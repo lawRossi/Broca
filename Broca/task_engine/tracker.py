@@ -11,6 +11,7 @@ class DialogueStateTracker:
         self.sender_id = sender_id
         self.agent = agent
         self.latest_message = None
+        self.latest_skill = None
         self.slots = {}
         for slot in agent.slots:
             self.slots[slot.name] = copy.deepcopy(slot)
@@ -20,6 +21,8 @@ class DialogueStateTracker:
 
     def current_state(self):
         state = {}
+        state["latest_skill"] = self.latest_skill
+        state["active_form"] = self.active_form
         intent = self.latest_message.get("intent")["name"]
         state["intent"] = intent
         intent_config = self.agent.intents[intent]
@@ -84,11 +87,21 @@ class DialogueStateTracker:
         return self.latest_message.get("intent")["name"]
 
     def get_latest_entity_values(self, entity):
+        if self.latest_message is None:
+            return None
         entities = self.latest_message.get("entities")
         if entities:
             values = entities.get(entity)
             if values is None or len(values) == 0:
                 return None
             else:
-                return values
+                return [value["value"] for value in values]
         return None
+
+    def snapshot(self):
+        return {
+            "sender_id": self.sender_id, 
+            "agent": self.agent,
+            "latest_message": self.latest_message, 
+            "slots": {slot.name: slot.value for slot in self.slots.values()}
+        }

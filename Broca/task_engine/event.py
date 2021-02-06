@@ -43,11 +43,16 @@ class SkillStarted(Event):
 
 
 class SkillEnded(Event):
+    def __init__(self, skill_name):
+        super().__init__()
+        self.skill_name = skill_name
+
     def apply(self, tracker):
-        tracker.update_states()
-    
+        self.backup["latest_skill"] = tracker.latest_skill
+        tracker.latest_skill = self.skill_name
+
     def undo(self, tracker):
-        tracker.pop_past_states()
+        tracker.latest_skill = self.backup["latest_skill"]
 
 
 class SlotSetted(Event):

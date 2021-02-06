@@ -61,7 +61,7 @@ class Agent:
         tracker.update(uttered)
         skill_name = self.policy.pick_skill(tracker)
         if skill_name:
-            skill = self.skills[skill_name]
+            skill = self.skills[skill_name]()
             for event in skill.perform(tracker):
                 tracker.update(event)
                 if isinstance(event, BotUttered):
@@ -70,12 +70,10 @@ class Agent:
                     channel.send_message(bot_message)
         self.tracker_store.update_tracker(tracker)
 
-    def add_skill(self, skill):
-        self.skills[skill.name] = skill
+    def add_skill(self, skill_cls):
+        skill = skill_cls()
+        self.skills[skill.name] = skill_cls
         mappings = self.script.get("mappings")
-        if mappings is None:
-            mappings = {}
-            self.script["mappings"] = mappings
         mappings.update(skill.generate_script())
         self.policy.parse_script(self.script)
         self.intents[skill.trigger_intent] = {"name": skill.trigger_intent, "use_entities": []}

@@ -2,6 +2,7 @@
 @author: Rossi
 @time: 2021-01-27
 """
+from Broca.utils import find_class
 
 
 class Policy:
@@ -44,3 +45,34 @@ class MappingPolicy(Policy):
         mapping = script.get("mappings")
         self.mapping = mapping
 
+
+class FormPolicy(Policy):
+    def predict_skill_probabilities(self, tracker):
+        if tracker.active_form is not None:
+            return {tracker.active_form: 1.0}
+        return {}
+
+
+class EnsemblePolicy(Policy):
+    def __init__(self, policies):
+        super().__init__()
+        self.policies = policies
+
+    def predict_skill_probabilities(self, tracker):
+        probabilities = {}
+        for policy in self.policies:
+            probabilities.update(policy.predict_skill_probabilities(tracker))
+        print(probabilities)
+        return probabilities
+
+    @classmethod
+    def from_config(cls, config):
+        policies = []
+        for policy_config in config["policies"]:
+            policy_cls = find_class(policy_config["class"])
+            policies.append(policy_cls.from_config(policy_config))
+        return cls(policies)
+
+    def parse_script(self, script):
+        for policy in self.policies:
+            policy.parse_script(script)
