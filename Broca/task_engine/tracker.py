@@ -2,8 +2,9 @@
 @author: Rossi
 @time: 2021-01-27
 """
+from Broca.task_engine.skill import Skill
 import copy
-from .event import SlotSetted
+from .event import SkillEnded, SlotSetted, UserUttered, Form
 
 
 class DialogueStateTracker:
@@ -18,15 +19,22 @@ class DialogueStateTracker:
         self.events = []
         self.past_states = []
         self.active_form = None
+    
+    def init_copy(self):
+        tracker = DialogueStateTracker(self.sender_id, self.agent)
+        return tracker
 
     def current_state(self):
         state = {}
         state["latest_skill"] = self.latest_skill
         state["active_form"] = self.active_form
-        intent = self.latest_message.get("intent")["name"]
+        if self.latest_message:
+            intent = self.latest_message.get("intent")["name"]
+        else:
+            intent = None
         state["intent"] = intent
-        intent_config = self.agent.intents[intent]
-        if intent_config["use_entities"]:
+        intent_config = self.agent.intents.get(intent)
+        if intent_config and intent_config["use_entities"]:
             entities = {}
             parsed_entities = self.latest_message.get("entities")
             for entity in intent_config["use_entities"]:
@@ -44,7 +52,7 @@ class DialogueStateTracker:
     def get_past_states(self):
         return self.past_states
 
-    def pop_past_states(self):
+    def pop_last_state(self):
         self.past_states.pop()
 
     def update_states(self):
@@ -97,6 +105,30 @@ class DialogueStateTracker:
             else:
                 return [value["value"] for value in values]
         return None
+    
+    def get_last_n_turns_events(self, turns, ignoring_in_form_skills=True):
+        events = []
+        if turns == 0:
+            return events
+        n = 0
+        in_form = False
+        for event in reversed(self.events):
+            if in_form and ignoring_in_form_skills:
+                if isinstance(event, SkillEnded) or isinstance(event, UserUttered):
+                    continue
+            if isinstance(event, UserUttered):
+                events.append(event)
+                n += 1
+                if n == turns:
+                    break
+            elif isinstance(event, Form):
+                if event.form is not None:
+                    events.append(SkillEnded(event.form))
+                events.append(event)
+                in_form = True if not in_form else False
+            else:
+                events.append(event)
+        return list(reversed(events))
 
     def snapshot(self):
         return {

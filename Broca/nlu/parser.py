@@ -60,7 +60,7 @@ class RENaturalLanguageParser(NaturalLanguageParser):
     @classmethod
     def from_config(cls, config):
         intent_file = config["intent_file"]
-        with open(intent_file) as fi:
+        with open(intent_file, encoding="utf-8") as fi:
             json_data = json.load(fi)
         intent_pattens = []
         for item in json_data:

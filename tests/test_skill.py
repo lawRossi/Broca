@@ -3,6 +3,7 @@ from Broca.task_engine.event import BotUttered, UserUttered
 from Broca.task_engine.agent import Agent
 from Broca.task_engine.tracker import DialogueStateTracker
 from Broca.message import UserMessage
+from collections import OrderedDict
 
 
 class GreetSkill(Skill):
@@ -26,9 +27,9 @@ class GreetFormSkill(FormSkill):
     def __init__(self):
         super().__init__()
         self.name = "greet_form"
-        self.trigger_intent = "greet"
+        self.trigger_intent = "hey"
         self.intent_patterns = ["你好"]
-        self.required_slots = {"name": {"prefilled": True}, "age": {"prefilled": True}}
+        self.required_slots = OrderedDict({"name": {"prefilled": True}, "age": {"prefilled": True}})
 
     def slot_mappings(self):
         return {"name": [self.from_entity("name")], "age": [self.from_entity("age")]}

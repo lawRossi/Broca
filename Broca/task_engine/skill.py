@@ -15,7 +15,9 @@ class Skill:
 
     def perform(self, tracker):
         events = [SkillStarted()]
-        events.extend(self._perform(tracker))
+        more_events = self._perform(tracker)
+        if more_events:
+            events.extend(more_events)
         events.extend(self.bot_atterances)
         events.append(SkillEnded(self.name))
         return events
@@ -29,7 +31,15 @@ class Skill:
         self.bot_atterances.append(utterance)
 
     def generate_script(self):
-        return {self.trigger_intent: self.name}
+        if self.trigger_intent:
+            return {self.trigger_intent: self.name}
+        return None
+
+
+class ListenSkill(Skill):
+    def __init__(self):
+        super().__init__()
+        self.name = "listen"
 
 
 class FormSkill(Skill):
@@ -131,3 +141,12 @@ class FormSkill(Skill):
             events.extend(self._submit(snapshot))
             events.append(Form(None))  # deactivate
         return events
+
+
+class DeactivateFormSkill(Skill):
+    def __init__(self):
+        super().__init__()
+        self.name = "deactivate_form"
+    
+    def _perform(self, tracker):
+        return [Form(None)]
