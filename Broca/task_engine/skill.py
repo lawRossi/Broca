@@ -3,7 +3,7 @@
 @time: 2021-01-26
 """
 from Broca.message import BotMessage
-from .event import SkillStarted, SkillEnded, BotUttered, SlotSetted, Form
+from .event import SkillStarted, SkillEnded, BotUttered, SlotSetted, Form, Undo
 
 
 class Skill:
@@ -13,16 +13,16 @@ class Skill:
         self.intent_patterns = None
         self.bot_atterances = []
 
-    def perform(self, tracker):
+    def perform(self, tracker, **parameters):
         events = [SkillStarted()]
-        more_events = self._perform(tracker)
+        more_events = self._perform(tracker, **parameters)
         if more_events:
             events.extend(more_events)
         events.extend(self.bot_atterances)
         events.append(SkillEnded(self.name))
         return events
 
-    def _perform(self, tracker):
+    def _perform(self, tracker, **parameters):
         return []
 
     def utter(self, text, data=None):
@@ -123,7 +123,7 @@ class FormSkill(Skill):
     def _submit(self, tracker_snapshot):
         return []
 
-    def _perform(self, tracker):
+    def _perform(self, tracker, **parameters):
         events = self._activate_if_required(tracker)
         slot_dict = self.extract_required_slots(tracker)
         events.extend([SlotSetted(slot, value) for slot, value in slot_dict.items() if tracker.get_slot(slot) != value])
@@ -148,5 +148,14 @@ class DeactivateFormSkill(Skill):
         super().__init__()
         self.name = "deactivate_form"
     
-    def _perform(self, tracker):
+    def _perform(self, tracker, **parameters):
         return [Form(None)]
+
+
+class UndoSkill(Skill):
+    def __init__(self):
+        super().__init__()
+        self.name = "undo"
+    
+    def perform(self, tracker, **parameters):
+        return [Undo()]

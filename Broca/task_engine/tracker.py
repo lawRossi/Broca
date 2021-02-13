@@ -23,6 +23,12 @@ class DialogueStateTracker:
     def init_copy(self):
         tracker = DialogueStateTracker(self.sender_id, self.agent)
         return tracker
+    
+    def copy(self):
+        tracker = self.init_copy()
+        for event in self.events:
+            tracker.update(event)
+        return tracker
 
     def current_state(self):
         state = {}
@@ -114,7 +120,7 @@ class DialogueStateTracker:
         in_form = False
         for event in reversed(self.events):
             if in_form and ignoring_in_form_skills:
-                if isinstance(event, SkillEnded) or isinstance(event, UserUttered):
+                if not isinstance(event, SlotSetted) and not isinstance(event, Form):
                     continue
             if isinstance(event, UserUttered):
                 events.append(event)
@@ -122,7 +128,7 @@ class DialogueStateTracker:
                 if n == turns:
                     break
             elif isinstance(event, Form):
-                if event.form is not None:
+                if event.form is not None: # form activation
                     events.append(SkillEnded(event.form))
                 events.append(event)
                 in_form = True if not in_form else False

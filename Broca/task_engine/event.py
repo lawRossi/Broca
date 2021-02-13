@@ -53,7 +53,7 @@ class UserUttered(Event):
 
     def undo(self, tracker):
         tracker.pop_user_message()
-        tracker.pop_past_states()
+        tracker.pop_last_state()
         tracker.latest_message = self.backup[self.LATEST_MESSAGE]
 
     @classmethod
@@ -133,3 +133,15 @@ class Form(Event):
     def from_parameters(cls, parameter_string=None):
         parameters = json.loads(parameter_string)
         return cls(parameters["name"])
+
+
+class Undo(Event):
+    name = "undo"
+
+    def apply(self, tracker):
+        n = 0
+        while n < 2:
+            event = tracker.events.pop()
+            event.undo(tracker)
+            if isinstance(event, UserUttered):
+                n += 1

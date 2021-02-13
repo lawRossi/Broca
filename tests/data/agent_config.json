@@ -1,0 +1,30 @@
+{
+    "agent_name": "agent",
+    "parser": {
+        "class": "Broca.nlu.parser.RENaturalLanguageParser",
+        "intent_file": "tests/data/intent_patterns.json"
+    },
+    "tracker_store": {
+        "class": "Broca.task_engine.tracker_store.InMemoryTrackerStore"
+    },
+    "policy": {
+        "class": "Broca.task_engine.policy.EnsemblePolicy",
+        "policies": [
+            {"class": "Broca.task_engine.policy.FormPolicy"},
+            {"class": "Broca.task_engine.policy.MemoryPolicy"},
+            {"class": "Broca.task_engine.policy.MappingPolicy"}
+        ]
+    },
+    "script_file": "tests/data/script.json",
+    "intents": {
+        "inform": {"use_entities": null},
+        "ask_date": {"use_entities": null},
+        "ask_weekday": {"use_entities": null},
+        "ask_weather": {"use_entities": null},
+        "ask_date_weekday": {"use_entities": null}
+    },
+    "slots": [
+        {"class": "Broca.task_engine.slot.Slot", "name": "name", "from_entity": "name"},
+        {"class": "Broca.task_engine.slot.Slot", "name": "age"}   
+    ]
+}

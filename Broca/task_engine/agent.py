@@ -7,6 +7,7 @@ import json
 from Broca.utils import find_class
 from .event import UserUttered, BotUttered
 from .skill import ListenSkill
+import re
 
 
 class Agent:
@@ -19,6 +20,7 @@ class Agent:
         self.intents = intents
         self.skills = {}
         self.slots = slots
+        self.skill_pattern = re.compile("(?P<name>[a-zA-Z_0-9]+)?(:(?P<parameters>\{.+\})$)?")
 
     def set_script(self, script):
         self.script = script
@@ -47,6 +49,17 @@ class Agent:
             slot_cls = find_class(slot_config["class"])
             slots.append(slot_cls.from_config(slot_config))
         return cls(agent_name, parser, tracker_store, policy, intents, slots)
+    
+    def can_handle_message(self, message):
+        if self.parser:
+            self.parser.parse(message)
+        uttered = UserUttered(message)
+        tracker = self.tracker_store.get_tracker(message.sender_id)
+        temp_tracker = tracker.copy()
+        temp_tracker.update(uttered)
+        self.listen(temp_tracker)
+        skill_name = self.policy.pick_skill(temp_tracker)
+        return skill_name is not None
 
     def handle_message(self, message):
         if self.parser:
@@ -59,8 +72,9 @@ class Agent:
         skill_name = self.policy.pick_skill(tracker)
         if skill_name is not None:
             while skill_name is not None:
+                skill_name, parameters = self._parse_skill_name(skill_name)
                 skill = self.skills[skill_name]()
-                for event in skill.perform(tracker):
+                for event in skill.perform(tracker, **parameters):
                     tracker.update(event)
                     if isinstance(event, BotUttered):
                         bot_message = event.bot_message
@@ -70,6 +84,19 @@ class Agent:
             bot_message = BotMessage("不好意思，我不懂你的意思")
             channel.send_message(bot_message)
         self.tracker_store.update_tracker(tracker)
+    
+    def _parse_skill_name(self, skill_name):
+        match = self.skill_pattern.match(skill_name)
+        if not match:
+            raise RuntimeError("invalid skill name")
+        else:
+            skill_name = match.group("name")
+            parameters = match.group("parameters")
+            if parameters:
+                parameters = json.loads(parameters)
+            else:
+                parameters = {}
+            return skill_name, parameters
 
     def add_skill(self, skill_cls):
         skill = skill_cls()
@@ -84,3 +111,7 @@ class Agent:
         events = ListenSkill().perform(tracker)
         for event in events:
             tracker.update(event)
+    
+    def is_active(self, sender_id):
+        tracker = self.tracker_store.get_tracker(sender_id)
+        return tracker.active_form is not None

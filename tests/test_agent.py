@@ -30,7 +30,7 @@ class ReportWeatherSkill(Skill):
         super().__init__()
         self.name = "report_weather"
 
-    def _perform(self, tracker):
+    def _perform(self, tracker, date=None):
         self.utter("今天天气很好")
 
 
