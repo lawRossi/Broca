@@ -1,0 +1,11 @@
+{
+    "parser_pipeline": {
+        "class": "Broca.nlu.pipeline.ParserPipeline",
+        "parsers": [
+            {
+                "class": "Broca.nlu.parser.RENaturalLanguageParser",
+                "intent_file": "tests/data/intent_patterns.json"
+            }
+        ]
+    }
+}

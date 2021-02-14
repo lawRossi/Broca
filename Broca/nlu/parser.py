@@ -68,3 +68,7 @@ class RENaturalLanguageParser(NaturalLanguageParser):
             patterns = [re.compile(pattern) for pattern in item["patterns"]]
             intent_pattens.append((intent, patterns))
         return cls(intent_pattens)
+
+    def add_intent_patterns(self, intent, patterns):
+        patterns = [re.compile(pattern) for pattern in patterns]
+        self.intent_pattens.append((intent, patterns))

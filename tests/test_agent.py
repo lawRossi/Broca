@@ -13,7 +13,7 @@ class ReportDateSkill(Skill):
         self.name = "report_date"
     
     def _perform(self, tracker):
-        self.utter("今天是15号")
+        self.utter("今天是15号", tracker)
 
 
 class ReportWeekdaySkill(Skill):
@@ -22,7 +22,7 @@ class ReportWeekdaySkill(Skill):
         self.name = "report_weekday"
 
     def _perform(self, tracker):
-        self.utter("今天是周五")
+        self.utter("今天是周五", tracker)
 
 
 class ReportWeatherSkill(Skill):
@@ -31,7 +31,7 @@ class ReportWeatherSkill(Skill):
         self.name = "report_weather"
 
     def _perform(self, tracker, date=None):
-        self.utter("今天天气很好")
+        self.utter("今天天气很好", tracker)
 
 
 def read_scenes(script_file):
@@ -67,7 +67,7 @@ if __name__ == "__main__":
     scenes = read_scenes("tests/data/dialogues.txt")
     for scene in scenes:
         channel = CollectingOutputChannel()
-        agent = Agent.from_config("tests/data/agent_config.json")
+        agent = Agent.from_config_file("tests/data/agent_config.json")
         agent.set_script(script)
 
         agent.add_skill(GreetSkill)

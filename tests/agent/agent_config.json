@@ -1,13 +1,8 @@
 {
     "agent_name": "agent",
     "parser": {
-        "class": "Broca.nlu.pipeline.ParserPipeline",
-        "parsers": [
-            {
-                "class": "Broca.nlu.parser.RENaturalLanguageParser",
-                "intent_file": "tests/data/intent_patterns.json"
-            }
-        ]
+        "class": "Broca.nlu.parser.RENaturalLanguageParser",
+        "intent_file": "tests/data/intent_patterns.json"
     },
     "tracker_store": {
         "class": "Broca.task_engine.tracker_store.InMemoryTrackerStore"
@@ -20,7 +15,6 @@
             {"class": "Broca.task_engine.policy.MappingPolicy"}
         ]
     },
-    "script_file": "tests/data/script.json",
     "intents": {
         "inform": {"use_entities": null},
         "ask_date": {"use_entities": null},

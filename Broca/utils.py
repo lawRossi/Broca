@@ -6,6 +6,7 @@ import importlib
 from elasticsearch_dsl import Document, Text, Keyword, Float, Integer, Date, Q
 import datetime
 import logging
+import inspect
 
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,12 @@ def all_subclasses(cls):
     return cls.__subclasses__() + [
         g for s in cls.__subclasses__() for g in all_subclasses(s)
     ]
+
+
+def list_class(module):
+    imported_module = importlib.import_module(".", module)
+    for (_, cls) in inspect.getmembers(imported_module, inspect.isclass):
+        yield cls
 
 
 class Entity(Document):

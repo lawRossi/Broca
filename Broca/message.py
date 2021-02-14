@@ -49,7 +49,8 @@ class UserMessage:
 
 
 class BotMessage:
-    def __init__(self, text, data=None):
+    def __init__(self, receiver_id, text, data=None):
+        self.receiver_id = receiver_id
         self.text = text
         self.data = data
     
@@ -61,6 +62,7 @@ class BotMessage:
 
     def to_dict(self):
         return {
+            "receiver_id": self.receiver_id,
             "text": self.text,
             "data": self.data
         }

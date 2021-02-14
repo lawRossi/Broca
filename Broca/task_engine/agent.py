@@ -4,9 +4,9 @@
 """
 from Broca.message import BotMessage
 import json
-from Broca.utils import find_class
+from Broca.utils import find_class, list_class
 from .event import UserUttered, BotUttered
-from .skill import ListenSkill
+from .skill import FormSkill, ListenSkill, Skill, UndoSkill, DeactivateFormSkill
 import re
 
 
@@ -25,11 +25,15 @@ class Agent:
     def set_script(self, script):
         self.script = script
         self.policy.parse_script(script, self)
-
+    
     @classmethod
-    def from_config(cls, config_file):
+    def from_config_file(cls, config_file):
         with open(config_file, encoding="utf-8") as fi:
             config = json.load(fi)
+            return cls.from_config(config)
+
+    @classmethod
+    def from_config(cls, config):
         parser_config = config.get("parser")
         if parser_config:
             parser_cls = find_class(parser_config["class"])
@@ -49,7 +53,7 @@ class Agent:
             slot_cls = find_class(slot_config["class"])
             slots.append(slot_cls.from_config(slot_config))
         return cls(agent_name, parser, tracker_store, policy, intents, slots)
-    
+
     def can_handle_message(self, message):
         if self.parser:
             self.parser.parse(message)
@@ -61,8 +65,8 @@ class Agent:
         skill_name = self.policy.pick_skill(temp_tracker)
         return skill_name is not None
 
-    def handle_message(self, message):
-        if self.parser:
+    def handle_message(self, message, message_parsed=False):
+        if self.parser and not message_parsed:
             self.parser.parse(message)
         uttered = UserUttered(message)
         tracker = self.tracker_store.get_tracker(message.sender_id)
@@ -81,10 +85,10 @@ class Agent:
                         channel.send_message(bot_message)
                 skill_name = self.policy.pick_skill(tracker)
         else:
-            bot_message = BotMessage("不好意思，我不懂你的意思")
+            bot_message = BotMessage(message.sender_id, "不好意思，我不懂你的意思")
             channel.send_message(bot_message)
         self.tracker_store.update_tracker(tracker)
-    
+
     def _parse_skill_name(self, skill_name):
         match = self.skill_pattern.match(skill_name)
         if not match:
@@ -115,3 +119,19 @@ class Agent:
     def is_active(self, sender_id):
         tracker = self.tracker_store.get_tracker(sender_id)
         return tracker.active_form is not None
+
+    def load_skills(self, skill_module):
+        for cls in list_class(skill_module):
+            if issubclass(cls, Skill) and cls not in [Skill, FormSkill]:
+                self.add_skill(cls)
+        self.add_skill(UndoSkill)
+        self.add_skill(DeactivateFormSkill)
+
+    def collect_intent_patterns(self):
+        intent_patterns = []
+        for skill_cls in self.skills.values():
+            skill = skill_cls()
+            if skill.trigger_intent and skill.intent_patterns:
+                intent = {"name": skill.trigger_intent, "agent": self.name}
+                intent_patterns.append((intent, skill.intent_patterns))
+        return intent_patterns

@@ -25,8 +25,8 @@ class Skill:
     def _perform(self, tracker, **parameters):
         return []
 
-    def utter(self, text, data=None):
-        bot_message = BotMessage(text, data)
+    def utter(self, text, receiver_id, data=None):
+        bot_message = BotMessage(receiver_id, text, data)
         utterance = BotUttered(bot_message)
         self.bot_atterances.append(utterance)
 
@@ -134,7 +134,7 @@ class FormSkill(Skill):
                 break
         if next_to_fill_slot:
             utter_func = getattr(self, f"utter_ask_{next_to_fill_slot}")
-            self.utter(utter_func(tracker))
+            self.utter(utter_func(tracker), tracker.sender_id)
         else:
             snapshot = tracker.snapshot()
             snapshot["slots"].update(slot_dict)

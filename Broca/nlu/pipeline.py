@@ -2,6 +2,7 @@
 @Author: Rossi
 Created At: 2020-12-13
 """
+from Broca.utils import find_class
 
 
 class ParserPipeline:
@@ -22,3 +23,11 @@ class ParserPipeline:
         """
         for parser in self.parsers:
             parser.parse(message)
+
+    @classmethod
+    def from_config(cls, config):
+        pipeline = cls()
+        for parser_config in config["parsers"]:
+            parser_cls = find_class(parser_config["class"])
+            pipeline.add_parser(parser_cls.from_config(parser_config))
+        return pipeline

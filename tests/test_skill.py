@@ -19,7 +19,7 @@ class GreetSkill(Skill):
             name = names[0]
         else:
             name = ""
-        self.utter(f"你好呀{name}")
+        self.utter(f"你好呀{name}", tracker.sender_id)
         return []
 
 
@@ -43,7 +43,7 @@ class GreetFormSkill(FormSkill):
     def _submit(self, tracker_snapshot):
         name = tracker_snapshot["slots"]["name"][0]
         age = tracker_snapshot["slots"]["age"][0]
-        self.utter(f"你好呀，{name}，你{age}岁了呀")
+        self.utter(f"你好呀，{name}，你{age}岁了呀", tracker_snapshot["sender_id"])
         return []
 
  
