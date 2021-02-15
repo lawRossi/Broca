@@ -5,6 +5,7 @@ Created At: 2021-02-13
 from importlib import import_module
 from Broca.task_engine.agent import Agent
 from Broca.message import BotMessage
+from Broca.nlu.parser import RENaturalLanguageParser
 from Broca.utils import find_class
 import os
 import json
@@ -51,7 +52,10 @@ class Engine:
                 script_file = os.path.join(abs_dir, "script.py")
                 if os.path.exists(config_file) and os.path.exists(script_file):
                     agent = Agent.from_config_file(config_file)
-                    base_package = ".".join([package, dir])
+                    if package != ".":
+                        base_package = ".".join([package, dir])
+                    else:
+                        base_package = dir
                     script_module = import_module(f"{base_package}.script")
                     script = getattr(script_module, "script")
                     agent.set_script(script)
@@ -60,10 +64,12 @@ class Engine:
                     self.add_agent(agent)
 
     def collect_intent_patterns(self):
-        intent_patterns = []
-        for agent in self.agents:
-            intent_patterns.extend(agent.collect_intent_patterns())
-        return intent_patterns
+        for parser in self.parser_pipeline.parsers:
+            if isinstance(parser, RENaturalLanguageParser):
+                for agent in self.agents:
+                    for intent, patterns in agent.collect_intent_patterns():
+                        parser.add_intent_patterns(intent, patterns)
+                break
     
     @classmethod
     def from_config_file(cls, config_file):

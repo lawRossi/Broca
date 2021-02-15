@@ -1,0 +1,20 @@
+{
+    "agent_name": "agent",
+    "tracker_store": {
+        "class": "Broca.task_engine.tracker_store.InMemoryTrackerStore"
+    },
+    "policy": {
+        "class": "Broca.task_engine.policy.EnsemblePolicy",
+        "policies": [
+            {"class": "Broca.task_engine.policy.FormPolicy"},
+            {"class": "Broca.task_engine.policy.MemoryPolicy"},
+            {"class": "Broca.task_engine.policy.MappingPolicy"}
+        ]
+    },
+    "intents": {
+        
+    },
+    "slots": [
+        
+    ]
+}

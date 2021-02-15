@@ -35,7 +35,9 @@ class DialogueStateTracker:
         state["latest_skill"] = self.latest_skill
         state["active_form"] = self.active_form
         if self.latest_message:
-            intent = self.latest_message.get("intent")["name"]
+            intent = self.latest_message.get("intent")
+            if intent:
+                intent = intent["name"]
         else:
             intent = None
         state["intent"] = intent
