@@ -13,12 +13,13 @@ def init_project(args):
 
     if project_type == "simple":
         base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        template_dir = os.path.join(base_dir, "resource\\templates\\simple")
         if platform == "win32":
+            template_dir = os.path.join(base_dir, "resource\\templates\\simple")
             cmd = f"xcopy {template_dir}\\*.* {project_name} /s"
             os.system(cmd)
         elif platform == "linux":
-            cmd = f"cp {template_dir}\\* {project_name}"
+            template_dir = os.path.join(base_dir, "resource/templates/simple")
+            cmd = f"cp -r {template_dir}/* {project_name}"
             os.system(cmd)
     print(f"project {project_name} created")
 
@@ -51,12 +52,13 @@ def init_agent(args):
     os.makedirs(agent_name)
     platform = sys.platform
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-    template_dir = os.path.join(base_dir, "resource\\templates\\simple\\agent")
     if platform == "win32":
+        template_dir = os.path.join(base_dir, "resource\\templates\\simple\\agent")
         cmd = f"xcopy {template_dir}\\*.* {agent_name} /s"
         os.system(cmd)
     elif platform == "linux":
-        cmd = f"cp {template_dir}\\* {agent_name}"
+        template_dir = os.path.join(base_dir, "resource/templates/simple/agent")
+        cmd = f"cp -r {template_dir}/* {agent_name}"
         os.system(cmd)
     print(f"agent {agent_name} created")
 
