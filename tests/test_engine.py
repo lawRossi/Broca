@@ -7,4 +7,4 @@ if __name__ == "__main__":
     assert len(engine.agents) == 1
     agent = engine.agents[0]
     assert len(agent.skills) == 5
-    print(engine.collect_intent_patterns())
+    engine.collect_intent_patterns()
