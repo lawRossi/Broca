@@ -4,6 +4,7 @@
 """
 from Broca.message import BotMessage
 from .event import SkillStarted, SkillEnded, BotUttered, SlotSetted, Form, Undo
+from collections import defaultdict
 
 
 class Skill:
@@ -47,6 +48,8 @@ class FormSkill(Skill):
     FROM_INTENT = "from_intent"
     FROM_TEXT = "from_text"
 
+    slot_cache = defaultdict(lambda : dict())
+
     def __init__(self):
         super().__init__()
         self.required_slots = {}
@@ -67,7 +70,7 @@ class FormSkill(Skill):
         mappings = self.slot_mappings()
         return mappings.get(slot_name, self.from_entity(slot_name))
 
-    def id_desired_intent(self, slot_mapping, tracker):
+    def is_desired_intent(self, slot_mapping, tracker):
         intent = tracker.get_latest_intent()
         intents = slot_mapping["intents"]
         not_intents = slot_mapping["not_intents"]
@@ -81,7 +84,7 @@ class FormSkill(Skill):
         slot_dict = {}
         for slot_to_fill, config in self.required_slots.items():
             for slot_mapping in self.get_mappings_for_slot(slot_to_fill):
-                if self.id_desired_intent(slot_mapping, tracker):
+                if self.is_desired_intent(slot_mapping, tracker):
                     value = None
                     if slot_mapping["type"] == self.FROM_ENTITY:
                         value = tracker.get_latest_entity_values(slot_mapping["entity"])
@@ -89,8 +92,14 @@ class FormSkill(Skill):
                         value = slot_mapping["value"]
                     elif slot_mapping["type"] == self.FROM_TEXT:
                         value = tracker.latest_message.text
-                    if value is None and config.get("prefilled", True):  # try to find a prefilled slot vlaue
-                        value = tracker.get_slot(slot_to_fill)
+                    if value is None:
+                        if config.get("prefilled", True):  # try to find a prefilled slot vlaue
+                            value = tracker.get_slot(slot_to_fill)
+                        else: # try to find the prefilled value in this form
+                            value = self.slot_cache[self.name].get(slot_to_fill)
+                    else:
+                        if not config.get("prefilled", True):
+                            self.slot_cache[self.name][slot_to_fill] = value
                     if value is None and config.get("default") is not None:
                         default = config["default"]
                         if callable(default):
@@ -122,8 +131,15 @@ class FormSkill(Skill):
 
     def _submit(self, tracker_snapshot):
         return []
+    
+    def _clear_slot_cache_if_required(self, tracker, **parameters):
+        if tracker.active_form != self.name:  # begining of this form
+            flag = parameters.get("clear_slot", True)
+            if flag:
+                self.slot_cache[self.name].clear()
 
     def _perform(self, tracker, **parameters):
+        self._clear_slot_cache_if_required(tracker, **parameters)
         events = self._activate_if_required(tracker)
         slot_dict = self.extract_required_slots(tracker)
         events.extend([SlotSetted(slot, value) for slot, value in slot_dict.items() if tracker.get_slot(slot) != value])

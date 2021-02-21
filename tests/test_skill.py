@@ -29,7 +29,7 @@ class GreetFormSkill(FormSkill):
         self.name = "greet_form"
         self.trigger_intent = "hey"
         self.intent_patterns = ["你好"]
-        self.required_slots = OrderedDict({"name": {"prefilled": True}, "age": {"prefilled": True}})
+        self.required_slots = OrderedDict({"name": {"prefilled": True}, "age": {"prefilled": False}})
 
     def slot_mappings(self):
         return {"name": [self.from_entity("name")], "age": [self.from_entity("age")]}
