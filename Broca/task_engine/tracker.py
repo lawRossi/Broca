@@ -100,7 +100,10 @@ class DialogueStateTracker:
     def get_latest_intent(self):
         if self.latest_message is None:
             return None
-        return self.latest_message.get("intent")["name"]
+        intent = self.latest_message.get("intent")
+        if not intent:
+            return None
+        return intent["name"]
 
     def get_latest_entity_values(self, entity):
         if self.latest_message is None:

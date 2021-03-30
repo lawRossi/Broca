@@ -8,7 +8,7 @@ setup(
     author="Rossi",
     packages=find_packages(exclude=("test", "test.*", "data")),
     include_package_data = True,
-    # data_files = [("resource", ["resource/templates/simple/engine_config.json", "resource/templates/simple/agent/agent_config.json"])],
+    data_files = [("resource", ["resource/templates/simple/intent_patterns.json"])],
     entry_points = {  
         'console_scripts': [  
              'broca = Broca.__main__:main'  

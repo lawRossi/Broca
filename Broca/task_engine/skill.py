@@ -49,6 +49,7 @@ class FormSkill(Skill):
     FROM_TEXT = "from_text"
 
     slot_cache = defaultdict(lambda : dict())
+    slot_trials = defaultdict(lambda : defaultdict(int))
 
     def __init__(self):
         super().__init__()
@@ -68,7 +69,7 @@ class FormSkill(Skill):
 
     def get_mappings_for_slot(self, slot_name):
         mappings = self.slot_mappings()
-        return mappings.get(slot_name, self.from_entity(slot_name))
+        return mappings.get(slot_name, [self.from_entity(slot_name)])
 
     def is_desired_intent(self, slot_mapping, tracker):
         intent = tracker.get_latest_intent()
@@ -109,15 +110,16 @@ class FormSkill(Skill):
                     if value is not None:
                         slot_dict[slot_to_fill] = value
                         break
-        return self.validate(slot_dict)
+        return self.validate(slot_dict, tracker)
 
-    def validate(self, slot_dict):
+    def validate(self, slot_dict, tracker):
         valid_slot_dict = {}
         for slot_name, value in slot_dict.items():
             validate_func_name = f"validate_{slot_name}"
             if hasattr(self, validate_func_name):
-                validate_func = getattr(self, )
-                if validate_func(value):
+                validate_func = getattr(self, validate_func_name)
+                value = validate_func(value, tracker)
+                if value is not None:
                     valid_slot_dict[slot_name] = value
             else:
                 valid_slot_dict[slot_name] = value
@@ -131,7 +133,7 @@ class FormSkill(Skill):
 
     def _submit(self, tracker_snapshot):
         return []
-    
+
     def _clear_slot_cache_if_required(self, tracker, **parameters):
         if tracker.active_form != self.name:  # begining of this form
             flag = parameters.get("clear_slot", True)
@@ -151,11 +153,13 @@ class FormSkill(Skill):
         if next_to_fill_slot:
             utter_func = getattr(self, f"utter_ask_{next_to_fill_slot}")
             self.utter(utter_func(tracker), tracker.sender_id)
+            self.slot_trials[tracker.sender_id][next_to_fill_slot] += 1
         else:
             snapshot = tracker.snapshot()
             snapshot["slots"].update(slot_dict)
             events.extend(self._submit(snapshot))
             events.append(Form(None))  # deactivate
+            self.slot_trials[tracker.sender_id].clear()
         return events
 
 
