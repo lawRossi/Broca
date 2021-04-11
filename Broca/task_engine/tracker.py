@@ -2,7 +2,6 @@
 @author: Rossi
 @time: 2021-01-27
 """
-from Broca.task_engine.skill import Skill
 import copy
 from .event import SkillEnded, SlotSetted, UserUttered, Form
 

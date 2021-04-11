@@ -65,7 +65,10 @@ class Entity(Document):
     def _get_sub_query(cls, field, value):
         field_type = cls.get_field(field)
         if isinstance(field_type, Text):
-            return ("query", Q("match_phrase", **{field: value}))
+            if isinstance(value, list):
+                return ("query", Q("match_phrase", **{field: value[0]}))
+            else:
+                return ("query", Q("match_phrase", **{field: value}))
         elif isinstance(field_type, Keyword):
             if isinstance(value, list):
                 return ("filter", Q("terms", **{field: value}))

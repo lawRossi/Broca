@@ -11,7 +11,9 @@ import re
 
 
 class Agent:
-    def __init__(self, name, parser, tracker_store, policy, intents, slots):
+    skill_pattern = re.compile("(?P<name>[a-zA-Z_0-9]+)?(:(?P<parameters>\{.+\})$)?")
+
+    def __init__(self, name, parser, tracker_store, policy, intents, slots, prompt_trigger=None):
         self.name = name
         self.parser = parser
         tracker_store.agent = self
@@ -20,7 +22,7 @@ class Agent:
         self.intents = intents
         self.skills = {}
         self.slots = slots
-        self.skill_pattern = re.compile("(?P<name>[a-zA-Z_0-9]+)?(:(?P<parameters>\{.+\})$)?")
+        self.prompt_trigger = prompt_trigger
 
     def set_script(self, script):
         self.script = script
@@ -52,7 +54,11 @@ class Agent:
         for slot_config in config["slots"]:
             slot_cls = find_class(slot_config["class"])
             slots.append(slot_cls.from_config(slot_config))
-        return cls(agent_name, parser, tracker_store, policy, intents, slots)
+        prompt_trigger = config.get("prompt_trigger", None)
+        return cls(agent_name, parser, tracker_store, policy, intents, slots, prompt_trigger)
+
+    def prompt(self, message):
+        pass
 
     def can_handle_message(self, message):
         if self.parser:
@@ -64,7 +70,7 @@ class Agent:
         self.listen(temp_tracker)
         skill_name = self.policy.pick_skill(temp_tracker)
         return skill_name is not None
-
+    
     def handle_message(self, message, message_parsed=False):
         if self.parser and not message_parsed:
             self.parser.parse(message)

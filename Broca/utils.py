@@ -4,6 +4,7 @@ Created At: 2021-01-30
 """
 import importlib
 import inspect
+from mako.template import Template
 
 
 def find_class(class_path):
@@ -26,3 +27,25 @@ def list_class(module):
     imported_module = importlib.import_module(".", module)
     for (_, cls) in inspect.getmembers(imported_module, inspect.isclass):
         yield cls
+
+
+def load_templates(template_path=None):
+    if template_path is None:
+        template_path = "templates.md"
+    templates_mapping = {}
+    with open(template_path, encoding="utf-8") as fi:
+        intent = None
+        template = ""
+        for line in fi:
+            if not line.strip():
+                continue
+            elif line.startswith("##"):
+                if intent is not None:
+                    templates_mapping[intent] = Template(template)
+                    template = ""
+                intent = line[2:].strip()
+            else:
+                template += line
+        if intent is not None:
+            templates_mapping[intent] = Template(template)
+        return templates_mapping

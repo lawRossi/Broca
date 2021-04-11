@@ -1,5 +1,6 @@
 {
     "agent_name": "agent",
+    "prompt": null,
     "tracker_store": {
         "class": "Broca.task_engine.tracker_store.InMemoryTrackerStore"
     },
