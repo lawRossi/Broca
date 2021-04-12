@@ -38,7 +38,12 @@ class Engine:
             for agent in self.agents:
                 if agent.name == agent_name and agent.can_handle_message(message):
                     agent.handle_message(message, message_parsed=True)
-                    break 
+                    break
+            else:
+                channel = message.channel
+                prompt_message = self._prompt()
+                bot_message = BotMessage(message.sender_id, prompt_message)
+                channel.send_message(bot_message)
         else:
             for agent in self.agents:
                 if agent.can_handle_message(message):

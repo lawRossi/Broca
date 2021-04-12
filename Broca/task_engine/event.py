@@ -3,7 +3,6 @@
 Created At: 2021-01-30
 """
 from Broca.utils import all_subclasses
-import re
 import json
 from Broca.message import UserMessage
 
@@ -102,7 +101,7 @@ class SlotSetted(Event):
     def apply(self, tracker):
         self.backup[self.slot] = tracker.get_slot(self.slot)
         tracker.set_slot(self.slot, self.value)
-    
+
     def undo(self, tracker):
         tracker.set_slot(self.slot, self.backup[self.slot])
     

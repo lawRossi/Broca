@@ -10,6 +10,7 @@ class Slot:
         self.from_entity = from_entity
         self.value = None
         self.featurized = False
+        self.turn_no = None
 
     def featurize(self):
         return {self.name: self.value}

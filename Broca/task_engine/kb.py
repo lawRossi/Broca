@@ -116,7 +116,6 @@ def query_entity_attributes(sender_id, intent, slots, intent_templates_mapping):
     attrs = None
     if entity is not None:
         attrs = entity.get_attributes(intent)
-        print(attrs)
     template = intent_templates_mapping[intent]
     response = template.render(slots=slots, datas=attrs)
     return response

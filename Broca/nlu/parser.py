@@ -209,3 +209,30 @@ class TimeExtractor(NaturalLanguageParser):
     @classmethod
     def from_config(cls, config):
         return cls()
+
+
+class EntitySynonymMapper(NaturalLanguageParser):
+    def __init__(self, synonyms):
+        self.synonyms = synonyms if synonyms else {}
+
+    def parse(self, message):
+        entities = message.get("entities", [])
+        self._replace_synonyms(entities)
+
+    @classmethod
+    def from_config(cls, config):
+        file_name = config.get("synonym_file")
+        if not file_name:
+            synonyms = None
+        with open(file_name, encoding="utf-8") as fi:
+            synonyms = json.load(fi)
+        return cls(synonyms)
+
+    def _replace_synonyms(self, entities):
+        for entity_type, entity_values in entities.items():
+            # need to wrap in `str` to handle e.g. entity values of type int
+            if entity_type in self.synonyms:
+                for entity in entity_values:
+                    value = str(entity.get("value"))
+                    if value in self.synonyms[entity_type]:
+                        entity["value"] = self.synonyms[entity_type][value]

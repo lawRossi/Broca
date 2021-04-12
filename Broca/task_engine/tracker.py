@@ -18,7 +18,8 @@ class DialogueStateTracker:
         self.events = []
         self.past_states = []
         self.active_form = None
-    
+        self.turns = 0
+
     def init_copy(self):
         tracker = DialogueStateTracker(self.sender_id, self.agent)
         return tracker
@@ -72,6 +73,7 @@ class DialogueStateTracker:
     def add_user_message(self, message):
         self.latest_message = message
         entities = message.get("entities")
+        self.turns += 1
         if entities:
             events = []
             for slot in self.slots.values():
@@ -89,10 +91,13 @@ class DialogueStateTracker:
     def set_slot(self, slot, value):
         if slot in self.slots:
             self.slots[slot].value = value
-    
-    def get_slot(self, slot):
+            self.slots[slot].turn_no = self.turns
+
+    def get_slot(self, slot, within_turns=None):
         slot = self.slots.get(slot)
         if slot:
+            if within_turns is not None and self.turns - slot.turn_no + 1 > within_turns:
+                return None
             return slot.value
         return None
 
@@ -145,5 +150,6 @@ class DialogueStateTracker:
             "sender_id": self.sender_id, 
             "agent": self.agent,
             "latest_message": self.latest_message, 
-            "slots": {slot.name: slot.value for slot in self.slots.values()}
+            "slots": {slot.name: slot.value for slot in self.slots.values()},
+            "turns": self.turns
         }

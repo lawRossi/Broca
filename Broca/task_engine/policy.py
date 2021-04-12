@@ -74,6 +74,7 @@ class MemoryPolicy(Policy):
         self.max_memory_depth = max_memory_depth
         self.max_scene_turns = 0
         self.event_pattern = re.compile("^(?P<event>([a-zA-Z\d_]+?))(?P<parameters>\{.+\}$)")
+        self.skill_parameters = re.compile(":\{.+\}")
 
     def predict_skill_probabilities(self, tracker):
         skill = self.search_memory(tracker)
@@ -146,7 +147,8 @@ class MemoryPolicy(Policy):
                     self.memories[memory_key] = skill_name
                     if skill_name == "deactivate_form":
                         tracker.update(Form(None))
-                    tracker.update(SkillEnded(skill_name))
+                    raw_skill_name = self.skill_parameters.sub("", skill_name)
+                    tracker.update(SkillEnded(raw_skill_name))
         self.max_scene_turns = max(self.max_scene_turns, turns)
 
 
