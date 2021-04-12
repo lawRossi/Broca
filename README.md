@@ -49,5 +49,6 @@ We now finish our demo by implementing two simple skills. Edit the skills.py as 
             self.utter("I can talk with you.", tracker.sender_id)
             return []
 
-Then we can test our demo just by running engine.py.
+Then we can test our demo just by running engine.py.  
+
 ![](resource/img/demo.png)
