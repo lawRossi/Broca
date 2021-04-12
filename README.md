@@ -46,9 +46,8 @@ We now finish our demo by implementing two simple skills. Edit the skills.py as 
             self.intent_patterns = ["what can you do?"]
 
         def _perform(self, tracker):
-            self.utter("I can task with you.", tracker.sender_id)
+            self.utter("I can talk with you.", tracker.sender_id)
             return []
 
 Then we can test our demo just by running engine.py.
 ![](resource/img/demo.png)
-
