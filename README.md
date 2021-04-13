@@ -1,5 +1,5 @@
 # Broca
-![Licence](https://img.shields.io/github/license/lawRossi/time_extractor)
+![Licence](https://img.shields.io/github/license/lawRossi/broca)
 ![Python](https://img.shields.io/badge/Python->=3.6-blue)
 
 Broca is a tiny and easy-to-use dialogue framework.
