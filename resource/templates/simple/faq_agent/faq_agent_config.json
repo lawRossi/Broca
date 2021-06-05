@@ -1,0 +1,18 @@
+{
+    "agent_name": "faq",
+    "es_index": {
+        "hosts": ["81.68.99.110"], 
+        "http_auth": ["elastic", "xiaoxi2203"], 
+        "index": "questions"
+    },
+    "vector_index": {
+        "encoder_model": "tests/data/encoder",
+        "device": "cpu",
+        "index_dir": "tests/data/index"
+    },
+    "topk": 1,
+    "threshold": 0.7,
+    "prompt_threshold": 0.6,
+    "template": "tests/data/template.txt",
+    "prompt_template": "tests/data/prompt_template.txt"
+}

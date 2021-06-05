@@ -19,9 +19,10 @@ class Engine:
     def add_agent(self, agent):
         self.agents.append(agent)
     
-    def _prompt(self):
+    def prompt(self, user_message):
         prompt_triggers = [agent.prompt_trigger for agent in self.agents if agent.prompt_trigger is not None]
-        return "不好意思，我不懂你的意思。\n请输入提示词看看我能做些什么:\n" + "\n".join(prompt_triggers)
+        prompt = "不好意思，我不懂你的意思。\n请输入提示词看看我能做些什么:\n" + "\n".join(prompt_triggers)
+        return BotMessage(user_message.sender_id, prompt)
 
     def handle_message(self, message, message_parsed=False):
         if not message_parsed:
@@ -34,31 +35,21 @@ class Engine:
 
         intent = message.get("intent")
         agent_name = intent.get("agent") if intent is not None else None
+
         if agent_name is not None:
             for agent in self.agents:
                 if agent.name == agent_name and agent.can_handle_message(message):
-                    agent.handle_message(message, message_parsed=True)
-                    break
-            else:
-                channel = message.channel
-                prompt_message = self._prompt()
-                bot_message = BotMessage(message.sender_id, prompt_message)
-                channel.send_message(bot_message)
+                    return agent.handle_message(message, message_parsed=True)
         else:
             for agent in self.agents:
                 if agent.can_handle_message(message):
-                    agent.handle_message(message, message_parsed=True)
-                    break 
-            else:
-                channel = message.channel
-                prompt_message = self._prompt()
-                bot_message = BotMessage(message.sender_id, prompt_message)
-                channel.send_message(bot_message)
+                    return agent.handle_message(message, message_parsed=True)
+        return []
 
     def can_handle_message(self, message):
         self.parser_pipeline.parse(message)
         for agent in self.agents:
-            if agent.can_handle_message(agent):
+            if agent.can_handle_message(message):
                 return True
         return False
 

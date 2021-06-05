@@ -63,15 +63,48 @@ def init_agent(args):
     print(f"agent {agent_name} created")
 
 
+def init_faq_agent(args):
+    agent_name = args.agent_name
+    if os.path.exists(agent_name):
+        raise RuntimeError(f"directory {agent_name} already exists")
+    os.makedirs(agent_name)
+    platform = sys.platform
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    if platform == "win32":
+        template_dir = os.path.join(base_dir, "resource\\templates\\simple\\faq_agent")
+        cmd = f"xcopy {template_dir}\\*.* {agent_name} /s"
+        os.system(cmd)
+    elif platform == "linux":
+        template_dir = os.path.join(base_dir, "resource/templates/simple/faq_agent")
+        cmd = f"cp -r {template_dir}/* {agent_name}"
+        os.system(cmd)
+    print(f"faq agent {agent_name} created")
+
+
 def add_init_agent_parser(parent_parsers, subparsers):
     init_parser = subparsers.add_parser(
         "init_agent",
         parents=parent_parsers,
         conflict_handler="resolve",
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        help="Initialize a Broca project",
+        help="Initialize a task agent",
     )
     init_parser.set_defaults(func=init_agent)
+    init_parser.add_argument("--agent_name",
+                        type=str,
+                        required=True,
+                        help="The name of the agent")
+
+
+def add_init_faq_agent_parser(parent_parsers, subparsers):
+    init_parser = subparsers.add_parser(
+        "init_faq_agent",
+        parents=parent_parsers,
+        conflict_handler="resolve",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        help="Initialize a faq agent",
+    )
+    init_parser.set_defaults(func=init_faq_agent)
     init_parser.add_argument("--agent_name",
                         type=str,
                         required=True,
@@ -93,4 +126,5 @@ def create_argument_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(help="Broca commands")
     add_init_project_parser(parent_parsers, subparsers)
     add_init_agent_parser(parent_parsers, subparsers)
+    add_init_faq_agent_parser(parent_parsers, subparsers)
     return parser

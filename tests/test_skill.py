@@ -54,7 +54,10 @@ if __name__ == "__main__":
     # assert isinstance(events[1], BotUttered)
     # print(skill.generate_script())
 
-    agent = Agent.from_config("tests/data/agent_config.json")
+    agent = Agent.from_config_file("tests/data/agent_config.json")
+    from .agent.script import script
+    agent.set_script(script)
+
     tracker = DialogueStateTracker("", agent)
     agent.add_skill(GreetFormSkill)
 

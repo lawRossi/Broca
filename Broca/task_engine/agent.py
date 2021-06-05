@@ -80,6 +80,7 @@ class Agent:
         self.listen(tracker)
         channel = message.channel
         skill_name = self.policy.pick_skill(tracker)
+        responses = []
         if skill_name is not None:
             while skill_name is not None:
                 skill_name, parameters = self._parse_skill_name(skill_name)
@@ -88,12 +89,10 @@ class Agent:
                     tracker.update(event)
                     if isinstance(event, BotUttered):
                         bot_message = event.bot_message
-                        channel.send_message(bot_message)
+                        responses.append(bot_message)
                 skill_name = self.policy.pick_skill(tracker)
-        else:
-            bot_message = BotMessage(message.sender_id, "不好意思，我不懂你的意思")
-            channel.send_message(bot_message)
         self.tracker_store.update_tracker(tracker)
+        return responses
 
     def _parse_skill_name(self, skill_name):
         match = self.skill_pattern.match(skill_name)

@@ -1,4 +1,3 @@
-from Broca.task_engine.event import UserUttered
 from Broca.task_engine.agent import Agent
 from Broca.message import UserMessage
 from Broca.channel import CollectingOutputChannel
