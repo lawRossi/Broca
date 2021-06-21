@@ -12,7 +12,7 @@ class Controller:
     def handle_message(self, message):
         channel = message.channel
         if self.task_engine is not None and self.task_engine.can_handle_message(message):
-            responses = self.task_engine.handle_message(message, True)
+            responses = self.task_engine.handle_message(message)
             for response in responses:
                 channel.send_message(response)
         else:
