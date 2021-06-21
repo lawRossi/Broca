@@ -61,8 +61,8 @@ class Agent:
         pass
 
     def can_handle_message(self, message):
-        if self.parser:
-            self.parser.parse(message)
+        self._parse_if_needed(message)
+
         uttered = UserUttered(message)
         tracker = self.tracker_store.get_tracker(message.sender_id)
         temp_tracker = tracker.copy()
@@ -71,14 +71,13 @@ class Agent:
         skill_name = self.policy.pick_skill(temp_tracker)
         return skill_name is not None
     
-    def handle_message(self, message, message_parsed=False):
-        if self.parser and not message_parsed:
-            self.parser.parse(message)
+    def handle_message(self, message):
+        self._parse_if_needed(message)
+
         uttered = UserUttered(message)
         tracker = self.tracker_store.get_tracker(message.sender_id)
         tracker.update(uttered)
         self.listen(tracker)
-        channel = message.channel
         skill_name = self.policy.pick_skill(tracker)
         responses = []
         if skill_name is not None:
@@ -93,6 +92,17 @@ class Agent:
                 skill_name = self.policy.pick_skill(tracker)
         self.tracker_store.update_tracker(tracker)
         return responses
+    
+    def _parse_if_needed(self, message):
+        processed_by = message.get("processed_by")
+        if processed_by is None:
+            processed_by = set()
+            message.set("processed_by", processed_by)
+        if self.name in processed_by:
+            return
+        if self.parser is not None:
+            self.parser.parse(message)
+        processed_by.add(self.name)
 
     def _parse_skill_name(self, skill_name):
         match = self.skill_pattern.match(skill_name)

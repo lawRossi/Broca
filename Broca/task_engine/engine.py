@@ -24,13 +24,12 @@ class Engine:
         prompt = "不好意思，我不懂你的意思。\n请输入提示词看看我能做些什么:\n" + "\n".join(prompt_triggers)
         return BotMessage(user_message.sender_id, prompt)
 
-    def handle_message(self, message, message_parsed=False):
-        if not message_parsed:
-            self.parser_pipeline.parse(message)
-
+    def handle_message(self, message):
+        self._parse_if_needed(message)
+    
         for agent in self.agents:
             if agent.is_active(message.sender_id):
-                agent.handle_message(message, message_parsed=False)
+                agent.handle_message(message)
                 return
 
         intent = message.get("intent")
@@ -39,19 +38,29 @@ class Engine:
         if agent_name is not None:
             for agent in self.agents:
                 if agent.name == agent_name and agent.can_handle_message(message):
-                    return agent.handle_message(message, message_parsed=True)
+                    return agent.handle_message(message)
         else:
             for agent in self.agents:
                 if agent.can_handle_message(message):
-                    return agent.handle_message(message, message_parsed=True)
+                    return agent.handle_message(message)
         return []
 
     def can_handle_message(self, message):
-        self.parser_pipeline.parse(message)
+        self._parse_if_needed(message)
         for agent in self.agents:
             if agent.can_handle_message(message):
                 return True
         return False
+
+    def _parse_if_needed(self, message):
+        processed_by = message.get("processed_by")
+        if processed_by is None:
+            processed_by = set()
+            message.set("processed_by", processed_by)
+        if "task_engine" in processed_by:
+            return
+        self.parser_pipeline.parse(message)
+        processed_by.add("task_engine")
 
     def has_active_agent(self, message):
         for agent in self.agents:
