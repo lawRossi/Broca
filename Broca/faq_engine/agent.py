@@ -3,6 +3,7 @@ from Broca.utils import find_class
 from Broca.faq_engine.index import ESIndex, VectorIndex
 from mako.template import Template
 from Broca.message import BotMessage
+import time
 
 
 class FAQAgent:
@@ -24,6 +25,11 @@ class FAQAgent:
         es_index = ESIndex.from_config(es_config)
         vector_index_config = config["vector_index"]
         vector_index = VectorIndex.from_config(vector_index_config)
+        if config["build_index_at_start"]:
+            es_index.build_index_from_file(config["document_file"])
+            time.sleep(5)  # wait until the es index gets ready
+            vector_index.build_index(es_index)
+        vector_index.load_index()
         threshold = config["threshold"]
         topk = config["topk"]
         prompt_threshold = config["prompt_threshold"]
@@ -48,7 +54,7 @@ class FAQAgent:
         selected = [candidate for candidate, similarity in zip(candidates, similarities) if similarity >= self.threshold]
         result = {}
         if selected:
-            documents = self.es_index.get_documents_by_ids(selected)
+            documents = self.es_index.get_answer_by_question_ids(selected)
             response = self.template.render(documents=documents)
             result["response"] = BotMessage(message.sender_id, response.strip())
         else:
