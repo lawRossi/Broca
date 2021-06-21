@@ -6,13 +6,15 @@
         "index": "questions"
     },
     "vector_index": {
-        "encoder_model": "tests/data/encoder",
+        "encoder_model": "",
         "device": "cpu",
-        "index_dir": "tests/data/index"
+        "index_dir": ""
     },
+    "document_file": "",
+    "build_index_at_start": true,
     "topk": 1,
     "threshold": 0.7,
     "prompt_threshold": 0.6,
-    "template": "tests/data/template.txt",
-    "prompt_template": "tests/data/prompt_template.txt"
+    "template": "",
+    "prompt_template": ""
 }
