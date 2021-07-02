@@ -29,7 +29,10 @@
 
 ![](resource/img/directory_tree.png)
 
-初始化项目包含了一个初始的agent，在agent目录下，其中agent_config.json是该agent的配置文件，skills.py用于定义该agent的技能。controller.py中定义了中控组件，是项目的启动文件。intent_patterns.json用于定义意图识别模板。task_engine_config.json是对话引擎的配置文件。
+初始化项目包含了一个初始的agent，在agent目录下，其中agent_config.json是该agent的配置文件，
+script.py用于定义对话流程的脚本，skills.py用于定义该agent的技能。controller.py中定义了中控组件，
+是项目的启动文件。intent_patterns.json用于定义意图识别模板。task_engine_config.json是对话引擎的
+配置文件。
 
 我们通过实现两个简单技能来完成一个简单的demo，编辑agent/skills.py，写入以下代码：
 
