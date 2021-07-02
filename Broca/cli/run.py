@@ -1,26 +1,35 @@
 import argparse
 import os
 import sys
+import shutil
 
 
 def init_project(args):
     project_name = args.project_name
     project_type = args.project_type
     if os.path.exists(project_name):
-        raise RuntimeError(f"directory {project_name} already exists")
+        print(f"directory {project_name} already exists")
+        return
     os.makedirs(project_name)
     platform = sys.platform
 
-    if project_type == "simple":
-        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        if platform == "win32":
-            template_dir = os.path.join(base_dir, "resource\\templates\\simple")
-            cmd = f"xcopy {template_dir}\\*.* {project_name} /s"
-            os.system(cmd)
-        elif platform == "linux":
-            template_dir = os.path.join(base_dir, "resource/templates/simple")
-            cmd = f"cp -r {template_dir}/* {project_name}"
-            os.system(cmd)
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    if platform == "win32":
+        template_dir = os.path.join(base_dir, "resource\\templates\\simple")
+        cmd = f"xcopy {template_dir}\\*.* {project_name} /s"
+        os.system(cmd)
+    elif platform == "linux":
+        template_dir = os.path.join(base_dir, "resource/templates/simple")
+        cmd = f"cp -r {template_dir}/* {project_name}"
+        os.system(cmd)
+    shutil.rmtree(f"{project_name}/agent/__pycache__")
+    if project_type == "task":
+        shutil.rmtree(f"{project_name}/faq_agent",)
+        os.remove(f"{project_name}/faq_engine_config.json")
+    elif project_type == "faq":
+        shutil.rmtree(f"{project_name}/agent")
+        os.remove(f"{project_name}/task_engine_config.json")
+    shutil.rmtree(f"{project_name}/__pycache__")
     print(f"project {project_name} created")
 
 
@@ -39,7 +48,7 @@ def add_init_project_parser(parent_parsers, subparsers):
                         help="The name of the project")
 
     init_parser.add_argument("--project_type",
-                        default="simple",
+                        default="complex",
                         type=str,
                         required=False,
                         help="The type of project to initialize")

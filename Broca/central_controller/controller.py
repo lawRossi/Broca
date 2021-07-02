@@ -25,7 +25,7 @@ class Controller:
             responses = self.task_engine.handle_message(message)
             for response in responses:
                 channel.send_message(response)
-        else:
+        elif self.faq_engine is not None:
             result = self.faq_engine.handle_message(message)
             if "response" in result:
                 channel.send_message(result["response"])
@@ -37,6 +37,9 @@ class Controller:
             else:
                 response = BotMessage(message.sender_id, "没有找到相关问题")
                 channel.send_message(response)
+        else:
+            response = self.task_engine.prompt(message)
+            channel.send_message(response)
 
     def load_engines(self, package):
         if self._check_task_engine(package):
@@ -48,17 +51,13 @@ class Controller:
             self.faq_engine.load_agents(package)
 
     def _check_task_engine(self, package):
-        for dir in os.listdir(package):
-            abs_dir = os.path.join(package, dir)
-            if os.path.isdir(abs_dir):
-                config_file = os.path.join(abs_dir, "agent_config.json")
-                if os.path.exists(config_file):
-                    return True
+        config_file = os.path.join(package, "task_engine_config.json")
+        if os.path.exists(config_file):
+            return True
+        return False
 
     def _check_faq_engine(self, package):
-        for dir in os.listdir(package):
-            abs_dir = os.path.join(package, dir)
-            if os.path.isdir(abs_dir):
-                config_file = os.path.join(abs_dir, "faq_agent_config.json")
-                if os.path.exists(config_file):
-                    return True
+        config_file = os.path.join(package, "faq_engine_config.json")
+        if os.path.exists(config_file):
+            return True
+        return False
