@@ -29,8 +29,7 @@ class Engine:
     
         for agent in self.agents:
             if agent.is_active(message.sender_id):
-                agent.handle_message(message)
-                return
+                return agent.handle_message(message)
 
         intent = message.get("intent")
         agent_name = intent.get("agent") if intent is not None else None

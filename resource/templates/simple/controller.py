@@ -13,7 +13,10 @@ def run_cmd():
         message = UserMessage("", msg, channel=channel)
         controller.handle_message(message)
         for res in channel.messages:
-            print(f"bot:{res.text}")
+            if res.text:
+                print(f"bot:{res.text}")
+            elif res.data:
+                print(f"bot:{res.data}")
         channel.messages.clear()
 
 

@@ -85,7 +85,7 @@ class DialogueStateTracker:
             for event in events:
                 self.update(event)
 
-    def pop_user_message(self, message):
+    def pop_user_message(self):
         self.latest_message = None
 
     def set_slot(self, slot, value):

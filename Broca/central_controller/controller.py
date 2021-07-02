@@ -1,6 +1,6 @@
 from Broca.task_engine.engine import Engine
 from Broca.faq_engine.engine import FAQEngine
-from Broca.message import BotMessage
+from Broca.message import BotMessage, UserMessage
 import os
 
 
@@ -10,6 +10,16 @@ class Controller:
         self.faq_engine = None
 
     def handle_message(self, message):
+        text = message.text
+        if "  " in text:
+            texts = text.split("  ")
+            messages = [UserMessage(message.sender_id, text, message.channel) for text in texts]
+            for message in messages:
+                self._handle_single_message(message)
+        else:
+            self._handle_single_message(message)
+
+    def _handle_single_message(self, message):
         channel = message.channel
         if self.task_engine is not None and self.task_engine.can_handle_message(message):
             responses = self.task_engine.handle_message(message)

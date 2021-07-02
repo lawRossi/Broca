@@ -54,6 +54,7 @@ class FormSkill(Skill):
     def __init__(self):
         super().__init__()
         self.required_slots = {}
+        self.terminated = False
 
     def from_entity(self, entity, intents=None, not_intents=None):
         return {"type": self.FROM_ENTITY, "entity": entity, "intents": intents, "not_intents": not_intents}
@@ -154,6 +155,9 @@ class FormSkill(Skill):
             utter_func = getattr(self, f"utter_ask_{next_to_fill_slot}")
             self.utter(utter_func(tracker), tracker.sender_id)
             self.slot_trials[tracker.sender_id][next_to_fill_slot] += 1
+            if self.terminated:
+                self.slot_trials[tracker.sender_id].clear()
+                return [Form(None)]
         else:
             snapshot = tracker.snapshot()
             snapshot["slots"].update(slot_dict)
@@ -161,6 +165,9 @@ class FormSkill(Skill):
             events.append(Form(None))  # deactivate
             self.slot_trials[tracker.sender_id].clear()
         return events
+
+    def _terminate(self):
+        self.terminated = True
 
 
 class DeactivateFormSkill(Skill):
