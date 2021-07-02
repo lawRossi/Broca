@@ -4,7 +4,11 @@
 # 中文README [English README](#introduction)
 
 ## 简介
-   Broca是一个轻量的对话系统框架，在设计和实现上借鉴了rasa框架，但比rasa更轻量，应该也更容易使用。
+   Broca是一个轻量的对话系统框架，如下图所示，该框架包含任务引擎和Faq引擎，同时支持任务对话和Faq对话。
+当接受用户的消息时，中控组件负责将消息分发给任务引擎或faq引擎。任务引擎在设计和实现上借鉴了rasa框架，
+但比rasa更轻量，也更容易使用，可以支持多个agent。Faq Agent基于语义匹配技术实现，可实现问题准确又高效的检索。
+
+   ![](resource/img/arch.png)
 
 ## 安装
 
