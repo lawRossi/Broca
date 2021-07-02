@@ -40,7 +40,7 @@ class Controller:
 
     def load_engines(self, package):
         if self._check_task_engine(package):
-            self.task_engine = Engine.from_config_file("engine_config.json")
+            self.task_engine = Engine.from_config_file("task_engine_config.json")
             self.task_engine.load_agents(package)
             self.task_engine.collect_intent_patterns()
         if self._check_faq_engine(package):

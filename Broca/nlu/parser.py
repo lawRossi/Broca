@@ -230,7 +230,6 @@ class EntitySynonymMapper(NaturalLanguageParser):
 
     def _replace_synonyms(self, entities):
         for entity_type, entity_values in entities.items():
-            # need to wrap in `str` to handle e.g. entity values of type int
             if entity_type in self.synonyms:
                 for entity in entity_values:
                     value = str(entity.get("value"))
