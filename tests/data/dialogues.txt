@@ -19,21 +19,21 @@ bot:今天是周五
 user:今天周几
 bot:今天是周五
 user:今天天气怎么样
-bot:不好意思，我不懂你的意思
+bot:null
 user:今天是几号
 bot:今天是15号
 
 user:今天周几
 bot:今天是周五
 user:今天天气怎么样
-bot:不好意思，我不懂你的意思
+bot:null
 user:今天是几号
 bot:今天是15号
 user:今天天气怎么样
 bot:今天天气很好
 
 user:今天天气怎么样
-bot:不好意思，我不懂你的意思
+bot:null
 user:今天是几号
 bot:今天是15号
 user:今天天气怎么样

@@ -39,20 +39,20 @@ class MappingPolicy(Policy):
     def __init__(self) -> None:
         super().__init__()
         self.name = "mapping_policy"
-        self.mapping = None
+        self.mappings = None
 
     def predict_skill_probabilities(self, tracker):
         probabilities = {}
         state = tracker.current_state()
         intent = state["intent"]
-        skill = self.mapping.get(intent)
+        skill = self.mappings.get(intent)
         if state["latest_skill"] == "listen" and skill:
             probabilities[skill] = 1.0
         return probabilities
 
     def parse_script(self, script, agent):
-        mapping = script.get("mappings")
-        self.mapping = mapping
+        mappings = script.get("mappings")
+        self.mappings = mappings
 
 
 class FormPolicy(Policy):

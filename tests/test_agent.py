@@ -78,11 +78,12 @@ if __name__ == "__main__":
 
         for turn in scene:
             user_message = UserMessage("", turn[0], channel)
-            agent.handle_message(user_message)
-            # print(user_message.parsed_data)
-            assert len(channel.messages) == len(turn[1])
-            for message, text in zip(channel.messages, turn[1]):
-                if message.text != text:
-                    print(text, message.text)
-                assert message.text == text
-            channel.messages = []
+            messages = agent.handle_message(user_message)
+            if turn[1][0] == "null":
+                assert messages == []
+            else:
+                assert len(messages) == len(turn[1])
+                for message, text in zip(messages, turn[1]):
+                    if message.text != text:
+                        print(text, message.text)
+                    assert message.text == text

@@ -1,8 +1,9 @@
 {
     "agent_name": "agent",
     "parser": {
-        "class": "Broca.nlu.parser.RENaturalLanguageParser",
-        "intent_file": "/data/Broca/tests/data/intent_patterns.json"
+        "class": "Broca.nlu.pipeline.ParserPipeline",
+        "parsers": [
+        ]
     },
     "tracker_store": {
         "class": "Broca.task_engine.tracker_store.InMemoryTrackerStore"

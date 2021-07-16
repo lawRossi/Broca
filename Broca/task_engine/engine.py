@@ -12,43 +12,36 @@ import json
 
 
 class Engine:
-    def __init__(self):
-        self.parser_pipeline = None
+    def __init__(self, parser_pipeline, dispatcher=None):
+        self.parser_pipeline = parser_pipeline
+        self.dispatcher = dispatcher
         self.agents = []
 
     def add_agent(self, agent):
         self.agents.append(agent)
-    
+
     def prompt(self, user_message):
         prompt_triggers = [agent.prompt_trigger for agent in self.agents if agent.prompt_trigger is not None]
-        prompt = "不好意思，我不懂你的意思。\n请输入提示词看看我能做些什么:\n" + "\n".join(prompt_triggers)
-        return BotMessage(user_message.sender_id, prompt)
+        prompt_message = "不好意思，我不懂你的意思。\n请输入提示词看看我能做些什么:\n" + "\n".join(prompt_triggers)
+        response = BotMessage(user_message.sender_id, prompt_message)
+        return response
 
     def handle_message(self, message):
         self._parse_if_needed(message)
-    
-        for agent in self.agents:
-            if agent.is_active(message.sender_id):
-                return agent.handle_message(message)
 
-        intent = message.get("intent")
-        agent_name = intent.get("agent") if intent is not None else None
-
-        if agent_name is not None:
-            for agent in self.agents:
-                if agent.name == agent_name and agent.can_handle_message(message):
-                    return agent.handle_message(message)
-        else:
-            for agent in self.agents:
-                if agent.can_handle_message(message):
-                    return agent.handle_message(message)
+        agent = message.get("agent")
+        if agent is None:  # the message has not been dispatched
+            agent = self.dispatcher.dispatch(self.agents, message)
+        if agent is not None:
+            return agent.handle_message(message)
         return []
 
     def can_handle_message(self, message):
         self._parse_if_needed(message)
-        for agent in self.agents:
-            if agent.can_handle_message(message):
-                return True
+        agent = self.dispatcher.dispatch(self.agents, message)
+        if agent is not None:
+            message.set("agent", agent)
+            return True
         return False
 
     def _parse_if_needed(self, message):
@@ -93,7 +86,7 @@ class Engine:
                     for intent, patterns in agent.collect_intent_patterns():
                         parser.add_intent_patterns(intent, patterns)
                 break
-    
+
     @classmethod
     def from_config_file(cls, config_file):
         with open(config_file, encoding="utf-8") as fi:
@@ -102,9 +95,13 @@ class Engine:
 
     @classmethod
     def from_config(cls, config):
-        engine = cls()
         pipeline_config = config["parser_pipeline"]
         parser_pipeline_cls = find_class(pipeline_config["class"])
         parser_pipeline = parser_pipeline_cls.from_config(pipeline_config)
-        engine.parser_pipeline = parser_pipeline
-        return engine
+        dispatcher_config = config.get("dispatcher")
+        if dispatcher_config:
+            dispatcher_cls = find_class(dispatcher_config["class"])
+            dispatcher = dispatcher_cls.from_config(dispatcher_config)
+        else:
+            dispatcher = None
+        return cls(parser_pipeline, dispatcher)

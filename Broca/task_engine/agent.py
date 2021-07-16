@@ -2,7 +2,6 @@
 @author: Rossi
 @time: 2021-01-26
 """
-from Broca.message import BotMessage
 import json
 from Broca.utils import find_class, list_class
 from .event import UserUttered, BotUttered
@@ -13,7 +12,8 @@ import re
 class Agent:
     skill_pattern = re.compile("(?P<name>[a-zA-Z_0-9]+)?(:(?P<parameters>\{.+\})$)?")
 
-    def __init__(self, name, parser, tracker_store, policy, intents, slots, prompt_trigger=None):
+    def __init__(self, name, parser, tracker_store, policy, intents, slots, 
+            prompt_trigger=None):
         self.name = name
         self.parser = parser
         tracker_store.agent = self
@@ -57,9 +57,6 @@ class Agent:
         prompt_trigger = config.get("prompt_trigger", None)
         return cls(agent_name, parser, tracker_store, policy, intents, slots, prompt_trigger)
 
-    def prompt(self, message):
-        pass
-
     def can_handle_message(self, message):
         self._parse_if_needed(message)
 
@@ -70,10 +67,9 @@ class Agent:
         self.listen(temp_tracker)
         skill_name = self.policy.pick_skill(temp_tracker)
         return skill_name is not None
-    
+
     def handle_message(self, message):
         self._parse_if_needed(message)
-
         uttered = UserUttered(message)
         tracker = self.tracker_store.get_tracker(message.sender_id)
         tracker.update(uttered)
@@ -90,9 +86,19 @@ class Agent:
                         bot_message = event.bot_message
                         responses.append(bot_message)
                 skill_name = self.policy.pick_skill(tracker)
+        elif "help_skill" in self.skills:  # perform help skill
+            help_skill = self.skills["help_skill"]()
+            for event in help_skill.perform(tracker):
+                tracker.update(event)
+                if isinstance(event, BotUttered):
+                    bot_message = event.bot_message
+                    responses.append(bot_message)
         self.tracker_store.update_tracker(tracker)
         return responses
     
+    def parse(self, message):
+        self._parse_if_needed(message)
+
     def _parse_if_needed(self, message):
         processed_by = message.get("processed_by")
         if processed_by is None:
@@ -130,7 +136,7 @@ class Agent:
         events = ListenSkill().perform(tracker)
         for event in events:
             tracker.update(event)
-    
+
     def is_active(self, sender_id):
         tracker = self.tracker_store.get_tracker(sender_id)
         return tracker.active_form is not None

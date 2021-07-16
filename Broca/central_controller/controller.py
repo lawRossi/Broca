@@ -2,12 +2,14 @@ from Broca.task_engine.engine import Engine
 from Broca.faq_engine.engine import FAQEngine
 from Broca.message import BotMessage, UserMessage
 import os
+import random
 
 
 class Controller:
-    def __init__(self):
+    def __init__(self, get_frequent_queries=None):
         self.task_engine = None
         self.faq_engine = None
+        self.get_frequent_queries = get_frequent_queries
 
     def handle_message(self, message):
         text = message.text
@@ -31,11 +33,11 @@ class Controller:
                 channel.send_message(result["response"])
             elif "prompt" in result:
                 channel.send_message(result["prompt"])
-            elif self.task_engine is not None:
+            elif self.task_engine is not None and random.random() < 0.5:
                 response = self.task_engine.prompt(message)
                 channel.send_message(response)
             else:
-                response = BotMessage(message.sender_id, "没有找到相关问题")
+                response = self._prompt(message)
                 channel.send_message(response)
         else:
             response = self.task_engine.prompt(message)
@@ -61,3 +63,11 @@ class Controller:
         if os.path.exists(config_file):
             return True
         return False
+
+    def _prompt(self, messae):
+        text = "不要意思，我不懂你的意思。大家在问:\n"
+        for query in self.get_frequent_queries():
+            text += query + "\n"
+        text = text.strip()
+        response = BotMessage(messae.sender_id, text)
+        return response

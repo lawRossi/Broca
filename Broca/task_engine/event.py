@@ -140,6 +140,8 @@ class Undo(Event):
     def apply(self, tracker):
         n = 0
         while n < 2:
+            if not tracker.events:
+                break
             event = tracker.events.pop()
             event.undo(tracker)
             if isinstance(event, UserUttered):

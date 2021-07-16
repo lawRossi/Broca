@@ -20,7 +20,6 @@
             {"class": "Broca.task_engine.policy.MappingPolicy"}
         ]
     },
-    "script_file": "tests/data/script.json",
     "intents": {
         "inform": {"use_entities": null},
         "ask_date": {"use_entities": null},

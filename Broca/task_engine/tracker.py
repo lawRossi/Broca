@@ -37,11 +37,14 @@ class DialogueStateTracker:
         if self.latest_message:
             intent = self.latest_message.get("intent")
             if intent:
-                intent = intent["name"]
+                agent = intent.get("agent")
+                intent_name = "public#" + intent["name"] if agent == "public" else intent["name"]
+            else:
+                intent_name = None
         else:
-            intent = None
-        state["intent"] = intent
-        intent_config = self.agent.intents.get(intent)
+            intent_name = None
+        state["intent"] = intent_name
+        intent_config = self.agent.intents.get(intent_name)
         if intent_config and intent_config["use_entities"]:
             entities = {}
             parsed_entities = self.latest_message.get("entities")
