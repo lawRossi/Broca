@@ -2,6 +2,24 @@ from Broca.nlu.parser import RENaturalLanguageParser
 from Broca.message import UserMessage
 
 
+class Base:
+    cache = {}
+
+
+class Sub1(Base):
+    def __init__(self) -> None:
+        self.cache["a"] = 1
+
+class Sub2(Base):
+    def __init__(self) -> None:
+        self.cache["b"] = 2
+
+s1 = Sub1()
+s2 = Sub2()
+print(s1.cache)
+print(s2.cache)
+
+
 if __name__ == "__main__":
     parser = RENaturalLanguageParser.from_config({"intent_file": "tests/data/intent_patterns.json"})
     message1 = UserMessage("sender", "意图一实体")

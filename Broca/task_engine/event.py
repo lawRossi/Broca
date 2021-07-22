@@ -2,6 +2,7 @@
 @Author: Rossi
 Created At: 2021-01-30
 """
+from Broca.task_engine.slot import Slot
 from Broca.utils import all_subclasses
 import json
 from Broca.message import UserMessage
@@ -18,6 +19,9 @@ class Event:
 
     def undo(self, tracker):
         pass
+
+    def copy(self):
+        return self
 
     @staticmethod
     def from_parameter_string(event_name, parameter_string):
@@ -44,16 +48,18 @@ class UserUttered(Event):
     def __init__(self, user_message):
         super().__init__()
         self.message = user_message
-    
+
     def apply(self, tracker):
         self.backup[self.LATEST_MESSAGE] = tracker.latest_message
         tracker.add_user_message(self.message)
         tracker.update_states()
 
     def undo(self, tracker):
-        tracker.pop_user_message()
         tracker.pop_last_state()
         tracker.latest_message = self.backup[self.LATEST_MESSAGE]
+    
+    def copy(self):
+        return UserUttered(self.message)
 
     @classmethod
     def from_parameters(cls, parameter_string=None):
@@ -88,6 +94,9 @@ class SkillEnded(Event):
     def undo(self, tracker):
         tracker.latest_skill = self.backup["latest_skill"]
         tracker.pop_last_state()
+    
+    def copy(self):
+        return SkillEnded(self.skill_name)
 
 
 class SlotSetted(Event):
@@ -105,6 +114,9 @@ class SlotSetted(Event):
     def undo(self, tracker):
         tracker.set_slot(self.slot, self.backup[self.slot])
     
+    def copy(self):
+        return SlotSetted(self.slot, self.value)
+
     @classmethod
     def from_parameters(cls, parameter_string=None):
         parameters = json.loads(parameter_string)
@@ -127,6 +139,9 @@ class Form(Event):
 
     def undo(self, tracker):
         tracker.active_form = self.backup["form"]
+    
+    def copy(self):
+        return Form(self.form)
 
     @classmethod
     def from_parameters(cls, parameter_string=None):
@@ -146,3 +161,14 @@ class Undo(Event):
             event.undo(tracker)
             if isinstance(event, UserUttered):
                 n += 1
+
+
+class ExternalStart(Event):
+    name = "external_start"
+
+    def apply(self, tracker):
+        pass
+
+
+class ExternalEnd(Event):
+    name = "external_end"

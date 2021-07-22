@@ -53,10 +53,10 @@ class BotMessage:
         self.receiver_id = receiver_id
         self.text = text
         self.data = data
-    
+
     def set(self, key, value):
         self.data[key] = value
-    
+
     def get(self, key, default=None):
         return self.data.get(key, default)
 

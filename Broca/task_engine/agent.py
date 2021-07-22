@@ -2,10 +2,11 @@
 @author: Rossi
 @time: 2021-01-26
 """
+from Broca.task_engine.slot import Slot
 import json
 from Broca.utils import find_class, list_class
 from .event import UserUttered, BotUttered
-from .skill import FormSkill, ListenSkill, Skill, UndoSkill, DeactivateFormSkill
+from .skill import ConfirmSkill, FormSkill, ListenSkill, OptionSkill, Skill, UndoSkill, DeactivateFormSkill
 import re
 
 
@@ -54,12 +55,16 @@ class Agent:
         for slot_config in config["slots"]:
             slot_cls = find_class(slot_config["class"])
             slots.append(slot_cls.from_config(slot_config))
+        slots.append(Slot("confirmed_slot"))
+        slots.append(Slot("options_slot"))
+        slots.append(Slot("option_slot"))
+        slots.append(Slot("main_form"))
+        slots.append(Slot("form_utterance"))
         prompt_trigger = config.get("prompt_trigger", None)
         return cls(agent_name, parser, tracker_store, policy, intents, slots, prompt_trigger)
 
     def can_handle_message(self, message):
         self._parse_if_needed(message)
-
         uttered = UserUttered(message)
         tracker = self.tracker_store.get_tracker(message.sender_id)
         temp_tracker = tracker.copy()
@@ -147,6 +152,8 @@ class Agent:
                 self.add_skill(cls)
         self.add_skill(UndoSkill)
         self.add_skill(DeactivateFormSkill)
+        self.add_skill(ConfirmSkill)
+        self.add_skill(OptionSkill)
 
     def collect_intent_patterns(self):
         intent_patterns = []

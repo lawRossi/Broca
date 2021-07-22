@@ -7,5 +7,6 @@
     {"intent": {"name": "ask_date", "agent": "agent"}, "patterns": ["今天是几号"]},
     {"intent": {"name": "ask_weekday", "agent": "agent"}, "patterns": ["今天周几"]},
     {"intent": {"name": "ask_date_weekday", "agent": "agent"}, "patterns": ["今天是几号,周几"]},
-    {"intent": {"name": "ask_weather", "agent": "agent"}, "patterns": ["今天天气怎么样"]}
+    {"intent": {"name": "ask_weather", "agent": "agent"}, "patterns": ["今天天气怎么样"]},
+    {"intent": {"name": "praise_me", "agent": "agent"}, "patterns": ["^快夸我$"]}
 ]

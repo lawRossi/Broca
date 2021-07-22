@@ -40,6 +40,12 @@ script = {
         bot: report_weekday
         bot: form{"name": "greet_form"}
         bot: form{"name": null}
+        """,
+        """
+        user: praise_me
+        bot: form{"name": "confirm_form_skill"}
+        bot: form{"name": null}
+        bot: praise
         """
     ]
 }

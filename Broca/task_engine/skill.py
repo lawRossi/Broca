@@ -3,8 +3,10 @@
 @time: 2021-01-26
 """
 from Broca.message import BotMessage
-from .event import SkillStarted, SkillEnded, BotUttered, SlotSetted, Form, Undo
-from collections import defaultdict
+from .event import ExternalEnd, ExternalStart, SkillStarted, SkillEnded
+from .event import BotUttered, SlotSetted, Form, Undo
+from collections import OrderedDict, defaultdict
+import re
 
 
 class Skill:
@@ -13,15 +15,16 @@ class Skill:
         self.trigger_intent = None
         self.intent_patterns = None
         self.bot_atterances = []
+        self.events = []
 
     def perform(self, tracker, **parameters):
-        events = [SkillStarted()]
+        self.events.append(SkillStarted())
         more_events = self._perform(tracker, **parameters)
         if more_events:
-            events.extend(more_events)
-        events.extend(self.bot_atterances)
-        events.append(SkillEnded(self.name))
-        return events
+            self.events.extend(more_events)
+        self.events.extend(self.bot_atterances)
+        self.events.append(SkillEnded(self.name))
+        return self.events
 
     def _perform(self, tracker, **parameters):
         return []
@@ -47,9 +50,13 @@ class FormSkill(Skill):
     FROM_ENTITY = "from_entity"
     FROM_INTENT = "from_intent"
     FROM_TEXT = "from_text"
+    STARTED = "STARTED"
+    IN_PROGRESS = "IN-PROGRESS"
 
     slot_cache = defaultdict(lambda : dict())
     slot_trials = defaultdict(lambda : defaultdict(int))
+    parameters_cache = defaultdict(lambda : dict())
+    stages = defaultdict(lambda : dict())
 
     def __init__(self):
         super().__init__()
@@ -125,6 +132,15 @@ class FormSkill(Skill):
             else:
                 valid_slot_dict[slot_name] = value
         return valid_slot_dict
+    
+    def perform(self, tracker, **parameters):
+        events = super().perform(tracker, **parameters)
+        parameters = self.parameters_cache[self.name].get(tracker.sender_id, {})
+        if parameters.get("options") is True:
+            events.append(ExternalStart())
+            events.append(Form("option_form_skill"))
+            events.append(SkillEnded("listen"))   # to activate the option form            
+        return events
 
     def _activate_if_required(self, tracker):
         if tracker.active_form != self.name:
@@ -134,14 +150,23 @@ class FormSkill(Skill):
 
     def _submit(self, tracker_snapshot):
         return []
+    
+    def _is_started(self, tracker):
+        stage = self.stages.get(self.name).get(tracker.sender_id)
+        return stage == self.STARTED
 
     def _clear_slot_cache_if_required(self, tracker, **parameters):
-        if tracker.active_form != self.name:  # begining of this form
+        if self._is_started(tracker): # begining of this form
             flag = parameters.get("clear_slot", True)
             if flag:
                 self.slot_cache[self.name].clear()
 
     def _perform(self, tracker, **parameters):
+        self._check_stage(tracker)
+        if parameters:
+            self.parameters_cache[self.name][tracker.sender_id] = parameters
+        else:
+            parameters = self.parameters_cache.get(self.name, {}).get(tracker.sender_id, {})
         self._clear_slot_cache_if_required(tracker, **parameters)
         events = self._activate_if_required(tracker)
         slot_dict = self.extract_required_slots(tracker)
@@ -153,7 +178,9 @@ class FormSkill(Skill):
                 break
         if next_to_fill_slot:
             utter_func = getattr(self, f"utter_ask_{next_to_fill_slot}")
-            self.utter(utter_func(tracker), tracker.sender_id)
+            utterance = utter_func(tracker)
+            if utterance:
+                self.utter(utterance, tracker.sender_id)
             self.slot_trials[tracker.sender_id][next_to_fill_slot] += 1
             if self.terminated:
                 self.slot_trials[tracker.sender_id].clear()
@@ -164,10 +191,30 @@ class FormSkill(Skill):
             events.extend(self._submit(snapshot))
             events.append(Form(None))  # deactivate
             self.slot_trials[tracker.sender_id].clear()
+            self.parameters_cache[tracker.sender_id].clear()
+            self._terminate(tracker.sender_id)
         return events
 
-    def _terminate(self):
+    def _check_stage(self, tracker):
+        stage = self.stages.get(self.name, {}).get(tracker.sender_id, None) 
+        if stage is None:
+            self.stages[self.name][tracker.sender_id] = self.STARTED
+        elif stage == self.STARTED:
+            self.stages[self.name][tracker.sender_id] = self.IN_PROGRESS
+
+    def _terminate(self, sender_id):
         self.terminated = True
+        self.stages[self.name][sender_id] = None
+
+    def _show_options_form(self, tracker, options):
+        self.events.append(SlotSetted("options_slot", options))
+        if self.parameters_cache[self.name].get(tracker.sender_id) is None:
+            self.parameters_cache[self.name][tracker.sender_id] = {}
+        self.parameters_cache[self.name][tracker.sender_id]["options"] = True
+        self.events.append(SlotSetted("main_form", self.name))
+
+    def _hide_options_form(self, tracker):
+        self.parameters_cache[self.name][tracker.sender_id]["options"] = False
 
 
 class DeactivateFormSkill(Skill):
@@ -186,3 +233,111 @@ class UndoSkill(Skill):
     
     def perform(self, tracker, **parameters):
         return [Undo()]
+
+
+class ConfirmSkill(FormSkill):
+    def __init__(self):
+        super().__init__()
+        self.name = "confirm_form_skill"
+        self.required_slots = OrderedDict({"confirmed_slot": {"prefilled": False}})
+
+    def slot_mappings(self):
+        return {"confirmed_slot": [self.from_text()]}
+
+    def validate_confirmed_slot(self, value, tracker):
+        if value.lower() in ["是的", "没问题", "ok", "确定", "确认", "好的", "没错"]:
+            return True
+        elif value in ["取消"]:
+            return False
+        return None
+
+    def utter_ask_confirmed_slot(self, tracker):
+        utterance = tracker.get_slot("form_utterance")
+        utterance = utterance or "确定吗？"
+        return utterance
+
+    def perform(self, tracker, **parameters):
+        events = super().perform(tracker, **parameters)
+        if tracker.active_form != self.name:
+            events.insert(0, ExternalStart())
+        return events
+
+
+class OptionSkill(FormSkill):
+    number = "\d+|[一二三四五六七八九十]"
+    reference = re.compile(f"((?P<base>上面|下面|倒数|前面|后面|底下)?第)?(?P<index>{number})(个|这个|那个)?")
+    top = re.compile("(最)?上面(的|那个|这个|个)")
+    middle = re.compile("(最)?中间(的|那个|这个|个)")
+    bottom = re.compile("(最)?(下面|底下|后|后面)(一个|的|那个|这个|个)")
+    description = re.compile("(?P<term>.+?)(这个|那个|的)?")
+    digit_mapping = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九":9, "十": 10}
+    base_mapping = {"上面": 1, "下面": -1, "倒数": -1, "前面": 1, "后面": -1, "底下": -1}
+
+    def __init__(self):
+        super().__init__()
+        self.name = "option_form_skill"
+        self.required_slots = OrderedDict({"option_slot": {"prefilled": False}})
+
+    def slot_mappings(self):
+        return {"option_slot": [self.from_text()]}
+
+    def validate_option_slot(self, value, tracker):
+        options = tracker.get_slot("options_slot")
+        index = self._parse_reference(value, options)
+        if index is None:
+            index = self._parse_description(value, options)            
+        if index is not None and -len(options) <= index < len(options):
+            return options[index]
+        else:
+            return None
+
+    def _parse_reference(self, value, options):
+        index = None
+        reverse = False
+        m = self.reference.match(value)
+        if m:
+            index = m.group("index")
+            if m.group("base"):
+                reverse = self.base_mapping[m.group("base")] == -1
+        elif self.top.match(value):
+            return 0
+        elif self.middle.match(value):
+            return len(options) // 2
+        elif self.bottom.match(value):
+            return -1
+        if index is not None:
+            if index.isdigit():
+                index = int(index)
+            else:
+                index = self.digit_mapping[index]
+            if reverse:
+                index *= -1
+            else:
+                index -= 1   # index starts with 0
+        return index
+
+    def _parse_description(self, value, options):
+        m = self.description.match(value)
+        if m:
+            term = m.group("term")
+            for i, option in enumerate(options):
+                if term in option["value"]:
+                    return i
+        return None
+
+    def utter_ask_option_slot(self, tracker):
+        utterance = tracker.get_slot("form_utterance")
+        options = tracker.get_slot("options_slot")
+        for option in options:
+            utterance += "\n  " + option["value"]
+        return utterance
+
+    def perform(self, tracker, **parameters):
+        events = super().perform(tracker, **parameters)
+
+        if self.terminated:
+            events.append(ExternalEnd())
+            self.events.append(SlotSetted("main_form", None))   # return to the main form
+            self.events.append(Form(tracker.get_slot("main_form")))
+            self.events.append(SkillEnded("listen"))
+        return events

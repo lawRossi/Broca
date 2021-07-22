@@ -2,9 +2,11 @@
 @author: Rossi
 @time: 2021-01-27
 """
+import copy
+from os import environ
 from Broca.task_engine.tracker import DialogueStateTracker
 from Broca.utils import find_class
-from Broca.task_engine.event import Event, Form, SkillEnded
+from Broca.task_engine.event import BotUttered, Event, Form, SkillEnded, UserUttered
 import json
 import re
 from collections import OrderedDict
@@ -86,13 +88,15 @@ class MemoryPolicy(Policy):
                 new_tracker = tracker.init_copy()
                 events = tracker.get_last_n_turns_events(n)
                 for event in events:
+                    if not isinstance(event, BotUttered):
+                        event = event.copy()
                     new_tracker.update(event)
                 skill = self.search_memory(new_tracker)
                 if skill:
                     probabilities[skill] = 1.0
                     break
         return probabilities
-    
+
     def search_memory(self, tracker):
         states = tracker.get_past_states()
         memeory_key = json.dumps(states[-self.max_memory_depth:])

@@ -9,8 +9,15 @@ if __name__ == "__main__":
     engine.load_agents("tests")
     assert len(engine.agents) == 1
     agent = engine.agents[0]
-    assert len(agent.skills) == 7
+    assert len(agent.skills) == 11
     engine.collect_intent_patterns()
+
+    user_msg = UserMessage("", "我要买电影票")
+    responses = engine.handle_message(user_msg)
+    print([response.text for response in responses])
+    user_msg = UserMessage("", "第一个")
+    responses = engine.handle_message(user_msg)
+    print([response.text for response in responses])
 
     scenes = read_scenes("tests/data/dialogues.txt")
     for scene in scenes:

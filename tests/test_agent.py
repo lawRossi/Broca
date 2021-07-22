@@ -60,30 +60,3 @@ def read_scenes(script_file):
         if scene:
             scenes.append(scene)
     return scenes
-
-
-if __name__ == "__main__":
-    scenes = read_scenes("tests/data/dialogues.txt")
-    for scene in scenes:
-        channel = CollectingOutputChannel()
-        agent = Agent.from_config_file("tests/data/agent_config.json")
-        agent.set_script(script)
-
-        agent.add_skill(GreetSkill)
-        agent.add_skill(GreetFormSkill)
-        agent.add_skill(ReportWeatherSkill)
-        agent.add_skill(ReportDateSkill)
-        agent.add_skill(ReportWeekdaySkill)
-        agent.add_skill(DeactivateFormSkill)
-
-        for turn in scene:
-            user_message = UserMessage("", turn[0], channel)
-            messages = agent.handle_message(user_message)
-            if turn[1][0] == "null":
-                assert messages == []
-            else:
-                assert len(messages) == len(turn[1])
-                for message, text in zip(messages, turn[1]):
-                    if message.text != text:
-                        print(text, message.text)
-                    assert message.text == text
