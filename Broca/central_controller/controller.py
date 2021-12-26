@@ -39,11 +39,15 @@ class Controller:
             elif "prompt" in result:
                 channel.send_message(result["prompt"])
             elif self.task_engine is not None:
-                response = self.task_engine.force_prompt(user_message)
-                if response is not None:
-                    channel.send_message(response)
+                responses = self.task_engine.force_prompt(user_message)
+                if responses is not None:
+                    for response in responses:
+                        channel.send_message(response)
                 elif random.random() < 0.5:
                     response = self.task_engine.prompt(user_message)
+                    channel.send_message(response)
+                else:
+                    response = self.faq_engine.prompt(user_message)
                     channel.send_message(response)
             else:
                 response = self.faq_engine.prompt(user_message)
