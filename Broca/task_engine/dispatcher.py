@@ -47,23 +47,20 @@ class EntityMappingDispatcher(DefaultDispatcher):
         self.entity_agent_mapping = entity_agent_mapping
 
     def dispatch(self, agents, message):
-        target_agent = super().dispatch(agents, message)
-        if target_agent is None:
-            for agent in agents:
-                agent.parse(message)
-            entities = message.get("entities")
-            print(entities)
-            if entities:
-                mapped_agents = set()
-                for entity_type in entities:
-                    if entities.get(entity_type) and entity_type in self.entity_agent_mapping:
-                        mapped_agents.add(self.entity_agent_mapping[entity_type])
-                if len(mapped_agents) == 1:
-                    agent_name = mapped_agents.pop()
-                    for agent in agents:
-                        if agent.name == agent_name:
-                            return agent
-        return target_agent
+        for agent in agents:
+            agent.parse(message)
+        entities = message.get("entities")
+        if entities:
+            mapped_agents = set()
+            for entity_type in entities:
+                if entities.get(entity_type) and entity_type in self.entity_agent_mapping:
+                    mapped_agents.add(self.entity_agent_mapping[entity_type])
+            if len(mapped_agents) == 1:
+                agent_name = mapped_agents.pop()
+                for agent in agents:
+                    if agent.name == agent_name:
+                        return agent
+        return None
 
     @classmethod
     def from_config(cls, config):

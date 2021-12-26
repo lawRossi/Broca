@@ -85,7 +85,6 @@ class ESIndex:
                 }
             }
         }
-        # query = {"query": {"match_all": {}}}
         res = self.es.search(body=query, index=self.es_index)
         ids = set()
         answers = []

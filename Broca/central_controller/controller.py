@@ -7,46 +7,49 @@ import random
 import os
 
 from Broca.faq_engine.engine import FAQEngine
-from Broca.message import BotMessage, UserMessage
+from Broca.message import UserMessage
 from Broca.task_engine.engine import Engine
 
 
 class Controller:
-    def __init__(self, get_frequent_queries=None):
+    def __init__(self):
         self.task_engine = None
         self.faq_engine = None
-        self.get_frequent_queries = get_frequent_queries
 
-    def handle_message(self, message):
-        text = message.text
+    def handle_message(self, user_message):
+        text = user_message.text
         if "  " in text:
             texts = text.split("  ")
-            messages = [UserMessage(message.sender_id, text, message.channel) for text in texts]
-            for message in messages:
-                self._handle_single_message(message)
+            user_messages = [UserMessage(user_message.sender_id, text, user_message.channel) for text in texts]
+            for user_message in user_messages:
+                self._handle_single_message(user_message)
         else:
-            self._handle_single_message(message)
+            self._handle_single_message(user_message)
 
-    def _handle_single_message(self, message):
-        channel = message.channel
-        if self.task_engine is not None and self.task_engine.can_handle_message(message):
-            responses = self.task_engine.handle_message(message)
+    def _handle_single_message(self, user_message):
+        channel = user_message.channel
+        if self.task_engine is not None and self.task_engine.can_handle_message(user_message):
+            responses = self.task_engine.handle_message(user_message)
             for response in responses:
                 channel.send_message(response)
         elif self.faq_engine is not None:
-            result = self.faq_engine.handle_message(message)
+            result = self.faq_engine.handle_message(user_message)
             if "response" in result:
                 channel.send_message(result["response"])
             elif "prompt" in result:
                 channel.send_message(result["prompt"])
-            elif self.task_engine is not None and random.random() < 0.5:
-                response = self.task_engine.prompt(message)
-                channel.send_message(response)
+            elif self.task_engine is not None:
+                response = self.task_engine.force_prompt(user_message)
+                if response is not None:
+                    channel.send_message(response)
+                elif random.random() < 0.5:
+                    response = self.task_engine.prompt(user_message)
+                    channel.send_message(response)
             else:
-                response = self._prompt(message)
+                response = self.faq_engine.prompt(user_message)
                 channel.send_message(response)
         else:
-            response = self.task_engine.prompt(message)
+            response = self.task_engine.prompt(user_message)
             channel.send_message(response)
 
     def load_engines(self, package):
@@ -69,11 +72,3 @@ class Controller:
         if os.path.exists(config_file):
             return True
         return False
-
-    def _prompt(self, messae):
-        text = "不要意思，我不懂你的意思。大家在问:\n"
-        for query in self.get_frequent_queries():
-            text += query + "\n"
-        text = text.strip()
-        response = BotMessage(messae.sender_id, text)
-        return response

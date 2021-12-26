@@ -7,30 +7,40 @@ from importlib import import_module
 import json
 import os
 
-from Broca.message import BotMessage
+from Broca.message import BotMessage, UserMessage
 from Broca.nlu.parser import RENaturalLanguageParser
 from Broca.task_engine.agent import Agent
 from Broca.utils import find_class
 
 
 class Engine:
-    def __init__(self, parser_pipeline, dispatcher=None):
+    def __init__(self, parser_pipeline, dispatcher=None, prompter_dispatcher=None):
         self.parser_pipeline = parser_pipeline
         self.dispatcher = dispatcher
+        self.prompter_dispatcher = prompter_dispatcher
         self.agents = []
 
     def add_agent(self, agent):
         self.agents.append(agent)
 
     def prompt(self, user_message):
+        prompt_message = "不好意思，我不懂你的意思。"
         prompt_triggers = [agent.prompt_trigger for agent in self.agents if agent.prompt_trigger is not None]
-        prompt_message = "不好意思，我不懂你的意思。\n请输入提示词看看我能做些什么:\n" + "\n".join(prompt_triggers)
+        if prompt_triggers:
+            prompt_message += "\n请输入提示词看看我能做些什么:\n" + "\n".join(prompt_triggers)
         response = BotMessage(user_message.sender_id, prompt_message)
         return response
 
+    def force_prompt(self, user_message):
+        if self.prompter_dispatcher is None:
+            return None
+        agent = self.prompter_dispatcher.dispatch(self.agents, user_message)
+        if agent is not None:
+            return agent.handle_message(user_message)
+        return None
+
     def handle_message(self, message):
         self._parse_if_needed(message)
-
         agent = message.get("agent")
         if agent is None:  # the message has not been dispatched
             agent = self.dispatcher.dispatch(self.agents, message)
@@ -106,4 +116,10 @@ class Engine:
             dispatcher = dispatcher_cls.from_config(dispatcher_config)
         else:
             dispatcher = None
-        return cls(parser_pipeline, dispatcher)
+        dispatcher_config = config.get("prompter_dispatcher")
+        if dispatcher_config:
+            dispatcher_cls = find_class(dispatcher_config["class"])
+            prompter_dispatcher = dispatcher_cls.from_config(dispatcher_config)
+        else:
+            prompter_dispatcher = None
+        return cls(parser_pipeline, dispatcher, prompter_dispatcher)
