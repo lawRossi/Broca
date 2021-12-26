@@ -2,8 +2,10 @@
 @Author: Rossi
 Created At: 2021-02-21
 """
+
 import json
 import os
+
 from .agent import FAQAgent
 
 

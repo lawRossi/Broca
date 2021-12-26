@@ -2,14 +2,14 @@
 @author: Rossi
 @time: 2021-01-27
 """
-import copy
-from os import environ
-from Broca.task_engine.tracker import DialogueStateTracker
-from Broca.utils import find_class
-from Broca.task_engine.event import BotUttered, Event, Form, SkillEnded, UserUttered
+
+from collections import OrderedDict
 import json
 import re
-from collections import OrderedDict
+
+from Broca.task_engine.event import BotUttered, Event, Form, SkillEnded
+from Broca.task_engine.tracker import DialogueStateTracker
+from Broca.utils import find_class
 
 
 class Policy:

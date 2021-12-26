@@ -3,7 +3,6 @@
 Created At: 2021-01-30
 """
 
-
 class Slot:
     def __init__(self, name, from_entity=None):
         self.name = name

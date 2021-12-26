@@ -2,11 +2,13 @@
 @author: Rossi
 @time: 2021-01-26
 """
+
+from collections import OrderedDict, defaultdict
+import re
+
 from Broca.message import BotMessage
 from .event import ExternalEnd, ExternalStart, SkillStarted, SkillEnded
 from .event import BotUttered, SlotSetted, Form, Undo
-from collections import OrderedDict, defaultdict
-import re
 
 
 class Skill:

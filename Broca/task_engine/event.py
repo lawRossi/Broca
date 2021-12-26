@@ -2,10 +2,11 @@
 @Author: Rossi
 Created At: 2021-01-30
 """
-from Broca.task_engine.slot import Slot
-from Broca.utils import all_subclasses
+
 import json
+
 from Broca.message import UserMessage
+from Broca.utils import all_subclasses
 
 
 class Event:

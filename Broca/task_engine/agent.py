@@ -2,12 +2,14 @@
 @author: Rossi
 @time: 2021-01-26
 """
-from Broca.task_engine.slot import Slot
+
 import json
+import re
+
 from Broca.utils import find_class, list_class
+from Broca.task_engine.slot import Slot
 from .event import UserUttered, BotUttered
 from .skill import ConfirmSkill, FormSkill, ListenSkill, OptionSkill, Skill, UndoSkill, DeactivateFormSkill
-import re
 
 
 class Agent:

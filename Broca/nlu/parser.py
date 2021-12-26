@@ -2,16 +2,18 @@
 @Author: Rossi
 Created At: 2020-12-13
 """
-import re
-import json
+
 from collections import defaultdict
+import copy
+import datetime
+import json
 from itertools import groupby
 from operator import itemgetter
+import re
+
 import ahocorasick
-import datetime
-from time_extractor.extraction import TimeExtractor as Extractor
 import arrow
-import copy
+from time_extractor.extraction import TimeExtractor as Extractor
 
 
 class NaturalLanguageParser:

@@ -1,9 +1,15 @@
+"""
+@Author: Rossi
+Created At: 2021-02-21
+"""
+
 import json
-from Broca.utils import find_class
-from Broca.faq_engine.index import ESIndex, VectorIndex
-from mako.template import Template
-from Broca.message import BotMessage
 import time
+
+from mako.template import Template
+
+from Broca.faq_engine.index import ESIndex, VectorIndex
+from Broca.message import BotMessage
 
 
 class FAQAgent:

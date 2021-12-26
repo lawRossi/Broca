@@ -3,8 +3,8 @@
 Created At: 2020-12-13
 """
 from collections import defaultdict
-import re
 import json
+import re
 
 
 class UserMessage:
