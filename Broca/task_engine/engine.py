@@ -7,7 +7,7 @@ from importlib import import_module
 import json
 import os
 
-from Broca.message import BotMessage, UserMessage
+from Broca.message import BotMessage
 from Broca.nlu.parser import RENaturalLanguageParser
 from Broca.task_engine.agent import Agent
 from Broca.utils import find_class
@@ -81,7 +81,7 @@ class Engine:
                 if os.path.exists(config_file) and os.path.exists(script_file):
                     agent = Agent.from_config_file(config_file)
                     if package != ".":
-                        base_package = ".".join([package, dir])
+                        base_package = ".".join([package.replace("/", "."), dir])
                     else:
                         base_package = dir
                     script_module = import_module(f"{base_package}.script")

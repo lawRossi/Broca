@@ -8,12 +8,21 @@ import re
 
 
 class UserMessage:
-    def __init__(self, sender_id, text, channel=None):
+
+    def __init__(self, sender_id, text, channel=None, external_intent=None, external_entities=None):
         self.sender_id = sender_id
         self.text = text
         self.channel = channel
         self.parsed_data = {}
-    
+        if external_intent is not None:
+            intent = {"name": external_intent, "agent": "external"}
+            self.parsed_data["intent"] = intent
+            if external_entities is not None:
+                self.parsed_data["entities"] = external_entities
+            self.is_external = True
+        else:
+            self.is_external = False
+
     def set(self, key, value):
         self.parsed_data[key] = value
     
@@ -21,10 +30,14 @@ class UserMessage:
         return self.parsed_data.get(key, default)
 
     def to_dict(self):
+        agent = self.parsed_data.get("agent")
+        if agent is not None and not isinstance(agent, str):
+            agent = agent.name
+        parsed_data = {"intent": self.get("intent"), "entities": self.get("entities"), "agent": agent}
         return {
             "sender_id": self.sender_id,
             "text": self.text,
-            "parsed_data": self.parsed_data
+            "parsed_data": parsed_data
         }
 
     @classmethod
@@ -55,9 +68,13 @@ class BotMessage:
         self.data = data
 
     def set(self, key, value):
+        if self.data is None:
+            self.data = {}
         self.data[key] = value
 
     def get(self, key, default=None):
+        if self.data is None:
+            return None
         return self.data.get(key, default)
 
     def to_dict(self):

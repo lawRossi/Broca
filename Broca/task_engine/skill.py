@@ -42,6 +42,15 @@ class Skill:
         return None
 
 
+class ReplySkill(Skill):
+
+    def _perform(self, tracker, **parameters):
+        slots = tracker.get_slot_values()
+        message = self.template.format(**slots)
+        self.utter(message, tracker.sender_id)
+        return []
+
+
 class ListenSkill(Skill):
     def __init__(self):
         super().__init__()

@@ -26,6 +26,11 @@ class NaturalLanguageParser:
         Args:
             message (UserMessage): the user message to be parsed
         """
+        if message.is_external:
+            return
+        self._parse(message)
+
+    def _parse(self, message):
         pass
 
     @classmethod
@@ -50,13 +55,16 @@ class RENaturalLanguageParser(NaturalLanguageParser):
         super().__init__()
         self.intent_patterns = intent_patterns
 
-    def parse(self, message):
+    def _parse(self, message):
         text = message.text
         for intent, patterns in self.intent_patterns:
             for pattern in patterns:
                 m = pattern.match(text)
                 if m is not None:
-                    intent = {"name": intent["name"], "agent": intent["agent"], "confidence": 1.0}
+                    intent_name = intent["name"]
+                    if intent["agent"] == "public":
+                        intent_name = "public:" + intent_name
+                    intent = {"name": intent_name, "agent": intent["agent"], "confidence": 1.0}
                     message.set("intent", intent)
                     entities = message.get("entities", defaultdict(list))
                     for k, v in m.groupdict().items():
@@ -88,7 +96,7 @@ class LookupTableEntityExtractor(NaturalLanguageParser):
         super().__init__()
         self.automaton = automaton
     
-    def parse(self, message) -> None:
+    def _parse(self, message) -> None:
         entities = message.get("entities", defaultdict(list))
         for entity in self._extract_entities(message.text):
             entities[entity["type"]].append(entity)
@@ -133,7 +141,7 @@ class TimeExtractor(NaturalLanguageParser):
         super().__init__()
         self.extractor = Extractor()
 
-    def parse(self, message) -> None:
+    def _parse(self, message) -> None:
         entities = message.get("entities", defaultdict(list))
         for entity in self._extract_time(message.text):
             entities[entity["type"]].append(entity)
@@ -217,7 +225,7 @@ class EntitySynonymMapper(NaturalLanguageParser):
     def __init__(self, synonyms):
         self.synonyms = synonyms if synonyms else {}
 
-    def parse(self, message):
+    def _parse(self, message):
         entities = message.get("entities", [])
         self._replace_synonyms(entities)
 

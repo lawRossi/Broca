@@ -29,12 +29,11 @@ class DefaultDispatcher(Dispatcher):
 
         intent = message.get("intent")
         agent_name = intent.get("agent") if intent is not None else None
-
-        if agent_name is not None and agent_name != "public":
+        if agent_name is not None and agent_name not in ["public", "external"]:
             for agent in agents:
                 if agent.name == agent_name:
                     return agent
-        elif agent_name == "public":
+        elif agent_name in["public", "external"]:
             for agent in agents:
                 if agent.can_handle_message(message):
                     return agent

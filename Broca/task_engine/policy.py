@@ -48,7 +48,7 @@ class MappingPolicy(Policy):
         state = tracker.current_state()
         intent = state["intent"]
         skill = self.mappings.get(intent)
-        if state["latest_skill"] == "listen" and skill:
+        if state["latest_skill"] == "listen" and skill is not None:
             probabilities[skill] = 1.0
         return probabilities
 

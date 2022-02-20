@@ -105,6 +105,15 @@ class DialogueStateTracker:
                 return None
             return slot.value
         return None
+    
+    def get_slot_values(self, within_turns=None):
+        slot_values = {}
+        for slot_name, slot in self.slots.items():
+            if slot:
+                if within_turns is not None and self.turns - slot.turn_no + 1 > within_turns:
+                    continue
+                slot_values[slot_name] = slot.value
+        return slot_values
 
     def get_latest_intent(self):
         if self.latest_message is None:

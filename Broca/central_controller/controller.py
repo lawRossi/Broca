@@ -12,9 +12,10 @@ from Broca.task_engine.engine import Engine
 
 
 class Controller:
-    def __init__(self):
+    def __init__(self, external_process):
         self.task_engine = None
         self.faq_engine = None
+        self.external_process = external_process
 
     def handle_message(self, user_message):
         text = user_message.text
@@ -53,16 +54,23 @@ class Controller:
                 response = self.faq_engine.prompt(user_message)
                 channel.send_message(response)
         else:
-            response = self.task_engine.prompt(user_message)
+            if self.external_process is not None and not user_message.is_external:
+                response = self.external_process(user_message)
+                if response is None:
+                    response = self.task_engine.prompt(user_message)
+            else:
+                response = self.task_engine.prompt(user_message)
             channel.send_message(response)
 
     def load_engines(self, package):
         if self._check_task_engine(package):
-            self.task_engine = Engine.from_config_file("task_engine_config.json")
+            config_file = os.path.join(package, "task_engine_config.json")
+            self.task_engine = Engine.from_config_file(config_file)
             self.task_engine.load_agents(package)
             self.task_engine.collect_intent_patterns()
         if self._check_faq_engine(package):
-            self.faq_engine = FAQEngine.from_config_file("faq_engine_config.json")
+            config_file = os.path.join(package, "faq_engine_config.json")
+            self.faq_engine = FAQEngine.from_config_file(config_file)
             self.faq_engine.load_agents(package)
 
     def _check_task_engine(self, package):
