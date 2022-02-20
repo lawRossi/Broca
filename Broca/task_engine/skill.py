@@ -103,6 +103,8 @@ class FormSkill(Skill):
     def extract_required_slots(self, tracker):
         slot_dict = {}
         for slot_to_fill, config in self.required_slots.items():
+            if self._is_slot_filled(slot_to_fill):
+                continue
             for slot_mapping in self.get_mappings_for_slot(slot_to_fill):
                 if self.is_desired_intent(slot_mapping, tracker):
                     value = None
@@ -113,13 +115,10 @@ class FormSkill(Skill):
                     elif slot_mapping["type"] == self.FROM_TEXT:
                         value = tracker.latest_message.text
                     if value is None:
-                        if config.get("prefilled", True):  # try to find a prefilled slot vlaue
+                        if self.slot_cache.get(self.name) is not None:  # try to find the prefilled value in this form
+                            value = self.slot_cache[self.name].get(slot_to_fill)  
+                        if value is None and config.get("prefilled", True):  # try to find a prefilled slot vlaue
                             value = tracker.get_slot(slot_to_fill)
-                        else: # try to find the prefilled value in this form
-                            value = self.slot_cache[self.name].get(slot_to_fill)
-                    else:
-                        if not config.get("prefilled", True):
-                            self.slot_cache[self.name][slot_to_fill] = value
                     if value is None and config.get("default") is not None:
                         default = config["default"]
                         if callable(default):
@@ -130,6 +129,11 @@ class FormSkill(Skill):
                         slot_dict[slot_to_fill] = value
                         break
         return self.validate(slot_dict, tracker)
+    
+    def _is_slot_filled(self, slot_to_fill):
+        if self.slot_cache.get(self.name) is None:
+            return False
+        return self.slot_cache[self.name].get(slot_to_fill) is not None
 
     def validate(self, slot_dict, tracker):
         valid_slot_dict = {}
@@ -140,10 +144,12 @@ class FormSkill(Skill):
                 value = validate_func(value, tracker)
                 if value is not None:
                     valid_slot_dict[slot_name] = value
+                    self.slot_cache[self.name][slot_name] = value
             else:
                 valid_slot_dict[slot_name] = value
+                self.slot_cache[self.name][slot_name] = value
         return valid_slot_dict
-    
+
     def perform(self, tracker, **parameters):
         events = super().perform(tracker, **parameters)
         parameters = self.parameters_cache[self.name].get(tracker.sender_id, {})
@@ -161,7 +167,7 @@ class FormSkill(Skill):
 
     def _submit(self, tracker_snapshot):
         return []
-    
+
     def _is_started(self, tracker):
         stage = self.stages.get(self.name).get(tracker.sender_id)
         return stage == self.STARTED
@@ -184,7 +190,7 @@ class FormSkill(Skill):
         events.extend([SlotSetted(slot, value) for slot, value in slot_dict.items() if tracker.get_slot(slot) != value])
         next_to_fill_slot = None
         for slot_name in self.required_slots:
-            if slot_name not in slot_dict:
+            if slot_name not in slot_dict and not self._is_slot_filled(slot_name):
                 next_to_fill_slot = slot_name
                 break
         if next_to_fill_slot:
