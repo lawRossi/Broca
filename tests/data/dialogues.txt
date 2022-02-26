@@ -99,10 +99,10 @@ bot:你好呀，罗西，你20岁了呀
 
 user:快夸我
 bot:确定吗？
-user:取消
-bot:null
+user:确定
+bot:你真棒
 
 user:快夸我
 bot:确定吗？
-user:确定
-bot:你真棒
+user:取消
+bot:null

@@ -7,8 +7,8 @@ from collections import OrderedDict, defaultdict
 import re
 
 from Broca.message import BotMessage
-from .event import ExternalEnd, ExternalStart, SkillStarted, SkillEnded
-from .event import BotUttered, SlotSetted, Form, Undo
+from .event import SkillStarted, SkillEnded, BotUttered, SlotSetted
+from .event import Form, Undo, Prompt, PromptEnded
 
 
 class Skill:
@@ -66,13 +66,13 @@ class FormSkill(Skill):
 
     slot_cache = defaultdict(lambda : dict())
     slot_trials = defaultdict(lambda : defaultdict(int))
-    parameters_cache = defaultdict(lambda : dict())
     stages = defaultdict(lambda : dict())
 
     def __init__(self):
         super().__init__()
         self.required_slots = {}
         self.terminated = False
+        self.cached_events = []
 
     def from_entity(self, entity, intents=None, not_intents=None):
         return {"type": self.FROM_ENTITY, "entity": entity, "intents": intents, "not_intents": not_intents}
@@ -152,11 +152,7 @@ class FormSkill(Skill):
 
     def perform(self, tracker, **parameters):
         events = super().perform(tracker, **parameters)
-        parameters = self.parameters_cache[self.name].get(tracker.sender_id, {})
-        if parameters.get("options") is True:
-            events.append(ExternalStart())
-            events.append(Form("option_form_skill"))
-            events.append(SkillEnded("listen"))   # to activate the option form            
+        events.extend(self.cached_events)         
         return events
 
     def _activate_if_required(self, tracker):
@@ -180,10 +176,6 @@ class FormSkill(Skill):
 
     def _perform(self, tracker, **parameters):
         self._check_stage(tracker)
-        if parameters:
-            self.parameters_cache[self.name][tracker.sender_id] = parameters
-        else:
-            parameters = self.parameters_cache.get(self.name, {}).get(tracker.sender_id, {})
         self._clear_slot_cache_if_required(tracker, **parameters)
         events = self._activate_if_required(tracker)
         slot_dict = self.extract_required_slots(tracker)
@@ -208,7 +200,6 @@ class FormSkill(Skill):
             events.extend(self._submit(snapshot))
             events.append(Form(None))  # deactivate
             self.slot_trials[tracker.sender_id].clear()
-            self.parameters_cache[tracker.sender_id].clear()
             self._terminate(tracker.sender_id)
         return events
 
@@ -223,22 +214,20 @@ class FormSkill(Skill):
         self.terminated = True
         self.stages[self.name][sender_id] = None
 
-    def _show_options_form(self, tracker, options):
-        self.events.append(SlotSetted("options_slot", options))
-        if self.parameters_cache[self.name].get(tracker.sender_id) is None:
-            self.parameters_cache[self.name][tracker.sender_id] = {}
-        self.parameters_cache[self.name][tracker.sender_id]["options"] = True
-        self.events.append(SlotSetted("main_form", self.name))
-
-    def _hide_options_form(self, tracker):
-        self.parameters_cache[self.name][tracker.sender_id]["options"] = False
+    def _show_prompt(self, tracker, prompt_utterance, options=None):
+        prompt = "option_prompt_skill" if options is not None else "confirm_prompt_skill"
+        self.cached_events.append(Prompt(prompt))
+        self.cached_events.append(SlotSetted("prompt_utterance", prompt_utterance))
+        if options:
+            self.cached_events.append(SlotSetted("options_slot", options))
+        self.cached_events.append(SkillEnded("listen"))
 
 
 class DeactivateFormSkill(Skill):
     def __init__(self):
         super().__init__()
         self.name = "deactivate_form"
-    
+
     def _perform(self, tracker, **parameters):
         return [Form(None)]
 
@@ -255,7 +244,7 @@ class UndoSkill(Skill):
 class ConfirmSkill(FormSkill):
     def __init__(self):
         super().__init__()
-        self.name = "confirm_form_skill"
+        self.name = "confirm_prompt_skill"
         self.required_slots = OrderedDict({"confirmed_slot": {"prefilled": False}})
 
     def slot_mappings(self):
@@ -269,14 +258,14 @@ class ConfirmSkill(FormSkill):
         return None
 
     def utter_ask_confirmed_slot(self, tracker):
-        utterance = tracker.get_slot("form_utterance")
-        utterance = utterance or "确定吗？"
+        utterance = tracker.get_slot("prompt_utterance")
         return utterance
 
     def perform(self, tracker, **parameters):
         events = super().perform(tracker, **parameters)
-        if tracker.active_form != self.name:
-            events.insert(0, ExternalStart())
+        if self.terminated:
+            events.append(PromptEnded())
+            events.append(SkillEnded("listen"))
         return events
 
 
@@ -292,7 +281,7 @@ class OptionSkill(FormSkill):
 
     def __init__(self):
         super().__init__()
-        self.name = "option_form_skill"
+        self.name = "option_prompt_skill"
         self.required_slots = OrderedDict({"option_slot": {"prefilled": False}})
 
     def slot_mappings(self):
@@ -343,7 +332,7 @@ class OptionSkill(FormSkill):
         return None
 
     def utter_ask_option_slot(self, tracker):
-        utterance = tracker.get_slot("form_utterance")
+        utterance = tracker.get_slot("prompt_utterance")
         options = tracker.get_slot("options_slot")
         for option in options:
             utterance += "\n  " + option["value"]
@@ -353,8 +342,6 @@ class OptionSkill(FormSkill):
         events = super().perform(tracker, **parameters)
 
         if self.terminated:
-            events.append(ExternalEnd())
-            self.events.append(SlotSetted("main_form", None))   # return to the main form
-            self.events.append(Form(tracker.get_slot("main_form")))
-            self.events.append(SkillEnded("listen"))
+            events.append(PromptEnded())
+            events.append(SkillEnded("listen"))
         return events

@@ -2,6 +2,8 @@ from Broca.task_engine.event import Form, SkillEnded, SlotSetted
 from Broca.task_engine.skill import Skill, FormSkill
 from collections import OrderedDict
 
+from loguru import logger
+
 
 class ReportDateSkill(Skill):
     def __init__(self):
@@ -71,16 +73,31 @@ class GreetFormSkill(FormSkill):
         return []
 
 
-class PraiseSkill(Skill):
+class PraiseSkill(FormSkill):
     def __init__(self):
         super().__init__()
-        self.name = "praise"
+        self.name = "praise_form"
+        self.trigger_intent = "praise_me"
+        self.intent_patterns = ["快夸我"]
+        self.required_slots = OrderedDict({"confirmed_slot": {"prefilled": True}})
 
-    def _perform(self, tracker):
+    def slot_mappings(self):
+        return {"confirmed_slot": [self.from_text()]}
+    
+    def utter_ask_confirmed_slot(self, tracker):
+        return None
+
+    def validate_confirmed_slot(self, slot_dict, tracker):
         confirmed = tracker.get_slot("confirmed_slot")
+        if confirmed is None:
+            self._show_prompt(tracker, "确定吗？")
+        return confirmed
+
+    def _submit(self, tracker_snapshot):
+        confirmed = tracker_snapshot["slots"].get("confirmed_slot")
         if confirmed:
-            self.utter("你真棒", tracker.sender_id)
-        return []
+            self.utter("你真棒", tracker_snapshot["sender_id"])
+        return [SlotSetted("confirmed_slot", None)]
 
 
 class BookTicketSkill(FormSkill):
@@ -97,11 +114,9 @@ class BookTicketSkill(FormSkill):
     def validate_movie(self, value, tracker):
         options = tracker.get_slot("options_slot")
         if options is None:
-            self.events.append(SlotSetted("form_utterance", "你想看哪部电影？"))
-            self._show_options_form(tracker, [{"value": "海王"}, {"value": "魔戒"}])
+            self._show_prompt(tracker, "你想看哪部电影？", [{"value": "海王"}, {"value": "魔戒"}])
         option = tracker.get_slot("option_slot")
         if option is not None:
-            self._hide_options_form(tracker)
             return option["value"]
         else:
             return None

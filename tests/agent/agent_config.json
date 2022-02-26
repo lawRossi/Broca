@@ -25,6 +25,8 @@
     },
     "slots": [
         {"class": "Broca.task_engine.slot.Slot", "name": "name", "from_entity": "name"},
-        {"class": "Broca.task_engine.slot.Slot", "name": "age"}   
+        {"class": "Broca.task_engine.slot.Slot", "name": "age"},
+        {"class": "Broca.task_engine.slot.Slot", "name": "prompt_utterance"},
+        {"class": "Broca.task_engine.slot.Slot", "name": "confirmed_slot"}
     ]
 }

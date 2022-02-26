@@ -28,6 +28,7 @@ if __name__ == "__main__":
         for turn in scene:
             user_message = UserMessage("", turn[0], channel)
             messages = engine.handle_message(user_message)
+            
             if turn[1][0] == "null":
                 assert messages == []
             else:

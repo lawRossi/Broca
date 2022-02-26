@@ -129,7 +129,7 @@ class MemoryPolicy(Policy):
                     event_name = match.group("event")
                     parameter_string = match.group("parameters")
                     event = Event.from_parameter_string(event_name, parameter_string)
-                    if event_name == "form":
+                    if event_name in ["form", "prompt"]:
                         parameters = json.loads(parameter_string)
                         skill_name = parameters["name"]
                         if skill_name is not None: 

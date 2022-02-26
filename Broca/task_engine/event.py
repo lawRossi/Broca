@@ -164,12 +164,15 @@ class Undo(Event):
                 n += 1
 
 
-class ExternalStart(Event):
-    name = "external_start"
+class Prompt(Form):
+    name = "prompt"
+
+
+class PromptEnded:
+    name = "prompt_ended"
 
     def apply(self, tracker):
-        pass
-
-
-class ExternalEnd(Event):
-    name = "external_end"
+        event = None
+        while not isinstance(event, Prompt):
+            event = tracker.events.pop()
+        event.undo(tracker)
