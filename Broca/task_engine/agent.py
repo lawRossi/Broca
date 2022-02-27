@@ -9,7 +9,7 @@ import re
 from Broca.utils import find_class, list_class
 from Broca.task_engine.slot import Slot
 from .event import UserUttered, BotUttered
-from .skill import ConfirmSkill, FormSkill, ListenSkill, OptionSkill, Skill, UndoSkill, DeactivateFormSkill
+from .skill import ComplexSkill, ConfirmSkill, ConfirmedSkill, FormSkill, ListenSkill, OptionSkill, ReplySkill, Skill, UndoSkill, DeactivateFormSkill
 
 
 class Agent:
@@ -57,11 +57,6 @@ class Agent:
         for slot_config in config["slots"]:
             slot_cls = find_class(slot_config["class"])
             slots.append(slot_cls.from_config(slot_config))
-        slots.append(Slot("confirmed_slot"))
-        slots.append(Slot("options_slot"))
-        slots.append(Slot("option_slot"))
-        slots.append(Slot("main_form"))
-        slots.append(Slot("form_utterance"))
         prompt_trigger = config.get("prompt_trigger", None)
         return cls(agent_name, parser, tracker_store, policy, intents, slots, prompt_trigger)
 
@@ -150,7 +145,8 @@ class Agent:
 
     def load_skills(self, skill_module):
         for cls in list_class(skill_module):
-            if issubclass(cls, Skill) and cls not in [Skill, FormSkill]:
+            if issubclass(cls, Skill) and cls not in [Skill, FormSkill, ReplySkill, ConfirmSkill, 
+                    OptionSkill, ConfirmedSkill, ComplexSkill]:
                 self.add_skill(cls)
         self.add_skill(UndoSkill)
         self.add_skill(DeactivateFormSkill)

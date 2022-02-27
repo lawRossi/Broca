@@ -24,9 +24,12 @@
         "ask_date_weekday": {"use_entities": null}
     },
     "slots": [
+        {"class": "Broca.task_engine.slot.Slot", "name": "popup_utterance"},
+        {"class": "Broca.task_engine.slot.Slot", "name": "confirmed_slot"},
+        {"class": "Broca.task_engine.slot.Slot", "name": "options_slot"},
+        {"class": "Broca.task_engine.slot.Slot", "name": "option_slot"},
         {"class": "Broca.task_engine.slot.Slot", "name": "name", "from_entity": "name"},
         {"class": "Broca.task_engine.slot.Slot", "name": "age"},
-        {"class": "Broca.task_engine.slot.Slot", "name": "prompt_utterance"},
-        {"class": "Broca.task_engine.slot.Slot", "name": "confirmed_slot"}
+        {"class": "Broca.task_engine.slot.Slot", "name": "movie"}
     ]
 }

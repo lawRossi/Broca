@@ -1,8 +1,6 @@
-from Broca.task_engine.event import Form, SkillEnded, SlotSetted
-from Broca.task_engine.skill import Skill, FormSkill
+from Broca.task_engine.event import SlotSetted
+from Broca.task_engine.skill import ComplexSkill, Skill, FormSkill, ConfirmedSkill
 from collections import OrderedDict
-
-from loguru import logger
 
 
 class ReportDateSkill(Skill):
@@ -73,58 +71,32 @@ class GreetFormSkill(FormSkill):
         return []
 
 
-class PraiseSkill(FormSkill):
+class PraiseSkill(ConfirmedSkill):
     def __init__(self):
         super().__init__()
         self.name = "praise_form"
         self.trigger_intent = "praise_me"
         self.intent_patterns = ["快夸我"]
-        self.required_slots = OrderedDict({"confirmed_slot": {"prefilled": True}})
+        self.confirm_utterance = "确定吗？"
 
-    def slot_mappings(self):
-        return {"confirmed_slot": [self.from_text()]}
+    def _accept(self, tracker_snapshot):
+        self.utter("你真棒", tracker_snapshot["sender_id"])
+        return []
     
-    def utter_ask_confirmed_slot(self, tracker):
-        return None
-
-    def validate_confirmed_slot(self, slot_dict, tracker):
-        confirmed = tracker.get_slot("confirmed_slot")
-        if confirmed is None:
-            self._show_prompt(tracker, "确定吗？")
-        return confirmed
-
-    def _submit(self, tracker_snapshot):
-        confirmed = tracker_snapshot["slots"].get("confirmed_slot")
-        if confirmed:
-            self.utter("你真棒", tracker_snapshot["sender_id"])
-        return [SlotSetted("confirmed_slot", None)]
+    def _reject(self, tracker_snapshot):
+        return []
 
 
-class BookTicketSkill(FormSkill):
+class BookTicketSkill(ComplexSkill):
     def __init__(self):
-        super().__init__()
+        options = [{"value": "海王", "text": "海王"}, {"value": "魔戒", "text": "魔戒"}]
+        slot_config = {"movie": {"options": options, "popup_utterance": "你想看哪部电影？"}}
+        super().__init__(slot_config)
         self.name = "book_form"
         self.trigger_intent = "book_ticket"
         self.intent_patterns = ["我要买电影票"]
-        self.required_slots = OrderedDict({"movie": {"prefilled": True}})
-
-    def slot_mappings(self):
-        return {"movie": [self.from_text()]}
-
-    def validate_movie(self, value, tracker):
-        options = tracker.get_slot("options_slot")
-        if options is None:
-            self._show_prompt(tracker, "你想看哪部电影？", [{"value": "海王"}, {"value": "魔戒"}])
-        option = tracker.get_slot("option_slot")
-        if option is not None:
-            return option["value"]
-        else:
-            return None
-
-    def utter_ask_movie(self, tracker):
-        return None
 
     def _submit(self, tracker_snapshot):
-        movie = tracker_snapshot["slots"].get("movie")
+        movie = tracker_snapshot["slots"].get("movie")["text"]
         self.utter(f"已为你预定{movie}的票", tracker_snapshot["sender_id"])
         return [SlotSetted("options_slot", None), SlotSetted("option_slot", None)]

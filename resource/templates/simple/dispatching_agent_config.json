@@ -1,6 +1,6 @@
 {
-    "agent_name": "agent",
-    "prompt_trigger": null,
+    "agent_name": "dispatching_agent",
+    "prompt": null,
     "tracker_store": {
         "class": "Broca.task_engine.tracker_store.InMemoryTrackerStore"
     },
@@ -16,7 +16,7 @@
         
     },
     "slots": [
-        {"class": "Broca.task_engine.slot.Slot", "name": "popup_utterance"},
+        {"class": "Broca.task_engine.slot.Slot", "name": "prompt_utterance"},
         {"class": "Broca.task_engine.slot.Slot", "name": "confirmed_slot"},
         {"class": "Broca.task_engine.slot.Slot", "name": "options_slot"},
         {"class": "Broca.task_engine.slot.Slot", "name": "option_slot"}

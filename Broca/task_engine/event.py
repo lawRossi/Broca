@@ -164,15 +164,24 @@ class Undo(Event):
                 n += 1
 
 
-class Prompt(Form):
-    name = "prompt"
+class Popup(Form):
+    name = "popup"
 
 
-class PromptEnded:
-    name = "prompt_ended"
+class PopupEnded(Event):
+    name = "popup_ended"
 
     def apply(self, tracker):
         event = None
-        while not isinstance(event, Prompt):
+        while not isinstance(event, Popup):
             event = tracker.events.pop()
         event.undo(tracker)
+
+
+class AgentTriggered(Event):
+    def __init__(self, agent, text, intent, entities=None):
+        super().__init__()
+        self.agent = agent
+        self.text = text
+        self.intent = intent
+        self.entities = entities

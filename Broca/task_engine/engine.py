@@ -24,10 +24,10 @@ class Engine:
         self.agents.append(agent)
 
     def prompt(self, user_message):
-        prompt_message = "不好意思，我不懂你的意思。"
+        prompt_message = "抱歉，我不懂你的意思。"
         prompt_triggers = [agent.prompt_trigger for agent in self.agents if agent.prompt_trigger is not None]
         if prompt_triggers:
-            prompt_message += "\n请输入提示词看看我能做些什么:\n" + "\n".join(prompt_triggers)
+            prompt_message += "\n输入提示词看看我能做什么:\n" + "\n".join(prompt_triggers)
         response = BotMessage(user_message.sender_id, prompt_message)
         return response
 

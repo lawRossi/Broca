@@ -1,9 +1,10 @@
-from Broca.central_controller.controller import Controller
+from Broca.dialogue_engine.engine import DialogueEngine
 from Broca.channel import CollectingOutputChannel
 from Broca.message import UserMessage
 
-controller = Controller()
-controller.load_engines(".")
+engine = DialogueEngine()
+engine.load_engines(".")
+engine.load_dispatching_agent("")
 
 
 def run_cmd():
@@ -11,7 +12,7 @@ def run_cmd():
     while True:
         msg = input("user:")
         message = UserMessage("", msg, channel=channel)
-        controller.handle_message(message)
+        engine.handle_message(message)
         for res in channel.messages:
             if res.text:
                 print(f"bot:{res.text}")
