@@ -418,9 +418,14 @@ class ComplexSkill(FormSkill):
 
     def _build_validate_func(self, slot):
         def func(value, tracker):
-            trials = self._get_slot_trials(tracker.sender_id, slot)
+            not_filled_slots = 0
+            for to_fill_slot in self.required_slots.keys():
+                if to_fill_slot == slot:
+                    break
+                if not self._is_slot_filled(tracker.sender_id, to_fill_slot):
+                    not_filled_slots += 1
             value = tracker.get_slot("option_slot")
-            if trials == 0 or not isinstance(value, dict):
+            if not isinstance(value, dict) and not_filled_slots == 0:
                 popup_utterance = self.slot_config.get(slot).get("popup_utterance")
                 options = self.slot_config.get(slot).get("options")
                 self._show_popup(tracker, popup_utterance, options)
