@@ -14,62 +14,51 @@ from .dispatching_agent import DispatchingAgent
 
 
 class DialogueEngine:
-    def __init__(self, external_process=None):
+    def __init__(self, external_process=None, interceptor=None):
         self.task_engine = None
         self.faq_engine = None
         self.external_process = external_process
+        self.interceptor = interceptor
         self.dispatching_agent = None
 
     def handle_message(self, user_message):
-        text = user_message.text
-        if "  " in text:
-            texts = text.split("  ")
-            user_messages = [UserMessage(user_message.sender_id, text, user_message.channel) for text in texts]
-            for user_message in user_messages:
-                self._handle_single_message(user_message)
-        else:
-            self._handle_single_message(user_message)
-
-    def _handle_single_message(self, user_message):
+        self.task_engine.parse(user_message)
+        if self.interceptor is not None:
+            responses = self.interceptor.handle_message(user_message)
+            if responses is not None:
+                return responses
         if self.task_engine.can_handle_message(user_message):
-            self.handel_message_with_engines(user_message)
+            return self.handel_message_with_engines(user_message)
         elif self.dispatching_agent.can_handle_message(user_message):
-            self._dispatch(user_message)
+            return self._dispatch(user_message)
         else:
-            self.handel_message_with_engines(user_message)
+            return self.handel_message_with_engines(user_message)
 
     def _dispatch(self, user_message):
-        channel = user_message.channel
-        responses = self.dispatching_agent.handle_message(user_message)
-        for response in responses:
-            channel.send_message(response)
+        return self.dispatching_agent.handle_message(user_message)
 
     def handel_message_with_engines(self, user_message):
-        channel = user_message.channel
         if self.task_engine is not None and self.task_engine.can_handle_message(user_message):
-            responses = self.task_engine.handle_message(user_message)
-            for response in responses:
-                channel.send_message(response)
+            return self.task_engine.handle_message(user_message)
         elif self.faq_engine is not None:
             result = self.faq_engine.handle_message(user_message)
             if "response" in result:
-                channel.send_message(result["response"])
+                return [result["response"]]
             elif "prompt" in result:
-                channel.send_message(result["prompt"])
+                return [result["prompt"]]
             elif self.task_engine is not None:
                 responses = self.task_engine.force_prompt(user_message)
-                if responses is not None:
-                    for response in responses:
-                        channel.send_message(response)
+                if responses:
+                    return responses
                 elif random.random() < 0.5:
                     response = self.task_engine.prompt(user_message)
-                    channel.send_message(response)
+                    return [response]
                 else:
                     response = self.faq_engine.prompt(user_message)
-                    channel.send_message(response)
+                    return [response]
             else:
                 response = self.faq_engine.prompt(user_message)
-                channel.send_message(response)
+                return [response]
         else:
             if self.external_process is not None and not user_message.is_external:
                 response = self.external_process(user_message)
@@ -77,7 +66,7 @@ class DialogueEngine:
                     response = self.task_engine.prompt(user_message)
             else:
                 response = self.task_engine.prompt(user_message)
-            channel.send_message(response)
+            return [response]
 
     def load_engines(self, package):
         if self._check_task_engine(package):

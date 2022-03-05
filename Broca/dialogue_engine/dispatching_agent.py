@@ -17,7 +17,6 @@ class DispatchingAgent(Agent):
         responses = []
         triggered_event = None
         if skill_name is not None:
-            
             while skill_name is not None:
                 skill_name, parameters = self._parse_skill_name(skill_name)
                 skill = self.skills[skill_name]()
@@ -34,9 +33,8 @@ class DispatchingAgent(Agent):
             new_message = UserMessage(
                 message.sender_id, 
                 triggered_event.text,
-                channel=message.channel, 
                 external_intent=triggered_event.intent,
                 external_entities=triggered_event.entities
             )
-            self.dialogue_engine.handel_message_with_engines(new_message)
+            responses.extend(self.dialogue_engine.handel_message_with_engines(new_message))
         return responses

@@ -21,12 +21,11 @@ if __name__ == "__main__":
 
     scenes = read_scenes("tests/data/dialogues.txt")
     for scene in scenes:
-        channel = CollectingOutputChannel()
         engine = Engine.from_config_file("tests/data/engine_config.json")
         engine.load_agents("tests")
         engine.collect_intent_patterns()
         for turn in scene:
-            user_message = UserMessage("", turn[0], channel)
+            user_message = UserMessage("", turn[0])
             messages = engine.handle_message(user_message)
             
             if turn[1][0] == "null":

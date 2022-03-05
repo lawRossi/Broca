@@ -273,9 +273,9 @@ class ConfirmSkill(FormSkill):
         return {"confirmed_slot": [self.from_text()]}
 
     def validate_confirmed_slot(self, value, tracker):
-        if value.lower() in ["是的", "没问题", "ok", "确定", "确认", "好的", "没错", "嗯嗯"]:
+        if value.lower() in ["是的", "要", "没问题", "ok", "确定", "确认", "好的", "没错", "嗯嗯"]:
             return True
-        elif value in ["取消", "放弃"]:
+        elif value in ["取消", "放弃", "不是", "不要", "否"]:
             return False
         else:
             trials = self._get_slot_trials(tracker.sender_id, "confirmed_slot")
@@ -410,13 +410,15 @@ class ComplexSkill(FormSkill):
         for slot in slot_config.keys():
             self.required_slots[slot] = {"prefilled": slot_config.get("prefilled", False)}
             if "options" in slot_config[slot]:
-                self._build_validate_func(slot)
+                self._build_option_validate_func(slot)
+            elif slot_config[slot].get("confirmed", False):
+                self._build_confirmed_validate_func(slot)
 
     def slot_mappings(self):
         return {slot: self.slot_config[slot].get("mapping", [self.from_text()]) 
                 for slot in self.slot_config.keys()}
 
-    def _build_validate_func(self, slot):
+    def _build_option_validate_func(self, slot):
         def func(value, tracker):
             not_filled_slots = 0
             for to_fill_slot in self.required_slots.keys():
@@ -432,3 +434,25 @@ class ComplexSkill(FormSkill):
                 return None
             return value
         setattr(self, f"validate_{slot}", func)
+
+    def _build_confirmed_validate_func(self, slot):
+        def func(value, tracker):
+            not_filled_slots = 0
+            for to_fill_slot in self.required_slots.keys():
+                if to_fill_slot == slot:
+                    break
+                if not self._is_slot_filled(tracker.sender_id, to_fill_slot):
+                    not_filled_slots += 1
+            value = tracker.get_slot("confirmed")
+            if value is None and not_filled_slots == 0:
+                popup_utterance = self.slot_config.get(slot).get("popup_utterance")
+                self._show_popup(tracker, popup_utterance)
+                return None
+            return value
+        setattr(self, f"validate_{slot}", func)
+
+    def perform(self, tracker, **parameters):
+        events = super().perform(tracker, **parameters)
+        events.append(SlotSetted("option_slot", None))
+        events.append(SlotSetted("confirmed", None))
+        return events

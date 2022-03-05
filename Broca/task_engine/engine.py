@@ -56,6 +56,9 @@ class Engine:
             return True
         return False
 
+    def parse(self, message):
+        return self._parse_if_needed(message)
+
     def _parse_if_needed(self, message):
         processed_by = message.get("processed_by")
         if processed_by is None:

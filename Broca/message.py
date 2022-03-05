@@ -9,10 +9,9 @@ import re
 
 class UserMessage:
 
-    def __init__(self, sender_id, text, channel=None, external_intent=None, external_entities=None):
+    def __init__(self, sender_id, text, external_intent=None, external_entities=None):
         self.sender_id = sender_id
         self.text = text
-        self.channel = channel
         self.parsed_data = {}
         if external_intent is not None:
             intent = {"name": external_intent, "agent": "external"}
