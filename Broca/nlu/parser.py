@@ -56,7 +56,7 @@ class RENaturalLanguageParser(NaturalLanguageParser):
         self.intent_patterns = intent_patterns
 
     def _parse(self, message):
-        text = message.text
+        text = message.text.lower()
         for intent, patterns in self.intent_patterns:
             for pattern in patterns:
                 m = pattern.match(text)

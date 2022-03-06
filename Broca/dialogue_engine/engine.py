@@ -8,16 +8,15 @@ import random
 import os
 
 from Broca.faq_engine.engine import FAQEngine
-from Broca.message import UserMessage
 from Broca.task_engine.engine import Engine
 from .dispatching_agent import DispatchingAgent
 
 
 class DialogueEngine:
-    def __init__(self, external_process=None, interceptor=None):
+    def __init__(self, third_party_process=None, interceptor=None):
         self.task_engine = None
         self.faq_engine = None
-        self.external_process = external_process
+        self.third_party_process = third_party_process
         self.interceptor = interceptor
         self.dispatching_agent = None
 
@@ -38,15 +37,55 @@ class DialogueEngine:
         return self.dispatching_agent.handle_message(user_message)
 
     def handel_message_with_engines(self, user_message):
-        if self.task_engine is not None and self.task_engine.can_handle_message(user_message):
+        if self.task_engine is not None and self.faq_engine is None:
+            return self.handle_message_with_task_engine(user_message)
+        elif self.faq_engine is not None and self.task_engine is None:
+            return self.handle_message_with_faq_engine(user_message)
+        else:
+            return self.handle_message_with_both_engine(user_message)
+
+    def handle_message_with_task_engine(self, user_message):
+        if self.task_engine.can_handle_message(user_message):
             return self.task_engine.handle_message(user_message)
-        elif self.faq_engine is not None:
+        else:
+            if self.third_party_process is not None:
+                response = self.third_party_process(user_message)
+                if response:
+                    return [response]
+            responses = self.task_engine.force_prompt(user_message)
+            if responses:
+                return responses
+            response = self.task_engine.prompt(user_message)
+            return [response]
+
+    def handle_message_with_faq_engine(self, user_message):
+        result = self.faq_engine.handle_message(user_message)
+        if "response" in result:
+            return [result["response"]]
+        elif "prompt" in result:
+            return [result["prompt"]]
+        else:
+            if self.third_party_process is not None:
+                response = self.third_party_process(user_message)
+                if response:
+                    return [response]
+            response = self.faq_engine.prompt(user_message)
+            return [response]
+
+    def handle_message_with_both_engine(self, user_message):
+        if self.task_engine.can_handle_message(user_message):
+            return self.task_engine.handle_message(user_message)
+        else:
             result = self.faq_engine.handle_message(user_message)
             if "response" in result:
                 return [result["response"]]
             elif "prompt" in result:
                 return [result["prompt"]]
-            elif self.task_engine is not None:
+            else:
+                if self.third_party_process is not None:
+                    response = self.third_party_process(user_message)
+                    if response:
+                        return [response]
                 responses = self.task_engine.force_prompt(user_message)
                 if responses:
                     return responses
@@ -56,17 +95,6 @@ class DialogueEngine:
                 else:
                     response = self.faq_engine.prompt(user_message)
                     return [response]
-            else:
-                response = self.faq_engine.prompt(user_message)
-                return [response]
-        else:
-            if self.external_process is not None and not user_message.is_external:
-                response = self.external_process(user_message)
-                if response is None:
-                    response = self.task_engine.prompt(user_message)
-            else:
-                response = self.task_engine.prompt(user_message)
-            return [response]
 
     def load_engines(self, package):
         if self._check_task_engine(package):
