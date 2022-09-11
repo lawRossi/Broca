@@ -5,11 +5,13 @@ Created At: 2020-12-13
 from collections import defaultdict
 import json
 import re
+from uuid import uuid1
 
 
 class UserMessage:
 
     def __init__(self, sender_id, text, external_intent=None, external_entities=None):
+        self.message_id = uuid1()
         self.sender_id = sender_id
         self.text = text
         self.parsed_data = {}
@@ -24,7 +26,7 @@ class UserMessage:
 
     def set(self, key, value):
         self.parsed_data[key] = value
-    
+
     def get(self, key, default=None):
         return self.parsed_data.get(key, default)
 

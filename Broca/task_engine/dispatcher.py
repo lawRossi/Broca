@@ -3,6 +3,7 @@
 Created At: 2021-07-14
 """
 
+
 class Dispatcher:
     def dispatch(self, agents, message):
         """ dispatch the message to an appropriate agent.

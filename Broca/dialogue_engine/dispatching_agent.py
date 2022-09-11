@@ -31,7 +31,7 @@ class DispatchingAgent(Agent):
         self.tracker_store.update_tracker(tracker)
         if triggered_event is not None:
             new_message = UserMessage(
-                message.sender_id, 
+                message.sender_id,
                 triggered_event.text,
                 external_intent=triggered_event.intent,
                 external_entities=triggered_event.entities

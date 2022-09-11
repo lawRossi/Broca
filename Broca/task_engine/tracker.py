@@ -25,7 +25,7 @@ class DialogueStateTracker:
     def init_copy(self):
         tracker = DialogueStateTracker(self.sender_id, self.agent)
         return tracker
-    
+
     def copy(self):
         tracker = self.init_copy()
         for event in self.events:
@@ -101,11 +101,13 @@ class DialogueStateTracker:
     def get_slot(self, slot, within_turns=None):
         slot = self.slots.get(slot)
         if slot:
+            if slot.value is None:
+                return None
             if within_turns is not None and self.turns - slot.turn_no + 1 > within_turns:
                 return None
             return slot.value
         return None
-    
+
     def get_slot_values(self, within_turns=None):
         slot_values = {}
         for slot_name, slot in self.slots.items():
@@ -134,7 +136,7 @@ class DialogueStateTracker:
             else:
                 return [value["value"] for value in values]
         return None
-    
+
     def get_last_n_turns_events(self, turns, ignoring_in_form_skills=True):
         events = []
         if turns == 0:

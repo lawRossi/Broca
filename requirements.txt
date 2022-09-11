@@ -3,3 +3,7 @@ elasticsearch_dsl
 pyahocorasick
 git+https://github.com/lawRossi/time_extractor.git
 arrow
+git+https://github.com/lawRossi/semantic_matching.git
+faiss-cpu==1.7.2
+annoy==1.17.0
+lmdb==0.97

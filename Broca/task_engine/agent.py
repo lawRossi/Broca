@@ -7,16 +7,15 @@ import json
 import re
 
 from Broca.utils import find_class, list_class
-from Broca.task_engine.slot import Slot
 from .event import UserUttered, BotUttered
-from .skill import ComplexSkill, ConfirmSkill, ConfirmedSkill, FormSkill, ListenSkill, OptionSkill, ReplySkill, Skill, UndoSkill, DeactivateFormSkill
+from .skill import ComplexSkill, ConfirmSkill, ConfirmedSkill, FormSkill, ListenSkill
+from .skill import OptionSkill, ReplySkill, Skill, UndoSkill, DeactivateFormSkill
 
 
 class Agent:
     skill_pattern = re.compile("(?P<name>[a-zA-Z_0-9]+)?(:(?P<parameters>\{.+\})$)?")
 
-    def __init__(self, name, parser, tracker_store, policy, intents, slots, 
-            prompt_trigger=None):
+    def __init__(self, name, parser, tracker_store, policy, intents, slots, prompt_trigger=None):
         self.name = name
         self.parser = parser
         tracker_store.agent = self
@@ -30,7 +29,7 @@ class Agent:
     def set_script(self, script):
         self.script = script
         self.policy.parse_script(script, self)
-    
+
     @classmethod
     def from_config_file(cls, config_file):
         with open(config_file, encoding="utf-8") as fi:
@@ -97,7 +96,7 @@ class Agent:
                     responses.append(bot_message)
         self.tracker_store.update_tracker(tracker)
         return responses
-    
+
     def parse(self, message):
         self._parse_if_needed(message)
 
@@ -145,8 +144,9 @@ class Agent:
 
     def load_skills(self, skill_module):
         for cls in list_class(skill_module):
-            if issubclass(cls, Skill) and cls not in [Skill, FormSkill, ReplySkill, ConfirmSkill, 
-                    OptionSkill, ConfirmedSkill, ComplexSkill]:
+            if issubclass(cls, Skill) and cls not in \
+                    [Skill, FormSkill, ReplySkill, ConfirmSkill, OptionSkill,
+                     ConfirmedSkill, ComplexSkill]:
                 self.add_skill(cls)
         self.add_skill(UndoSkill)
         self.add_skill(DeactivateFormSkill)
