@@ -75,8 +75,8 @@ class MemoryPolicy(Policy):
         self.memories = {}
         self.max_memory_depth = max_memory_depth
         self.max_scene_turns = 0
-        self.event_pattern = re.compile("^(?P<event>([a-zA-Z\d_]+?))(?P<parameters>\{.+\}$)")
-        self.skill_parameters = re.compile(":\{.+\}")
+        self.event_pattern = re.compile(r"^(?P<event>([a-zA-Z\d_]+?))(?P<parameters>\{.+\}$)")
+        self.skill_parameters = re.compile(r":\{.+\}")
 
     def predict_skill_probabilities(self, tracker):
         skill = self.search_memory(tracker)
@@ -156,11 +156,66 @@ class MemoryPolicy(Policy):
         self.max_scene_turns = max(self.max_scene_turns, turns)
 
 
+class RulePolicy(Policy):
+    def __init__(self):
+        super().__init__()
+        self.name = "rule_policy"
+        self.rules = []
+
+    def predict_skill_probabilities(self, tracker):
+        probabilities = {}
+        state = tracker.current_state()
+        if state["latest_skill"] == "listen":
+            for rule in self.rules:
+                if rule.apply(tracker):
+                    probabilities[rule.skill] = 1.0
+
+        return probabilities
+
+    def parse_script(self, script, agent):
+        for rule in script["rules"]:
+            self.rules.append(Rule.from_config(rule))
+
+
+class Rule:
+    def __init__(self):
+        self.active_form = None
+        self.trigger_intent = None
+        self.skill = None
+
+    def apply(self, tracker):
+        if self.active_form is not None:
+            if tracker.active_form != self.active_form:
+                return False
+
+        if self.trigger_intent is not None:
+            message = tracker.latest_message
+            if message is None:
+                return False
+            intent = message.get("intent")
+            if intent is None:
+                return False
+            if intent.get("agent") != self.trigger_intent["agent"]:
+                return False
+            if intent.get("name") != self.trigger_intent["intent"]:
+                return False
+
+        return True
+
+    @classmethod
+    def from_config(cls, config):
+        rule = cls()
+        rule.active_form = config.get("active_form")
+        rule.trigger_intent = config.get("trigger_intent")
+        rule.skill = config.get("skill")
+        return rule
+
+
 class EnsemblePolicy(Policy):
     def __init__(self, policies):
         super().__init__()
         self.policies = policies
-    
+
     def pick_skill(self, tracker):
         policy_probabilities = self.predict_skill_probabilities(tracker)
         if policy_probabilities:

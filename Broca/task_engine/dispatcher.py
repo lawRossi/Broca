@@ -34,7 +34,7 @@ class DefaultDispatcher(Dispatcher):
             for agent in agents:
                 if agent.name == agent_name:
                     return agent
-        elif agent_name in["public", "external"]:
+        elif agent_name in ["public", "external"]:
             for agent in agents:
                 if agent.can_handle_message(message):
                     return agent
