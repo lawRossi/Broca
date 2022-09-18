@@ -3,12 +3,12 @@
 @time: 2021-01-26
 """
 
-from collections import OrderedDict, defaultdict
+from collections import defaultdict
 import re
 
 from Broca.message import BotMessage
 from .event import SkillStarted, SkillEnded, BotUttered, SlotSetted
-from .event import Form, Undo, Popup, PopupEnded
+from .event import Form, Undo
 
 
 class Skill:
@@ -68,11 +68,13 @@ class FormSkill(Skill):
     slot_trials = defaultdict(lambda: defaultdict(int))
     stages = defaultdict(lambda: dict())
 
-    def __init__(self):
+    def __init__(self, required_slots):
         super().__init__()
-        self.required_slots = {}
+        self.required_slots = required_slots
+        self._build_utter_slot_func(required_slots)
         self.terminated = False
         self.cached_events = []
+        self.max_slot_trials = 3
 
     def from_entity(self, entity, intents=None, not_intents=None):
         return {"type": self.FROM_ENTITY, "entity": entity, "intents": intents, "not_intents": not_intents}
@@ -84,11 +86,12 @@ class FormSkill(Skill):
         return {"type": self.FROM_TEXT, "intents": intents, "not_intents": not_intents}
 
     def slot_mappings(self):
-        return {}
+        return {slot: self.required_slots[slot].get("mapping", [self.from_entity(slot)])
+                for slot in self.required_slots}
 
     def get_mappings_for_slot(self, slot_name):
         mappings = self.slot_mappings()
-        return mappings.get(slot_name, [self.from_entity(slot_name)])
+        return mappings.get(slot_name)
 
     def is_desired_intent(self, slot_mapping, tracker):
         intent = tracker.get_latest_intent()
@@ -99,6 +102,22 @@ class FormSkill(Skill):
     def is_desired_entity(self, slot_mapping, tracker):
         entity = slot_mapping["entity"]
         return tracker.get_latest_entity_values(entity) is not None
+
+    def _build_utter_slot_func(self, required_slots):
+        for slot in required_slots:
+            def func(tracker, slot):
+                utterance = required_slots[slot].get("utterance")
+                retry_utterance = required_slots[slot].get("retry_utterance", utterance)
+                fail_utterance = required_slots[slot].get("fail_utterance", "抱歉，这次没帮到你，已退出流程")
+
+                if self._get_slot_trials(tracker.sender_id, slot) == 1:
+                    return utterance
+                elif self._get_slot_trials(tracker.sender_id, slot) == self.max_slot_trials:
+                    return fail_utterance
+                else:
+                    return retry_utterance
+
+            setattr(self, f"utter_ask_{slot}", func)
 
     def extract_required_slots(self, tracker):
         slot_dict = {}
@@ -178,27 +197,28 @@ class FormSkill(Skill):
         events = self._activate_if_required(tracker)
         slot_dict = self.extract_required_slots(tracker)
         events.extend([SlotSetted(slot, value) for slot, value in slot_dict.items() if tracker.get_slot(slot) != value])
+        sender_id = tracker.sender_id
         next_to_fill_slot = None
         for slot_name in self.required_slots:
-            if slot_name not in slot_dict and not self._is_slot_filled(tracker.sender_id, slot_name):
+            if slot_name not in slot_dict and not self._is_slot_filled(sender_id, slot_name):
                 next_to_fill_slot = slot_name
                 break
         if next_to_fill_slot:
+            self._record_slot_trails(sender_id, next_to_fill_slot)
             if hasattr(self, f"utter_ask_{next_to_fill_slot}"):
                 utter_func = getattr(self, f"utter_ask_{next_to_fill_slot}")
-                utterance = utter_func(tracker)
+                utterance = utter_func(tracker, next_to_fill_slot)
                 if utterance:
-                    self.utter(utterance, tracker.sender_id)
-            self._record_slot_trails(tracker.sender_id, next_to_fill_slot)
-            if self.terminated:
-                self.slot_trials[tracker.sender_id].clear()
-                return [Form(None)]
+                    self.utter(utterance, sender_id)
+            if self._get_slot_trials(sender_id, next_to_fill_slot) == self.max_slot_trials:
+                self._terminate(sender_id)
+                events.append(Form(None))
         else:
             snapshot = tracker.snapshot()
             snapshot["slots"].update(slot_dict)
             events.extend(self._submit(snapshot))
             events.append(Form(None))  # deactivate
-            self._terminate(tracker.sender_id)
+            self._terminate(sender_id)
         return events
 
     def _get_cached_slot(self, sender_id, slot):
@@ -226,7 +246,7 @@ class FormSkill(Skill):
         self.slot_trials[key].clear()
 
     def _check_stage(self, tracker):
-        stage = self.stages.get(self.name, {}).get(tracker.sender_id, None) 
+        stage = self.stages.get(self.name, {}).get(tracker.sender_id, None)
         if stage is None:
             self.stages[self.name][tracker.sender_id] = self.STARTED
         elif stage == self.STARTED:
@@ -236,15 +256,6 @@ class FormSkill(Skill):
         self.terminated = True
         self.stages[self.name][sender_id] = None
         self._reset_slot_trails(sender_id)
-
-    def _show_popup(self, tracker, popup_utterance, options=None):
-        popup = "option_skill" if options is not None else "confirm_skill"
-        self.cached_events.append(Popup(popup))
-        self.cached_events.append(SlotSetted("popup_utterance", popup_utterance))
-        if options:
-            self.cached_events.append(SlotSetted("options_slot", options))
-        self.cached_events.append(SlotSetted("option_slot", None))
-        self.cached_events.append(SkillEnded("listen"))
 
 
 class DeactivateFormSkill(Skill):
@@ -265,71 +276,78 @@ class UndoSkill(Skill):
         return [Undo()]
 
 
-class ConfirmSkill(FormSkill):
-    def __init__(self):
-        super().__init__()
-        self.name = "confirm_skill"
-        self.required_slots = OrderedDict({"confirmed_slot": {"prefilled": False}})
-
-    def slot_mappings(self):
-        return {"confirmed_slot": [self.from_text()]}
-
-    def validate_confirmed_slot(self, value, tracker):
-        if value.lower() in ["是的", "要", "没问题", "ok", "确定", "确认", "好的", "没错", "嗯嗯"]:
-            return True
-        elif value in ["取消", "放弃", "不是", "不要", "否"]:
-            return False
-        else:
-            trials = self._get_slot_trials(tracker.sender_id, "confirmed_slot")
-            if trials < 2:
-                return None
-            return False
-
-    def utter_ask_confirmed_slot(self, tracker):
-        utterance = tracker.get_slot("popup_utterance")
-        return utterance
-
-    def perform(self, tracker, **parameters):
-        events = super().perform(tracker, **parameters)
-        if self.terminated:
-            events.append(PopupEnded())
-            events.append(SkillEnded("listen"))
-        return events
-
-
 class OptionSkill(FormSkill):
-    number = "\d+|[一二三四五六七八九十]"
+    number = r"\d+|[一二三四五六七八九十]"
     reference = re.compile(f"((?P<base>上面|下面|倒数|前面|后面|底下)?第)?(?P<index>{number})(个|这个|那个)?")
     top = re.compile("(最)?上面(的|那个|这个|个)")
     middle = re.compile("(最)?中间(的|那个|这个|个)")
     bottom = re.compile("(最)?(下面|底下|后|后面)(一个|的|那个|这个|个)")
-    description = re.compile("(?P<term>.+?)(这个|那个|的)?")
+    description = re.compile("(?P<term>.+)(这个|那个|的)?")
     digit_mapping = {"一": 1, "二": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
     base_mapping = {"上面": 1, "下面": -1, "倒数": -1, "前面": 1, "后面": -1, "底下": -1}
-    cached_message_ids = defaultdict(set)
 
-    def __init__(self):
-        super().__init__()
-        self.name = "option_skill"
-        self.required_slots = OrderedDict({"option_slot": {"prefilled": False}})
+    def __init__(self, required_slots):
+        super().__init__(required_slots)
+        for slot in required_slots:
+            if "options" in required_slots[slot]:
+                self._build_option_validate_func(slot)
+        self.processed_message_ids = defaultdict(set)
 
-    def slot_mappings(self):
-        return {"option_slot": [self.from_text()]}
+    def _build_utter_slot_func(self, required_slots):
+        for slot in required_slots:
+            def func(tracker, slot):
+                utterance = required_slots[slot].get("utterance")
+                if "options" in required_slots[slot]:
+                    options = required_slots[slot]["options"]
+                    retry_utterance = utterance + f"(请输入数字1-{len(options)}进行选择,或输入退出)"
+                    for i, option in enumerate(options):
+                        utterance += f"\n  {i+1}:" + option["text"]
+                        retry_utterance += f"\n  {i+1}:" + option["text"]
+                else:
+                    retry_utterance = required_slots[slot].get("retry_utterance", utterance)
+                fail_utterance = required_slots[slot].get("fail_utterance", "抱歉，这次没帮到你，已退出流程")
 
-    def validate_option_slot(self, value, tracker):
-        msg = tracker.latest_message
-        if msg.message_id in self.cached_message_ids[msg.sender_id]:
-            return None
+                if self._get_slot_trials(tracker.sender_id, slot) == 1:
+                    return utterance
+                elif self._get_slot_trials(tracker.sender_id, slot) == self.max_slot_trials:
+                    return fail_utterance
+                else:
+                    return retry_utterance
 
-        options = tracker.get_slot("options_slot")
-        index = self._parse_reference(value, options)
-        if index is None:
-            index = self._parse_description(value, options)
-        if index is not None and -len(options) <= index < len(options):
-            self.cached_message_ids[msg.sender_id].add(msg.message_id)
-            return options[index]
-        else:
-            return None
+            setattr(self, f"utter_ask_{slot}", func)
+
+    def _build_option_validate_func(self, slot):
+        def func(value, tracker):
+            not_filled_slots = 0
+            for to_fill_slot in self.required_slots:
+                if to_fill_slot == slot:
+                    break
+                if not self._is_slot_filled(tracker.sender_id, to_fill_slot):
+                    not_filled_slots += 1
+
+            if not_filled_slots == 0:
+                sender_id = tracker.sender_id
+                message_id = tracker.latest_message.message_id
+                if self._get_slot_trials(sender_id, slot) == 0:
+                    self.cached_events.append(SlotSetted("options_slot", self.required_slots[slot]["options"]))
+                    return None
+
+                if message_id in self.processed_message_ids.get(sender_id, {}):
+                    return None
+
+                options = tracker.get_slot("options_slot")
+                index = self._parse_reference(value, options)
+                if index is None:
+                    index = self._parse_description(value, options)
+                if index is not None and -len(options) <= index < len(options):
+                    self.processed_message_ids[sender_id].add(message_id)
+                    return options[index]
+                else:
+                    return None
+            else:
+                return None
+
+        setattr(self, f"validate_{slot}", func)
 
     def _parse_reference(self, value, options):
         index = None
@@ -350,6 +368,8 @@ class OptionSkill(FormSkill):
                 index = int(index)
             else:
                 index = self.digit_mapping[index]
+            if index < 1 or index > len(options):
+                return None
             if reverse:
                 index *= -1
             else:
@@ -359,120 +379,14 @@ class OptionSkill(FormSkill):
     def _parse_description(self, value, options):
         m = self.description.match(value)
         if m:
+            matched = 0
+            index = -1
             term = m.group("term")
             for i, option in enumerate(options):
-                if term in option["text"]:
-                    return i
+                if (not term.isdigit() and term in option["text"]) or term == option["text"]:
+                    index = i
+                    matched += 1
+            if matched == 1:
+                return index
+
         return None
-
-    def utter_ask_option_slot(self, tracker):
-        utterance = tracker.get_slot("popup_utterance")
-        options = tracker.get_slot("options_slot")
-        for i, option in enumerate(options):
-            utterance += f"\n  {i+1}:" + option["text"]
-        return utterance
-
-    def perform(self, tracker, **parameters):
-        events = super().perform(tracker, **parameters)
-        if self.terminated:
-            events.append(PopupEnded())
-            events.append(SkillEnded("listen"))
-        return events
-
-
-class ConfirmedSkill(FormSkill):
-    def __init__(self):
-        super().__init__()
-        self.required_slots = {"confirmed_slot": {"prefilled": False}}
-
-    def slot_mappings(self):
-        return {"confirmed_slot": [self.from_text()]}
-
-    def validate_confirmed_slot(self, slot_dict, tracker):
-        confirmed = tracker.get_slot("confirmed_slot")
-        if confirmed is None:
-            self._show_popup(tracker, self.confirm_utterance)
-        return confirmed
-
-    def _submit(self, tracker_snapshot):
-        confirmed = tracker_snapshot["slots"].get("confirmed_slot")
-        events = [SlotSetted("confirmed_slot", None)]
-        if confirmed:
-            events.extend(self._accept(tracker_snapshot))
-        else:
-            events.extend(self._reject(tracker_snapshot))
-        return events
-
-    def _accept(self, tracker_snapshot):
-        pass
-
-    def _reject(self, tracker_snapshot):
-        pass
-
-
-class ComplexSkill(FormSkill):
-    def __init__(self, slot_config):
-        super().__init__()
-        self.slot_config = slot_config
-        self.required_slots = OrderedDict()
-        for slot in slot_config.keys():
-            self.required_slots[slot] = {"prefilled": slot_config.get("prefilled", False)}
-            if "options" in slot_config[slot]:
-                self._build_option_validate_func(slot)
-            elif slot_config[slot].get("confirmed", False):
-                self._build_confirmed_validate_func(slot)
-        self.option_filled = False
-
-    def slot_mappings(self):
-        return {slot: self.slot_config[slot].get("mapping", [self.from_text()])
-                for slot in self.slot_config.keys()}
-
-    def _build_option_validate_func(self, slot):
-        def func(value, tracker):
-            not_filled_slots = 0
-            for to_fill_slot in self.required_slots.keys():
-                if to_fill_slot == slot:
-                    break
-                if not self._is_slot_filled(tracker.sender_id, to_fill_slot):
-                    not_filled_slots += 1
-            if not_filled_slots == 0:
-                value = tracker.get_slot("option_slot", 1)
-                if self.option_filled or not isinstance(value, dict):
-                    popup_utterance = self.slot_config.get(slot).get("popup_utterance")
-                    options = self.slot_config.get(slot).get("options")
-                    self._show_popup(tracker, popup_utterance, options)
-                    return None
-                self.option_filled = True
-                return value
-            else:
-                return None
-
-        setattr(self, f"validate_{slot}", func)
-
-    def _build_confirmed_validate_func(self, slot):
-        def func(value, tracker):
-            not_filled_slots = 0
-            for to_fill_slot in self.required_slots.keys():
-                if to_fill_slot == slot:
-                    break
-                if not self._is_slot_filled(tracker.sender_id, to_fill_slot):
-                    not_filled_slots += 1
-            if not_filled_slots == 0:
-                value = tracker.get_slot("option_slot", 1)
-                if self.option_filled or not isinstance(value, dict):
-                    popup_utterance = self.slot_config.get(slot).get("popup_utterance")
-                    options = [{"text": "否", "value": False}, {"text": "是", "value": True}]
-                    self._show_popup(tracker, popup_utterance, options)
-                    return None
-                self.option_filled = True
-                return value["value"]
-            else:
-                return None
-
-        setattr(self, f"validate_{slot}", func)
-
-    def perform(self, tracker, **parameters):
-        events = super().perform(tracker, **parameters)
-        events.append(SlotSetted("option_slot", None))
-        events.append(SlotSetted("confirmed_slot", None))
-        return events

@@ -8,8 +8,8 @@ import re
 
 from Broca.utils import find_class, list_class
 from .event import UserUttered, BotUttered
-from .skill import ComplexSkill, ConfirmSkill, ConfirmedSkill, FormSkill, ListenSkill
-from .skill import OptionSkill, ReplySkill, Skill, UndoSkill, DeactivateFormSkill
+from .skill import DeactivateFormSkill, FormSkill, ListenSkill
+from .skill import OptionSkill, ReplySkill, Skill, UndoSkill
 
 
 class Agent:
@@ -145,13 +145,10 @@ class Agent:
     def load_skills(self, skill_module):
         for cls in list_class(skill_module):
             if issubclass(cls, Skill) and cls not in \
-                    [Skill, FormSkill, ReplySkill, ConfirmSkill, OptionSkill,
-                     ConfirmedSkill, ComplexSkill]:
+                    [Skill, FormSkill, ReplySkill, OptionSkill]:
                 self.add_skill(cls)
         self.add_skill(UndoSkill)
         self.add_skill(DeactivateFormSkill)
-        self.add_skill(ConfirmSkill)
-        self.add_skill(OptionSkill)
 
     def collect_intent_patterns(self):
         intent_patterns = []
