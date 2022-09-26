@@ -3,6 +3,7 @@
 Created At: 2021-01-30
 """
 
+
 class MessageChannel:
     def send_message(self, bot_message):
         pass

@@ -132,7 +132,7 @@ class MemoryPolicy(Policy):
                     if event_name in ["form", "popup"]:
                         parameters = json.loads(parameter_string)
                         skill_name = parameters["name"]
-                        if skill_name is not None: 
+                        if skill_name is not None:
                             active_form = skill_name
                             states = tracker.get_past_states()
                             memory_key = json.dumps(states[-self.max_memory_depth:])
@@ -185,7 +185,7 @@ class Rule:
 
     def apply(self, tracker):
         if self.active_form is not None:
-            if tracker.active_form != self.active_form:
+            if tracker.active_form is None or self.active_form.match(tracker.active_form) is None:
                 return False
 
         if self.trigger_intent is not None:
@@ -205,7 +205,7 @@ class Rule:
     @classmethod
     def from_config(cls, config):
         rule = cls()
-        rule.active_form = config.get("active_form")
+        rule.active_form = re.compile(config.get("active_form"))
         rule.trigger_intent = config.get("trigger_intent")
         rule.skill = config.get("skill")
         return rule

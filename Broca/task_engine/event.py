@@ -14,7 +14,7 @@ class Event:
 
     def __init__(self):
         self.backup = {}
-    
+
     def apply(self, tracker):
         pass
 
@@ -46,6 +46,7 @@ class UserUttered(Event):
     name = "user_uttered"
 
     LATEST_MESSAGE = "LATEST_MESSAGE"
+
     def __init__(self, user_message):
         super().__init__()
         self.message = user_message
@@ -58,7 +59,7 @@ class UserUttered(Event):
     def undo(self, tracker):
         tracker.pop_last_state()
         tracker.latest_message = self.backup[self.LATEST_MESSAGE]
-    
+
     def copy(self):
         return UserUttered(self.message)
 
@@ -95,7 +96,7 @@ class SkillEnded(Event):
     def undo(self, tracker):
         tracker.latest_skill = self.backup["latest_skill"]
         tracker.pop_last_state()
-    
+
     def copy(self):
         return SkillEnded(self.skill_name)
 
@@ -107,14 +108,14 @@ class SlotSetted(Event):
         super().__init__()
         self.slot = slot
         self.value = value
-    
+
     def apply(self, tracker):
         self.backup[self.slot] = tracker.get_slot(self.slot)
         tracker.set_slot(self.slot, self.value)
 
     def undo(self, tracker):
         tracker.set_slot(self.slot, self.backup[self.slot])
-    
+
     def copy(self):
         return SlotSetted(self.slot, self.value)
 
@@ -133,14 +134,14 @@ class Form(Event):
     def __init__(self, form):
         super().__init__()
         self.form = form
-    
+
     def apply(self, tracker):
         self.backup["form"] = tracker.active_form
         tracker.active_form = self.form
 
     def undo(self, tracker):
         tracker.active_form = self.backup["form"]
-    
+
     def copy(self):
         return Form(self.form)
 

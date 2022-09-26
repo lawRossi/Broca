@@ -7,6 +7,7 @@ from collections import defaultdict
 import re
 
 from Broca.message import BotMessage
+from Broca.utils import all_subclasses
 from .event import SkillStarted, SkillEnded, BotUttered, SlotSetted
 from .event import Form, Undo
 
@@ -257,6 +258,11 @@ class FormSkill(Skill):
         self.stages[self.name][sender_id] = None
         self._reset_slot_trails(sender_id)
 
+    def reset(self, sender_id):
+        self._reset_slot_cache(sender_id)
+        self._reset_slot_trails(sender_id)
+        self.stages[self.name][sender_id] = None
+
 
 class DeactivateFormSkill(Skill):
     def __init__(self):
@@ -264,6 +270,14 @@ class DeactivateFormSkill(Skill):
         self.name = "deactivate_form"
 
     def _perform(self, tracker, **parameters):
+        for cls in all_subclasses(FormSkill):
+            try:
+                form = cls()
+                if form.name == tracker.active_form:
+                    form.reset(tracker.sender_id)
+                    break
+            except:
+                pass
         return [Form(None)]
 
 
