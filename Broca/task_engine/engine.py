@@ -45,6 +45,7 @@ class Engine:
         if agent is None:  # the message has not been dispatched
             agent = self.dispatcher.dispatch(self.agents, message)
         if agent is not None:
+            message.set("agent", agent)
             return agent.handle_message(message)
         return []
 

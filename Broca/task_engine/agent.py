@@ -78,7 +78,9 @@ class Agent:
         skill_name = self.policy.pick_skill(tracker)
         responses = []
         if skill_name is not None:
+            skills = []
             while skill_name is not None:
+                skills.append(skill_name)
                 skill_name, parameters = self._parse_skill_name(skill_name)
                 skill = self.skills[skill_name]()
                 for event in skill.perform(tracker, **parameters):
@@ -87,6 +89,8 @@ class Agent:
                         bot_message = event.bot_message
                         responses.append(bot_message)
                 skill_name = self.policy.pick_skill(tracker)
+            message.set("skills", skills)
+
         elif "help_skill" in self.skills:  # perform help skill
             help_skill = self.skills["help_skill"]()
             for event in help_skill.perform(tracker):
@@ -94,6 +98,8 @@ class Agent:
                 if isinstance(event, BotUttered):
                     bot_message = event.bot_message
                     responses.append(bot_message)
+            message.set("skills", ["help_kill"])
+
         self.tracker_store.update_tracker(tracker)
         return responses
 

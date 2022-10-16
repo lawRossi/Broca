@@ -3,6 +3,7 @@
 Created At: 2020-12-13
 """
 from collections import defaultdict
+from datetime import datetime
 import json
 import re
 from uuid import uuid1
@@ -10,7 +11,7 @@ from uuid import uuid1
 
 class UserMessage:
 
-    def __init__(self, sender_id, text, external_intent=None, external_entities=None):
+    def __init__(self, sender_id, text, external_intent=None, external_entities=None, receive_time=None):
         self.message_id = uuid1()
         self.sender_id = sender_id
         self.text = text
@@ -23,6 +24,9 @@ class UserMessage:
             self.is_external = True
         else:
             self.is_external = False
+        self.receive_time = receive_time
+        if receive_time is None:
+            self.receive_time = datetime.now()
 
     def set(self, key, value):
         self.parsed_data[key] = value
@@ -34,7 +38,13 @@ class UserMessage:
         agent = self.parsed_data.get("agent")
         if agent is not None and not isinstance(agent, str):
             agent = agent.name
-        parsed_data = {"intent": self.get("intent"), "entities": self.get("entities"), "agent": agent}
+        parsed_data = {
+            "intent": self.get("intent"),
+            "entities": self.get("entities"),
+            "agent": agent,
+            "skills": self.get("skills")
+        }
+
         return {
             "sender_id": self.sender_id,
             "text": self.text,

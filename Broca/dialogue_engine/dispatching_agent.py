@@ -17,7 +17,9 @@ class DispatchingAgent(Agent):
         responses = []
         triggered_event = None
         if skill_name is not None:
+            skills = []
             while skill_name is not None:
+                skills.append(skill_name)
                 skill_name, parameters = self._parse_skill_name(skill_name)
                 skill = self.skills[skill_name]()
                 for event in skill.perform(tracker, **parameters):
@@ -28,6 +30,9 @@ class DispatchingAgent(Agent):
                     elif isinstance(event, AgentTriggered):
                         triggered_event = event
                 skill_name = self.policy.pick_skill(tracker)
+            message.set("agent", self.name)
+            message.set("skills", skills)
+
         self.tracker_store.update_tracker(tracker)
         if triggered_event is not None:
             new_message = UserMessage(
@@ -37,4 +42,5 @@ class DispatchingAgent(Agent):
                 external_entities=triggered_event.entities
             )
             responses.extend(self.dialogue_engine.handel_message_with_engines(new_message))
+            message.parsed_data.update(new_message.parsed_data)
         return responses
