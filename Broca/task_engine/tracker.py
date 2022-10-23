@@ -20,6 +20,8 @@ class DialogueStateTracker:
         self.events = []
         self.past_states = []
         self.active_form = None
+        self.active_scene = None
+        self.scene_expire_time = None
         self.turns = 0
 
     def init_copy(self):

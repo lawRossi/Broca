@@ -6,6 +6,7 @@
 from collections import OrderedDict
 import json
 import re
+import time
 
 from Broca.task_engine.event import BotUttered, Event, Form, SkillEnded
 from Broca.task_engine.tracker import DialogueStateTracker
@@ -65,6 +66,18 @@ class FormPolicy(Policy):
     def predict_skill_probabilities(self, tracker):
         if tracker.latest_skill == "listen" and tracker.active_form is not None:
             return {tracker.active_form: 1.0}
+        return {}
+
+
+class ScenePolicy(Policy):
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = "scene_policy"
+
+    def predict_skill_probabilities(self, tracker):
+        if tracker.latest_skill == "listen" and tracker.active_form is None:
+            if tracker.active_scene is not None and time.time() < tracker.scene_expire_time:
+                return {tracker.active_scene: 1.0}
         return {}
 
 

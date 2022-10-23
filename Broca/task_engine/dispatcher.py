@@ -25,7 +25,7 @@ class Dispatcher:
 class DefaultDispatcher(Dispatcher):
     def dispatch(self, agents, message):
         for agent in agents:
-            if agent.is_active(message.sender_id):
+            if agent.is_active(message.sender_id) and agent.can_handle_message(message):
                 return agent
 
         intent = message.get("intent")

@@ -146,7 +146,7 @@ class Agent:
 
     def is_active(self, sender_id):
         tracker = self.tracker_store.get_tracker(sender_id)
-        return tracker.active_form is not None
+        return tracker.active_form is not None or tracker.active_scene is not None
 
     def load_skills(self, skill_module):
         for cls in list_class(skill_module):

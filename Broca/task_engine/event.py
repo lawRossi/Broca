@@ -151,6 +151,33 @@ class Form(Event):
         return cls(parameters["name"])
 
 
+class Scene(Event):
+    name = "scene"
+
+    def __init__(self, scene, expire_time):
+        super().__init__()
+        self.scene = scene
+        self.expire_time = expire_time
+
+    def apply(self, tracker):
+        self.backup["scene"] = tracker.active_scene
+        self.backup["expire_time"] = tracker.scene_expire_time
+        tracker.active_scene = self.scene
+        tracker.scene_expire_time = self.expire_time
+
+    def undo(self, tracker):
+        tracker.active_scene = self.backup["scene"]
+        tracker.scene_expire_time = self.backup["expire_time"]
+
+    def copy(self):
+        return Scene(self.scene, self.expire_time)
+
+    @classmethod
+    def from_parameters(cls, parameter_string=None):
+        parameters = json.loads(parameter_string)
+        return cls(parameters["name"], parameters["scene_expire_time"])
+
+
 class Undo(Event):
     name = "undo"
 
