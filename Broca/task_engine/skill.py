@@ -87,7 +87,7 @@ class FormSkill(Skill):
         return {"type": self.FROM_TEXT, "intents": intents, "not_intents": not_intents}
 
     def slot_mappings(self):
-        return {slot: self.required_slots[slot].get("mapping", [self.from_entity(slot)])
+        return {slot["name"]: slot.get("mapping", [self.from_entity(slot["name"])])
                 for slot in self.required_slots}
 
     def get_mappings_for_slot(self, slot_name):
@@ -105,24 +105,31 @@ class FormSkill(Skill):
         return tracker.get_latest_entity_values(entity) is not None
 
     def _build_utter_slot_func(self, required_slots):
-        for slot in required_slots:
-            def func(tracker, slot):
-                utterance = required_slots[slot].get("utterance")
-                retry_utterance = required_slots[slot].get("retry_utterance", utterance)
-                fail_utterance = required_slots[slot].get("fail_utterance", "抱歉，这次没帮到你，已退出流程")
+        def func(tracker, slot):
+            if self._get_slot_trials(tracker.sender_id, slot) == 1:
+                return self.slot_utterances[slot]["utterance"]
+            elif self._get_slot_trials(tracker.sender_id, slot) == self.max_slot_trials:
+                return self.slot_utterances[slot]["fail_utterance"]
+            else:
+                return self.slot_utterances[slot]["retry_utterance"]
 
-                if self._get_slot_trials(tracker.sender_id, slot) == 1:
-                    return utterance
-                elif self._get_slot_trials(tracker.sender_id, slot) == self.max_slot_trials:
-                    return fail_utterance
-                else:
-                    return retry_utterance
+        self.slot_utterances = {}
+        for slot_config in required_slots:
+            utterance = slot_config.get("utterance")
+            retry_utterance = slot_config.get("retry_utterance", utterance)
+            fail_utterance = slot_config.get("fail_utterance", "抱歉，这次没帮到你，已退出流程")
+            self.slot_utterances[slot_config["name"]] = {
+                "utterance": utterance,
+                "retry_utterance": retry_utterance,
+                "fail_utterance": fail_utterance
+            }
 
-            setattr(self, f"utter_ask_{slot}", func)
+            setattr(self, f"utter_ask_{slot_config['name']}", func)
 
     def extract_required_slots(self, tracker):
         slot_dict = {}
-        for slot_to_fill, config in self.required_slots.items():
+        for slot_config in self.required_slots:
+            slot_to_fill = slot_config["name"]
             if self._is_slot_filled(tracker.sender_id, slot_to_fill):
                 continue
             for slot_mapping in self.get_mappings_for_slot(slot_to_fill):
@@ -136,10 +143,10 @@ class FormSkill(Skill):
                         value = tracker.latest_message.text
                     if value is None:
                         value = self._get_cached_slot(tracker.sender_id, slot_to_fill)  # try to find the prefilled value in this form
-                        if value is None and config.get("prefilled", True):  # try to find a prefilled slot vlaue
+                        if value is None and slot_config.get("prefilled", True):  # try to find a prefilled slot vlaue
                             value = tracker.get_slot(slot_to_fill)
-                    if value is None and config.get("default") is not None:
-                        default = config["default"]
+                    if value is None and slot_config.get("default") is not None:
+                        default = slot_config["default"]
                         if callable(default):
                             value = default()
                         else:
@@ -200,7 +207,8 @@ class FormSkill(Skill):
         events.extend([SlotSetted(slot, value) for slot, value in slot_dict.items() if tracker.get_slot(slot) != value])
         sender_id = tracker.sender_id
         next_to_fill_slot = None
-        for slot_name in self.required_slots:
+        for slot_config in self.required_slots:
+            slot_name = slot_config["name"]
             if slot_name not in slot_dict and not self._is_slot_filled(sender_id, slot_name):
                 next_to_fill_slot = slot_name
                 break
@@ -276,7 +284,7 @@ class DeactivateFormSkill(Skill):
                 if form.name == tracker.active_form:
                     form.reset(tracker.sender_id)
                     break
-            except:
+            except Exception:
                 pass
         return [Form(None)]
 
@@ -302,38 +310,44 @@ class OptionSkill(FormSkill):
 
     def __init__(self, required_slots):
         super().__init__(required_slots)
-        for slot in required_slots:
-            if "options" in required_slots[slot]:
-                self._build_option_validate_func(slot)
+        for slot_config in required_slots:
+            if "options" in slot_config:
+                self._build_option_validate_func(slot_config["name"])
         self.processed_message_ids = defaultdict(set)
 
     def _build_utter_slot_func(self, required_slots):
-        for slot in required_slots:
-            def func(tracker, slot):
-                utterance = required_slots[slot].get("utterance")
-                if "options" in required_slots[slot]:
-                    options = required_slots[slot]["options"]
-                    retry_utterance = utterance + f"(请输入数字1-{len(options)}进行选择,或输入退出)"
-                    for i, option in enumerate(options):
-                        utterance += f"\n  {i+1}:" + option["text"]
-                        retry_utterance += f"\n  {i+1}:" + option["text"]
-                else:
-                    retry_utterance = required_slots[slot].get("retry_utterance", utterance)
-                fail_utterance = required_slots[slot].get("fail_utterance", "抱歉，这次没帮到你，已退出流程")
-
-                if self._get_slot_trials(tracker.sender_id, slot) == 1:
-                    return utterance
-                elif self._get_slot_trials(tracker.sender_id, slot) == self.max_slot_trials:
-                    return fail_utterance
-                else:
-                    return retry_utterance
-
-            setattr(self, f"utter_ask_{slot}", func)
+        def func(tracker, slot):
+            if self._get_slot_trials(tracker.sender_id, slot) == 1:
+                return self.slot_utterances[slot]["utterance"]
+            elif self._get_slot_trials(tracker.sender_id, slot) == self.max_slot_trials:
+                return self.slot_utterances[slot]["fail_utterance"]
+            else:
+                return self.slot_utterances[slot]["retry_utterance"]
+        
+        self.slot_utterances = {}
+        for slot_config in required_slots:
+            utterance = slot_config.get("utterance")
+            if "options" in slot_config:
+                options = slot_config["options"]
+                retry_utterance = utterance + f"(请输入数字1-{len(options)}进行选择,或输入退出)"
+                for i, option in enumerate(options):
+                    utterance += f"\n  {i+1}:" + option["text"]
+                    retry_utterance += f"\n  {i+1}:" + option["text"]
+            else:
+                retry_utterance = slot_config.get("retry_utterance", utterance)
+            fail_utterance = slot_config.get("fail_utterance", "抱歉，这次没帮到你，已退出流程")
+            self.slot_utterances[slot_config["name"]] = {
+                "utterance": utterance,
+                "retry_utterance": retry_utterance,
+                "fail_utterance": fail_utterance
+            }
+            setattr(self, f"utter_ask_{slot_config['name']}", func)
 
     def _build_option_validate_func(self, slot):
         def func(value, tracker):
             not_filled_slots = 0
-            for to_fill_slot in self.required_slots:
+            for slot_config in self.required_slots:
+                to_fill_slot = slot_config["name"]
                 if to_fill_slot == slot:
                     break
                 if not self._is_slot_filled(tracker.sender_id, to_fill_slot):
@@ -343,7 +357,7 @@ class OptionSkill(FormSkill):
                 sender_id = tracker.sender_id
                 message_id = tracker.latest_message.message_id
                 if self._get_slot_trials(sender_id, slot) == 0:
-                    self.cached_events.append(SlotSetted("options_slot", self.required_slots[slot]["options"]))
+                    self.cached_events.append(SlotSetted("options_slot", slot_config["options"]))
                     return None
 
                 if message_id in self.processed_message_ids.get(sender_id, {}):
