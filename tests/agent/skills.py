@@ -1,6 +1,5 @@
 from Broca.task_engine.event import SlotSetted
-from Broca.task_engine.skill import ComplexSkill, Skill, FormSkill, ConfirmedSkill
-from collections import OrderedDict
+from Broca.task_engine.skill import FormSkill, OptionSkill, Skill
 
 
 class ReportDateSkill(Skill):
@@ -49,21 +48,15 @@ class GreetSkill(Skill):
 
 class GreetFormSkill(FormSkill):
     def __init__(self):
-        super().__init__()
+        required_slots = [
+            {"name": "name", "mapping": [self.from_entity("name")], "utterance": "请问你叫什么名字？"},
+            {"name": "age", "mapping": [self.from_entity("age")], "utterance": "请问你多少岁了?"}
+        ]
+        super().__init__(required_slots)
         self.name = "greet_form"
         self.trigger_intent = "hey"
         self.intent_patterns = ["你好"]
-        self.required_slots = OrderedDict({"name": {"prefilled": True}, "age": {"prefilled": False}})
 
-    def slot_mappings(self):
-        return {"name": [self.from_entity("name")], "age": [self.from_entity("age")]}
-    
-    def utter_ask_name(self, tracker):
-        return "请问你叫什么名字？"
-
-    def utter_ask_age(self, tracker):
-        return "请问你多少岁了?"
-    
     def _submit(self, tracker_snapshot):
         name = tracker_snapshot["slots"]["name"][0]
         age = tracker_snapshot["slots"]["age"][0]
@@ -71,27 +64,18 @@ class GreetFormSkill(FormSkill):
         return []
 
 
-class PraiseSkill(ConfirmedSkill):
-    def __init__(self):
-        super().__init__()
-        self.name = "praise_form"
-        self.trigger_intent = "praise_me"
-        self.intent_patterns = ["快夸我"]
-        self.confirm_utterance = "确定吗？"
-
-    def _accept(self, tracker_snapshot):
-        self.utter("你真棒", tracker_snapshot["sender_id"])
-        return []
-    
-    def _reject(self, tracker_snapshot):
-        return []
-
-
-class BookTicketSkill(ComplexSkill):
+class BookTicketSkill(OptionSkill):
     def __init__(self):
         options = [{"value": "海王", "text": "海王"}, {"value": "魔戒", "text": "魔戒"}]
-        slot_config = {"movie": {"options": options, "popup_utterance": "你想看哪部电影？"}}
-        super().__init__(slot_config)
+        required_slots = [
+            {
+                "name": "movie", 
+                "options": options,
+                "utterance": "你想看哪部电影？",
+                "mapping": [self.from_text()]
+            }
+        ]
+        super().__init__(required_slots)
         self.name = "book_form"
         self.trigger_intent = "book_ticket"
         self.intent_patterns = ["我要买电影票"]

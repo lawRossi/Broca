@@ -41,5 +41,6 @@ script = {
         bot: form{"name": "greet_form"}
         bot: form{"name": null}
         """
-    ]
+    ],
+    "rules": []
 }

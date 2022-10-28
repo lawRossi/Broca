@@ -11,17 +11,15 @@
     "policy": {
         "class": "Broca.task_engine.policy.EnsemblePolicy",
         "policies": [
+            {"class": "Broca.task_engine.policy.RulePolicy"},
             {"class": "Broca.task_engine.policy.FormPolicy"},
+            {"class": "Broca.task_engine.policy.ScenePolicy"},
             {"class": "Broca.task_engine.policy.MemoryPolicy"},
             {"class": "Broca.task_engine.policy.MappingPolicy"}
         ]
     },
     "intents": {
-        "inform": {"use_entities": null},
-        "ask_date": {"use_entities": null},
-        "ask_weekday": {"use_entities": null},
-        "ask_weather": {"use_entities": null},
-        "ask_date_weekday": {"use_entities": null}
+        
     },
     "slots": [
         {"class": "Broca.task_engine.slot.Slot", "name": "popup_utterance"},

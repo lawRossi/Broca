@@ -96,13 +96,3 @@ user:我是罗西
 bot:请问你多少岁了?
 user:我20岁
 bot:你好呀，罗西，你20岁了呀
-
-user:快夸我
-bot:确定吗？
-user:确定
-bot:你真棒
-
-user:快夸我
-bot:确定吗？
-user:取消
-bot:null

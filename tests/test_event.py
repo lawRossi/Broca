@@ -1,4 +1,4 @@
-from Broca.task_engine.event import *
+from Broca.task_engine.event import Event, Form, SlotSetted, UserUttered
 
 
 if __name__ == "__main__":
