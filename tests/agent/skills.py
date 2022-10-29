@@ -1,5 +1,7 @@
-from Broca.task_engine.event import SlotSetted
-from Broca.task_engine.skill import FormSkill, OptionSkill, Skill
+import time
+
+from Broca.task_engine.event import Scene, SlotSetted
+from Broca.task_engine.skill import FormSkill, OptionSkill, ReplySkill, Skill
 
 
 class ReportDateSkill(Skill):
@@ -69,7 +71,7 @@ class BookTicketSkill(OptionSkill):
         options = [{"value": "海王", "text": "海王"}, {"value": "魔戒", "text": "魔戒"}]
         required_slots = [
             {
-                "name": "movie", 
+                "name": "movie",
                 "options": options,
                 "utterance": "你想看哪部电影？",
                 "mapping": [self.from_text()]
@@ -83,4 +85,32 @@ class BookTicketSkill(OptionSkill):
     def _submit(self, tracker_snapshot):
         movie = tracker_snapshot["slots"].get("movie")["text"]
         self.utter(f"已为你预定{movie}的票", tracker_snapshot["sender_id"])
-        return [SlotSetted("options_slot", None), SlotSetted("option_slot", None)]
+        return [SlotSetted("movie", None)]
+
+
+class ForceSkill(ReplySkill):
+    def __init__(self):
+        super().__init__()
+        self.name = "force_skill"
+        self.template = "一定要买"
+
+
+class TestSceneSkill(Skill):
+    def __init__(self):
+        super().__init__()
+        self.name = "test_scene"
+        self.trigger_intent = "test_scene"
+        self.intent_patterns = ["^测试场景$"]
+
+    def _perform(self, tracker):
+        message = tracker.latest_message
+        intent = message.get("intent")
+        if intent and intent["name"] == "test_scene":
+            self.utter("已进入场景测试", tracker.sender_id)
+            return [Scene(self.name, time.time() + 3)]
+        elif message.text == "退出":
+            self.utter("已退出场景测试", tracker.sender_id)
+            return [Scene(None, None)]
+        else:
+            self.utter("在测试场景呢", tracker.sender_id)
+            return [Scene(self.name, time.time() + 3)]

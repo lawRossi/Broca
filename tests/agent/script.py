@@ -42,5 +42,11 @@ script = {
         bot: form{"name": null}
         """
     ],
-    "rules": []
+    "rules": [
+        {
+            "active_form": "book_form",
+            "trigger_intent": {"agent": "agent", "intent": "regret"},
+            "skill": "force_skill"
+        }
+    ]
 }
