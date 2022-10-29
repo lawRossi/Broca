@@ -315,6 +315,19 @@ class OptionSkill(FormSkill):
                 self._build_option_validate_func(slot_config["name"])
         self.processed_message_ids = defaultdict(set)
 
+    def slot_mappings(self):
+        mappings = {}
+        for slot_config in self.required_slots:
+            mapping = slot_config.get("mapping")
+            if not mapping:
+                if "options" in slot_config:
+                    mapping = [self.from_text()]
+                else:
+                    mapping = [self.from_entity(slot_config["name"])]
+            mappings[slot_config["name"]] = mapping
+
+        return mappings
+
     def _build_utter_slot_func(self, required_slots):
         def func(tracker, slot):
             if self._get_slot_trials(tracker.sender_id, slot) == 1:
@@ -323,7 +336,7 @@ class OptionSkill(FormSkill):
                 return self.slot_utterances[slot]["fail_utterance"]
             else:
                 return self.slot_utterances[slot]["retry_utterance"]
-        
+
         self.slot_utterances = {}
         for slot_config in required_slots:
             utterance = slot_config.get("utterance")

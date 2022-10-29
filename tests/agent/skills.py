@@ -73,8 +73,7 @@ class BookTicketSkill(OptionSkill):
             {
                 "name": "movie",
                 "options": options,
-                "utterance": "你想看哪部电影？",
-                "mapping": [self.from_text()]
+                "utterance": "你想看哪部电影？"
             }
         ]
         super().__init__(required_slots)
