@@ -72,10 +72,12 @@ class FormSkill(Skill):
     def __init__(self, required_slots):
         super().__init__()
         self.required_slots = required_slots
-        self._build_utter_slot_func(required_slots)
         self.terminated = False
         self.cached_events = []
         self.max_slot_trials = 3
+        self.processed_message_ids = defaultdict(set)
+        self._build_utter_slot_func()
+        self._build_text_validate_func()
 
     def from_entity(self, entity, intents=None, not_intents=None):
         return {"type": self.FROM_ENTITY, "entity": entity, "intents": intents, "not_intents": not_intents}
@@ -104,7 +106,7 @@ class FormSkill(Skill):
         entity = slot_mapping["entity"]
         return tracker.get_latest_entity_values(entity) is not None
 
-    def _build_utter_slot_func(self, required_slots):
+    def _build_utter_slot_func(self):
         def func(tracker, slot):
             if self._get_slot_trials(tracker.sender_id, slot) == 1:
                 return self.slot_utterances[slot]["utterance"]
@@ -114,7 +116,7 @@ class FormSkill(Skill):
                 return self.slot_utterances[slot]["retry_utterance"]
 
         self.slot_utterances = {}
-        for slot_config in required_slots:
+        for slot_config in self.required_slots:
             utterance = slot_config.get("utterance")
             retry_utterance = slot_config.get("retry_utterance", utterance)
             fail_utterance = slot_config.get("fail_utterance", "抱歉，这次没帮到你，已退出流程")
@@ -125,6 +127,21 @@ class FormSkill(Skill):
             }
 
             setattr(self, f"utter_ask_{slot_config['name']}", func)
+
+    def _build_text_validate_func(self):
+        def validate_func(value, tracker):
+            message_id = tracker.latest_message.message_id
+            if message_id in self.processed_message_ids.get(tracker.sender_id, {}):
+                return None
+            else:
+                self.processed_message_ids[tracker.sender_id].add(message_id)
+                return value
+
+        for slot_config in self.required_slots:
+            slot_mappings = slot_config.get("mapping")
+            if slot_mappings and len(slot_mappings) == 1:
+                if slot_mappings[0]["type"] == self.FROM_TEXT:
+                    setattr(self, f"validate_{slot_config['name']}", validate_func)
 
     def extract_required_slots(self, tracker):
         slot_dict = {}
@@ -313,7 +330,6 @@ class OptionSkill(FormSkill):
         for slot_config in required_slots:
             if "options" in slot_config:
                 self._build_option_validate_func(slot_config["name"])
-        self.processed_message_ids = defaultdict(set)
 
     def slot_mappings(self):
         mappings = {}
@@ -328,7 +344,7 @@ class OptionSkill(FormSkill):
 
         return mappings
 
-    def _build_utter_slot_func(self, required_slots):
+    def _build_utter_slot_func(self):
         def func(tracker, slot):
             if self._get_slot_trials(tracker.sender_id, slot) == 1:
                 return self.slot_utterances[slot]["utterance"]
@@ -338,7 +354,7 @@ class OptionSkill(FormSkill):
                 return self.slot_utterances[slot]["retry_utterance"]
 
         self.slot_utterances = {}
-        for slot_config in required_slots:
+        for slot_config in self.required_slots:
             utterance = slot_config.get("utterance")
             if "options" in slot_config:
                 options = slot_config["options"]
