@@ -218,7 +218,8 @@ class Rule:
     @classmethod
     def from_config(cls, config):
         rule = cls()
-        rule.active_form = re.compile(config.get("active_form"))
+        active_form = config.get("active_form")
+        rule.active_form = re.compile(active_form) if active_form else None
         rule.trigger_intent = config.get("trigger_intent")
         rule.skill = config.get("skill")
         return rule

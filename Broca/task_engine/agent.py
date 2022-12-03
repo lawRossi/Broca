@@ -6,8 +6,9 @@
 import json
 import re
 
+from Broca.message import UserMessage
 from Broca.utils import find_class, list_class
-from .event import UserUttered, BotUttered
+from .event import AgentTriggered, UserUttered, BotUttered
 from .skill import DeactivateFormSkill, FormSkill, ListenSkill
 from .skill import OptionSkill, ReplySkill, Skill, UndoSkill
 
@@ -76,6 +77,7 @@ class Agent:
         tracker.update(uttered)
         self.listen(tracker)
         skill_name = self.policy.pick_skill(tracker)
+        triggered_event = None
         responses = []
         if skill_name is not None:
             skills = []
@@ -88,6 +90,8 @@ class Agent:
                     if isinstance(event, BotUttered):
                         bot_message = event.bot_message
                         responses.append(bot_message)
+                    elif isinstance(event, AgentTriggered):
+                        triggered_event = event
                 skill_name = self.policy.pick_skill(tracker)
             message.set("skills", skills)
 
@@ -101,6 +105,17 @@ class Agent:
             message.set("skills", ["help_kill"])
 
         self.tracker_store.update_tracker(tracker)
+
+        if triggered_event is not None:
+            new_message = UserMessage(
+                message.sender_id,
+                triggered_event.text,
+                external_intent=triggered_event.intent,
+                external_entities=triggered_event.entities
+            )
+            responses.extend(self.handle_message(new_message))
+            message.parsed_data.update(new_message.parsed_data)
+
         return responses
 
     def parse(self, message):
