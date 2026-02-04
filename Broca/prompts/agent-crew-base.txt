@@ -1,0 +1,17 @@
+<Background>
+    {{background}}
+</Background>
+
+<Rules>
+{{rules}}
+</Rules>
+
+<Crew Members>
+{{members}}
+</Crew Members>
+
+{{member_instruction}}
+
+<Blackboard Content>
+{{blackboard_content}}
+</Blackboard Content>
