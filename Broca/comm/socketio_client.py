@@ -384,21 +384,32 @@ class SocketIOClient:
 
         logger.error("Max reconnection attempts reached")
 
-    async def send_message(self, message: Message, 
-                          callback: Optional[Callable] = None) -> str:
+    async def send_message(self, message: Message,
+                          callback: Optional[Callable] = None,
+                          retry_on_disconnect: bool = True) -> str:
         """
-        Send message to server
+        Send message to server with automatic reconnection support
 
         Args:
             message: Message to send
             callback: Optional callback for response
+            retry_on_disconnect: Whether to attempt reconnection if disconnected
             
         Returns:
             Message ID
         """
+        # Check connection and attempt reconnection if needed
         if not self.connection_info.connected:
-            logger.error("Not connected to server")
-            raise RuntimeError("Not connected to server")
+            if retry_on_disconnect and self.auto_reconnect:
+                logger.info("Not connected to server, attempting to reconnect...")
+                try:
+                    await self.connect()
+                except Exception as e:
+                    logger.error(f"Failed to reconnect: {e}")
+                    raise RuntimeError("Not connected to server and reconnection failed")
+            else:
+                logger.error("Not connected to server")
+                raise RuntimeError("Not connected to server")
 
         # Set sender ID if not set
         if not message.sender_id:
@@ -408,14 +419,26 @@ class SocketIOClient:
         if callback:
             self.message_callbacks[message.message_id] = callback
 
-        # Send message
-        try:
-            await self.sio.emit("message", message.to_dict())
-            logger.debug(f"Sent message: {message}")
-            return message.message_id
-        except Exception as e:
-            logger.error(f"Failed to send message: {e}")
-            raise
+        # Send message with retry logic
+        max_retries = 2
+        for attempt in range(max_retries):
+            try:
+                await self.sio.emit("message", message.to_dict())
+                logger.debug(f"Sent message: {message}")
+                return message.message_id
+            except Exception as e:
+                if attempt < max_retries - 1:
+                    logger.warning(f"Failed to send message (attempt {attempt + 1}), retrying: {e}")
+                    # Check if we're still connected
+                    if not self.connection_info.connected and retry_on_disconnect:
+                        try:
+                            await self.connect()
+                        except Exception as reconnect_error:
+                            logger.error(f"Reconnection failed: {reconnect_error}")
+                else:
+                    logger.error(f"Failed to send message after {max_retries} attempts: {e}")
+                    raise
+        return ""
 
     async def send_user_message(self, content: str, 
                                receiver_id: Optional[str] = None,
