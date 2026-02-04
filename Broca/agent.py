@@ -9,7 +9,6 @@ from loguru import logger
 
 from Broca.llm import LLMClient
 from Broca.skill_manager import SkillManager
-from Broca.task_executor import TaskExecutor
 from Broca.tools import ToolCallContext
 from Broca.tool_manager import ToolManager
 from Broca.comm.agent_communicator import AgentCommunicator
@@ -218,6 +217,9 @@ class SocketIOAgent(Agent):
             async with self._permission_lock:
                 granted = self._permission_requests.get(request_id, {}).get("granted", False)
                 return granted or False
+        except Exception as e:
+            logger.error(f"Failed to send permission request: {e}")
+            return False
         finally:
             # Clean up the request
             async with self._permission_lock:
@@ -234,8 +236,6 @@ class SocketIOAgent(Agent):
         request_id = message.data.get("request_id")
         
         # Find the matching permission request
-        # Since we're using a simple approach, we'll grant the most recent request
-        # In a more robust implementation, we'd use request_id matching
         async with self._permission_lock:
             if request_id and request_id in self._permission_requests:
                 request_data = self._permission_requests[request_id]
@@ -292,18 +292,21 @@ class SocketIOAgent(Agent):
         # Add response to history
         self.history.append(response["message"])
 
-        # Send response via Socket.io
+        # Send response via Socket.io (send_message will handle connection automatically)
         if "content" in response:
             content = response["content"]
             if self.config.verbose:
                 logger.info(f"Agent response: {content}")
 
             # Send agent response
-            await self.communicator.send_agent_response(
-                content=content,
-                reasoning_content=response.get("reasoning_content"),
-                subscription=self.config.session_id
-            )
+            try:
+                await self.communicator.send_agent_response(
+                    content=content,
+                    reasoning_content=response.get("reasoning_content"),
+                    subscription=self.config.session_id
+                )
+            except Exception as e:
+                logger.error(f"Failed to send agent response: {e}")
 
         # Check if tool calls are needed
         if "tool_calls" not in response:
@@ -332,12 +335,13 @@ class SocketIOAgent(Agent):
             else:
                 logger.debug(f"Executing tool '{tool_name}', arguments: {arguments[:50]}...")
                 try:
-                    # Send tool call notification
+                    # Send tool call notification (send_message will handle connection automatically)
                     await self.communicator.send_tool_call(
                         tool_name=tool_name,
                         arguments=arguments,
                         subscription=self.config.session_id
                     )
+                    
                     # Execute tool asynchronously with timeout for cancellation support
                     result = await asyncio.wait_for(
                         self.tool_mapping[tool_name].execute(arguments, context),
@@ -378,19 +382,19 @@ class SocketIOAgent(Agent):
 
         # Store the current execution task for potential cancellation
         self._abort_task = asyncio.current_task()
-
+        turn_id = f"turn_{len(self.history)}"
         try:
             if user_message:
                 # Process initial user message
-                self.history.append({"role": "user", "content": user_message})
-
-                # Send turn start message
-                turn_id = f"turn_{len(self.history)}"
-                await self.communicator.send_turn_start(
-                    turn_id=turn_id,
-                    turn_description=f"Processing user message: {user_message[:50]}...",
-                    subscription=self.config.session_id
-                )
+                self.history.append({"role": "user", "content": user_message})                
+                try:
+                    await self.communicator.send_turn_start(
+                        turn_id=turn_id,
+                        turn_description=f"Processing user message: {user_message[:50]}...",
+                        subscription=self.config.session_id
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to send turn start: {e}")
 
                 # Execute complete round
                 await self._execute_round_async(max_steps)
@@ -398,20 +402,26 @@ class SocketIOAgent(Agent):
             logger.info("Agent execution cancelled by user")
         except Exception as e:
             logger.error(f"Error in agent execution: {e}")
-            # send error message
-            await self.communicator.send_agent_response(
-                content=f"Error in agent execution: {e}",
-                subscription=self.config.session_id
-            )
+            # send error message (send_message will handle connection automatically)
+            try:
+                await self.communicator.send_agent_response(
+                    content=f"Error in agent execution: {e}",
+                    subscription=self.config.session_id
+                )
+            except Exception as send_error:
+                logger.error(f"Failed to send error response: {send_error}")
         finally:
             # Clear the abort task reference
             self._abort_task = None
-            # Send turn end message
-            await self.communicator.send_turn_end(
-                turn_id=turn_id,
-                result="Turn completed successfully",
-                subscription=self.config.session_id
-            )
+            try:
+                await self.communicator.send_turn_end(
+                    turn_id=turn_id,
+                    result="Turn completed",
+                    subscription=self.config.session_id
+                )
+                print("turn end sent")
+            except Exception as e:
+                logger.error(f"Failed to send turn end: {e}")
 
         logger.debug("Agent execution completed.")
 
@@ -484,8 +494,7 @@ class SocketIOAgent(Agent):
         """
         Abort the agent execution
         
-        This method sets the abort flag, cancels the current execution task,
-        and sends a notification to the client.
+        This method sets the abort flag and cancels the current execution task.
         """
         logger.info("Aborting agent execution")
         self.is_aborted = True
@@ -504,15 +513,6 @@ class SocketIOAgent(Agent):
                 logger.warning("Task cancellation timed out, forcing abort")
             except Exception as e:
                 logger.warning(f"Error during task cancellation: {e}")
-
-        # Send abort notification to client
-        try:
-            await self.communicator.send_agent_response(
-                content="Agent execution aborted by user",
-                subscription=self.config.session_id
-            )
-        except Exception as e:
-            logger.error(f"Failed to send abort notification: {e}")
 
     async def _on_command(self, message: Message):
         """
