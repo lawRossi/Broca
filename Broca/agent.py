@@ -7,12 +7,12 @@ from typing import Optional
 from jinja2 import StrictUndefined, Template
 from loguru import logger
 
-from Broca.llm import LLMClient
-from Broca.skill_manager import SkillManager
-from Broca.tools import ToolCallContext
-from Broca.tool_manager import ToolManager
 from Broca.comm.agent_communicator import AgentCommunicator
 from Broca.comm.message_types import Message
+from Broca.llm import LLMClient
+from Broca.skill_manager import SkillManager
+from Broca.tool_manager import ToolManager
+from Broca.tools import ToolCallContext
 
 # Standard logger for non-agent operations
 std_logger = logging.getLogger(__name__)
@@ -32,7 +32,6 @@ class AgentConfig:
         self.interactive = True
         self.save_history = True
         self.environment = None
-        self.verbose = True
 
     @classmethod
     def from_config(cls, config):
@@ -89,7 +88,9 @@ class Agent:
         return skills_str.strip()
 
     def _call_llm(self, messages: list) -> dict:
-        message = self.llm_client.get_response(messages, self.tools, self.config.llm_config_name)
+        message = self.llm_client.get_response(
+            messages, self.tools, self.config.llm_config_name
+        )
         response = {}
         if message.content and message.content.strip():
             response["content"] = message.content.strip()
@@ -102,7 +103,7 @@ class Agent:
                     {
                         "id": tool_call.id,
                         "tool_name": tool_call.function.name,
-                        "arguments": tool_call.function.arguments
+                        "arguments": tool_call.function.arguments,
                     }
                 )
             response["tool_calls"] = tool_calls
@@ -129,17 +130,19 @@ class SocketIOAgent(Agent):
 
         # Initialize communicator
         self.communicator = AgentCommunicator(
-            agent_id=self.agent_id,
-            server_url=config.server_url,
-            client_type="agent"
+            agent_id=self.agent_id, server_url=config.server_url, client_type="agent"
         )
 
         # Set up callbacks
         self.communicator.register_event_handler("user_message", self._on_user_message)
-        self.communicator.register_event_handler("agent_response", self._on_agent_response)
+        self.communicator.register_event_handler(
+            "agent_response", self._on_agent_response
+        )
         self.communicator.register_event_handler("error", self._on_error)
         self.communicator.register_event_handler("command", self._on_command)
-        self.communicator.register_event_handler("permission_response", self._on_permission_response)
+        self.communicator.register_event_handler(
+            "permission_response", self._on_permission_response
+        )
 
         # Permission response tracking (thread-safe)
         self._permission_requests: dict[str, dict] = {}
@@ -162,7 +165,9 @@ class SocketIOAgent(Agent):
 
             # Check if there's an ongoing execution that's being aborted
             if self._abort_task and not self._abort_task.done():
-                logger.warning("Previous execution is still running or being aborted, ignoring new message")
+                logger.warning(
+                    "Previous execution is still running or being aborted, ignoring new message"
+                )
                 return
 
             await self.run_async(content)
@@ -180,31 +185,31 @@ class SocketIOAgent(Agent):
     async def ask_for_permission(self, message: str) -> bool:
         """
         Ask for user permission via communication channel
-        
+
         Args:
             message: Permission request message
-            
+
         Returns:
             True if permission is granted, False otherwise
         """
         # Generate unique request ID
         request_id = str(uuid.uuid4())
-        
+
         # Create event for waiting for response
         response_event = asyncio.Event()
-        
+
         async with self._permission_lock:
             self._permission_requests[request_id] = {
                 "event": response_event,
-                "granted": None
+                "granted": None,
             }
-        
+
         try:
             # Send permission request with request_id
             await self.communicator.send_permission_request(
                 message=message,
                 request_id=request_id,
-                subscription=self.config.session_id
+                subscription=self.config.session_id,
             )
 
             # Wait for response with timeout
@@ -213,9 +218,11 @@ class SocketIOAgent(Agent):
             except asyncio.TimeoutError:
                 logger.warning(f"Permission request {request_id} timed out")
                 return False
-            
+
             async with self._permission_lock:
-                granted = self._permission_requests.get(request_id, {}).get("granted", False)
+                granted = self._permission_requests.get(request_id, {}).get(
+                    "granted", False
+                )
                 return granted or False
         except Exception as e:
             logger.error(f"Failed to send permission request: {e}")
@@ -224,32 +231,36 @@ class SocketIOAgent(Agent):
             # Clean up the request
             async with self._permission_lock:
                 self._permission_requests.pop(request_id, None)
-    
+
     async def _on_permission_response(self, message: Message):
         """
         Handle permission response from Socket.io
-        
+
         Args:
             message: Permission response message
         """
         granted = message.data.get("granted", False)
         request_id = message.data.get("request_id")
-        
+
         # Find the matching permission request
         async with self._permission_lock:
             if request_id and request_id in self._permission_requests:
                 request_data = self._permission_requests[request_id]
                 request_data["granted"] = granted
                 request_data["event"].set()
-                
-                logger.info(f"Permission request {request_id}: {'granted' if granted else 'denied'}")
+
+                logger.info(
+                    f"Permission request {request_id}: {'granted' if granted else 'denied'}"
+                )
             else:
-                logger.warning(f"Received permission response for unknown request_id: {request_id}")
+                logger.warning(
+                    f"Received permission response for unknown request_id: {request_id}"
+                )
 
     async def run_step_async(self) -> bool:
         """
         Run one step of agent execution (async version)
-        
+
         Returns:
             True if more steps are needed, False otherwise
         """
@@ -269,8 +280,7 @@ class SocketIOAgent(Agent):
             try:
                 # Call LLM with timeout for cancellation support
                 response = await asyncio.wait_for(
-                    asyncio.to_thread(self._call_llm, self.history),
-                    timeout=300
+                    asyncio.to_thread(self._call_llm, self.history), timeout=300
                 )
                 break
             except asyncio.TimeoutError:
@@ -295,15 +305,13 @@ class SocketIOAgent(Agent):
         # Send response via Socket.io (send_message will handle connection automatically)
         if "content" in response:
             content = response["content"]
-            if self.config.verbose:
-                logger.info(f"Agent response: {content}")
 
             # Send agent response
             try:
                 await self.communicator.send_agent_response(
                     content=content,
                     reasoning_content=response.get("reasoning_content"),
-                    subscription=self.config.session_id
+                    subscription=self.config.session_id,
                 )
             except Exception as e:
                 logger.error(f"Failed to send agent response: {e}")
@@ -333,19 +341,21 @@ class SocketIOAgent(Agent):
                 logger.error(f"Tool '{tool_name}' not found.")
                 result = f"Tool {tool_name} not found"
             else:
-                logger.debug(f"Executing tool '{tool_name}', arguments: {arguments[:50]}...")
+                logger.debug(
+                    f"Executing tool '{tool_name}', arguments: {arguments[:50]}..."
+                )
                 try:
                     # Send tool call notification (send_message will handle connection automatically)
                     await self.communicator.send_tool_call(
                         tool_name=tool_name,
                         arguments=arguments,
-                        subscription=self.config.session_id
+                        subscription=self.config.session_id,
                     )
-                    
+
                     # Execute tool asynchronously with timeout for cancellation support
                     result = await asyncio.wait_for(
                         self.tool_mapping[tool_name].execute(arguments, context),
-                        timeout=60
+                        timeout=60,
                     )
                 except asyncio.TimeoutError:
                     logger.error(f"Tool '{tool_name}' execution timed out")
@@ -358,20 +368,19 @@ class SocketIOAgent(Agent):
                     result = f"Tool execution failed: {e}"
 
             # Add to history
-            self.history.append({
-                "role": "tool",
-                "tool_call_id": tool_call["id"],
-                "content": result
-            })
+            self.history.append(
+                {"role": "tool", "tool_call_id": tool_call["id"], "content": result}
+            )
 
-    async def run_async(self, user_message: Optional[str] = None,
-                       max_steps: Optional[int] = None) -> None:
+    async def run_async(
+        self, user_message: Optional[str] = None, max_steps: Optional[int] = None
+    ) -> None:
         """
         Run agent in async mode (replaces command-line interaction)
-        
+
         This method executes complete rounds of agent execution, sending
         start and end messages for each round.
-        
+
         Args:
             user_message: Optional user message
             max_steps: Maximum number of steps
@@ -386,12 +395,12 @@ class SocketIOAgent(Agent):
         try:
             if user_message:
                 # Process initial user message
-                self.history.append({"role": "user", "content": user_message})                
+                self.history.append({"role": "user", "content": user_message})
                 try:
                     await self.communicator.send_turn_start(
                         turn_id=turn_id,
                         turn_description=f"Processing user message: {user_message[:50]}...",
-                        subscription=self.config.session_id
+                        subscription=self.config.session_id,
                     )
                 except Exception as e:
                     logger.error(f"Failed to send turn start: {e}")
@@ -406,7 +415,7 @@ class SocketIOAgent(Agent):
             try:
                 await self.communicator.send_agent_response(
                     content=f"Error in agent execution: {e}",
-                    subscription=self.config.session_id
+                    subscription=self.config.session_id,
                 )
             except Exception as send_error:
                 logger.error(f"Failed to send error response: {send_error}")
@@ -417,7 +426,7 @@ class SocketIOAgent(Agent):
                 await self.communicator.send_turn_end(
                     turn_id=turn_id,
                     result="Turn completed",
-                    subscription=self.config.session_id
+                    subscription=self.config.session_id,
                 )
                 print("turn end sent")
             except Exception as e:
@@ -431,7 +440,7 @@ class SocketIOAgent(Agent):
     async def _execute_round_async(self, max_steps: Optional[int] = None) -> None:
         """
         Execute a complete round of agent execution
-        
+
         Args:
             max_steps: Maximum number of steps
         """
@@ -447,7 +456,7 @@ class SocketIOAgent(Agent):
                 # Run one step
                 need_more_steps = await self.run_step_async()
                 steps += 1
-                
+
                 # Check if more steps are needed
                 if not need_more_steps:
                     logger.info(f"Round completed after {steps} steps")
@@ -493,7 +502,7 @@ class SocketIOAgent(Agent):
     async def abort(self):
         """
         Abort the agent execution
-        
+
         This method sets the abort flag and cancels the current execution task.
         """
         logger.info("Aborting agent execution")
@@ -513,6 +522,8 @@ class SocketIOAgent(Agent):
                 logger.warning("Task cancellation timed out, forcing abort")
             except Exception as e:
                 logger.warning(f"Error during task cancellation: {e}")
+            finally:
+                self._abort_task = None
 
     async def _on_command(self, message: Message):
         """

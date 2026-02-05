@@ -4,12 +4,12 @@ Message Types and Protocol Definitions
 This module defines the message types and protocol for multi-endpoint communication.
 """
 
-from enum import Enum, IntEnum
-from typing import Optional, Dict, Any
-from dataclasses import dataclass, field
 import json
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
+from enum import Enum, IntEnum
+from typing import Any, Dict, Optional
 
 
 class MessageType(str, Enum):
@@ -58,27 +58,27 @@ class MessageType(str, Enum):
 
 class MessageSubType(str, Enum):
     """Subtypes for more specific message categorization"""
-    
+
     # User message subtypes
     USER_INPUT = "user_input"
     USER_COMMAND = "user_command"
     USER_FILE = "user_file"
-    
+
     # Agent response subtypes
     AGENT_TEXT = "agent_text"
     AGENT_REASONING = "agent_reasoning"
     AGENT_ACTION = "agent_action"
-    
+
     # Task subtypes
     TASK_CREATE = "task_create"
     TASK_UPDATE = "task_update"
     TASK_DELETE = "task_delete"
-    
+
     # Tool subtypes
     TOOL_EXECUTE = "tool_execute"
     TOOL_SUCCESS = "tool_success"
     TOOL_FAILURE = "tool_failure"
-    
+
     # Error subtypes
     ERROR_CONNECTION = "error_connection"
     ERROR_AUTH = "error_auth"
@@ -88,19 +88,19 @@ class MessageSubType(str, Enum):
 
 class MessageStatus(IntEnum):
     """Message status codes"""
-    
+
     # Success
     OK = 200
     CREATED = 201
     ACCEPTED = 202
-    
+
     # Client errors
     BAD_REQUEST = 400
     UNAUTHORIZED = 401
     FORBIDDEN = 403
     NOT_FOUND = 404
     CONFLICT = 409
-    
+
     # Server errors
     INTERNAL_ERROR = 500
     NOT_IMPLEMENTED = 501
@@ -110,7 +110,7 @@ class MessageStatus(IntEnum):
 @dataclass
 class Message:
     """Base message structure for all communications"""
-    
+
     # Required fields
     message_id: str = field(default_factory=lambda: str(uuid.uuid4()))
     message_type: MessageType = MessageType.USER_MESSAGE
@@ -136,14 +136,24 @@ class Message:
         """Convert message to dictionary"""
         result: Dict[str, Any] = {
             "message_id": self.message_id,
-            "message_type": self.message_type.value if isinstance(self.message_type, MessageType) else self.message_type,
+            "message_type": self.message_type.value
+            if isinstance(self.message_type, MessageType)
+            else self.message_type,
             "timestamp": self.timestamp,
         }
-        
+
         if self.sub_type:
-            result["sub_type"] = self.sub_type.value if isinstance(self.sub_type, MessageSubType) else self.sub_type
+            result["sub_type"] = (
+                self.sub_type.value
+                if isinstance(self.sub_type, MessageSubType)
+                else self.sub_type
+            )
         if self.status:
-            result["status"] = self.status.value if isinstance(self.status, MessageStatus) else self.status
+            result["status"] = (
+                self.status.value
+                if isinstance(self.status, MessageStatus)
+                else self.status
+            )
         if self.sender_id:
             result["sender_id"] = self.sender_id
         if self.receiver_id:
@@ -160,15 +170,15 @@ class Message:
             result["error_code"] = self.error_code
         if self.error_message:
             result["error_message"] = self.error_message
-            
+
         return result
-    
+
     def to_json(self) -> str:
         """Convert message to JSON string"""
         return json.dumps(self.to_dict(), ensure_ascii=False)
-    
+
     @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> 'Message':
+    def from_dict(cls, data: Dict[str, Any]) -> "Message":
         """Create message from dictionary"""
         message_type_str = data.get("message_type", MessageType.USER_MESSAGE)
         message_type: MessageType
@@ -179,7 +189,7 @@ class Message:
                 message_type = MessageType.USER_MESSAGE
         else:
             message_type = message_type_str
-        
+
         sub_type_str = data.get("sub_type")
         sub_type: Optional[MessageSubType] = None
         if sub_type_str:
@@ -187,7 +197,7 @@ class Message:
                 sub_type = MessageSubType(sub_type_str)
             except ValueError:
                 sub_type = None
-        
+
         status_value = data.get("status")
         status: Optional[MessageStatus] = None
         if status_value is not None:
@@ -195,7 +205,7 @@ class Message:
                 status = MessageStatus(status_value)
             except ValueError:
                 status = None
-        
+
         return cls(
             message_id=data.get("message_id", str(uuid.uuid4())),
             message_type=message_type,
@@ -211,21 +221,21 @@ class Message:
             error_code=data.get("error_code"),
             error_message=data.get("error_message"),
         )
-    
+
     @classmethod
-    def from_json(cls, json_str: str) -> 'Message':
+    def from_json(cls, json_str: str) -> "Message":
         """Create message from JSON string"""
         data = json.loads(json_str)
         return cls.from_dict(data)
-    
+
     def is_error(self) -> bool:
         """Check if message represents an error"""
         return self.status is not None and self.status.value >= 400
-    
+
     def is_success(self) -> bool:
         """Check if message represents success"""
         return self.status is not None and self.status.value < 400
-    
+
     def __str__(self) -> str:
         """String representation for logging"""
         parts = [
@@ -247,45 +257,50 @@ class Message:
 
 class MessageProtocol:
     """Protocol handler for message validation and processing"""
-    
+
     @staticmethod
     def validate_message(message: Message) -> tuple[bool, Optional[str]]:
         """
         Validate a message structure
-        
+
         Returns:
             Tuple of (is_valid, error_message)
         """
         if not message.message_type:
             return False, "Message type is required"
-        
+
         if not isinstance(message.message_type, MessageType):
             return False, f"Invalid message type: {message.message_type}"
-        
+
         # Validate message type specific rules
         if message.message_type == MessageType.USER_MESSAGE:
             if not message.data.get("content"):
                 return False, "User message requires content"
-        
+
         if message.message_type == MessageType.AGENT_RESPONSE:
-            if not message.data.get("content") and not message.data.get("reasoning_content"):
+            if not message.data.get("content") and not message.data.get(
+                "reasoning_content"
+            ):
                 return False, "Agent response requires content or reasoning_content"
-        
+
         if message.message_type == MessageType.TOOL_CALL:
             if not message.data.get("tool_name"):
                 return False, "Tool call requires tool_name"
-        
+
         if message.message_type == MessageType.ERROR:
             if not message.error_code:
                 return False, "Error message requires error_code"
-        
+
         return True, None
-    
+
     @staticmethod
-    def create_user_message(content: str, sender_id: Optional[str] = None, 
-                           receiver_id: Optional[str] = None, 
-                           room: Optional[str] = None, 
-                           subscription: Optional[str] = None) -> Message:
+    def create_user_message(
+        content: str,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a user message"""
         return Message(
             message_type=MessageType.USER_MESSAGE,
@@ -296,18 +311,21 @@ class MessageProtocol:
             subscription=subscription,
             data={"content": content},
         )
-    
+
     @staticmethod
-    def create_agent_response(content: str, reasoning_content: Optional[str] = None, 
-                            sender_id: Optional[str] = None, 
-                            receiver_id: Optional[str] = None,
-                            room: Optional[str] = None, 
-                            subscription: Optional[str] = None) -> Message:
+    def create_agent_response(
+        content: str,
+        reasoning_content: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create an agent response message"""
         data: Dict[str, Any] = {"content": content}
         if reasoning_content:
             data["reasoning_content"] = reasoning_content
-        
+
         return Message(
             message_type=MessageType.AGENT_RESPONSE,
             sub_type=MessageSubType.AGENT_TEXT,
@@ -317,13 +335,16 @@ class MessageProtocol:
             subscription=subscription,
             data=data,
         )
-    
+
     @staticmethod
-    def create_error_message(error_code: str, error_message: str, 
-                           sender_id: Optional[str] = None, 
-                           receiver_id: Optional[str] = None,
-                           room: Optional[str] = None, 
-                           subscription: Optional[str] = None) -> Message:
+    def create_error_message(
+        error_code: str,
+        error_message: str,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create an error message"""
         return Message(
             message_type=MessageType.ERROR,
@@ -336,13 +357,16 @@ class MessageProtocol:
             error_code=error_code,
             error_message=error_message,
         )
-    
+
     @staticmethod
-    def create_task_start(task_id: str, task_description: str, 
-                         sender_id: Optional[str] = None, 
-                         receiver_id: Optional[str] = None,
-                         room: Optional[str] = None, 
-                         subscription: Optional[str] = None) -> Message:
+    def create_task_start(
+        task_id: str,
+        task_description: str,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a task start message"""
         return Message(
             message_type=MessageType.TASK_START,
@@ -356,14 +380,17 @@ class MessageProtocol:
                 "task_description": task_description,
             },
         )
-    
+
     @staticmethod
-    def create_task_progress(task_id: str, progress: float, 
-                            message: Optional[str] = None, 
-                            sender_id: Optional[str] = None,
-                            receiver_id: Optional[str] = None, 
-                            room: Optional[str] = None,
-                            subscription: Optional[str] = None) -> Message:
+    def create_task_progress(
+        task_id: str,
+        progress: float,
+        message: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a task progress message"""
         data: Dict[str, Any] = {
             "task_id": task_id,
@@ -371,7 +398,7 @@ class MessageProtocol:
         }
         if message:
             data["message"] = message
-        
+
         return Message(
             message_type=MessageType.TASK_PROGRESS,
             sub_type=MessageSubType.TASK_UPDATE,
@@ -383,16 +410,19 @@ class MessageProtocol:
         )
 
     @staticmethod
-    def create_task_complete(task_id: str, result: Optional[str] = None,
-                            sender_id: Optional[str] = None,
-                            receiver_id: Optional[str] = None,
-                            room: Optional[str] = None,
-                            subscription: Optional[str] = None) -> Message:
+    def create_task_complete(
+        task_id: str,
+        result: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a task complete message"""
         data: Dict[str, Any] = {"task_id": task_id}
         if result:
             data["result"] = result
-        
+
         return Message(
             message_type=MessageType.TASK_COMPLETE,
             sub_type=MessageSubType.TASK_UPDATE,
@@ -402,13 +432,16 @@ class MessageProtocol:
             subscription=subscription,
             data=data,
         )
-    
+
     @staticmethod
-    def create_turn_start(turn_id: str, turn_description: str,
-                         sender_id: Optional[str] = None,
-                         receiver_id: Optional[str] = None,
-                         room: Optional[str] = None,
-                         subscription: Optional[str] = None) -> Message:
+    def create_turn_start(
+        turn_id: str,
+        turn_description: str,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a turn start message"""
         return Message(
             message_type=MessageType.TURN_START,
@@ -421,18 +454,21 @@ class MessageProtocol:
                 "turn_description": turn_description,
             },
         )
-    
+
     @staticmethod
-    def create_turn_end(turn_id: str, result: Optional[str] = None,
-                       sender_id: Optional[str] = None,
-                       receiver_id: Optional[str] = None,
-                       room: Optional[str] = None,
-                       subscription: Optional[str] = None) -> Message:
+    def create_turn_end(
+        turn_id: str,
+        result: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a turn end message"""
         data: Dict[str, Any] = {"turn_id": turn_id}
         if result:
             data["result"] = result
-        
+
         return Message(
             message_type=MessageType.TURN_END,
             sender_id=sender_id,
@@ -441,13 +477,16 @@ class MessageProtocol:
             subscription=subscription,
             data=data,
         )
-    
+
     @staticmethod
-    def create_tool_call(tool_name: str, arguments: Dict[str, Any],
-                        sender_id: Optional[str] = None, 
-                        receiver_id: Optional[str] = None,
-                        room: Optional[str] = None, 
-                        subscription: Optional[str] = None) -> Message:
+    def create_tool_call(
+        tool_name: str,
+        arguments: Dict[str, Any],
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a tool call message"""
         return Message(
             message_type=MessageType.TOOL_CALL,
@@ -461,13 +500,16 @@ class MessageProtocol:
                 "arguments": arguments,
             },
         )
-    
+
     @staticmethod
-    def create_tool_result(tool_name: str, result: Any,
-                          sender_id: Optional[str] = None, 
-                          receiver_id: Optional[str] = None,
-                          room: Optional[str] = None, 
-                          subscription: Optional[str] = None) -> Message:
+    def create_tool_result(
+        tool_name: str,
+        result: Any,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a tool result message"""
         return Message(
             message_type=MessageType.TOOL_RESULT,
@@ -481,11 +523,14 @@ class MessageProtocol:
                 "result": result,
             },
         )
-    
+
     @staticmethod
-    def create_subscribe(subscription: str, sender_id: Optional[str] = None,
-                        receiver_id: Optional[str] = None, 
-                        room: Optional[str] = None) -> Message:
+    def create_subscribe(
+        subscription: str,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+    ) -> Message:
         """Create a subscribe message"""
         return Message(
             message_type=MessageType.SUBSCRIBE,
@@ -494,11 +539,14 @@ class MessageProtocol:
             room=room,
             subscription=subscription,
         )
-    
+
     @staticmethod
-    def create_unsubscribe(subscription: str, sender_id: Optional[str] = None,
-                          receiver_id: Optional[str] = None, 
-                          room: Optional[str] = None) -> Message:
+    def create_unsubscribe(
+        subscription: str,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+    ) -> Message:
         """Create an unsubscribe message"""
         return Message(
             message_type=MessageType.UNSUBSCRIBE,
@@ -507,11 +555,14 @@ class MessageProtocol:
             room=room,
             subscription=subscription,
         )
-    
+
     @staticmethod
-    def create_broadcast(content: str, subscription: Optional[str] = None,
-                        sender_id: Optional[str] = None, 
-                        room: Optional[str] = None) -> Message:
+    def create_broadcast(
+        content: str,
+        subscription: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        room: Optional[str] = None,
+    ) -> Message:
         """Create a broadcast message"""
         return Message(
             message_type=MessageType.BROADCAST,
@@ -520,18 +571,21 @@ class MessageProtocol:
             subscription=subscription,
             data={"content": content},
         )
-    
+
     @staticmethod
-    def create_command(command: str, arguments: Optional[Dict[str, Any]] = None,
-                      sender_id: Optional[str] = None, 
-                      receiver_id: Optional[str] = None,
-                      room: Optional[str] = None, 
-                      subscription: Optional[str] = None) -> Message:
+    def create_command(
+        command: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a command message"""
         data: Dict[str, Any] = {"command": command}
         if arguments:
             data["arguments"] = arguments
-        
+
         return Message(
             message_type=MessageType.COMMAND,
             sender_id=sender_id,
@@ -542,11 +596,14 @@ class MessageProtocol:
         )
 
     @staticmethod
-    def create_command_result(command: str, result: Any,
-                             sender_id: Optional[str] = None,
-                             receiver_id: Optional[str] = None,
-                             room: Optional[str] = None,
-                             subscription: Optional[str] = None) -> Message:
+    def create_command_result(
+        command: str,
+        result: Any,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a command result message"""
         return Message(
             message_type=MessageType.COMMAND_RESULT,
@@ -559,19 +616,21 @@ class MessageProtocol:
                 "result": result,
             },
         )
-    
+
     @staticmethod
-    def create_permission_request(message: str,
-                                   request_id: Optional[str] = None,
-                                   sender_id: Optional[str] = None,
-                                   receiver_id: Optional[str] = None,
-                                   room: Optional[str] = None,
-                                   subscription: Optional[str] = None) -> Message:
+    def create_permission_request(
+        message: str,
+        request_id: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a permission request message"""
         data: Dict[str, Any] = {"message": message}
         if request_id:
             data["request_id"] = request_id
-        
+
         return Message(
             message_type=MessageType.PERMISSION_REQUEST,
             sender_id=sender_id,
@@ -580,19 +639,21 @@ class MessageProtocol:
             subscription=subscription,
             data=data,
         )
-    
+
     @staticmethod
-    def create_permission_response(granted: bool,
-                                    request_id: Optional[str] = None,
-                                    sender_id: Optional[str] = None,
-                                    receiver_id: Optional[str] = None,
-                                    room: Optional[str] = None,
-                                    subscription: Optional[str] = None) -> Message:
+    def create_permission_response(
+        granted: bool,
+        request_id: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
         """Create a permission response message"""
         data: Dict[str, Any] = {"granted": granted}
         if request_id:
             data["request_id"] = request_id
-        
+
         return Message(
             message_type=MessageType.PERMISSION_RESPONSE,
             sender_id=sender_id,

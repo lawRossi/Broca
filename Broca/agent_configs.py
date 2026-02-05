@@ -4,9 +4,10 @@ from Broca.prompts import main_agent_base, subagent_base
 main_agent_config = {
     "llm_config_name": "minimax",
     "system_prompt_template": main_agent_base,
-    "subagents": ["requirment analyzer", "frontend developer", "backend developer"],
-    "tools": ["create_task", "execute_code", "load_skill"],
-    "skills": ["skill-creator"],
+    "subagents": [],
+    # "subagents": ["requirment analyzer", "frontend developer", "backend developer"],
+    "tools": ["execute_code", "load_skill"],
+    "skills": ["planning-with-files"],
     "interactive": True,
     "save_history": True,
     "environment": None,

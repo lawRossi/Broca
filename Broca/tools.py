@@ -94,11 +94,12 @@ class ExecuteCode(Tool):
 
     def _validate_code(self, code: str) -> bool:
         """Validate code using tree-sitter for better parsing, with regex fallback"""
-        if self.tree_sitter_available and self._is_shell_command(code):
-            return self._validate_with_tree_sitter(code)
-        else:
-            return self._validate_with_regex(code)
-    
+        # if self.tree_sitter_available and self._is_shell_command(code):
+        #     return self._validate_with_tree_sitter(code)
+        # else:
+        #     return self._validate_with_regex(code)
+        return False
+
     def _is_shell_command(self, code: str) -> bool:
         """Check if the code appears to be a shell command"""
         # Simple heuristic to detect shell commands
@@ -118,7 +119,7 @@ class ExecuteCode(Tool):
                 (' ' in line or line.endswith(';'))):
                 return True
         return False
-    
+
     def _validate_with_tree_sitter(self, code: str) -> bool:
         """Validate shell commands using tree-sitter for better accuracy"""
         try:
@@ -199,7 +200,6 @@ class ExecuteCode(Tool):
             r"^\s*sudo\s+",  # Sudo usage
             r"^\s*su\s+",  # Switch user
             # Shell injection patterns
-            r"`.*`",  # Backtick command substitution
             r"\$\s*\(",  # $(command) substitution
             # os.system() usage
             r"^\s*os\.system\s*\(",

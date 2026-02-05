@@ -553,6 +553,24 @@ class SocketIOClient:
             subscription=subscription
         )
         return await self.send_message(msg, callback)
+    
+
+    async def send_permission_response(self, granted: bool,
+                                       request_id: Optional[str] = None,
+                                       receiver_id: Optional[str] = None,
+                                       room: Optional[str] = None,
+                                       subscription: Optional[str] = None,
+                                       callback: Optional[Callable] = None) -> str:
+        """Send permission response"""
+        msg = MessageProtocol.create_permission_response(
+            granted=granted,
+            request_id=request_id,
+            sender_id=self.client_id,
+            receiver_id=receiver_id,
+            room=room,
+            subscription=subscription
+        )
+        return await self.send_message(msg, callback)
 
     async def subscribe(self, subscription: str,
                        callback: Optional[Callable] = None) -> str:
