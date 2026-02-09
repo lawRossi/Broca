@@ -1,10 +1,9 @@
 import json
-from pathlib import Path
 import warnings
+from pathlib import Path
 
-from litellm import completion
+from litellm import Message, acompletion
 from loguru import logger
-
 
 warnings.filterwarnings("ignore")
 
@@ -26,8 +25,12 @@ class LLMClient:
             with open(config_file) as f:
                 self.config = json.load(f)
 
-    def get_response(self, messages, tools=None, config_name="minimax"):
-        response = completion(messages=messages, tools=tools, **self.config[config_name])
+    async def get_response(
+        self, messages, tools=None, config_name="minimax"
+    ) -> Message:
+        response = await acompletion(
+            messages=messages, tools=tools, **self.config[config_name]
+        )
         logger.debug(
             f"LLM call - input tokens: {response.usage.prompt_tokens}, output tokens: {response.usage.completion_tokens}"
         )
@@ -56,16 +59,26 @@ if __name__ == "__main__":
                             "description": "the code to run",
                         }
                     },
-                    "required": ["code"]
+                    "required": ["code"],
                 },
-            }
+            },
         },
     ]
 
     client = LLMClient()
-    messages = [
-        {"role": "user", "content": "现在是什么时间"}
-    ]
-    # print(get_response(messages, "deepseek/deepseek-chat-v3.1:free"))
-    message = client.get_response(messages, tools, "z-ai")
+    messages = [{"role": "user", "content": "现在是什么时间"}]
+
+    # async def test():
+    #     message = await client.get_response(messages, tools, "deepseek")
+    #     with open("message.json", "w", encoding="utf-8") as f:
+    #         json.dump(message.json(), f, ensure_ascii=False, indent=2)
+    # import asyncio
+    # asyncio.run(test())
+
+    with open("message.json") as fi:
+        message_data = json.load(fi)
+
+    from litellm import Message
+
+    message = Message.parse_obj(message_data)
     print(message)

@@ -1,35 +1,40 @@
 from Broca.skill_manager import SkillManager
-from Broca.tools import CreateTask, ExecuteCode, LoadSkill, Tool
+from Broca.tools.bash import ExecuteCode
+from Broca.tools.filesystem import EditFile, ListDir, ReadFile, WriteFile
+from Broca.tools.skill import LoadSkill
+from Broca.tools.tool import Tool
 
 
 class ToolManager:
     _instance = None
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(ToolManager, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
-        if not hasattr(self, '_initialized'):
+        if not hasattr(self, "_initialized"):
             self._initialized = True
             self.tools = {}
             self._init_tools()
 
     def _init_tools(self):
         self.tools = {}
-        execute_code = ExecuteCode()
-        self._add_tool(execute_code)
+        self._add_tool(ExecuteCode())
+        self._add_tool(ReadFile())
+        self._add_tool(WriteFile())
+        self._add_tool(EditFile())
+        self._add_tool(ListDir())
         load_skill = LoadSkill(SkillManager())
         self._add_tool(load_skill)
-        create_task = CreateTask()
-        self._add_tool(create_task)
 
     def _add_tool(self, tool: Tool):
         if tool.name in self.tools:
             raise ValueError(f"Tool with name {tool.name} already exists")
         self.tools[tool.name] = tool
 
-    def get_tools(self, tool_names: list[str]|None=None) -> list[Tool]:
+    def get_tools(self, tool_names: list[str] | None = None) -> list[Tool]:
         if tool_names is not None:
             tools = []
             for tool_name in tool_names:

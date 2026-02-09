@@ -4,67 +4,31 @@ import traceback
 import uuid
 from typing import Optional
 
-from jinja2 import StrictUndefined, Template
+from litellm import Message as LLMMessage
 from loguru import logger
 
+from Broca.agent_configs import AgentConfig
 from Broca.comm.agent_communicator import AgentCommunicator
 from Broca.comm.message_types import Message
+from Broca.context import Context
 from Broca.llm import LLMClient
-from Broca.skill_manager import SkillManager
-from Broca.tool_manager import ToolManager
-from Broca.tools import ToolCallContext
+from Broca.tools.tool import ToolCallContext
+from Broca.tools.tool_manager import ToolManager
 
 # Standard logger for non-agent operations
 std_logger = logging.getLogger(__name__)
 
 
-class AgentConfig:
-    def __init__(self):
-        self.session_id = None
-        self.role_description = None
-        self.llm_config_name = "minimax"
-        self.log_file = "agent.log"
-        self.system_prompt_template = None
-        self.subagents = []
-        self.tools = None
-        self.skills = None
-        self.server_url = "http://localhost:8001"
-        self.interactive = True
-        self.save_history = True
-        self.environment = None
-
-    @classmethod
-    def from_config(cls, config):
-        agent_config = cls()
-        agent_config.__dict__.update(config)
-        return agent_config
-
-
 class Agent:
-    def __init__(self, config: AgentConfig, llm_client: LLMClient):
+    def __init__(self, config: AgentConfig, llm_client: LLMClient, **kwargs):
         self.config = config
         self.llm_client = llm_client
+        self._setup_context(**kwargs)
         self._setup_tools()
-        self._setup_skills()
-        self.setup_system_prompt()
-        self._init_history()
         self._setup_logger()
 
-    def setup_system_prompt(self, prompt_template=None, **args):
-        if not prompt_template:
-            prompt_template = self.config.system_prompt_template
-        if self.config.environment:
-            args["environment"] = self.config.environment
-        args["subagents"] = "\n".join(self.config.subagents)
-        args["skills"] = self.skills or ""
-        if self.config.role_description:
-            args["role_description"] = self.config.role_description
-        self.system_prompt = Template(
-            prompt_template, undefined=StrictUndefined
-        ).render(**args)
-
-    def _init_history(self):
-        self.history = [{"role": "user", "content": self.system_prompt}]
+    def _setup_context(self, **kwargs) -> None:
+        self.context = Context(self.config, **kwargs)
 
     def _setup_tools(self):
         tool_manager = ToolManager()
@@ -76,43 +40,11 @@ class Agent:
         logger.remove()
         logger.add(self.config.log_file, level="DEBUG")
 
-    def _setup_skills(self):
-        skill_manager = SkillManager()
-        skills = skill_manager.get_skills(skill_names=self.config.skills)
-        self.skills = self._format_skills(skills)
-
-    def _format_skills(self, skills: dict[str, dict]) -> str:
-        skills_str = ""
-        for name, skill in skills.items():
-            skills_str += f"{name}: {skill['description']}\n"
-        return skills_str.strip()
-
-    def _call_llm(self, messages: list) -> dict:
-        message = self.llm_client.get_response(
-            messages, self.tools, self.config.llm_config_name
+    async def _call_llm(self, context: Context) -> LLMMessage:
+        message = await self.llm_client.get_response(
+            context.history, self.tools, self.config.llm_config_name
         )
-        response = {}
-        if message.content and message.content.strip():
-            response["content"] = message.content.strip()
-        if hasattr(message, "reasoning_content") and message.reasoning_content.strip():
-            response["reasoning_content"] = message.reasoning_content.strip()
-        if message.tool_calls:
-            tool_calls = []
-            for tool_call in message.tool_calls:
-                tool_calls.append(
-                    {
-                        "id": tool_call.id,
-                        "tool_name": tool_call.function.name,
-                        "arguments": tool_call.function.arguments,
-                    }
-                )
-            response["tool_calls"] = tool_calls
-        response["message"] = message
-
-        return response
-
-    def reset(self):
-        self._init_history()
+        return message
 
 
 class SocketIOAgent(Agent):
@@ -280,7 +212,7 @@ class SocketIOAgent(Agent):
             try:
                 # Call LLM with timeout for cancellation support
                 response = await asyncio.wait_for(
-                    asyncio.to_thread(self._call_llm, self.history), timeout=300
+                    self._call_llm(self.context), timeout=180
                 )
                 break
             except asyncio.TimeoutError:
@@ -300,13 +232,11 @@ class SocketIOAgent(Agent):
                     return False
 
         # Add response to history
-        self.history.append(response["message"])
+        await self.context.add_message(response)
 
         # Send response via Socket.io (send_message will handle connection automatically)
-        if "content" in response:
-            content = response["content"]
-
-            # Send agent response
+        content = response.content
+        if content and content.strip():
             try:
                 await self.communicator.send_agent_response(
                     content=content,
@@ -316,12 +246,10 @@ class SocketIOAgent(Agent):
             except Exception as e:
                 logger.error(f"Failed to send agent response: {e}")
 
-        # Check if tool calls are needed
-        if "tool_calls" not in response:
+        if not response.tool_calls:
             need_more_steps = False
         else:
-            # Process tool calls
-            await self._process_tool_calls_async(response["tool_calls"])
+            await self._process_tool_calls_async(response.tool_calls)
 
         return need_more_steps
 
@@ -335,8 +263,8 @@ class SocketIOAgent(Agent):
                 logger.info("Agent execution aborted during tool call processing")
                 return
 
-            tool_name = tool_call["tool_name"]
-            arguments = tool_call["arguments"]
+            tool_name = tool_call.function.name
+            arguments = tool_call.function.arguments
             if tool_name not in self.tool_mapping:
                 logger.error(f"Tool '{tool_name}' not found.")
                 result = f"Tool {tool_name} not found"
@@ -368,8 +296,8 @@ class SocketIOAgent(Agent):
                     result = f"Tool execution failed: {e}"
 
             # Add to history
-            self.history.append(
-                {"role": "tool", "tool_call_id": tool_call["id"], "content": result}
+            await self.context.add_message(
+                {"role": "tool", "tool_call_id": tool_call.id, "content": result}
             )
 
     async def run_async(
@@ -391,11 +319,13 @@ class SocketIOAgent(Agent):
 
         # Store the current execution task for potential cancellation
         self._abort_task = asyncio.current_task()
-        turn_id = f"turn_{len(self.history)}"
+        turn_id = f"turn_{uuid.uuid4().hex[:16]}"
         try:
             if user_message:
                 # Process initial user message
-                self.history.append({"role": "user", "content": user_message})
+                await self.context.add_message(
+                    {"role": "user", "content": user_message}
+                )
                 try:
                     await self.communicator.send_turn_start(
                         turn_id=turn_id,
@@ -428,7 +358,6 @@ class SocketIOAgent(Agent):
                     result="Turn completed",
                     subscription=self.config.session_id,
                 )
-                print("turn end sent")
             except Exception as e:
                 logger.error(f"Failed to send turn end: {e}")
 

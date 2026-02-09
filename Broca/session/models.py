@@ -141,6 +141,8 @@ class Message(SQLModel, table=True):
     reasoning_content: Optional[str] = Field(default=None, description="推理内容")
 
     # 工具调用信息
+    tool_calls: Optional[str] = Field(default=None, description="工具调用信息")
+
     tool_call_id: Optional[str] = Field(default=None, description="工具调用ID")
     tool_name: Optional[str] = Field(default=None, description="工具名称")
     tool_arguments: Optional[str] = Field(default=None, description="工具参数JSON")
@@ -227,4 +229,3 @@ class Agent(SQLModel, table=True):
 
     class Config:
         json_encoders = {datetime: lambda v: v.isoformat()}
-

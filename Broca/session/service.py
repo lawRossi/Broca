@@ -179,52 +179,6 @@ class SessionService(BaseService[Session]):
             finished_at=datetime.utcnow(),
         )
 
-    async def get_session_with_turns(self, session_id: str) -> Optional[Dict[str, Any]]:
-        """获取会话及其所有轮次"""
-        session = await self.get(session_id)
-        if not session:
-            return None
-
-        turn_service = TurnService()
-        turns = await turn_service.get_turns_by_session(session_id)
-
-        return {
-            "session": session,
-            "turns": turns,
-        }
-
-    async def get_session_with_messages(
-        self, session_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """获取会话及其所有消息"""
-        session = await self.get(session_id)
-        if not session:
-            return None
-
-        message_service = MessageService()
-        messages = await message_service.get_messages_by_session(session_id)
-
-        return {
-            "session": session,
-            "messages": messages,
-        }
-
-    async def get_session_with_agents(
-        self, session_id: str
-    ) -> Optional[Dict[str, Any]]:
-        """获取会话及其所有Agent"""
-        session = await self.get(session_id)
-        if not session:
-            return None
-
-        agent_service = AgentService()
-        agents = await agent_service.get_agents_by_session(session_id)
-
-        return {
-            "session": session,
-            "agents": agents,
-        }
-
 
 class TurnService(BaseService[Turn]):
     """Turn Service类"""
@@ -269,20 +223,6 @@ class TurnService(BaseService[Turn]):
             )
             result = await session.exec(statement)
             return result.scalars().first()
-
-    async def get_turn_with_messages(self, turn_id: str) -> Optional[Dict[str, Any]]:
-        """获取轮次及其所有消息"""
-        turn = await self.get(turn_id)
-        if not turn:
-            return None
-
-        message_service = MessageService()
-        messages = await message_service.get_messages_by_turn(turn_id)
-
-        return {
-            "turn": turn,
-            "messages": messages,
-        }
 
     async def get_next_sequence_number(self, session_id: str) -> int:
         """获取下一个轮次序列号"""
@@ -344,20 +284,6 @@ class MessageService(BaseService[Message]):
         """根据Agent ID获取消息"""
         return await self.get_all(filters={"agent_id": agent_id})
 
-    async def get_messages_by_role(
-        self, session_id: str, role: MessageRole
-    ) -> List[Message]:
-        """根据会话ID和角色获取消息"""
-        async with db_manager.get_session() as session:
-            statement = select(Message).where(
-                and_(
-                    Message.session_id == session_id,
-                    Message.role == role,
-                )
-            )
-            result = await session.exec(statement)
-            return result.scalars().all()
-
     async def get_messages_by_type(
         self, session_id: str, message_type: MessageType
     ) -> List[Message]:
@@ -368,20 +294,6 @@ class MessageService(BaseService[Message]):
                     Message.session_id == session_id,
                     Message.message_type == message_type,
                 )
-            )
-            result = await session.exec(statement)
-            return result.scalars().all()
-
-    async def get_conversation_history(
-        self, session_id: str, limit: int = 50
-    ) -> List[Message]:
-        """获取会话历史消息"""
-        async with db_manager.get_session() as session:
-            statement = (
-                select(Message)
-                .where(Message.session_id == session_id)
-                .order_by(Message.sequence_number.asc())
-                .limit(limit)
             )
             result = await session.exec(statement)
             return result.scalars().all()
@@ -424,20 +336,6 @@ class AgentConfigService(BaseService[AgentConfig]):
         """根据会话ID获取配置"""
         return await self.get_all(filters={"session_id": session_id})
 
-    async def get_config_by_name(
-        self, session_id: str, name: str
-    ) -> Optional[AgentConfig]:
-        """根据会话ID和名称获取配置"""
-        async with db_manager.get_session() as session:
-            statement = select(AgentConfig).where(
-                and_(
-                    AgentConfig.session_id == session_id,
-                    AgentConfig.name == name,
-                )
-            )
-            result = await session.exec(statement)
-            return result.scalars().first()
-
 
 class AgentService(BaseService[Agent]):
     """Agent Service类"""
@@ -466,38 +364,6 @@ class AgentService(BaseService[Agent]):
     async def get_agents_by_session(self, session_id: str) -> List[Agent]:
         """根据会话ID获取Agent"""
         return await self.get_all(filters={"session_id": session_id})
-
-    async def get_agents_by_config(self, config_id: str) -> List[Agent]:
-        """根据配置ID获取Agent"""
-        return await self.get_all(filters={"config_id": config_id})
-
-    async def get_agent_with_turns(self, agent_id: str) -> Optional[Dict[str, Any]]:
-        """获取Agent及其所有轮次"""
-        agent = await self.get(agent_id)
-        if not agent:
-            return None
-
-        turn_service = TurnService()
-        turns = await turn_service.get_turns_by_agent(agent_id)
-
-        return {
-            "agent": agent,
-            "turns": turns,
-        }
-
-    async def get_agent_with_messages(self, agent_id: str) -> Optional[Dict[str, Any]]:
-        """获取Agent及其所有消息"""
-        agent = await self.get(agent_id)
-        if not agent:
-            return None
-
-        message_service = MessageService()
-        messages = await message_service.get_messages_by_agent(agent_id)
-
-        return {
-            "agent": agent,
-            "messages": messages,
-        }
 
 
 # 全局Service实例
