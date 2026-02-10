@@ -128,7 +128,7 @@ class SessionManager:
         tool_name: str | None = None,
         tool_arguments: str | None = None,
         tool_result: str | None = None,
-    ) -> bool:
+    ) -> Message | None:
         """
         保存消息到数据库
 
@@ -158,7 +158,7 @@ class SessionManager:
                 self.session_id
             )
 
-            await self.message_service.create_message(
+            message = await self.message_service.create_message(
                 message_id=message_id,
                 session_id=self.session_id,
                 turn_id=turn_id,
@@ -174,11 +174,11 @@ class SessionManager:
                 sequence_number=seq_num,
             )
 
-            return True
+            return message
 
         except Exception as e:
             logger.error(f"Failed to save message: {e}")
-            return False
+            return None
 
     async def get_messages(
         self,
@@ -245,6 +245,14 @@ class SessionManager:
                 turn_description=description,
             )
 
+            await self.save_message(
+                role=MessageRole.AGENT,
+                content="",
+                message_type=MessageType.TURN_START,
+                turn_id=turn_id,
+                agent_id=agent_id,
+            )
+
             logger.info(f"Started new turn: {turn_id}")
 
             return turn_id
@@ -252,6 +260,35 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Failed to start turn: {e}")
             raise
+
+    async def end_turn(self, turn_id: str, agent_id: str) -> bool:
+        """
+        结束指定的turn
+
+        Args:
+            turn_id: 要结束的turn ID
+
+        Returns:
+            是否成功结束
+        """
+        if not turn_id:
+            logger.warning("No turn ID provided for ending")
+            return False
+
+        try:
+            await self.save_message(
+                role=MessageRole.SYSTEM,
+                content="",
+                message_type=MessageType.TURN_END,
+                turn_id=turn_id,
+                agent_id=agent_id,
+            )
+            logger.info(f"Ended turn: {turn_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"Failed to end turn: {e}")
+            return False
 
     async def load_session(self, session_id: str) -> bool:
         """

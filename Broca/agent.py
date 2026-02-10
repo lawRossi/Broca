@@ -12,6 +12,7 @@ from Broca.comm.agent_communicator import AgentCommunicator
 from Broca.comm.message_types import Message
 from Broca.context import Context
 from Broca.llm import LLMClient
+from Broca.session import MessageRole, MessageType, SessionManager
 from Broca.tools.tool import ToolCallContext
 from Broca.tools.tool_manager import ToolManager
 
@@ -26,6 +27,7 @@ class Agent:
         self._setup_context(**kwargs)
         self._setup_tools()
         self._setup_logger()
+        self.agent_id = kwargs.get("agent_id") or uuid.uuid4().hex
 
     def _setup_context(self, **kwargs) -> None:
         self.context = Context(self.config, **kwargs)
@@ -56,13 +58,26 @@ class SocketIOAgent(Agent):
     VSCode plugin, and browser plugin clients.
     """
 
-    def __init__(self, config: AgentConfig, llm_client: LLMClient):
-        super().__init__(config, llm_client)
-        self.agent_id = uuid.uuid4().hex
+    def __init__(
+        self,
+        config: AgentConfig,
+        llm_client: LLMClient,
+        session_manager: SessionManager,
+        **kwargs,
+    ):
+        super().__init__(config, llm_client, **kwargs)
 
-        # Initialize communicator
+        self.session_manager = session_manager
+        self.session_id: str | None = None
+        self.turn_id: str | None = None
+
+        self._setup_communicator()
+
+    def _setup_communicator(self):
         self.communicator = AgentCommunicator(
-            agent_id=self.agent_id, server_url=config.server_url, client_type="agent"
+            agent_id=self.agent_id,
+            server_url=self.config.server_url,
+            client_type="agent",
         )
 
         # Set up callbacks
@@ -85,7 +100,13 @@ class SocketIOAgent(Agent):
         self.is_aborted = False
         self._abort_task: Optional[asyncio.Task] = None
 
-        logger.info(f"SocketIOAgent initialized for {self.communicator.agent_id}")
+    async def _ensure_session(self):
+        if not self.session_id:
+            await self.session_manager.initialize()
+            if not self.session_manager.session_id:
+                await self.session_manager.create_session()
+            self.session_id = self.session_manager.session_id
+            self.subscribe(self.session_manager.session_id)
 
     async def _on_user_message(self, message: Message):
         """Handle user message from Socket.io"""
@@ -102,7 +123,7 @@ class SocketIOAgent(Agent):
                 )
                 return
 
-            await self.run_async(content)
+            await self.run_async(content, message.message_id)
         except Exception as e:
             logger.error(f"Error processing user message: {e}")
 
@@ -301,7 +322,10 @@ class SocketIOAgent(Agent):
             )
 
     async def run_async(
-        self, user_message: Optional[str] = None, max_steps: Optional[int] = None
+        self,
+        user_message: Optional[str] = None,
+        message_id: Optional[str] = None,
+        max_steps: Optional[int] = None,
     ) -> None:
         """
         Run agent in async mode (replaces command-line interaction)
@@ -319,18 +343,32 @@ class SocketIOAgent(Agent):
 
         # Store the current execution task for potential cancellation
         self._abort_task = asyncio.current_task()
-        turn_id = f"turn_{uuid.uuid4().hex[:16]}"
+
         try:
             if user_message:
-                # Process initial user message
-                await self.context.add_message(
-                    {"role": "user", "content": user_message}
-                )
                 try:
+                    await self._ensure_session()
+
+                    turn_id = await self.session_manager.start_turn(self.agent_id)
+                    self.turn_id = turn_id
+
                     await self.communicator.send_turn_start(
                         turn_id=turn_id,
                         turn_description=f"Processing user message: {user_message[:50]}...",
                         subscription=self.config.session_id,
+                    )
+
+                    await self.session_manager.save_message(
+                        role=MessageRole.USER,
+                        content=user_message,
+                        message_type=MessageType.TEXT,
+                        turn_id=turn_id,
+                        agent_id=self.agent_id,
+                        message_id=message_id,
+                    )
+
+                    await self.context.add_message(
+                        {"role": "user", "content": user_message}
                     )
                 except Exception as e:
                     logger.error(f"Failed to send turn start: {e}")
@@ -352,14 +390,19 @@ class SocketIOAgent(Agent):
         finally:
             # Clear the abort task reference
             self._abort_task = None
-            try:
-                await self.communicator.send_turn_end(
-                    turn_id=turn_id,
-                    result="Turn completed",
-                    subscription=self.config.session_id,
-                )
-            except Exception as e:
-                logger.error(f"Failed to send turn end: {e}")
+            if self.turn_id:
+                try:
+                    turn_id = self.turn_id
+                    self.turn_id = None
+                    await self.communicator.send_turn_end(
+                        turn_id=turn_id,
+                        result="Turn completed",
+                        subscription=self.config.session_id,
+                    )
+                    await self.session_manager.end_turn(turn_id, self.agent_id)
+
+                except Exception as e:
+                    logger.error(f"Failed to send turn end: {e}")
 
         logger.debug("Agent execution completed.")
 
