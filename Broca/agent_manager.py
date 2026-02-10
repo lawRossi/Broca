@@ -1,9 +1,10 @@
-import platform
 import os
+import platform
 
 from Broca.agent import AgentConfig, SocketIOAgent
 from Broca.agent_configs import main_agent_config, sub_agent_config
 from Broca.llm import LLMClient
+from Broca.session import SessionManager
 
 
 class AgentFactory:
@@ -15,7 +16,7 @@ class AgentFactory:
         return cls._instance
 
     def __init__(self):
-        if not hasattr(self, '_initialized'):
+        if not hasattr(self, "_initialized"):
             self._initialized = True
             self.llm_client = LLMClient()
 
@@ -27,12 +28,16 @@ class AgentFactory:
         else:
             raise ValueError(f"Unknown agent type: {name}")
 
-    def _create_main_agent(self, session_id):
+    async def _create_main_agent(self, session_id=None) -> SocketIOAgent:
         config = AgentConfig.from_config(main_agent_config)
-        config.session_id = session_id
+        session_manager = SessionManager()
+        if session_id is not None:
+            await session_manager.load_session(session_id)
+        else:
+            await session_manager.create_session()
         if config.environment is None:
             config.environment = self._init_environment()
-        return SocketIOAgent(config, self.llm_client)
+        return SocketIOAgent(config, self.llm_client, session_manager)
 
     def _create_subagent(self, role=None):
         config = AgentConfig.from_config(sub_agent_config)

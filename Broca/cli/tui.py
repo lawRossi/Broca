@@ -11,8 +11,6 @@ Provides a rich TUI experience with:
 """
 
 import asyncio
-import random
-import string
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
@@ -397,15 +395,10 @@ class BrocaTUIApp(App):
 
         # Generate session_id if not provided
         if session_id is None:
-            random_suffix = "".join(
-                random.choices(string.ascii_lowercase + string.digits, k=8)
-            )
-            self.session_id = f"session_{self.client_type}_{random_suffix}"
             self._init_agent = True
         else:
-            self.session_id = session_id
             self._init_agent = False
-
+        self.session_id = session_id
         self.message_buffer = MessageBuffer()
         self.status = StatusIndicator()
         self.client = None
@@ -434,13 +427,13 @@ class BrocaTUIApp(App):
 
     def on_mount(self) -> None:
         """Called when the app is mounted"""
-        # Show welcome message
-        asyncio.create_task(self._show_welcome())
-        # Initialize agent if needed
+        asyncio.create_task(self._on_mounted())
+
+    async def _on_mounted(self) -> None:
+        await self._show_welcome()
         if self._init_agent:
-            asyncio.create_task(self._initialize_agent())
-        # Connect to server
-        asyncio.create_task(self._connect())
+            await self._initialize_agent()
+        await self._connect()
 
     async def _initialize_agent(self):
         """Initialize the agent"""
@@ -450,9 +443,12 @@ class BrocaTUIApp(App):
             self.query_one(StatusWidget).update_status()
 
             factory = AgentFactory()
-            self.agent = factory.get_agent("main_agent", session_id=self.session_id)
+            self.agent = await factory.get_agent(
+                "main_agent", session_id=self.session_id
+            )
+            if self.session_id is None:
+                self.session_id = self.agent.session_manager.session_id
             await self.agent.connect()
-            await self.agent.subscribe(self.session_id)
 
             # Set agent connected status
             if hasattr(self.agent, "agent_id"):
@@ -526,6 +522,7 @@ class BrocaTUIApp(App):
 
             # Subscribe to session
             session_id = self.session_id
+            logger.info(f"Subscribing to session: {session_id}")
             await self.client.subscribe(session_id)
 
             self.status.set_connected(session_id, self.server_url)
