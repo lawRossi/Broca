@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 import traceback
 import uuid
@@ -102,11 +103,9 @@ class SocketIOAgent(Agent):
 
     async def _ensure_session(self):
         if not self.session_id:
-            await self.session_manager.initialize()
             if not self.session_manager.session_id:
                 await self.session_manager.create_session()
             self.session_id = self.session_manager.session_id
-            self.subscribe(self.session_manager.session_id)
 
     async def _on_user_message(self, message: Message):
         """Handle user message from Socket.io"""
@@ -126,6 +125,18 @@ class SocketIOAgent(Agent):
             await self.run_async(content, message.message_id)
         except Exception as e:
             logger.error(f"Error processing user message: {e}")
+            # Save user message processing error to database
+            if self.turn_id:
+                try:
+                    await self.session_manager.save_message(
+                        role=MessageRole.SYSTEM,
+                        content=f"Error processing user message: {e}",
+                        message_type=MessageType.ERROR,
+                        turn_id=self.turn_id,
+                        agent_id=self.agent_id,
+                    )
+                except Exception as save_error:
+                    logger.error(f"Failed to save user message error: {save_error}")
 
     async def _on_agent_response(self, message: Message):
         """Handle agent response from Socket.io"""
@@ -165,20 +176,53 @@ class SocketIOAgent(Agent):
                 subscription=self.config.session_id,
             )
 
+            if self.turn_id:
+                await self.session_manager.save_message(
+                    role=MessageRole.AGENT,
+                    content=message,
+                    message_type=MessageType.PERMISSION_REQUEST,
+                    turn_id=self.turn_id,
+                    agent_id=self.agent_id,
+                )
+
             # Wait for response with timeout
             try:
                 await asyncio.wait_for(response_event.wait(), timeout=60)
             except asyncio.TimeoutError:
                 logger.warning(f"Permission request {request_id} timed out")
+                if self.turn_id:
+                    await self.session_manager.save_message(
+                        role=MessageRole.SYSTEM,
+                        content="Permission request timed out",
+                        message_type=MessageType.ERROR,
+                        turn_id=self.turn_id,
+                        agent_id=self.agent_id,
+                    )
                 return False
 
             async with self._permission_lock:
                 granted = self._permission_requests.get(request_id, {}).get(
                     "granted", False
                 )
+                if self.turn_id:
+                    await self.session_manager.save_message(
+                        role=MessageRole.AGENT,
+                        content=f"Permission request {request_id}: {'granted' if granted else 'denied'}",
+                        message_type=MessageType.PERMISSION_RESPONSE,
+                        turn_id=self.turn_id,
+                        agent_id=self.agent_id,
+                    )
                 return granted or False
         except Exception as e:
             logger.error(f"Failed to send permission request: {e}")
+            if self.turn_id:
+                await self.session_manager.save_message(
+                    role=MessageRole.SYSTEM,
+                    content=f"Failed to send permission request: {e}",
+                    message_type=MessageType.ERROR,
+                    turn_id=self.turn_id,
+                    agent_id=self.agent_id,
+                )
             return False
         finally:
             # Clean up the request
@@ -239,6 +283,20 @@ class SocketIOAgent(Agent):
             except asyncio.TimeoutError:
                 logger.error("LLM call timed out")
                 errors += 1
+
+                # Save timeout error to database
+                if self.turn_id:
+                    try:
+                        await self.session_manager.save_message(
+                            role=MessageRole.SYSTEM,
+                            content="LLM call timed out",
+                            message_type=MessageType.ERROR,
+                            turn_id=self.turn_id,
+                            agent_id=self.agent_id,
+                        )
+                    except Exception as save_error:
+                        logger.error(f"Failed to save timeout error: {save_error}")
+
                 if errors > 2:
                     logger.error("Too many timeouts, aborting...")
                     return False
@@ -248,6 +306,20 @@ class SocketIOAgent(Agent):
             except Exception as e:
                 logger.error(f"LLM call failed: {e}")
                 errors += 1
+
+                # Save LLM call error to database
+                if self.turn_id:
+                    try:
+                        await self.session_manager.save_message(
+                            role=MessageRole.SYSTEM,
+                            content=f"LLM call failed: {e}",
+                            message_type=MessageType.ERROR,
+                            turn_id=self.turn_id,
+                            agent_id=self.agent_id,
+                        )
+                    except Exception as save_error:
+                        logger.error(f"Failed to save LLM error: {save_error}")
+
                 if errors > 2:
                     logger.error("Too many errors, aborting...")
                     return False
@@ -257,15 +329,36 @@ class SocketIOAgent(Agent):
 
         # Send response via Socket.io (send_message will handle connection automatically)
         content = response.content
-        if content and content.strip():
+        if content:
+            content = content.strip()
+        reasoning_content = response.get("reasoning_content") or response.get(
+            "reasoning_details"
+        )
+        if reasoning_content:
+            reasoning_content = reasoning_content.strip()
+
+        if content or reasoning_content:
             try:
                 await self.communicator.send_agent_response(
                     content=content,
-                    reasoning_content=response.get("reasoning_content"),
+                    reasoning_content=reasoning_content,
                     subscription=self.config.session_id,
                 )
             except Exception as e:
                 logger.error(f"Failed to send agent response: {e}")
+
+        if self.turn_id:
+            try:
+                msg_congent = json.dumps(response.json(), ensure_ascii=False)
+                await self.session_manager.save_message(
+                    role=MessageRole.ASSISTANT,
+                    content=msg_congent,
+                    message_type=MessageType.TEXT,
+                    turn_id=self.turn_id,
+                    agent_id=self.agent_id,
+                )
+            except Exception as save_error:
+                logger.error(f"Failed to save agent response: {save_error}")
 
         if not response.tool_calls:
             need_more_steps = False
@@ -316,10 +409,28 @@ class SocketIOAgent(Agent):
                     logger.error(f"Tool execution failed: {e}")
                     result = f"Tool execution failed: {e}"
 
+            tool_call_result = {
+                "role": "tool",
+                "tool_call_id": tool_call.id,
+                "content": result,
+            }
+
+            # Save tool result to database for persistence
+            # This completes the tool execution record with the actual result
+            if self.turn_id:
+                try:
+                    await self.session_manager.save_message(
+                        role=MessageRole.TOOL,
+                        content=json.dumps(tool_call_result, ensure_ascii=False),
+                        message_type=MessageType.TOOL_RESULT,
+                        turn_id=self.turn_id,
+                        agent_id=self.agent_id,
+                    )
+                except Exception as save_error:
+                    logger.error(f"Failed to save tool result: {save_error}")
+
             # Add to history
-            await self.context.add_message(
-                {"role": "tool", "tool_call_id": tool_call.id, "content": result}
-            )
+            await self.context.add_message(tool_call_result)
 
     async def run_async(
         self,
@@ -372,6 +483,20 @@ class SocketIOAgent(Agent):
                     )
                 except Exception as e:
                     logger.error(f"Failed to send turn start: {e}")
+                    # Save turn start error to database
+                    if self.turn_id:
+                        try:
+                            await self.session_manager.save_message(
+                                role=MessageRole.SYSTEM,
+                                content=f"Failed to send turn start: {e}",
+                                message_type=MessageType.ERROR,
+                                turn_id=self.turn_id,
+                                agent_id=self.agent_id,
+                            )
+                        except Exception as save_error:
+                            logger.error(
+                                f"Failed to save turn start error: {save_error}"
+                            )
 
                 # Execute complete round
                 await self._execute_round_async(max_steps)
@@ -379,6 +504,19 @@ class SocketIOAgent(Agent):
             logger.info("Agent execution cancelled by user")
         except Exception as e:
             logger.error(f"Error in agent execution: {e}")
+            # Save error to database
+            if self.turn_id:
+                try:
+                    await self.session_manager.save_message(
+                        role=MessageRole.SYSTEM,
+                        content=f"Error in agent execution: {e}\n{traceback.format_exc()}",
+                        message_type=MessageType.ERROR,
+                        turn_id=self.turn_id,
+                        agent_id=self.agent_id,
+                    )
+                except Exception as save_error:
+                    logger.error(f"Failed to save execution error: {save_error}")
+
             # send error message (send_message will handle connection automatically)
             try:
                 await self.communicator.send_agent_response(
@@ -403,6 +541,18 @@ class SocketIOAgent(Agent):
 
                 except Exception as e:
                     logger.error(f"Failed to send turn end: {e}")
+                    # Save turn end error to database
+                    if turn_id:
+                        try:
+                            await self.session_manager.save_message(
+                                role=MessageRole.SYSTEM,
+                                content=f"Failed to send turn end: {e}",
+                                message_type=MessageType.ERROR,
+                                turn_id=turn_id,
+                                agent_id=self.agent_id,
+                            )
+                        except Exception as save_error:
+                            logger.error(f"Failed to save turn end error: {save_error}")
 
         logger.debug("Agent execution completed.")
 
@@ -445,6 +595,19 @@ class SocketIOAgent(Agent):
             except Exception as e:
                 logger.error(f"Error in round execution: {e}")
                 logger.error(traceback.format_exc())
+
+                # Save round execution error to database
+                if self.turn_id:
+                    try:
+                        await self.session_manager.save_message(
+                            role=MessageRole.SYSTEM,
+                            content=f"Error in round execution: {e}\n{traceback.format_exc()}",
+                            message_type=MessageType.ERROR,
+                            turn_id=self.turn_id,
+                            agent_id=self.agent_id,
+                        )
+                    except Exception as save_error:
+                        logger.error(f"Failed to save round error: {save_error}")
                 break
 
     def reset(self):
@@ -506,6 +669,17 @@ class SocketIOAgent(Agent):
         command = message.data.get("command")
         if command == "abort":
             logger.info("Received abort command from user")
+            if self.turn_id:
+                try:
+                    await self.session_manager.save_message(
+                        role=MessageRole.USER,
+                        content="abort",
+                        message_type=MessageType.COMMAND,
+                        turn_id=self.turn_id,
+                        agent_id=self.agent_id,
+                    )
+                except Exception as save_error:
+                    logger.error(f"Failed to save abort command: {save_error}")
             await self.abort()
 
     async def disconnect(self):

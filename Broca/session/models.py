@@ -74,9 +74,6 @@ class Turn(SQLModel, table=True):
         default_factory=datetime.utcnow, description="创建时间"
     )
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
-
 
 class Session(SQLModel, table=True):
     """
@@ -108,9 +105,6 @@ class Session(SQLModel, table=True):
         back_populates="session", cascade_delete="all"
     )
 
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
-
 
 class Message(SQLModel, table=True):
     """
@@ -137,17 +131,6 @@ class Message(SQLModel, table=True):
     message_type: MessageType = Field(default=MessageType.TEXT, description="消息类型")
     content: Optional[str] = Field(default=None, description="消息内容")
 
-    # 推理内容（用于思维链）
-    reasoning_content: Optional[str] = Field(default=None, description="推理内容")
-
-    # 工具调用信息
-    tool_calls: Optional[str] = Field(default=None, description="工具调用信息")
-
-    tool_call_id: Optional[str] = Field(default=None, description="工具调用ID")
-    tool_name: Optional[str] = Field(default=None, description="工具名称")
-    tool_arguments: Optional[str] = Field(default=None, description="工具参数JSON")
-    tool_result: Optional[str] = Field(default=None, description="工具执行结果")
-
     sequence_number: int = Field(description="消息序列号")
     timestamp: datetime = Field(
         default_factory=datetime.utcnow, description="消息时间戳"
@@ -157,9 +140,6 @@ class Message(SQLModel, table=True):
     session: Session = Relationship(back_populates="messages")
     turn: Turn = Relationship(back_populates="messages")
     agent: "Agent" = Relationship(back_populates="messages")
-
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class AgentConfig(SQLModel, table=True):
@@ -187,9 +167,6 @@ class AgentConfig(SQLModel, table=True):
     # 关联关系
     session: Session = Relationship(back_populates="agent_configs")
     agents: List["Agent"] = Relationship(back_populates="agent_config")
-
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}
 
 
 class Agent(SQLModel, table=True):
@@ -226,6 +203,3 @@ class Agent(SQLModel, table=True):
     messages: List["Message"] = Relationship(
         back_populates="agent", cascade_delete="all"
     )
-
-    class Config:
-        json_encoders = {datetime: lambda v: v.isoformat()}

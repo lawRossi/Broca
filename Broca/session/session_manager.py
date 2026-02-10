@@ -118,16 +118,11 @@ class SessionManager:
     async def save_message(
         self,
         role: str,
-        content: str,
+        content: str | None,
         message_type: str,
         turn_id: str,
         agent_id: str,
         message_id: str | None = None,
-        reasoning_content: str | None = None,
-        tool_call_id: str | None = None,
-        tool_name: str | None = None,
-        tool_arguments: str | None = None,
-        tool_result: str | None = None,
     ) -> Message | None:
         """
         保存消息到数据库
@@ -166,11 +161,6 @@ class SessionManager:
                 role=MessageRole(role),
                 content=content,
                 message_type=MessageType(message_type),
-                reasoning_content=reasoning_content,
-                tool_call_id=tool_call_id,
-                tool_name=tool_name,
-                tool_arguments=tool_arguments,
-                tool_result=tool_result,
                 sequence_number=seq_num,
             )
 

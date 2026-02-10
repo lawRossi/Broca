@@ -247,11 +247,6 @@ class MessageService(BaseService[Message]):
         role: MessageRole,
         content: Optional[str] = None,
         message_type: MessageType = MessageType.TEXT,
-        reasoning_content: Optional[str] = None,
-        tool_call_id: Optional[str] = None,
-        tool_name: Optional[str] = None,
-        tool_arguments: Optional[str] = None,
-        tool_result: Optional[str] = None,
         sequence_number: int = 1,
     ) -> Message:
         """创建新消息"""
@@ -263,11 +258,6 @@ class MessageService(BaseService[Message]):
             role=role,
             content=content,
             message_type=message_type,
-            reasoning_content=reasoning_content,
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-            tool_arguments=tool_arguments,
-            tool_result=tool_result,
             sequence_number=sequence_number,
             timestamp=datetime.utcnow(),
         )

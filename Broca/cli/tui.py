@@ -10,6 +10,7 @@ Provides a rich TUI experience with:
 - Command support
 """
 
+import argparse
 import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -31,6 +32,7 @@ from textual.widgets import (
 
 from Broca.agent_manager import AgentFactory
 from Broca.comm.socketio_client import SocketIOClient
+from Broca.session.database import db_manager
 
 logger.add("tui.log", level="DEBUG")
 
@@ -449,6 +451,7 @@ class BrocaTUIApp(App):
             if self.session_id is None:
                 self.session_id = self.agent.session_manager.session_id
             await self.agent.connect()
+            await self.agent.subscribe(self.session_id)
 
             # Set agent connected status
             if hasattr(self.agent, "agent_id"):
@@ -729,7 +732,7 @@ Keyboard shortcuts:
                     content="Abort command sent", message_type=MessageType.SYSTEM
                 )
             )
-            logger.info("Abort command sent")
+            logger.info(f"Abort command sent to {self.session_id}.")
 
         except Exception as e:
             logger.error(f"Failed to send abort command: {e}")
@@ -934,7 +937,6 @@ class TUI:
 
 async def main():
     """Main entry point for TUI"""
-    import argparse
 
     parser = argparse.ArgumentParser(description="Broca CLI - Terminal User Interface")
     parser.add_argument(
@@ -951,6 +953,9 @@ async def main():
     )
 
     args = parser.parse_args()
+
+    # setup tables
+    await db_manager.init_tables()
 
     # Create and run TUI
     tui = TUI(

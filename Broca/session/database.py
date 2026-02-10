@@ -88,14 +88,3 @@ class AsyncDatabaseManager:
 
 # 全局数据库管理器实例
 db_manager = AsyncDatabaseManager()
-
-
-def get_db_manager() -> AsyncDatabaseManager:
-    """获取数据库管理器实例"""
-    return db_manager
-
-
-async def init_database():
-    """初始化数据库"""
-    await db_manager.init_tables()
-    print("Database tables initialized")
