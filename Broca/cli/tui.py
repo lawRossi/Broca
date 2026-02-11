@@ -480,12 +480,33 @@ class BrocaTUIApp(App):
             )
 
     async def _show_welcome(self):
-        """Show welcome message"""
+        """Show welcome message with ASCII art"""
+        broca_ascii = """
+╔══════════════════════════════════════════════════════════════════════════════════╗                                                                  ║
+║  ██████╗ ██████╗  ██████╗  ██████╗ █████╗                                        ║
+║  ██╔══██╗██╔══██╗██╔═══██╗██╔════╝██╔══██╗                                       ║
+║  ██████╔╝██████╔╝██║   ██║██║     ███████║                                       ║
+║  ██╔══██╗██╔══██╗██║   ██║██║     ██╔══██║                                       ║
+║  ██████╔╝██║  ██║╚██████╔╝╚██████╗██║  ██║                                       ║
+║  ╚═════╝ ╚═╝  ╚═╝ ╚═════╝  ╚═════╝╚═╝  ╚═╝                                       ║                                                                        ║
+║  ──────────────────────────────────────────────────────────────────────────────  ║
+║                                                                                  ║
+║  Welcome to Broca CLI - Your Intelligent Assistant                               ║
+║                                                                                  ║
+║  Commands:                                                                       ║
+║    • Type your message and press Enter to send                                   ║
+║    • Use /help for available commands                                            ║
+║    • Press Ctrl+C to exit                                                        ║
+║                                                                                  ║
+║  Keyboard Shortcuts:                                                             ║
+║    • Up/Down: Navigate input history                                             ║
+║    • Ctrl+L: Clear chat                                                          ║
+║    • Ctrl+S: Toggle auto-scroll                                                  ║
+║                                                                                  ║
+╚══════════════════════════════════════════════════════════════════════════════════╝
+"""
         welcome = ChatMessage(
-            content="Welcome to Broca CLI!\n\n"
-            "Type your message and press Enter to send.\n"
-            "Use /help for available commands.\n"
-            "Press Ctrl+C to exit.\n\n",
+            content=broca_ascii,
             message_type=MessageType.SYSTEM,
         )
         await self.add_message(welcome)
