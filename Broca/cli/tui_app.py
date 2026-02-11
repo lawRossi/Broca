@@ -20,74 +20,7 @@ from .tui_widgets import MessageListWidget, PermissionDialog, StatusWidget
 class BrocaTUIApp(App):
     """Main TUI application"""
 
-    CSS = """
-    #main-container {
-        height: 100%;
-        background: #f0f0f0;
-    }
-
-    #status-bar {
-        height: 2;
-        dock: top;
-        background: #f0f0f0;
-        padding: 0 1;
-        color: #000000;
-    }
-
-    #message-container {
-        height: 1fr;
-        border: solid $primary;
-        background: #f5f5f5;
-    }
-
-    MessageListWidget {
-        background: #f5f5f5;
-        color: #000000;
-        scrollbar-size: 1 1;
-    }
-
-    #input-container {
-        height: 3;
-        dock: bottom;
-        padding: 0 1;
-        background: #f0f0f0;
-    }
-
-    Input {
-        width: 1fr;
-        background: #ffffff;
-        color: #000000;
-    }
-
-    #permission-dialog {
-        dock: top;
-        layer: overlay;
-        height: 10;
-        background: #f0f0f0;
-        border: thick $primary;
-        padding: 1;
-        color: #000000;
-    }
-
-    #permission-container {
-        height: 1fr;
-        content-align: center middle;
-    }
-
-    #permission-message {
-        margin-bottom: 1;
-        text-align: center;
-    }
-
-    #permission-buttons {
-        margin-top: 1;
-    }
-
-    Button {
-        margin: 0 1;
-        min-width: 10;
-    }
-    """
+    CSS_PATH = "tui_app.tcss"
 
     BINDINGS = [
         Binding("ctrl+c", "quit", "Quit"),
@@ -112,6 +45,8 @@ class BrocaTUIApp(App):
         self.user_id = user_id
 
         self.session_id = session_id
+        self._history_loaded: bool = False
+        self._session_id_provided: bool = session_id is not None
         self.message_buffer = MessageBuffer()
         self.status = StatusIndicator()
         self.client = None
@@ -145,7 +80,47 @@ class BrocaTUIApp(App):
     async def _on_mounted(self) -> None:
         await self._show_welcome()
         await self._initialize_agent()
+        # If session_id is provided (or resolved during agent init), load and show history
+        await self._load_and_show_history_if_needed()
         await self._connect()
+
+    async def _load_and_show_history_if_needed(self) -> None:
+        """Load historical messages for the current session (if any) and render them."""
+        if not self.session_id:
+            return
+
+        # Only load if user explicitly specified a session_id when launching
+        # (avoid duplicating messages for brand-new sessions).
+        if not self._session_id_provided or self._history_loaded:
+            return
+
+        try:
+            if not self.agent or not hasattr(self.agent, "session_manager"):
+                return
+
+            messages = await self.agent.session_manager.get_messages()
+            if not messages:
+                self._history_loaded = True
+                return
+
+            await self.add_message(
+                ChatMessage(
+                    content=f"--- Loaded {len(messages)} historical messages for session {self.session_id} ---\n",
+                    display_type=ChatMessage.DisplayType.SYSTEM,
+                )
+            )
+            for m in messages:
+                await self.add_session_message(m)
+
+            self._history_loaded = True
+        except Exception as e:
+            logger.error(f"Failed to load history for session {self.session_id}: {e}")
+            await self.add_message(
+                ChatMessage(
+                    content=f"Failed to load history for session {self.session_id}: {e}",
+                    display_type=ChatMessage.DisplayType.ERROR,
+                )
+            )
 
     async def _initialize_agent(self):
         """Initialize the agent"""
@@ -369,9 +344,10 @@ class BrocaTUIApp(App):
         """
         await self.message_buffer.add_session_message(message, display_type)
         chat_message = ChatMessage.from_session_message(message, display_type)
-        message_list = self.query_one("#message-list", MessageListWidget)
-        message_list.add_message(chat_message)
-        await self._trigger_event("message_added", chat_message)
+        if chat_message:
+            message_list = self.query_one("#message-list", MessageListWidget)
+            message_list.add_message(chat_message)
+            await self._trigger_event("message_added", chat_message)
 
     async def handle_command(self, command: str):
         """Handle CLI commands"""

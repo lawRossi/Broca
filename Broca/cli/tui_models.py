@@ -8,21 +8,24 @@ Contains data structures for the TUI application:
 """
 
 import asyncio
+import json
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from Broca.session.models import MessageRole, MessageType as SessionMessageType
+from Broca.session.models import MessageRole
+from Broca.session.models import MessageType as SessionMessageType
 
 
 @dataclass
 class ChatMessage:
     """Chat message data structure for TUI display"""
-    
+
     # TUI-specific message type for display styling
     class DisplayType(Enum):
         """Message types for TUI display styling"""
+
         USER = "user"
         ASSISTANT = "assistant"
         SYSTEM = "system"
@@ -33,7 +36,6 @@ class ChatMessage:
     content: str
     display_type: DisplayType
     timestamp: datetime = field(default_factory=datetime.now)
-    sender_id: Optional[str] = None
     message_id: Optional[str] = None
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -44,19 +46,40 @@ class ChatMessage:
     turn_id: Optional[str] = None
     agent_id: Optional[str] = None
     sequence_number: Optional[int] = None
-    
+
     @classmethod
-    def from_session_message(cls, message: Any, display_type: Optional[DisplayType] = None) -> "ChatMessage":
+    def from_session_message(
+        cls, message: Any, display_type: Optional[DisplayType] = None
+    ) -> "ChatMessage" or None:
         """Create a ChatMessage from a session message model"""
+        if message.role not in [
+            MessageRole.USER,
+            MessageRole.ASSISTANT,
+            MessageRole.SYSTEM,
+        ]:
+            return None
+        content = message.content
+        if not content:
+            return None
+        try:
+            json_content = json.loads(content)
+            content = json_content["content"]
+            if not content:
+                return None
+        except json.JSONDecodeError:
+            pass
         # Determine display type from role and message type
         if display_type is None:
-            if hasattr(message, 'role'):
+            if hasattr(message, "role"):
                 if message.role == MessageRole.USER:
                     display_type = cls.DisplayType.USER
                 elif message.role == MessageRole.ASSISTANT:
                     display_type = cls.DisplayType.ASSISTANT
                 elif message.role == MessageRole.SYSTEM:
-                    if hasattr(message, 'message_type') and message.message_type == SessionMessageType.ERROR:
+                    if (
+                        hasattr(message, "message_type")
+                        and message.message_type == SessionMessageType.ERROR
+                    ):
                         display_type = cls.DisplayType.ERROR
                     else:
                         display_type = cls.DisplayType.SYSTEM
@@ -66,27 +89,28 @@ class ChatMessage:
                     display_type = cls.DisplayType.SYSTEM
             else:
                 display_type = cls.DisplayType.SYSTEM
-        
+
         return cls(
-            content=message.content if hasattr(message, 'content') else str(message),
+            content=content,
             display_type=display_type,
-            timestamp=message.timestamp if hasattr(message, 'timestamp') else datetime.now(),
-            sender_id=message.agent_id if hasattr(message, 'agent_id') else None,
-            message_id=message.message_id if hasattr(message, 'message_id') else None,
-            role=getattr(message, 'role', None),
-            message_type=getattr(message, 'message_type', None),
-            session_id=getattr(message, 'session_id', None),
-            turn_id=getattr(message, 'turn_id', None),
-            agent_id=getattr(message, 'agent_id', None),
-            sequence_number=getattr(message, 'sequence_number', None),
-            metadata={}
+            timestamp=message.timestamp
+            if hasattr(message, "timestamp")
+            else datetime.now(),
+            message_id=message.message_id if hasattr(message, "message_id") else None,
+            role=getattr(message, "role", None),
+            message_type=getattr(message, "message_type", None),
+            session_id=getattr(message, "session_id", None),
+            turn_id=getattr(message, "turn_id", None),
+            agent_id=getattr(message, "agent_id", None),
+            sequence_number=getattr(message, "sequence_number", None),
+            metadata={},
         )
 
 
 class MessageBuffer:
     """
     Thread-safe message buffer for storing chat messages
-    
+
     支持两种类型的消息:
     1. ChatMessage 对象 (TUI 显示消息)
     2. Session 消息对象 (通过 add_session_message 方法)
@@ -104,16 +128,19 @@ class MessageBuffer:
                 self._messages.pop(0)
             self._messages.append(message)
 
-    async def add_session_message(self, message: Any, display_type: Optional[ChatMessage.DisplayType] = None):
+    async def add_session_message(
+        self, message: Any, display_type: Optional[ChatMessage.DisplayType] = None
+    ):
         """
         Add a session message to the buffer
-        
+
         Args:
             message: A session message object (e.g., Broca.session.models.Message)
             display_type: Optional display type override
         """
         chat_message = ChatMessage.from_session_message(message, display_type)
-        await self.add_message(chat_message)
+        if chat_message:
+            await self.add_message(chat_message)
 
     async def get_messages(self) -> List[ChatMessage]:
         """Get all messages from the buffer"""
