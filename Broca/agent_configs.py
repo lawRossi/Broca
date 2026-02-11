@@ -5,9 +5,9 @@ from Broca.prompts import main_agent_base, subagent_base
 
 class AgentConfig:
     def __init__(self):
-        self.session_id = None
+        self.config_name = None
         self.role_description = None
-        self.llm_config_name = "minimax"
+        self.llm_config_name = "deepseek"
         self.log_file = "agent.log"
         self.system_prompt_template = None
         self.subagents = []
@@ -22,6 +22,9 @@ class AgentConfig:
     @classmethod
     def from_config(cls, config):
         agent_config = cls()
+        for key in list(config.keys()):
+            if key not in agent_config.__dict__:
+                del config[key]
         agent_config.__dict__.update(config)
         return agent_config
 
@@ -30,7 +33,8 @@ class AgentConfig:
 
 
 main_agent_config = {
-    "llm_config_name": "minimax",
+    "config_name": "main_agent",
+    "llm_config_name": "deepseek",
     "system_prompt_template": main_agent_base,
     "subagents": [],
     # "subagents": ["requirment analyzer", "frontend developer", "backend developer"],
@@ -51,7 +55,7 @@ main_agent_config = {
 
 
 sub_agent_config = {
-    "llm_config_name": "minimax",
+    "llm_config_name": "deepseek",
     "system_prompt_template": subagent_base,
     "tools": ["execute_code", "load_skill"],
     "skills": [],
