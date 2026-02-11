@@ -29,6 +29,8 @@ class Agent:
         self._setup_tools()
         self._setup_logger()
         self.agent_id = kwargs.get("agent_id") or uuid.uuid4().hex
+        self.name = kwargs.get("name")
+        self.role = kwargs.get("role")
 
     def _setup_context(self, **kwargs) -> None:
         self.context = Context(self.config, **kwargs)
@@ -173,7 +175,7 @@ class SocketIOAgent(Agent):
             await self.communicator.send_permission_request(
                 message=message,
                 request_id=request_id,
-                subscription=self.config.session_id,
+                subscription=self.session_id,
             )
 
             if self.turn_id:
@@ -342,7 +344,7 @@ class SocketIOAgent(Agent):
                 await self.communicator.send_agent_response(
                     content=content,
                     reasoning_content=reasoning_content,
-                    subscription=self.config.session_id,
+                    subscription=self.session_id,
                 )
             except Exception as e:
                 logger.error(f"Failed to send agent response: {e}")
@@ -391,7 +393,7 @@ class SocketIOAgent(Agent):
                     await self.communicator.send_tool_call(
                         tool_name=tool_name,
                         arguments=arguments,
-                        subscription=self.config.session_id,
+                        subscription=self.session_id,
                     )
 
                     # Execute tool asynchronously with timeout for cancellation support
@@ -466,21 +468,21 @@ class SocketIOAgent(Agent):
                     await self.communicator.send_turn_start(
                         turn_id=turn_id,
                         turn_description=f"Processing user message: {user_message[:50]}...",
-                        subscription=self.config.session_id,
+                        subscription=self.session_id,
                     )
 
+                    message = {"role": "user", "content": user_message}
+                    msg_content = json.dumps(message, ensure_ascii=False)
                     await self.session_manager.save_message(
                         role=MessageRole.USER,
-                        content=user_message,
+                        content=msg_content,
                         message_type=MessageType.TEXT,
                         turn_id=turn_id,
                         agent_id=self.agent_id,
                         message_id=message_id,
                     )
 
-                    await self.context.add_message(
-                        {"role": "user", "content": user_message}
-                    )
+                    await self.context.add_message(message)
                 except Exception as e:
                     logger.error(f"Failed to send turn start: {e}")
                     # Save turn start error to database
@@ -521,7 +523,7 @@ class SocketIOAgent(Agent):
             try:
                 await self.communicator.send_agent_response(
                     content=f"Error in agent execution: {e}",
-                    subscription=self.config.session_id,
+                    subscription=self.session_id,
                 )
             except Exception as send_error:
                 logger.error(f"Failed to send error response: {send_error}")
@@ -535,7 +537,7 @@ class SocketIOAgent(Agent):
                     await self.communicator.send_turn_end(
                         turn_id=turn_id,
                         result="Turn completed",
-                        subscription=self.config.session_id,
+                        subscription=self.session_id,
                     )
                     await self.session_manager.end_turn(turn_id, self.agent_id)
 
@@ -685,3 +687,8 @@ class SocketIOAgent(Agent):
     async def disconnect(self):
         """Disconnect from server"""
         await self.communicator.disconnect()
+
+    async def restore_from_session(self, agent_id):
+        await self.context.build_history_from_session(self.session_manager, agent_id)
+        for message in self.context.history:
+            logger.info(message)

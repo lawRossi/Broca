@@ -395,11 +395,6 @@ class BrocaTUIApp(App):
         self.client_id = client_id or f"{client_type}_{id(self)}"
         self.user_id = user_id
 
-        # Generate session_id if not provided
-        if session_id is None:
-            self._init_agent = True
-        else:
-            self._init_agent = False
         self.session_id = session_id
         self.message_buffer = MessageBuffer()
         self.status = StatusIndicator()
@@ -433,8 +428,7 @@ class BrocaTUIApp(App):
 
     async def _on_mounted(self) -> None:
         await self._show_welcome()
-        if self._init_agent:
-            await self._initialize_agent()
+        await self._initialize_agent()
         await self._connect()
 
     async def _initialize_agent(self):

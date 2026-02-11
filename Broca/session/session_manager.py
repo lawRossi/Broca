@@ -7,9 +7,10 @@ Session管理器模块
 
 import asyncio
 import json
-import logging
 import uuid
 from typing import Any, Dict, List, Optional
+
+from loguru import logger
 
 from .models import Message, MessageRole, MessageType
 from .service import (
@@ -25,7 +26,8 @@ from .service import (
     get_turn_service,
 )
 
-logger = logging.getLogger(__name__)
+logger.remove()
+logger.add("db.log", level="DEBUG")
 
 
 class SessionManager:
@@ -362,4 +364,56 @@ class SessionManager:
 
         except Exception as e:
             logger.error(f"Failed to get session info: {e}")
+            return None
+
+    async def save_agent(self, agent: "Agent") -> None:
+        if not self.session_id:
+            raise ValueError("No session ID provided. Call create_session() first.")
+
+        agent_config = agent.config
+        config_content = agent_config.to_json()
+        saved_config = await self.agent_config_service.create_config(
+            session_id=self.session_id,
+            name=agent_config.config_name,
+            config_content=config_content,
+        )
+
+        await self.agent_service.create_agent(
+            agent_id=agent.agent_id,
+            config_id=saved_config.config_id,
+            session_id=self.session_id,
+            name=agent.name,
+            role=agent.role,
+        )
+
+    async def get_agents(self) -> List[dict]:
+        if not self.session_id:
+            return []
+
+        try:
+            agents = await self.agent_service.get_agents_by_session(self.session_id)
+            return [agent.dict() for agent in agents]
+
+        except Exception as e:
+            logger.error(f"Failed to get agents: {e}")
+            return []
+
+    async def get_agent_config(self, agent_id: str) -> dict | None:
+        if not self.session_id:
+            return None
+
+        try:
+            agent = await self.agent_service.get(agent_id)
+            if not agent:
+                return None
+
+            config = await self.agent_config_service.get(agent.config_id)
+            if not config:
+                return None
+
+            config_content = config.dict()["config_content"]
+            return json.loads(config_content)
+
+        except Exception as e:
+            logger.error(f"Failed to get agent config: {e}")
             return None

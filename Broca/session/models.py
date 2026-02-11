@@ -70,9 +70,7 @@ class Turn(SQLModel, table=True):
         back_populates="turn", cascade_delete="all"
     )
 
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="创建时间"
-    )
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
 
 class Session(SQLModel, table=True):
@@ -89,9 +87,7 @@ class Session(SQLModel, table=True):
     description: Optional[str] = Field(default=None, description="会话描述")
 
     # 元数据
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="创建时间"
-    )
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
     finished_at: Optional[datetime] = Field(default=None, description="结束时间")
 
@@ -132,9 +128,7 @@ class Message(SQLModel, table=True):
     content: Optional[str] = Field(default=None, description="消息内容")
 
     sequence_number: int = Field(description="消息序列号")
-    timestamp: datetime = Field(
-        default_factory=datetime.utcnow, description="消息时间戳"
-    )
+    timestamp: datetime = Field(default_factory=datetime.now, description="消息时间戳")
 
     # 关联关系
     session: Session = Relationship(back_populates="messages")
@@ -156,13 +150,11 @@ class AgentConfig(SQLModel, table=True):
         foreign_key="session.session_id", ondelete="CASCADE", description="关联的会话ID"
     )
 
-    name: str = Field(description="配置名称")
+    name: Optional[str] = Field(description="配置名称")
     config_content: str = Field(description="配置内容")
 
     # 元数据
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="创建时间"
-    )
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
     # 关联关系
     session: Session = Relationship(back_populates="agent_configs")
@@ -188,13 +180,11 @@ class Agent(SQLModel, table=True):
         foreign_key="session.session_id", ondelete="CASCADE", description="关联的会话ID"
     )
 
-    name: str = Field(description="Agent名称")
-    role: str = Field(description="Agent角色")
+    name: Optional[str] = Field(description="Agent名称")
+    role: Optional[str] = Field(description="Agent角色")
 
     # 元数据
-    created_at: datetime = Field(
-        default_factory=datetime.utcnow, description="创建时间"
-    )
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
     # 关联关系
     agent_config: AgentConfig = Relationship(back_populates="agents")

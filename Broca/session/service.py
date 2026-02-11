@@ -5,9 +5,11 @@ Service类实现模块
 实现CRUD操作和业务逻辑。
 """
 
+import uuid
 from datetime import datetime
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
+from loguru import logger
 from sqlalchemy import select
 from sqlmodel import SQLModel, and_
 
@@ -22,6 +24,9 @@ from .models import (
     SessionStatus,
     Turn,
 )
+
+logger.remove()
+logger.add("db.log", level="DEBUG")
 
 # 泛型类型变量
 T = TypeVar("T", bound=SQLModel)
@@ -38,7 +43,6 @@ class BaseService(Generic[T]):
     def _get_id_field_name(self) -> str:
         """根据模型类名获取ID字段名"""
         class_name = self.model_class.__name__.lower()
-        # 特殊处理：Session -> session_id, Turn -> turn_id, 等等
         if class_name == "session":
             return "session_id"
         elif class_name == "turn":
@@ -69,11 +73,14 @@ class BaseService(Generic[T]):
                 getattr(self.model_class, self.id_field) == id
             )
             result = await session.exec(statement)
-            # 使用scalars()获取模型实例而不是Row对象
             return result.scalars().first()
 
     async def get_all(
-        self, skip: int = 0, limit: int = 100, filters: Optional[Dict[str, Any]] = None
+        self,
+        skip: int = 0,
+        limit: int = 100,
+        filters: Optional[Dict[str, Any]] = None,
+        order_by: Optional[str] = None,
     ) -> List[T]:
         """获取所有记录，支持分页和过滤"""
         async with db_manager.get_session() as session:
@@ -86,6 +93,8 @@ class BaseService(Generic[T]):
                         conditions.append(getattr(self.model_class, key) == value)
                 if conditions:
                     statement = statement.where(and_(*conditions))
+            if order_by:
+                statement = statement.order_by(order_by)
 
             result = await session.exec(statement)
             # 使用scalars()获取模型实例列表
@@ -264,15 +273,21 @@ class MessageService(BaseService[Message]):
 
     async def get_messages_by_session(self, session_id: str) -> List[Message]:
         """根据会话ID获取消息"""
-        return await self.get_all(filters={"session_id": session_id})
+        return await self.get_all(
+            filters={"session_id": session_id}, order_by="sequence_number"
+        )
 
     async def get_messages_by_turn(self, turn_id: str) -> List[Message]:
         """根据轮次ID获取消息"""
-        return await self.get_all(filters={"turn_id": turn_id})
+        return await self.get_all(
+            filters={"turn_id": turn_id}, order_by="sequence_number"
+        )
 
     async def get_messages_by_agent(self, agent_id: str) -> List[Message]:
         """根据Agent ID获取消息"""
-        return await self.get_all(filters={"agent_id": agent_id})
+        return await self.get_all(
+            filters={"agent_id": agent_id}, order_by="sequence_number"
+        )
 
     async def get_messages_by_type(
         self, session_id: str, message_type: MessageType
@@ -311,9 +326,10 @@ class AgentConfigService(BaseService[AgentConfig]):
         super().__init__(AgentConfig)
 
     async def create_config(
-        self, config_id: str, session_id: str, name: str, config_content: str
+        self, session_id: str, name: str, config_content: str
     ) -> AgentConfig:
         """创建新配置"""
+        config_id = uuid.uuid4().hex
         return await self.create(
             config_id=config_id,
             session_id=session_id,

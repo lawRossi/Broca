@@ -1,3 +1,4 @@
+import json
 from pathlib import Path
 from typing import Union
 
@@ -70,4 +71,5 @@ class Context:
                 MessageRole.SYSTEM,
                 MessageRole.TOOL,
             ] and message.message_type in [MessageType.TEXT, MessageType.TOOL_RESULT]:
-                await self.add_message(Message.parse_obj(message))
+                message_content = json.loads(message.content)
+                await self.add_message(Message.parse_obj(message_content))
