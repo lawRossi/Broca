@@ -32,7 +32,7 @@ class BrocaTUIApp(App):
 
     def __init__(
         self,
-        server_url: str = "http://localhost:8001",
+        server_url: str = "http://localhost:6868",
         client_type: str = "cli",
         client_id: Optional[str] = None,
         user_id: Optional[str] = None,

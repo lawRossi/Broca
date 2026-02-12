@@ -40,7 +40,7 @@ async def setup() -> None:
     # Start Broca SocketIO server alongside FastAPI (optional)
     enabled = os.getenv("BROCA_SOCKETIO_ENABLED", "true").lower() == "true"
     host = os.getenv("BROCA_SOCKETIO_HOST", "0.0.0.0")
-    port = int(os.getenv("BROCA_SOCKETIO_PORT", "8000"))
+    port = int(os.getenv("BROCA_SOCKETIO_PORT", "6868"))
     cors = os.getenv("BROCA_SOCKETIO_CORS", "*")
 
     app.state.socketio_runtime = SocketIOServerRuntime(

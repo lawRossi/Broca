@@ -23,7 +23,7 @@ class AgentCommunicator(SocketIOClient):
     replacing command-line interaction with Socket.io-based communication.
     """
 
-    def __init__(self, agent_id: str, server_url: str = "http://localhost:8000",
+    def __init__(self, agent_id: str, server_url: str = "http://localhost:6868",
                  client_type: str = "agent"):
         """
         Initialize Agent Communicator

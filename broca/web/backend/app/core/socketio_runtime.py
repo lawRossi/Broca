@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 class SocketIOServerConfig:
     enabled: bool = True
     host: str = "0.0.0.0"
-    port: int = 8000
+    port: int = 6868
     cors_allowed_origins: str = "*"
 
 

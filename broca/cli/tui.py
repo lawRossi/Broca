@@ -29,7 +29,7 @@ class TUI:
 
     def __init__(
         self,
-        server_url: str = "http://localhost:8001",
+        server_url: str = "http://localhost:6868",
         client_type: str = "cli",
         client_id: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -73,7 +73,7 @@ async def main():
 
     parser = argparse.ArgumentParser(description="Broca CLI - Terminal User Interface")
     parser.add_argument(
-        "--server", "-s", default="http://localhost:8001", help="Socket.io server URL"
+        "--server", "-s", default="http://localhost:6868", help="Socket.io server URL"
     )
     parser.add_argument("--client-type", "-t", default="cli", help="Client type")
     parser.add_argument("--client-id", "-c", default=None, help="Client identifier")
