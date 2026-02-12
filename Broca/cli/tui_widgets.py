@@ -9,10 +9,9 @@ Contains UI components for the TUI application:
 
 from typing import Callable, Optional
 
-from textual import events
 from textual.containers import Container, Horizontal
 from textual.reactive import reactive
-from textual.widgets import Button, Input, RichLog, Static
+from textual.widgets import Button, RichLog, Static
 
 from .tui_models import ChatMessage, StatusIndicator
 
