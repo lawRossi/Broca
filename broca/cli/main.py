@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspa
 
 def main():
     """Main entry point"""
-    from Broca.cli.tui import main as tui_main
+    from broca.cli.tui import main as tui_main
 
     try:
         asyncio.run(tui_main())

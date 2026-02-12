@@ -14,8 +14,8 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from Broca.session.models import MessageRole
-from Broca.session.models import MessageType as SessionMessageType
+from broca.session.models import MessageRole
+from broca.session.models import MessageType as SessionMessageType
 
 
 @dataclass

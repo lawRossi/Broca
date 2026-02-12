@@ -5,9 +5,9 @@ from typing import Union
 from jinja2 import Template
 from litellm import Message
 
-from Broca.agent_configs import AgentConfig
-from Broca.session import MessageRole, MessageType, SessionManager
-from Broca.skill_manager import SkillManager
+from broca.agent_configs import AgentConfig
+from broca.session import MessageRole, MessageType, SessionManager
+from broca.skill_manager import SkillManager
 
 
 class Context:

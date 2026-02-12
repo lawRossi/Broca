@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from Broca.tools.tool import Tool, ToolCallContext
+from broca.tools.tool import Tool, ToolCallContext
 
 
 class ReadFile(Tool):

@@ -1,5 +1,5 @@
-from Broca.skill_manager import SkillManager
-from Broca.tools.tool import Tool, ToolCallContext
+from broca.skill_manager import SkillManager
+from broca.tools.tool import Tool, ToolCallContext
 
 
 class LoadSkill(Tool):

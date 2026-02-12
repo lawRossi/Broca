@@ -12,7 +12,7 @@ from typing import Optional
 
 from loguru import logger
 
-from Broca.session.database import db_manager
+from broca.session.database import db_manager
 
 from .tui_app import BrocaTUIApp
 

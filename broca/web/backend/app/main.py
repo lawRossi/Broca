@@ -1,9 +1,11 @@
 import logging
+import os
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api import api_router
+from app.core.socketio_runtime import SocketIOServerConfig, SocketIOServerRuntime
 from app.utils.supabase_utils import get_supbase
 
 logger = logging.getLogger(__name__)
@@ -30,10 +32,28 @@ app = FastAPI(dependencies=[Depends(verify_token)], title="Simple Backend")
 
 
 @app.on_event("startup")
-def setup() -> None:
+async def setup() -> None:
     logger.info("Starting up")
     global supabase
     app.state.supabase = supabase
+
+    # Start Broca SocketIO server alongside FastAPI (optional)
+    enabled = os.getenv("BROCA_SOCKETIO_ENABLED", "true").lower() == "true"
+    host = os.getenv("BROCA_SOCKETIO_HOST", "0.0.0.0")
+    port = int(os.getenv("BROCA_SOCKETIO_PORT", "8000"))
+    cors = os.getenv("BROCA_SOCKETIO_CORS", "*")
+
+    app.state.socketio_runtime = SocketIOServerRuntime(
+        SocketIOServerConfig(enabled=enabled, host=host, port=port, cors_allowed_origins=cors)
+    )
+    await app.state.socketio_runtime.start()
+
+
+@app.on_event("shutdown")
+async def shutdown() -> None:
+    runtime = getattr(app.state, "socketio_runtime", None)
+    if runtime:
+        await runtime.stop()
 
 
 app.include_router(api_router, prefix="/api")

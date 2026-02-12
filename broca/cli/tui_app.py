@@ -129,7 +129,8 @@ class BrocaTUIApp(App):
             self.status.set_agent_connecting()
             self.query_one(StatusWidget).update_status()
 
-            from Broca.agent_manager import AgentFactory
+            from broca.agent_manager import AgentFactory
+
             factory = AgentFactory()
             self.agent = await factory.get_agent(
                 "main_agent", session_id=self.session_id
@@ -209,7 +210,8 @@ class BrocaTUIApp(App):
             self.status.set_connecting()
             self.query_one(StatusWidget).update_status()
 
-            from Broca.comm.socketio_client import SocketIOClient
+            from broca.comm.socketio_client import SocketIOClient
+
             self.client = SocketIOClient(
                 server_url=self.server_url,
                 client_type=self.client_type,
@@ -247,7 +249,8 @@ class BrocaTUIApp(App):
             self.query_one(StatusWidget).update_status()
             await self.add_message(
                 ChatMessage(
-                    content=f"Connection failed: {e}", display_type=ChatMessage.DisplayType.ERROR
+                    content=f"Connection failed: {e}",
+                    display_type=ChatMessage.DisplayType.ERROR,
                 )
             )
 
@@ -324,7 +327,10 @@ class BrocaTUIApp(App):
         message_list = self.query_one("#message-list", MessageListWidget)
         await message_list.clear_messages()
         await self.add_message(
-            ChatMessage(content="Chat history cleared", display_type=ChatMessage.DisplayType.SYSTEM)
+            ChatMessage(
+                content="Chat history cleared",
+                display_type=ChatMessage.DisplayType.SYSTEM,
+            )
         )
 
     async def add_message(self, message: ChatMessage):
@@ -333,11 +339,13 @@ class BrocaTUIApp(App):
         message_list = self.query_one("#message-list", MessageListWidget)
         message_list.add_message(message)
         await self._trigger_event("message_added", message)
-    
-    async def add_session_message(self, message: Any, display_type: Optional[ChatMessage.DisplayType] = None):
+
+    async def add_session_message(
+        self, message: Any, display_type: Optional[ChatMessage.DisplayType] = None
+    ):
         """
         Add a session message to the display
-        
+
         Args:
             message: A session message object (e.g., Broca.session.models.Message)
             display_type: Optional display type override
@@ -370,7 +378,8 @@ class BrocaTUIApp(App):
         else:
             await self.add_message(
                 ChatMessage(
-                    content=f"Unknown command: {cmd}", display_type=ChatMessage.DisplayType.ERROR
+                    content=f"Unknown command: {cmd}",
+                    display_type=ChatMessage.DisplayType.ERROR,
                 )
             )
             await self.cmd_help([])
@@ -407,7 +416,9 @@ Keyboard shortcuts:
   Status: {self.status.get_status_text()}
   Messages: {len(self.message_buffer)}"""
         await self.add_message(
-            ChatMessage(content=status_info, display_type=ChatMessage.DisplayType.SYSTEM)
+            ChatMessage(
+                content=status_info, display_type=ChatMessage.DisplayType.SYSTEM
+            )
         )
 
     async def cmd_quit(self, args):
@@ -425,7 +436,8 @@ Keyboard shortcuts:
         if not self.input_history:
             await self.add_message(
                 ChatMessage(
-                    content="No command history", display_type=ChatMessage.DisplayType.SYSTEM
+                    content="No command history",
+                    display_type=ChatMessage.DisplayType.SYSTEM,
                 )
             )
             return
@@ -434,7 +446,9 @@ Keyboard shortcuts:
             f"{i + 1}. {cmd}" for i, cmd in enumerate(self.input_history)
         )
         await self.add_message(
-            ChatMessage(content=history_text, display_type=ChatMessage.DisplayType.SYSTEM)
+            ChatMessage(
+                content=history_text, display_type=ChatMessage.DisplayType.SYSTEM
+            )
         )
 
     async def cmd_abort(self, args):
@@ -442,7 +456,8 @@ Keyboard shortcuts:
         if not self.client or not self.client.is_connected():
             await self.add_message(
                 ChatMessage(
-                    content="Not connected to server", display_type=ChatMessage.DisplayType.ERROR
+                    content="Not connected to server",
+                    display_type=ChatMessage.DisplayType.ERROR,
                 )
             )
             return
@@ -451,7 +466,8 @@ Keyboard shortcuts:
             await self.client.send_command("abort", subscription=self.session_id)
             await self.add_message(
                 ChatMessage(
-                    content="Abort command sent", display_type=ChatMessage.DisplayType.SYSTEM
+                    content="Abort command sent",
+                    display_type=ChatMessage.DisplayType.SYSTEM,
                 )
             )
             logger.info(f"Abort command sent to {self.session_id}.")
@@ -470,7 +486,8 @@ Keyboard shortcuts:
         if not self.client or not self.client.is_connected():
             await self.add_message(
                 ChatMessage(
-                    content="Not connected to server", display_type=ChatMessage.DisplayType.ERROR
+                    content="Not connected to server",
+                    display_type=ChatMessage.DisplayType.ERROR,
                 )
             )
             return
@@ -507,7 +524,8 @@ Keyboard shortcuts:
         self.query_one(StatusWidget).update_status()
         await self.add_message(
             ChatMessage(
-                content="Disconnected from server", display_type=ChatMessage.DisplayType.SYSTEM
+                content="Disconnected from server",
+                display_type=ChatMessage.DisplayType.SYSTEM,
             )
         )
 
@@ -530,7 +548,10 @@ Keyboard shortcuts:
     async def on_connect(self):
         """Handle connection event"""
         await self.add_message(
-            ChatMessage(content="Connected to server", display_type=ChatMessage.DisplayType.SYSTEM)
+            ChatMessage(
+                content="Connected to server",
+                display_type=ChatMessage.DisplayType.SYSTEM,
+            )
         )
 
     async def on_disconnect(self):
@@ -539,7 +560,8 @@ Keyboard shortcuts:
         self.query_one(StatusWidget).update_status()
         await self.add_message(
             ChatMessage(
-                content="Disconnected from server", display_type=ChatMessage.DisplayType.SYSTEM
+                content="Disconnected from server",
+                display_type=ChatMessage.DisplayType.SYSTEM,
             )
         )
 
@@ -556,7 +578,8 @@ Keyboard shortcuts:
         self.query_one(StatusWidget).update_status()
         await self.add_message(
             ChatMessage(
-                content="Assistant is thinking...", display_type=ChatMessage.DisplayType.SYSTEM
+                content="Assistant is thinking...",
+                display_type=ChatMessage.DisplayType.SYSTEM,
             )
         )
 
@@ -605,5 +628,8 @@ Keyboard shortcuts:
         """Handle error event"""
         error_msg = str(data)
         await self.add_message(
-            ChatMessage(content=f"Error: {error_msg}", display_type=ChatMessage.DisplayType.ERROR)
+            ChatMessage(
+                content=f"Error: {error_msg}",
+                display_type=ChatMessage.DisplayType.ERROR,
+            )
         )

@@ -1,8 +1,8 @@
-from Broca.skill_manager import SkillManager
-from Broca.tools.bash import ExecuteCode
-from Broca.tools.filesystem import EditFile, ListDir, ReadFile, WriteFile
-from Broca.tools.skill import LoadSkill
-from Broca.tools.tool import Tool
+from broca.skill_manager import SkillManager
+from broca.tools.bash import ExecuteCode
+from broca.tools.filesystem import EditFile, ListDir, ReadFile, WriteFile
+from broca.tools.skill import LoadSkill
+from broca.tools.tool import Tool
 
 
 class ToolManager:

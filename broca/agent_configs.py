@@ -1,6 +1,6 @@
 import json
 
-from Broca.prompts import main_agent_base, subagent_base
+from broca.prompts import main_agent_base, subagent_base
 
 
 class AgentConfig:

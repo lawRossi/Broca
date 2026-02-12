@@ -4,6 +4,15 @@ import type { RouteRecordRaw } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
+    redirect: '/chat',
+  },
+  {
+    path: '/chat',
+    name: 'Chat',
+    component: () => import('@/views/Chat.vue'),
+  },
+  {
+    path: '/home',
     name: 'Home',
     component: () => import('@/views/Home.vue'),
   },
@@ -16,7 +25,7 @@ const routes: RouteRecordRaw[] = [
     path: '/auth/callback',
     name: 'AuthCallback',
     component: () => import('@/views/AuthCallback.vue'),
-  }
+  },
 ]
 
 const router = createRouter({

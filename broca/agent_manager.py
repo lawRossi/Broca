@@ -3,10 +3,10 @@ import platform
 
 from loguru import logger
 
-from Broca.agent import AgentConfig, SocketIOAgent
-from Broca.agent_configs import main_agent_config, sub_agent_config
-from Broca.llm import LLMClient
-from Broca.session import SessionManager
+from broca.agent import AgentConfig, SocketIOAgent
+from broca.agent_configs import main_agent_config, sub_agent_config
+from broca.llm import LLMClient
+from broca.session import SessionManager
 
 logger.add("agent.log", level="DEBUG")
 

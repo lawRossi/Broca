@@ -8,14 +8,14 @@ from typing import Optional
 from litellm import Message as LLMMessage
 from loguru import logger
 
-from Broca.agent_configs import AgentConfig
-from Broca.comm.agent_communicator import AgentCommunicator
-from Broca.comm.message_types import Message
-from Broca.context import Context
-from Broca.llm import LLMClient
-from Broca.session import MessageRole, MessageType, SessionManager
-from Broca.tools.tool import ToolCallContext
-from Broca.tools.tool_manager import ToolManager
+from broca.agent_configs import AgentConfig
+from broca.comm.agent_communicator import AgentCommunicator
+from broca.comm.message_types import Message
+from broca.context import Context
+from broca.llm import LLMClient
+from broca.session import MessageRole, MessageType, SessionManager
+from broca.tools.tool import ToolCallContext
+from broca.tools.tool_manager import ToolManager
 
 # Standard logger for non-agent operations
 std_logger = logging.getLogger(__name__)

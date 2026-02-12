@@ -5,7 +5,7 @@ from jinja2 import Template
 from loguru import logger
 from tree_sitter import Language, Parser
 
-from Broca.tools.tool import Tool, ToolCallContext
+from broca.tools.tool import Tool, ToolCallContext
 
 
 class ExecuteCode(Tool):
