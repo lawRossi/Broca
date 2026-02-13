@@ -58,7 +58,47 @@ export interface TurnsResponse {
   limit: number
 }
 
+export interface SessionsResponse {
+  sessions: Session[]
+  total: number
+  skip: number
+  limit: number
+}
+
+export interface SessionQueryParams {
+  skip?: number
+  limit?: number
+  status?: string
+  keyword?: string
+}
+
+export interface CreateSessionParams {
+  description?: string
+  workspace?: string
+}
+
+export interface CreateSessionResponse {
+  session_id: string
+  workspace: string
+  agent_id: string
+  description?: string
+}
+
 export const sessionApi = {
+  /**
+   * 获取会话列表
+   */
+  async getSessions(params: SessionQueryParams = {}): Promise<SessionsResponse> {
+    return request.get('/session/sessions', {
+      params: {
+        skip: params.skip ?? 0,
+        limit: params.limit ?? 20,
+        status: params.status,
+        keyword: params.keyword
+      }
+    })
+  },
+
   /**
    * 获取会话详情
    */
@@ -104,6 +144,13 @@ export const sessionApi = {
    */
   async getSessionLatestAgent(sessionId: string): Promise<LatestAgentResponse> {
     return request.get(`/session/${sessionId}/latest-agent`)
+  },
+
+  /**
+   * 创建新会话
+   */
+  async createSession(params: CreateSessionParams = {}): Promise<CreateSessionResponse> {
+    return request.post('/session/sessions', params)
   }
 }
 

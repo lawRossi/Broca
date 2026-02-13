@@ -94,7 +94,17 @@ class BaseService(Generic[T]):
                 if conditions:
                     statement = statement.where(and_(*conditions))
             if order_by:
-                statement = statement.order_by(order_by)
+                # 支持 "column desc" 或 "column asc" 格式的排序
+                parts = order_by.strip().split()
+                if len(parts) >= 1:
+                    column_name = parts[0]
+                    if hasattr(self.model_class, column_name):
+                        column = getattr(self.model_class, column_name)
+                        if len(parts) >= 2 and parts[1].lower() == 'desc':
+                            from sqlalchemy import desc
+                            statement = statement.order_by(desc(column))
+                        else:
+                            statement = statement.order_by(column)
 
             result = await session.exec(statement)
             # 使用scalars()获取模型实例列表

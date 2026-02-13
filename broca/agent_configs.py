@@ -13,7 +13,7 @@ class AgentConfig:
         self.subagents = []
         self.tools = None
         self.skills = None
-        self.server_url = "http://localhost:8001"
+        self.server_url = "http://localhost:6868"
         self.interactive = True
         self.save_history = True
         self.environment = None

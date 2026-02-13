@@ -37,14 +37,15 @@ class BrocaTUIApp(App):
         client_id: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        workspace: Optional[str] = None
     ):
         super().__init__()
         self.server_url = server_url
         self.client_type = client_type
         self.client_id = client_id or f"{client_type}_{id(self)}"
         self.user_id = user_id
-
         self.session_id = session_id
+        self.workspace = workspace
         self._history_loaded: bool = False
         self._session_id_provided: bool = session_id is not None
         self.message_buffer = MessageBuffer()
@@ -133,7 +134,7 @@ class BrocaTUIApp(App):
 
             factory = AgentFactory()
             self.agent = await factory.get_agent(
-                "main_agent", session_id=self.session_id
+                "main_agent", session_id=self.session_id, workspace=self.workspace
             )
             if self.session_id is None:
                 self.session_id = self.agent.session_manager.session_id

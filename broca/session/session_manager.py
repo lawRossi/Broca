@@ -43,7 +43,22 @@ class SessionManager:
         self.session_id: str | None = None
         self._services: Dict[str, Any] = {}
         self._initialized = False
-        asyncio.create_task(self.initialize())
+        self._init_future: Optional[asyncio.Future] = None
+
+    async def _ensure_initialized(self) -> None:
+        """确保SessionManager已初始化"""
+        if self._initialized:
+            return
+        if self._init_future is None:
+            self._init_future = asyncio.get_event_loop().create_future()
+            try:
+                await self.initialize()
+                self._init_future.set_result(None)
+            except Exception as e:
+                self._init_future.set_exception(e)
+                raise
+        else:
+            await self._init_future
 
     async def initialize(self) -> None:
         """初始化所有service实例"""
@@ -99,6 +114,7 @@ class SessionManager:
         Returns:
             新创建的session ID
         """
+        await self._ensure_initialized()
 
         session_id = f"session_{uuid.uuid4().hex[:16]}"
 

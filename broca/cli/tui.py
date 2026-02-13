@@ -34,6 +34,7 @@ class TUI:
         client_id: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
+        workspace: Optional[str] = None
     ):
         """
         Initialize TUI
@@ -57,6 +58,7 @@ class TUI:
             client_id=client_id,
             user_id=user_id,
             session_id=session_id,
+            workspace=workspace
         )
 
     def register_event_handler(self, event_name: str, func: callable):
@@ -84,6 +86,12 @@ async def main():
         default=None,
         help="Session identifier (if not provided, will generate one and initialize agent)",
     )
+    parser.add_argument(
+        "--workspace",
+        "-w",
+        default=None,
+        help="Workspace directory (if not provided, will use current directory)",
+    )
 
     args = parser.parse_args()
 
@@ -97,6 +105,7 @@ async def main():
         client_id=args.client_id,
         user_id=args.user_id,
         session_id=args.session_id,
+        workspace=args.workspace
     )
 
     try:

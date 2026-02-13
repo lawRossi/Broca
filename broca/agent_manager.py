@@ -32,14 +32,20 @@ class AgentFactory:
         else:
             raise ValueError(f"Unknown agent type: {name}")
 
-    async def _create_main_agent(self, session_id=None) -> SocketIOAgent:
+    async def _create_main_agent(
+        self, session_id=None, workspace=None
+    ) -> SocketIOAgent:
         if session_id is not None:
             return await self.restore_agent_from_session(session_id)
         config = AgentConfig.from_config(main_agent_config)
+        if workspace is not None:
+            config.workspace = workspace
+        if not config.workspace:
+            config.workspace = os.getcwd()
         session_manager = SessionManager()
         await session_manager.create_session()
         if config.environment is None:
-            config.environment = self._init_environment()
+            config.environment = self._init_environment(config)
         agent = SocketIOAgent(config, self.llm_client, session_manager)
         await session_manager.save_agent(agent)
         return agent
@@ -61,7 +67,7 @@ class AgentFactory:
     def _create_subagent(self, role=None):
         config = AgentConfig.from_config(sub_agent_config)
         if config.environment is None:
-            config.environment = self._init_environment()
+            config.environment = self._init_environment(config)
         config.role = role
         if role == "requirment analyzer":
             role_description = "You are an expert requirement analyzer. Your task is to dig the requirements from the user by applying your skills."
@@ -76,5 +82,5 @@ class AgentFactory:
         config.role_description = role_description
         return SocketIOAgent(config, self.llm_client)
 
-    def _init_environment(self):
-        return f"System: {platform.system()}\nWorkspace: {os.getcwd()}"
+    def _init_environment(self, config: AgentConfig) -> str:
+        return f"System: {platform.system()}\nWorkspace: {config.workspace}"

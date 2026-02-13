@@ -4,7 +4,7 @@ import type { RouteRecordRaw } from 'vue-router'
 const routes: RouteRecordRaw[] = [
   {
     path: '/',
-    redirect: '/chat',
+    redirect: '/sessions',
   },
   {
     path: '/chat',
@@ -21,6 +21,11 @@ const routes: RouteRecordRaw[] = [
     path: '/home',
     name: 'Home',
     component: () => import('@/views/Home.vue'),
+  },
+  {
+    path: '/sessions',
+    name: 'Sessions',
+    component: () => import('@/views/Sessions.vue'),
   },
   {
     path: '/auth',

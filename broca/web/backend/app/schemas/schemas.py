@@ -1,10 +1,16 @@
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
 
 class BaseSchema(BaseModel):
     model_config = ConfigDict(from_attributes=True)
+
+
+class CreateSessionRequest(BaseModel):
+    """创建 Session 的请求模型"""
+    description: Optional[str] = None
+    workspace: Optional[str] = None
 
 
 class ApiResponse(BaseModel):
