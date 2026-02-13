@@ -1,14 +1,12 @@
 import inspect
 import json
 import logging
-from typing import Optional, Dict, Any, List, Callable, Set
 from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Set
+
 from socketio import AsyncServer
 
-from .message_types import (
-    Message, MessageType, MessageStatus, MessageProtocol
-)
-
+from .message_types import Message, MessageProtocol, MessageStatus, MessageType
 
 logger = logging.getLogger(__name__)
 
@@ -16,6 +14,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class ClientInfo:
     """Information about a connected client"""
+
     client_id: str
     client_type: str  # browser, cli, vscode, browser_plugin
     user_id: Optional[str] = None
@@ -35,8 +34,9 @@ class SocketIOServer:
     - Client management
     """
 
-    def __init__(self, host: str = "0.0.0.0", port: int = 8000,
-                 cors_allowed_origins: str = "*"):
+    def __init__(
+        self, host: str = "0.0.0.0", port: int = 8000, cors_allowed_origins: str = "*"
+    ):
         self.host = host
         self.port = port
         self.cors_allowed_origins = cors_allowed_origins
@@ -45,7 +45,7 @@ class SocketIOServer:
             async_mode="asgi",
             cors_allowed_origins=cors_allowed_origins,
             logger=False,
-            engineio_logger=False
+            engineio_logger=False,
         )
 
         self.clients: Dict[str, ClientInfo] = {}
@@ -60,24 +60,24 @@ class SocketIOServer:
         """Setup Socket.io event handlers"""
 
         @self.sio.event
-        async def connect(sid, environ):
-            client_type = environ.get("HTTP_X_CLIENT_TYPE", "unknown")
-            user_id = environ.get("HTTP_X_USER_ID")
-            client_id = environ.get("HTTP_X_CLIENT_ID", sid)
-
+        async def connect(sid, environ, auth_data=None):
+            if not auth_data:
+                client_type = environ.get("HTTP_X_CLIENT_TYPE", "unknown")
+                user_id = environ.get("HTTP_X_USER_ID")
+                client_id = environ.get("HTTP_X_CLIENT_ID", sid)
+            else:
+                client_type = auth_data.get("client_type", "unknown")
+                user_id = auth_data.get("user_id")
+                client_id = auth_data.get("client_id", sid)
             client_info = ClientInfo(
-                client_id=client_id,
-                client_type=client_type,
-                user_id=user_id
+                client_id=client_id, client_type=client_type, user_id=user_id
             )
 
             self.clients[sid] = client_info
             self.client_sids[client_id] = sid
 
             connect_msg = MessageProtocol.create_user_message(
-                content="Connected to server",
-                sender_id="server",
-                receiver_id=client_id
+                content="Connected to server", sender_id="server", receiver_id=client_id
             )
             connect_msg.message_type = MessageType.CONNECT
             connect_msg.status = MessageStatus.OK
@@ -105,18 +105,28 @@ class SocketIOServer:
         @self.sio.event
         async def message(sid, data):
             try:
-                message = Message.from_json(data) if isinstance(data, str) else Message.from_dict(data)
+                message = (
+                    Message.from_json(data)
+                    if isinstance(data, str)
+                    else Message.from_dict(data)
+                )
 
                 is_valid, error_msg = MessageProtocol.validate_message(message)
                 if not is_valid:
-                    await self._send_error(sid, "VALIDATION_ERROR", error_msg, message.sender_id)
+                    await self._send_error(
+                        sid, "VALIDATION_ERROR", error_msg, message.sender_id
+                    )
                     return
 
                 await self._process_message(sid, message)
             except json.JSONDecodeError as e:
-                await self._send_error(sid, "PARSE_ERROR", f"Failed to parse message: {e}")
+                await self._send_error(
+                    sid, "PARSE_ERROR", f"Failed to parse message: {e}"
+                )
             except Exception as e:
-                await self._send_error(sid, "PROCESS_ERROR", f"Error processing message: {e}")
+                await self._send_error(
+                    sid, "PROCESS_ERROR", f"Error processing message: {e}"
+                )
 
         @self.sio.event
         async def subscribe(sid, data):
@@ -133,7 +143,9 @@ class SocketIOServer:
             subscription = parsed_data.get("subscription")
 
             if not subscription:
-                await self._send_error(sid, "MISSING_SUBSCRIPTION", "Subscription name is required")
+                await self._send_error(
+                    sid, "MISSING_SUBSCRIPTION", "Subscription name is required"
+                )
                 return
 
             if sid not in self.clients:
@@ -160,9 +172,7 @@ class SocketIOServer:
                 logger.info(f"Client {client_id} unsubscribed from {subscription}")
 
             ack_msg = MessageProtocol.create_user_message(
-                content=content,
-                sender_id="server",
-                receiver_id=client_id
+                content=content, sender_id="server", receiver_id=client_id
             )
             ack_msg.message_type = msg_type
             ack_msg.status = MessageStatus.OK
@@ -173,14 +183,19 @@ class SocketIOServer:
             error_code = f"{'SUBSCRIBE' if subscribe else 'UNSUBSCRIBE'}_ERROR"
             await self._send_error(sid, error_code, f"Error processing: {e}")
 
-    async def _send_error(self, sid: str, error_code: str, error_message: str,
-                         receiver_id: Optional[str] = None):
+    async def _send_error(
+        self,
+        sid: str,
+        error_code: str,
+        error_message: str,
+        receiver_id: Optional[str] = None,
+    ):
         """Send error message to client"""
         error_response = MessageProtocol.create_error_message(
             error_code=error_code,
             error_message=error_message,
             sender_id="server",
-            receiver_id=receiver_id
+            receiver_id=receiver_id,
         )
         await self.sio.emit("message", error_response.to_dict(), room=sid)
 
@@ -203,7 +218,11 @@ class SocketIOServer:
             await self._broadcast(message)
 
         # Trigger appropriate event
-        event_name = message.message_type.value if hasattr(message.message_type, 'value') else "message"
+        event_name = (
+            message.message_type.value
+            if hasattr(message.message_type, "value")
+            else "message"
+        )
         await self._trigger_event(event_name, client_info, message)
 
     async def _send_to_client(self, client_id: str, message: Message):
@@ -229,7 +248,9 @@ class SocketIOServer:
 
         for client_id in self.subscriptions[subscription]:
             if client_id in self.client_sids:
-                await self.sio.emit("message", message.to_dict(), room=self.client_sids[client_id])
+                await self.sio.emit(
+                    "message", message.to_dict(), room=self.client_sids[client_id]
+                )
 
         logger.debug(f"Sent message to subscription {subscription}")
 
@@ -238,17 +259,21 @@ class SocketIOServer:
         await self.sio.emit("message", message.to_dict())
         logger.debug("Broadcasted message to all clients")
 
-    async def _trigger_event(self, event_name: str, client_info: ClientInfo,
-                            message: Optional[Message] = None):
+    async def _trigger_event(
+        self,
+        event_name: str,
+        client_info: ClientInfo,
+        message: Optional[Message] = None,
+    ):
         """Trigger event handlers"""
         if event_name not in self.event_handlers:
             return
 
         for handler in self.event_handlers[event_name]:
-            try:                
+            try:
                 sig = inspect.signature(handler)
                 param_count = len(sig.parameters)
-                
+
                 if message and param_count >= 2:
                     await handler(client_info, message)
                 elif param_count >= 1:
@@ -261,13 +286,20 @@ class SocketIOServer:
 
     def on(self, event_name: str):
         """Decorator to register event handlers"""
+
         def decorator(func):
             self.event_handlers.setdefault(event_name, []).append(func)
             return func
+
         return decorator
 
-    async def send_message(self, message: Message, client_id: Optional[str] = None,
-                          room: Optional[str] = None, subscription: Optional[str] = None):
+    async def send_message(
+        self,
+        message: Message,
+        client_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ):
         """Send message from server"""
         if client_id:
             await self._send_to_client(client_id, message)
@@ -278,23 +310,24 @@ class SocketIOServer:
         else:
             await self._broadcast(message)
 
-    async def broadcast(self, content: str, subscription: Optional[str] = None,
-                       sender_id: str = "server"):
+    async def broadcast(
+        self,
+        content: str,
+        subscription: Optional[str] = None,
+        sender_id: str = "server",
+    ):
         """Broadcast message from server"""
         message = MessageProtocol.create_broadcast(
-            content=content,
-            subscription=subscription,
-            sender_id=sender_id
+            content=content, subscription=subscription, sender_id=sender_id
         )
         await self.send_message(message, subscription=subscription)
 
-    async def send_to_client(self, client_id: str, content: str,
-                            sender_id: str = "server"):
+    async def send_to_client(
+        self, client_id: str, content: str, sender_id: str = "server"
+    ):
         """Send message to specific client from server"""
         message = MessageProtocol.create_user_message(
-            content=content,
-            sender_id=sender_id,
-            receiver_id=client_id
+            content=content, sender_id=sender_id, receiver_id=client_id
         )
         await self.send_message(message, client_id=client_id)
 
@@ -313,10 +346,7 @@ class SocketIOServer:
 
     def get_subscriptions(self) -> Dict[str, List[str]]:
         """Get list of subscriptions and their clients"""
-        return {
-            sub: list(clients)
-            for sub, clients in self.subscriptions.items()
-        }
+        return {sub: list(clients) for sub, clients in self.subscriptions.items()}
 
     async def start(self):
         """Start the server"""
