@@ -12,6 +12,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Chat.vue'),
   },
   {
+    path: '/chat/:session_id?',
+    name: 'ChatWithSession',
+    component: () => import('@/views/Chat.vue'),
+    props: (route) => ({ sessionId: route.params.session_id })
+  },
+  {
     path: '/home',
     name: 'Home',
     component: () => import('@/views/Home.vue'),
