@@ -42,7 +42,7 @@ class SocketIOServer:
         self.cors_allowed_origins = cors_allowed_origins
 
         self.sio = AsyncServer(
-            async_mode="asgi",
+            async_mode="aiohttp",
             cors_allowed_origins=cors_allowed_origins,
             logger=False,
             engineio_logger=False,
@@ -350,15 +350,16 @@ class SocketIOServer:
 
     async def start(self):
         """Start the server"""
-        import uvicorn
-        from socketio import ASGIApp
+        from aiohttp import web
 
         logger.info(f"Starting Socket.io server on {self.host}:{self.port}")
 
-        app = ASGIApp(self.sio)
-        config = uvicorn.Config(app, host=self.host, port=self.port, log_level="info")
-        server = uvicorn.Server(config)
-        await server.serve()
+        app = web.Application()
+        self.sio.attach(app)
+        runner = web.AppRunner(app)
+        await runner.setup()
+        site = web.TCPSite(runner, self.host, self.port)
+        await site.start()
 
     async def stop(self):
         """Stop the server"""
