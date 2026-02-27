@@ -52,7 +52,7 @@ class SessionManager:
         if self._init_future is None:
             self._init_future = asyncio.get_event_loop().create_future()
             try:
-                await self.initialize()
+                await self._initialize()
                 self._init_future.set_result(None)
             except Exception as e:
                 self._init_future.set_exception(e)
@@ -60,7 +60,7 @@ class SessionManager:
         else:
             await self._init_future
 
-    async def initialize(self) -> None:
+    async def _initialize(self) -> None:
         """初始化所有service实例"""
         if self._initialized:
             return
@@ -160,6 +160,8 @@ class SessionManager:
         if not self.session_id:
             raise ValueError("No session ID provided. Call create_session() first.")
 
+        await self._ensure_initialized()
+
         # 生成消息ID
         message_id = message_id or f"msg_{uuid.uuid4().hex[:16]}"
         if isinstance(content, dict):
@@ -211,6 +213,7 @@ class SessionManager:
                     self.session_id
                 )
             else:
+                await self._ensure_initialized()
                 messages = await self.message_service.get_messages_by_agent(agent_id)
 
             return messages
@@ -236,6 +239,8 @@ class SessionManager:
 
         if not self.session_id:
             raise ValueError("No session ID provided. Call create_session() first.")
+
+        await self._ensure_initialized()
 
         # 生成turn ID
         turn_id = f"turn_{uuid.uuid4().hex[:16]}"
@@ -284,6 +289,7 @@ class SessionManager:
             return False
 
         try:
+            await self._ensure_initialized()
             await self.save_message(
                 role=MessageRole.SYSTEM,
                 content="",
@@ -313,6 +319,7 @@ class SessionManager:
             return False
 
         try:
+            await self._ensure_initialized()
             # 检查session是否存在
             session = await self.session_service.get(session_id)
             if not session:
@@ -340,6 +347,7 @@ class SessionManager:
             return False
 
         try:
+            await self._ensure_initialized()
             # 更新session状态
             await self.session_service.close_session(self.session_id)
 
@@ -364,6 +372,7 @@ class SessionManager:
             return None
 
         try:
+            await self._ensure_initialized()
             session = await self.session_service.get(self.session_id)
             if not session:
                 return None
@@ -385,7 +394,7 @@ class SessionManager:
     async def save_agent(self, agent: "Agent") -> None:
         if not self.session_id:
             raise ValueError("No session ID provided. Call create_session() first.")
-
+        await self._ensure_initialized()
         agent_config = agent.config
         config_content = agent_config.to_json()
         saved_config = await self.agent_config_service.create_config(
@@ -407,6 +416,7 @@ class SessionManager:
             return []
 
         try:
+            await self._ensure_initialized()
             agents = await self.agent_service.get_agents_by_session(self.session_id)
             return [agent.dict() for agent in agents]
 
@@ -419,6 +429,7 @@ class SessionManager:
             return None
 
         try:
+            await self._ensure_initialized()
             agent = await self.agent_service.get(agent_id)
             if not agent:
                 return None
