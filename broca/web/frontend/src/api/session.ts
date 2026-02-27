@@ -151,6 +151,22 @@ export const sessionApi = {
    */
   async createSession(params: CreateSessionParams = {}): Promise<CreateSessionResponse> {
     return request.post('/session/sessions', params)
+  },
+
+  /**
+   * 删除单个会话
+   */
+  async deleteSession(sessionId: string): Promise<void> {
+    return request.delete(`/session/${sessionId}`)
+  },
+
+  /**
+   * 批量删除会话
+   */
+  async deleteSessions(sessionIds: string[]): Promise<void> {
+    return request.delete('/session/sessions', {
+      data: { session_ids: sessionIds }
+    })
   }
 }
 

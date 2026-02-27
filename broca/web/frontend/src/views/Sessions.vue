@@ -1,10 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage } from 'element-plus'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { sessionApi, type Session, type CreateSessionParams } from '@/api/session'
-import { ChatRound, Search, ArrowRight, Calendar, Timer, Plus } from '@element-plus/icons-vue'
+import { ChatRound, Search, ArrowRight, Calendar, Timer, Plus, Delete, Loading } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -19,6 +19,8 @@ const searchKeyword = ref('')
 const statusFilter = ref('')
 const createDialogVisible = ref(false)
 const creating = ref(false)
+const deleteLoading = ref(false)
+const selectedSessions = ref<string[]>([])
 const createForm = ref<CreateSessionParams>({
   description: '',
   workspace: ''
@@ -26,6 +28,21 @@ const createForm = ref<CreateSessionParams>({
 
 // 计算属性：是否已登录
 const isLoggedIn = computed(() => userStore.isLoggedIn)
+
+// 计算属性：是否全选
+const isAllSelected = computed(() => {
+  return sessions.value.length > 0 && 
+    selectedSessions.value.length === sessions.value.length
+})
+
+// 计算属性：是否部分选择
+const isIndeterminate = computed(() => {
+  return selectedSessions.value.length > 0 && 
+    selectedSessions.value.length < sessions.value.length
+})
+
+// 计算属性：是否有选中项
+const hasSelection = computed(() => selectedSessions.value.length > 0)
 
 // 状态选项
 const statusOptions = [
@@ -161,6 +178,78 @@ const handleSizeChange = (size: number) => {
   loadSessions()
 }
 
+// 处理表格选择变化
+const handleSelectionChange = (selection: Session[]) => {
+  selectedSessions.value = selection.map(s => s.session_id)
+}
+
+// 全选/取消全选
+const toggleSelectAll = () => {
+  if (isAllSelected.value) {
+    selectedSessions.value = []
+  } else {
+    selectedSessions.value = sessions.value.map(s => s.session_id)
+  }
+}
+
+// 删除单个会话
+const handleDelete = async (session: Session) => {
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除会话 "${session.description || session.session_id}" 吗？此操作不可恢复。`,
+      '确认删除',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    deleteLoading.value = true
+    await sessionApi.deleteSession(session.session_id)
+    ElMessage.success('删除成功')
+    selectedSessions.value = selectedSessions.value.filter(id => id !== session.session_id)
+    loadSessions()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('删除会话失败:', error)
+      ElMessage.error('删除失败')
+    }
+  } finally {
+    deleteLoading.value = false
+  }
+}
+
+// 批量删除会话
+const handleBatchDelete = async () => {
+  if (selectedSessions.value.length === 0) return
+  
+  try {
+    await ElMessageBox.confirm(
+      `确定要删除选中的 ${selectedSessions.value.length} 个会话吗？此操作不可恢复。`,
+      '确认批量删除',
+      {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      }
+    )
+    
+    deleteLoading.value = true
+    await sessionApi.deleteSessions(selectedSessions.value)
+    ElMessage.success(`成功删除 ${selectedSessions.value.length} 个会话`)
+    selectedSessions.value = []
+    loadSessions()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      console.error('批量删除会话失败:', error)
+      ElMessage.error('批量删除失败')
+    }
+  } finally {
+    deleteLoading.value = false
+  }
+}
+
 // 监听筛选条件变化
 watch([statusFilter], () => {
   currentPage.value = 1
@@ -274,9 +363,42 @@ onMounted(async () => {
 
       <!-- 会话列表 -->
       <div v-else class="space-y-4">
+        <!-- 批量操作栏 -->
+        <div class="bg-white rounded-lg shadow-sm border p-3">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-4">
+              <el-checkbox
+                :model-value="isAllSelected"
+                :indeterminate="isIndeterminate"
+                @change="toggleSelectAll"
+              >
+                全选
+              </el-checkbox>
+              <span class="text-sm text-gray-500">
+                已选择 {{ selectedSessions.length }} 项
+              </span>
+            </div>
+            <el-button
+              v-if="hasSelection"
+              type="danger"
+              :loading="deleteLoading"
+              @click="handleBatchDelete"
+            >
+              <el-icon class="mr-1"><Delete /></el-icon>
+              批量删除 ({{ selectedSessions.length }})
+            </el-button>
+          </div>
+        </div>
+
         <!-- PC端表格视图 -->
         <div class="hidden sm:block bg-white rounded-lg shadow-sm border overflow-hidden">
-          <el-table :data="sessions" stripe class="w-full">
+          <el-table 
+            :data="sessions" 
+            stripe 
+            class="w-full"
+            @selection-change="handleSelectionChange"
+          >
+            <el-table-column type="selection" width="55" />
             <el-table-column label="会话ID" min-width="180">
               <template #default="{ row }">
                 <div class="font-mono text-sm text-gray-600">
@@ -314,15 +436,25 @@ onMounted(async () => {
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="120" align="center" fixed="right">
+            <el-table-column label="操作" width="150" align="center" fixed="right">
               <template #default="{ row }">
-                <el-button
-                  type="primary"
-                  size="small"
-                  @click="goToChat(row.session_id)"
-                >
-                  进入
-                </el-button>
+                <div class="flex items-center justify-center gap-2">
+                  <el-button
+                    type="primary"
+                    size="small"
+                    @click="goToChat(row.session_id)"
+                  >
+                    进入
+                  </el-button>
+                  <el-button
+                    type="danger"
+                    size="small"
+                    :loading="deleteLoading"
+                    @click="handleDelete(row)"
+                  >
+                    <el-icon class="mr-1"><Delete /></el-icon>
+                  </el-button>
+                </div>
               </template>
             </el-table-column>
           </el-table>
@@ -330,33 +462,81 @@ onMounted(async () => {
 
         <!-- 移动端卡片视图 -->
         <div class="sm:hidden space-y-3">
+          <!-- 移动端批量操作栏 -->
+          <div v-if="hasSelection" class="bg-white rounded-lg shadow-sm border p-3 sticky top-20 z-10">
+            <div class="flex items-center justify-between">
+              <span class="text-sm text-gray-500">
+                已选择 {{ selectedSessions.length }} 项
+              </span>
+              <el-button
+                type="danger"
+                size="small"
+                :loading="deleteLoading"
+                @click="handleBatchDelete"
+              >
+                <el-icon class="mr-1"><Delete /></el-icon>
+                删除
+              </el-button>
+            </div>
+          </div>
+
           <div
             v-for="session in sessions"
             :key="session.session_id"
-            class="bg-white rounded-lg shadow-sm border p-4 active:bg-gray-50 transition-colors"
-            @click="goToChat(session.session_id)"
+            class="bg-white rounded-lg shadow-sm border p-4"
+            :class="{ 'ring-2 ring-blue-500': selectedSessions.includes(session.session_id) }"
           >
-            <div class="flex items-start justify-between mb-3">
-              <div class="flex-1 min-w-0">
-                <div class="font-mono text-sm text-gray-500 mb-1">
-                  {{ truncateId(session.session_id, 10) }}
+            <div class="flex items-start gap-3">
+              <el-checkbox
+                :model-value="selectedSessions.includes(session.session_id)"
+                class="mt-1"
+                @change="(val: boolean) => {
+                  if (val) {
+                    selectedSessions.push(session.session_id)
+                  } else {
+                    selectedSessions = selectedSessions.filter(id => id !== session.session_id)
+                  }
+                }"
+              />
+              <div 
+                class="flex-1 min-w-0 active:bg-gray-50 transition-colors rounded"
+                @click="goToChat(session.session_id)"
+              >
+                <div class="flex items-start justify-between mb-3">
+                  <div class="flex-1 min-w-0">
+                    <div class="font-mono text-sm text-gray-500 mb-1">
+                      {{ truncateId(session.session_id, 10) }}
+                    </div>
+                    <div class="text-gray-900 font-medium truncate">
+                      {{ session.description || '无描述' }}
+                    </div>
+                  </div>
+                  <div class="ml-3 flex-shrink-0">
+                    <el-tag :type="getStatusType(session.status)" size="small">
+                      {{ getStatusLabel(session.status) }}
+                    </el-tag>
+                  </div>
                 </div>
-                <div class="text-gray-900 font-medium truncate">
-                  {{ session.description || '无描述' }}
+                <div class="flex items-center justify-between text-sm text-gray-500">
+                  <div class="flex items-center gap-1">
+                    <el-icon class="text-xs"><Calendar /></el-icon>
+                    <span>{{ formatDate(session.created_at).split(' ')[0] }}</span>
+                  </div>
+                  <el-icon class="text-gray-400"><ArrowRight /></el-icon>
                 </div>
-              </div>
-              <div class="ml-3 flex-shrink-0">
-                <el-tag :type="getStatusType(session.status)" size="small">
-                  {{ getStatusLabel(session.status) }}
-                </el-tag>
               </div>
             </div>
-            <div class="flex items-center justify-between text-sm text-gray-500">
-              <div class="flex items-center gap-1">
-                <el-icon class="text-xs"><Calendar /></el-icon>
-                <span>{{ formatDate(session.created_at).split(' ')[0] }}</span>
-              </div>
-              <el-icon class="text-gray-400"><ArrowRight /></el-icon>
+            <!-- 移动端单个删除按钮 -->
+            <div class="flex justify-end mt-3 pt-3 border-t">
+              <el-button
+                type="danger"
+                size="small"
+                :loading="deleteLoading"
+                @click.stop="handleDelete(session)"
+              >
+                <el-icon class="mr-1"><Delete /></el-icon>
+                删除
+              </el-button>
             </div>
           </div>
         </div>

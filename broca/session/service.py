@@ -148,6 +148,26 @@ class BaseService(Generic[T]):
             await session.commit()
             return True
 
+    async def delete_batch(self, ids: List[str]) -> int:
+        """批量删除记录，返回删除数量"""
+        if not ids:
+            return 0
+        
+        async with db_manager.get_session() as session:
+            statement = select(self.model_class).where(
+                getattr(self.model_class, self.id_field).in_(ids)
+            )
+            result = await session.exec(statement)
+            instances = result.scalars().all()
+            
+            count = 0
+            for instance in instances:
+                await session.delete(instance)
+                count += 1
+            
+            await session.commit()
+            return count
+
     async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         """统计记录数量"""
         async with db_manager.get_session() as session:
