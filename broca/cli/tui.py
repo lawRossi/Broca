@@ -34,7 +34,7 @@ class TUI:
         client_id: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        workspace: Optional[str] = None
+        workspace: Optional[str] = None,
     ):
         """
         Initialize TUI
@@ -58,7 +58,7 @@ class TUI:
             client_id=client_id,
             user_id=user_id,
             session_id=session_id,
-            workspace=workspace
+            workspace=workspace,
         )
 
     def register_event_handler(self, event_name: str, func: callable):
@@ -75,14 +75,14 @@ async def main():
 
     parser = argparse.ArgumentParser(description="Broca CLI - Terminal User Interface")
     parser.add_argument(
-        "--server", "-s", default="http://localhost:6868", help="Socket.io server URL"
+        "--server", default="http://localhost:6868", help="Socket.io server URL"
     )
     parser.add_argument("--client-type", "-t", default="cli", help="Client type")
     parser.add_argument("--client-id", "-c", default=None, help="Client identifier")
     parser.add_argument("--user-id", "-u", default=None, help="User identifier")
     parser.add_argument(
-        "--session-id",
-        "-i",
+        "--session",
+        "-s",
         default=None,
         help="Session identifier (if not provided, will generate one and initialize agent)",
     )
@@ -104,8 +104,8 @@ async def main():
         client_type=args.client_type,
         client_id=args.client_id,
         user_id=args.user_id,
-        session_id=args.session_id,
-        workspace=args.workspace
+        session_id=args.session,
+        workspace=args.workspace,
     )
 
     try:

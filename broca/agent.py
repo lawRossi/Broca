@@ -690,5 +690,3 @@ class SocketIOAgent(Agent):
 
     async def restore_from_session(self, agent_id):
         await self.context.build_history_from_session(self.session_manager, agent_id)
-        for message in self.context.history:
-            logger.info(message)

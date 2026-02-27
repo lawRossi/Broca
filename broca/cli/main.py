@@ -278,6 +278,10 @@ examples:
     )
 
     parser.add_argument("--version", action="version", version=f"Broca {get_version()}")
+    parser.add_argument(
+        "--server", default="http://localhost:6868", help="Socket.io server URL"
+    )
+    parser.add_argument("--session", "-s", default=None, help="Session identifier")
 
     # Web subcommand
     web_parser = parser.add_subparsers(
