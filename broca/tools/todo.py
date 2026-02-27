@@ -16,7 +16,7 @@ class TodoManager(Tool):
 
     @property
     def description(self):
-        return "Use this tool to manage todo list. Use this tool when executing tasks that require multiple steps."
+        return "Use this tool to manage todo list. Always use this tool to track progress when executing complex tasks that require multiple steps."
 
     @property
     def parameters(self):
@@ -63,7 +63,7 @@ class TodoManager(Tool):
 
     def _save_todos(self):
         with open(self.data_file, "w") as f:
-            json.dump(self.todos, f, indent=2)
+            json.dump(self.todos, f, indent=2, ensure_ascii=False)
 
     def _get_next_id(self):
         if not self.todos:
@@ -133,7 +133,7 @@ class TodoManager(Tool):
         if not todos:
             return f"Todo group with ID {todo_id} not found"
 
-        return json.dumps(todos, indent=2, default=str)
+        return json.dumps(todos, indent=2, default=str, ensure_ascii=False)
 
     def _update_todos(self, arguments):
         todo_id = arguments.get("todo_id")
