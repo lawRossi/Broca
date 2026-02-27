@@ -13,6 +13,7 @@ enum DisplayType {
   SYSTEM = 'system',
   ERROR = 'error',
   THINKING = 'thinking',
+  TOOL_CALL = 'tool_call',
 }
 
 type UiMessage = {
@@ -25,6 +26,7 @@ type UiMessage = {
   subscription?: string
   content?: string
   raw: BrocaMessage
+  showParameters?: boolean  // 用于控制 tool_call 消息的 parameters 显示
 }
 
 type AgentStatus = 'idle' | 'running' | 'connecting' | 'disconnected'
@@ -111,6 +113,8 @@ const filteredMessages = computed(() => {
         return messageFilters.showError
       case DisplayType.THINKING:
         return messageFilters.showAssistant
+      case DisplayType.TOOL_CALL:
+        return messageFilters.showAssistant // tool_call消息跟随assistant的过滤设置
       default:
         return true
     }
@@ -119,8 +123,11 @@ const filteredMessages = computed(() => {
 
 // 添加UI消息
 const addUiMessage = (m: BrocaMessage, displayType?: DisplayType) => {
-  // 不展示 turn_start 和 turn_end 消息
   if (m.message_type === 'turn_start' || m.message_type === 'turn_end') {
+    return
+  }
+
+  if (m.message_type === 'command') {
     return
   }
 
@@ -130,42 +137,113 @@ const addUiMessage = (m: BrocaMessage, displayType?: DisplayType) => {
     return
   }
 
-  let content =
-    m.data?.content ??
-    m.data?.reasoning_content ??
-    m.data?.message ??
-    m.error_message ??
-    JSON.stringify(m.data ?? {}, null, 2)
-
-  // tool_call 消息只展示 tool_name
-  if (m.message_type === 'tool_call' && m.data?.tool_name) {
-    content = `🔧 Tool Call: ${m.data.tool_name}`
-  }
-
-  // 自动判断消息类型
-  let type = displayType
-  if (!type) {
-    if (m.message_type === 'error' || m.error_message) {
-      type = DisplayType.ERROR
-    } else if (m.sender_id === 'system' || m.sender_id?.includes('system')) {
-      type = DisplayType.SYSTEM
-    } else if (m.sender_id === 'user' || m.sender_id?.includes('user')) {
-      type = DisplayType.USER
-    } else {
-      type = DisplayType.ASSISTANT
+  // 检查是否是assistant消息且包含tool_call
+  if ((m.message_type === 'agent_response' || m.role === 'assistant') && m.data?.content) {
+    try {
+      const contentObj = JSON.parse(m.data.content)
+      
+      // 检查是否有tool_calls字段（OpenAI格式）
+      if (contentObj.tool_calls && Array.isArray(contentObj.tool_calls) && contentObj.tool_calls.length > 0) {
+        // 首先添加content/reasoning content作为assistant消息（如果有的话）
+        if (contentObj.content || contentObj.reasoning_content) {
+          let assistantContent = ''
+          if (contentObj.content) {
+            assistantContent = contentObj.content
+          }
+          if (contentObj.reasoning_content) {
+            if (assistantContent) {
+              assistantContent += '\n\n推理过程:\n' + contentObj.reasoning_content
+            } else {
+              assistantContent = '推理过程:\n' + contentObj.reasoning_content
+            }
+          }
+          
+          const assistantMsg: UiMessage = {
+            id: `${m.message_id}_content`,
+            ts: m.timestamp,
+            type: m.message_type,
+            displayType: DisplayType.ASSISTANT,
+            sender: m.sender_id,
+            receiver: m.receiver_id,
+            subscription: m.subscription,
+            content: assistantContent,
+            raw: {
+              ...m,
+              data: { ...m.data, content: assistantContent }
+            },
+            showParameters: false,
+          }
+          
+          uiMessages.value.push(assistantMsg)
+        }
+        
+        // 然后为每个tool_call添加单独的消息
+        contentObj.tool_calls.forEach((toolCall: any, index: number) => {
+          let toolName = 'unknown_tool'
+          let argumentsData = {}
+          
+          if (toolCall.function) {
+            toolName = toolCall.function.name || toolName
+            try {
+              argumentsData = JSON.parse(toolCall.function.arguments || '{}')
+            } catch (e) {
+              argumentsData = { raw_arguments: toolCall.function.arguments }
+            }
+          }
+          
+          const toolCallMsg: UiMessage = {
+            id: `${m.message_id}_toolcall_${index}`,
+            ts: m.timestamp,
+            type: 'tool_call',
+            displayType: DisplayType.TOOL_CALL,
+            sender: m.sender_id,
+            receiver: m.receiver_id,
+            subscription: m.subscription,
+            content: `🔧 Tool Call: ${toolName}`,
+            raw: {
+              message_id: `${m.message_id}_toolcall_${index}`,
+              timestamp: m.timestamp,
+              message_type: 'tool_call',
+              sender_id: m.sender_id,
+              receiver_id: m.receiver_id,
+              subscription: m.subscription,
+              data: {
+                tool_name: toolName,
+                arguments: argumentsData
+              }
+            },
+            showParameters: false,
+          }
+          
+          uiMessages.value.push(toolCallMsg)
+        })
+        
+        // 自动滚动到底部
+        nextTick(() => {
+          scrollToBottom()
+        })
+        return
+      }
+    } catch (e) {
+      // 如果不是JSON格式，继续正常处理
+      console.debug('消息内容不是有效的JSON格式:', e)
     }
   }
 
+  // 使用统一的消息处理函数处理其他消息
+  const processed = processMessageForDisplay(m, m.message_type)
+  
   const uiMsg: UiMessage = {
     id: m.message_id,
     ts: m.timestamp,
     type: m.message_type,
-    displayType: type!,
+    displayType: displayType || processed.displayType,
     sender: m.sender_id,
     receiver: m.receiver_id,
     subscription: m.subscription,
-    content,
+    content: processed.content,
     raw: m,
+    showParameters: false, // 默认不显示参数
   }
 
   uiMessages.value.push(uiMsg)
@@ -200,6 +278,14 @@ const scrollToBottom = () => {
   }
 }
 
+// 切换tool_call消息的参数显示
+const toggleToolParameters = (messageId: string) => {
+  const message = uiMessages.value.find(m => m.id === messageId)
+  if (message && message.displayType === DisplayType.TOOL_CALL) {
+    message.showParameters = !message.showParameters
+  }
+}
+
 
 let client: BrocaSocketClient | null = null
 
@@ -225,21 +311,6 @@ const agentStatusText = computed(() => {
   }
 })
 
-// Agent状态样式
-const agentStatusClass = computed(() => {
-  switch (agentStatus.value) {
-    case 'idle':
-      return 'bg-green-100 text-green-800'
-    case 'running':
-      return 'bg-yellow-100 text-yellow-800 animate-pulse'
-    case 'connecting':
-      return 'bg-blue-100 text-blue-800'
-    case 'disconnected':
-      return 'bg-gray-100 text-gray-800'
-    default:
-      return 'bg-gray-100 text-gray-800'
-  }
-})
 
 // 根据session_id获取agent_id和agent_name
 const fetchAgentId = async (sessionId: string) => {
@@ -264,9 +335,117 @@ const parseMessageContent = (content: string | undefined): string => {
   if (!content) return ''
   try {
     const parsed = JSON.parse(content)
-    return parsed.content
+    
+    // 如果消息包含tool_calls，则返回原始JSON字符串，让processMessageForDisplay处理
+    if (parsed.tool_calls && Array.isArray(parsed.tool_calls) && parsed.tool_calls.length > 0) {
+      return JSON.stringify(parsed, null, 2)
+    }
+    
+    // 优先返回content字段，如果没有则返回整个JSON字符串
+    return parsed.content || JSON.stringify(parsed, null, 2)
   } catch {
     return content
+  }
+}
+
+// 统一的消息显示处理函数
+const processMessageForDisplay = (messageData: any, messageType?: string): { 
+  content: string, 
+  displayType: DisplayType, 
+  data?: any 
+} => {
+  // 优先使用传入的messageType，否则从messageData中获取
+  const msgType = messageType || messageData.message_type
+  
+  // 处理tool_call消息
+  if (msgType === 'tool_call') {
+    let toolName = 'unknown_tool'
+    let argumentsData = {}
+    
+    // 尝试从不同位置获取数据
+    if (messageData.data?.tool_name) {
+      // 实时消息格式
+      toolName = messageData.data.tool_name
+      argumentsData = messageData.data.arguments || {}
+    } else if (messageData.content) {
+      // 历史消息格式（JSON字符串）
+      try {
+        const parsedContent = JSON.parse(messageData.content)
+        toolName = parsedContent.tool_name || toolName
+        argumentsData = parsedContent.arguments || argumentsData
+      } catch (e) {
+        console.error('解析tool_call消息失败:', e)
+        toolName = messageData.content
+      }
+    }
+    
+    return {
+      content: `🔧 Tool Call: ${toolName}`,
+      displayType: DisplayType.TOOL_CALL,
+      data: {
+        tool_name: toolName,
+        arguments: argumentsData
+      }
+    }
+  }
+  
+  // 处理tool_result消息
+  if (msgType === 'tool_result') {
+    let result = '无结果'
+    
+    // 尝试从不同位置获取数据
+    if (messageData.data?.result !== undefined) {
+      // 实时消息格式
+      result = messageData.data.result
+    } else if (messageData.content) {
+      // 历史消息格式（JSON字符串）
+      try {
+        const parsedContent = JSON.parse(messageData.content)
+        result = parsedContent.result || result
+      } catch (e) {
+        result = messageData.content
+      }
+    }
+    
+    const displayResult = typeof result === 'string' 
+      ? (result.length > 100 ? result.substring(0, 100) + '...' : result)
+      : JSON.stringify(result, null, 2)
+    
+    return {
+      content: `✅ Tool Result: ${displayResult}`,
+      displayType: DisplayType.ASSISTANT
+    }
+  }
+  
+  // 处理普通消息
+  let content = ''
+  if (messageData.data?.content !== undefined) {
+    // 实时消息格式
+    content = messageData.data.content
+  } else if (messageData.content) {
+    // 历史消息格式
+    content = parseMessageContent(messageData.content)
+  } else if (messageData.data?.message) {
+    content = messageData.data.message
+  } else if (messageData.error_message) {
+    content = messageData.error_message
+  }
+  
+  // 确定显示类型
+  let displayType = DisplayType.ASSISTANT
+  if (msgType === 'error' || messageData.error_message) {
+    displayType = DisplayType.ERROR
+  } else if (messageData.sender_id === 'system' || messageData.sender_id?.includes('system')) {
+    displayType = DisplayType.SYSTEM
+  } else if (messageData.sender_id === 'user' || messageData.sender_id?.includes('user') || messageData.role === 'user') {
+    displayType = DisplayType.USER
+  } else if (msgType === 'tool_call') {
+    displayType = DisplayType.TOOL_CALL
+  }
+  
+  return {
+    content,
+    displayType
   }
 }
 
@@ -277,28 +456,140 @@ const loadHistory = async (sessionId: string) => {
     const response = await sessionApi.getSessionMessages(sessionId)
     if (response.messages) {
       const filteredMessages = response.messages.filter(
-        (msg: any) => (msg.role === 'user' || msg.role === 'assistant') && parseMessageContent(msg.content)
+        (msg: any) => (msg.role === 'user' || msg.role === 'assistant') && 
+                     (parseMessageContent(msg.content) || msg.message_type === 'tool_call') && 
+                     msg.message_type !== 'command'
       )
       
-      const historyMessages = filteredMessages.map((msg: any): UiMessage => ({
-        id: msg.message_id,
-        ts: msg.timestamp,
-        type: msg.message_type,
-        displayType: msg.role === 'user' ? DisplayType.USER : DisplayType.ASSISTANT,
-        sender: msg.role === 'user' ? 'user' : msg.agent_id,
-        receiver: msg.role === 'user' ? msg.agent_id : 'user',
-        subscription: sessionId,
-        content: parseMessageContent(msg.content),
-        raw: {
-          message_id: msg.message_id,
-          timestamp: msg.timestamp,
-          message_type: msg.message_type,
-          sender_id: msg.role === 'user' ? 'user' : msg.agent_id,
-          receiver_id: msg.role === 'user' ? msg.agent_id : 'user',
+      const historyMessages: UiMessage[] = []
+      
+      filteredMessages.forEach((msg: any) => {
+        // 检查是否是assistant消息且包含tool_call
+        if ((msg.role === 'assistant' || msg.message_type === 'agent_response') && msg.content) {
+          try {
+            const contentObj = JSON.parse(msg.content)
+            
+            // 检查是否有tool_calls字段（OpenAI格式）
+            if (contentObj.tool_calls && Array.isArray(contentObj.tool_calls) && contentObj.tool_calls.length > 0) {
+              // 首先添加content/reasoning content作为assistant消息（如果有的话）
+              if (contentObj.content || contentObj.reasoning_content) {
+                let assistantContent = ''
+                if (contentObj.content) {
+                  assistantContent = contentObj.content
+                }
+                if (contentObj.reasoning_content) {
+                  if (assistantContent) {
+                    assistantContent += '\n\n推理过程:\n' + contentObj.reasoning_content
+                  } else {
+                    assistantContent = '推理过程:\n' + contentObj.reasoning_content
+                  }
+                }
+                
+                const assistantMsg: UiMessage = {
+                  id: `${msg.message_id}_content`,
+                  ts: msg.timestamp,
+                  type: msg.message_type,
+                  displayType: DisplayType.ASSISTANT,
+                  sender: msg.role === 'user' ? 'user' : msg.agent_id,
+                  receiver: msg.role === 'user' ? msg.agent_id : 'user',
+                  subscription: sessionId,
+                  content: assistantContent,
+                  raw: {
+                    message_id: `${msg.message_id}_content`,
+                    timestamp: msg.timestamp,
+                    message_type: msg.message_type,
+                    sender_id: msg.role === 'user' ? 'user' : msg.agent_id,
+                    receiver_id: msg.role === 'user' ? msg.agent_id : 'user',
+                    subscription: sessionId,
+                    data: { content: assistantContent }
+                  } as BrocaMessage,
+                  showParameters: false,
+                }
+                
+                historyMessages.push(assistantMsg)
+              }
+              
+              // 然后为每个tool_call添加单独的消息
+              contentObj.tool_calls.forEach((toolCall: any, index: number) => {
+                let toolName = 'unknown_tool'
+                let argumentsData = {}
+                
+                if (toolCall.function) {
+                  toolName = toolCall.function.name || toolName
+                  try {
+                    argumentsData = JSON.parse(toolCall.function.arguments || '{}')
+                  } catch (e) {
+                    argumentsData = { raw_arguments: toolCall.function.arguments }
+                  }
+                }
+                
+                const toolCallMsg: UiMessage = {
+                  id: `${msg.message_id}_toolcall_${index}`,
+                  ts: msg.timestamp,
+                  type: 'tool_call',
+                  displayType: DisplayType.TOOL_CALL,
+                  sender: msg.role === 'user' ? 'user' : msg.agent_id,
+                  receiver: msg.role === 'user' ? msg.agent_id : 'user',
+                  subscription: sessionId,
+                  content: `🔧 Tool Call: ${toolName}`,
+                  raw: {
+                    message_id: `${msg.message_id}_toolcall_${index}`,
+                    timestamp: msg.timestamp,
+                    message_type: 'tool_call',
+                    sender_id: msg.role === 'user' ? 'user' : msg.agent_id,
+                    receiver_id: msg.role === 'user' ? msg.agent_id : 'user',
+                    subscription: sessionId,
+                    data: {
+                      tool_name: toolName,
+                      arguments: argumentsData
+                    }
+                  } as BrocaMessage,
+                  showParameters: false,
+                }
+                
+                historyMessages.push(toolCallMsg)
+              })
+              
+              return // 跳过正常的消息处理
+            }
+          } catch (e) {
+            // 如果不是JSON格式，继续正常处理
+            console.debug('历史消息内容不是有效的JSON格式:', e)
+          }
+        }
+        
+        // 使用统一的消息处理函数处理其他消息
+        const processed = processMessageForDisplay(msg, msg.message_type)
+        
+        // 构建raw消息数据 - 确保与实时消息格式一致
+        const rawData: any = { content: processed.content }
+        if (processed.data) {
+          Object.assign(rawData, processed.data)
+        }
+        
+        const uiMsg: UiMessage = {
+          id: msg.message_id,
+          ts: msg.timestamp,
+          type: msg.message_type,
+          displayType: processed.displayType,
+          sender: msg.role === 'user' ? 'user' : msg.agent_id,
+          receiver: msg.role === 'user' ? msg.agent_id : 'user',
           subscription: sessionId,
-          data: { content: parseMessageContent(msg.content) }
-        } as BrocaMessage
-      }))
+          content: processed.content,
+          raw: {
+            message_id: msg.message_id,
+            timestamp: msg.timestamp,
+            message_type: msg.message_type,
+            sender_id: msg.role === 'user' ? 'user' : msg.agent_id,
+            receiver_id: msg.role === 'user' ? msg.agent_id : 'user',
+            subscription: sessionId,
+            data: rawData
+          } as BrocaMessage,
+          showParameters: false // 默认不显示参数
+        }
+        
+        historyMessages.push(uiMsg)
+      })
       
       uiMessages.value = [...historyMessages, ...uiMessages.value]
     }
@@ -442,7 +733,13 @@ const doConnect = async () => {
     client.on('turn_end', () => {
       agentStatus.value = 'idle'
     })
-    
+    client.on('agent_response', () => {
+      agentStatus.value = 'running'
+    })
+    client.on('tool_call', () => {
+      agentStatus.value = 'running'
+    })
+
     client.on('permission_request', (m: BrocaMessage) => {
       permissionDialog.visible = true
       permissionDialog.requestId = m.data?.request_id
@@ -513,6 +810,31 @@ const send = async () => {
     })
   } catch (e: any) {
     ElMessage.error(e?.message || '发送失败')
+  }
+}
+
+// 发送 abort 命令
+const sendAbort = async () => {
+  if (!client) {
+    ElMessage.warning('请先连接')
+    return
+  }
+  
+  if (agentStatus.value !== 'running') {
+    ElMessage.info('Agent 未在运行中，无需 abort')
+    return
+  }
+
+  try {
+    await client.sendCommand({
+      command: 'abort',
+      arguments: {},
+      subscription: sessionId.value
+    })
+
+    ElMessage.success('Abort 命令已发送')
+  } catch (e: any) {
+    ElMessage.error(e?.message || '发送 abort 失败')
   }
 }
 
@@ -757,6 +1079,8 @@ onUnmounted(() => {
                 'bg-red-50 border-l-4 border-red-500 text-red-800': m.displayType === DisplayType.ERROR,
                 // Thinking messages - yellow theme
                 'bg-yellow-50 border-l-4 border-yellow-500 italic': m.displayType === DisplayType.THINKING,
+                // Tool call messages - purple theme
+                'bg-purple-50 border-l-4 border-purple-500': m.displayType === DisplayType.TOOL_CALL,
               }"
             >
               <!-- Message header -->
@@ -771,7 +1095,8 @@ onUnmounted(() => {
                       m.displayType === DisplayType.USER ? '👤' : 
                       m.displayType === DisplayType.ASSISTANT ? '🤖' : 
                       m.displayType === DisplayType.ERROR ? '⚠️' : 
-                      m.displayType === DisplayType.THINKING ? '💭' : '💬' 
+                      m.displayType === DisplayType.THINKING ? '💭' : 
+                      m.displayType === DisplayType.TOOL_CALL ? '🔧' : '💬' 
                     }}
                   </span>
                   <!-- Sender name -->
@@ -780,12 +1105,14 @@ onUnmounted(() => {
                     'text-green-700': m.displayType === DisplayType.ASSISTANT,
                     'text-red-700': m.displayType === DisplayType.ERROR,
                     'text-yellow-700': m.displayType === DisplayType.THINKING,
+                    'text-purple-700': m.displayType === DisplayType.TOOL_CALL,
                   }">
                     {{
                       m.displayType === DisplayType.USER ? 'You' :
                       m.displayType === DisplayType.ASSISTANT ? agentName :
                       m.displayType === DisplayType.ERROR ? 'Error' :
-                      m.displayType === DisplayType.THINKING ? 'Thinking' : 'System'
+                      m.displayType === DisplayType.THINKING ? 'Thinking' :
+                      m.displayType === DisplayType.TOOL_CALL ? 'Tool Call' : 'System'
                     }}
                   </span>
                 </div>
@@ -796,13 +1123,34 @@ onUnmounted(() => {
               </div>
               
               <!-- Message content -->
-              <pre 
-                class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed"
-                :class="{
-                  'text-gray-800': m.displayType === DisplayType.USER || m.displayType === DisplayType.ASSISTANT,
-                  'font-mono': m.displayType === DisplayType.SYSTEM,
-                }"
-              >{{ m.content }}</pre>
+              <div>
+                <pre 
+                  class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
+                  :class="{
+                    'text-gray-800': m.displayType === DisplayType.USER || m.displayType === DisplayType.ASSISTANT,
+                    'font-mono': m.displayType === DisplayType.SYSTEM,
+                    'text-purple-800': m.displayType === DisplayType.TOOL_CALL,
+                  }"
+                >{{ m.content }}</pre>
+                
+                <!-- Tool call parameters (only for tool_call messages) -->
+                <div v-if="m.displayType === DisplayType.TOOL_CALL && m.raw.data?.arguments" class="mt-2">
+                  <el-button 
+                    size="small" 
+                    type="text" 
+                    @click="toggleToolParameters(m.id)"
+                    class="!text-purple-600 !p-0 !h-auto !min-h-0"
+                  >
+                    {{ m.showParameters ? '隐藏参数' : '查看参数' }}
+                  </el-button>
+                  
+                  <div v-if="m.showParameters" class="mt-2 p-2 bg-purple-100 rounded border border-purple-200">
+                    <div class="text-xs font-semibold text-purple-700 mb-1">参数:</div>
+                    <pre class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border">
+{{ JSON.stringify(m.raw.data.arguments, null, 2) }}</pre>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
 
@@ -817,6 +1165,16 @@ onUnmounted(() => {
                 :size="isMobile ? 'default' : 'large'"
                 clearable
               />
+              <el-button 
+                v-if="agentStatus === 'running'"
+                type="danger" 
+                @click="sendAbort"
+                :size="isMobile ? 'default' : 'large'"
+                title="Abort current operation"
+              >
+                <span class="hidden sm:inline">Abort</span>
+                <span class="sm:hidden">⏹</span>
+              </el-button>
               <el-button 
                 type="primary" 
                 @click="send" 
@@ -905,6 +1263,13 @@ onUnmounted(() => {
                   Errors
                 </span>
                 <span class="font-mono text-sm">{{ uiMessages.filter(m => m.displayType === DisplayType.ERROR).length }}</span>
+              </div>
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-gray-600 flex items-center gap-2">
+                  <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+                  Tool Calls
+                </span>
+                <span class="font-mono text-sm">{{ uiMessages.filter(m => m.displayType === DisplayType.TOOL_CALL).length }}</span>
               </div>
             </div>
           </div>
