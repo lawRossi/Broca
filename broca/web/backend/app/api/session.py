@@ -1,6 +1,5 @@
 import logging
 import tempfile
-from typing import List
 
 from broca.agent_manager import AgentFactory
 from broca.session.service import (
@@ -230,35 +229,6 @@ async def get_session_latest_agent(session_id: str) -> ApiResponse:
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
-@router.delete("/{session_id}", response_model=ApiResponse)
-async def delete_session(session_id: str) -> ApiResponse:
-    """删除单个会话"""
-    try:
-        session_service = get_session_service()
-        session = await session_service.get(session_id)
-
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        # 删除会话（级联删除关联的turns、messages、agents等）
-        success = await session_service.delete(session_id)
-
-        if not success:
-            raise HTTPException(status_code=500, detail="Failed to delete session")
-
-        logger.info(f"Session deleted: {session_id}")
-        return ApiResponse.success(msg="Session deleted successfully")
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting session: {e}")
-        import traceback
-
-        logger.error(traceback.format_exc())
-        raise HTTPException(500, f"Internal server error: {e!s}") from e
-
-
 @router.delete("/sessions", response_model=ApiResponse)
 async def delete_sessions(request: dict) -> ApiResponse:
     """批量删除会话"""
@@ -282,6 +252,35 @@ async def delete_sessions(request: dict) -> ApiResponse:
         raise
     except Exception as e:
         logger.error(f"Error batch deleting sessions: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.delete("/{session_id}", response_model=ApiResponse)
+async def delete_session(session_id: str) -> ApiResponse:
+    """删除单个会话"""
+    try:
+        session_service = get_session_service()
+        session = await session_service.get(session_id)
+
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # 删除会话（级联删除关联的turns、messages、agents等）
+        success = await session_service.delete(session_id)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete session")
+
+        logger.info(f"Session deleted: {session_id}")
+        return ApiResponse.success(msg="Session deleted successfully")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting session: {e}")
         import traceback
 
         logger.error(traceback.format_exc())
