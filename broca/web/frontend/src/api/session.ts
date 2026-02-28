@@ -119,7 +119,7 @@ export const sessionApi = {
   async getSessionMessages(
     sessionId: string,
     skip: number = 0,
-    limit: number = 100
+    limit: number = 50
   ): Promise<MessagesResponse> {
     return request.get(`/session/${sessionId}/messages`, {
       params: { skip, limit }

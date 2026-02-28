@@ -143,8 +143,8 @@ async def get_session_agents(session_id: str) -> ApiResponse:
 
 
 @router.get("/{session_id}/messages", response_model=ApiResponse)
-async def get_session_messages(session_id: str, skip: int = 0, limit: int = 100) -> ApiResponse:
-    """获取会话的消息历史"""
+async def get_session_messages(session_id: str, skip: int = 0, limit: int = 50) -> ApiResponse:
+    """获取会话的消息历史（按时间正序），支持分页"""
     try:
         # 验证会话是否存在
         session_service = get_session_service()
@@ -152,16 +152,17 @@ async def get_session_messages(session_id: str, skip: int = 0, limit: int = 100)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # 获取会话的消息
+        # 获取消息
         message_service = get_message_service()
         messages = await message_service.get_messages_by_session(session_id)
 
-        # 应用分页
-        paginated_messages = messages[skip : skip + limit]
+        # 按时间正序排列后分页
+        messages_sorted = sorted(messages, key=lambda m: m.timestamp, reverse=True)
+        total = len(messages_sorted)
+        paginated_messages = messages_sorted[skip : skip + limit]
+        paginated_messages.reverse()
 
-        return ApiResponse.success(
-            {"messages": paginated_messages, "total": len(messages), "skip": skip, "limit": limit}
-        )
+        return ApiResponse.success({"messages": paginated_messages, "total": total, "skip": skip, "limit": limit})
     except HTTPException:
         raise
     except Exception as e:

@@ -307,6 +307,20 @@ class MessageService(BaseService[Message]):
             filters={"session_id": session_id}, order_by="sequence_number"
         )
 
+    async def get_recent_messages(self, session_id: str, limit: int = 50) -> List[Message]:
+        """获取最近的消息，按时间倒序返回（最新的在前），用于前端直接展示"""
+        async with db_manager.get_session() as session:
+            statement = (
+                select(Message)
+                .where(Message.session_id == session_id)
+                .order_by(Message.timestamp.desc())
+                .limit(limit)
+            )
+            result = await session.exec(statement)
+            messages = result.scalars().all()
+            # 反转顺序，最旧的在前面，最新的在后面（按时间正序）
+            return list(reversed(messages))
+
     async def get_messages_by_turn(self, turn_id: str) -> List[Message]:
         """根据轮次ID获取消息"""
         return await self.get_all(
