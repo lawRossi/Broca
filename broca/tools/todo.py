@@ -4,7 +4,7 @@ import os
 from broca.tools.tool import Tool, ToolCallContext
 
 
-class TodoManager(Tool):
+class TodoManagement(Tool):
     def __init__(self, data_file="todos.json"):
         super().__init__()
         self.data_file = data_file
@@ -12,7 +12,7 @@ class TodoManager(Tool):
 
     @property
     def name(self):
-        return "todo_manager"
+        return "todo_management"
 
     @property
     def description(self):

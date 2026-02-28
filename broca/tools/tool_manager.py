@@ -2,6 +2,8 @@ from broca.skill_manager import SkillManager
 from broca.tools.bash import ExecuteCode
 from broca.tools.filesystem import EditFile, ListDir, ReadFile, WriteFile
 from broca.tools.skill import LoadSkill
+from broca.tools.task import TaskManagement
+from broca.tools.todo import TodoManagement
 from broca.tools.tool import Tool
 
 
@@ -26,6 +28,8 @@ class ToolManager:
         self._add_tool(WriteFile())
         self._add_tool(EditFile())
         self._add_tool(ListDir())
+        self._add_tool(TodoManagement())
+        self._add_tool(TaskManagement())
         load_skill = LoadSkill(SkillManager())
         self._add_tool(load_skill)
 

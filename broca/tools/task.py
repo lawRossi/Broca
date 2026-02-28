@@ -1,14 +1,14 @@
 import json
 
-from Broca.task import TaskContext, TaskPriority, TaskStatus
-from Broca.task_manager import TaskManager
-
+from broca.task import TaskContext, TaskPriority, TaskStatus
+from broca.task_manager import TaskManager
 from broca.tools.tool import Tool, ToolCallContext
 
 
-class TaskManagementTool(Tool):
+class TaskManagement(Tool):
     def __init__(self):
         super().__init__()
+        self.task_manager = TaskManager()
 
     @property
     def name(self):
@@ -16,7 +16,7 @@ class TaskManagementTool(Tool):
 
     @property
     def description(self):
-        return "Use this tool to manage tasks with CRUD operations."
+        return "Use this tool to manage tasks with CRUD operations. Load skill plan-with-tasks before using this tool."
 
     @property
     def parameters(self):
@@ -94,9 +94,8 @@ class TaskManagementTool(Tool):
             },
             "required": ["action"],
         }
-        self.task_manager = TaskManager()
 
-    def _execute(self, arguments: dict, context: ToolCallContext):
+    async def _execute(self, arguments: dict, context: ToolCallContext):
         action = arguments.get("action")
 
         if action == "create":
@@ -136,7 +135,9 @@ class TaskManagementTool(Tool):
 
             # Convert context dict to TaskContext if provided
             task_context = TaskContext(
-                arguments.get("files"), arguments.get("links"), arguments.get("notes")
+                files=arguments.get("files"),
+                links=arguments.get("links"),
+                notes=arguments.get("notes"),
             )
 
             task = self.task_manager.create_task(
@@ -209,7 +210,9 @@ class TaskManagementTool(Tool):
                 priority = TaskPriority(arguments["priority"].lower())
 
             task_context = TaskContext(
-                arguments.get("files"), arguments.get("links"), arguments.get("notes")
+                files=arguments.get("files"),
+                links=arguments.get("links"),
+                notes=arguments.get("notes"),
             )
 
             task = self.task_manager.update_task(
