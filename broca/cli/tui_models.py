@@ -31,6 +31,7 @@ class ChatMessage:
         SYSTEM = "system"
         ERROR = "error"
         TOOL = "tool"
+        TOOL_CALL = "tool_call"
         PERMISSION = "permission"
 
     content: str
