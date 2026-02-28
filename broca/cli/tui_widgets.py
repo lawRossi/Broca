@@ -78,6 +78,7 @@ class MessageListWidget(RichLog):
             ChatMessage.DisplayType.SYSTEM: ("System", "grey"),
             ChatMessage.DisplayType.ERROR: ("Error", "red"),
             ChatMessage.DisplayType.TOOL: ("Tool", "orange"),
+            ChatMessage.DisplayType.TOOL_CALL: ("Tool Call", "cyan"),
             ChatMessage.DisplayType.PERMISSION: ("Permission", "purple"),
         }
 
