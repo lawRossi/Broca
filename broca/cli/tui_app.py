@@ -224,6 +224,7 @@ class BrocaTUIApp(App):
             self.client.register_event_handler("connect", self.on_connect)
             self.client.register_event_handler("disconnect", self.on_disconnect)
             self.client.register_event_handler("agent_response", self.on_agent_response)
+            self.client.register_event_handler("tool_call", self.on_tool_call)
             self.client.register_event_handler("turn_start", self.on_turn_start)
             self.client.register_event_handler("turn_end", self.on_turn_end)
             self.client.register_event_handler(
@@ -571,6 +572,13 @@ Keyboard shortcuts:
         content = message.data.get("content", "")
         await self.add_message(
             ChatMessage(content=content, display_type=ChatMessage.DisplayType.ASSISTANT)
+        )
+
+    async def on_tool_call(self, message):
+        """Handle tool call"""
+        tool_name = message.data.get("tool_name", "unknown")
+        await self.add_message(
+            ChatMessage(content=f"Calling tool: {tool_name}", display_type=ChatMessage.DisplayType.TOOL_CALL)
         )
 
     async def on_turn_start(self, message):
