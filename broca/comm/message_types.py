@@ -376,6 +376,7 @@ class MessageProtocol:
             room=room,
             subscription=subscription,
             data={
+                "assigner": sender_id,
                 "task_id": task_id,
                 "task_description": task_description,
             },
@@ -431,6 +432,27 @@ class MessageProtocol:
             room=room,
             subscription=subscription,
             data=data,
+        )
+
+    @staticmethod
+    def create_task_error(
+        task_id: str,
+        error_message: str,
+        sender_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> Message:
+        """Create a task error message"""
+        return Message(
+            message_type=MessageType.TASK_FAILED,
+            sub_type=MessageSubType.TASK_UPDATE,
+            sender_id=sender_id,
+            receiver_id=receiver_id,
+            room=room,
+            subscription=subscription,
+            error_code=task_id,
+            error_message=error_message,
         )
 
     @staticmethod

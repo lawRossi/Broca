@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import tempfile
 
@@ -39,6 +40,8 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
         session_id = agent.session_manager.session_id
         await agent.connect()
         await agent.subscribe(session_id)
+        task = asyncio.create_task(agent.run())
+        task.add_done_callback(lambda _: agent.stop())
 
         # 更新会话描述（如果提供）
         if request.description:
@@ -161,7 +164,7 @@ async def get_session_messages(session_id: str, skip: int = 0, limit: int = 50) 
         total = len(messages_sorted)
         paginated_messages = messages_sorted[skip : skip + limit]
         paginated_messages.reverse()
-
+        print(total)
         return ApiResponse.success({"messages": paginated_messages, "total": total, "skip": skip, "limit": limit})
     except HTTPException:
         raise

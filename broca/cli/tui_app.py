@@ -37,7 +37,7 @@ class BrocaTUIApp(App):
         client_id: Optional[str] = None,
         user_id: Optional[str] = None,
         session_id: Optional[str] = None,
-        workspace: Optional[str] = None
+        workspace: Optional[str] = None,
     ):
         super().__init__()
         self.server_url = server_url
@@ -140,6 +140,18 @@ class BrocaTUIApp(App):
                 self.session_id = self.agent.session_manager.session_id
             await self.agent.connect()
             await self.agent.subscribe(self.session_id)
+            asyncio.create_task(self.agent.run())
+
+            subagent = await factory.get_agent(
+                "sub_agent",
+                role="poet",
+                session_id=self.session_id,
+                workspace=self.workspace,
+            )
+            await subagent.connect()
+            await subagent.subscribe(self.session_id)
+            logger.info(f"Sub-agent initialized with id: {subagent.agent_id}")
+            asyncio.create_task(subagent.run())
 
             # Set agent connected status
             if hasattr(self.agent, "agent_id"):
@@ -578,7 +590,10 @@ Keyboard shortcuts:
         """Handle tool call"""
         tool_name = message.data.get("tool_name", "unknown")
         await self.add_message(
-            ChatMessage(content=f"Calling tool: {tool_name}", display_type=ChatMessage.DisplayType.TOOL_CALL)
+            ChatMessage(
+                content=f"Calling tool: {tool_name}",
+                display_type=ChatMessage.DisplayType.TOOL_CALL,
+            )
         )
 
     async def on_turn_start(self, message):

@@ -71,5 +71,13 @@ class Context:
                 MessageRole.SYSTEM,
                 MessageRole.TOOL,
             ] and message.message_type in [MessageType.TEXT, MessageType.TOOL_RESULT]:
+                if message.content is None:
+                    continue
                 message_content = json.loads(message.content)
                 await self.add_message(Message.parse_obj(message_content))
+
+    def get_latest_assistant_message(self) -> str| None:
+        for message in reversed(self._history):
+            if message["role"] == "assistant":
+                return message["content"]
+        return None

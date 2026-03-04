@@ -64,23 +64,23 @@ class AgentFactory:
         await agent.restore_from_session(agent_id)
         return agent
 
-    def _create_subagent(self, role=None):
+    async def _create_subagent(self, role, session_id, workspace):
         config = AgentConfig.from_config(sub_agent_config)
         if config.environment is None:
             config.environment = self._init_environment(config)
-        config.role = role
-        if role == "requirment analyzer":
-            role_description = "You are an expert requirement analyzer. Your task is to dig the requirements from the user by applying your skills."
-            skills = ["Requirement Analyzer"]
-        elif role == "frontend developer":
-            skills = ["frontend-design"]
-            role_description = "You are a frontend developer. Your task is to design and implement the frontend for the user's requirements."
+        if workspace is not None:
+            config.workspace = workspace
         else:
-            skills = []
-            role_description = "You are a backend developer. Your task is to design and implement the backend for the user's requirements."
-        config.skills = skills
+            config.workspace = os.getcwd()
+        config.role = role
+        if role == "poet":
+            role_description = "You are a poet."
         config.role_description = role_description
-        return SocketIOAgent(config, self.llm_client)
+        session_manager = SessionManager()
+        await session_manager.load_session(session_id)
+        agent = SocketIOAgent(config, self.llm_client, session_manager)
+        await session_manager.save_agent(agent)
+        return agent
 
     def _init_environment(self, config: AgentConfig) -> str:
         return f"System: {platform.system()}\nWorkspace: {config.workspace}"

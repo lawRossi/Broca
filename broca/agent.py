@@ -11,6 +11,7 @@ from loguru import logger
 from broca.agent_configs import AgentConfig
 from broca.comm.agent_communicator import AgentCommunicator
 from broca.comm.message_types import Message
+from broca.comm.message_types import MessageType as CommMessageType
 from broca.context import Context
 from broca.llm import LLMClient
 from broca.session import MessageRole, MessageType, SessionManager
@@ -75,6 +76,7 @@ class SocketIOAgent(Agent):
         self.turn_id: str | None = None
 
         self._setup_communicator()
+        self.message_queue: asyncio.Queue = asyncio.Queue(3)
 
     def _setup_communicator(self):
         self.communicator = AgentCommunicator(
@@ -84,17 +86,16 @@ class SocketIOAgent(Agent):
         )
 
         # Set up callbacks
-        self.communicator.register_event_handler("user_message", self._on_user_message)
-        self.communicator.register_event_handler(
-            "agent_response", self._on_agent_response
-        )
+        self.communicator.register_event_handler("user_message", self._receive_message)
+        self.communicator.register_event_handler("task_start", self._receive_message)
+        self.communicator.register_event_handler("task_complete", self._receive_message)
+        self.communicator.register_event_handler("task_failed", self._receive_message)
         self.communicator.register_event_handler("error", self._on_error)
         self.communicator.register_event_handler("command", self._on_command)
         self.communicator.register_event_handler(
             "permission_response", self._on_permission_response
         )
 
-        # Permission response tracking (thread-safe)
         self._permission_requests: dict[str, dict] = {}
         self._permission_lock = asyncio.Lock()
 
@@ -109,40 +110,9 @@ class SocketIOAgent(Agent):
                 await self.session_manager.create_session()
             self.session_id = self.session_manager.session_id
 
-    async def _on_user_message(self, message: Message):
-        """Handle user message from Socket.io"""
-        try:
-            content = message.data.get("content", "")
-            if not content:
-                logger.warning("Empty user message received")
-                return
-
-            # Check if there's an ongoing execution that's being aborted
-            if self._abort_task and not self._abort_task.done():
-                logger.warning(
-                    "Previous execution is still running or being aborted, ignoring new message"
-                )
-                return
-
-            await self.run_async(content, message.message_id)
-        except Exception as e:
-            logger.error(f"Error processing user message: {e}")
-            # Save user message processing error to database
-            if self.turn_id:
-                try:
-                    await self.session_manager.save_message(
-                        role=MessageRole.SYSTEM,
-                        content=f"Error processing user message: {e}",
-                        message_type=MessageType.ERROR,
-                        turn_id=self.turn_id,
-                        agent_id=self.agent_id,
-                    )
-                except Exception as save_error:
-                    logger.error(f"Failed to save user message error: {save_error}")
-
-    async def _on_agent_response(self, message: Message):
-        """Handle agent response from Socket.io"""
-        pass
+    async def _receive_message(self, message: Message):
+        logger.info("Received message")
+        await self.message_queue.put(message)
 
     async def _on_error(self, message: Message):
         """Handle error from Socket.io"""
@@ -255,6 +225,38 @@ class SocketIOAgent(Agent):
                 logger.warning(
                     f"Received permission response for unknown request_id: {request_id}"
                 )
+
+    async def run(self):
+        self.running = True
+
+        while self.running:
+            try:
+                message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
+                if message.message_type == CommMessageType.USER_MESSAGE:
+                    content = message.data.get("content")
+                    await self.run_async(content, message.message_id)
+                elif message.message_type == CommMessageType.TASK_START:
+                    task_id = message.data.get("task_id")
+                    task = message.data.get("task_description")
+                    assigner = message.data.get("assigner")
+                    await self._handle_task(task_id, task, assigner)
+                elif message.message_type == CommMessageType.TASK_COMPLETE:
+                    task_id = message.data.get("task_id")
+                    result = message.data.get("result")
+                    logger.info(f"Received task result of task {task_id}: {result}")
+                    await self.run_async(result)
+                elif message.message_type == CommMessageType.TASK_FAILED:
+                    task_id = message.data.get("task_id")
+                    error_message = message.error_message
+                    logger.error(
+                        f"Received task error of task {task_id}: {error_message}"
+                    )
+                    await self.run_async(error_message)
+            except asyncio.TimeoutError:
+                continue
+
+    async def stop(self):
+        self.running = False
 
     async def run_step_async(self) -> bool:
         """
@@ -473,14 +475,15 @@ class SocketIOAgent(Agent):
 
                     message = {"role": "user", "content": user_message}
                     msg_content = json.dumps(message, ensure_ascii=False)
-                    await self.session_manager.save_message(
-                        role=MessageRole.USER,
-                        content=msg_content,
-                        message_type=MessageType.TEXT,
-                        turn_id=turn_id,
-                        agent_id=self.agent_id,
-                        message_id=message_id,
-                    )
+                    if message_id is not None:
+                        await self.session_manager.save_message(
+                            role=MessageRole.USER,
+                            content=msg_content,
+                            message_type=MessageType.TEXT,
+                            turn_id=turn_id,
+                            agent_id=self.agent_id,
+                            message_id=message_id,
+                        )
 
                     await self.context.add_message(message)
                 except Exception as e:
@@ -612,9 +615,33 @@ class SocketIOAgent(Agent):
                         logger.error(f"Failed to save round error: {save_error}")
                 break
 
+    async def _handle_task(self, task_id: str, task: str, assigner: str) -> None:
+        try:
+            await self.run_async(task)
+            msg = self.context.get_latest_assistant_message()
+            result = f"Message from agent {self.agent_id}: {msg}"
+            logger.info(result)
+            logger.info(f"send result to {assigner}")
+            await self.communicator.send_task_complete(task_id, result, assigner)
+        except Exception as e:
+            logger.error(f"Error processing task: {e}")
+            # Save task processing error to database
+            if self.turn_id:
+                try:
+                    await self.session_manager.save_message(
+                        role=MessageRole.SYSTEM,
+                        content=f"Error processing task: {e}",
+                        message_type=MessageType.ERROR,
+                        turn_id=self.turn_id,
+                        agent_id=self.agent_id,
+                    )
+                except Exception as save_error:
+                    logger.error(f"Failed to save task error: {save_error}")
+            result = f"The agent {self.agent_id} failed to finish the task"
+            await self.communicator.send_task_error(task_id, result, assigner)
+
     def reset(self):
         """Reset agent state"""
-        super().reset()
         # Reset abort state
         self.is_aborted = False
         self.abort_event.clear()
@@ -669,19 +696,20 @@ class SocketIOAgent(Agent):
         This method is called when an abort command is received via the command channel.
         """
         command = message.data.get("command")
+        if self.turn_id:
+            try:
+                await self.session_manager.save_message(
+                    role=MessageRole.SYSTEM,
+                    content=command,
+                    message_type=MessageType.COMMAND,
+                    turn_id=self.turn_id,
+                    agent_id=self.agent_id,
+                )
+            except Exception as save_error:
+                logger.error(f"Failed to save abort command: {save_error}")
+
         if command == "abort":
             logger.info("Received abort command from user")
-            if self.turn_id:
-                try:
-                    await self.session_manager.save_message(
-                        role=MessageRole.USER,
-                        content="abort",
-                        message_type=MessageType.COMMAND,
-                        turn_id=self.turn_id,
-                        agent_id=self.agent_id,
-                    )
-                except Exception as save_error:
-                    logger.error(f"Failed to save abort command: {save_error}")
             await self.abort()
 
     async def disconnect(self):
