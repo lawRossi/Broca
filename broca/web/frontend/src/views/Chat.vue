@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted, watch } from 'vue'
 import { useChatStore } from '@/stores'
 import ChatHeader from '@/components/ChatHeader.vue'
-import ChatSidebar from '@/components/ChatSidebar.vue'
+import AgentSidebar from '@/components/AgentSidebar.vue'
 import ChatMessageList from '@/components/ChatMessageList.vue'
 import ChatInput from '@/components/ChatInput.vue'
 import ChatInfoSidebar from '@/components/ChatInfoSidebar.vue'
@@ -37,7 +37,7 @@ onUnmounted(() => {
     
     <div class="flex-1 mx-auto max-w-7xl w-full px-2 sm:px-4 py-2 sm:py-4 overflow-hidden">
       <div class="grid grid-cols-12 gap-2 sm:gap-4 h-full">
-        <ChatSidebar />
+        <AgentSidebar />
         
         <div 
           class="flex flex-col gap-2 sm:gap-4 h-full overflow-hidden"
