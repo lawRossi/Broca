@@ -5,7 +5,7 @@ from jinja2 import Template
 from loguru import logger
 from tree_sitter import Language, Parser
 
-from broca.tools.tool import Tool, ToolCallContext
+from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class ExecuteCode(Tool):
@@ -53,12 +53,12 @@ class ExecuteCode(Tool):
             self.parser = None
             self.bash_lang = None
 
-    async def _execute(self, arguments: dict, context: ToolCallContext):
+    async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         code = arguments["code"]
         if not self._validate_code(code):
             agent = context.agent
             if not await agent.ask_for_permission("Run potentially dangerous code"):
-                return "User refused to run potentially dangerous code"
+                return ToolResult(status=ToolStatus.ERROR, content="User refused to run potentially dangerous code")
 
         return self._run_code(code)
 
@@ -212,7 +212,8 @@ class ExecuteCode(Tool):
 
         return True
 
-    def _run_code(self, code: str, timeout: int = 10) -> str:
+    def _run_code(self, code: str, timeout: int = 10) -> ToolResult:
+        status: ToolStatus = ToolStatus.SUCCESS
         try:
             result = subprocess.run(
                 code, capture_output=True, text=True, timeout=timeout, shell=True
@@ -222,15 +223,18 @@ class ExecuteCode(Tool):
                 "stdout": result.stdout,
                 "stderr": result.stderr,
             }
+            status = ToolStatus.SUCCESS if result.returncode == 0 else ToolStatus.ERROR
         except subprocess.TimeoutExpired:
             result_dict = {
                 "returncode": -1,
                 "stdout": "Execution timed out.",
             }
+            status = ToolStatus.ERROR
         except Exception as e:
             result_dict = {
                 "returncode": -1,
                 "stdout": f"Execution failed: {e}",
             }
+            status = ToolStatus.ERROR
         output = Template(self.code_output_template).render(output=result_dict)
-        return output
+        return ToolResult(status=status, content=output)

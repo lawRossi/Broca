@@ -1,6 +1,21 @@
 import json
+from enum import Enum
 
 from loguru import logger
+
+
+class ToolStatus(str, Enum):
+    SUCCESS = "success"
+    ERROR = "error"
+
+
+class ToolResult:
+    def __init__(self, status: ToolStatus, content: str):
+        self.status = status
+        self.content = content
+
+    def to_dict(self) -> dict:
+        return {"status": self.status, "content": self.content}
 
 
 class ToolCallContext:
@@ -9,15 +24,14 @@ class ToolCallContext:
 
 
 class Tool:
-
     @property
     def name(self) -> str:
         return "tool"
-    
+
     @property
     def description(self) -> str:
         return "This is a tool"
-    
+
     @property
     def parameters(self) -> dict:
         return {}
@@ -32,13 +46,22 @@ class Tool:
             },
         }
 
-    async def execute(self, arguments: str, context: ToolCallContext) -> str:
+    async def execute(self, arguments: str, context: ToolCallContext) -> ToolResult:
         try:
             args_dict = json.loads(arguments)
-            return await self._execute(args_dict, context)
+            result = await self._execute(args_dict, context)
+            return result
+        except json.JSONDecodeError:
+            logger.error("Invalid JSON arguments")
+            return ToolResult(status=ToolStatus.ERROR, content="Invalid JSON arguments")
         except Exception as e:
             logger.error(f"Error executing tool: {e}")
-            return f"Error executing tool: {e}"
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error executing tool: {e}"
+            )
 
-    async def _execute(self, arguments: dict, context: ToolCallContext) -> str:
-        return f"Tool {self.name} does not implement _execute method"
+    async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
+        return ToolResult(
+            status=ToolStatus.SUCCESS,
+            content=f"Tool {self.name} does not implement _execute method",
+        )

@@ -1,4 +1,4 @@
-from broca.tools.tool import Tool, ToolCallContext
+from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class AssignTask(Tool):
@@ -34,7 +34,7 @@ class AssignTask(Tool):
             "required": ["agent", "task_id", "task"],
         }
 
-    async def _execute(self, arguments, context: ToolCallContext):
+    async def _execute(self, arguments, context: ToolCallContext) -> ToolResult:
         agent_id = arguments["agent_id"]
         task_id = arguments["task_id"]
         task = arguments["task"]
@@ -42,4 +42,4 @@ class AssignTask(Tool):
         agent = context.agent
         await agent.communicator.send_task_start(task_id, task, receiver_id=agent_id)
 
-        return "The task has been assigned to the agent and you will be notified when it is completed."
+        return ToolResult(status=ToolStatus.SUCCESS, content="The task has been assigned to the agent and you will be notified when it is completed.")

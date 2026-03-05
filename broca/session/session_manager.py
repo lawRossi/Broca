@@ -141,6 +141,7 @@ class SessionManager:
         turn_id: str,
         agent_id: str,
         message_id: str | None = None,
+        status: str | None = None,
     ) -> Message | None:
         """
         保存消息到数据库
@@ -182,6 +183,7 @@ class SessionManager:
                 content=content,
                 message_type=MessageType(message_type),
                 sequence_number=seq_num,
+                status=status,
             )
 
             return message

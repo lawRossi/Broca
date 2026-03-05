@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from broca.tools.tool import Tool, ToolCallContext
+from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class ReadFile(Tool):
@@ -32,22 +32,22 @@ class ReadFile(Tool):
             "required": ["path"],
         }
 
-    async def _execute(self, parameters: dict, context: ToolCallContext) -> str:
+    async def _execute(self, parameters: dict, context: ToolCallContext) -> ToolResult:
         try:
             path = parameters["path"]
             file_path = Path(path).expanduser()
             encoding = parameters.get("encoding", "utf-8")
             if not file_path.exists():
-                return f"Error: File not found: {path}"
+                return ToolResult(status=ToolStatus.ERROR, content=f"Error: File not found: {path}")
             if not file_path.is_file():
-                return f"Error: Not a file: {path}"
+                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Not a file: {path}")
 
             content = file_path.read_text(encoding=encoding)
-            return content
+            return ToolResult(status=ToolStatus.SUCCESS, content=content)
         except PermissionError:
-            return f"Error: Permission denied: {path}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}")
         except Exception as e:
-            return f"Error reading file: {str(e)}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error reading file: {str(e)}")
 
 
 class WriteFile(Tool):
@@ -72,20 +72,20 @@ class WriteFile(Tool):
             "required": ["path", "content"],
         }
 
-    async def _execute(self, parameters: dict, context: ToolCallContext) -> str:
+    async def _execute(self, parameters: dict, context: ToolCallContext) -> ToolResult:
         try:
             path = parameters["path"]
             file_path = Path(path).expanduser()
             if file_path.exists() and not file_path.is_file():
-                return f"Error: Not a file: {path}"
+                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Not a file: {path}")
             content = parameters["content"]
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
-            return f"Successfully wrote content to {path}"
+            return ToolResult(status=ToolStatus.SUCCESS, content=f"Successfully wrote content to {path}")
         except PermissionError:
-            return f"Error: Permission denied: {path}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}")
         except Exception as e:
-            return f"Error writing file: {str(e)}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error writing file: {str(e)}")
 
 
 class EditFile(Tool):
@@ -127,14 +127,14 @@ class EditFile(Tool):
             "required": ["path", "old_text", "new_text"],
         }
 
-    async def _execute(self, parameters: dict, context: ToolCallContext) -> str:
+    async def _execute(self, parameters: dict, context: ToolCallContext) -> ToolResult:
         try:
             path = parameters["path"]
             file_path = Path(path).expanduser()
             if not file_path.exists():
-                return f"Error: File not found: {path}"
+                return ToolResult(status=ToolStatus.ERROR, content=f"Error: File not found: {path}")
             if not file_path.is_file():
-                return f"Error: Not a file: {path}"
+                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Not a file: {path}")
             old_text = parameters["old_text"]
             new_text = parameters["new_text"]
             encoding = parameters.get("encoding", "utf-8")
@@ -143,23 +143,21 @@ class EditFile(Tool):
             content = file_path.read_text(encoding=encoding)
 
             if old_text not in content:
-                return (
-                    "Error: old_text not found in file. Make sure it matches exactly."
-                )
+                return ToolResult(status=ToolStatus.ERROR, content="Error: old_text not found in file. Make sure it matches exactly.")
 
             # Count occurrences
             count = content.count(old_text)
             if count > 1 and not replace_all:
-                return f"Error: old_text appears {count} times. Please provide more context to make it unique or set replace_all to true."
+                return ToolResult(status=ToolStatus.ERROR, content=f"Error: old_text appears {count} times. Please provide more context to make it unique or set replace_all to true.")
 
             new_content = content.replace(old_text, new_text)
             file_path.write_text(new_content, encoding=encoding)
 
-            return f"Successfully edited {path}"
+            return ToolResult(status=ToolStatus.SUCCESS, content=f"Successfully edited {path}")
         except PermissionError:
-            return f"Error: Permission denied: {path}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}")
         except Exception as e:
-            return f"Error editing file: {str(e)}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error editing file: {str(e)}")
 
 
 class ListDir(Tool):
@@ -183,14 +181,14 @@ class ListDir(Tool):
             "required": ["path"],
         }
 
-    async def _execute(self, parameters: dict, context: ToolCallContext) -> str:
+    async def _execute(self, parameters: dict, context: ToolCallContext) -> ToolResult:
         try:
             path = parameters["path"]
             dir_path = Path(path).expanduser()
             if not dir_path.exists():
-                return f"Error: Directory not found: {path}"
+                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Directory not found: {path}")
             if not dir_path.is_dir():
-                return f"Error: Not a directory: {path}"
+                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Not a directory: {path}")
 
             items = []
             for item in sorted(dir_path.iterdir()):
@@ -198,10 +196,10 @@ class ListDir(Tool):
                 items.append(f"{prefix}{item.name}")
 
             if not items:
-                return f"Directory {path} is empty"
+                return ToolResult(status=ToolStatus.SUCCESS, content=f"Directory {path} is empty")
 
-            return "\n".join(items)
+            return ToolResult(status=ToolStatus.SUCCESS, content="\n".join(items))
         except PermissionError:
-            return f"Error: Permission denied: {path}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}")
         except Exception as e:
-            return f"Error listing directory: {str(e)}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error listing directory: {str(e)}")

@@ -15,7 +15,7 @@ from broca.comm.message_types import MessageType as CommMessageType
 from broca.context import Context
 from broca.llm import LLMClient
 from broca.session import MessageRole, MessageType, SessionManager
-from broca.tools.tool import ToolCallContext
+from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
 from broca.tools.tool_manager import ToolManager
 
 # Standard logger for non-agent operations
@@ -383,9 +383,10 @@ class SocketIOAgent(Agent):
 
             tool_name = tool_call.function.name
             arguments = tool_call.function.arguments
+            status: ToolStatus = ToolStatus.ERROR
             if tool_name not in self.tool_mapping:
                 logger.error(f"Tool '{tool_name}' not found.")
-                result = f"Tool {tool_name} not found"
+                result = ToolResult(status=ToolStatus.ERROR, content=f"Tool {tool_name} not found")
             else:
                 logger.debug(
                     f"Executing tool '{tool_name}', arguments: {arguments[:50]}..."
@@ -399,24 +400,29 @@ class SocketIOAgent(Agent):
                     )
 
                     # Execute tool asynchronously with timeout for cancellation support
-                    result = await asyncio.wait_for(
+                    tool_result = await asyncio.wait_for(
                         self.tool_mapping[tool_name].execute(arguments, context),
                         timeout=60,
                     )
+                    result = tool_result.content
+                    status = tool_result.status
                 except asyncio.TimeoutError:
                     logger.error(f"Tool '{tool_name}' execution timed out")
-                    result = f"Tool {tool_name} execution timed out"
+                    result = ToolResult(status=ToolStatus.ERROR, content=f"Tool {tool_name} execution timed out")
+                    status = ToolStatus.ERROR
                 except asyncio.CancelledError:
                     logger.info("Tool execution cancelled by user")
                     return
                 except Exception as e:
                     logger.error(f"Tool execution failed: {e}")
-                    result = f"Tool execution failed: {e}"
+                    result = ToolResult(status=ToolStatus.ERROR, content=f"Tool execution failed: {e}")
+                    status = ToolStatus.ERROR
 
             tool_call_result = {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
                 "content": result,
+                "status": status,
             }
 
             # Save tool result to database for persistence
@@ -429,6 +435,7 @@ class SocketIOAgent(Agent):
                         message_type=MessageType.TOOL_RESULT,
                         turn_id=self.turn_id,
                         agent_id=self.agent_id,
+                        status=status,
                     )
                 except Exception as save_error:
                     logger.error(f"Failed to save tool result: {save_error}")

@@ -1,5 +1,5 @@
 from broca.skill_manager import SkillManager
-from broca.tools.tool import Tool, ToolCallContext
+from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class LoadSkill(Tool):
@@ -27,6 +27,16 @@ class LoadSkill(Tool):
             "required": ["skill_name"],
         }
 
-    async def _execute(self, arguments: dict, context: ToolCallContext):
+    async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         skill_name = arguments["skill_name"]
-        return self.skill_manager.load_skill_spec(skill_name)
+        try:
+            result = self.skill_manager.load_skill_spec(skill_name)
+            return ToolResult(status=ToolStatus.SUCCESS, content=result)
+        except ValueError:
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Skill '{skill_name}' not found"
+            )
+        except Exception as e:
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error loading skill: {e}"
+            )

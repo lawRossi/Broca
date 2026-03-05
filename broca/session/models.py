@@ -126,6 +126,7 @@ class Message(SQLModel, table=True):
     role: MessageRole = Field(description="消息角色")
     message_type: MessageType = Field(default=MessageType.TEXT, description="消息类型")
     content: Optional[str] = Field(default=None, description="消息内容")
+    status: Optional[str] = Field(default=None, description="状态: success/error")
 
     sequence_number: int = Field(description="消息序列号")
     timestamp: datetime = Field(default_factory=datetime.now, description="消息时间戳")

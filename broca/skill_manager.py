@@ -73,5 +73,4 @@ class SkillManager:
             logger.debug(f"Loaded skill spec for '{skill_name}'.")
             return skill_spec
         else:
-            logger.error(f"Skill '{skill_name}' not found.")
-            return f"Error: Skill '{skill_name}' not found."
+            raise ValueError(f"Skill '{skill_name}' not found.")

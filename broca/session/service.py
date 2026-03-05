@@ -287,6 +287,7 @@ class MessageService(BaseService[Message]):
         content: Optional[str] = None,
         message_type: MessageType = MessageType.TEXT,
         sequence_number: int = 1,
+        status: Optional[str] = None,
     ) -> Message:
         """创建新消息"""
         return await self.create(
@@ -299,6 +300,7 @@ class MessageService(BaseService[Message]):
             message_type=message_type,
             sequence_number=sequence_number,
             timestamp=datetime.utcnow(),
+            status=status,
         )
 
     async def get_messages_by_session(self, session_id: str) -> List[Message]:

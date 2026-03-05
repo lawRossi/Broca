@@ -7,7 +7,7 @@ from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
-from broca.tools.tool import Tool, ToolCallContext
+from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class MCPTool(Tool):
@@ -33,24 +33,26 @@ class MCPTool(Tool):
     def parameters(self) -> dict:
         return self._parameters
 
-    async def _run(self, parameters: dict, context: ToolCallContext):
+    async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         try:
             result = await asyncio.wait_for(
-                self._session.call_tool(self._original_name, arguments=args),
+                self._session.call_tool(self._original_name, arguments=arguments),
                 timeout=self._tool_timeout,
             )
-        except asyncio.TimeoutError:
-            logger.warning(
-                "MCP tool '{}' timed out after {}s", self._name, self._tool_timeout
+
+        except Exception as e:
+            return ToolResult(
+                status=ToolStatus.ERROR, content="Failed to execute tool: " + str(e)
             )
-            return f"(MCP tool call timed out after {self._tool_timeout}s)"
         parts = []
         for block in result.content:
             if isinstance(block, types.TextContent):
                 parts.append(block.text)
             else:
                 parts.append(str(block))
-        return "\n".join(parts) or "(no output)"
+
+        content = "".join(parts) if parts else "no output"
+        return ToolResult(status=ToolStatus.SUCCESS, content=content)
 
 
 async def connect_mcp_servers(mcp_configs: dict, stack: AsyncExitStack) -> list[Tool]:

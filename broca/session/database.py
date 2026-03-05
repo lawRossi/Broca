@@ -14,7 +14,7 @@ from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 # 数据库文件路径
-DATABASE_DIR = "data"
+DATABASE_DIR = "/home/ubuntu/code/Broca/data"
 DATABASE_PATH = os.path.join(DATABASE_DIR, "sessions.db")
 
 

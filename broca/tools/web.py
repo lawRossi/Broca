@@ -1,7 +1,7 @@
 from loguru import logger
 from tavily import TavilyClient
 
-from broca.tools.tool import Tool, ToolCallContext
+from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class WebFetch(Tool):
@@ -96,13 +96,13 @@ class WebFetch(Tool):
             text = re.sub(r"<[^>]+>", "", html)
             return text
 
-    async def _execute(self, arguments: dict, context: ToolCallContext) -> str:
+    async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         url = arguments.get("url")
         if not url:
-            return "Error: URL is required"
+            return ToolResult(status=ToolStatus.ERROR, content="Error: URL is required")
 
         if not await self._init_playwright():
-            return "Error: Playwright not available. Please install it with: pip install playwright && playwright install chromium"
+            return ToolResult(status=ToolStatus.ERROR, content="Error: Playwright not available. Please install it with: pip install playwright && playwright install chromium")
 
         page = None
         try:
@@ -124,11 +124,11 @@ class WebFetch(Tool):
                 html_content = await page.content()
                 result = self._html_to_text(html_content)
 
-            return result
+            return ToolResult(status=ToolStatus.SUCCESS, content=result)
 
         except Exception as e:
             logger.error(f"Web fetch error: {e}")
-            return f"Error fetching web page: {str(e)}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error fetching web page: {str(e)}")
         finally:
             if page:
                 await page.close()
@@ -225,15 +225,13 @@ class WebSearch(Tool):
             )
         return False
 
-    async def _execute(self, arguments: dict, context: ToolCallContext) -> str:
+    async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         if not self.client:
-            return (
-                "Error: Tavily client not initialized. Please provide a valid API key."
-            )
+            return ToolResult(status=ToolStatus.ERROR, content="Error: Tavily client not initialized. Please provide a valid API key.")
 
         query = arguments.get("query")
         if not query:
-            return "Error: Query is required"
+            return ToolResult(status=ToolStatus.ERROR, content="Error: Query is required")
         try:
             # Build search parameters
             search_params = {
@@ -257,11 +255,11 @@ class WebSearch(Tool):
             result = self.client.search(**search_params)
 
             # Format results
-            return self._format_results(result)
+            return ToolResult(status=ToolStatus.SUCCESS, content=self._format_results(result))
 
         except Exception as e:
             logger.error(f"Web search error: {e}")
-            return f"Error performing web search: {str(e)}"
+            return ToolResult(status=ToolStatus.ERROR, content=f"Error performing web search: {str(e)}")
 
     def _format_results(self, result: dict) -> str:
         """Format search results for better readability"""

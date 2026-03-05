@@ -1,7 +1,7 @@
 import json
 import os
 
-from broca.tools.tool import Tool, ToolCallContext
+from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class TodoManagement(Tool):
@@ -76,17 +76,20 @@ class TodoManagement(Tool):
                 return todo
         return None
 
-    async def _execute(self, arguments: dict, context: ToolCallContext):
+    async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         action = arguments.get("action")
 
         if action == "create":
-            return self._create_todos(arguments)
+            result = self._create_todos(arguments)
         elif action == "read":
-            return self._read_todos(arguments)
+            result = self._read_todos(arguments)
         elif action == "update":
-            return self._update_todos(arguments)
+            result = self._update_todos(arguments)
         else:
-            return f"Unknown action: {action}"
+            result = f"Unknown action: {action}"
+
+        status = ToolStatus.ERROR if result.startswith("Error:") or result.startswith("Missing") or result.startswith("Invalid") or result.startswith("Unknown") else ToolStatus.SUCCESS
+        return ToolResult(status=status, content=result)
 
     def _validate_todos(self, todos):
         if not isinstance(todos, list):
