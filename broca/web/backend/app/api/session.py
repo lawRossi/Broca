@@ -34,14 +34,15 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
         # 初始化 Agent
         factory = AgentFactory()
-        agent = await factory.get_agent("main_agent", session_id=None, workspace=workspace)
-
-        # 获取 session_id
-        session_id = agent.session_manager.session_id
-        await agent.connect()
-        await agent.subscribe(session_id)
-        task = asyncio.create_task(agent.run())
-        task.add_done_callback(lambda _: agent.stop())
+        agents = await factory.init_session_agents(workspace=workspace)
+        session_id = None
+        for agent in agents:
+            await agent.connect()
+            if session_id is None:
+                session_id = agent.session_manager.session_id
+            await agent.subscribe(session_id)
+            task = asyncio.create_task(agent.run())
+            task.add_done_callback(lambda _: agent.stop())
 
         # 更新会话描述（如果提供）
         if request.description:

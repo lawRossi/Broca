@@ -30,8 +30,8 @@ class Agent:
         self._setup_tools()
         self._setup_logger()
         self.agent_id = kwargs.get("agent_id") or uuid.uuid4().hex
-        self.name = kwargs.get("name")
-        self.role = kwargs.get("role")
+        self.name = config.name
+        self.role = config.role
 
     def _setup_context(self, **kwargs) -> None:
         self.context = Context(self.config, **kwargs)
@@ -386,7 +386,9 @@ class SocketIOAgent(Agent):
             status: ToolStatus = ToolStatus.ERROR
             if tool_name not in self.tool_mapping:
                 logger.error(f"Tool '{tool_name}' not found.")
-                result = ToolResult(status=ToolStatus.ERROR, content=f"Tool {tool_name} not found")
+                result = ToolResult(
+                    status=ToolStatus.ERROR, content=f"Tool {tool_name} not found"
+                )
             else:
                 logger.debug(
                     f"Executing tool '{tool_name}', arguments: {arguments[:50]}..."
@@ -408,14 +410,19 @@ class SocketIOAgent(Agent):
                     status = tool_result.status
                 except asyncio.TimeoutError:
                     logger.error(f"Tool '{tool_name}' execution timed out")
-                    result = ToolResult(status=ToolStatus.ERROR, content=f"Tool {tool_name} execution timed out")
+                    result = ToolResult(
+                        status=ToolStatus.ERROR,
+                        content=f"Tool {tool_name} execution timed out",
+                    )
                     status = ToolStatus.ERROR
                 except asyncio.CancelledError:
                     logger.info("Tool execution cancelled by user")
                     return
                 except Exception as e:
                     logger.error(f"Tool execution failed: {e}")
-                    result = ToolResult(status=ToolStatus.ERROR, content=f"Tool execution failed: {e}")
+                    result = ToolResult(
+                        status=ToolStatus.ERROR, content=f"Tool execution failed: {e}"
+                    )
                     status = ToolStatus.ERROR
 
             tool_call_result = {

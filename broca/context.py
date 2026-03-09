@@ -11,7 +11,7 @@ from broca.skill_manager import SkillManager
 
 
 class Context:
-    BOOTSTRAP_FILES = ["AGENTS.md"]
+    BOOTSTRAP_FILES = ["AGENT.md", "SOUL.md", ".agents/AGENT.md", ".agents/SOUL.md"]
 
     def __init__(self, agent_config: AgentConfig, **kwargs):
         self._history: list = []
@@ -35,9 +35,10 @@ class Context:
         skill_manager = SkillManager()
         skills = skill_manager.get_skills(skill_names=config.skills)
         kwargs["skills"] = self._format_skills(skills)
-        boostrap_content = self._load_bootstrap_files(config.workspace)
-        if boostrap_content:
-            kwargs["bootstrap_content"] = boostrap_content
+        if config.boostrap_instractions:
+            boostrap_content = self._load_bootstrap_files(config.workspace)
+            if boostrap_content:
+                kwargs["bootstrap_content"] = boostrap_content
         return Template(prompt_template).render(**kwargs)
 
     def _format_skills(self, skills: dict[str, dict]) -> str:
@@ -53,7 +54,7 @@ class Context:
             if file_path.exists() and file_path.is_file():
                 text = file_path.read_text()
                 if text.strip():
-                    boostrap_content += f"### Guidelines from {file}\n\n{text}\n\n"
+                    boostrap_content += f"### Instrunction from {file}\n\n{text}\n\n"
 
         return boostrap_content
 
@@ -76,7 +77,7 @@ class Context:
                 message_content = json.loads(message.content)
                 await self.add_message(Message.parse_obj(message_content))
 
-    def get_latest_assistant_message(self) -> str| None:
+    def get_latest_assistant_message(self) -> str | None:
         for message in reversed(self._history):
             if message["role"] == "assistant":
                 return message["content"]

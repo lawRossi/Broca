@@ -1,6 +1,7 @@
 import logging
 import os
 
+from broca.session.database import db_manager
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
@@ -36,6 +37,8 @@ async def setup() -> None:
     logger.info("Starting up")
     global supabase
     app.state.supabase = supabase
+
+    await db_manager.init_tables()
 
     # Start Broca SocketIO server alongside FastAPI (optional)
     enabled = os.getenv("BROCA_SOCKETIO_ENABLED", "true").lower() == "true"

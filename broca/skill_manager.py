@@ -1,4 +1,5 @@
 import os
+from pathlib import Path
 
 import yaml
 from loguru import logger
@@ -30,16 +31,25 @@ class SkillManager:
         else:
             return self.skills
 
-    def _load_all_skills(self, skills_dir: str = "skills") -> None:
+    def _load_all_skills(self) -> None:
+        boostrap_dirs = [
+            Path(__file__).parent.parent / "skills",
+            Path(".agents/skills"),
+            Path("~/.broca/skills"),
+        ]
         skills = {}
-        if os.path.exists(skills_dir) and os.path.isdir(skills_dir):
-            for dirname in os.listdir(skills_dir):
-                if not os.path.isdir(os.path.join(skills_dir, dirname)):
-                    continue
-                skill_file = os.path.join(skills_dir, dirname, "SKILL.md")
-                skill = self._load_skill(skill_file)
-                if "name" in skill:
-                    skills[skill["name"]] = skill
+        for skills_dir in boostrap_dirs:
+            if os.path.exists(skills_dir) and os.path.isdir(skills_dir):
+                for dirname in os.listdir(skills_dir):
+                    if not os.path.isdir(os.path.join(skills_dir, dirname)):
+                        continue
+                    skill_file = os.path.join(skills_dir, dirname, "SKILL.md")
+                    skill = self._load_skill(skill_file)
+                    if "name" in skill:
+                        if skill["name"] not in skills:
+                            skills[skill["name"]] = skill
+                        else:
+                            logger.warning(f"Duplicate skill ignored: {skill['name']}")
 
         self.skills = skills
 

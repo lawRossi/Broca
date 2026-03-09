@@ -565,3 +565,5 @@ tramp
 *.woff
 *.woff2
 *.eot
+
+.agents

@@ -133,31 +133,20 @@ class BrocaTUIApp(App):
             from broca.agent_manager import AgentFactory
 
             factory = AgentFactory()
-            self.agent = await factory.get_agent(
-                "main_agent", session_id=self.session_id, workspace=self.workspace
+            agents = await factory.init_session_agents(
+                session_id=self.session_id, workspace=self.workspace
             )
+            for agent in agents:
+                await agent.connect()
+                await agent.subscribe(self.session_id)
+                asyncio.create_task(agent.run())
+                if agent.role == "main-agent":
+                    self.agent = agent
+
             if self.session_id is None:
                 self.session_id = self.agent.session_manager.session_id
-            await self.agent.connect()
-            await self.agent.subscribe(self.session_id)
-            asyncio.create_task(self.agent.run())
 
-            subagent = await factory.get_agent(
-                "sub_agent",
-                role="poet",
-                session_id=self.session_id,
-                workspace=self.workspace,
-            )
-            await subagent.connect()
-            await subagent.subscribe(self.session_id)
-            logger.info(f"Sub-agent initialized with id: {subagent.agent_id}")
-            asyncio.create_task(subagent.run())
-
-            # Set agent connected status
-            if hasattr(self.agent, "agent_id"):
-                self.status.set_agent_connected(self.agent.agent_id)
-            else:
-                self.status.set_agent_connected("main_agent")
+            self.status.set_agent_connected(self.agent.agent_id)
             self.query_one(StatusWidget).update_status()
 
             await self.add_message(
