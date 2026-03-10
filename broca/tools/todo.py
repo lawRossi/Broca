@@ -66,10 +66,10 @@ class TodoManagement(Tool):
         with open(data_file, "w") as f:
             json.dump(todos_data, f, indent=2, ensure_ascii=False)
 
-    def _get_next_id(self):
-        if not self.todos:
+    def _get_next_id(self, todos_data):
+        if not todos_data:
             return "1"
-        return str(max(int(todo["id"]) for todo in self.todos) + 1)
+        return str(max(int(todos["id"]) for todos in todos_data) + 1)
 
     def _find_todos(self, todo_id, todos_data):
         for todo in todos_data:
@@ -126,7 +126,7 @@ class TodoManagement(Tool):
         todos_data = self._load_todos(data_file)
 
         todos = {
-            "id": self._get_next_id(),
+            "id": self._get_next_id(todos_data),
             "name": name,
             "todos": todos,
         }

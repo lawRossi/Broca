@@ -374,6 +374,7 @@ class SocketIOAgent(Agent):
     async def _process_tool_calls_async(self, tool_calls: list):
         context = ToolCallContext()
         context.agent = self
+        context.workspace = self.config.workspace
 
         for tool_call in tool_calls:
             # Check for abort before processing each tool call
@@ -710,6 +711,7 @@ class SocketIOAgent(Agent):
         This method is called when an abort command is received via the command channel.
         """
         command = message.data.get("command")
+        logger.info(f"Received command: {command}")
         if self.turn_id:
             try:
                 await self.session_manager.save_message(

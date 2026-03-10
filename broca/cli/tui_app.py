@@ -137,14 +137,13 @@ class BrocaTUIApp(App):
                 session_id=self.session_id, workspace=self.workspace
             )
             for agent in agents:
+                if self.session_id is None:
+                    self.session_id = agent.session_id
                 await agent.connect()
                 await agent.subscribe(self.session_id)
                 asyncio.create_task(agent.run())
                 if agent.role == "main-agent":
                     self.agent = agent
-
-            if self.session_id is None:
-                self.session_id = self.agent.session_id
 
             self.status.set_agent_connected(self.agent.agent_id)
             self.query_one(StatusWidget).update_status()
