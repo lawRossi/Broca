@@ -138,7 +138,7 @@ class TodoManagement(Tool):
             content=f"Todo group created successfully with ID: {todos['id']}",
         )
 
-    def _read_todos(self, arguments):
+    def _read_todos(self, arguments) -> ToolResult:
         todo_id = arguments.get("todo_id")
         if not todo_id:
             return ToolResult(
@@ -154,7 +154,10 @@ class TodoManagement(Tool):
                 content=f"Todo group with ID {todo_id} not found",
             )
 
-        return json.dumps(todos, indent=2, default=str, ensure_ascii=False)
+        return ToolResult(
+            status=ToolStatus.SUCCESS,
+            content=json.dumps(todos, indent=2, default=str, ensure_ascii=False),
+        )
 
     def _update_todos(self, arguments):
         todo_id = arguments.get("todo_id")
@@ -181,4 +184,7 @@ class TodoManagement(Tool):
             todos["todos"] = arguments["todos"]
 
         self._save_todos(data_file, todos_data)
-        return f"Todo group {todo_id} updated successfully"
+        return ToolResult(
+            status=ToolStatus.SUCCESS,
+            content=f"Todo group {todo_id} updated successfully",
+        )
