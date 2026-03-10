@@ -1,5 +1,6 @@
 import json
 import os
+from pathlib import Path
 
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
@@ -8,7 +9,6 @@ class TodoManagement(Tool):
     def __init__(self, data_file="todos.json"):
         super().__init__()
         self.data_file = data_file
-        self._load_todos()
 
     @property
     def name(self):
@@ -54,42 +54,42 @@ class TodoManagement(Tool):
             "required": ["action"],
         }
 
-    def _load_todos(self):
-        if os.path.exists(self.data_file):
+    def _load_todos(self, data_file) -> list:
+        if os.path.exists(data_file):
             with open(self.data_file, "r") as f:
-                self.todos = json.load(f)
+                todos_data = json.load(f)
         else:
-            self.todos = []
+            todos_data = []
+        return todos_data
 
-    def _save_todos(self):
-        with open(self.data_file, "w") as f:
-            json.dump(self.todos, f, indent=2, ensure_ascii=False)
+    def _save_todos(self, data_file, todos_data):
+        with open(data_file, "w") as f:
+            json.dump(todos_data, f, indent=2, ensure_ascii=False)
 
     def _get_next_id(self):
         if not self.todos:
             return "1"
         return str(max(int(todo["id"]) for todo in self.todos) + 1)
 
-    def _find_todos(self, todo_id):
-        for todo in self.todos:
+    def _find_todos(self, todo_id, todos_data):
+        for todo in todos_data:
             if todo["id"] == todo_id:
                 return todo
         return None
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         action = arguments.get("action")
-
+        arguments["workspace"] = context.workspace
         if action == "create":
-            result = self._create_todos(arguments)
+            return self._create_todos(arguments)
         elif action == "read":
-            result = self._read_todos(arguments)
+            return self._read_todos(arguments)
         elif action == "update":
-            result = self._update_todos(arguments)
+            return self._update_todos(arguments)
         else:
-            result = f"Unknown action: {action}"
-
-        status = ToolStatus.ERROR if result.startswith("Error:") or result.startswith("Missing") or result.startswith("Invalid") or result.startswith("Unknown") else ToolStatus.SUCCESS
-        return ToolResult(status=status, content=result)
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Unknown action: {action}"
+            )
 
     def _validate_todos(self, todos):
         if not isinstance(todos, list):
@@ -105,55 +105,80 @@ class TodoManagement(Tool):
                 return "Invalid status. Valid values: pending, completed"
         return None
 
-    def _create_todos(self, arguments):
+    def _create_todos(self, arguments) -> ToolResult:
         name = arguments.get("name")
         todos = arguments.get("todos")
 
         if not name:
-            return "Missing required field: name"
+            return ToolResult(
+                status=ToolStatus.ERROR, content="Missing required field: name"
+            )
         if not todos:
-            return "Missing required field: todos"
+            return ToolResult(
+                status=ToolStatus.ERROR, content="Missing required field: todos"
+            )
 
         error = self._validate_todos(todos)
         if error:
-            return error
+            return ToolResult(status=ToolStatus.ERROR, content=error)
 
-        todo = {
+        data_file = Path(arguments["workspace"]) / self.data_file
+        todos_data = self._load_todos(data_file)
+
+        todos = {
             "id": self._get_next_id(),
             "name": name,
             "todos": todos,
         }
-        self.todos.append(todo)
-        self._save_todos()
-        return f"Todo group created successfully with ID: {todo['id']}"
+        todos_data.append(todos)
+        self._save_todos(data_file, todos_data)
+
+        return ToolResult(
+            status=ToolStatus.SUCCESS,
+            content=f"Todo group created successfully with ID: {todos['id']}",
+        )
 
     def _read_todos(self, arguments):
         todo_id = arguments.get("todo_id")
         if not todo_id:
-            return "Missing required field: todo_id"
+            return ToolResult(
+                status=ToolStatus.ERROR, content="Missing required field: todo_id"
+            )
 
-        todos = self._find_todos(todo_id)
+        data_file = Path(arguments["workspace"]) / self.data_file
+        todos_data = self._load_todos(data_file)
+        todos = self._find_todos(todo_id, todos_data)
         if not todos:
-            return f"Todo group with ID {todo_id} not found"
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Todo group with ID {todo_id} not found",
+            )
 
         return json.dumps(todos, indent=2, default=str, ensure_ascii=False)
 
     def _update_todos(self, arguments):
         todo_id = arguments.get("todo_id")
         if not todo_id:
-            return "Missing required field: todo_id"
+            return ToolResult(
+                status=ToolStatus.ERROR, content="Missing required field: todo_id"
+            )
 
-        todo = self._find_todos(todo_id)
-        if not todo:
-            return f"Todo group with ID {todo_id} not found"
+        data_file = Path(arguments["workspace"]) / self.data_file
+        todos_data = self._load_todos(data_file)
+        todos = self._find_todos(todo_id, todos_data)
+        if not todos:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Todo group with ID {todo_id} not found",
+            )
 
         if "name" in arguments:
-            todo["name"] = arguments["name"]
+            todos["name"] = arguments["name"]
         if "todos" in arguments:
             error = self._validate_todos(arguments["todos"])
             if error:
-                return error
-            todo["todos"] = arguments["todos"]
+                return ToolResult(status=ToolStatus.ERROR, content=error)
+            todos["todos"] = arguments["todos"]
 
-        self._save_todos()
+        self._save_todos(data_file, todos_data)
         return f"Todo group {todo_id} updated successfully"

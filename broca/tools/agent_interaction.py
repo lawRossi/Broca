@@ -18,9 +18,9 @@ class AssignTask(Tool):
         return {
             "type": "object",
             "properties": {
-                "agent_id": {
+                "agent": {
                     "type": "string",
-                    "description": "the id of the agent to assign the task to",
+                    "description": "the agent to assign the task to",
                 },
                 "task_id": {
                     "type": "string",
@@ -35,11 +35,24 @@ class AssignTask(Tool):
         }
 
     async def _execute(self, arguments, context: ToolCallContext) -> ToolResult:
-        agent_id = arguments["agent_id"]
+        from broca.agent_manager import AgentFactory
+
+        agent = context.agent
+        factory = AgentFactory()
+        agent_name = arguments["agent"]
+        target_agent = factory.get_agent(agent.session_id, agent_name)
+        if target_agent is None:
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Agent {agent_name} not found"
+            )
+
+        agent_id = target_agent.agent_id
         task_id = arguments["task_id"]
         task = arguments["task"]
 
-        agent = context.agent
         await agent.communicator.send_task_start(task_id, task, receiver_id=agent_id)
 
-        return ToolResult(status=ToolStatus.SUCCESS, content="The task has been assigned to the agent and you will be notified when it is completed.")
+        return ToolResult(
+            status=ToolStatus.SUCCESS,
+            content="The task has been assigned to the agent and you will be notified when it is completed.",
+        )

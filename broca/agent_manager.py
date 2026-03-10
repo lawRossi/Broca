@@ -118,3 +118,8 @@ class AgentFactory:
             except yaml.YAMLError as e:
                 logger.error(f"YAML parsing error in {config_path}: {e}")
                 return {}
+
+    def get_agent(self, session_id, agent_name) -> SocketIOAgent | None:
+        if session_id not in self._session_agents:
+            return None
+        return self._session_agents[session_id].get(agent_name)

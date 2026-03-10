@@ -24,8 +24,7 @@ class SkillManager:
             skills = {}
             for name in skill_names:
                 if name not in self.skills:
-                    # raise ValueError(f"Skill '{name}' not found.")
-                    continue
+                    raise ValueError(f"Skill '{name}' not found.")
                 skills[name] = self.skills[name]
             return skills
         else:

@@ -72,7 +72,7 @@ class SocketIOAgent(Agent):
         super().__init__(config, llm_client, **kwargs)
 
         self.session_manager = session_manager
-        self.session_id: str | None = None
+        self.session_id: str | None = session_manager.session_id
         self.turn_id: str | None = None
 
         self._setup_communicator()

@@ -10,7 +10,6 @@ class AgentConfig:
         self.llm_config_name = "deepseek"
         self.log_file = "agent.log"
         self.system_prompt_template = None
-        self.subagents = []
         self.tools = None
         self.skills = None
         self.server_url = "http://localhost:6868"
@@ -18,7 +17,6 @@ class AgentConfig:
         self.save_history = True
         self.environment = None
         self.workspace = ""
-        self.boostrap_instractions = False
 
     @classmethod
     def from_config(cls, config):

@@ -1,53 +1,54 @@
 import json
 import os
 from datetime import datetime
-from typing import List, Optional, Dict, Any
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 from uuid import uuid4
 
-from .task import Task, TaskMetadata, TaskStatus, TaskPriority, TaskComment, TaskContext
+from .task import Task, TaskComment, TaskContext, TaskMetadata, TaskPriority, TaskStatus
 
 
 class TaskManager:
     """Manages tasks with CRUD operations using JSON file storage."""
-    
-    def __init__(self, storage_file: str = "tasks.json"):
+
+    def __init__(self, storage_file: str | Path):
         """
         Initialize the TaskManager.
-        
+
         Args:
             storage_file: Path to the JSON file for task storage
         """
         self.storage_file = storage_file
         self._ensure_storage_file()
-    
+
     def _ensure_storage_file(self) -> None:
         """Ensure the storage file exists and is properly initialized."""
         if not os.path.exists(self.storage_file):
-            with open(self.storage_file, 'w') as f:
+            with open(self.storage_file, "w") as f:
                 json.dump({"tasks": []}, f, indent=2, default=str)
-    
+
     def _load_tasks(self) -> List[Dict[str, Any]]:
         """Load all tasks from the JSON file."""
         try:
-            with open(self.storage_file, 'r') as f:
+            with open(self.storage_file, "r") as f:
                 data = json.load(f)
                 return data.get("tasks", [])
         except (json.JSONDecodeError, FileNotFoundError):
             return []
-    
+
     def _save_tasks(self, tasks: List[Dict[str, Any]]) -> None:
         """Save tasks to the JSON file."""
-        with open(self.storage_file, 'w') as f:
+        with open(self.storage_file, "w") as f:
             json.dump({"tasks": tasks}, f, indent=2, default=str)
-    
+
     def _task_to_dict(self, task: Task) -> Dict[str, Any]:
         """Convert a Task object to a dictionary for JSON serialization."""
         return task.model_dump()
-    
+
     def _dict_to_task(self, task_dict: Dict[str, Any]) -> Task:
         """Convert a dictionary to a Task object."""
         return Task.model_validate(task_dict)
-    
+
     def create_task(
         self,
         name: str,
@@ -58,11 +59,11 @@ class TaskManager:
         dependencies: Optional[List[str]] = None,
         details: Optional[str] = None,
         context: Optional[TaskContext] = None,
-        acceptance_criteria: Optional[List[str]] = None
+        acceptance_criteria: Optional[List[str]] = None,
     ) -> Task:
         """
         Create a new task.
-        
+
         Args:
             name: Task name
             description: Task description
@@ -73,13 +74,13 @@ class TaskManager:
             details: Optional detailed description
             context: Optional task context
             acceptance_criteria: Optional list of acceptance criteria
-            
+
         Returns:
             Created Task object
         """
         task_id = str(uuid4())
         now = datetime.now()
-        
+
         metadata = TaskMetadata(
             id=task_id,
             parent_id=parent_id,
@@ -88,24 +89,24 @@ class TaskManager:
             status=TaskStatus.PENDING,
             priority=priority,
             dependencies=dependencies,
-            assignee=assignee
+            assignee=assignee,
         )
-        
+
         task = Task(
             metadata=metadata,
             name=name,
             description=description,
             details=details,
             context=context,
-            acceptance_criteria=acceptance_criteria
+            acceptance_criteria=acceptance_criteria,
         )
-        
+
         tasks = self._load_tasks()
         tasks.append(self._task_to_dict(task))
         self._save_tasks(tasks)
-        
+
         return task
-    
+
     def get_task(self, task_id: str) -> Optional[Task]:
         """
         Get a task by ID.
@@ -125,7 +126,7 @@ class TaskManager:
     def get_all_tasks(self) -> List[Task]:
         """
         Get all tasks.
-        
+
         Returns:
             List of all Task objects
         """
@@ -135,10 +136,10 @@ class TaskManager:
     def get_tasks_by_status(self, status: TaskStatus) -> List[Task]:
         """
         Get tasks by status.
-        
+
         Args:
             status: The status to filter by
-            
+
         Returns:
             List of Task objects with the specified status
         """
@@ -152,10 +153,10 @@ class TaskManager:
     def get_tasks_by_assignee(self, assignee: str) -> List[Task]:
         """
         Get tasks by assignee.
-        
+
         Args:
             assignee: The assignee to filter by
-            
+
         Returns:
             List of Task objects assigned to the specified assignee
         """
@@ -177,7 +178,7 @@ class TaskManager:
         dependencies: Optional[List[str]] = None,
         details: Optional[str] = None,
         context: Optional[TaskContext] = None,
-        acceptance_criteria: Optional[List[str]] = None
+        acceptance_criteria: Optional[List[str]] = None,
     ) -> Optional[Task]:
         """
         Update an existing task.
@@ -236,42 +237,38 @@ class TaskManager:
     def delete_task(self, task_id: str) -> bool:
         """
         Delete a task by ID.
-        
+
         Args:
             task_id: The ID of the task to delete
-            
+
         Returns:
             True if task was deleted, False if task was not found
         """
         tasks = self._load_tasks()
         original_length = len(tasks)
-        
+
         # Filter out the task to delete
         tasks = [
-            task_dict for task_dict in tasks
+            task_dict
+            for task_dict in tasks
             if task_dict.get("metadata", {}).get("id") != task_id
         ]
-        
+
         if len(tasks) < original_length:
             self._save_tasks(tasks)
             return True
-        
+
         return False
 
-    def add_comment(
-        self,
-        task_id: str,
-        author: str,
-        content: str
-    ) -> Optional[Task]:
+    def add_comment(self, task_id: str, author: str, content: str) -> Optional[Task]:
         """
         Add a comment to a task.
-        
+
         Args:
             task_id: The ID of the task
             author: The comment author
             content: The comment content
-            
+
         Returns:
             Updated Task object if found, None otherwise
         """
@@ -279,24 +276,22 @@ class TaskManager:
         for i, task_dict in enumerate(tasks):
             if task_dict.get("metadata", {}).get("id") == task_id:
                 task = self._dict_to_task(task_dict)
-                
+
                 if task.discussion is None:
                     task.discussion = []
-                
+
                 comment = TaskComment(
-                    author=author,
-                    content=content,
-                    created=datetime.now()
+                    author=author, content=content, created=datetime.now()
                 )
-                
+
                 task.discussion.append(comment)
                 task.metadata.updated = datetime.now()
-                
+
                 tasks[i] = self._task_to_dict(task)
                 self._save_tasks(tasks)
-                
+
                 return task
-        
+
         return None
 
     def get_child_tasks(self, parent_id: str) -> List[Task]:
@@ -332,9 +327,11 @@ class TaskManager:
 
         for task_dict in tasks:
             task = self._dict_to_task(task_dict)
-            if (query_lower in task.name.lower() or 
-                query_lower in task.description.lower() or
-                (task.details and query_lower in task.details.lower())):
+            if (
+                query_lower in task.name.lower()
+                or query_lower in task.description.lower()
+                or (task.details and query_lower in task.details.lower())
+            ):
                 matching_tasks.append(task)
 
         return matching_tasks

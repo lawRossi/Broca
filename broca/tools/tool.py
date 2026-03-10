@@ -21,6 +21,7 @@ class ToolResult:
 class ToolCallContext:
     def __init__(self):
         self.agent = None
+        self.workspace = None
 
 
 class Tool:

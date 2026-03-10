@@ -29,17 +29,15 @@ class Context:
         prompt_template = config.system_prompt_template
         if config.environment:
             kwargs["environment"] = config.environment
-        kwargs["subagents"] = "\n".join(config.subagents)
         if config.role_description:
             kwargs["role_description"] = config.role_description
         skill_manager = SkillManager()
-        skills = skill_manager.get_skills(skill_names=config.skills)
+        skills = skill_manager.get_skills(config.workspace, skill_names=config.skills)
         kwargs["skills"] = self._format_skills(skills)
-        if config.boostrap_instractions:
-            boostrap_content = self._load_bootstrap_files(config.workspace)
-            if boostrap_content:
-                kwargs["bootstrap_content"] = boostrap_content
-        return Template(prompt_template).render(**kwargs)
+        boostrap_content = self._load_bootstrap_files(config.workspace)
+        if boostrap_content:
+            kwargs["bootstrap_content"] = boostrap_content
+        return Template(prompt_template).render(**kwargs).strip()
 
     def _format_skills(self, skills: dict[str, dict]) -> str:
         skills_str = ""
@@ -54,9 +52,9 @@ class Context:
             if file_path.exists() and file_path.is_file():
                 text = file_path.read_text()
                 if text.strip():
-                    boostrap_content += f"### Instrunction from {file}\n\n{text}\n\n"
+                    boostrap_content += f"## Instrunction from {file}\n\n{text}\n\n"
 
-        return boostrap_content
+        return boostrap_content.strip()
 
     async def add_message(self, message: Union[dict, Message]):
         self._history.append(message)

@@ -144,7 +144,7 @@ class BrocaTUIApp(App):
                     self.agent = agent
 
             if self.session_id is None:
-                self.session_id = self.agent.session_manager.session_id
+                self.session_id = self.agent.session_id
 
             self.status.set_agent_connected(self.agent.agent_id)
             self.query_one(StatusWidget).update_status()

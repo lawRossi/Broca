@@ -30,7 +30,7 @@ class LoadSkill(Tool):
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         skill_name = arguments["skill_name"]
         try:
-            result = self.skill_manager.load_skill_spec(skill_name)
+            result = self.skill_manager.load_skill_spec(skill_name, context.workspace)
             return ToolResult(status=ToolStatus.SUCCESS, content=result)
         except ValueError:
             return ToolResult(
