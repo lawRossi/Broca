@@ -12,9 +12,12 @@ export interface Agent {
   agent_id: string
   config_id: string
   session_id: string
-  name: string
-  role: string
+  name?: string
+  role?: string
   created_at: string
+  type?: string
+  status?: string
+  description?: string
 }
 
 export interface Message {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
-import { useChatStore, useAgentStore } from '@/stores'
+import { onMounted, ref, watch } from 'vue'
+import { useChatStore } from '@/stores'
 import { ElIcon, ElTooltip } from 'element-plus'
 import {
   User,
@@ -17,11 +17,14 @@ import {
   InfoFilled
 } from '@element-plus/icons-vue'
 
+// Crown图标在element-plus/icons-vue中可能不存在，使用其他图标替代
+import { StarFilled } from '@element-plus/icons-vue'
+
 const chatStore = useChatStore()
-const agentStore = useAgentStore()
 
 const showConfigPanel = ref(false)
 const loading = ref(false)
+const selectedAgent = ref<any>(null)
 
 const statusColors = {
   idle: 'success',
@@ -82,39 +85,39 @@ const formatDate = (dateString: string) => {
 }
 
 const refreshAgents = async () => {
+  if (!chatStore.sessionId) return
+  
   loading.value = true
   try {
-    await agentStore.fetchAgents()
+    await chatStore.fetchSessionAgents(chatStore.sessionId)
   } finally {
     loading.value = false
   }
 }
 
-const handleAgentClick = (agentId: string) => {
-  agentStore.selectAgent(agentId)
+const handleAgentClick = (agent: any) => {
+  selectedAgent.value = agent
   showConfigPanel.value = true
 }
 
 const closeConfigPanel = () => {
   showConfigPanel.value = false
+  selectedAgent.value = null
 }
 
-// const getConfigValue = (config: any, path: string): any => {
-//   return path.split('.').reduce((obj, key) => obj?.[key], config)
-// }
+// 移除未使用的formatConfigValue函数
 
-const formatConfigValue = (value: any): string => {
-  if (Array.isArray(value)) {
-    return value.join(', ')
+// 监听session变化，自动刷新agents
+watch(() => chatStore.sessionId, (newSessionId) => {
+  if (newSessionId) {
+    refreshAgents()
   }
-  if (typeof value === 'object') {
-    return JSON.stringify(value, null, 2)
-  }
-  return String(value)
-}
+})
 
-onMounted(async () => {
-  await agentStore.init()
+onMounted(() => {
+  if (chatStore.sessionId) {
+    refreshAgents()
+  }
 })
 </script>
 
@@ -129,15 +132,15 @@ onMounted(async () => {
   >
     <!-- 移动端标题 -->
     <div v-if="chatStore.isMobile && chatStore.showLeftSidebar" class="flex justify-between items-center lg:hidden mb-4">
-      <span class="text-sm font-semibold text-gray-700">Agent 面板</span>
+      <span class="text-sm font-semibold text-gray-700">Session Agents</span>
       <el-button size="small" @click="chatStore.showLeftSidebar = false">✕</el-button>
     </div>
 
     <!-- Agent面板标题 -->
     <div class="flex items-center justify-between mb-2">
       <div class="flex items-center gap-2">
-        <h3 class="text-sm font-semibold text-gray-900">Agent 面板</h3>
-        <el-tooltip content="点击Agent查看配置详情" placement="top">
+        <h3 class="text-sm font-semibold text-gray-900">Session Agents</h3>
+        <el-tooltip content="点击Agent查看详情，使用 @agent名称 发送消息给指定agent" placement="top">
           <el-icon :size="14" class="text-gray-400 cursor-help">
             <InfoFilled />
           </el-icon>
@@ -149,19 +152,21 @@ onMounted(async () => {
         :loading="loading" 
         @click="refreshAgents"
         class="!p-1 !h-6 !w-6"
+        :disabled="!chatStore.sessionId"
       />
     </div>
 
     <!-- Agent列表 -->
     <div class="space-y-3">
       <div 
-        v-for="agent in agentStore.agents" 
-        :key="agent.id"
+        v-for="agent in chatStore.agents" 
+        :key="agent.agent_id"
         class="bg-white rounded-lg border p-3 shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
         :class="{
-          'ring-2 ring-blue-500': agentStore.selectedAgentId === agent.id
+          'ring-2 ring-blue-500': chatStore.agentId === agent.agent_id,
+          'ring-2 ring-yellow-500': agent.role === 'main_agent' || agent.role === 'main-agent'
         }"
-        @click="handleAgentClick(agent.id)"
+        @click="handleAgentClick(agent)"
       >
         <div class="flex items-start justify-between mb-2">
           <div class="flex items-center gap-2">
@@ -172,30 +177,40 @@ onMounted(async () => {
               <component :is="typeIcons[agent.type as keyof typeof typeIcons] || QuestionFilled" />
             </el-icon>
             <span class="text-sm font-medium text-gray-900 truncate">{{ agent.name }}</span>
+            <el-icon 
+              v-if="agent.role === 'main_agent' || agent.role === 'main-agent'" 
+              :size="12" 
+              class="text-yellow-500"
+              title="Main Agent (默认)"
+            >
+              <StarFilled />
+            </el-icon>
           </div>
           <el-tag 
             size="small" 
-            :type="statusColors[agent.status] || 'info'"
+            :type="agent.status ? statusColors[agent.status as keyof typeof statusColors] || 'info' : 'info'"
             class="!text-xs"
           >
             <el-icon :size="12" class="mr-1">
-              <component :is="getStatusIcon(agent.status)" />
+              <component :is="getStatusIcon(agent.status || 'disconnected')" />
             </el-icon>
-            {{ getStatusText(agent.status) }}
+            {{ getStatusText(agent.status || 'disconnected') }}
           </el-tag>
         </div>
 
-        <p class="text-xs text-gray-600 mb-3 line-clamp-2">{{ agent.description }}</p>
+        <p class="text-xs text-gray-600 mb-3 line-clamp-2">
+          {{ agent.description || `Agent ID: ${agent.agent_id}` }}
+        </p>
 
         <div class="flex items-center justify-between text-xs text-gray-500">
           <div class="flex items-center gap-4">
             <div class="flex items-center gap-1">
-              <span class="text-gray-400">消息:</span>
-              <span class="font-medium">{{ agent.metrics?.total_messages || 0 }}</span>
+              <span class="text-gray-400">角色:</span>
+              <span class="font-medium">{{ agent.role || '未指定' }}</span>
             </div>
             <div class="flex items-center gap-1">
-              <span class="text-gray-400">成功率:</span>
-              <span class="font-medium">{{ agent.metrics?.success_rate || 0 }}%</span>
+              <span class="text-gray-400">配置:</span>
+              <span class="font-medium">{{ agent.config_id?.slice(0, 8) || 'default' }}</span>
             </div>
           </div>
           <span class="text-gray-400">{{ formatDate(agent.created_at) }}</span>
@@ -204,24 +219,25 @@ onMounted(async () => {
     </div>
 
     <!-- 空状态 -->
-    <div v-if="agentStore.agents.length === 0 && !agentStore.loading" class="text-center py-8">
+    <div v-if="chatStore.agents.length === 0 && !loading" class="text-center py-8">
       <el-icon :size="48" class="text-gray-300 mb-2">
         <User />
       </el-icon>
-      <p class="text-sm text-gray-500">暂无Agent</p>
+      <p class="text-sm text-gray-500">Session中暂无Agent</p>
+      <p class="text-xs text-gray-400 mt-1">请先连接到session</p>
     </div>
 
     <!-- 加载状态 -->
-    <div v-if="agentStore.loading" class="text-center py-8">
+    <div v-if="loading" class="text-center py-8">
       <el-icon :size="24" class="text-gray-400 animate-spin">
         <Loading />
       </el-icon>
       <p class="text-sm text-gray-500 mt-2">加载中...</p>
     </div>
 
-    <!-- Agent配置详情面板 -->
+    <!-- Agent详情面板 -->
     <div 
-      v-if="showConfigPanel && agentStore.selectedAgent"
+      v-if="showConfigPanel && selectedAgent"
       class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4"
       @click.self="closeConfigPanel"
     >
@@ -231,13 +247,13 @@ onMounted(async () => {
           <div class="flex items-center gap-3">
             <el-icon 
               :size="20" 
-              :color="typeColors[agentStore.selectedAgent.type as keyof typeof typeColors] || 'gray'"
+              :color="selectedAgent.type ? typeColors[selectedAgent.type as keyof typeof typeColors] || 'gray' : 'gray'"
             >
-              <component :is="typeIcons[agentStore.selectedAgent.type as keyof typeof typeIcons] || QuestionFilled" />
+              <component :is="selectedAgent.type ? typeIcons[selectedAgent.type as keyof typeof typeIcons] || QuestionFilled : QuestionFilled" />
             </el-icon>
             <div>
-              <h3 class="text-lg font-semibold text-gray-900">{{ agentStore.selectedAgent.name }}</h3>
-              <p class="text-sm text-gray-500">{{ agentStore.selectedAgent.description }}</p>
+              <h3 class="text-lg font-semibold text-gray-900">{{ selectedAgent.name }}</h3>
+              <p class="text-sm text-gray-500">{{ selectedAgent.description || `Agent ID: ${selectedAgent.agent_id}` }}</p>
             </div>
           </div>
           <el-button 
@@ -256,67 +272,50 @@ onMounted(async () => {
             <h4 class="text-sm font-medium text-gray-900 mb-3">基本信息</h4>
             <div class="grid grid-cols-2 gap-4">
               <div>
-                <label class="text-xs text-gray-500">ID</label>
-                <p class="text-sm font-mono bg-gray-50 p-2 rounded">{{ agentStore.selectedAgent.id }}</p>
+                <label class="text-xs text-gray-500">Agent ID</label>
+                <p class="text-sm font-mono bg-gray-50 p-2 rounded">{{ selectedAgent.agent_id }}</p>
               </div>
               <div>
-                <label class="text-xs text-gray-500">类型</label>
-                <p class="text-sm">{{ agentStore.selectedAgent.type }}</p>
+                <label class="text-xs text-gray-500">角色</label>
+                <div class="flex items-center gap-1">
+                  <span class="text-sm">{{ selectedAgent.role || '未指定' }}</span>
+                  <el-icon 
+                    v-if="selectedAgent.role === 'main_agent' || selectedAgent.role === 'main-agent'" 
+                    :size="12" 
+                    class="text-yellow-500"
+                  >
+                    <StarFilled />
+                  </el-icon>
+                </div>
               </div>
               <div>
-                <label class="text-xs text-gray-500">状态</label>
-                <el-tag 
-                  size="small" 
-                  :type="statusColors[agentStore.selectedAgent.status] || 'info'"
-                >
-                  {{ getStatusText(agentStore.selectedAgent.status) }}
-                </el-tag>
+                <label class="text-xs text-gray-500">配置ID</label>
+                <p class="text-sm font-mono">{{ selectedAgent.config_id }}</p>
               </div>
               <div>
                 <label class="text-xs text-gray-500">创建时间</label>
-                <p class="text-sm">{{ new Date(agentStore.selectedAgent.created_at).toLocaleString() }}</p>
+                <p class="text-sm">{{ new Date(selectedAgent.created_at).toLocaleString() }}</p>
               </div>
             </div>
           </div>
 
-          <!-- Agent配置 -->
-          <div v-if="agentStore.selectedAgentConfig" class="mb-6">
-            <h4 class="text-sm font-medium text-gray-900 mb-3">配置详情</h4>
-            <div class="space-y-3">
-              <div v-for="(value, key) in agentStore.selectedAgentConfig.config" :key="key">
-                <label class="text-xs text-gray-500 block mb-1">{{ key }}</label>
-                <div class="bg-gray-50 p-3 rounded text-sm font-mono overflow-x-auto">
-                  {{ formatConfigValue(value) }}
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- 性能指标 -->
-          <div v-if="agentStore.selectedAgent.metrics" class="mb-6">
-            <h4 class="text-sm font-medium text-gray-900 mb-3">性能指标</h4>
-            <div class="grid grid-cols-3 gap-4">
-              <div class="text-center p-3 bg-blue-50 rounded">
-                <p class="text-2xl font-bold text-blue-600">{{ agentStore.selectedAgent.metrics.total_messages }}</p>
-                <p class="text-xs text-blue-500">总消息数</p>
-              </div>
-              <div class="text-center p-3 bg-green-50 rounded">
-                <p class="text-2xl font-bold text-green-600">{{ agentStore.selectedAgent.metrics.avg_response_time }}s</p>
-                <p class="text-xs text-green-500">平均响应时间</p>
-              </div>
-              <div class="text-center p-3 bg-purple-50 rounded">
-                <p class="text-2xl font-bold text-purple-600">{{ agentStore.selectedAgent.metrics.success_rate }}%</p>
-                <p class="text-xs text-purple-500">成功率</p>
-              </div>
-            </div>
+          <!-- 使用说明 -->
+          <div class="mb-6 p-3 bg-blue-50 rounded border border-blue-200">
+            <h4 class="text-sm font-medium text-blue-900 mb-2">如何使用此Agent</h4>
+            <ul class="text-xs text-blue-800 space-y-1">
+              <li>• 在输入框中输入 <code class="bg-blue-100 px-1 rounded">@{{ selectedAgent.name || selectedAgent.agent_id?.slice(0, 8) || 'agent' }}</code> 发送消息给此Agent</li>
+              <li>• 或直接输入 <code class="bg-blue-100 px-1 rounded">@{{ selectedAgent.agent_id?.slice(0, 8) || 'agent' }}</code> 使用ID引用</li>
+              <li>• 如果不指定@mention，消息将发送给默认Agent (role为main_agent或main-agent)</li>
+            </ul>
           </div>
 
           <!-- 无配置信息 -->
-          <div v-else class="text-center py-8 text-gray-500">
+          <div class="text-center py-8 text-gray-500">
             <el-icon :size="32" class="mb-2">
               <Setting />
             </el-icon>
-            <p>暂无配置信息</p>
+            <p>暂无详细配置信息</p>
+            <p class="text-xs mt-1">配置信息存储在server端</p>
           </div>
         </div>
 
@@ -324,7 +323,17 @@ onMounted(async () => {
         <div class="p-4 border-t bg-gray-50">
           <div class="flex justify-end gap-2">
             <el-button size="small" @click="closeConfigPanel">关闭</el-button>
-            <el-button type="primary" size="small">编辑配置</el-button>
+            <el-button 
+              type="primary" 
+              size="small"
+              @click="() => {
+                const agentName = selectedAgent.name || selectedAgent.agent_id?.slice(0, 8) || 'agent';
+                chatStore.input = `@${agentName} `;
+                closeConfigPanel();
+              }"
+            >
+              发送消息给此Agent
+            </el-button>
           </div>
         </div>
       </div>

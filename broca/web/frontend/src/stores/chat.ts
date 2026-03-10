@@ -4,7 +4,7 @@ import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { BrocaSocketClient, type BrocaMessage } from '@/api/brocaSocket'
-import { sessionApi } from '@/api/session'
+import { sessionApi, type Agent as SessionAgent } from '@/api/session'
 
 export const DisplayType = {
   USER: 'user',
@@ -32,6 +32,9 @@ export type UiMessage = {
 
 export type AgentStatus = 'idle' | 'running' | 'connecting' | 'disconnected'
 
+// 使用SessionAgent类型
+type Agent = SessionAgent
+
 export const useChatStore = defineStore('chat', () => {
   const route = useRoute()
   const userStore = useUserStore()
@@ -39,6 +42,7 @@ export const useChatStore = defineStore('chat', () => {
   const connected = ref(false)
   const connecting = ref(false)
   const sessionId = ref<string>('')
+  const agents = ref<Agent[]>([])
   const agentId = ref('main_agent')
   const agentName = ref('Assistant')
   const agentStatus = ref<AgentStatus>('disconnected')
@@ -80,6 +84,64 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   const uiMessages = ref<UiMessage[]>([])
+
+  // 获取session中的所有agents
+  const fetchSessionAgents = async (sessionId: string) => {
+    try {
+      const response = await sessionApi.getSessionAgents(sessionId)
+      agents.value = response
+      
+      // 设置默认agent：优先选择role为main_agent或main-agent的，否则选择第一个agent
+      const mainAgent = response.find(agent => agent.role === 'main_agent' || agent.role === 'main-agent')
+      if (mainAgent) {
+        agentId.value = mainAgent.agent_id
+        agentName.value = mainAgent.name || 'Main Agent'
+      } else if (response.length > 0) {
+        const firstAgent = response[0]
+        if (firstAgent) {
+          agentId.value = firstAgent.agent_id
+          agentName.value = firstAgent.name || 'Assistant'
+        } else {
+          // 如果没有agent，使用默认值
+          agentId.value = 'main_agent'
+          agentName.value = 'Assistant'
+        }
+      } else {
+        // 如果没有agent，使用默认值
+        agentId.value = 'main_agent'
+        agentName.value = 'Assistant'
+      }
+      
+      agentStatus.value = 'idle'
+    } catch (error: any) {
+      console.error('获取session agents失败:', error)
+      agentName.value = 'Assistant'
+      agentStatus.value = 'disconnected'
+    }
+  }
+
+  // 解析输入中的@mention，返回目标agentId
+  const parseMention = (text: string): { targetAgentId: string | null, cleanText: string } => {
+    const mentionRegex = /@(\w+)(?:\s|$)/
+    const match = text.match(mentionRegex)
+    
+    if (match && match[1]) {
+      const mentionName = match[1]
+      const cleanText = text.replace(mentionRegex, '').trim()
+      
+      // 查找匹配的agent
+      const targetAgent = agents.value.find(agent => 
+        agent.name?.toLowerCase().includes(mentionName.toLowerCase()) || 
+        agent.agent_id.toLowerCase().includes(mentionName.toLowerCase())
+      )
+      
+      if (targetAgent) {
+        return { targetAgentId: targetAgent.agent_id, cleanText }
+      }
+    }
+    
+    return { targetAgentId: null, cleanText: text }
+  }
 
   const filteredMessages = computed(() => {
     return uiMessages.value.filter(msg => {
@@ -412,10 +474,7 @@ export const useChatStore = defineStore('chat', () => {
   const fetchAgentId = async (sessionId: string) => {
     try {
       loading.value = true
-      const latestAgent = await sessionApi.getSessionLatestAgent(sessionId)
-      agentId.value = latestAgent.agent_id
-      agentName.value = latestAgent.agent_name || 'Assistant'
-      agentStatus.value = 'idle'
+      await fetchSessionAgents(sessionId)
     } catch (error: any) {
       console.error('获取Agent失败:', error)
       ElMessage.warning('获取Agent失败，使用默认Agent')
@@ -573,20 +632,31 @@ export const useChatStore = defineStore('chat', () => {
 
     input.value = ''
 
+    // 解析@mention
+    const { targetAgentId, cleanText } = parseMention(text)
+    const targetAgent = targetAgentId || agentId.value
+    
+    // 获取目标agent的名称用于显示
+    const targetAgentObj = agents.value.find(a => a.agent_id === targetAgent)
+    const displayAgentName = targetAgentObj?.name || targetAgent
+
     addUiMessage({
       message_id: `user_${Date.now()}`,
       timestamp: new Date().toISOString(),
       message_type: 'user_message',
       sender_id: 'user',
-      receiver_id: agentId.value,
+      receiver_id: targetAgent,
       subscription: sessionId.value,
-      data: { content: text }
+      data: { 
+        content: cleanText,
+        mention: targetAgentId ? displayAgentName : undefined
+      }
     } as BrocaMessage, DisplayType.USER)
 
     try {
       await client.sendUserMessage({
-        content: text,
-        receiverId: agentId.value,
+        content: cleanText,
+        receiverId: targetAgent,
         subscription: sessionId.value,
       })
     } catch (e: any) {
@@ -676,6 +746,7 @@ export const useChatStore = defineStore('chat', () => {
     connected,
     connecting,
     sessionId,
+    agents,
     agentId,
     agentName,
     agentStatus,
@@ -709,5 +780,7 @@ export const useChatStore = defineStore('chat', () => {
     doConnect,
     doSubscribe,
     loadHistory,
+    fetchSessionAgents,
+    parseMention,
   }
 })
