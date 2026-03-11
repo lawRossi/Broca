@@ -51,6 +51,7 @@ class WebFetch(Tool):
         if self.playwright is None:
             try:
                 from playwright.async_api import async_playwright
+
                 self.playwright = await async_playwright().start()
                 self.browser = await self.playwright.chromium.launch(headless=True)
             except ImportError:
@@ -76,6 +77,7 @@ class WebFetch(Tool):
         """Convert HTML to markdown"""
         try:
             from markdownify import markdownify as md
+
             return md(html)
         except ImportError:
             logger.warning("markdownify not installed, returning plain text")
@@ -85,6 +87,7 @@ class WebFetch(Tool):
         """Convert HTML to plain text"""
         try:
             from bs4 import BeautifulSoup
+
             soup = BeautifulSoup(html, "html.parser")
             for script in soup(["script", "style"]):
                 script.decompose()
@@ -93,6 +96,7 @@ class WebFetch(Tool):
             return "\n".join(line for line in lines if line)
         except ImportError:
             import re
+
             text = re.sub(r"<[^>]+>", "", html)
             return text
 
@@ -102,7 +106,10 @@ class WebFetch(Tool):
             return ToolResult(status=ToolStatus.ERROR, content="Error: URL is required")
 
         if not await self._init_playwright():
-            return ToolResult(status=ToolStatus.ERROR, content="Error: Playwright not available. Please install it with: pip install playwright && playwright install chromium")
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content="Error: Playwright not available. Please install it with: pip install playwright && playwright install chromium",
+            )
 
         page = None
         try:
@@ -128,7 +135,9 @@ class WebFetch(Tool):
 
         except Exception as e:
             logger.error(f"Web fetch error: {e}")
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error fetching web page: {str(e)}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error fetching web page: {str(e)}"
+            )
         finally:
             if page:
                 await page.close()
@@ -227,11 +236,16 @@ class WebSearch(Tool):
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         if not self.client:
-            return ToolResult(status=ToolStatus.ERROR, content="Error: Tavily client not initialized. Please provide a valid API key.")
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content="Error: Tavily client not initialized. Please provide a valid API key.",
+            )
 
         query = arguments.get("query")
         if not query:
-            return ToolResult(status=ToolStatus.ERROR, content="Error: Query is required")
+            return ToolResult(
+                status=ToolStatus.ERROR, content="Error: Query is required"
+            )
         try:
             # Build search parameters
             search_params = {
@@ -255,11 +269,16 @@ class WebSearch(Tool):
             result = self.client.search(**search_params)
 
             # Format results
-            return ToolResult(status=ToolStatus.SUCCESS, content=self._format_results(result))
+            return ToolResult(
+                status=ToolStatus.SUCCESS, content=self._format_results(result)
+            )
 
         except Exception as e:
             logger.error(f"Web search error: {e}")
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error performing web search: {str(e)}")
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Error performing web search: {str(e)}",
+            )
 
     def _format_results(self, result: dict) -> str:
         """Format search results for better readability"""

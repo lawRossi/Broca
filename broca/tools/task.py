@@ -7,8 +7,6 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class TaskManagement(Tool):
-    def __init__(self):
-        super().__init__()
 
     @property
     def name(self):

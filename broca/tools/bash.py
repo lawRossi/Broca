@@ -10,6 +10,7 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 class ExecuteCode(Tool):
     def __init__(self):
+        super().__init__()
         self.code_output_template = "return code: {{output.returncode}}\n{% if output.returncode == 0 -%}\noutput:{{ output.stdout if output.stdout.strip() else 'execution succeeded'}}\n{% endif %}\n{%- if output.stderr -%}error: {{output.stderr}}{% endif %}"
         self._init_tree_sitter()
 
@@ -58,7 +59,10 @@ class ExecuteCode(Tool):
         if not self._validate_code(code):
             agent = context.agent
             if not await agent.ask_for_permission("Run potentially dangerous code"):
-                return ToolResult(status=ToolStatus.ERROR, content="User refused to run potentially dangerous code")
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content="User refused to run potentially dangerous code",
+                )
 
         return self._run_code(code)
 
