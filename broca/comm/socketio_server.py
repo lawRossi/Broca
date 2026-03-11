@@ -366,3 +366,6 @@ class SocketIOServer:
         logger.info("Stopping Socket.io server")
         await self.sio.shutdown()
         logger.info("Socket.io server stopped")
+
+    def is_client_connected(self, client_id: str) -> bool:
+        return client_id in self.client_sids

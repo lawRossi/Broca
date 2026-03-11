@@ -19,13 +19,34 @@ const getIcon = (displayType: DisplayType) => {
   }
 }
 
-const getSenderName = (displayType: DisplayType, agentName: string) => {
+const getSenderName = (displayType: DisplayType, agentName: string, message: UiMessage) => {
   switch (displayType) {
-    case DisplayType.USER: return 'You'
-    case DisplayType.ASSISTANT: return agentName
+    case DisplayType.USER: 
+      // 显示发送给谁
+      if (message.receiver && message.receiver !== chatStore.agentId) {
+        const targetAgent = chatStore.agents.find(a => a.agent_id === message.receiver)
+        const targetName = targetAgent?.name || message.receiver
+        return `You → @${targetName}`
+      }
+      return 'You'
+    case DisplayType.ASSISTANT: 
+      // 显示来自哪个agent
+      if (message.sender && message.sender !== chatStore.agentId) {
+        const senderAgent = chatStore.agents.find(a => a.agent_id === message.sender)
+        const senderName = senderAgent?.name || message.sender
+        return `@${senderName}`
+      }
+      return agentName
     case DisplayType.ERROR: return 'Error'
     case DisplayType.THINKING: return 'Thinking'
-    case DisplayType.TOOL_CALL: return 'Tool Call'
+    case DisplayType.TOOL_CALL: 
+      // 显示来自哪个agent的工具调用
+      if (message.sender && message.sender !== chatStore.agentId) {
+        const senderAgent = chatStore.agents.find(a => a.agent_id === message.sender)
+        const senderName = senderAgent?.name || message.sender
+        return `@${senderName} - Tool`
+      }
+      return 'Tool Call'
     default: return 'System'
   }
 }
@@ -80,7 +101,7 @@ const getContentClass = (displayType: DisplayType) => {
       <div class="flex items-center gap-2">
         <span class="text-lg">{{ getIcon(message.displayType) }}</span>
         <span class="font-semibold text-sm" :class="getHeaderColor(message.displayType)">
-          {{ getSenderName(message.displayType, chatStore.agentName) }}
+          {{ getSenderName(message.displayType, chatStore.agentName, message) }}
         </span>
       </div>
       <div class="text-xs opacity-70">

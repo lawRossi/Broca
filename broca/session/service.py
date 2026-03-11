@@ -77,14 +77,12 @@ class BaseService(Generic[T]):
 
     async def get_all(
         self,
-        skip: int = 0,
-        limit: int = 100,
         filters: Optional[Dict[str, Any]] = None,
         order_by: Optional[str] = None,
     ) -> List[T]:
         """获取所有记录，支持分页和过滤"""
         async with db_manager.get_session() as session:
-            statement = select(self.model_class).offset(skip).limit(limit)
+            statement = select(self.model_class)
 
             if filters:
                 conditions = []

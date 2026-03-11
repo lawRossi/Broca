@@ -69,16 +69,23 @@ class AgentFactory:
         db_agents = await session_manager.get_agents()
         agents = []
         for db_agent in db_agents:
-            agent_id = db_agent["agent_id"]
-            config = await session_manager.get_agent_config(agent_id)
-            logger.info(f"Restoring agent from config: {config}, agent_id: {agent_id}")
-            agent_config = AgentConfig.from_config(config)
-            agent = SocketIOAgent(
-                agent_config, self.llm_client, session_manager, agent_id=agent_id
-            )
-            await agent.restore_from_session(agent_id)
+            agent = await self.restore_agent(db_agent["agent_id"], session_manager)
             agents.append(agent)
         return agents
+
+    async def restore_agent(self, agent_id, session_manager=None, session_id=None):
+        if session_manager is None:
+            session_manager = SessionManager()
+            await session_manager.load_session(session_id)
+        config = await session_manager.get_agent_config(agent_id)
+        logger.info(f"Restoring agent from config: {config}, agent_id: {agent_id}")
+        agent_config = AgentConfig.from_config(config)
+        agent = SocketIOAgent(
+            agent_config, self.llm_client, session_manager, agent_id=agent_id
+        )
+        await agent.restore_from_session(agent_id)
+        self._session_agents[session_manager.session_id][agent.name] = agent
+        return agent
 
     def _init_environment(self, config: AgentConfig) -> str:
         return f"System: {platform.system()}\nWorkspace: {config.workspace}"

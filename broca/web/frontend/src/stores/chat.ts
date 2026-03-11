@@ -122,24 +122,42 @@ export const useChatStore = defineStore('chat', () => {
 
   // 解析输入中的@mention，返回目标agentId
   const parseMention = (text: string): { targetAgentId: string | null, cleanText: string } => {
-    const mentionRegex = /@(\w+)(?:\s|$)/
-    const match = text.match(mentionRegex)
+    // 如果agents列表为空，直接返回
+    if (!agents.value || agents.value.length === 0) {
+      console.log('agents列表为空，无法解析mention')
+      return { targetAgentId: null, cleanText: text }
+    }
     
+    // 改进的正则表达式，支持中文、字母、数字、下划线和连字符
+    // 匹配 @mention 或 @ mention（允许有空格）
+    const mentionRegex = /@\s*([\w\u4e00-\u9fa5\-]+)(?:\s|$)/
+    const match = text.match(mentionRegex)
+
     if (match && match[1]) {
       const mentionName = match[1]
       const cleanText = text.replace(mentionRegex, '').trim()
-      
+
       // 查找匹配的agent
-      const targetAgent = agents.value.find(agent => 
-        agent.name?.toLowerCase().includes(mentionName.toLowerCase()) || 
-        agent.agent_id.toLowerCase().includes(mentionName.toLowerCase())
-      )
-      
+      const targetAgent = agents.value.find(agent => {
+        if (!agent) return false
+        
+        const agentNameLower = agent.name?.toLowerCase() || ''
+        const mentionNameLower = mentionName.toLowerCase()
+        
+        // 检查name是否包含mentionName（支持部分匹配）
+        if (agentNameLower && agentNameLower === mentionNameLower) {
+          return true
+        }
+        return false
+      })
+            
       if (targetAgent) {
         return { targetAgentId: targetAgent.agent_id, cleanText }
+      } else {
+        console.log('未找到匹配的agent')
       }
     }
-    
+
     return { targetAgentId: null, cleanText: text }
   }
 
@@ -632,14 +650,18 @@ export const useChatStore = defineStore('chat', () => {
 
     input.value = ''
 
+    console.log('发送消息，原始文本:', text)
+    console.log('当前agents列表:', agents.value)
+    console.log('当前默认agentId:', agentId.value)
+
     // 解析@mention
     const { targetAgentId, cleanText } = parseMention(text)
     const targetAgent = targetAgentId || agentId.value
-    
+
     // 获取目标agent的名称用于显示
     const targetAgentObj = agents.value.find(a => a.agent_id === targetAgent)
     const displayAgentName = targetAgentObj?.name || targetAgent
-
+  
     addUiMessage({
       message_id: `user_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -713,7 +735,7 @@ export const useChatStore = defineStore('chat', () => {
     sessionId.value = urlSessionId.value
 
     try {
-      await fetchAgentId(urlSessionId.value)
+      await fetchSessionAgents(urlSessionId.value)
       await doConnect()
       await doSubscribe()
       await loadHistory(urlSessionId.value)

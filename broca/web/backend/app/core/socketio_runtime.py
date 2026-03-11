@@ -79,3 +79,6 @@ class SocketIOServerRuntime:
         self._task = None
         self._server = None
         logger.info("SocketIOServer stopped")
+
+    def is_client_connected(self, client_id: str) -> bool:
+        return self._server is not None and self._server.is_client_connected(client_id)

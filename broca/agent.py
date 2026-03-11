@@ -407,11 +407,9 @@ class SocketIOAgent(Agent):
                         self.tool_mapping[tool_name].execute(arguments, context),
                         timeout=60,
                     )
-                    result = tool_result.content
-                    status = tool_result.status
                 except asyncio.TimeoutError:
                     logger.error(f"Tool '{tool_name}' execution timed out")
-                    result = ToolResult(
+                    tool_result = ToolResult(
                         status=ToolStatus.ERROR,
                         content=f"Tool {tool_name} execution timed out",
                     )
@@ -421,7 +419,7 @@ class SocketIOAgent(Agent):
                     return
                 except Exception as e:
                     logger.error(f"Tool execution failed: {e}")
-                    result = ToolResult(
+                    tool_result = ToolResult(
                         status=ToolStatus.ERROR, content=f"Tool execution failed: {e}"
                     )
                     status = ToolStatus.ERROR
@@ -429,8 +427,8 @@ class SocketIOAgent(Agent):
             tool_call_result = {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": result,
-                "status": status,
+                "content": tool_result.content,
+                "status": tool_result.status,
             }
 
             # Save tool result to database for persistence

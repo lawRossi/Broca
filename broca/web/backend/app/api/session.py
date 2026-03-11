@@ -1,5 +1,4 @@
 import asyncio
-import logging
 import tempfile
 
 from broca.agent_manager import AgentFactory
@@ -9,11 +8,11 @@ from broca.session.service import (
     get_session_service,
     get_turn_service,
 )
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
+from loguru import logger
 
 from app.schemas.schemas import ApiResponse, CreateSessionRequest
 
-logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -86,9 +85,8 @@ async def get_sessions(
         total = await session_service.count(filters=filters if filters else None)
 
         # 获取分页数据
-        sessions = await session_service.get_all(
-            skip=skip, limit=limit, filters=filters if filters else None, order_by="created_at desc"
-        )
+        sessions = await session_service.get_all(filters=filters if filters else None, order_by="created_at desc")
+        sessions = sessions[skip : skip + limit]
 
         # 关键词过滤（在内存中过滤）
         if keyword and sessions:
@@ -106,37 +104,27 @@ async def get_sessions(
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
-@router.get("/{session_id}", response_model=ApiResponse)
-async def get_session(session_id: str) -> ApiResponse:
-    """获取会话详情"""
-    try:
-        session_service = get_session_service()
-        session = await session_service.get(session_id)
-
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        return ApiResponse.success(session)
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting session: {e}")
-        raise HTTPException(500, f"Internal server error: {e!s}") from e
-
-
 @router.get("/{session_id}/agents", response_model=ApiResponse)
-async def get_session_agents(session_id: str) -> ApiResponse:
+async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
     """获取会话的Agent列表"""
     try:
-        # 验证会话是否存在
-        session_service = get_session_service()
-        session = await session_service.get(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
         # 获取会话的Agent
         agent_service = get_agent_service()
         agents = await agent_service.get_agents_by_session(session_id)
+        if not agents:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        runtime = req.app.state.socketio_runtime
+        factory = AgentFactory()
+        for db_agent in agents:
+            if not runtime.is_client_connected(db_agent.agent_id):
+                logger.info(f"Agent {db_agent.name} is not connected")
+                agent = await factory.restore_agent(db_agent.agent_id, session_id=session_id)
+                await agent.connect()
+                await agent.subscribe(session_id)
+                task = asyncio.create_task(agent.run())
+                task.add_done_callback(lambda _: agent.stop())
+                logger.info(f"Agent {db_agent.name} restored")
 
         return ApiResponse.success(agents)
     except HTTPException:
@@ -160,7 +148,6 @@ async def get_session_messages(session_id: str, skip: int = 0, limit: int = 50) 
         message_service = get_message_service()
         messages = await message_service.get_messages_by_session(session_id)
 
-        # 按时间正序排列后分页
         messages_sorted = sorted(messages, key=lambda m: m.timestamp, reverse=True)
         total = len(messages_sorted)
         paginated_messages = messages_sorted[skip : skip + limit]
@@ -196,41 +183,6 @@ async def get_session_turns(session_id: str, skip: int = 0, limit: int = 100) ->
         raise
     except Exception as e:
         logger.error(f"Error getting session turns: {e}")
-        raise HTTPException(500, f"Internal server error: {e!s}") from e
-
-
-@router.get("/{session_id}/latest-agent", response_model=ApiResponse)
-async def get_session_latest_agent(session_id: str) -> ApiResponse:
-    """获取会话的最新Agent（用于Chat.vue自动获取agent_id）"""
-    try:
-        # 验证会话是否存在
-        session_service = get_session_service()
-        session = await session_service.get(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        # 获取会话的Agent
-        agent_service = get_agent_service()
-        agents = await agent_service.get_agents_by_session(session_id)
-
-        if not agents:
-            # 如果没有Agent，返回默认值
-            return ApiResponse.success({"agent_id": "main_agent", "has_agents": False})
-
-        # 获取最新的Agent（假设按创建时间排序）
-        latest_agent = agents[-1] if agents else None
-
-        return ApiResponse.success(
-            {
-                "agent_id": latest_agent.agent_id if latest_agent else "main_agent",
-                "agent_name": latest_agent.name if latest_agent else "Main Agent",
-                "has_agents": True,
-            }
-        )
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting session latest agent: {e}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 

@@ -25,6 +25,9 @@ class ToolCallContext:
 
 
 class Tool:
+    def __init__(self, max_content_length: int = 10000):
+        self.max_content_length = max_content_length
+
     @property
     def name(self) -> str:
         return "tool"
@@ -47,11 +50,21 @@ class Tool:
             },
         }
 
+    def _post_process_result(self, result: ToolResult) -> ToolResult:
+        if len(result.content) > self.max_content_length:
+            content = result.content
+            half_length = self.max_content_length // 2
+            content = content[:half_length] + "..." + content[-half_length:]
+            content += "\n**Notice**: The output is too long and has been truncated in the middle."
+            result.content = content
+
+        return result
+
     async def execute(self, arguments: str, context: ToolCallContext) -> ToolResult:
         try:
             args_dict = json.loads(arguments)
             result = await self._execute(args_dict, context)
-            return result
+            return self._post_process_result(result)
         except json.JSONDecodeError:
             logger.error("Invalid JSON arguments")
             return ToolResult(status=ToolStatus.ERROR, content="Invalid JSON arguments")
