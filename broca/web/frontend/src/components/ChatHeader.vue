@@ -20,23 +20,10 @@ const chatStore = useChatStore()
           }"></div>
         </div>
 
+        <!-- 中间部分：显示客户端信息 -->
         <div class="flex items-center gap-2 sm:gap-4 flex-1 justify-center">
-          <div class="flex items-center gap-1.5 sm:gap-2">
-            <div class="w-2 h-2 rounded-full flex-shrink-0" :class="{
-              'bg-green-500': chatStore.agentStatus === 'idle',
-              'bg-yellow-500 animate-pulse': chatStore.agentStatus === 'running',
-              'bg-blue-500 animate-pulse': chatStore.agentStatus === 'connecting',
-              'bg-gray-400': chatStore.agentStatus === 'disconnected'
-            }"></div>
-            <span class="text-xs sm:text-sm font-medium truncate max-w-[100px] sm:max-w-none" :class="{
-              'text-green-700': chatStore.agentStatus === 'idle',
-              'text-yellow-700': chatStore.agentStatus === 'running',
-              'text-blue-700': chatStore.agentStatus === 'connecting',
-              'text-gray-500': chatStore.agentStatus === 'disconnected'
-            }">{{ chatStore.agentStatusText }}</span>
-          </div>
-          <div v-if="chatStore.agentId && chatStore.agentStatus !== 'disconnected'" class="hidden md:block text-xs text-gray-500">
-            Agent: {{ chatStore.agentId }}
+          <div class="hidden sm:block text-xs text-gray-500">
+            client: {{ chatStore.socketConfig.clientId.slice(0, 8) }}...
           </div>
         </div>
 
@@ -58,9 +45,6 @@ const chatStore = useChatStore()
             >
               <span class="text-xs">📊</span>
             </el-button>
-          </div>
-          <div class="hidden sm:block text-xs text-gray-500">
-            client: {{ chatStore.socketConfig.clientId.slice(0, 8) }}...
           </div>
         </div>
       </div>

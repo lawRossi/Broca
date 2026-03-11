@@ -152,6 +152,18 @@ const targetAgentDisplay = computed(() => {
   return chatStore.agentName
 })
 
+// 检查是否可以发送消息
+const canSendMessage = computed(() => {
+  const text = chatStore.input.trim()
+  if (!text) return false
+  
+  // 解析@mention
+  const { cleanText } = chatStore.parseMention(text)
+  
+  // 检查cleanText是否为空或只包含空格
+  return cleanText.trim().length > 0
+})
+
 // 添加和移除全局点击事件监听器
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
@@ -200,7 +212,6 @@ onUnmounted(() => {
             <div class="flex items-center gap-2">
               <span class="text-blue-500">@</span>
               <span class="font-medium">{{ suggestion.name }}</span>
-              <span class="text-xs text-gray-400 ml-auto">{{ suggestion.id }}</span>
             </div>
           </div>
         </div>
@@ -219,7 +230,7 @@ onUnmounted(() => {
       <el-button 
         type="primary" 
         @click="chatStore.sendUserMessage" 
-        :disabled="!chatStore.connected || !chatStore.input.trim()"
+        :disabled="!chatStore.connected || !canSendMessage"
         :size="chatStore.isMobile ? 'default' : 'large'"
       >
         <span class="hidden sm:inline">Send</span>

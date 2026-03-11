@@ -84,6 +84,8 @@ class AgentFactory:
             agent_config, self.llm_client, session_manager, agent_id=agent_id
         )
         await agent.restore_from_session(agent_id)
+        if session_manager.session_id not in self._session_agents:
+            self._session_agents[session_manager.session_id] = {}
         self._session_agents[session_manager.session_id][agent.name] = agent
         return agent
 

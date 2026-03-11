@@ -85,19 +85,43 @@ export const useChatStore = defineStore('chat', () => {
 
   const uiMessages = ref<UiMessage[]>([])
 
+  // 更新特定agent的状态
+  const updateAgentStatus = (agentId: string, status: AgentStatus) => {
+    const agentIndex = agents.value.findIndex(a => a.agent_id === agentId)
+    if (agentIndex !== -1) {
+      const agent = agents.value[agentIndex]
+      if (agent) {
+        // 创建新的agent对象以触发响应式更新
+        const updatedAgent = { ...agent, status }
+        agents.value.splice(agentIndex, 1, updatedAgent)
+      }
+    } else {
+      // 如果agent不在列表中，可能是新创建的agent，尝试重新获取agents列表
+      console.log(`Agent ${agentId} not found in list, refreshing agents...`)
+      if (sessionId.value) {
+        fetchSessionAgents(sessionId.value)
+      }
+    }
+  }
+
   // 获取session中的所有agents
   const fetchSessionAgents = async (sessionId: string) => {
     try {
       const response = await sessionApi.getSessionAgents(sessionId)
-      agents.value = response
+      // 为每个agent设置默认状态
+      const agentsWithStatus = response.map(agent => ({
+        ...agent,
+        status: (agent.status as AgentStatus) || (connected.value ? 'idle' : 'disconnected')
+      }))
+      agents.value = agentsWithStatus
       
       // 设置默认agent：优先选择role为main_agent或main-agent的，否则选择第一个agent
-      const mainAgent = response.find(agent => agent.role === 'main_agent' || agent.role === 'main-agent')
+      const mainAgent = agentsWithStatus.find(agent => agent.role === 'main_agent' || agent.role === 'main-agent')
       if (mainAgent) {
         agentId.value = mainAgent.agent_id
         agentName.value = mainAgent.name || 'Main Agent'
-      } else if (response.length > 0) {
-        const firstAgent = response[0]
+      } else if (agentsWithStatus.length > 0) {
+        const firstAgent = agentsWithStatus[0]
         if (firstAgent) {
           agentId.value = firstAgent.agent_id
           agentName.value = firstAgent.name || 'Assistant'
@@ -127,10 +151,10 @@ export const useChatStore = defineStore('chat', () => {
       console.log('agents列表为空，无法解析mention')
       return { targetAgentId: null, cleanText: text }
     }
-    
+  
     // 改进的正则表达式，支持中文、字母、数字、下划线和连字符
     // 匹配 @mention 或 @ mention（允许有空格）
-    const mentionRegex = /@\s*([\w\u4e00-\u9fa5\-]+)(?:\s|$)/
+    const mentionRegex = /@([\w\u4e00-\u9fa5\-]+)(?:\s|$)/
     const match = text.match(mentionRegex)
 
     if (match && match[1]) {
@@ -158,7 +182,12 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    return { targetAgentId: null, cleanText: text }
+    // 如果文本只包含@符号，返回空字符串作为cleanText
+    if (text.trim() === '@') {
+      return { targetAgentId: null, cleanText: '' }
+    }
+
+    return { targetAgentId: null, cleanText: text.trim() }
   }
 
   const filteredMessages = computed(() => {
@@ -489,20 +518,6 @@ export const useChatStore = defineStore('chat', () => {
     uiMessages.value.push(msg)
   }
 
-  const fetchAgentId = async (sessionId: string) => {
-    try {
-      loading.value = true
-      await fetchSessionAgents(sessionId)
-    } catch (error: any) {
-      console.error('获取Agent失败:', error)
-      ElMessage.warning('获取Agent失败，使用默认Agent')
-      agentName.value = 'Assistant'
-      agentStatus.value = 'disconnected'
-    } finally {
-      loading.value = false
-    }
-  }
-
   const loadHistory = async (sessionId: string, isLoadMore: boolean = false) => {
     const limit = 50
     
@@ -580,12 +595,22 @@ export const useChatStore = defineStore('chat', () => {
         connected.value = true
         connecting.value = false
         agentStatus.value = 'idle'
+        // 将所有agent状态重置为idle
+        agents.value = agents.value.map(agent => ({
+          ...agent,
+          status: 'idle'
+        }))
         ElMessage.success('连接成功')
       })
       client.on('disconnect', () => {
         connected.value = false
         connecting.value = false
         agentStatus.value = 'disconnected'
+        // 将所有agent状态设置为disconnected
+        agents.value = agents.value.map(agent => ({
+          ...agent,
+          status: 'disconnected'
+        }))
         ElMessage.warning('连接断开')
       })
       client.on('message', (m: BrocaMessage) => {
@@ -593,17 +618,29 @@ export const useChatStore = defineStore('chat', () => {
         scrollToBottom()
       })
 
-      client.on('turn_start', () => {
+      client.on('turn_start', (m: BrocaMessage) => {
         agentStatus.value = 'running'
+        // 更新特定agent的状态
+        const targetAgentId = m.sender_id || agentId.value
+        updateAgentStatus(targetAgentId, 'running')
       })
-      client.on('turn_end', () => {
+      client.on('turn_end', (m: BrocaMessage) => {
         agentStatus.value = 'idle'
+        // 更新特定agent的状态
+        const targetAgentId = m.sender_id || agentId.value
+        updateAgentStatus(targetAgentId, 'idle')
       })
-      client.on('agent_response', () => {
+      client.on('agent_response', (m: BrocaMessage) => {
         agentStatus.value = 'running'
+        // 更新特定agent的状态
+        const targetAgentId = m.sender_id || agentId.value
+        updateAgentStatus(targetAgentId, 'running')
       })
-      client.on('tool_call', () => {
+      client.on('tool_call', (m: BrocaMessage) => {
         agentStatus.value = 'running'
+        // 更新特定agent的状态
+        const targetAgentId = m.sender_id || agentId.value
+        updateAgentStatus(targetAgentId, 'running')
       })
 
       client.on('permission_request', (m: BrocaMessage) => {
@@ -648,14 +685,21 @@ export const useChatStore = defineStore('chat', () => {
     const text = input.value.trim()
     if (!text) return
 
+    // 解析@mention
+    const { targetAgentId, cleanText } = parseMention(text)
+    
+    // 检查cleanText是否为空或只包含空格
+    if (!cleanText.trim()) {
+      ElMessage.warning('请输入消息内容')
+      return
+    }
+
     input.value = ''
 
     console.log('发送消息，原始文本:', text)
     console.log('当前agents列表:', agents.value)
     console.log('当前默认agentId:', agentId.value)
 
-    // 解析@mention
-    const { targetAgentId, cleanText } = parseMention(text)
     const targetAgent = targetAgentId || agentId.value
 
     // 获取目标agent的名称用于显示
