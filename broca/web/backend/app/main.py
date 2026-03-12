@@ -1,5 +1,6 @@
 import logging
 import os
+from datetime import datetime
 
 from broca.session.database import db_manager
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -10,7 +11,7 @@ from app.core.socketio_runtime import SocketIOServerConfig, SocketIOServerRuntim
 from app.utils.supabase_utils import get_supbase
 
 logger = logging.getLogger(__name__)
-WHITE_LIST = {"/api/user/login", "/docs", "/openapi.json", "/api/health"}
+WHITE_LIST = {"/api/user/login", "/docs", "/openapi.json", "/api/health", "/api/files", "/api/files/info", "/api/files/preview"}
 security = HTTPBearer(auto_error=False)
 supabase = get_supbase()
 
@@ -58,5 +59,9 @@ async def shutdown() -> None:
     if runtime:
         await runtime.stop()
 
+
+@app.get("/api/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
 
 app.include_router(api_router, prefix="/api")

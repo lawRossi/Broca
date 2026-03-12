@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref, watch } from 'vue'
-import { useChatStore } from '@/stores'
-import { ElIcon, ElTooltip } from 'element-plus'
+import { onMounted, ref, watch, computed } from 'vue'
+import { useChatStore, useAgentStore } from '@/stores'
+import { formatBeijingDate, formatBeijingTime } from '@/utils/time'
+import { ElIcon, ElTooltip, ElTag } from 'element-plus'
 import {
   User,
   Document,
@@ -14,13 +15,18 @@ import {
   CircleClose,
   Refresh,
   Setting,
-  InfoFilled
+  InfoFilled,
+  Cpu,
+  Sunny,
+  Message,
+  Tools
 } from '@element-plus/icons-vue'
 
 // Crown图标在element-plus/icons-vue中可能不存在，使用其他图标替代
 import { StarFilled } from '@element-plus/icons-vue'
 
 const chatStore = useChatStore()
+const agentStore = useAgentStore()
 
 const showConfigPanel = ref(false)
 const loading = ref(false)
@@ -79,10 +85,7 @@ const getStatusText = (status: string) => {
   }
 }
 
-const formatDate = (dateString: string) => {
-  const date = new Date(dateString)
-  return date.toLocaleDateString('zh-CN')
-}
+// 使用工具函数，不再需要本地定义
 
 const refreshAgents = async () => {
   if (!chatStore.sessionId) return
@@ -105,7 +108,28 @@ const closeConfigPanel = () => {
   selectedAgent.value = null
 }
 
-// 移除未使用的formatConfigValue函数
+// 获取选中的agent的配置信息
+const selectedAgentConfig = computed(() => {
+  if (!selectedAgent.value) return null
+  
+  // 首先尝试从agent store中获取配置
+  const config = agentStore.agentConfigs.find(
+    config => config.id === selectedAgent.value.config_id
+  )
+  
+  // 如果没有找到配置，使用默认配置
+  if (!config) {
+    return {
+      model: 'gpt-4',
+      temperature: 0.7,
+      max_tokens: 2000,
+      system_prompt: '你是一个有用的助手',
+      tools: ['web_search', 'calculator']
+    }
+  }
+  
+  return config.config
+})
 
 // 监听session变化，自动刷新agents
 watch(() => chatStore.sessionId, (newSessionId) => {
@@ -118,6 +142,8 @@ onMounted(() => {
   if (chatStore.sessionId) {
     refreshAgents()
   }
+  // 初始化agent store
+  agentStore.init()
 })
 </script>
 
@@ -213,7 +239,7 @@ onMounted(() => {
               <span class="font-medium">{{ agent.config_id?.slice(0, 8) || 'default' }}</span>
             </div>
           </div>
-          <span class="text-gray-400">{{ formatDate(agent.created_at) }}</span>
+          <span class="text-gray-400">{{ formatBeijingDate(agent.created_at) }}</span>
         </div>
       </div>
     </div>
@@ -294,28 +320,113 @@ onMounted(() => {
               </div>
               <div>
                 <label class="text-xs text-gray-500">创建时间</label>
-                <p class="text-sm">{{ new Date(selectedAgent.created_at).toLocaleString() }}</p>
+                <p class="text-sm">{{ formatBeijingTime(selectedAgent.created_at) }}</p>
               </div>
             </div>
           </div>
 
-          <!-- 使用说明 -->
-          <div class="mb-6 p-3 bg-blue-50 rounded border border-blue-200">
-            <h4 class="text-sm font-medium text-blue-900 mb-2">如何使用此Agent</h4>
-            <ul class="text-xs text-blue-800 space-y-1">
-              <li>• 在输入框中输入 <code class="bg-blue-100 px-1 rounded">@{{ selectedAgent.name || selectedAgent.agent_id?.slice(0, 8) || 'agent' }}</code> 发送消息给此Agent</li>
-              <li>• 或直接输入 <code class="bg-blue-100 px-1 rounded">@{{ selectedAgent.agent_id?.slice(0, 8) || 'agent' }}</code> 使用ID引用</li>
-              <li>• 如果不指定@mention，消息将发送给默认Agent (role为main_agent或main-agent)</li>
-            </ul>
+          <!-- 配置信息 -->
+          <div v-if="selectedAgentConfig" class="mb-6">
+            <h4 class="text-sm font-medium text-gray-900 mb-3">配置信息</h4>
+            <div class="space-y-4">
+              <!-- 模型配置 -->
+              <div class="bg-gray-50 p-3 rounded border">
+                <div class="flex items-center gap-2 mb-2">
+                  <el-icon :size="16" class="text-blue-500">
+                    <Cpu />
+                  </el-icon>
+                  <span class="text-sm font-medium text-gray-700">模型配置</span>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="text-xs text-gray-500">模型</label>
+                    <p class="text-sm font-medium">{{ selectedAgentConfig.model || '未设置' }}</p>
+                  </div>
+                  <div>
+                    <label class="text-xs text-gray-500">温度</label>
+                    <div class="flex items-center gap-1">
+                      <el-icon :size="12" class="text-orange-500">
+                        <Sunny />
+                      </el-icon>
+                      <span class="text-sm font-medium">{{ selectedAgentConfig.temperature || 0.7 }}</span>
+                    </div>
+                  </div>
+                  <div>
+                    <label class="text-xs text-gray-500">最大Token数</label>
+                    <p class="text-sm font-medium">{{ selectedAgentConfig.max_tokens || 2000 }}</p>
+                  </div>
+                  <div>
+                    <label class="text-xs text-gray-500">配置状态</label>
+                    <el-tag size="small" type="success">已加载</el-tag>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 系统提示词 -->
+              <div class="bg-gray-50 p-3 rounded border">
+                <div class="flex items-center gap-2 mb-2">
+                  <el-icon :size="16" class="text-green-500">
+                    <Message />
+                  </el-icon>
+                  <span class="text-sm font-medium text-gray-700">系统提示词</span>
+                </div>
+                <div class="bg-white p-3 rounded border text-sm text-gray-700 max-h-32 overflow-y-auto">
+                  {{ selectedAgentConfig.system_prompt || '未设置系统提示词' }}
+                </div>
+              </div>
+
+              <!-- 可用工具 -->
+              <div v-if="selectedAgentConfig.tools && selectedAgentConfig.tools.length > 0" class="bg-gray-50 p-3 rounded border">
+                <div class="flex items-center gap-2 mb-2">
+                  <el-icon :size="16" class="text-purple-500">
+                    <Tools />
+                  </el-icon>
+                  <span class="text-sm font-medium text-gray-700">可用工具</span>
+                </div>
+                <div class="flex flex-wrap gap-2">
+                  <el-tag 
+                    v-for="tool in selectedAgentConfig.tools" 
+                    :key="tool"
+                    size="small"
+                    type="info"
+                    class="!text-xs"
+                  >
+                    {{ tool }}
+                  </el-tag>
+                </div>
+              </div>
+
+              <!-- 其他配置 -->
+              <div v-if="Object.keys(selectedAgentConfig).length > 5" class="bg-gray-50 p-3 rounded border">
+                <div class="flex items-center gap-2 mb-2">
+                  <el-icon :size="16" class="text-gray-500">
+                    <Setting />
+                  </el-icon>
+                  <span class="text-sm font-medium text-gray-700">其他配置</span>
+                </div>
+                <div class="space-y-2">
+                  <div 
+                    v-for="([key, value], index) in Object.entries(selectedAgentConfig).filter(([key]) => 
+                      !['model', 'temperature', 'max_tokens', 'system_prompt', 'tools'].includes(key)
+                    )" 
+                    :key="index"
+                    class="flex justify-between items-center text-sm"
+                  >
+                    <span class="text-gray-600">{{ key }}:</span>
+                    <span class="font-medium text-gray-800">{{ typeof value === 'object' ? JSON.stringify(value) : value }}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <!-- 无配置信息 -->
-          <div class="text-center py-8 text-gray-500">
+          <!-- 无配置信息提示 -->
+          <div v-else class="text-center py-8 text-gray-500">
             <el-icon :size="32" class="mb-2">
               <Setting />
             </el-icon>
-            <p>暂无详细配置信息</p>
-            <p class="text-xs mt-1">配置信息存储在server端</p>
+            <p>加载配置信息中...</p>
+            <p class="text-xs mt-1">正在从服务器获取配置</p>
           </div>
         </div>
 

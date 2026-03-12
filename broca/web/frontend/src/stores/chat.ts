@@ -792,6 +792,13 @@ export const useChatStore = defineStore('chat', () => {
 
   const init = async () => {
     await userStore.init()
+    
+    // 检查登录状态
+    if (!userStore.isLoggedIn) {
+      console.log('用户未登录，无法初始化聊天')
+      return
+    }
+    
     checkMobile()
     window.addEventListener('resize', checkMobile)
 

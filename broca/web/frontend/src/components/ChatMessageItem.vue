@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { useChatStore, DisplayType } from '@/stores'
 import type { UiMessage } from '@/stores/chat'
+import { formatBeijingTimeShort } from '@/utils/time'
 
 const chatStore = useChatStore()
 
@@ -105,7 +106,7 @@ const getContentClass = (displayType: DisplayType) => {
         </span>
       </div>
       <div class="text-xs opacity-70">
-        {{ new Date(message.ts).toLocaleTimeString() }}
+        {{ formatBeijingTimeShort(message.ts) }}
       </div>
     </div>
     

@@ -5,6 +5,7 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { sessionApi, type Session, type CreateSessionParams } from '@/api/session'
 import { ChatRound, Search, ArrowRight, Calendar, Timer, Plus, Delete, Loading } from '@element-plus/icons-vue'
+import { formatBeijingTime } from '@/utils/time'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -75,18 +76,7 @@ const getStatusLabel = (status: string) => {
   return map[status] || status
 }
 
-// 格式化日期
-const formatDate = (dateStr: string) => {
-  if (!dateStr) return '-'
-  const date = new Date(dateStr)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit'
-  })
-}
+// 使用工具函数
 
 // 截断ID显示
 const truncateId = (id: string, length: number = 8) => {
@@ -424,7 +414,7 @@ onMounted(async () => {
               <template #default="{ row }">
                 <div class="text-sm text-gray-500 flex items-center gap-1">
                   <el-icon class="text-xs"><Calendar /></el-icon>
-                  {{ formatDate(row.created_at) }}
+                  {{ formatBeijingTime(row.created_at) }}
                 </div>
               </template>
             </el-table-column>
@@ -432,7 +422,7 @@ onMounted(async () => {
               <template #default="{ row }">
                 <div class="text-sm text-gray-500 flex items-center gap-1">
                   <el-icon class="text-xs"><Timer /></el-icon>
-                  {{ row.finished_at ? formatDate(row.finished_at) : '-' }}
+                  {{ row.finished_at ? formatBeijingTime(row.finished_at) : '-' }}
                 </div>
               </template>
             </el-table-column>
@@ -520,7 +510,7 @@ onMounted(async () => {
                 <div class="flex items-center justify-between text-sm text-gray-500">
                   <div class="flex items-center gap-1">
                     <el-icon class="text-xs"><Calendar /></el-icon>
-                    <span>{{ formatDate(session.created_at).split(' ')[0] }}</span>
+                    <span>{{ formatBeijingTime(session.created_at).split(' ')[0] }}</span>
                   </div>
                   <el-icon class="text-gray-400"><ArrowRight /></el-icon>
                 </div>
