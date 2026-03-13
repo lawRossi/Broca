@@ -58,7 +58,7 @@ def check_pnpm():
         return False
 
 
-def run_frontend(host: str = "127.0.0.1", port: int = 5177):
+def run_frontend(host: str = "127.0.0.1", port: int = 5166):
     """Start the frontend development server"""
     frontend_path = get_web_frontend_path()
 
@@ -135,7 +135,7 @@ def run_backend(host: str = "127.0.0.1", port: int = 9000, reload: bool = True):
 
 def run_all_services(
     frontend_host="127.0.0.1",
-    frontend_port=5177,
+    frontend_port=5166,
     backend_host="127.0.0.1",
     backend_port=9000,
     reload=False,
@@ -196,7 +196,7 @@ def run_all_services(
         print("All services stopped")
 
 
-def run_frontend_only(host="127.0.0.1", port=5177):
+def run_frontend_only(host="127.0.0.1", port=5166):
     """Start only the frontend service"""
     if not check_pnpm():
         print("Error: pnpm is not installed. Please install pnpm first.")
@@ -314,8 +314,8 @@ examples:
     web_sub.add_argument(
         "--frontend-port",
         type=int,
-        default=5177,
-        help="Frontend port number (default: 5177)",
+        default=5166,
+        help="Frontend port number (default: 5166)",
     )
     web_sub.add_argument(
         "--backend-host",
@@ -349,7 +349,7 @@ examples:
         "--host", default="127.0.0.1", help="Frontend host address (default: 127.0.0.1)"
     )
     frontend_sub.add_argument(
-        "--port", type=int, default=5177, help="Frontend port number (default: 5177)"
+        "--port", type=int, default=5166, help="Frontend port number (default: 5166)"
     )
 
     # Backend subcommand
