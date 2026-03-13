@@ -1,9 +1,19 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
-import { ElMessage } from 'element-plus'
-import { Folder, Document, ArrowLeft, Refresh, Search, InfoFilled } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
+
+// 防抖函数
+const debounce = (fn: Function, delay: number) => {
+  let timeoutId: number
+  return (...args: any[]) => {
+    clearTimeout(timeoutId)
+    timeoutId = setTimeout(() => fn(...args), delay)
+  }
+}
+import { Folder, Document, ArrowLeft, Refresh, Search, InfoFilled, Edit, Warning } from '@element-plus/icons-vue'
 import type { FileItem } from '@/api/files'
 import { formatUnixTimestamp } from '@/utils/time'
+import { filesApi } from '@/api'
 
 // Props
 const props = defineProps<{
@@ -24,8 +34,13 @@ const searchQuery = ref('')
 const breadcrumbs = ref<string[]>([])
 const showPreview = ref(false)
 const previewContent = ref('')
-const previewFileName = ref('')
+const previewFileName = ref<string>('')
 const previewLoading = ref(false)
+const isEditing = ref(false)
+const editedContent = ref('')
+const saveLoading = ref(false)
+const showSaveConfirm = ref(false)
+const contentChanged = ref(false)
 const isMobile = ref(false)
 
 // Computed
@@ -45,23 +60,54 @@ const hasParent = computed(() => {
   return breadcrumbs.value.length > 1
 })
 
+const fileExtension = computed((): string => {
+  const fileName = previewFileName.value
+  if (!fileName) return ''
+  const parts = fileName.split('.')
+  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
+})
+
+
+
+// 简单的语法高亮映射
+const syntaxHighlightClass = computed(() => {
+  const ext = fileExtension.value
+  const mapping: Record<string, string> = {
+    'js': 'javascript',
+    'ts': 'typescript',
+    'vue': 'vue',
+    'html': 'html',
+    'css': 'css',
+    'py': 'python',
+    'java': 'java',
+    'cpp': 'cpp',
+    'c': 'c',
+    'h': 'c',
+    'xml': 'xml',
+    'json': 'json',
+    'md': 'markdown',
+    'yaml': 'yaml',
+    'yml': 'yaml',
+    'sh': 'bash',
+    'bash': 'bash',
+    'zsh': 'bash'
+  }
+  return mapping[ext] || 'plaintext'
+})
+
+const isTextFile = computed(() => {
+  if (!previewContent.value) return false
+  return !previewContent.value.includes('Binary file') && 
+         !previewContent.value.includes('Cannot preview') &&
+         previewContent.value.trim() !== ''
+})
+
 // Methods
 const loadFiles = async (path: string = currentPath.value) => {
   try {
     loading.value = true
-    const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`)
+    const result = await filesApi.listFiles(path)
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    
-    if (data.code !== 200) {
-      throw new Error(data.msg || 'Failed to load files')
-    }
-    
-    const result = data.data
     currentPath.value = result.current_path
     files.value = result.files
     
@@ -124,26 +170,19 @@ const previewFile = async (file: FileItem) => {
   try {
     previewLoading.value = true
     previewFileName.value = file.name
+    isEditing.value = false
     
-    const response = await fetch(`/api/files/preview?path=${encodeURIComponent(file.path)}&max_lines=100`)
+    const result = await filesApi.previewFile(file.path)
     
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    
-    if (data.code !== 200) {
-      throw new Error(data.msg || 'Failed to preview file')
-    }
-    
-    const result = data.data
-    if (result.preview === null) {
+    if (!result.preview) {
       previewContent.value = result.message || 'Cannot preview this file'
+      editedContent.value = ''
     } else {
       previewContent.value = result.preview
+      editedContent.value = result.preview
       if (result.truncated) {
-        previewContent.value += '\n\n... (truncated)'
+        previewContent.value += '\n\n... (truncated due to file size limit)'
+        editedContent.value += '\n\n... (truncated due to file size limit)'
       }
     }
     
@@ -183,6 +222,226 @@ const getModifiedTime = (file: FileItem) => {
   return formatUnixTimestamp(file.modified_time)
 }
 
+const startEditing = () => {
+  // 找到当前预览的文件
+  const currentFile = files.value.find(f => f.name === previewFileName.value)
+  if (!currentFile) {
+    ElMessage.warning('File not found')
+    return
+  }
+  
+  if (!currentFile.readable) {
+    ElMessage.warning('File is not readable')
+    return
+  }
+  
+  // 检查文件是否可编辑
+  if (!isTextFile.value) {
+    ElMessage.warning('Cannot edit binary or unsupported files')
+    return
+  }
+  
+  // 检查是否有未保存的草稿
+  const draftKey = `file_draft_${previewFileName.value}`
+  const draftData = localStorage.getItem(draftKey)
+  
+  if (draftData) {
+    try {
+      const draft = JSON.parse(draftData)
+      const draftAge = Date.now() - draft.timestamp
+      const maxDraftAge = 24 * 60 * 60 * 1000 // 24小时
+      
+      if (draftAge < maxDraftAge) {
+        ElMessageBox.confirm(
+          `Found unsaved draft from ${new Date(draft.timestamp).toLocaleTimeString()}. Restore it?`,
+          'Restore Draft',
+          {
+            confirmButtonText: 'Restore',
+            cancelButtonText: 'Start Fresh',
+            type: 'info',
+          }
+        ).then(() => {
+          editedContent.value = draft.content
+          isEditing.value = true
+          contentChanged.value = true
+        }).catch(() => {
+          // 清除草稿
+          localStorage.removeItem(draftKey)
+          isEditing.value = true
+        })
+        return
+      } else {
+        // 草稿过期，清除
+        localStorage.removeItem(draftKey)
+      }
+    } catch (e) {
+      console.error('Error parsing draft:', e)
+      localStorage.removeItem(draftKey)
+    }
+  }
+  
+  isEditing.value = true
+}
+
+const cancelEditing = () => {
+  if (contentChanged.value) {
+    // 如果有未保存的更改，提示用户
+    ElMessageBox.confirm(
+      'You have unsaved changes. Are you sure you want to cancel?',
+      'Confirm Cancel',
+      {
+        confirmButtonText: 'Yes, Cancel',
+        cancelButtonText: 'Continue Editing',
+        type: 'warning',
+      }
+    ).then(() => {
+      isEditing.value = false
+      editedContent.value = previewContent.value
+      contentChanged.value = false
+      // 清除草稿
+      const draftKey = `file_draft_${previewFileName.value}`
+      localStorage.removeItem(draftKey)
+    }).catch(() => {
+      // 用户选择继续编辑
+    })
+  } else {
+    isEditing.value = false
+    editedContent.value = previewContent.value
+  }
+}
+
+const handleContentChange = () => {
+  contentChanged.value = editedContent.value !== previewContent.value
+}
+
+// 防抖的草稿保存函数
+const saveDraft = debounce(() => {
+  if (contentChanged.value && previewFileName.value && isEditing.value) {
+    const draftKey = `file_draft_${previewFileName.value}`
+    const draftData = {
+      content: editedContent.value,
+      timestamp: Date.now()
+    }
+    localStorage.setItem(draftKey, JSON.stringify(draftData))
+  }
+}, 2000) // 2秒防抖
+
+// 修改内容变化处理，添加防抖
+const handleContentChangeDebounced = () => {
+  handleContentChange()
+  saveDraft()
+}
+
+const handleClosePreview = () => {
+  if (isEditing.value && contentChanged.value) {
+    ElMessageBox.confirm(
+      'You have unsaved changes. Are you sure you want to close?',
+      'Confirm Close',
+      {
+        confirmButtonText: 'Yes, Close',
+        cancelButtonText: 'Continue Editing',
+        type: 'warning',
+      }
+    ).then(() => {
+      showPreview.value = false
+      isEditing.value = false
+      contentChanged.value = false
+      // 清除草稿
+      const draftKey = `file_draft_${previewFileName.value}`
+      localStorage.removeItem(draftKey)
+    }).catch(() => {
+      // 用户选择继续编辑
+    })
+  } else {
+    showPreview.value = false
+    isEditing.value = false
+    contentChanged.value = false
+  }
+}
+
+const confirmSave = () => {
+  showSaveConfirm.value = true
+}
+
+const saveFile = async () => {
+  try {
+    saveLoading.value = true
+    showSaveConfirm.value = false
+    
+    // 找到当前预览的文件
+    const currentFile = files.value.find(f => f.name === previewFileName.value)
+    if (!currentFile) {
+      throw new Error('File not found')
+    }
+    
+    // 检查文件大小（10MB限制）
+    const contentSize = new Blob([editedContent.value]).size
+    const maxSize = 10 * 1024 * 1024 // 10MB
+    if (contentSize > maxSize) {
+      throw new Error(`File content too large (${(contentSize / 1024 / 1024).toFixed(2)}MB > 10MB). Please reduce file size.`)
+    }
+    
+    // 检查文件是否为空
+    if (editedContent.value.trim() === '') {
+      ElMessageBox.confirm(
+        'File content is empty. Save empty file?',
+        'Confirm Save',
+        {
+          confirmButtonText: 'Save Empty',
+          cancelButtonText: 'Cancel',
+          type: 'warning',
+        }
+      ).then(() => {
+        // 用户确认保存空文件
+        performSave(currentFile)
+      }).catch(() => {
+        saveLoading.value = false
+      })
+      return
+    }
+    
+    await performSave(currentFile)
+    
+  } catch (error: any) {
+    console.error('Error saving file:', error)
+    ElMessage.error(`Failed to save file: ${error.message}`)
+    saveLoading.value = false
+  }
+}
+
+const performSave = async (currentFile: FileItem) => {
+  try {
+    const result = await filesApi.editFile(currentFile.path, editedContent.value)
+    
+    // 更新预览内容
+    previewContent.value = editedContent.value
+    isEditing.value = false
+    contentChanged.value = false
+    
+    // 清除草稿
+    const draftKey = `file_draft_${previewFileName.value}`
+    localStorage.removeItem(draftKey)
+    
+    // 更新文件列表中的修改时间
+    const updatedFile = files.value.find(f => f.name === previewFileName.value)
+    if (updatedFile) {
+      updatedFile.modified_time = result.modified_time
+    }
+    
+    ElMessage.success({
+      message: `File "${previewFileName.value}" saved successfully`,
+      duration: 3000,
+      showClose: true
+    })
+    
+  } catch (error: any) {
+    console.error('Error in performSave:', error)
+    throw error
+  } finally {
+    saveLoading.value = false
+  }
+}
+
 const refresh = () => {
   loadFiles()
 }
@@ -197,16 +456,38 @@ const handleResize = () => {
   checkIsMobile()
 }
 
+// 键盘快捷键处理
+const handleKeyDown = (event: KeyboardEvent) => {
+  if (showPreview.value && isEditing.value) {
+    // Ctrl+S 保存
+    if ((event.ctrlKey || event.metaKey) && event.key === 's') {
+      event.preventDefault()
+      confirmSave()
+    }
+    // Esc 取消编辑
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      if (contentChanged.value) {
+        cancelEditing()
+      } else {
+        isEditing.value = false
+      }
+    }
+  }
+}
+
 // Lifecycle
 onMounted(() => {
   loadFiles()
   checkIsMobile()
   window.addEventListener('resize', handleResize)
+  window.addEventListener('keydown', handleKeyDown)
 })
 
 // 清理事件监听器
 onUnmounted(() => {
   window.removeEventListener('resize', handleResize)
+  window.removeEventListener('keydown', handleKeyDown)
 })
 
 // Watch for prop changes
@@ -424,7 +705,7 @@ watch(() => props.initialPath, (newPath) => {
     <!-- File Preview Dialog -->
     <el-dialog
       v-model="showPreview"
-      :title="`Preview: ${previewFileName}`"
+      :title="`${isEditing ? 'Edit' : 'Preview'}: ${previewFileName}`"
       width="90%"
       :fullscreen="isMobile"
     >
@@ -434,11 +715,164 @@ watch(() => props.initialPath, (newPath) => {
         </el-icon>
         <p class="mt-2 text-gray-600">Loading preview...</p>
       </div>
-      <pre v-else class="bg-gray-900 text-gray-100 p-4 rounded-lg overflow-auto max-h-[60vh] text-sm font-mono whitespace-pre-wrap">{{ previewContent }}</pre>
+      
+      <div v-else-if="previewContent === null || previewContent === ''" class="p-8 text-center">
+        <el-icon class="text-3xl text-gray-400">
+          <Document />
+        </el-icon>
+        <p class="mt-2 text-gray-600">Cannot preview this file</p>
+      </div>
+      
+      <div v-else>
+        <!-- Preview Mode -->
+        <div v-if="!isEditing">
+          <div class="mb-4 flex items-center justify-between">
+            <div class="text-sm text-gray-600 flex items-center gap-2">
+              <span v-if="fileExtension" class="bg-gray-200 text-gray-700 px-2 py-1 rounded text-xs">
+                {{ fileExtension }}
+                <span v-if="syntaxHighlightClass !== 'plaintext'" class="ml-1 text-primary-600">
+                  ●
+                </span>
+              </span>
+              <span v-if="previewContent && !previewContent.includes('Cannot preview')" class="text-xs text-gray-500">
+                {{ (previewContent.length / 1024).toFixed(2) }} KB
+              </span>
+              <span v-if="previewContent.includes('truncated')" class="text-yellow-600 text-xs">
+                <el-icon><Warning /></el-icon>
+                Truncated
+              </span>
+            </div>
+            <el-button
+              type="primary"
+              size="small"
+              @click="startEditing"
+              :disabled="!isTextFile"
+              :title="!isTextFile ? 'Cannot edit this file type' : 'Edit file'"
+            >
+              <el-icon><Edit /></el-icon>
+              Edit
+            </el-button>
+          </div>
+          <div class="bg-gray-900 rounded-lg overflow-auto max-h-[60vh] flex">
+            <!-- 行号 -->
+            <div class="bg-gray-800 text-gray-400 text-right py-4 px-3 select-none border-r border-gray-700">
+              <div v-for="(_, index) in previewContent.split('\n')" :key="index" class="leading-6">
+                {{ index + 1 }}
+              </div>
+            </div>
+            <!-- 内容 -->
+            <pre class="text-gray-100 p-4 text-sm font-mono whitespace-pre-wrap flex-1">{{ previewContent }}</pre>
+          </div>
+        </div>
+        
+        <!-- Edit Mode -->
+        <div v-else>
+          <div class="mb-4 flex items-center justify-between">
+            <div class="text-sm text-gray-600">
+              <el-icon><Edit /></el-icon>
+              Editing mode
+              <span class="ml-2 text-xs bg-gray-200 text-gray-700 px-2 py-1 rounded">
+                {{ editedContent.split('\n').length }} lines, {{ editedContent.length }} chars
+              </span>
+            </div>
+            <div class="flex items-center gap-2">
+              <el-button
+                size="small"
+                @click="cancelEditing"
+              >
+                Cancel
+              </el-button>
+              <el-button
+                type="primary"
+                size="small"
+                @click="confirmSave"
+                :loading="saveLoading"
+              >
+                Save
+              </el-button>
+            </div>
+          </div>
+          <div class="bg-gray-900 rounded-lg overflow-auto max-h-[60vh] flex border border-gray-700">
+            <!-- 行号 -->
+            <div class="bg-gray-800 text-gray-400 text-right py-4 px-3 select-none border-r border-gray-700 flex-shrink-0">
+              <div v-for="(_, index) in editedContent.split('\n')" :key="index" class="leading-6">
+                {{ index + 1 }}
+              </div>
+            </div>
+            <!-- 内容编辑区 -->
+            <textarea
+              v-model="editedContent"
+              class="flex-1 font-mono text-sm bg-gray-900 text-gray-100 p-4 resize-none focus:outline-none"
+              spellcheck="false"
+              placeholder="Edit file content..."
+              @input="handleContentChangeDebounced"
+            ></textarea>
+          </div>
+          <div class="mt-2 text-xs text-gray-500 flex justify-between">
+            <div>
+              <el-icon><InfoFilled /></el-icon>
+              Press Ctrl+S to save, Esc to cancel
+            </div>
+            <div v-if="contentChanged" class="text-yellow-600">
+              <el-icon><Warning /></el-icon>
+              Unsaved changes
+            </div>
+          </div>
+        </div>
+      </div>
       
       <template #footer>
         <span class="dialog-footer">
-          <el-button @click="showPreview = false">Close</el-button>
+          <el-button @click="handleClosePreview">Close</el-button>
+          <el-button
+            v-if="!isEditing && isTextFile"
+            type="primary"
+            @click="startEditing"
+          >
+            Edit
+          </el-button>
+          <el-button
+            v-if="isEditing"
+            @click="cancelEditing"
+          >
+            Cancel
+          </el-button>
+          <el-button
+            v-if="isEditing"
+            type="primary"
+            @click="confirmSave"
+            :loading="saveLoading"
+          >
+            Save
+          </el-button>
+        </span>
+      </template>
+    </el-dialog>
+    
+    <!-- Save Confirmation Dialog -->
+    <el-dialog
+      v-model="showSaveConfirm"
+      title="Confirm Save"
+      width="400px"
+    >
+      <div class="space-y-4">
+        <div class="flex items-start gap-3">
+          <el-icon class="text-yellow-500 mt-0.5"><Warning /></el-icon>
+          <div>
+            <p class="font-medium text-gray-900">Are you sure you want to save changes?</p>
+            <p class="text-sm text-gray-600 mt-1">
+              This will overwrite the original file. A backup will be created with .bak extension.
+            </p>
+          </div>
+        </div>
+      </div>
+      
+      <template #footer>
+        <span class="dialog-footer">
+          <el-button @click="showSaveConfirm = false">Cancel</el-button>
+          <el-button type="primary" @click="saveFile" :loading="saveLoading">
+            Save Changes
+          </el-button>
         </span>
       </template>
     </el-dialog>
@@ -474,5 +908,29 @@ watch(() => props.initialPath, (newPath) => {
 
 .scrollbar-thin::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* 预览对话框样式优化 */
+:deep(.el-dialog__body) {
+  padding-top: 10px !important;
+}
+
+/* 文本区域样式 */
+textarea {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  line-height: 1.5;
+}
+
+/* 行号区域样式 */
+.line-numbers {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-size: 12px;
+  user-select: none;
+}
+
+/* 语法高亮提示 */
+.syntax-badge {
+  font-size: 10px;
+  opacity: 0.7;
 }
 </style>

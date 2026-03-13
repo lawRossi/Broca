@@ -156,13 +156,12 @@ async def get_file_info(path: str) -> ApiResponse:
 
 
 @router.get("/files/preview", response_model=ApiResponse)
-async def preview_file(path: str, max_lines: int = 100) -> ApiResponse:
+async def preview_file(path: str) -> ApiResponse:
     """
     预览文件内容（仅文本文件）
     
     Args:
         path: 文件路径
-        max_lines: 最大预览行数
     """
     try:
         target_path = Path(path).expanduser().resolve()
@@ -188,21 +187,13 @@ async def preview_file(path: str, max_lines: int = 100) -> ApiResponse:
         # 尝试读取文件内容
         try:
             with open(target_path, 'r', encoding='utf-8') as f:
-                lines = []
-                for i, line in enumerate(f):
-                    if i >= max_lines:
-                        lines.append(f"... (truncated, showing first {max_lines} lines)")
-                        break
-                    lines.append(line.rstrip('\n'))
-                
-                content = '\n'.join(lines)
+                content = f.read()
                 
                 return ApiResponse.success({
                     "path": str(target_path),
                     "size": file_size,
                     "preview": content,
-                    "truncated": i >= max_lines,
-                    "total_lines": i + 1 if i < max_lines else max_lines
+                    "truncated": False
                 })
                 
         except UnicodeDecodeError:
@@ -222,4 +213,83 @@ async def preview_file(path: str, max_lines: int = 100) -> ApiResponse:
         raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
     except Exception as e:
         logger.error(f"Error previewing file {path}: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+class FileEditRequest(BaseModel):
+    """文件编辑请求"""
+    content: str
+
+
+@router.put("/files/edit", response_model=ApiResponse)
+async def edit_file(path: str, request: FileEditRequest) -> ApiResponse:
+    """
+    编辑文件内容
+    
+    Args:
+        path: 文件路径
+        content: 新的文件内容
+    """
+    try:
+        target_path = Path(path).expanduser().resolve()
+        
+        if not target_path.exists():
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        
+        if target_path.is_dir():
+            raise HTTPException(status_code=400, detail=f"Cannot edit directory: {path}")
+        
+        # 检查文件是否可写
+        if not os.access(target_path, os.W_OK):
+            raise HTTPException(status_code=403, detail=f"File is not writable: {path}")
+        
+        # 检查文件大小限制（防止上传过大文件）
+        max_size = 10 * 1024 * 1024  # 10MB
+        if len(request.content.encode('utf-8')) > max_size:
+            raise HTTPException(status_code=400, detail=f"File content too large ({len(request.content.encode('utf-8'))} bytes > {max_size} bytes)")
+        
+        # 备份原文件（可选）
+        backup_path = None
+        try:
+            # 创建备份
+            backup_path = target_path.with_suffix(target_path.suffix + '.bak')
+            import shutil
+            shutil.copy2(target_path, backup_path)
+        except Exception as e:
+            logger.warning(f"Failed to create backup for {path}: {e}")
+        
+        # 写入新内容
+        try:
+            with open(target_path, 'w', encoding='utf-8') as f:
+                f.write(request.content)
+            
+            # 获取文件信息
+            stat_info = target_path.stat()
+            
+            return ApiResponse.success({
+                "path": str(target_path),
+                "size": len(request.content.encode('utf-8')),
+                "modified_time": stat_info.st_mtime,
+                "backup_created": backup_path is not None and backup_path.exists(),
+                "backup_path": str(backup_path) if backup_path else None
+            })
+            
+        except Exception as e:
+            # 如果写入失败，尝试恢复备份
+            if backup_path and backup_path.exists():
+                try:
+                    shutil.copy2(backup_path, target_path)
+                    logger.info(f"Restored file from backup: {path}")
+                except Exception as restore_error:
+                    logger.error(f"Failed to restore from backup: {restore_error}")
+            
+            raise HTTPException(status_code=500, detail=f"Failed to write file: {str(e)}")
+            
+    except HTTPException:
+        raise
+    except PermissionError as e:
+        logger.error(f"Permission denied for {path}: {e}")
+        raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
+    except Exception as e:
+        logger.error(f"Error editing file {path}: {e}")
         raise HTTPException(status_code=500, detail=f"Internal server error: {str(e)}")

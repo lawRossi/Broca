@@ -1,3 +1,5 @@
+import request from '@/utils/request'
+
 export interface FileItem {
   name: string
   path: string
@@ -43,51 +45,50 @@ export interface FilePreview {
   total_lines?: number
 }
 
-// API functions
-export const listFiles = async (path: string = '.'): Promise<FileListResponse> => {
-  const response = await fetch(`/api/files?path=${encodeURIComponent(path)}`)
-  
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`)
-  }
-  
-  const data = await response.json()
-  
-  if (data.code !== 200) {
-    throw new Error(data.msg || 'Failed to load files')
-  }
-  
-  return data.data
+export interface FileEditResponse {
+  path: string
+  size: number
+  modified_time: number
+  backup_created: boolean
+  backup_path?: string
 }
 
-export const getFileInfo = async (path: string): Promise<FileInfo> => {
-  const response = await fetch(`/api/files/info?path=${encodeURIComponent(path)}`)
-  
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`)
+export const filesApi = {
+  /**
+   * 获取文件列表
+   */
+  async listFiles(path: string = '.'): Promise<FileListResponse> {
+    return request.get('/files', {
+      params: { path }
+    })
+  },
+
+  /**
+   * 获取文件信息
+   */
+  async getFileInfo(path: string): Promise<FileInfo> {
+    return request.get('/files/info', {
+      params: { path }
+    })
+  },
+
+  /**
+   * 预览文件内容
+   */
+  async previewFile(path: string): Promise<FilePreview> {
+    return request.get('/files/preview', {
+      params: { path }
+    })
+  },
+
+  /**
+   * 编辑文件
+   */
+  async editFile(path: string, content: string): Promise<FileEditResponse> {
+    return request.put('/files/edit', { content }, {
+      params: { path }
+    })
   }
-  
-  const data = await response.json()
-  
-  if (data.code !== 200) {
-    throw new Error(data.msg || 'Failed to get file info')
-  }
-  
-  return data.data
 }
 
-export const previewFile = async (path: string, maxLines: number = 100): Promise<FilePreview> => {
-  const response = await fetch(`/api/files/preview?path=${encodeURIComponent(path)}&max_lines=${maxLines}`)
-  
-  if (!response.ok) {
-    throw new Error(`HTTP error! status: ${response.status}`)
-  }
-  
-  const data = await response.json()
-  
-  if (data.code !== 200) {
-    throw new Error(data.msg || 'Failed to preview file')
-  }
-  
-  return data.data
-}
+export default filesApi

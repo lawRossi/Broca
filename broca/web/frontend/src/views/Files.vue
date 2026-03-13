@@ -9,6 +9,7 @@ import FileBrowser from '@/components/FileBrowser.vue'
 import type { FileItem } from '@/api/files'
 import { useUserStore } from '@/stores'
 import { formatUnixTimestamp } from '@/utils/time'
+import { filesApi } from '@/api'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -40,19 +41,7 @@ const handlePathChange = (path: string) => {
 const showFileInfo = async (file: FileItem) => {
   try {
     fileInfoLoading.value = true
-    const response = await fetch(`/api/files/info?path=${encodeURIComponent(file.path)}`)
-    
-    if (!response.ok) {
-      throw new Error(`HTTP error! status: ${response.status}`)
-    }
-    
-    const data = await response.json()
-    
-    if (data.code !== 200) {
-      throw new Error(data.msg || 'Failed to get file info')
-    }
-    
-    fileInfo.value = data.data
+    fileInfo.value = await filesApi.getFileInfo(file.path)
     fileInfoDialog.value = true
     
   } catch (error: any) {
