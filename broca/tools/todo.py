@@ -56,7 +56,7 @@ class TodoManagement(Tool):
 
     def _load_todos(self, data_file) -> list:
         if os.path.exists(data_file):
-            with open(self.data_file, "r") as f:
+            with open(data_file, "r") as f:
                 todos_data = json.load(f)
         else:
             todos_data = []
