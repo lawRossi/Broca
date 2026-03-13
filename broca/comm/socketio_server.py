@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Set
 
 from socketio import AsyncServer
 
-from .message_types import Message, MessageProtocol, MessageStatus, MessageType
+from .message_types import Message, MessageProtocol, MessageType
 
 logger = logging.getLogger(__name__)
 
@@ -80,7 +80,6 @@ class SocketIOServer:
                 content="Connected to server", sender_id="server", receiver_id=client_id
             )
             connect_msg.message_type = MessageType.CONNECT
-            connect_msg.status = MessageStatus.OK
             await self.sio.emit("message", connect_msg.to_dict(), room=sid)
             await self._trigger_event("connect", client_info)
             logger.info(f"Client {client_id} ({client_type}) connected successfully")
@@ -175,7 +174,6 @@ class SocketIOServer:
                 content=content, sender_id="server", receiver_id=client_id
             )
             ack_msg.message_type = msg_type
-            ack_msg.status = MessageStatus.OK
             ack_msg.subscription = subscription
             await self.sio.emit("message", ack_msg.to_dict(), room=sid)
 

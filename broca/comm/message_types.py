@@ -56,57 +56,6 @@ class MessageType(str, Enum):
     PERMISSION_RESPONSE = "permission_response"
 
 
-class MessageSubType(str, Enum):
-    """Subtypes for more specific message categorization"""
-
-    # User message subtypes
-    USER_INPUT = "user_input"
-    USER_COMMAND = "user_command"
-    USER_FILE = "user_file"
-
-    # Agent response subtypes
-    AGENT_TEXT = "agent_text"
-    AGENT_REASONING = "agent_reasoning"
-    AGENT_ACTION = "agent_action"
-
-    # Task subtypes
-    TASK_CREATE = "task_create"
-    TASK_UPDATE = "task_update"
-    TASK_DELETE = "task_delete"
-
-    # Tool subtypes
-    TOOL_EXECUTE = "tool_execute"
-    TOOL_SUCCESS = "tool_success"
-    TOOL_FAILURE = "tool_failure"
-
-    # Error subtypes
-    ERROR_CONNECTION = "error_connection"
-    ERROR_AUTH = "error_auth"
-    ERROR_VALIDATION = "error_validation"
-    ERROR_INTERNAL = "error_internal"
-
-
-class MessageStatus(IntEnum):
-    """Message status codes"""
-
-    # Success
-    OK = 200
-    CREATED = 201
-    ACCEPTED = 202
-
-    # Client errors
-    BAD_REQUEST = 400
-    UNAUTHORIZED = 401
-    FORBIDDEN = 403
-    NOT_FOUND = 404
-    CONFLICT = 409
-
-    # Server errors
-    INTERNAL_ERROR = 500
-    NOT_IMPLEMENTED = 501
-    SERVICE_UNAVAILABLE = 503
-
-
 @dataclass
 class Message:
     """Base message structure for all communications"""
@@ -117,8 +66,6 @@ class Message:
     timestamp: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
     # Optional fields
-    sub_type: Optional[MessageSubType] = None
-    status: Optional[MessageStatus] = None
     sender_id: Optional[str] = None
     receiver_id: Optional[str] = None
     room: Optional[str] = None
@@ -142,18 +89,6 @@ class Message:
             "timestamp": self.timestamp,
         }
 
-        if self.sub_type:
-            result["sub_type"] = (
-                self.sub_type.value
-                if isinstance(self.sub_type, MessageSubType)
-                else self.sub_type
-            )
-        if self.status:
-            result["status"] = (
-                self.status.value
-                if isinstance(self.status, MessageStatus)
-                else self.status
-            )
         if self.sender_id:
             result["sender_id"] = self.sender_id
         if self.receiver_id:
@@ -190,28 +125,10 @@ class Message:
         else:
             message_type = message_type_str
 
-        sub_type_str = data.get("sub_type")
-        sub_type: Optional[MessageSubType] = None
-        if sub_type_str:
-            try:
-                sub_type = MessageSubType(sub_type_str)
-            except ValueError:
-                sub_type = None
-
-        status_value = data.get("status")
-        status: Optional[MessageStatus] = None
-        if status_value is not None:
-            try:
-                status = MessageStatus(status_value)
-            except ValueError:
-                status = None
-
         return cls(
             message_id=data.get("message_id", str(uuid.uuid4())),
             message_type=message_type,
             timestamp=data.get("timestamp", datetime.utcnow().isoformat()),
-            sub_type=sub_type,
-            status=status,
             sender_id=data.get("sender_id"),
             receiver_id=data.get("receiver_id"),
             room=data.get("room"),
@@ -228,30 +145,18 @@ class Message:
         data = json.loads(json_str)
         return cls.from_dict(data)
 
-    def is_error(self) -> bool:
-        """Check if message represents an error"""
-        return self.status is not None and self.status.value >= 400
-
-    def is_success(self) -> bool:
-        """Check if message represents success"""
-        return self.status is not None and self.status.value < 400
-
     def __str__(self) -> str:
         """String representation for logging"""
         parts = [
             f"Message(id={self.message_id[:8]}...)",
             f"type={self.message_type.value}",
         ]
-        if self.sub_type:
-            parts.append(f"sub={self.sub_type.value}")
         if self.sender_id:
             parts.append(f"from={self.sender_id}")
         if self.receiver_id:
             parts.append(f"to={self.receiver_id}")
         if self.room:
             parts.append(f"room={self.room}")
-        if self.is_error():
-            parts.append(f"ERROR: {self.error_message}")
         return " ".join(parts)
 
 
@@ -304,7 +209,6 @@ class MessageProtocol:
         """Create a user message"""
         return Message(
             message_type=MessageType.USER_MESSAGE,
-            sub_type=MessageSubType.USER_INPUT,
             sender_id=sender_id,
             receiver_id=receiver_id,
             room=room,
@@ -328,7 +232,6 @@ class MessageProtocol:
 
         return Message(
             message_type=MessageType.AGENT_RESPONSE,
-            sub_type=MessageSubType.AGENT_TEXT,
             sender_id=sender_id,
             receiver_id=receiver_id,
             room=room,
@@ -348,8 +251,6 @@ class MessageProtocol:
         """Create an error message"""
         return Message(
             message_type=MessageType.ERROR,
-            sub_type=MessageSubType.ERROR_INTERNAL,
-            status=MessageStatus.INTERNAL_ERROR,
             sender_id=sender_id,
             receiver_id=receiver_id,
             room=room,
@@ -370,7 +271,6 @@ class MessageProtocol:
         """Create a task start message"""
         return Message(
             message_type=MessageType.TASK_START,
-            sub_type=MessageSubType.TASK_CREATE,
             sender_id=sender_id,
             receiver_id=receiver_id,
             room=room,
@@ -402,7 +302,6 @@ class MessageProtocol:
 
         return Message(
             message_type=MessageType.TASK_PROGRESS,
-            sub_type=MessageSubType.TASK_UPDATE,
             sender_id=sender_id,
             receiver_id=receiver_id,
             room=room,
@@ -426,7 +325,6 @@ class MessageProtocol:
 
         return Message(
             message_type=MessageType.TASK_COMPLETE,
-            sub_type=MessageSubType.TASK_UPDATE,
             sender_id=sender_id,
             receiver_id=receiver_id,
             room=room,
@@ -446,7 +344,6 @@ class MessageProtocol:
         """Create a task error message"""
         return Message(
             message_type=MessageType.TASK_FAILED,
-            sub_type=MessageSubType.TASK_UPDATE,
             sender_id=sender_id,
             receiver_id=receiver_id,
             room=room,
@@ -512,7 +409,6 @@ class MessageProtocol:
         """Create a tool call message"""
         return Message(
             message_type=MessageType.TOOL_CALL,
-            sub_type=MessageSubType.TOOL_EXECUTE,
             sender_id=sender_id,
             receiver_id=receiver_id,
             room=room,
@@ -535,7 +431,6 @@ class MessageProtocol:
         """Create a tool result message"""
         return Message(
             message_type=MessageType.TOOL_RESULT,
-            sub_type=MessageSubType.TOOL_SUCCESS,
             sender_id=sender_id,
             receiver_id=receiver_id,
             room=room,

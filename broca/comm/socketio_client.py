@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from socketio import AsyncClient
 
 from .message_types import (
-    Message, MessageType, MessageStatus, MessageProtocol
+    Message, MessageType, MessageProtocol
 )
 
 logger = logging.getLogger(__name__)
@@ -127,7 +127,6 @@ class SocketIOClient:
                 sender_id=self.client_id
             )
             connect_msg.message_type = MessageType.CONNECT
-            connect_msg.status = MessageStatus.OK
 
             await self.send_message(connect_msg)
 
