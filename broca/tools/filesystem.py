@@ -38,16 +38,24 @@ class ReadFile(Tool):
             file_path = Path(path).expanduser()
             encoding = parameters.get("encoding", "utf-8")
             if not file_path.exists():
-                return ToolResult(status=ToolStatus.ERROR, content=f"Error: File not found: {path}")
+                return ToolResult(
+                    status=ToolStatus.ERROR, content=f"Error: File not found: {path}"
+                )
             if not file_path.is_file():
-                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Not a file: {path}")
+                return ToolResult(
+                    status=ToolStatus.ERROR, content=f"Error: Not a file: {path}"
+                )
 
             content = file_path.read_text(encoding=encoding)
             return ToolResult(status=ToolStatus.SUCCESS, content=content)
         except PermissionError:
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}"
+            )
         except Exception as e:
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error reading file: {str(e)}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error reading file: {str(e)}"
+            )
 
 
 class WriteFile(Tool):
@@ -77,15 +85,24 @@ class WriteFile(Tool):
             path = parameters["path"]
             file_path = Path(path).expanduser()
             if file_path.exists() and not file_path.is_file():
-                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Not a file: {path}")
+                return ToolResult(
+                    status=ToolStatus.ERROR, content=f"Error: Not a file: {path}"
+                )
             content = parameters["content"]
             file_path.parent.mkdir(parents=True, exist_ok=True)
             file_path.write_text(content, encoding="utf-8")
-            return ToolResult(status=ToolStatus.SUCCESS, content=f"Successfully wrote content to {path}")
+            return ToolResult(
+                status=ToolStatus.SUCCESS,
+                content=f"Successfully wrote content to {path}",
+            )
         except PermissionError:
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}"
+            )
         except Exception as e:
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error writing file: {str(e)}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error writing file: {str(e)}"
+            )
 
 
 class EditFile(Tool):
@@ -132,9 +149,13 @@ class EditFile(Tool):
             path = parameters["path"]
             file_path = Path(path).expanduser()
             if not file_path.exists():
-                return ToolResult(status=ToolStatus.ERROR, content=f"Error: File not found: {path}")
+                return ToolResult(
+                    status=ToolStatus.ERROR, content=f"Error: File not found: {path}"
+                )
             if not file_path.is_file():
-                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Not a file: {path}")
+                return ToolResult(
+                    status=ToolStatus.ERROR, content=f"Error: Not a file: {path}"
+                )
             old_text = parameters["old_text"]
             new_text = parameters["new_text"]
             encoding = parameters.get("encoding", "utf-8")
@@ -143,21 +164,33 @@ class EditFile(Tool):
             content = file_path.read_text(encoding=encoding)
 
             if old_text not in content:
-                return ToolResult(status=ToolStatus.ERROR, content="Error: old_text not found in file. Make sure it matches exactly.")
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content="Error: old_text not found in file. Make sure it matches exactly.",
+                )
 
             # Count occurrences
             count = content.count(old_text)
             if count > 1 and not replace_all:
-                return ToolResult(status=ToolStatus.ERROR, content=f"Error: old_text appears {count} times. Please provide more context to make it unique or set replace_all to true.")
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content=f"Error: old_text appears {count} times. Please provide more context to make it unique or set replace_all to true.",
+                )
 
             new_content = content.replace(old_text, new_text)
             file_path.write_text(new_content, encoding=encoding)
 
-            return ToolResult(status=ToolStatus.SUCCESS, content=f"Successfully edited {path}")
+            return ToolResult(
+                status=ToolStatus.SUCCESS, content=f"Successfully edited {path}"
+            )
         except PermissionError:
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}"
+            )
         except Exception as e:
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error editing file: {str(e)}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error editing file: {str(e)}"
+            )
 
 
 class ListDir(Tool):
@@ -186,9 +219,14 @@ class ListDir(Tool):
             path = parameters["path"]
             dir_path = Path(path).expanduser()
             if not dir_path.exists():
-                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Directory not found: {path}")
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content=f"Error: Directory not found: {path}",
+                )
             if not dir_path.is_dir():
-                return ToolResult(status=ToolStatus.ERROR, content=f"Error: Not a directory: {path}")
+                return ToolResult(
+                    status=ToolStatus.ERROR, content=f"Error: Not a directory: {path}"
+                )
 
             items = []
             for item in sorted(dir_path.iterdir()):
@@ -196,10 +234,222 @@ class ListDir(Tool):
                 items.append(f"{prefix}{item.name}")
 
             if not items:
-                return ToolResult(status=ToolStatus.SUCCESS, content=f"Directory {path} is empty")
+                return ToolResult(
+                    status=ToolStatus.SUCCESS, content=f"Directory {path} is empty"
+                )
 
             return ToolResult(status=ToolStatus.SUCCESS, content="\n".join(items))
         except PermissionError:
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}"
+            )
         except Exception as e:
-            return ToolResult(status=ToolStatus.ERROR, content=f"Error listing directory: {str(e)}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error listing directory: {str(e)}"
+            )
+
+
+IGNORE_PATTERNS = [
+    "node_modules",
+    "__pycache__",
+    ".git",
+    "dist",
+    "build",
+    "target",
+    "vendor",
+    "bin",
+    "obj",
+    ".idea",
+    ".vscode",
+    ".zig-cache",
+    "zig-out",
+    ".coverage",
+    "coverage",
+    "vendor",
+    "tmp",
+    "temp",
+    ".cache",
+    "cache",
+    "logs",
+    ".venv",
+    "venv",
+    "env",
+]
+
+
+class TreeDir(Tool):
+    """Tool to display directory tree structure."""
+
+    @property
+    def name(self) -> str:
+        return "tree_dir"
+
+    @property
+    def description(self) -> str:
+        return "Display directory tree structure with optional ignore patterns."
+
+    @property
+    def parameters(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "path": {
+                    "type": "string",
+                    "description": "The directory path to display as tree",
+                },
+                "max_depth": {
+                    "type": "integer",
+                    "description": "Maximum depth to traverse (default: 5)",
+                    "default": 3,
+                },
+                "ignore_special": {
+                    "type": "boolean",
+                    "description": "Whether to ignore special direcoties (e.g., ['node_modules', '.git'])",
+                    "default": True,
+                },
+                "show_hidden": {
+                    "type": "boolean",
+                    "description": "Whether to show hidden files and directories",
+                    "default": False,
+                },
+                "show_files": {
+                    "type": "boolean",
+                    "description": "Whether to show files or only directories",
+                    "default": True,
+                },
+            },
+            "required": ["path"],
+        }
+
+    async def _execute(self, parameters: dict, context: ToolCallContext) -> ToolResult:
+        try:
+            path = parameters["path"]
+            dir_path = Path(path).expanduser()
+            if not dir_path.exists():
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content=f"Error: Directory not found: {path}",
+                )
+            if not dir_path.is_dir():
+                return ToolResult(
+                    status=ToolStatus.ERROR, content=f"Error: Not a directory: {path}"
+                )
+
+            max_depth = parameters.get("max_depth", 3)
+            ignore_patterns = (
+                IGNORE_PATTERNS if parameters.get("ignore_special", True) else []
+            )
+            show_hidden = parameters.get("show_hidden", False)
+            show_files = parameters.get("show_files", True)
+
+            # Build the tree structure
+            tree_lines: list = []
+            self._build_tree(
+                dir_path,
+                tree_lines,
+                prefix="",
+                is_last=True,
+                depth=0,
+                max_depth=max_depth,
+                ignore_patterns=ignore_patterns,
+                show_hidden=show_hidden,
+                show_files=show_files,
+            )
+
+            if not tree_lines:
+                return ToolResult(
+                    status=ToolStatus.SUCCESS,
+                    content=f"Directory {path} is empty or all items are ignored",
+                )
+
+            # Add header
+            header = f"Directory tree for: {path}\n"
+            if ignore_patterns:
+                header += f"Ignored patterns: {', '.join(sorted(ignore_patterns)[:5])}"
+                header += f"Ignored patterns: {', '.join(ignore_patterns[:5])}"
+                if len(ignore_patterns) > 5:
+                    header += f" and {len(ignore_patterns) - 5} more"
+                header += "\n"
+            header += "=" * 50 + "\n"
+
+            return ToolResult(
+                status=ToolStatus.SUCCESS, content=header + "\n".join(tree_lines)
+            )
+        except PermissionError:
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}"
+            )
+        except Exception as e:
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Error displaying tree: {str(e)}"
+            )
+
+    def _build_tree(
+        self,
+        dir_path: Path,
+        tree_lines: list,
+        prefix: str,
+        is_last: bool,
+        depth: int,
+        max_depth: int,
+        ignore_patterns: list,
+        show_hidden: bool,
+        show_files: bool,
+    ) -> None:
+        """Recursively build tree structure."""
+        if depth >= max_depth:
+            return
+
+        # Get all items in directory
+        try:
+            items = list(dir_path.iterdir())
+        except PermissionError:
+            tree_lines.append(f"{prefix}└── [Permission denied]")
+            return
+
+        # Filter items
+        filtered_items = []
+        for item in items:
+            # Skip hidden files if not showing hidden
+            if not show_hidden and item.name.startswith("."):
+                continue
+
+            # Skip ignored patterns
+            if any(pattern in item.name for pattern in ignore_patterns):
+                continue
+
+            # Skip files if show_files is False
+            if not show_files and not item.is_dir():
+                continue
+
+            filtered_items.append(item)
+
+        # Sort items: directories first, then files
+        filtered_items.sort(key=lambda x: (not x.is_dir(), x.name.lower()))
+
+        for i, item in enumerate(filtered_items):
+            is_last_item = i == len(filtered_items) - 1
+
+            # Determine the connector
+            connector = "└── " if is_last_item else "├── "
+
+            # Determine the icon
+            icon = "📁 " if item.is_dir() else "📄 "
+
+            # Add the current item
+            tree_lines.append(f"{prefix}{connector}{icon}{item.name}")
+
+            # If it's a directory, recurse
+            if item.is_dir():
+                extension = "    " if is_last_item else "│   "
+                self._build_tree(
+                    item,
+                    tree_lines,
+                    prefix=prefix + extension,
+                    is_last=is_last_item,
+                    depth=depth + 1,
+                    max_depth=max_depth,
+                    ignore_patterns=ignore_patterns,
+                    show_hidden=show_hidden,
+                    show_files=show_files,
+                )

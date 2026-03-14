@@ -3,7 +3,7 @@ from contextlib import AsyncExitStack
 from broca.skill_manager import SkillManager
 from broca.tools.agent_interaction import AssignTask
 from broca.tools.bash import ExecuteCode
-from broca.tools.filesystem import EditFile, ListDir, ReadFile, WriteFile
+from broca.tools.filesystem import EditFile, ListDir, ReadFile, TreeDir, WriteFile
 from broca.tools.mcp import connect_mcp_servers
 from broca.tools.skill import LoadSkill
 from broca.tools.task import TaskManagement
@@ -34,6 +34,7 @@ class ToolManager:
         self._add_tool(WriteFile())
         self._add_tool(EditFile())
         self._add_tool(ListDir())
+        self._add_tool(TreeDir())
         self._add_tool(TodoManagement())
         self._add_tool(TaskManagement())
         load_skill = LoadSkill(SkillManager())
