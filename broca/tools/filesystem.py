@@ -370,6 +370,7 @@ class TreeDir(Tool):
                 if len(ignore_patterns) > 5:
                     header += f" and {len(ignore_patterns) - 5} more"
                 header += "\n"
+            header += "max_depth: " + str(max_depth) + "\n"
             header += "=" * 50 + "\n"
 
             return ToolResult(
