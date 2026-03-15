@@ -7,21 +7,22 @@ Supports browser, command-line, VSCode plugin, and browser plugin clients.
 
 import asyncio
 import json
-import logging
-from typing import Optional, Dict, Any, Callable, List
 from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional
+
+from loguru import logger
 from socketio import AsyncClient
 
-from .message_types import (
-    Message, MessageType, MessageProtocol
-)
+from broca.session.models import Message, MessageProtocol, MessageType
 
-logger = logging.getLogger(__name__)
+logger.remove()
+logger.add("socketio.log", level="DEBUG")
 
 
 @dataclass
 class ConnectionInfo:
     """Connection information"""
+
     server_url: str
     client_id: str
     client_type: str
@@ -33,7 +34,7 @@ class ConnectionInfo:
 class SocketIOClient:
     """
     Socket.io client for multi-endpoint communication.
-    
+
     Features:
     - Connect to Socket.io server
     - Send and receive messages
@@ -42,13 +43,19 @@ class SocketIOClient:
     - Automatic reconnection
     """
 
-    def __init__(self, server_url: str = "http://localhost:8000",
-                 client_type: str = "cli", client_id: Optional[str] = None,
-                 user_id: Optional[str] = None, auto_reconnect: bool = True,
-                 reconnect_delay: float = 1.0, max_reconnect_attempts: int = 5):
+    def __init__(
+        self,
+        server_url: str = "http://localhost:8000",
+        client_type: str = "cli",
+        client_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        auto_reconnect: bool = True,
+        reconnect_delay: float = 1.0,
+        max_reconnect_attempts: int = 5,
+    ):
         """
         Initialize Socket.io client
-        
+
         Args:
             server_url: Socket.io server URL
             client_type: Client type (browser, cli, vscode, browser_plugin)
@@ -67,36 +74,35 @@ class SocketIOClient:
         self.max_reconnect_attempts = max_reconnect_attempts
 
         # Initialize Socket.io client
-        self.sio = AsyncClient(
-            logger=False,
-            engineio_logger=False
-        )
-        
+        self.sio = AsyncClient(logger=False, engineio_logger=False)
+
         # Connection info
         self.connection_info = ConnectionInfo(
             server_url=server_url,
             client_id=self.client_id,
             client_type=client_type,
-            user_id=user_id
+            user_id=user_id,
         )
-        
+
         # Event handlers
         self.event_handlers: Dict[str, List[Callable]] = {}
-        
+
         # Message callbacks
         self.message_callbacks: Dict[str, Callable] = {}
-        
+
         # Connection event for waiting on connection
         self._connect_event = asyncio.Event()
-        
+
         # Setup event handlers
         self._setup_event_handlers()
 
         # Reconnection state
         self._reconnect_task: Optional[asyncio.Task] = None
         self._should_reconnect = False
-        
-        logger.info(f"Socket.io client initialized (ID: {self.client_id}, Type: {client_type})")
+
+        logger.info(
+            f"Socket.io client initialized (ID: {self.client_id}, Type: {client_type})"
+        )
 
     def _setup_event_handlers(self):
         """Setup Socket.io event handlers"""
@@ -123,8 +129,7 @@ class SocketIOClient:
 
             # Send connection message
             connect_msg = MessageProtocol.create_user_message(
-                content="Connected to server",
-                sender_id=self.client_id
+                content="Connected to server", sender_id=self.client_id
             )
             connect_msg.message_type = MessageType.CONNECT
 
@@ -137,13 +142,13 @@ class SocketIOClient:
             """Handle disconnection from server"""
             logger.info(f"Disconnected from server at {self.server_url}")
             self.connection_info.connected = False
-            
+
             # Clear the connect event
             self._connect_event.clear()
-            
+
             # Trigger disconnect event
             await self._trigger_event("disconnect")
-            
+
             # Start reconnection if enabled
             if self.auto_reconnect and self._should_reconnect:
                 self._reconnect_task = asyncio.create_task(self._reconnect())
@@ -153,14 +158,12 @@ class SocketIOClient:
             """Handle incoming messages"""
             try:
                 # Parse message
-                if isinstance(data, str):
-                    message = Message.from_json(data)
-                else:
-                    message = Message.from_dict(data)
+                message_data = json.loads(data) if isinstance(data, str) else data
+                message = MessageProtocol.from_dict(message_data)
 
                 # Log message
                 logger.debug(f"Received message: {message}")
-                
+
                 # Handle message based on type
                 await self._handle_message(message)
 
@@ -192,8 +195,6 @@ class SocketIOClient:
             await self._handle_agent_response(message)
         elif message.message_type == MessageType.TASK_START:
             await self._handle_task_start(message)
-        elif message.message_type == MessageType.TASK_PROGRESS:
-            await self._handle_task_progress(message)
         elif message.message_type == MessageType.TASK_COMPLETE:
             await self._handle_task_complete(message)
         elif message.message_type == MessageType.TURN_START:
@@ -202,8 +203,6 @@ class SocketIOClient:
             await self._handle_turn_end(message)
         elif message.message_type == MessageType.TOOL_CALL:
             await self._handle_tool_call(message)
-        elif message.message_type == MessageType.TOOL_RESULT:
-            await self._handle_tool_result(message)
         elif message.message_type == MessageType.COMMAND:
             await self._handle_command(message)
         elif message.message_type == MessageType.COMMAND_RESULT:
@@ -232,10 +231,6 @@ class SocketIOClient:
     async def _handle_task_start(self, message: Message):
         """Handle task start"""
         await self._trigger_event("task_start", message)
-    
-    async def _handle_task_progress(self, message: Message):
-        """Handle task progress"""
-        await self._trigger_event("task_progress", message)
 
     async def _handle_task_complete(self, message: Message):
         """Handle task complete"""
@@ -253,10 +248,6 @@ class SocketIOClient:
         """Handle tool call"""
         await self._trigger_event("tool_call", message)
 
-    async def _handle_tool_result(self, message: Message):
-        """Handle tool result"""
-        await self._trigger_event("tool_result", message)
-
     async def _handle_command(self, message: Message):
         """Handle command"""
         await self._trigger_event("command", message)
@@ -267,29 +258,35 @@ class SocketIOClient:
 
     async def _handle_error(self, message: Message):
         """Handle error message"""
-        logger.error(f"Error from server: {message.error_message}")
+        logger.error(f"Error from server: {message.data.get('error_message')}")
         await self._trigger_event("error", message)
 
     async def _handle_subscribe(self, message: Message):
         """Handle subscribe acknowledgment"""
-        if message.subscription and message.subscription not in self.connection_info.subscriptions:
+        if (
+            message.subscription
+            and message.subscription not in self.connection_info.subscriptions
+        ):
             self.connection_info.subscriptions.append(message.subscription)
         await self._trigger_event("subscribe", message)
 
     async def _handle_unsubscribe(self, message: Message):
         """Handle unsubscribe acknowledgment"""
-        if message.subscription and message.subscription in self.connection_info.subscriptions:
+        if (
+            message.subscription
+            and message.subscription in self.connection_info.subscriptions
+        ):
             self.connection_info.subscriptions.remove(message.subscription)
         await self._trigger_event("unsubscribe", message)
-    
+
     async def _handle_broadcast(self, message: Message):
         """Handle broadcast message"""
         await self._trigger_event("broadcast", message)
-    
+
     async def _handle_permission_request(self, message: Message):
         """Handle permission request"""
         await self._trigger_event("permission_request", message)
-    
+
     async def _handle_permission_response(self, message: Message):
         """Handle permission response"""
         await self._trigger_event("permission_response", message)
@@ -305,7 +302,7 @@ class SocketIOClient:
 
     async def connect(self, timeout: float = 10.0):
         """Connect to server
-        
+
         Args:
             timeout: Maximum time to wait for connection to be established
         """
@@ -314,10 +311,10 @@ class SocketIOClient:
             return
 
         self._should_reconnect = True
-        
+
         # Clear the connect event before connecting
         self._connect_event.clear()
-        
+
         try:
             # Add headers for connection
             headers = {
@@ -326,14 +323,12 @@ class SocketIOClient:
             }
             if self.user_id:
                 headers["X-User-ID"] = self.user_id
-            
+
             # Connect to server
             await self.sio.connect(
-                self.server_url,
-                headers=headers,
-                transports=["websocket", "polling"]
+                self.server_url, headers=headers, transports=["websocket", "polling"]
             )
-            
+
             # Wait for the connect event to be triggered
             try:
                 await asyncio.wait_for(self._connect_event.wait(), timeout=timeout)
@@ -341,9 +336,9 @@ class SocketIOClient:
                 logger.error(f"Connection timeout after {timeout}s")
                 await self.sio.disconnect()
                 raise RuntimeError(f"Connection timeout after {timeout}s")
-            
+
             logger.info(f"Connected to server at {self.server_url}")
-            
+
         except Exception as e:
             logger.error(f"Failed to connect to server: {e}")
             if self.auto_reconnect:
@@ -360,7 +355,7 @@ class SocketIOClient:
                 await self._reconnect_task
             except asyncio.CancelledError:
                 pass
-        
+
         if self.connection_info.connected:
             await self.sio.disconnect()
             logger.info(f"Disconnected from server at {self.server_url}")
@@ -368,11 +363,11 @@ class SocketIOClient:
     async def _reconnect(self):
         """Attempt to reconnect to server"""
         attempt = 0
-        
+
         while attempt < self.max_reconnect_attempts and self._should_reconnect:
             attempt += 1
             logger.info(f"Reconnection attempt {attempt}/{self.max_reconnect_attempts}")
-            
+
             try:
                 await asyncio.sleep(self.reconnect_delay * attempt)
                 await self.connect()
@@ -383,9 +378,12 @@ class SocketIOClient:
 
         logger.error("Max reconnection attempts reached")
 
-    async def send_message(self, message: Message,
-                          callback: Optional[Callable] = None,
-                          retry_on_disconnect: bool = True) -> str:
+    async def send_message(
+        self,
+        message: Message,
+        callback: Optional[Callable] = None,
+        retry_on_disconnect: bool = True,
+    ) -> str:
         """
         Send message to server with automatic reconnection support
 
@@ -393,7 +391,7 @@ class SocketIOClient:
             message: Message to send
             callback: Optional callback for response
             retry_on_disconnect: Whether to attempt reconnection if disconnected
-            
+
         Returns:
             Message ID
         """
@@ -405,7 +403,9 @@ class SocketIOClient:
                     await self.connect()
                 except Exception as e:
                     logger.error(f"Failed to reconnect: {e}")
-                    raise RuntimeError("Not connected to server and reconnection failed")
+                    raise RuntimeError(
+                        "Not connected to server and reconnection failed"
+                    )
             else:
                 logger.error("Not connected to server")
                 raise RuntimeError("Not connected to server")
@@ -422,12 +422,14 @@ class SocketIOClient:
         max_retries = 2
         for attempt in range(max_retries):
             try:
-                await self.sio.emit("message", message.to_dict())
+                await self.sio.emit("message", MessageProtocol.to_dict(message))
                 logger.debug(f"Sent message: {message}")
                 return message.message_id
             except Exception as e:
                 if attempt < max_retries - 1:
-                    logger.warning(f"Failed to send message (attempt {attempt + 1}), retrying: {e}")
+                    logger.warning(
+                        f"Failed to send message (attempt {attempt + 1}), retrying: {e}"
+                    )
                     # Check if we're still connected
                     if not self.connection_info.connected and retry_on_disconnect:
                         try:
@@ -435,31 +437,39 @@ class SocketIOClient:
                         except Exception as reconnect_error:
                             logger.error(f"Reconnection failed: {reconnect_error}")
                 else:
-                    logger.error(f"Failed to send message after {max_retries} attempts: {e}")
+                    logger.error(
+                        f"Failed to send message after {max_retries} attempts: {e}"
+                    )
                     raise
         return ""
 
-    async def send_user_message(self, content: str, 
-                               receiver_id: Optional[str] = None,
-                               room: Optional[str] = None,
-                               subscription: Optional[str] = None,
-                               callback: Optional[Callable] = None) -> str:
+    async def send_user_message(
+        self,
+        content: str,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         """Send user message"""
         message = MessageProtocol.create_user_message(
             content=content,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
-            subscription=subscription
+            subscription=subscription,
         )
         return await self.send_message(message, callback)
 
-    async def send_agent_response(self, content: str, 
-                                 reasoning_content: Optional[str] = None,
-                                 receiver_id: Optional[str] = None,
-                                 room: Optional[str] = None,
-                                 subscription: Optional[str] = None,
-                                 callback: Optional[Callable] = None) -> str:
+    async def send_agent_response(
+        self,
+        content: str,
+        reasoning_content: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         """Send agent response"""
         message = MessageProtocol.create_agent_response(
             content=content,
@@ -467,15 +477,19 @@ class SocketIOClient:
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
-            subscription=subscription
+            subscription=subscription,
         )
         return await self.send_message(message, callback)
 
-    async def send_tool_call(self, tool_name: str, arguments: Dict[str, Any],
-                            receiver_id: Optional[str] = None,
-                            room: Optional[str] = None,
-                            subscription: Optional[str] = None,
-                            callback: Optional[Callable] = None) -> str:
+    async def send_tool_call(
+        self,
+        tool_name: str,
+        arguments: Dict[str, Any],
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         """Send tool call"""
         message = MessageProtocol.create_tool_call(
             tool_name=tool_name,
@@ -483,15 +497,19 @@ class SocketIOClient:
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
-            subscription=subscription
+            subscription=subscription,
         )
         return await self.send_message(message, callback)
 
-    async def send_turn_start(self, turn_id: str, turn_description: str,
-                             receiver_id: Optional[str] = None,
-                             room: Optional[str] = None,
-                             subscription: Optional[str] = None,
-                             callback: Optional[Callable] = None) -> str:
+    async def send_turn_start(
+        self,
+        turn_id: str,
+        turn_description: str,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         """Send turn start message"""
         message = MessageProtocol.create_turn_start(
             turn_id=turn_id,
@@ -499,15 +517,19 @@ class SocketIOClient:
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
-            subscription=subscription
+            subscription=subscription,
         )
         return await self.send_message(message, callback)
 
-    async def send_turn_end(self, turn_id: str, result: Optional[str] = None,
-                           receiver_id: Optional[str] = None,
-                           room: Optional[str] = None,
-                           subscription: Optional[str] = None,
-                           callback: Optional[Callable] = None) -> str:
+    async def send_turn_end(
+        self,
+        turn_id: str,
+        result: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         """Send turn end message"""
         message = MessageProtocol.create_turn_end(
             turn_id=turn_id,
@@ -515,16 +537,19 @@ class SocketIOClient:
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
-            subscription=subscription
+            subscription=subscription,
         )
         return await self.send_message(message, callback)
 
-    async def send_command(self, command: str, 
-                          arguments: Optional[Dict[str, Any]] = None,
-                          receiver_id: Optional[str] = None,
-                          room: Optional[str] = None,
-                          subscription: Optional[str] = None,
-                          callback: Optional[Callable] = None) -> str:
+    async def send_command(
+        self,
+        command: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         """Send command"""
         message = MessageProtocol.create_command(
             command=command,
@@ -532,16 +557,19 @@ class SocketIOClient:
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
-            subscription=subscription
+            subscription=subscription,
         )
         return await self.send_message(message, callback)
 
-    async def send_permission_request(self, message: str,
-                                       request_id: Optional[str] = None,
-                                       receiver_id: Optional[str] = None,
-                                       room: Optional[str] = None,
-                                       subscription: Optional[str] = None,
-                                       callback: Optional[Callable] = None) -> str:
+    async def send_permission_request(
+        self,
+        message: str,
+        request_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         """Send permission request"""
         msg = MessageProtocol.create_permission_request(
             message=message,
@@ -549,17 +577,19 @@ class SocketIOClient:
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
-            subscription=subscription
+            subscription=subscription,
         )
         return await self.send_message(msg, callback)
-    
 
-    async def send_permission_response(self, granted: bool,
-                                       request_id: Optional[str] = None,
-                                       receiver_id: Optional[str] = None,
-                                       room: Optional[str] = None,
-                                       subscription: Optional[str] = None,
-                                       callback: Optional[Callable] = None) -> str:
+    async def send_permission_response(
+        self,
+        granted: bool,
+        request_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         """Send permission response"""
         msg = MessageProtocol.create_permission_response(
             granted=granted,
@@ -567,33 +597,33 @@ class SocketIOClient:
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
-            subscription=subscription
+            subscription=subscription,
         )
         return await self.send_message(msg, callback)
 
-    async def subscribe(self, subscription: str,
-                       callback: Optional[Callable] = None) -> str:
+    async def subscribe(
+        self, subscription: str, callback: Optional[Callable] = None
+    ) -> str:
         """
         Subscribe to a channel
-        
+
         Args:
             subscription: Subscription name
             callback: Optional callback for subscription acknowledgment
-            
+
         Returns:
             Message ID
         """
         if not self.connection_info.connected:
             raise RuntimeError("Not connected to server")
-        
+
         message = MessageProtocol.create_subscribe(
-            subscription=subscription,
-            sender_id=self.client_id
+            subscription=subscription, sender_id=self.client_id
         )
-        
+
         if callback:
             self.message_callbacks[message.message_id] = callback
-        
+
         try:
             await self.sio.emit("subscribe", {"subscription": subscription})
             logger.info(f"Subscribed to {subscription}")
@@ -602,26 +632,26 @@ class SocketIOClient:
             logger.error(f"Failed to subscribe: {e}")
             raise
 
-    async def unsubscribe(self, subscription: str,
-                         callback: Optional[Callable] = None) -> str:
+    async def unsubscribe(
+        self, subscription: str, callback: Optional[Callable] = None
+    ) -> str:
         """
         Unsubscribe from a channel
-        
+
         Args:
             subscription: Subscription name
             callback: Optional callback for unsubscription acknowledgment
-            
+
         Returns:
             Message ID
         """
         if not self.connection_info.connected:
             raise RuntimeError("Not connected to server")
-        
+
         message = MessageProtocol.create_unsubscribe(
-            subscription=subscription,
-            sender_id=self.client_id
+            subscription=subscription, sender_id=self.client_id
         )
-        
+
         if callback:
             self.message_callbacks[message.message_id] = callback
 
@@ -633,14 +663,15 @@ class SocketIOClient:
             logger.error(f"Failed to unsubscribe: {e}")
             raise
 
-    async def broadcast(self, content: str, 
-                       subscription: Optional[str] = None,
-                       callback: Optional[Callable] = None) -> str:
+    async def broadcast(
+        self,
+        content: str,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
         """Broadcast message"""
         message = MessageProtocol.create_broadcast(
-            content=content,
-            subscription=subscription,
-            sender_id=self.client_id
+            content=content, subscription=subscription, sender_id=self.client_id
         )
         return await self.send_message(message, callback)
 
@@ -652,9 +683,11 @@ class SocketIOClient:
 
     def on(self, event_name: str):
         """Decorator to register event handlers"""
+
         def decorator(func):
             self.register_event_handler(event_name, func)
             return func
+
         return decorator
 
     def on_message(self, func: Callable):

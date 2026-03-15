@@ -1,14 +1,15 @@
 import inspect
 import json
-import logging
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set
 
 from socketio import AsyncServer
+from loguru import logger
 
-from .message_types import Message, MessageProtocol, MessageType
+from broca.session.models import Message, MessageProtocol, MessageType, MessageRole
 
-logger = logging.getLogger(__name__)
+logger.remove()
+logger.add("socketio.log", level="DEBUG")
 
 
 @dataclass
@@ -76,11 +77,14 @@ class SocketIOServer:
             self.clients[sid] = client_info
             self.client_sids[client_id] = sid
 
-            connect_msg = MessageProtocol.create_user_message(
-                content="Connected to server", sender_id="server", receiver_id=client_id
+            connect_msg = Message(
+                message_type=MessageType.CONNECT,
+                role=MessageRole.SYSTEM,
+                sender_id="server",
+                receiver_id=client_id,
+                data={"content": "Connected to server"}
             )
-            connect_msg.message_type = MessageType.CONNECT
-            await self.sio.emit("message", connect_msg.to_dict(), room=sid)
+            await self.sio.emit("message", MessageProtocol.to_dict(connect_msg), room=sid)
             await self._trigger_event("connect", client_info)
             logger.info(f"Client {client_id} ({client_type}) connected successfully")
 
@@ -104,13 +108,20 @@ class SocketIOServer:
         @self.sio.event
         async def message(sid, data):
             try:
-                message = (
-                    Message.from_json(data)
-                    if isinstance(data, str)
-                    else Message.from_dict(data)
-                )
-
-                is_valid, error_msg = MessageProtocol.validate_message(message)
+                # 解析消息数据
+                message_data = json.loads(data) if isinstance(data, str) else data
+                message = MessageProtocol.from_dict(message_data)
+                
+                # 简单的验证
+                is_valid = True
+                error_msg = None
+                if not message.message_type:
+                    is_valid = False
+                    error_msg = "Message type is required"
+                elif message.message_type == MessageType.USER_MESSAGE:
+                    if not message.data.get("content"):
+                        is_valid = False
+                        error_msg = "User message requires content"
                 if not is_valid:
                     await self._send_error(
                         sid, "VALIDATION_ERROR", error_msg, message.sender_id
@@ -123,6 +134,8 @@ class SocketIOServer:
                     sid, "PARSE_ERROR", f"Failed to parse message: {e}"
                 )
             except Exception as e:
+                import traceback
+                logger.error(traceback.format_exc())
                 await self._send_error(
                     sid, "PROCESS_ERROR", f"Error processing message: {e}"
                 )
@@ -170,12 +183,15 @@ class SocketIOServer:
                 msg_type = MessageType.UNSUBSCRIBE
                 logger.info(f"Client {client_id} unsubscribed from {subscription}")
 
-            ack_msg = MessageProtocol.create_user_message(
-                content=content, sender_id="server", receiver_id=client_id
+            ack_msg = Message(
+                message_type=msg_type,
+                role=MessageRole.SYSTEM,
+                sender_id="server",
+                receiver_id=client_id,
+                subscription=subscription,
+                data={"content": content}
             )
-            ack_msg.message_type = msg_type
-            ack_msg.subscription = subscription
-            await self.sio.emit("message", ack_msg.to_dict(), room=sid)
+            await self.sio.emit("message", MessageProtocol.to_dict(ack_msg), room=sid)
 
         except Exception as e:
             error_code = f"{'SUBSCRIBE' if subscribe else 'UNSUBSCRIBE'}_ERROR"
@@ -189,13 +205,15 @@ class SocketIOServer:
         receiver_id: Optional[str] = None,
     ):
         """Send error message to client"""
-        error_response = MessageProtocol.create_error_message(
-            error_code=error_code,
-            error_message=error_message,
+        error_response = Message(
+            message_type=MessageType.ERROR,
+            role=MessageRole.SYSTEM,
             sender_id="server",
             receiver_id=receiver_id,
+            error_code=error_code,
+            data={"error_message": error_message}
         )
-        await self.sio.emit("message", error_response.to_dict(), room=sid)
+        await self.sio.emit("message", MessageProtocol.to_dict(error_response), room=sid)
 
     async def _process_message(self, sid: str, message: Message):
         """Process incoming message"""
@@ -217,8 +235,8 @@ class SocketIOServer:
 
         # Trigger appropriate event
         event_name = (
-            message.message_type.value
-            if hasattr(message.message_type, "value")
+            message.message_type
+            if message.message_type is not None
             else "message"
         )
         await self._trigger_event(event_name, client_info, message)
@@ -230,12 +248,12 @@ class SocketIOServer:
             return
 
         sid = self.client_sids[client_id]
-        await self.sio.emit("message", message.to_dict(), room=sid)
+        await self.sio.emit("message", MessageProtocol.to_dict(message), room=sid)
         logger.debug(f"Sent message to client {client_id}")
 
     async def _send_to_room(self, room: str, message: Message):
         """Send message to room"""
-        await self.sio.emit("message", message.to_dict(), room=room)
+        await self.sio.emit("message", MessageProtocol.to_dict(message), room=room)
         logger.info(f"Sent message to room {room}")
 
     async def _send_to_subscription(self, subscription: str, message: Message):
@@ -247,14 +265,14 @@ class SocketIOServer:
         for client_id in self.subscriptions[subscription]:
             if client_id in self.client_sids:
                 await self.sio.emit(
-                    "message", message.to_dict(), room=self.client_sids[client_id]
+                    "message", MessageProtocol.to_dict(message), room=self.client_sids[client_id]
                 )
 
         logger.debug(f"Sent message to subscription {subscription}")
 
     async def _broadcast(self, message: Message):
         """Broadcast message to all clients"""
-        await self.sio.emit("message", message.to_dict())
+        await self.sio.emit("message", MessageProtocol.to_dict(message))
         logger.debug("Broadcasted message to all clients")
 
     async def _trigger_event(
@@ -315,8 +333,12 @@ class SocketIOServer:
         sender_id: str = "server",
     ):
         """Broadcast message from server"""
-        message = MessageProtocol.create_broadcast(
-            content=content, subscription=subscription, sender_id=sender_id
+        message = Message(
+            message_type=MessageType.BROADCAST,
+            role=MessageRole.SYSTEM,
+            sender_id=sender_id,
+            subscription=subscription,
+            data={"content": content}
         )
         await self.send_message(message, subscription=subscription)
 
@@ -324,8 +346,12 @@ class SocketIOServer:
         self, client_id: str, content: str, sender_id: str = "server"
     ):
         """Send message to specific client from server"""
-        message = MessageProtocol.create_user_message(
-            content=content, sender_id=sender_id, receiver_id=client_id
+        message = Message(
+            message_type=MessageType.USER_MESSAGE,
+            role=MessageRole.USER,
+            sender_id=sender_id,
+            receiver_id=client_id,
+            data={"content": content}
         )
         await self.send_message(message, client_id=client_id)
 

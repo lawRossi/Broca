@@ -13,7 +13,9 @@ from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.widgets import Input, Static
 
-from .tui_models import ChatMessage, MessageBuffer, StatusIndicator
+from broca.session.models import Message, MessageProtocol
+
+from .tui_models import MessageBuffer, StatusIndicator
 from .tui_widgets import MessageListWidget, PermissionDialog, StatusWidget
 
 
@@ -74,9 +76,9 @@ class BrocaTUIApp(App):
                 yield Input(placeholder="Type your message...", id="user-input")
         yield PermissionDialog("", id="permission-dialog")
 
-    def on_mount(self) -> None:
+    async def on_mount(self) -> None:
         """Called when the app is mounted"""
-        asyncio.create_task(self._on_mounted())
+        await self._on_mounted()
 
     async def _on_mounted(self) -> None:
         await self._show_welcome()
@@ -105,21 +107,19 @@ class BrocaTUIApp(App):
                 return
 
             await self.add_message(
-                ChatMessage(
-                    content=f"--- Loaded {len(messages)} historical messages for session {self.session_id} ---\n",
-                    display_type=ChatMessage.DisplayType.SYSTEM,
+                MessageProtocol.create_agent_system_message(
+                    f"--- Loaded {len(messages)} historical messages for session {self.session_id} ---\n"
                 )
             )
             for m in messages:
-                await self.add_session_message(m)
+                await self.add_message(m)
 
             self._history_loaded = True
         except Exception as e:
             logger.error(f"Failed to load history for session {self.session_id}: {e}")
             await self.add_message(
-                ChatMessage(
-                    content=f"Failed to load history for session {self.session_id}: {e}",
-                    display_type=ChatMessage.DisplayType.ERROR,
+                MessageProtocol.create_error_message(
+                    f"Failed to load history for session {self.session_id}: {e}"
                 )
             )
 
@@ -148,12 +148,6 @@ class BrocaTUIApp(App):
             self.status.set_agent_connected(self.agent.agent_id)
             self.query_one(StatusWidget).update_status()
 
-            await self.add_message(
-                ChatMessage(
-                    content=f"Agent initialized with session_id: {self.session_id}\n\n",
-                    display_type=ChatMessage.DisplayType.SYSTEM,
-                )
-            )
             logger.info(f"Agent initialized with session_id: {self.session_id}")
 
         except Exception as e:
@@ -167,10 +161,7 @@ class BrocaTUIApp(App):
             self.query_one(StatusWidget).update_status()
 
             await self.add_message(
-                ChatMessage(
-                    content=f"Failed to initialize agent: {e}",
-                    display_type=ChatMessage.DisplayType.ERROR,
-                )
+                MessageProtocol.create_error_message(f"Failed to initialize agent: {e}")
             )
 
     async def _show_welcome(self):
@@ -199,10 +190,7 @@ class BrocaTUIApp(App):
 ║                                                                                  ║
 ╚══════════════════════════════════════════════════════════════════════════════════╝
 """
-        welcome = ChatMessage(
-            content=broca_ascii,
-            display_type=ChatMessage.DisplayType.SYSTEM,
-        )
+        welcome = MessageProtocol.create_agent_system_message(broca_ascii)
         await self.add_message(welcome)
 
     async def _connect(self):
@@ -250,10 +238,7 @@ class BrocaTUIApp(App):
             self.status.set_disconnected()
             self.query_one(StatusWidget).update_status()
             await self.add_message(
-                ChatMessage(
-                    content=f"Connection failed: {e}",
-                    display_type=ChatMessage.DisplayType.ERROR,
-                )
+                MessageProtocol.create_error_message(f"Connection failed: {e}")
             )
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -316,9 +301,8 @@ class BrocaTUIApp(App):
         message_list.auto_scroll = not message_list.auto_scroll
         asyncio.create_task(
             self.add_message(
-                ChatMessage(
-                    content=f"Auto-scroll {'enabled' if message_list.auto_scroll else 'disabled'}",
-                    display_type=ChatMessage.DisplayType.SYSTEM,
+                MessageProtocol.create_agent_system_message(
+                    f"Auto-scroll {'enabled' if message_list.auto_scroll else 'disabled'}"
                 )
             )
         )
@@ -328,36 +312,13 @@ class BrocaTUIApp(App):
         await self.message_buffer.clear()
         message_list = self.query_one("#message-list", MessageListWidget)
         await message_list.clear_messages()
-        await self.add_message(
-            ChatMessage(
-                content="Chat history cleared",
-                display_type=ChatMessage.DisplayType.SYSTEM,
-            )
-        )
 
-    async def add_message(self, message: ChatMessage):
-        """Add a ChatMessage to the display"""
+    async def add_message(self, message: Message):
+        """Add a Message to the display"""
         await self.message_buffer.add_message(message)
         message_list = self.query_one("#message-list", MessageListWidget)
         message_list.add_message(message)
         await self._trigger_event("message_added", message)
-
-    async def add_session_message(
-        self, message: Any, display_type: Optional[ChatMessage.DisplayType] = None
-    ):
-        """
-        Add a session message to the display
-
-        Args:
-            message: A session message object (e.g., Broca.session.models.Message)
-            display_type: Optional display type override
-        """
-        await self.message_buffer.add_session_message(message, display_type)
-        chat_message = ChatMessage.from_session_message(message, display_type)
-        if chat_message:
-            message_list = self.query_one("#message-list", MessageListWidget)
-            message_list.add_message(chat_message)
-            await self._trigger_event("message_added", chat_message)
 
     async def handle_command(self, command: str):
         """Handle CLI commands"""
@@ -379,9 +340,8 @@ class BrocaTUIApp(App):
             await commands[cmd](args)
         else:
             await self.add_message(
-                ChatMessage(
-                    content=f"Unknown command: {cmd}",
-                    display_type=ChatMessage.DisplayType.ERROR,
+                MessageProtocol.create_error_message(
+                    f"Unknown command: {cmd}", error_code="unknown_command"
                 )
             )
             await self.cmd_help([])
@@ -402,9 +362,7 @@ Keyboard shortcuts:
   Ctrl+L     - Clear chat
   Ctrl+S     - Toggle auto-scroll
   Ctrl+C     - Quit"""
-        await self.add_message(
-            ChatMessage(content=help_text, display_type=ChatMessage.DisplayType.SYSTEM)
-        )
+        await self.add_message(MessageProtocol.create_agent_system_message(help_text))
 
     async def cmd_clear(self, args):
         """Clear chat history"""
@@ -417,17 +375,11 @@ Keyboard shortcuts:
   Client ID: {self.client_id}
   Status: {self.status.get_status_text()}
   Messages: {len(self.message_buffer)}"""
-        await self.add_message(
-            ChatMessage(
-                content=status_info, display_type=ChatMessage.DisplayType.SYSTEM
-            )
-        )
+        await self.add_message(MessageProtocol.create_agent_system_message(status_info))
 
     async def cmd_quit(self, args):
         """Quit the application"""
-        await self.add_message(
-            ChatMessage(content="Goodbye!", display_type=ChatMessage.DisplayType.SYSTEM)
-        )
+        await self.add_message(MessageProtocol.create_agent_system_message("Goodbye!"))  # type: ignore
         await self._disconnect()
         await asyncio.sleep(0.1)  # Small delay to allow message to be displayed
         # Schedule exit on the main event loop
@@ -437,10 +389,7 @@ Keyboard shortcuts:
         """Show command history"""
         if not self.input_history:
             await self.add_message(
-                ChatMessage(
-                    content="No command history",
-                    display_type=ChatMessage.DisplayType.SYSTEM,
-                )
+                MessageProtocol.create_agent_system_message("No command history")
             )
             return
 
@@ -448,38 +397,29 @@ Keyboard shortcuts:
             f"{i + 1}. {cmd}" for i, cmd in enumerate(self.input_history)
         )
         await self.add_message(
-            ChatMessage(
-                content=history_text, display_type=ChatMessage.DisplayType.SYSTEM
-            )
+            MessageProtocol.create_agent_system_message(history_text)
         )
 
     async def cmd_abort(self, args):
         """Send abort command to stop the current operation"""
         if not self.client or not self.client.is_connected():
             await self.add_message(
-                ChatMessage(
-                    content="Not connected to server",
-                    display_type=ChatMessage.DisplayType.ERROR,
-                )
+                MessageProtocol.create_error_message("Not connected to server")
             )
             return
 
         try:
             await self.client.send_command("abort", subscription=self.session_id)
             await self.add_message(
-                ChatMessage(
-                    content="Abort command sent",
-                    display_type=ChatMessage.DisplayType.SYSTEM,
-                )
+                MessageProtocol.create_agent_system_message("Abort command sent")
             )
             logger.info(f"Abort command sent to {self.session_id}.")
 
         except Exception as e:
             logger.error(f"Failed to send abort command: {e}")
             await self.add_message(
-                ChatMessage(
-                    content=f"Failed to send abort command: {e}",
-                    display_type=ChatMessage.DisplayType.ERROR,
+                MessageProtocol.create_error_message(
+                    f"Failed to send abort command: {e}", error_code="abort_error"
                 )
             )
 
@@ -487,31 +427,23 @@ Keyboard shortcuts:
         """Send a message to the server"""
         if not self.client or not self.client.is_connected():
             await self.add_message(
-                ChatMessage(
-                    content="Not connected to server",
-                    display_type=ChatMessage.DisplayType.ERROR,
-                )
+                MessageProtocol.create_error_message("Not connected to server")
             )
             return
 
         # Add user message to display
-        await self.add_message(
-            ChatMessage(content=content, display_type=ChatMessage.DisplayType.USER)
-        )
+        await self.add_message(MessageProtocol.create_user_message(content))
 
         try:
             # Get agent ID
             agent_id = self.status.agent_id
-            logger.info(agent_id)
+            logger.info(f"sent message to {agent_id}, content: {content}")
             await self.client.send_user_message(content=content, receiver_id=agent_id)
 
         except Exception as e:
             logger.error(f"Failed to send message: {e}")
             await self.add_message(
-                ChatMessage(
-                    content=f"Failed to send message: {e}",
-                    display_type=ChatMessage.DisplayType.ERROR,
-                )
+                MessageProtocol.create_error_message(f"Failed to send message: {e}")
             )
 
     async def _disconnect(self):
@@ -525,10 +457,7 @@ Keyboard shortcuts:
         self.status.set_disconnected()
         self.query_one(StatusWidget).update_status()
         await self.add_message(
-            ChatMessage(
-                content="Disconnected from server",
-                display_type=ChatMessage.DisplayType.SYSTEM,
-            )
+            MessageProtocol.create_agent_system_message("Disconnected from server")
         )
 
     def register_event_handler(self, event_name: str, func: Callable):
@@ -550,10 +479,7 @@ Keyboard shortcuts:
     async def on_connect(self):
         """Handle connection event"""
         await self.add_message(
-            ChatMessage(
-                content="Connected to server",
-                display_type=ChatMessage.DisplayType.SYSTEM,
-            )
+            MessageProtocol.create_agent_system_message("Connected to server")
         )
 
     async def on_disconnect(self):
@@ -561,26 +487,20 @@ Keyboard shortcuts:
         self.status.set_disconnected()
         self.query_one(StatusWidget).update_status()
         await self.add_message(
-            ChatMessage(
-                content="Disconnected from server",
-                display_type=ChatMessage.DisplayType.SYSTEM,
-            )
+            MessageProtocol.create_agent_system_message("Disconnected from server")
         )
 
     async def on_agent_response(self, message):
         """Handle agent response"""
         content = message.data.get("content", "")
-        await self.add_message(
-            ChatMessage(content=content, display_type=ChatMessage.DisplayType.ASSISTANT)
-        )
+        await self.add_message(MessageProtocol.create_agent_response(content))
 
     async def on_tool_call(self, message):
         """Handle tool call"""
         tool_name = message.data.get("tool_name", "unknown")
         await self.add_message(
-            ChatMessage(
-                content=f"Calling tool: {tool_name}",
-                display_type=ChatMessage.DisplayType.TOOL_CALL,
+            MessageProtocol.create_tool_call(
+                tool_name, message.data.get("arguments", {})
             )
         )
 
@@ -589,10 +509,7 @@ Keyboard shortcuts:
         self.status.set_agent_running()
         self.query_one(StatusWidget).update_status()
         await self.add_message(
-            ChatMessage(
-                content="Assistant is thinking...",
-                display_type=ChatMessage.DisplayType.SYSTEM,
-            )
+            MessageProtocol.create_agent_system_message("Turn started")
         )
 
     async def on_turn_end(self, message):
@@ -639,9 +556,4 @@ Keyboard shortcuts:
     async def on_error(self, data):
         """Handle error event"""
         error_msg = str(data)
-        await self.add_message(
-            ChatMessage(
-                content=f"Error: {error_msg}",
-                display_type=ChatMessage.DisplayType.ERROR,
-            )
-        )
+        await self.add_message(MessageProtocol.create_error_message(error_msg))

@@ -6,13 +6,16 @@ replacing command-line interaction with multi-endpoint communication.
 """
 
 import asyncio
-import logging
 from typing import Optional
 
-from .message_types import MessageProtocol
+from loguru import logger
+
+from broca.session.models import Message, MessageRole, MessageType
+
 from .socketio_client import SocketIOClient
 
-logger = logging.getLogger(__name__)
+logger.remove()
+logger.add("socketio.log", level="DEBUG")
 
 
 class AgentCommunicator(SocketIOClient):
@@ -64,13 +67,17 @@ class AgentCommunicator(SocketIOClient):
         subscription: Optional[str] = None,
     ) -> str:
         """Send task start message"""
-        message = MessageProtocol.create_task_start(
-            task_id=task_id,
-            task_description=task_description,
+        message = Message(
+            message_type=MessageType.TASK_START,
+            role=MessageRole.AGENT,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
             subscription=subscription,
+            data={
+                "task_id": task_id,
+                "task_description": task_description,
+            },
         )
         return await self.send_message(message)
 
@@ -83,13 +90,18 @@ class AgentCommunicator(SocketIOClient):
         subscription: Optional[str] = None,
     ) -> str:
         """Send task complete message"""
-        message = MessageProtocol.create_task_complete(
-            task_id=task_id,
-            result=result,
+        data = {"task_id": task_id}
+        if result:
+            data["result"] = result
+
+        message = Message(
+            message_type=MessageType.TASK_COMPLETE,
+            role=MessageRole.AGENT,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
             subscription=subscription,
+            data=data,
         )
         return await self.send_message(message)
 
@@ -102,13 +114,15 @@ class AgentCommunicator(SocketIOClient):
         subscription: Optional[str] = None,
     ) -> str:
         """Send task error message"""
-        message = MessageProtocol.create_task_error(
-            task_id=task_id,
-            error_message=error_message,
+        message = Message(
+            message_type=MessageType.TASK_FAILED,
+            role=MessageRole.AGENT,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
             subscription=subscription,
+            error_code=task_id,
+            data={"error_message": error_message, "task_id": task_id},
         )
         return await self.send_message(message)
 

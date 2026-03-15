@@ -98,6 +98,8 @@ async def main():
     # setup tables
     await db_manager.init_tables()
 
+    logger.debug("db tables created")
+
     # Create and run TUI
     tui = TUI(
         server_url=args.server,
@@ -107,6 +109,8 @@ async def main():
         session_id=args.session,
         workspace=args.workspace,
     )
+
+    logger.debug("tui initialized")
 
     try:
         await tui.run()

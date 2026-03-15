@@ -9,6 +9,11 @@ import subprocess
 import sys
 from pathlib import Path
 
+from loguru import logger
+
+logger.remove()
+logger.add("cli.log", level="DEBUG")
+
 
 def get_version():
     """Get the current version of Broca"""
@@ -36,16 +41,17 @@ def get_web_frontend_path():
 def run_tui():
     """Launch the Text User Interface"""
     try:
+        logger.debug("Starting TUI")
         from broca.cli.tui import main as tui_main
 
         asyncio.run(tui_main())
     except ImportError as e:
-        print(f"Error: Could not import TUI module: {e}")
+        logger.error(f"Error: Could not import TUI module: {e}")
         sys.exit(1)
     except KeyboardInterrupt:
         print("\nGoodbye!")
     except Exception as e:
-        print(f"Error launching TUI: {e}")
+        logger.error(f"Error launching TUI: {e}")
         sys.exit(1)
 
 

@@ -283,22 +283,29 @@ class MessageService(BaseService[Message]):
         agent_id: str,
         role: MessageRole,
         content: Optional[str] = None,
-        message_type: MessageType = MessageType.TEXT,
+        message_type: MessageType = MessageType.USER_MESSAGE,
         sequence_number: int = 1,
         status: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
     ) -> Message:
         """创建新消息"""
+        # 构建data字段
+        message_data = data or {}
+        if content:
+            message_data["content"] = content
+        if status:
+            message_data["status"] = status
+        
         return await self.create(
             message_id=message_id,
             session_id=session_id,
             turn_id=turn_id,
             agent_id=agent_id,
             role=role,
-            content=content,
             message_type=message_type,
             sequence_number=sequence_number,
             timestamp=datetime.utcnow(),
-            status=status,
+            data=message_data,
         )
 
     async def get_messages_by_session(self, session_id: str) -> List[Message]:

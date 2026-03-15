@@ -10,11 +10,9 @@ from loguru import logger
 
 from broca.agent_configs import AgentConfig
 from broca.comm.agent_communicator import AgentCommunicator
-from broca.comm.message_types import Message
-from broca.comm.message_types import MessageType as CommMessageType
 from broca.context import Context
 from broca.llm import LLMClient
-from broca.session import MessageRole, MessageType, SessionManager
+from broca.session import Message, MessageRole, MessageType, SessionManager
 from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
 from broca.tools.tool_manager import ToolManager
 
@@ -232,22 +230,22 @@ class SocketIOAgent(Agent):
         while self.running:
             try:
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
-                if message.message_type == CommMessageType.USER_MESSAGE:
+                if message.message_type == MessageType.USER_MESSAGE:
                     content = message.data.get("content")
                     await self.run_async(content, message.message_id)
-                elif message.message_type == CommMessageType.TASK_START:
+                elif message.message_type == MessageType.TASK_START:
                     task_id = message.data.get("task_id")
                     task = message.data.get("task_description")
                     assigner = message.data.get("assigner")
                     await self._handle_task(task_id, task, assigner)
-                elif message.message_type == CommMessageType.TASK_COMPLETE:
+                elif message.message_type == MessageType.TASK_COMPLETE:
                     task_id = message.data.get("task_id")
                     result = message.data.get("result")
                     logger.info(f"Received task result of task {task_id}: {result}")
                     await self.run_async(result)
-                elif message.message_type == CommMessageType.TASK_FAILED:
+                elif message.message_type == MessageType.TASK_FAILED:
                     task_id = message.data.get("task_id")
-                    error_message = message.error_message
+                    error_message = message.data.get("error_message")
                     logger.error(
                         f"Received task error of task {task_id}: {error_message}"
                     )
@@ -357,7 +355,7 @@ class SocketIOAgent(Agent):
                 await self.session_manager.save_message(
                     role=MessageRole.ASSISTANT,
                     content=msg_congent,
-                    message_type=MessageType.TEXT,
+                    message_type=MessageType.AGENT_RESPONSE,
                     turn_id=self.turn_id,
                     agent_id=self.agent_id,
                 )
@@ -384,10 +382,9 @@ class SocketIOAgent(Agent):
 
             tool_name = tool_call.function.name
             arguments = tool_call.function.arguments
-            status: ToolStatus = ToolStatus.ERROR
             if tool_name not in self.tool_mapping:
                 logger.error(f"Tool '{tool_name}' not found.")
-                result = ToolResult(
+                tool_result = ToolResult(
                     status=ToolStatus.ERROR, content=f"Tool {tool_name} not found"
                 )
             else:
@@ -413,7 +410,6 @@ class SocketIOAgent(Agent):
                         status=ToolStatus.ERROR,
                         content=f"Tool {tool_name} execution timed out",
                     )
-                    status = ToolStatus.ERROR
                 except asyncio.CancelledError:
                     logger.info("Tool execution cancelled by user")
                     return
@@ -422,7 +418,6 @@ class SocketIOAgent(Agent):
                     tool_result = ToolResult(
                         status=ToolStatus.ERROR, content=f"Tool execution failed: {e}"
                     )
-                    status = ToolStatus.ERROR
 
             tool_call_result = {
                 "role": "tool",
@@ -437,11 +432,17 @@ class SocketIOAgent(Agent):
                 try:
                     await self.session_manager.save_message(
                         role=MessageRole.TOOL,
-                        content=json.dumps(tool_call_result, ensure_ascii=False),
-                        message_type=MessageType.TOOL_RESULT,
+                        content=None,  # content现在在data中
+                        message_type=MessageType.TOOL_CALL,
                         turn_id=self.turn_id,
                         agent_id=self.agent_id,
-                        status=status,
+                        data={
+                            "content": json.dumps(tool_call_result, ensure_ascii=False),
+                            "action": "result",
+                            "tool_name": tool_name,
+                            "result": tool_result.content,
+                            "status": tool_result.status,
+                        }
                     )
                 except Exception as save_error:
                     logger.error(f"Failed to save tool result: {save_error}")
@@ -492,7 +493,7 @@ class SocketIOAgent(Agent):
                         await self.session_manager.save_message(
                             role=MessageRole.USER,
                             content=msg_content,
-                            message_type=MessageType.TEXT,
+                            message_type=MessageType.USER_MESSAGE,
                             turn_id=turn_id,
                             agent_id=self.agent_id,
                             message_id=message_id,
