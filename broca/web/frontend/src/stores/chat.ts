@@ -269,7 +269,7 @@ export const useChatStore = defineStore('chat', () => {
     
     // 过滤不需要显示的消息类型
     const filteredTypes = [
-      'turn_start', 'turn_end', 'command', 'permission_request',
+      'turn_start', 'turn_end', 'command', 'permission_request', 'permission_response',
       'subscribe', 'unsubscribe', 'connect', 'disconnect',
       'ping', 'pong', 'task_start', 'task_complete', 'task_error'
     ]
@@ -277,7 +277,7 @@ export const useChatStore = defineStore('chat', () => {
     if (filteredTypes.includes(message.message_type)) {
       return null
     }
-    
+
     // 过滤连接/订阅相关的系统消息
     const contentStr = message.data?.content ?? ''
     if (typeof contentStr === 'string' && (
