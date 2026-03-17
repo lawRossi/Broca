@@ -126,7 +126,6 @@ export const useChatStore = defineStore('chat', () => {
   const parseMention = (text: string): { targetAgentId: string | null, cleanText: string } => {
     // 如果agents列表为空，直接返回
     if (!agents.value || agents.value.length === 0) {
-      console.log('agents列表为空，无法解析mention')
       return { targetAgentId: null, cleanText: text }
     }
   
@@ -303,16 +302,6 @@ export const useChatStore = defineStore('chat', () => {
       )
       
       if (existingIndex !== -1) {
-        console.log('🔧 合并TOOL_CALL消息:', {
-          toolCallId,
-          existingMessageId: messages.value[existingIndex].message_id,
-          newMessageId: message.message_id,
-          existingHasResult: messages.value[existingIndex].data?.result !== undefined,
-          newHasResult: message.data?.result !== undefined,
-          existingData: messages.value[existingIndex].data,
-          newData: message.data
-        })
-        
         // 合并消息：直接更新现有消息的data字段
         // 这样可以保持Vue的响应性
         const existingMessage = messages.value[existingIndex]
@@ -322,9 +311,7 @@ export const useChatStore = defineStore('chat', () => {
           ...existingMessage.data,
           ...message.data
         }
-        
-        console.log('🔧 合并后的data:', mergedData)
-        
+                
         // 直接更新现有消息的data字段
         // 在Vue 3中，我们需要确保触发响应式更新
         // 由于existingMessage是响应式对象，直接赋值会触发更新
@@ -569,7 +556,6 @@ export const useChatStore = defineStore('chat', () => {
 
     // 解析@mention
     const { targetAgentId, cleanText } = parseMention(text)
-    console.log(targetAgentId, cleanText)
     
     // 检查cleanText是否为空或只包含空格
     if (!cleanText.trim()) {
@@ -578,10 +564,6 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     input.value = ''
-
-    console.log('发送消息，原始文本:', text)
-    console.log('当前agents列表:', agents.value)
-    console.log('当前默认agentId:', agentId.value)
 
     const targetAgent = targetAgentId || agentId.value
 

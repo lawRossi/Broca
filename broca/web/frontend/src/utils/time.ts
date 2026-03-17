@@ -7,8 +7,24 @@
  * @param date 日期对象或时间戳字符串
  * @returns 北京时间对象
  */
-export const toBeijingTime = (date: Date | string | number): Date => {
-  const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
+export const toBeijingTime = (date: Date | string | number | null | undefined): Date => {
+  // 处理 null 和 undefined
+  if (date === null || date === undefined) {
+    return new Date()
+  }
+  
+  let d: Date
+  if (typeof date === 'string' || typeof date === 'number') {
+    d = new Date(date)
+  } else {
+    d = date
+  }
+  
+  // 检查是否是无效日期
+  if (isNaN(d.getTime())) {
+    return new Date()
+  }
+  
   // 转换为北京时间 (UTC+8)
   return new Date(d.getTime() + 8 * 60 * 60 * 1000)
 }
@@ -20,7 +36,7 @@ export const toBeijingTime = (date: Date | string | number): Date => {
  * @returns 格式化的北京时间字符串
  */
 export const formatBeijingTime = (
-  date: Date | string | number,
+  date: Date | string | number | null | undefined,
   options: Intl.DateTimeFormatOptions = {}
 ): string => {
   try {
@@ -41,6 +57,9 @@ export const formatBeijingTime = (
     return beijingTime.toLocaleString('zh-CN', defaultOptions)
   } catch (error) {
     console.error('Error formatting Beijing time:', error)
+    if (!date) {
+      return '-'
+    }
     const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
     return d.toLocaleString('zh-CN')
   }
@@ -51,7 +70,7 @@ export const formatBeijingTime = (
  * @param date 日期对象或时间戳字符串
  * @returns 简化的北京时间字符串
  */
-export const formatBeijingTimeShort = (date: Date | string | number): string => {
+export const formatBeijingTimeShort = (date: Date | string | number | null | undefined): string => {
   try {
     const beijingTime = toBeijingTime(date)
     
@@ -86,6 +105,9 @@ export const formatBeijingTimeShort = (date: Date | string | number): string => 
     }
   } catch (error) {
     console.error('Error formatting Beijing time short:', error)
+    if (!date) {
+      return '-'
+    }
     const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
     return d.toLocaleTimeString()
   }
@@ -96,7 +118,7 @@ export const formatBeijingTimeShort = (date: Date | string | number): string => 
  * @param date 日期对象或时间戳字符串
  * @returns 格式化的日期字符串
  */
-export const formatBeijingDate = (date: Date | string | number): string => {
+export const formatBeijingDate = (date: Date | string | number | null | undefined): string => {
   try {
     const beijingTime = toBeijingTime(date)
     
@@ -119,6 +141,9 @@ export const formatBeijingDate = (date: Date | string | number): string => {
     }
   } catch (error) {
     console.error('Error formatting Beijing date:', error)
+    if (!date) {
+      return '-'
+    }
     const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
     return d.toLocaleDateString('zh-CN')
   }

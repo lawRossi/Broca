@@ -274,6 +274,7 @@ IGNORE_PATTERNS = [
     ".venv",
     "venv",
     "env",
+    ".pnpm"
 ]
 
 
