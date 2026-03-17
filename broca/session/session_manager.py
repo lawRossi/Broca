@@ -153,7 +153,6 @@ class SessionManager:
             turn_id: 关联的turn ID
             agent_id: 关联的agent ID
             message_id: 可选的消息ID
-            status: 状态
             data: 额外的数据字段
 
         Returns:

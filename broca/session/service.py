@@ -292,8 +292,6 @@ class MessageService(BaseService[Message]):
         message_data = data or {}
         if content:
             message_data["content"] = content
-        if status:
-            message_data["status"] = status
         
         return await self.create(
             message_id=message_id,
