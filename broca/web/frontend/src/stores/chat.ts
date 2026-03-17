@@ -3,32 +3,9 @@ import { ref, computed, reactive, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores'
-import { BrocaSocketClient, type BrocaMessage } from '@/api/brocaSocket'
+import { BrocaSocketClient, type Message } from '@/api/brocaSocket'
 import { sessionApi, type Agent as SessionAgent } from '@/api/session'
 
-export const DisplayType = {
-  USER: 'user',
-  ASSISTANT: 'assistant',
-  SYSTEM: 'system',
-  ERROR: 'error',
-  THINKING: 'thinking',
-  TOOL_CALL: 'tool_call',
-} as const
-
-export type DisplayType = typeof DisplayType[keyof typeof DisplayType]
-
-export type UiMessage = {
-  id: string
-  ts: string
-  type: string
-  displayType: DisplayType
-  sender?: string
-  receiver?: string
-  subscription?: string
-  content?: string
-  raw: BrocaMessage
-  showParameters?: boolean
-}
 
 export type AgentStatus = 'idle' | 'running' | 'connecting' | 'disconnected'
 
@@ -83,7 +60,8 @@ export const useChatStore = defineStore('chat', () => {
     userId: computed(() => userStore.userId || undefined),
   })
 
-  const uiMessages = ref<UiMessage[]>([])
+  const messages = ref<Message[]>([])
+  const messageStates = ref<Map<string, { showParameters: boolean; showResult: boolean }>>(new Map())
 
   // 更新特定agent的状态
   const updateAgentStatus = (agentId: string, status: AgentStatus) => {
@@ -191,23 +169,19 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const filteredMessages = computed(() => {
-    return uiMessages.value.filter(msg => {
-      switch (msg.displayType) {
-        case DisplayType.USER:
-          return messageFilters.showUser
-        case DisplayType.ASSISTANT:
-          return messageFilters.showAssistant
-        case DisplayType.SYSTEM:
-          return messageFilters.showSystem
-        case DisplayType.ERROR:
-          return messageFilters.showError
-        case DisplayType.THINKING:
-          return messageFilters.showAssistant
-        case DisplayType.TOOL_CALL:
-          return messageFilters.showAssistant
-        default:
-          return true
+    return messages.value.filter(msg => {
+      if (msg.message_type === 'user_message') {
+        return messageFilters.showUser
+      } else if (msg.message_type === 'agent_response') {
+        return messageFilters.showAssistant
+      } else if (msg.message_type === 'system_message' || msg.role === 'system') {
+        return messageFilters.showSystem
+      } else if (msg.message_type === 'error' || msg.message_type === 'agent_error') {
+        return messageFilters.showError
+      } else if (msg.message_type === 'tool_call') {
+        return messageFilters.showAssistant
       }
+      return true
     })
   })
 
@@ -258,264 +232,169 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const toggleToolParameters = (messageId: string) => {
-    const message = uiMessages.value.find(m => m.id === messageId)
-    if (message && message.displayType === DisplayType.TOOL_CALL) {
-      message.showParameters = !message.showParameters
+    const currentState = messageStates.value.get(messageId)
+    if (currentState) {
+      messageStates.value.set(messageId, {
+        ...currentState,
+        showParameters: !currentState.showParameters
+      })
+    } else {
+      messageStates.value.set(messageId, {
+        showParameters: true,
+        showResult: false
+      })
     }
   }
 
-  const parseMessageContent = (content: string | undefined): string => {
-    if (!content) return ''
-    try {
-      const parsed = JSON.parse(content)
-      if (parsed.tool_calls && Array.isArray(parsed.tool_calls) && parsed.tool_calls.length > 0) {
-        return JSON.stringify(parsed, null, 2)
-      }
-      return parsed.content || JSON.stringify(parsed, null, 2)
-    } catch {
-      return content
+  const toggleToolResult = (messageId: string) => {
+    const currentState = messageStates.value.get(messageId)
+    if (currentState) {
+      messageStates.value.set(messageId, {
+        ...currentState,
+        showResult: !currentState.showResult
+      })
+    } else {
+      messageStates.value.set(messageId, {
+        showParameters: false,
+        showResult: true
+      })
     }
   }
 
-  const normalizeToBrocaMessage = (msg: any): BrocaMessage => {
-    if (msg.sender_id !== undefined) {
-      return msg as BrocaMessage
+
+
+  // 处理消息，决定是否显示
+  const processMessage = (msg: any): Message | null => {
+    const message = msg as Message
+    
+    // 过滤不需要显示的消息类型
+    const filteredTypes = [
+      'turn_start', 'turn_end', 'command', 'permission_request', 'permission_response',
+      'subscribe', 'unsubscribe', 'connect', 'disconnect',
+      'ping', 'pong', 'task_start', 'task_complete', 'task_error'
+    ]
+    
+    if (filteredTypes.includes(message.message_type)) {
+      return null
     }
-    let message_type = msg.message_type
-    if (msg.message_type === 'text') {
-      if (msg.role == 'user') {
-        message_type = 'user_message'
-      } else if (msg.role == 'assistant') {
-        message_type = 'agent_response'
-      }
+
+    // 过滤连接/订阅相关的系统消息
+    const contentStr = message.data?.content ?? ''
+    if (typeof contentStr === 'string' && (
+      contentStr.toLowerCase().includes('connected to') || 
+      contentStr.toLowerCase().includes('subscribed to')
+    )) {
+      return null
     }
-  
-    return {
-      message_id: msg.message_id,
-      message_type: message_type,
-      timestamp: msg.timestamp,
-      sender_id: msg.role === 'user' ? 'user' : msg.agent_id,
-      receiver_id: msg.role === 'user' ? msg.agent_id : 'user',
-      subscription: msg.session_id,
-      data: msg.data || { content: msg.content },
-    }
+    
+    return message
   }
 
-  const convertToUiMessages = (msg: any, sessionId?: string): UiMessage[] => {
-    const normalized = normalizeToBrocaMessage(msg)
-
-    if (normalized.message_type === 'turn_start' || normalized.message_type === 'turn_end') {
-      return []
-    }
-
-    if (normalized.message_type === 'command') {
-      return []
-    }
-
-    if (normalized.message_type === 'permission_request') {
-      return []
-    }
-
-    const contentStr = normalized.data?.content ?? normalized.data?.message ?? ''
-    if (typeof contentStr === 'string' && (contentStr.toLowerCase().includes('connected to') || contentStr.toLowerCase().includes('subscribed to'))) {
-      return []
-    }
-
-    if ((normalized.message_type === 'agent_response' || normalized.sender_id === 'assistant') && normalized.data?.content) {
-      try {
-        const contentObj = JSON.parse(normalized.data.content)
-
-        if (contentObj.tool_calls && Array.isArray(contentObj.tool_calls) && contentObj.tool_calls.length > 0) {
-          const results: UiMessage[] = []
-
-          if (contentObj.content || contentObj.reasoning_content) {
-            let assistantContent = ''
-            if (contentObj.content) {
-              assistantContent = contentObj.content
-            }
-            if (contentObj.reasoning_content) {
-              if (assistantContent) {
-                assistantContent += '\n\n推理过程:\n' + contentObj.reasoning_content
-              } else {
-                assistantContent = '推理过程:\n' + contentObj.reasoning_content
-              }
-            }
-
-            results.push({
-              id: `${normalized.message_id}_content`,
-              ts: normalized.timestamp,
-              type: normalized.message_type,
-              displayType: DisplayType.ASSISTANT,
-              sender: normalized.sender_id,
-              receiver: normalized.receiver_id,
-              subscription: normalized.subscription || sessionId,
-              content: assistantContent,
-              raw: normalized,
-              showParameters: false           
-            })
-          }
-
-          contentObj.tool_calls.forEach((toolCall: any, index: number) => {
-            let toolName = 'unknown_tool'
-            let argumentsData = {}
-
-            if (toolCall.function) {
-              toolName = toolCall.function.name || toolName
-              try {
-                argumentsData = JSON.parse(toolCall.function.arguments || '{}')
-              } catch (e) {
-                argumentsData = { raw_arguments: toolCall.function.arguments }
-              }
-            }
-
-            results.push({
-              id: `${normalized.message_id}_toolcall_${index}`,
-              ts: normalized.timestamp,
-              type: 'tool_call',
-              displayType: DisplayType.TOOL_CALL,
-              sender: normalized.sender_id,
-              receiver: normalized.receiver_id,
-              subscription: normalized.subscription || sessionId,
-              content: toolName,
-              raw: {
-                message_id: `${normalized.message_id}_toolcall_${index}`,
-                timestamp: normalized.timestamp,
-                message_type: 'tool_call',
-                sender_id: normalized.sender_id,
-                receiver_id: normalized.receiver_id,
-                subscription: normalized.subscription || sessionId,
-                data: {
-                  tool_name: toolName,
-                  arguments: argumentsData
-                }
-              },
-              showParameters: false
-            })
+  // 添加消息到列表，处理TOOL_CALL消息的合并
+  const addMessageToList = (message: Message) => {
+    // 如果是TOOL_CALL消息，检查是否有相同tool_call_id的消息需要合并
+    if (message.message_type === 'tool_call' && message.data?.tool_call_id) {
+      const toolCallId = message.data.tool_call_id
+      
+      // 查找是否已经存在相同tool_call_id的消息
+      const existingIndex = messages.value.findIndex(msg => 
+        msg.message_type === 'tool_call' && 
+        msg.data?.tool_call_id === toolCallId
+      )
+      
+      if (existingIndex !== -1) {
+        console.log('🔧 合并TOOL_CALL消息:', {
+          toolCallId,
+          existingMessageId: messages.value[existingIndex].message_id,
+          newMessageId: message.message_id,
+          existingHasResult: messages.value[existingIndex].data?.result !== undefined,
+          newHasResult: message.data?.result !== undefined,
+          existingData: messages.value[existingIndex].data,
+          newData: message.data
+        })
+        
+        // 合并消息：直接更新现有消息的data字段
+        // 这样可以保持Vue的响应性
+        const existingMessage = messages.value[existingIndex]
+        
+        // 合并data字段
+        const mergedData = {
+          ...existingMessage.data,
+          ...message.data
+        }
+        
+        console.log('🔧 合并后的data:', mergedData)
+        
+        // 直接更新现有消息的data字段
+        // 在Vue 3中，我们需要确保触发响应式更新
+        // 由于existingMessage是响应式对象，直接赋值会触发更新
+        existingMessage.data = mergedData
+        
+        // 更新时间戳
+        if (message.timestamp) {
+          existingMessage.timestamp = message.timestamp
+        }
+        
+        // 更新消息状态（保持原有的状态）
+        if (!messageStates.value.has(existingMessage.message_id)) {
+          messageStates.value.set(existingMessage.message_id, {
+            showParameters: false,
+            showResult: false
           })
-
-          return results
         }
-      } catch (e) {
-        console.debug('消息内容不是有效的JSON格式:', e)
-      }
-    }
-
-    const processed = processMessageForDisplay(normalized, normalized.message_type)
-
-    const uiMsg: UiMessage = {
-      id: normalized.message_id,
-      ts: normalized.timestamp,
-      type: normalized.message_type,
-      displayType: processed.displayType,
-      sender: normalized.sender_id,
-      receiver: normalized.receiver_id,
-      subscription: normalized.subscription || sessionId,
-      content: processed.content,
-      raw: normalized,
-      showParameters: false,
-    }
-
-    return [uiMsg]
-  }
-
-  const processMessageForDisplay = (messageData: any, messageType?: string): {
-    content: string,
-    displayType: DisplayType,
-    data?: any
-  } => {
-    const msgType = messageType || messageData.message_type
-
-    if (msgType === 'tool_call') {
-      let toolName = 'unknown_tool'
-      let argumentsData = {}
-
-      if (messageData.data?.tool_name) {
-        toolName = messageData.data.tool_name
-        argumentsData = messageData.data.arguments || {}
-      } else if (messageData.content) {
-        try {
-          const parsedContent = JSON.parse(messageData.content)
-          toolName = parsedContent.tool_name || toolName
-          argumentsData = parsedContent.arguments || argumentsData
-        } catch (e) {
-          console.error('解析tool_call消息失败:', e)
-          toolName = messageData.content
+        
+        return existingMessage
+      } else {
+        // 没有相同tool_call_id的消息，直接添加
+        messages.value.push(message)
+        // 初始化消息状态
+        if (!messageStates.value.has(message.message_id)) {
+          messageStates.value.set(message.message_id, {
+            showParameters: false,
+            showResult: false
+          })
         }
+        return message
       }
-
-      return {
-        content: toolName,
-        displayType: DisplayType.TOOL_CALL,
-        data: {
-          tool_name: toolName,
-          arguments: argumentsData
-        }
+    } else {
+      // 不是TOOL_CALL消息，直接添加
+      messages.value.push(message)
+      // 初始化消息状态
+      if (!messageStates.value.has(message.message_id)) {
+        messageStates.value.set(message.message_id, {
+          showParameters: false,
+          showResult: false
+        })
       }
-    }
-
-    let content = ''
-    if (messageData.data?.content !== undefined) {
-      content = messageData.data.content
-    } else if (messageData.content) {
-      content = messageData.content
-    } else if (messageData.data?.message) {
-      content = messageData.data.message
-    } else if (messageData.error_message) {
-      content = messageData.error_message
-    }
-
-    content = parseMessageContent(content)
-
-    let displayType: DisplayType = DisplayType.ASSISTANT
-    if (msgType === 'error' || messageData.error_message) {
-      displayType = DisplayType.ERROR
-    } else if (messageData.sender_id === 'system' || messageData.sender_id?.includes('system')) {
-      displayType = DisplayType.SYSTEM
-    } else if (messageData.sender_id === 'user' || messageData.sender_id?.includes('user') || (messageData as any).role === 'user') {
-      displayType = DisplayType.USER
-    } else if (msgType === 'tool_call') {
-      displayType = DisplayType.TOOL_CALL
-    }
-
-    return {
-      content,
-      displayType
+      return message
     }
   }
 
-  const addUiMessage = (m: BrocaMessage, displayType?: DisplayType) => {
-    if (displayType) {
-      const uiMsg: UiMessage = {
-        id: m.message_id,
-        ts: m.timestamp,
-        type: m.message_type,
-        displayType,
-        sender: m.sender_id,
-        receiver: m.receiver_id,
-        subscription: m.subscription,
-        content: m.data?.content || '',
-        raw: m,
-        showParameters: false
-      }
-      uiMessages.value.push(uiMsg)
-      return
+  const addMessage = (m: Message) => {
+    console.log('📨 收到消息:', {
+      message_id: m.message_id,
+      message_type: m.message_type,
+      tool_call_id: m.data?.tool_call_id,
+      has_result: m.data?.result !== undefined,
+      data: m.data
+    })
+    
+    const processed = processMessage(m)
+    if (processed) {
+      addMessageToList(processed)
     }
-
-    const messages = convertToUiMessages(m)
-    uiMessages.value.push(...messages)
   }
 
   const addSystemMessage = (content: string) => {
-    const msg: UiMessage = {
-      id: `system_${Date.now()}`,
-      ts: new Date().toISOString(),
-      type: 'system',
-      displayType: DisplayType.SYSTEM,
-      sender: 'system',
-      content,
-      raw: {} as BrocaMessage
+    const msg: Message = {
+      message_id: `system_${Date.now()}`,
+      message_type: 'system_message',
+      timestamp: new Date().toISOString(),
+      role: 'system',
+      sender_id: 'system',
+      data: { content }
     }
-    uiMessages.value.push(msg)
+    addMessageToList(msg)
   }
 
   const loadHistory = async (sessionId: string, isLoadMore: boolean = false) => {
@@ -528,7 +407,7 @@ export const useChatStore = defineStore('chat', () => {
       loading.value = true
       historySkip.value = 0
       hasMoreHistory.value = true
-      uiMessages.value = []
+      messages.value = []
     }
 
     try {
@@ -546,23 +425,33 @@ export const useChatStore = defineStore('chat', () => {
       if (response.messages) {
         const allMessages = response.messages
         
-        const filteredMessages = allMessages.filter((msg: any) => 
-          (msg.role === 'user' || msg.role === 'assistant') &&
-          (parseMessageContent(msg.content) || msg.message_type === 'tool_call') &&
-          msg.message_type !== 'command'
-        )
+        const historyMessages: Message[] = []
 
-        const historyMessages: UiMessage[] = []
-
-        filteredMessages.forEach((msg: any) => {
-          const converted = convertToUiMessages(msg, sessionId)
-          historyMessages.push(...converted)
+        allMessages.forEach((msg: any) => {
+          const processed = processMessage(msg)
+          if (processed) {
+            historyMessages.push(processed)
+          }
         })
 
         if (isLoadMore) {
-          uiMessages.value = [...historyMessages, ...uiMessages.value]
+          // 对于加载更多，需要将历史消息添加到现有消息前面
+          // 并且需要处理合并（历史消息在前，新消息在后）
+          const combinedMessages = [...historyMessages, ...messages.value]
+          messages.value = []
+          messageStates.value.clear()
+          
+          // 重新添加所有消息，确保TOOL_CALL消息正确合并
+          combinedMessages.forEach(msg => {
+            addMessageToList(msg)
+          })
         } else {
-          uiMessages.value = historyMessages
+          // 对于首次加载，直接设置消息
+          messages.value = []
+          messageStates.value.clear()
+          historyMessages.forEach(msg => {
+            addMessageToList(msg)
+          })
         }
         historySkip.value = skip + limit
 
@@ -613,37 +502,37 @@ export const useChatStore = defineStore('chat', () => {
         }))
         ElMessage.warning('连接断开')
       })
-      client.on('message', (m: BrocaMessage) => {
-        addUiMessage(m)
+      client.on('message', (m: Message) => {
+        addMessage(m)
         scrollToBottom()
       })
 
-      client.on('turn_start', (m: BrocaMessage) => {
+      client.on('turn_start', (m: Message) => {
         agentStatus.value = 'running'
         // 更新特定agent的状态
         const targetAgentId = m.sender_id || agentId.value
         updateAgentStatus(targetAgentId, 'running')
       })
-      client.on('turn_end', (m: BrocaMessage) => {
+      client.on('turn_end', (m: Message) => {
         agentStatus.value = 'idle'
         // 更新特定agent的状态
         const targetAgentId = m.sender_id || agentId.value
         updateAgentStatus(targetAgentId, 'idle')
       })
-      client.on('agent_response', (m: BrocaMessage) => {
+      client.on('agent_response', (m: Message) => {
         agentStatus.value = 'running'
         // 更新特定agent的状态
         const targetAgentId = m.sender_id || agentId.value
         updateAgentStatus(targetAgentId, 'running')
       })
-      client.on('tool_call', (m: BrocaMessage) => {
+      client.on('tool_call', (m: Message) => {
         agentStatus.value = 'running'
         // 更新特定agent的状态
         const targetAgentId = m.sender_id || agentId.value
         updateAgentStatus(targetAgentId, 'running')
       })
 
-      client.on('permission_request', (m: BrocaMessage) => {
+      client.on('permission_request', (m: Message) => {
         permissionDialog.visible = true
         permissionDialog.requestId = m.data?.request_id
         permissionDialog.senderId = m.sender_id
@@ -706,10 +595,11 @@ export const useChatStore = defineStore('chat', () => {
     const targetAgentObj = agents.value.find(a => a.agent_id === targetAgent)
     const displayAgentName = targetAgentObj?.name || targetAgent
   
-    addUiMessage({
+    addMessage({
       message_id: `user_${Date.now()}`,
       timestamp: new Date().toISOString(),
       message_type: 'user_message',
+      role: 'user',
       sender_id: 'user',
       receiver_id: targetAgent,
       subscription: sessionId.value,
@@ -717,7 +607,7 @@ export const useChatStore = defineStore('chat', () => {
         content: cleanText,
         mention: targetAgentId ? displayAgentName : undefined
       }
-    } as BrocaMessage, DisplayType.USER)
+    } as Message)
 
     try {
       await client.sendUserMessage({
@@ -835,15 +725,17 @@ export const useChatStore = defineStore('chat', () => {
     urlSessionId,
     permissionDialog,
     socketConfig,
-    uiMessages,
+    messages,
+    messageStates,
     filteredMessages,
     statusText,
     agentStatusText,
     scrollToBottom,
     toggleToolParameters,
+    toggleToolResult,
     toggleLeftSidebar,
     toggleRightSidebar,
-    addUiMessage,
+    addMessage,
     addSystemMessage,
     init,
     cleanup,

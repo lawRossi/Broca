@@ -7,13 +7,16 @@ Contains UI components for the TUI application:
 - PermissionDialog: Permission request dialog
 """
 
+import json
 from typing import Callable, Optional
 
 from textual.containers import Container, Horizontal
 from textual.reactive import reactive
 from textual.widgets import Button, RichLog, Static
 
-from .tui_models import ChatMessage, StatusIndicator
+from broca.session.models import Message, MessageType
+
+from .tui_models import StatusIndicator
 
 
 class StatusWidget(Static):
@@ -67,27 +70,24 @@ class MessageListWidget(RichLog):
         self._messages: list[str] = []
         self.auto_scroll = True
 
-    def add_message(self, message: ChatMessage):
+    def add_message(self, message: Message):
         """Add a new message to the log"""
         timestamp = message.timestamp.strftime("%H:%M:%S")
 
-        # Style mapping
         styles = {
-            ChatMessage.DisplayType.USER: ("You", "green"),
-            ChatMessage.DisplayType.ASSISTANT: ("Assistant", "blue"),
-            ChatMessage.DisplayType.SYSTEM: ("System", "grey"),
-            ChatMessage.DisplayType.ERROR: ("Error", "red"),
-            ChatMessage.DisplayType.TOOL: ("Tool", "orange"),
-            ChatMessage.DisplayType.TOOL_CALL: ("Tool Call", "cyan"),
-            ChatMessage.DisplayType.PERMISSION: ("Permission", "purple"),
+            MessageType.USER_MESSAGE: ("You", "green"),
+            MessageType.AGENT_RESPONSE: ("Assistant", "blue"),
+            MessageType.AGENT_SYSTEM_MESSAGE: ("System", "grey"),
+            MessageType.ERROR: ("Error", "red"),
+            MessageType.TOOL_CALL: ("Tool", "orange"),
         }
 
         sender_name, sender_color = styles.get(
-            message.display_type, ("Unknown", "white")
+            message.message_type, ("Unknown", "white")
         )
+        content = self._get_display_content(message)
 
-        # Format message with rich markup
-        formatted_message = f"[dim]{timestamp}[/dim] [{sender_color} bold]{sender_name}:[/{sender_color} bold] {message.content}"
+        formatted_message = f"[dim]{timestamp}[/dim] [{sender_color} bold]{sender_name}:[/{sender_color} bold] {content}"
 
         self._messages.append(formatted_message)
         self.write(formatted_message)
@@ -96,6 +96,17 @@ class MessageListWidget(RichLog):
         """Clear all messages"""
         self._messages.clear()
         self.clear()
+
+    def _get_display_content(self, message):
+        if message.message_type == MessageType.TOOL_CALL:
+            tool_name = message.data.get("tool_name", "unknown")
+            return tool_name
+        content = message.data.get("content", "")
+        try:
+            json_content = json.loads(content)
+            return json_content["content"]
+        except json.JSONDecodeError:
+            return content
 
 
 class PermissionDialog(Static):

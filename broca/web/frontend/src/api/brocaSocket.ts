@@ -6,48 +6,11 @@
 // - dispatch by message_type (agent_response/turn_start/permission_request...)
 
 import { io, type Socket } from 'socket.io-client'
+import type { Message, MessageType, MessageRole } from './types'
 
-export type BrocaMessageType =
-  | 'connect'
-  | 'disconnect'
-  | 'ping'
-  | 'pong'
-  | 'error'
-  | 'user_message'
-  | 'agent_response'
-  | 'agent_thinking'
-  | 'agent_error'
-  | 'task_start'
-  | 'task_progress'
-  | 'task_complete'
-  | 'task_failed'
-  | 'turn_start'
-  | 'turn_end'
-  | 'tool_call'
-  | 'tool_result'
-  | 'subscribe'
-  | 'unsubscribe'
-  | 'broadcast'
-  | 'command'
-  | 'command_result'
-  | 'permission_request'
-  | 'permission_response'
+// 导出共享的类型
+export type { Message, MessageType, MessageRole }
 
-export interface BrocaMessage {
-  message_id: string
-  message_type: BrocaMessageType
-  timestamp: string
-  sub_type?: string
-  status?: number
-  sender_id?: string
-  receiver_id?: string
-  room?: string
-  subscription?: string
-  data?: Record<string, any>
-  metadata?: Record<string, any>
-  error_code?: string
-  error_message?: string
-}
 
 export interface BrocaConnectionOptions {
   serverUrl: string
@@ -56,7 +19,7 @@ export interface BrocaConnectionOptions {
   userId?: string
 }
 
-export type BrocaEventName = 'connect' | 'disconnect' | 'message' | BrocaMessageType
+export type BrocaEventName = 'connect' | 'disconnect' | 'message' | MessageType
 
 export type BrocaHandler = (payload?: any) => void
 
@@ -208,10 +171,11 @@ export class BrocaSocketClient {
       throw new Error('Not connected')
     }
 
-    const message: BrocaMessage = {
+    const message: Message = {
       message_id: this.generateMessageId(),
       message_type: 'user_message',
       timestamp: new Date().toISOString(),
+      role: 'user',
       sender_id: this.options.clientId,
       receiver_id: params.receiverId,
       room: params.room,
@@ -243,10 +207,11 @@ export class BrocaSocketClient {
       throw new Error('Not connected')
     }
 
-    const message: BrocaMessage = {
+    const message: Message = {
       message_id: this.generateMessageId(),
       message_type: 'command',
       timestamp: new Date().toISOString(),
+      role: 'system',
       sender_id: this.options.clientId,
       receiver_id: params.receiverId,
       room: params.room,
@@ -279,10 +244,11 @@ export class BrocaSocketClient {
       throw new Error('Not connected')
     }
 
-    const message: BrocaMessage = {
+    const message: Message = {
       message_id: this.generateMessageId(),
       message_type: 'permission_response',
       timestamp: new Date().toISOString(),
+      role: 'system',
       sender_id: this.options.clientId,
       receiver_id: params.receiverId,
       room: params.room,
@@ -304,7 +270,7 @@ export class BrocaSocketClient {
     })
   }
 
-  private parseMessage(data: any): BrocaMessage {
+  private parseMessage(data: any): Message {
     // Ensure data has required fields
     if (!data || typeof data !== 'object') {
       throw new Error('Invalid message format')
@@ -314,16 +280,16 @@ export class BrocaSocketClient {
       message_id: data.message_id || `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`,
       message_type: data.message_type || 'unknown',
       timestamp: data.timestamp || new Date().toISOString(),
-      sub_type: data.sub_type,
-      status: data.status,
+      role: data.role || 'assistant',
       sender_id: data.sender_id,
       receiver_id: data.receiver_id,
       room: data.room,
       subscription: data.subscription,
-      data: data.data,
-      metadata: data.metadata,
-      error_code: data.error_code,
-      error_message: data.error_message,
+      session_id: data.session_id,
+      turn_id: data.turn_id,
+      agent_id: data.agent_id,
+      sequence_number: data.sequence_number,
+      data: data.data || {},
     }
   }
 

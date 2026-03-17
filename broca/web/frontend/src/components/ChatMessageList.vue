@@ -37,7 +37,7 @@ const handleScroll = (event: Event) => {
     <div v-if="chatStore.loadingMore" class="flex items-center justify-center py-2 text-gray-400 text-sm">
       <span class="mr-2">加载中...</span>
     </div>
-    <div v-else-if="!chatStore.hasMoreHistory && chatStore.uiMessages.length > 0" class="flex items-center justify-center py-2 text-gray-400 text-sm">
+    <div v-else-if="!chatStore.hasMoreHistory && chatStore.messages.length > 0" class="flex items-center justify-center py-2 text-gray-400 text-sm">
       <span>没有更多历史消息了</span>
     </div>
     
@@ -50,7 +50,7 @@ const handleScroll = (event: Event) => {
 
     <ChatMessageItem
       v-for="m in chatStore.filteredMessages"
-      :key="m.id"
+      :key="m.message_id"
       :message="m"
     />
   </div>

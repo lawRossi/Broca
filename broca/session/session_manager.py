@@ -141,7 +141,7 @@ class SessionManager:
         turn_id: str,
         agent_id: str,
         message_id: str | None = None,
-        status: str | None = None,
+        data: Dict[str, Any] | None = None,
     ) -> Message | None:
         """
         保存消息到数据库
@@ -152,7 +152,9 @@ class SessionManager:
             message_type: 消息类型
             turn_id: 关联的turn ID
             agent_id: 关联的agent ID
-            metadata: 额外元数据
+            message_id: 可选的消息ID
+            status: 状态
+            data: 额外的数据字段
 
         Returns:
             保存的消息数据字典
@@ -165,8 +167,11 @@ class SessionManager:
 
         # 生成消息ID
         message_id = message_id or f"msg_{uuid.uuid4().hex[:16]}"
-        if isinstance(content, dict):
-            content = json.dumps(content, ensure_ascii=False)
+
+        # 构建data字段
+        message_data = data or {}
+        if content:
+            message_data["content"] = content
 
         try:
             # 获取下一个序列号
@@ -180,10 +185,9 @@ class SessionManager:
                 turn_id=turn_id,
                 agent_id=agent_id,
                 role=MessageRole(role),
-                content=content,
                 message_type=MessageType(message_type),
                 sequence_number=seq_num,
-                status=status,
+                data=message_data,
             )
 
             return message

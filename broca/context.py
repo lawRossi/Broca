@@ -6,7 +6,7 @@ from jinja2 import Template
 from litellm import Message
 
 from broca.agent_configs import AgentConfig
-from broca.session import MessageRole, MessageType, SessionManager
+from broca.session import MessageType, SessionManager
 from broca.skill_manager import SkillManager
 
 
@@ -64,15 +64,16 @@ class Context:
     ) -> None:
         messages = await session_manager.get_messages(agent_id)
         for message in messages:
-            if message.role in [
-                MessageRole.USER,
-                MessageRole.ASSISTANT,
-                MessageRole.SYSTEM,
-                MessageRole.TOOL,
-            ] and message.message_type in [MessageType.TEXT, MessageType.TOOL_RESULT]:
-                if message.content is None:
+            if message.message_type in [
+                MessageType.USER_MESSAGE,
+                MessageType.AGENT_RESPONSE,
+                MessageType.TOOL_CALL,
+            ]:
+                # 获取content，现在content在data字段中
+                content = message.data.get("content")
+                if content is None:
                     continue
-                message_content = json.loads(message.content)
+                message_content = json.loads(content)
                 await self.add_message(Message.parse_obj(message_content))
 
     def get_latest_assistant_message(self) -> str | None:

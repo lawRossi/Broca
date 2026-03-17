@@ -1,14 +1,16 @@
 """
-数据模型定义模块（修复版本）
+数据模型定义模块（优化版本）
 
 定义Session、Message、History等数据模型，使用sqlmodel框架。
-修复了关系配置问题。
+优化了消息模型，统一了字段结构。
 """
 
+import uuid
 from datetime import datetime
 from enum import Enum
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
+from sqlalchemy import JSON, Column
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -19,22 +21,51 @@ class MessageRole(str, Enum):
     ASSISTANT = "assistant"
     SYSTEM = "system"
     TOOL = "tool"
+    AGENT_SYSTEM = "agent_system"
     AGENT = "agent"
 
 
 class MessageType(str, Enum):
-    """消息类型枚举"""
+    """统一的消息类型枚举"""
 
-    COMMAND = "command"
+    # 系统消息
+    AGENT_SYSTEM_MESSAGE = "agent_system_message"
+    CONNECT = "connect"
+    DISCONNECT = "disconnect"
+    PING = "ping"
+    PONG = "pong"
     ERROR = "error"
-    PERMISSION_REQUEST = "permission_request"
-    PERMISSION_RESPONSE = "permission_response"
-    REASONING = "reasoning"
-    TEXT = "text"
+
+    # 用户交互消息
+    USER_MESSAGE = "user_message"
+    AGENT_RESPONSE = "agent_response"
+    AGENT_ERROR = "agent_error"
+    SYSTEM_MESSAGE = "system_message"
+
+    # 工具执行（合并tool_call和tool_result）
     TOOL_CALL = "tool_call"
-    TOOL_RESULT = "tool_result"
+
+    # 任务管理
+    TASK_START = "task_start"
+    TASK_COMPLETE = "task_complete"
+    TASK_ERROR = "task_error"
+
+    # 轮次管理
     TURN_START = "turn_start"
     TURN_END = "turn_end"
+
+    # 订阅和广播
+    SUBSCRIBE = "subscribe"
+    UNSUBSCRIBE = "unsubscribe"
+    BROADCAST = "broadcast"
+
+    # 命令消息
+    COMMAND = "command"
+    COMMAND_RESULT = "command_result"
+
+    # 权限消息
+    PERMISSION_REQUEST = "permission_request"
+    PERMISSION_RESPONSE = "permission_response"
 
 
 class SessionStatus(str, Enum):
@@ -102,39 +133,68 @@ class Session(SQLModel, table=True):
     )
 
 
-class Message(SQLModel, table=True):
-    """
-    消息模型
+def generate_message_id() -> str:
+    return "msg-" + str(uuid.uuid4())
 
-    存储通信消息，包括消息内容、角色、类型等。
-    """
+
+class Message(SQLModel, table=True):
+    """统一的消息模型"""
 
     __tablename__ = "message"
 
-    message_id: str = Field(index=True, primary_key=True, description="消息唯一标识符")
-    session_id: str = Field(
-        foreign_key="session.session_id", ondelete="CASCADE", description="关联的会话ID"
+    # 基础字段
+    message_id: str = Field(
+        index=True,
+        primary_key=True,
+        description="消息唯一标识符",
+        default_factory=generate_message_id,
     )
-    turn_id: str = Field(
-        foreign_key="turn.turn_id", ondelete="CASCADE", description="关联的轮次ID"
+    message_type: MessageType = Field(description="消息类型")
+    timestamp: datetime = Field(default_factory=datetime.now, description="消息时间戳")
+
+    # 通信字段（可选）
+    sender_id: Optional[str] = Field(default=None, description="发送者ID")
+    receiver_id: Optional[str] = Field(default=None, description="接收者ID")
+    room: Optional[str] = Field(default=None, description="房间ID")
+    subscription: Optional[str] = Field(default=None, description="订阅ID")
+
+    # 会话关联字段
+    session_id: Optional[str] = Field(
+        foreign_key="session.session_id",
+        ondelete="CASCADE",
+        default=None,
+        description="关联的会话ID",
     )
-    agent_id: str = Field(
-        foreign_key="agent.agent_id", ondelete="CASCADE", description="关联的Agent ID"
+    turn_id: Optional[str] = Field(
+        foreign_key="turn.turn_id",
+        ondelete="CASCADE",
+        default=None,
+        description="关联的轮次ID",
+    )
+    agent_id: Optional[str] = Field(
+        foreign_key="agent.agent_id",
+        ondelete="CASCADE",
+        default=None,
+        description="关联的Agent ID",
     )
 
     # 消息内容
     role: MessageRole = Field(description="消息角色")
-    message_type: MessageType = Field(default=MessageType.TEXT, description="消息类型")
-    content: Optional[str] = Field(default=None, description="消息内容")
-    status: Optional[str] = Field(default=None, description="状态: success/error")
 
-    sequence_number: int = Field(description="消息序列号")
-    timestamp: datetime = Field(default_factory=datetime.now, description="消息时间戳")
+    # 数据字段（JSON格式存储，包含content等所有数据）
+    data: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False, default={}),
+        description="消息数据（包含content等所有字段）",
+    )
+
+    # 序列号（用于排序）
+    sequence_number: Optional[int] = Field(default=None, description="消息序列号")
 
     # 关联关系
-    session: Session = Relationship(back_populates="messages")
-    turn: Turn = Relationship(back_populates="messages")
-    agent: "Agent" = Relationship(back_populates="messages")
+    session: Optional["Session"] = Relationship(back_populates="messages")
+    turn: Optional["Turn"] = Relationship(back_populates="messages")
+    agent: Optional["Agent"] = Relationship(back_populates="messages")
 
 
 class AgentConfig(SQLModel, table=True):
@@ -194,3 +254,263 @@ class Agent(SQLModel, table=True):
     messages: List["Message"] = Relationship(
         back_populates="agent", cascade_delete="all"
     )
+
+
+# 消息协议辅助类
+class MessageProtocol:
+    """消息协议处理类"""
+
+    @staticmethod
+    def create_user_message(content: str, **kwargs) -> Message:
+        """创建用户消息"""
+        data = kwargs.pop("data", {})
+        data["content"] = content
+
+        return Message(
+            message_type=MessageType.USER_MESSAGE,
+            role=MessageRole.USER,
+            data=data,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_agent_response(content: str, **kwargs) -> Message:
+        """创建Agent响应"""
+        data = kwargs.pop("data", {})
+        data["content"] = content
+
+        return Message(
+            message_type=MessageType.AGENT_RESPONSE,
+            role=MessageRole.ASSISTANT,
+            data=data,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_tool_call(
+        tool_name: str, arguments: Dict[str, Any], tool_call_id:str, result: Optional[str]=None, status: Optional[bool]=None,
+        **kwargs
+    ) -> Message:
+        """创建工具调用消息"""
+        data = kwargs.pop("data", {})
+        data.update({"tool_call_id": tool_call_id, "tool_name": tool_name, "arguments": arguments})
+        if result is not None:
+            data["result"] = result
+            data["status"] = status
+
+        return Message(
+            message_type=MessageType.TOOL_CALL,
+            role=MessageRole.TOOL,
+            data=data,
+            **kwargs,
+        )
+
+    @staticmethod
+    def from_dict(data: Dict[str, Any]) -> Message:
+        """从字典创建消息"""
+        # 处理工具消息类型转换
+        data["timestamp"] = datetime.fromisoformat(data["timestamp"])
+        message_type = data.get("message_type")
+        if message_type in ["tool_call", "tool_result"]:
+            data["message_type"] = "tool_call"
+            if "data" not in data:
+                data["data"] = {}
+            if message_type == "tool_call":
+                data["data"]["action"] = "call"
+            else:
+                data["data"]["action"] = "result"
+
+        return Message(**data)
+
+    @staticmethod
+    def to_dict(message: Message) -> Dict[str, Any]:
+        """将消息转换为字典"""
+        result = {
+            "message_id": message.message_id,
+            "message_type": message.message_type,
+            "timestamp": message.timestamp.isoformat(),
+            "role": message.role,
+            "data": message.data,
+        }
+
+        # 可选字段
+        optional_fields = [
+            "sender_id",
+            "receiver_id",
+            "room",
+            "subscription",
+            "error_code",
+            "session_id",
+            "turn_id",
+            "agent_id",
+            "sequence_number",
+        ]
+
+        for field in optional_fields:
+            value = getattr(message, field, None)
+            if value is not None:
+                result[field] = value
+
+        return result
+
+    @staticmethod
+    def create_turn_start(turn_id: str, turn_description: str, **kwargs) -> Message:
+        """创建轮次开始消息"""
+        return Message(
+            message_type=MessageType.TURN_START,
+            role=MessageRole.AGENT,
+            data={"turn_id": turn_id, "turn_description": turn_description},
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_turn_end(
+        turn_id: str, result: Optional[str] = None, **kwargs
+    ) -> Message:
+        """创建轮次结束消息"""
+        data = {"turn_id": turn_id}
+        if result:
+            data["result"] = result
+        return Message(
+            message_type=MessageType.TURN_END,
+            role=MessageRole.AGENT,
+            data=data,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_command(
+        command: str, arguments: Optional[Dict[str, Any]] = None, **kwargs
+    ) -> Message:
+        """创建命令消息"""
+        data = {"command": command}
+        if arguments:
+            data["arguments"] = arguments
+        return Message(
+            message_type=MessageType.COMMAND,
+            role=MessageRole.SYSTEM,
+            data=data,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_permission_request(
+        message: str, request_id: Optional[str] = None, **kwargs
+    ) -> Message:
+        """创建权限请求消息"""
+        data = {"message": message}
+        if request_id:
+            data["request_id"] = request_id
+        return Message(
+            message_type=MessageType.PERMISSION_REQUEST,
+            role=MessageRole.SYSTEM,
+            data=data,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_permission_response(
+        granted: bool, request_id: Optional[str] = None, **kwargs
+    ) -> Message:
+        """创建权限响应消息"""
+        data = {"granted": granted}
+        if request_id is not None:
+            data["request_id"] = request_id
+        return Message(
+            message_type=MessageType.PERMISSION_RESPONSE,
+            role=MessageRole.SYSTEM,
+            data=data,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_subscribe(subscription: str, **kwargs) -> Message:
+        """创建订阅消息"""
+        return Message(
+            message_type=MessageType.SUBSCRIBE,
+            role=MessageRole.SYSTEM,
+            subscription=subscription,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_unsubscribe(subscription: str, **kwargs) -> Message:
+        """创建取消订阅消息"""
+        return Message(
+            message_type=MessageType.UNSUBSCRIBE,
+            role=MessageRole.SYSTEM,
+            subscription=subscription,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_agent_system_message(content: str, **kwargs) -> Message:
+        """创建Agent系统消息"""
+        return Message(
+            message_type=MessageType.AGENT_SYSTEM_MESSAGE,
+            role=MessageRole.AGENT_SYSTEM,
+            data={"content": content},
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_error_message(
+        content: str, error_code: str | None = None, **kwargs
+    ) -> Message:
+        """创建错误消息"""
+        return Message(
+            message_type=MessageType.ERROR,
+            role=MessageRole.AGENT_SYSTEM,
+            data={"content": content, "error_code": error_code},
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_broadcast(
+        content: str, subscription: Optional[str] = None, **kwargs
+    ) -> Message:
+        """创建广播消息"""
+        return Message(
+            message_type=MessageType.BROADCAST,
+            role=MessageRole.SYSTEM,
+            data={"content": content},
+            subscription=subscription,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_task_start(task_id: str, task_description: str, **kwargs) -> Message:
+        """创建任务开始消息"""
+        return Message(
+            message_type=MessageType.TASK_START,
+            role=MessageRole.AGENT,
+            data={"task_id": task_id, "task_description": task_description},
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_task_complete(
+        task_id: str, result: Optional[str] = None, **kwargs
+    ) -> Message:
+        """创建任务完成消息"""
+        data = {"task_id": task_id}
+        if result:
+            data["result"] = result
+        return Message(
+            message_type=MessageType.TASK_COMPLETE,
+            role=MessageRole.AGENT,
+            data=data,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_task_error(
+        task_id: str, error_message: str, error_code: str | None = None, **kwargs
+    ) -> Message:
+        """创建任务错误消息"""
+        return Message(
+            message_type=MessageType.TASK_ERROR,
+            role=MessageRole.AGENT,
+            data={"task_id": task_id, "error_code": error_code},
+            **kwargs,
+        )
