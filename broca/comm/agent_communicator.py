@@ -14,9 +14,6 @@ from broca.session.models import Message, MessageProtocol, MessageRole, MessageT
 
 from .socketio_client import SocketIOClient
 
-logger.remove()
-logger.add("socketio.log", level="DEBUG")
-
 
 class AgentCommunicator(SocketIOClient):
     """

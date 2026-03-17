@@ -16,9 +16,6 @@ from broca.session.database import db_manager
 
 from .tui_app import BrocaTUIApp
 
-logger.remove()
-logger.add("tui.log", level="DEBUG")
-
 
 class TUI:
     """

@@ -4,6 +4,7 @@ import tempfile
 from broca.agent_manager import AgentFactory
 from broca.session.service import (
     get_agent_service,
+    get_agent_config_service,
     get_message_service,
     get_session_service,
     get_turn_service,
@@ -240,5 +241,62 @@ async def delete_session(session_id: str) -> ApiResponse:
         logger.error(f"Error deleting session: {e}")
         import traceback
 
+        logger.error(traceback.format_exc())
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.get("/{session_id}/agents/{agent_id}/config", response_model=ApiResponse)
+async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
+    """获取指定Agent的配置信息"""
+    try:
+        # 验证会话是否存在
+        session_service = get_session_service()
+        session = await session_service.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # 获取Agent信息
+        agent_service = get_agent_service()
+        agent = await agent_service.get(agent_id)
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        
+        # 验证Agent是否属于该会话
+        if agent.session_id != session_id:
+            raise HTTPException(status_code=400, detail="Agent does not belong to this session")
+
+        # 获取Agent配置
+        agent_config_service = get_agent_config_service()
+        agent_config = await agent_config_service.get(agent.config_id)
+        if not agent_config:
+            raise HTTPException(status_code=404, detail="Agent config not found")
+
+        # 解析配置内容
+        import json
+        try:
+            config_content = json.loads(agent_config.config_content)
+        except json.JSONDecodeError as e:
+            logger.error(f"Failed to parse agent config JSON: {e}")
+            config_content = {"error": "Failed to parse config content", "raw_content": agent_config.config_content}
+
+        # 返回完整的配置信息
+        config_data = {
+            "agent_id": agent.agent_id,
+            "agent_name": agent.name,
+            "agent_role": agent.role,
+            "config_id": agent_config.config_id,
+            "config_name": agent_config.name,
+            "config_content": config_content,
+            "created_at": agent_config.created_at.isoformat() if agent_config.created_at else None,
+            "raw_config_content": agent_config.config_content  # 保留原始内容用于调试
+        }
+
+        return ApiResponse.success(config_data, msg="Agent config retrieved successfully")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting agent config: {e}")
+        import traceback
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e

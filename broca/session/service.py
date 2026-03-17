@@ -285,7 +285,6 @@ class MessageService(BaseService[Message]):
         content: Optional[str] = None,
         message_type: MessageType = MessageType.USER_MESSAGE,
         sequence_number: int = 1,
-        status: Optional[str] = None,
         data: Optional[Dict[str, Any]] = None,
     ) -> Message:
         """创建新消息"""

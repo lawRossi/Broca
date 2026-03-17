@@ -11,9 +11,6 @@ from pathlib import Path
 
 from loguru import logger
 
-logger.remove()
-logger.add("cli.log", level="DEBUG")
-
 
 def get_version():
     """Get the current version of Broca"""

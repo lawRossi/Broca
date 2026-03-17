@@ -15,9 +15,6 @@ from socketio import AsyncClient
 
 from broca.session.models import Message, MessageProtocol, MessageType
 
-logger.remove()
-logger.add("socketio.log", level="DEBUG")
-
 
 @dataclass
 class ConnectionInfo:

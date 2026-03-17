@@ -42,17 +42,21 @@ const getIcon = (message: Message) => {
 const getSenderName = (message: Message, agentName: string) => {
   if (message.message_type === 'user_message' || message.role === 'user') {
     // 显示发送给谁
-    if (message.receiver_id && message.receiver_id !== chatStore.agentId) {
-      const targetAgent = chatStore.agents.find(a => a.agent_id === message.receiver_id)
-      const targetName = targetAgent?.name || message.receiver_id
+    // 优先使用receiver_id（实时消息），如果没有则使用agent_id（历史消息）
+    const targetAgentId = message.receiver_id || message.agent_id
+    if (targetAgentId && targetAgentId !== chatStore.agentId) {
+      const targetAgent = chatStore.agents.find(a => a.agent_id === targetAgentId)
+      const targetName = targetAgent?.name || targetAgentId
       return `You → @${targetName}`
     }
     return 'You'
   } else if (message.message_type === 'agent_response' || message.role === 'assistant') {
     // 显示来自哪个agent
-    if (message.sender_id && message.sender_id !== chatStore.agentId) {
-      const senderAgent = chatStore.agents.find(a => a.agent_id === message.sender_id)
-      const senderName = senderAgent?.name || message.sender_id
+    // 优先使用sender_id（实时消息），如果没有则使用agent_id（历史消息）
+    const senderAgentId = message.sender_id || message.agent_id
+    if (senderAgentId && senderAgentId !== chatStore.agentId) {
+      const senderAgent = chatStore.agents.find(a => a.agent_id === senderAgentId)
+      const senderName = senderAgent?.name || senderAgentId
       return `@${senderName}`
     }
     return agentName
@@ -60,9 +64,11 @@ const getSenderName = (message: Message, agentName: string) => {
     return 'Error'
   } else if (message.message_type === 'tool_call') {
     // 显示来自哪个agent的工具调用
-    if (message.sender_id && message.sender_id !== chatStore.agentId) {
-      const senderAgent = chatStore.agents.find(a => a.agent_id === message.sender_id)
-      const senderName = senderAgent?.name || message.sender_id
+    // 优先使用sender_id（实时消息），如果没有则使用agent_id（历史消息）
+    const senderAgentId = message.sender_id || message.agent_id
+    if (senderAgentId && senderAgentId !== chatStore.agentId) {
+      const senderAgent = chatStore.agents.find(a => a.agent_id === senderAgentId)
+      const senderName = senderAgent?.name || senderAgentId
       return `@${senderName} - Tool`
     }
     return ''

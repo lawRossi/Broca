@@ -8,9 +8,6 @@ from loguru import logger
 
 from broca.session.models import Message, MessageProtocol, MessageType, MessageRole
 
-logger.remove()
-logger.add("socketio.log", level="DEBUG")
-
 
 @dataclass
 class ClientInfo:

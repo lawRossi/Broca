@@ -4,7 +4,8 @@ name: sub-agent
 tools: edit_file,execute_code,list_dir,read_file,task_management,todo_management,tree_dir,write_file
 ---
 
-{{role_description}}
+You are a helpful agent named sub-agent. You can help with gegeral tasks.
+
 {%- if skills -%}
 ALWAYS apply appropriate skills to finish you task.
 {%- endif %}

@@ -1,34 +1,15 @@
 import { defineStore } from 'pinia'
 import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { agentApi, type AgentConfig as ApiAgentConfig } from '@/api/agent'
+import { sessionApi, type Agent as SessionAgent } from '@/api/session'
 
-export interface AgentConfig {
-  id: string
-  name: string
-  description: string
-  status: 'active' | 'inactive' | 'error'
-  type: string
-  created_at: string
-  updated_at: string
-  config: {
-    model: string
-    temperature: number
-    max_tokens: number
-    system_prompt: string
-    tools: string[]
-    [key: string]: any
-  }
-}
+// 使用API中的AgentConfig类型
+export type AgentConfig = ApiAgentConfig
 
-export interface Agent {
-  id: string
-  name: string
-  description: string
+export interface Agent extends SessionAgent {
   status: 'idle' | 'running' | 'connecting' | 'disconnected'
   type: string
-  config_id: string
-  created_at: string
-  session_id?: string
   metrics?: {
     total_messages: number
     avg_response_time: number
@@ -38,7 +19,7 @@ export interface Agent {
 
 export const useAgentStore = defineStore('agent', () => {
   const agents = ref<Agent[]>([])
-  const agentConfigs = ref<AgentConfig[]>([])
+  const agentConfigs = ref<Map<string, AgentConfig>>(new Map()) // 使用Map缓存配置
   const selectedAgentId = ref<string>('')
   const loading = ref(false)
   const error = ref<string>('')
@@ -46,180 +27,32 @@ export const useAgentStore = defineStore('agent', () => {
   const selectedAgent = ref<Agent | null>(null)
   const selectedAgentConfig = ref<AgentConfig | null>(null)
 
-  const mockAgents: Agent[] = [
-    {
-      id: 'main_agent',
-      name: 'Main Assistant',
-      description: '主要助手，负责处理一般对话和任务',
-      status: 'idle',
-      type: 'assistant',
-      config_id: 'config_001',
-      created_at: '2024-01-01T00:00:00Z',
-      metrics: {
-        total_messages: 1250,
-        avg_response_time: 1.2,
-        success_rate: 95.5
-      }
-    },
-    {
-      id: 'code_agent',
-      name: 'Code Assistant',
-      description: '代码助手，专门处理编程相关任务',
-      status: 'running',
-      type: 'code_assistant',
-      config_id: 'config_002',
-      created_at: '2024-01-02T00:00:00Z',
-      metrics: {
-        total_messages: 850,
-        avg_response_time: 2.1,
-        success_rate: 92.3
-      }
-    },
-    {
-      id: 'research_agent',
-      name: 'Research Assistant',
-      description: '研究助手，负责信息检索和分析',
-      status: 'idle',
-      type: 'research_assistant',
-      config_id: 'config_003',
-      created_at: '2024-01-03T00:00:00Z',
-      metrics: {
-        total_messages: 420,
-        avg_response_time: 3.5,
-        success_rate: 88.7
-      }
-    },
-    {
-      id: 'task_agent',
-      name: 'Task Manager',
-      description: '任务管理助手，负责规划和跟踪任务',
-      status: 'disconnected',
-      type: 'task_manager',
-      config_id: 'config_004',
-      created_at: '2024-01-04T00:00:00Z',
-      metrics: {
-        total_messages: 680,
-        avg_response_time: 1.8,
-        success_rate: 96.2
-      }
-    },
-    {
-      id: 'data_agent',
-      name: 'Data Analyst',
-      description: '数据分析助手，处理数据分析和可视化',
-      status: 'connecting',
-      type: 'data_analyst',
-      config_id: 'config_005',
-      created_at: '2024-01-05T00:00:00Z',
-      metrics: {
-        total_messages: 320,
-        avg_response_time: 4.2,
-        success_rate: 85.4
-      }
-    }
-  ]
-
-  const mockAgentConfigs: AgentConfig[] = [
-    {
-      id: 'config_001',
-      name: 'Main Assistant Config',
-      description: '主要助手的配置',
-      status: 'active',
-      type: 'assistant',
-      created_at: '2024-01-01T00:00:00Z',
-      updated_at: '2024-01-10T00:00:00Z',
-      config: {
-        model: 'gpt-4',
-        temperature: 0.7,
-        max_tokens: 2000,
-        system_prompt: '你是一个有用的助手，请帮助用户解决问题。',
-        tools: ['web_search', 'calculator', 'file_reader']
-      }
-    },
-    {
-      id: 'config_002',
-      name: 'Code Assistant Config',
-      description: '代码助手的配置',
-      status: 'active',
-      type: 'code_assistant',
-      created_at: '2024-01-02T00:00:00Z',
-      updated_at: '2024-01-11T00:00:00Z',
-      config: {
-        model: 'gpt-4-code',
-        temperature: 0.3,
-        max_tokens: 4000,
-        system_prompt: '你是一个专业的编程助手，请帮助用户编写、调试和优化代码。',
-        tools: ['code_executor', 'debugger', 'code_analyzer', 'git_operations']
-      }
-    },
-    {
-      id: 'config_003',
-      name: 'Research Assistant Config',
-      description: '研究助手的配置',
-      status: 'active',
-      type: 'research_assistant',
-      created_at: '2024-01-03T00:00:00Z',
-      updated_at: '2024-01-12T00:00:00Z',
-      config: {
-        model: 'gpt-4-research',
-        temperature: 0.5,
-        max_tokens: 3000,
-        system_prompt: '你是一个研究助手，请帮助用户收集、分析和整理信息。',
-        tools: ['web_search', 'document_analyzer', 'summarizer', 'citation_generator']
-      }
-    },
-    {
-      id: 'config_004',
-      name: 'Task Manager Config',
-      description: '任务管理助手的配置',
-      status: 'active',
-      type: 'task_manager',
-      created_at: '2024-01-04T00:00:00Z',
-      updated_at: '2024-01-13T00:00:00Z',
-      config: {
-        model: 'gpt-4',
-        temperature: 0.4,
-        max_tokens: 2500,
-        system_prompt: '你是一个任务管理助手，请帮助用户规划、跟踪和管理任务。',
-        tools: ['task_creator', 'progress_tracker', 'calendar_integration', 'reminder_system']
-      }
-    },
-    {
-      id: 'config_005',
-      name: 'Data Analyst Config',
-      description: '数据分析助手的配置',
-      status: 'active',
-      type: 'data_analyst',
-      created_at: '2024-01-05T00:00:00Z',
-      updated_at: '2024-01-14T00:00:00Z',
-      config: {
-        model: 'gpt-4-data',
-        temperature: 0.6,
-        max_tokens: 3500,
-        system_prompt: '你是一个数据分析助手，请帮助用户分析数据、生成报告和可视化。',
-        tools: ['data_processor', 'statistical_analyzer', 'chart_generator', 'report_builder']
-      }
-    }
-  ]
-
-  const fetchAgents = async () => {
+  const fetchAgents = async (sessionId?: string) => {
     loading.value = true
     error.value = ''
     
     try {
-      // TODO: 替换为实际的API调用
-      // const response = await agentApi.getAgents()
-      // agents.value = response.agents
+      if (!sessionId) {
+        // 如果没有提供sessionId，清空agents
+        agents.value = []
+        return
+      }
       
-      // 暂时使用模拟数据
-      await new Promise(resolve => setTimeout(resolve, 500))
-      agents.value = mockAgents
+      // 使用sessionApi获取session中的agents
+      const sessionAgents = await sessionApi.getSessionAgents(sessionId)
+      
+      // 转换为Agent类型，添加默认状态
+      agents.value = sessionAgents.map(agent => ({
+        ...agent,
+        status: 'idle' as const,
+        type: agent.type || 'assistant'
+      }))
       
       if (agents.value.length > 0 && !selectedAgentId.value) {
         const firstAgent = agents.value[0]
         if (firstAgent) {
-          selectedAgentId.value = firstAgent.id
-          selectAgent(firstAgent.id)
+          selectedAgentId.value = firstAgent.agent_id
+          selectAgent(firstAgent.agent_id)
         }
       }
     } catch (err: any) {
@@ -230,18 +63,48 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
+  const fetchAgentConfig = async (sessionId: string, agentId: string): Promise<AgentConfig | null> => {
+    try {
+      // 先从缓存中查找
+      const cachedConfig = agentConfigs.value.get(`${sessionId}_${agentId}`)
+      if (cachedConfig) {
+        return cachedConfig
+      }
+      
+      // 调用API获取配置
+      const config = await agentApi.getAgentConfig({ sessionId, agentId })
+      
+      // 缓存配置
+      agentConfigs.value.set(`${sessionId}_${agentId}`, config)
+      
+      return config
+    } catch (err: any) {
+      console.error('获取Agent配置失败:', err)
+      // 不显示错误消息，避免干扰用户
+      return null
+    }
+  }
+
   const fetchAgentConfigs = async () => {
     loading.value = true
     error.value = ''
     
     try {
-      // TODO: 替换为实际的API调用
-      // const response = await agentApi.getAgentConfigs()
-      // agentConfigs.value = response.configs
+      // 获取所有agent配置
+      const configs = await agentApi.getAgentConfigs()
       
-      // 暂时使用模拟数据
-      await new Promise(resolve => setTimeout(resolve, 500))
-      agentConfigs.value = mockAgentConfigs
+      // 清空缓存
+      agentConfigs.value.clear()
+      
+      // 将配置添加到缓存（这里假设配置有sessionId和agentId信息）
+      configs.forEach(config => {
+        // 注意：这里需要根据实际API返回的数据结构调整
+        // 假设config中有session_id和agent_id字段
+        const key = `${(config as any).session_id}_${(config as any).agent_id}`
+        if (key) {
+          agentConfigs.value.set(key, config)
+        }
+      })
     } catch (err: any) {
       error.value = err.message || '获取Agent配置失败'
       ElMessage.error(error.value)
@@ -250,31 +113,41 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
-  const selectAgent = (agentId: string) => {
+  const selectAgent = (agentId: string, sessionId?: string) => {
     selectedAgentId.value = agentId
-    selectedAgent.value = agents.value.find(agent => agent.id === agentId) || null
+    selectedAgent.value = agents.value.find(agent => agent.agent_id === agentId) || null
     
-    if (selectedAgent.value) {
-      selectedAgentConfig.value = agentConfigs.value.find(
-        config => config.id === selectedAgent.value?.config_id
-      ) || null
+    // 如果提供了sessionId，尝试获取agent配置
+    if (selectedAgent.value && sessionId) {
+      fetchAgentConfig(sessionId, agentId).then(config => {
+        selectedAgentConfig.value = config
+      })
+    } else {
+      selectedAgentConfig.value = null
     }
   }
 
   const getAgentById = (agentId: string): Agent | undefined => {
-    return agents.value.find(agent => agent.id === agentId)
+    return agents.value.find(agent => agent.agent_id === agentId)
   }
 
-  const getAgentConfigById = (configId: string): AgentConfig | undefined => {
-    return agentConfigs.value.find(config => config.id === configId)
+  const getAgentConfigById = (sessionId: string, agentId: string): AgentConfig | undefined => {
+    return agentConfigs.value.get(`${sessionId}_${agentId}`)
   }
 
-  const updateAgentStatus = (agentId: string, status: Agent['status']) => {
-    const agent = agents.value.find(a => a.id === agentId)
+  const updateAgentStatus = (agentId: string, status: Agent['status'], sessionId?: string) => {
+    const agent = agents.value.find(a => a.agent_id === agentId)
     if (agent) {
       agent.status = status
       if (agentId === selectedAgentId.value) {
         selectedAgent.value = { ...agent }
+      }
+      
+      // 如果有sessionId，调用API更新状态
+      if (sessionId) {
+        agentApi.updateAgentStatus({ sessionId, agentId, status }).catch(err => {
+          console.error('更新Agent状态失败:', err)
+        })
       }
     }
   }
@@ -337,11 +210,20 @@ export const useAgentStore = defineStore('agent', () => {
     return typeColors[type] || 'gray'
   }
 
-  const init = async () => {
-    await Promise.all([
-      fetchAgents(),
-      fetchAgentConfigs()
-    ])
+  const init = async (sessionId?: string) => {
+    if (sessionId) {
+      await fetchAgents(sessionId)
+    }
+    // 不自动获取所有配置，按需获取
+  }
+
+  // 清除缓存
+  const clearCache = () => {
+    agentConfigs.value.clear()
+    agents.value = []
+    selectedAgentId.value = ''
+    selectedAgent.value = null
+    selectedAgentConfig.value = null
   }
 
   return {
@@ -354,6 +236,7 @@ export const useAgentStore = defineStore('agent', () => {
     error,
     
     fetchAgents,
+    fetchAgentConfig,
     fetchAgentConfigs,
     selectAgent,
     getAgentById,
@@ -363,6 +246,7 @@ export const useAgentStore = defineStore('agent', () => {
     getStatusText,
     getTypeIcon,
     getTypeColor,
-    init
+    init,
+    clearCache
   }
 })

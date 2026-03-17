@@ -371,13 +371,6 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const addMessage = (m: Message) => {
-    console.log('📨 收到消息:', {
-      message_id: m.message_id,
-      message_type: m.message_type,
-      tool_call_id: m.data?.tool_call_id,
-      has_result: m.data?.result !== undefined,
-      data: m.data
-    })
     
     const processed = processMessage(m)
     if (processed) {
@@ -576,6 +569,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // 解析@mention
     const { targetAgentId, cleanText } = parseMention(text)
+    console.log(targetAgentId, cleanText)
     
     // 检查cleanText是否为空或只包含空格
     if (!cleanText.trim()) {
