@@ -100,7 +100,7 @@ class MessageListWidget(RichLog):
     def _get_display_content(self, message):
         if message.message_type == MessageType.TOOL_CALL:
             tool_name = message.data.get("tool_name", "unknown")
-            return f"Call tool: {tool_name}"
+            return tool_name
         content = message.data.get("content", "")
         try:
             json_content = json.loads(content)

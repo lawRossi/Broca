@@ -13,7 +13,7 @@ from textual.binding import Binding
 from textual.containers import Container, Vertical
 from textual.widgets import Input, Static
 
-from broca.session.models import Message, MessageProtocol
+from broca.session.models import Message, MessageProtocol, MessageType
 
 from .tui_models import MessageBuffer, StatusIndicator
 from .tui_widgets import MessageListWidget, PermissionDialog, StatusWidget
@@ -112,7 +112,12 @@ class BrocaTUIApp(App):
                 )
             )
             for m in messages:
-                await self.add_message(m)
+                if m.message_type in [
+                    MessageType.USER_MESSAGE,
+                    MessageType.AGENT_RESPONSE,
+                    MessageType.TOOL_CALL,
+                ]:
+                    await self.add_message(m)
 
             self._history_loaded = True
         except Exception as e:
@@ -493,16 +498,12 @@ Keyboard shortcuts:
     async def on_agent_response(self, message):
         """Handle agent response"""
         content = message.data.get("content", "")
-        await self.add_message(MessageProtocol.create_agent_response(content))
+        await self.add_message(message)
 
     async def on_tool_call(self, message):
         """Handle tool call"""
         tool_name = message.data.get("tool_name", "unknown")
-        await self.add_message(
-            MessageProtocol.create_tool_call(
-                tool_name, message.data.get("arguments", {})
-            )
-        )
+        await self.add_message(message)
 
     async def on_turn_start(self, message):
         """Handle turn start event"""

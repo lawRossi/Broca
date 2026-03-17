@@ -48,7 +48,7 @@ const chatStore = useChatStore()
       </div>
       
       <div class="mt-4 pt-3 border-t text-xs text-gray-500">
-        Showing {{ chatStore.filteredMessages.length }} of {{ chatStore.uiMessages.length }} messages
+        Showing {{ chatStore.filteredMessages.length }} of {{ chatStore.messages.length }} messages
       </div>
     </div>
 

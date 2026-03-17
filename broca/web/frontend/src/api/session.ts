@@ -1,4 +1,5 @@
 import request from '@/utils/request'
+import type { Message, MessageType, MessageRole } from './types'
 
 export interface Session {
   session_id: string
@@ -20,17 +21,8 @@ export interface Agent {
   description?: string
 }
 
-export interface Message {
-  message_id: string
-  session_id: string
-  turn_id: string
-  agent_id: string
-  role: string
-  content?: string
-  message_type: string
-  sequence_number: number
-  timestamp: string
-}
+// 使用共享的Message类型
+export type { Message, MessageType, MessageRole }
 
 export interface Turn {
   turn_id: string

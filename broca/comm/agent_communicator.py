@@ -10,7 +10,7 @@ from typing import Optional
 
 from loguru import logger
 
-from broca.session.models import Message, MessageRole, MessageType
+from broca.session.models import Message, MessageProtocol, MessageRole, MessageType
 
 from .socketio_client import SocketIOClient
 
@@ -67,18 +67,15 @@ class AgentCommunicator(SocketIOClient):
         subscription: Optional[str] = None,
     ) -> str:
         """Send task start message"""
-        message = Message(
-            message_type=MessageType.TASK_START,
-            role=MessageRole.AGENT,
+        message = MessageProtocol.create_task_start(
+            task_id=task_id,
+            task_description=task_description,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
             subscription=subscription,
-            data={
-                "task_id": task_id,
-                "task_description": task_description,
-            },
         )
+
         return await self.send_message(message)
 
     async def send_task_complete(
@@ -114,16 +111,15 @@ class AgentCommunicator(SocketIOClient):
         subscription: Optional[str] = None,
     ) -> str:
         """Send task error message"""
-        message = Message(
-            message_type=MessageType.TASK_FAILED,
-            role=MessageRole.AGENT,
+        message = MessageProtocol.create_task_error(
+            task_id=task_id,
+            error_message=error_message,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
             subscription=subscription,
-            error_code=task_id,
-            data={"error_message": error_message, "task_id": task_id},
         )
+
         return await self.send_message(message)
 
     async def send_to_user(self, user_id: str, content: str):

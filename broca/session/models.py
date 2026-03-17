@@ -5,6 +5,7 @@
 优化了消息模型，统一了字段结构。
 """
 
+import uuid
 from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
@@ -47,7 +48,7 @@ class MessageType(str, Enum):
     # 任务管理
     TASK_START = "task_start"
     TASK_COMPLETE = "task_complete"
-    TASK_FAILED = "task_failed"
+    TASK_ERROR = "task_error"
 
     # 轮次管理
     TURN_START = "turn_start"
@@ -132,13 +133,22 @@ class Session(SQLModel, table=True):
     )
 
 
+def generate_message_id() -> str:
+    return "msg-" + str(uuid.uuid4())
+
+
 class Message(SQLModel, table=True):
     """统一的消息模型"""
 
     __tablename__ = "message"
 
     # 基础字段
-    message_id: str = Field(index=True, primary_key=True, description="消息唯一标识符")
+    message_id: str = Field(
+        index=True,
+        primary_key=True,
+        description="消息唯一标识符",
+        default_factory=generate_message_id,
+    )
     message_type: MessageType = Field(description="消息类型")
     timestamp: datetime = Field(default_factory=datetime.now, description="消息时间戳")
 
@@ -178,9 +188,6 @@ class Message(SQLModel, table=True):
         description="消息数据（包含content等所有字段）",
     )
 
-    # 错误信息
-    error_code: Optional[str] = Field(default=None, description="错误代码")
-
     # 序列号（用于排序）
     sequence_number: Optional[int] = Field(default=None, description="消息序列号")
 
@@ -188,21 +195,6 @@ class Message(SQLModel, table=True):
     session: Optional["Session"] = Relationship(back_populates="messages")
     turn: Optional["Turn"] = Relationship(back_populates="messages")
     agent: Optional["Agent"] = Relationship(back_populates="messages")
-
-    # 辅助方法
-    def is_tool_call(self) -> bool:
-        """判断是否为工具调用"""
-        return (
-            self.message_type == MessageType.TOOL_CALL
-            and self.data.get("action") == "call"
-        )
-
-    def is_tool_result(self) -> bool:
-        """判断是否为工具结果"""
-        return (
-            self.message_type == MessageType.TOOL_CALL
-            and self.data.get("action") == "result"
-        )
 
 
 class AgentConfig(SQLModel, table=True):
@@ -296,24 +288,15 @@ class MessageProtocol:
 
     @staticmethod
     def create_tool_call(
-        tool_name: str, arguments: Dict[str, Any], **kwargs
+        tool_name: str, arguments: Dict[str, Any], tool_call_id:str, result: Optional[str]=None, status: Optional[bool]=None,
+        **kwargs
     ) -> Message:
         """创建工具调用消息"""
         data = kwargs.pop("data", {})
-        data.update({"tool_name": tool_name, "arguments": arguments, "action": "call"})
-
-        return Message(
-            message_type=MessageType.TOOL_CALL,
-            role=MessageRole.TOOL,
-            data=data,
-            **kwargs,
-        )
-
-    @staticmethod
-    def create_tool_result(tool_name: str, result: Any, **kwargs) -> Message:
-        """创建工具结果消息"""
-        data = kwargs.pop("data", {})
-        data.update({"tool_name": tool_name, "result": result, "action": "result"})
+        data.update({"tool_call_id": tool_call_id, "tool_name": tool_name, "arguments": arguments})
+        if result is not None:
+            data["result"] = result
+            data["status"] = status
 
         return Message(
             message_type=MessageType.TOOL_CALL,
@@ -478,7 +461,7 @@ class MessageProtocol:
         return Message(
             message_type=MessageType.ERROR,
             role=MessageRole.AGENT_SYSTEM,
-            data={"content": content},
+            data={"content": content, "error_code": error_code},
             **kwargs,
         )
 
@@ -492,5 +475,42 @@ class MessageProtocol:
             role=MessageRole.SYSTEM,
             data={"content": content},
             subscription=subscription,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_task_start(task_id: str, task_description: str, **kwargs) -> Message:
+        """创建任务开始消息"""
+        return Message(
+            message_type=MessageType.TASK_START,
+            role=MessageRole.AGENT,
+            data={"task_id": task_id, "task_description": task_description},
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_task_complete(
+        task_id: str, result: Optional[str] = None, **kwargs
+    ) -> Message:
+        """创建任务完成消息"""
+        data = {"task_id": task_id}
+        if result:
+            data["result"] = result
+        return Message(
+            message_type=MessageType.TASK_COMPLETE,
+            role=MessageRole.AGENT,
+            data=data,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_task_error(
+        task_id: str, error_message: str, error_code: str | None = None, **kwargs
+    ) -> Message:
+        """创建任务错误消息"""
+        return Message(
+            message_type=MessageType.TASK_ERROR,
+            role=MessageRole.AGENT,
+            data={"task_id": task_id, "error_code": error_code},
             **kwargs,
         )

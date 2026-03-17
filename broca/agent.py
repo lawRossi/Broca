@@ -87,7 +87,7 @@ class SocketIOAgent(Agent):
         self.communicator.register_event_handler("user_message", self._receive_message)
         self.communicator.register_event_handler("task_start", self._receive_message)
         self.communicator.register_event_handler("task_complete", self._receive_message)
-        self.communicator.register_event_handler("task_failed", self._receive_message)
+        self.communicator.register_event_handler("task_error", self._receive_message)
         self.communicator.register_event_handler("error", self._on_error)
         self.communicator.register_event_handler("command", self._on_command)
         self.communicator.register_event_handler(
@@ -396,6 +396,7 @@ class SocketIOAgent(Agent):
                     await self.communicator.send_tool_call(
                         tool_name=tool_name,
                         arguments=arguments,
+                        tool_call_id=tool_call.id,
                         subscription=self.session_id,
                     )
 
@@ -422,14 +423,23 @@ class SocketIOAgent(Agent):
             tool_call_result = {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": tool_result.content,
-                "status": tool_result.status,
+                "content": tool_result.content
             }
 
             # Save tool result to database for persistence
             # This completes the tool execution record with the actual result
             if self.turn_id:
                 try:
+                    # Send tool call result (second message with result)
+                    await self.communicator.send_tool_call(
+                        tool_name=tool_name,
+                        arguments=arguments,
+                        tool_call_id=tool_call.id,
+                        result=tool_result.content,
+                        status=tool_result.status,
+                        subscription=self.session_id,
+                    )
+
                     await self.session_manager.save_message(
                         role=MessageRole.TOOL,
                         content=None,  # content现在在data中
@@ -440,9 +450,10 @@ class SocketIOAgent(Agent):
                             "content": json.dumps(tool_call_result, ensure_ascii=False),
                             "action": "result",
                             "tool_name": tool_name,
+                            "arguments": arguments,
                             "result": tool_result.content,
                             "status": tool_result.status,
-                        }
+                        },
                     )
                 except Exception as save_error:
                     logger.error(f"Failed to save tool result: {save_error}")
@@ -652,7 +663,9 @@ class SocketIOAgent(Agent):
                 except Exception as save_error:
                     logger.error(f"Failed to save task error: {save_error}")
             result = f"The agent {self.agent_id} failed to finish the task"
-            await self.communicator.send_task_error(task_id, result, assigner)
+            await self.communicator.send_task_error(
+                task_id, result, receiver_id=assigner
+            )
 
     def reset(self):
         """Reset agent state"""

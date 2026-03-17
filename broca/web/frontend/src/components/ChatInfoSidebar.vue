@@ -1,10 +1,31 @@
 <script setup lang="ts">
-import { useChatStore, DisplayType } from '@/stores'
+import { useChatStore } from '@/stores'
+import type { BrocaMessage } from '@/api/brocaSocket'
 
 const chatStore = useChatStore()
 
-const getMessageCount = (displayType: DisplayType) => {
-  return chatStore.uiMessages.filter(m => m.displayType === displayType).length
+const getMessageCount = (filterFn: (msg: BrocaMessage) => boolean) => {
+  return chatStore.messages.filter(filterFn).length
+}
+
+const getUserMessageCount = () => {
+  return getMessageCount(msg => msg.message_type === 'user_message' || msg.role === 'user')
+}
+
+const getAssistantMessageCount = () => {
+  return getMessageCount(msg => msg.message_type === 'agent_response' || msg.role === 'assistant')
+}
+
+const getSystemMessageCount = () => {
+  return getMessageCount(msg => msg.message_type === 'system_message' || msg.role === 'system')
+}
+
+const getErrorMessageCount = () => {
+  return getMessageCount(msg => msg.message_type === 'error' || msg.message_type === 'agent_error')
+}
+
+const getToolCallCount = () => {
+  return getMessageCount(msg => msg.message_type === 'tool_call')
 }
 </script>
 
@@ -41,7 +62,7 @@ const getMessageCount = (displayType: DisplayType) => {
         </div>
         <div class="flex justify-between">
           <span class="text-gray-500">Messages:</span>
-          <span class="font-mono">{{ chatStore.uiMessages.length }}</span>
+          <span class="font-mono">{{ chatStore.messages.length }}</span>
         </div>
       </div>
     </div>
@@ -54,35 +75,35 @@ const getMessageCount = (displayType: DisplayType) => {
             <span class="w-2 h-2 rounded-full bg-blue-500"></span>
             User
           </span>
-          <span class="font-mono text-sm">{{ getMessageCount(DisplayType.USER) }}</span>
+          <span class="font-mono text-sm">{{ getUserMessageCount() }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-600 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-green-500"></span>
             Assistant
           </span>
-          <span class="font-mono text-sm">{{ getMessageCount(DisplayType.ASSISTANT) }}</span>
+          <span class="font-mono text-sm">{{ getAssistantMessageCount() }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-600 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-gray-500"></span>
             System
           </span>
-          <span class="font-mono text-sm">{{ getMessageCount(DisplayType.SYSTEM) }}</span>
+          <span class="font-mono text-sm">{{ getSystemMessageCount() }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-600 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-red-500"></span>
             Errors
           </span>
-          <span class="font-mono text-sm">{{ getMessageCount(DisplayType.ERROR) }}</span>
+          <span class="font-mono text-sm">{{ getErrorMessageCount() }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-600 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-purple-500"></span>
             Tool Calls
           </span>
-          <span class="font-mono text-sm">{{ getMessageCount(DisplayType.TOOL_CALL) }}</span>
+          <span class="font-mono text-sm">{{ getToolCallCount() }}</span>
         </div>
       </div>
     </div>
