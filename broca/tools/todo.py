@@ -43,7 +43,7 @@ class TodoManagement(Tool):
                             "name": {"type": "string"},
                             "status": {
                                 "type": "string",
-                                "enum": ["pending", "completed"],
+                                "enum": ["pending", "in_progress", "completed"],
                             },
                         },
                         "required": ["name", "status"],
@@ -101,7 +101,7 @@ class TodoManagement(Tool):
                 return "each todo must have a name"
             if "status" not in item:
                 return "each todo must have a status"
-            if item["status"] not in ["pending", "completed"]:
+            if item["status"] not in ["pending", "in_progress", "completed"]:
                 return "Invalid status. Valid values: pending, completed"
         return None
 
