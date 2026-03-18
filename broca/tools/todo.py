@@ -72,9 +72,9 @@ class TodoManagement(Tool):
         return str(max(int(todos["id"]) for todos in todos_data) + 1)
 
     def _find_todos(self, todo_id, todos_data):
-        for todo in todos_data:
-            if todo["id"] == todo_id:
-                return todo
+        for todos in todos_data:
+            if todos["id"] == todo_id:
+                return todos
         return None
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
