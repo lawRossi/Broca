@@ -12,8 +12,6 @@ from typing import Optional
 
 from loguru import logger
 
-from broca.session.database import db_manager
-
 from .tui_app import BrocaTUIApp
 
 
@@ -91,11 +89,6 @@ async def main():
     )
 
     args = parser.parse_args()
-
-    # setup tables
-    await db_manager.init_tables()
-
-    logger.debug("db tables created")
 
     # Create and run TUI
     tui = TUI(

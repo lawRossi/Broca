@@ -7,6 +7,7 @@ Session管理模块
 - Turn管理
 - Agent配置管理
 - 与现有Agent系统的集成
+- 数据库迁移管理（Alembic集成）
 """
 
 from .models import (
@@ -35,6 +36,12 @@ from .service import (
 from .session_manager import (
     SessionManager,
 )
+from .db_migration import (
+    DatabaseMigrationManager,
+    migration_manager,
+    init_database_with_migrations,
+    handle_migration_command,
+)
 
 __all__ = [
     # Models
@@ -60,4 +67,9 @@ __all__ = [
     "get_agent_config_service",
     # Session Manager
     "SessionManager",
+    # Database Migration
+    "DatabaseMigrationManager",
+    "migration_manager",
+    "init_database_with_migrations",
+    "handle_migration_command",
 ]

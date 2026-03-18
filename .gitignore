@@ -567,3 +567,5 @@ tramp
 *.eot
 
 .agents
+
+alembic/versions

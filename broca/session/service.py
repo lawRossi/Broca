@@ -17,9 +17,13 @@ from .database import db_manager
 from .models import (
     Agent,
     AgentConfig,
+    JobExecution,
+    JobStatus,
+    JobType,
     Message,
     MessageRole,
     MessageType,
+    ScheduledJob,
     Session,
     SessionStatus,
     Turn,
@@ -53,6 +57,10 @@ class BaseService(Generic[T]):
             return "agent_id"
         elif class_name == "agentconfig":
             return "config_id"
+        elif class_name == "scheduledjob":
+            return "job_id"
+        elif class_name == "jobexecution":
+            return "execution_id"
         else:
             # 默认规则：类名 + "_id"
             return f"{class_name}_id"
@@ -451,3 +459,140 @@ def get_agent_config_service() -> AgentConfigService:
 def get_agent_service() -> AgentService:
     """获取AgentService实例"""
     return agent_service
+
+
+class JobService(BaseService[ScheduledJob]):
+    """调度任务Service类"""
+
+    def __init__(self):
+        super().__init__(ScheduledJob)
+
+    async def create_job(
+        self,
+        job_id: str,
+        name: str,
+        job_type: JobType,
+        trigger_type: str,
+        trigger_config: Dict[str, Any],
+        content: str,
+        session_id: Optional[str] = None
+    ) -> ScheduledJob:
+        """创建新任务"""
+        return await self.create(
+            job_id=job_id,
+            name=name,
+            job_type=job_type,
+            status=JobStatus.ACTIVE,
+            trigger_type=trigger_type,
+            trigger_config=trigger_config,
+            content=content,
+            session_id=session_id,
+            created_at=datetime.utcnow(),
+            updated_at=datetime.utcnow(),
+        )
+
+    async def get_active_jobs(self, session_id: Optional[str] = None) -> List[ScheduledJob]:
+        """获取活跃任务"""
+        filters = {"status": JobStatus.ACTIVE}
+        if session_id:
+            filters["session_id"] = session_id
+        return await self.get_all(filters=filters, order_by="created_at")
+
+    async def get_jobs_by_session(self, session_id: str) -> List[ScheduledJob]:
+        """根据会话ID获取任务"""
+        return await self.get_all(filters={"session_id": session_id}, order_by="created_at")
+
+    async def update_job_status(self, job_id: str, status: JobStatus) -> bool:
+        """更新任务状态"""
+        job = await self.update(
+            job_id,
+            status=status,
+            updated_at=datetime.utcnow()
+        )
+        return job is not None
+
+    async def update_next_run_time(self, job_id: str, next_run_time: Optional[datetime]) -> bool:
+        """更新下次执行时间"""
+        job = await self.update(
+            job_id,
+            next_run_time=next_run_time,
+            updated_at=datetime.utcnow()
+        )
+        return job is not None
+
+    async def pause_job(self, job_id: str) -> bool:
+        """暂停任务"""
+        return await self.update_job_status(job_id, JobStatus.PAUSED)
+
+    async def resume_job(self, job_id: str) -> bool:
+        """恢复任务"""
+        return await self.update_job_status(job_id, JobStatus.ACTIVE)
+
+    async def cancel_job(self, job_id: str) -> bool:
+        """取消任务"""
+        return await self.update_job_status(job_id, JobStatus.CANCELLED)
+
+    async def complete_job(self, job_id: str) -> bool:
+        """标记任务完成（一次性任务）"""
+        return await self.update_job_status(job_id, JobStatus.COMPLETED)
+
+
+class JobExecutionService(BaseService[JobExecution]):
+    """任务执行记录Service类"""
+
+    def __init__(self):
+        super().__init__(JobExecution)
+
+    async def create_execution(
+        self,
+        job_id: str,
+        success: bool,
+        result: Optional[str] = None
+    ) -> JobExecution:
+        """创建执行记录"""
+        execution_id = f"exec_{uuid.uuid4().hex}"
+        return await self.create(
+            execution_id=execution_id,
+            job_id=job_id,
+            success=success,
+            result=result,
+            executed_at=datetime.utcnow(),
+        )
+
+    async def get_executions_by_job(self, job_id: str, limit: int = 10) -> List[JobExecution]:
+        """根据任务ID获取执行记录"""
+        async with db_manager.get_session() as session:
+            statement = (
+                select(JobExecution)
+                .where(JobExecution.job_id == job_id)
+                .order_by(JobExecution.executed_at.desc())
+                .limit(limit)
+            )
+            result = await session.exec(statement)
+            return result.scalars().all()
+
+    async def get_recent_executions(self, limit: int = 50) -> List[JobExecution]:
+        """获取最近的执行记录"""
+        async with db_manager.get_session() as session:
+            statement = (
+                select(JobExecution)
+                .order_by(JobExecution.executed_at.desc())
+                .limit(limit)
+            )
+            result = await session.exec(statement)
+            return result.scalars().all()
+
+
+# 全局Service实例
+job_service = JobService()
+job_execution_service = JobExecutionService()
+
+
+def get_job_service() -> JobService:
+    """获取JobService实例"""
+    return job_service
+
+
+def get_job_execution_service() -> JobExecutionService:
+    """获取JobExecutionService实例"""
+    return job_execution_service

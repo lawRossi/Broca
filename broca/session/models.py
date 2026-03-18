@@ -131,6 +131,9 @@ class Session(SQLModel, table=True):
     agent_configs: List["AgentConfig"] = Relationship(
         back_populates="session", cascade_delete="all"
     )
+    scheduled_jobs: List["ScheduledJob"] = Relationship(
+        back_populates="session", cascade_delete="all"
+    )
 
 
 def generate_message_id() -> str:
@@ -514,3 +517,80 @@ class MessageProtocol:
             data={"task_id": task_id, "error_code": error_code},
             **kwargs,
         )
+
+
+# ============================================================================
+# 调度器相关模型
+# ============================================================================
+
+class JobType(str, Enum):
+    """任务类型枚举"""
+    REMINDER = "reminder"      # 提醒任务
+    COMMAND = "command"        # 命令执行任务
+
+
+class JobStatus(str, Enum):
+    """任务状态枚举"""
+    ACTIVE = "active"          # 任务活跃
+    PAUSED = "paused"          # 任务暂停
+    COMPLETED = "completed"    # 任务完成（一次性任务）
+    CANCELLED = "cancelled"    # 任务取消
+
+
+class ScheduledJob(SQLModel, table=True):
+    """调度任务模型（简化版）"""
+    __tablename__ = "scheduled_job"
+    
+    # 基础字段
+    job_id: str = Field(primary_key=True, description="任务唯一标识符")
+    name: str = Field(description="任务名称")
+    job_type: JobType = Field(description="任务类型")
+    status: JobStatus = Field(default=JobStatus.ACTIVE, description="任务状态")
+    
+    # 触发器配置（保持与现有cron工具兼容）
+    trigger_type: str = Field(description="触发器类型：cron, interval, date")
+    trigger_config: Dict[str, Any] = Field(
+        sa_column=Column(JSON, nullable=False, default={}),
+        description="触发器配置（JSON格式）"
+    )
+    
+    # 执行内容
+    content: str = Field(description="执行内容（消息或命令）")
+    
+    # 元数据
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
+    next_run_time: Optional[datetime] = Field(default=None, description="下次执行时间")
+    
+    # 会话关联（可选）
+    session_id: Optional[str] = Field(
+        foreign_key="session.session_id",
+        ondelete="SET NULL",
+        default=None,
+        description="关联的会话ID"
+    )
+    
+    # 关联关系
+    session: Optional["Session"] = Relationship(back_populates="scheduled_jobs")
+    executions: List["JobExecution"] = Relationship(
+        back_populates="job", cascade_delete="all"
+    )
+
+
+class JobExecution(SQLModel, table=True):
+    """任务执行记录模型（简化版）"""
+    __tablename__ = "job_execution"
+    
+    execution_id: str = Field(primary_key=True, description="执行记录唯一标识符")
+    job_id: str = Field(
+        foreign_key="scheduled_job.job_id",
+        ondelete="CASCADE",
+        description="关联的任务ID"
+    )
+    
+    executed_at: datetime = Field(default_factory=datetime.now, description="执行时间")
+    success: bool = Field(description="是否成功")
+    result: Optional[str] = Field(default=None, description="执行结果")
+    
+    # 关联关系
+    job: ScheduledJob = Relationship(back_populates="executions")

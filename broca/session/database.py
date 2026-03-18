@@ -10,7 +10,6 @@ from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
-from sqlmodel import SQLModel
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 # 数据库文件路径
@@ -53,11 +52,6 @@ class AsyncDatabaseManager:
         )
 
         print(f"Async database initialized at: {DATABASE_PATH}")
-
-    async def init_tables(self):
-        """初始化表"""
-        async with self._engine.begin() as conn:
-            await conn.run_sync(SQLModel.metadata.create_all)
 
     def get_engine(self):
         """获取异步数据库引擎"""
