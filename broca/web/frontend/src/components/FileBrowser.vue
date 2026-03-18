@@ -629,9 +629,10 @@ watch(() => props.initialPath, (newPath) => {
                       <el-button
                         :icon="InfoFilled"
                         size="small"
-                        type="text"
+                        type="default"
                         @click.stop="() => handleInfoClick(file)"
                         title="Details"
+                        class="!border-0 !bg-transparent !shadow-none hover:!bg-transparent"
                       />
                     </div>
                   </td>

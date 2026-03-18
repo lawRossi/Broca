@@ -199,9 +199,9 @@ const getShowResult = (messageId: string) => {
         <div v-if="message.data?.arguments" class="mb-2">
           <el-button 
             size="small" 
-            type="text" 
+            type="default" 
             @click="chatStore.toggleToolParameters(message.message_id)"
-            class="!text-purple-600 !p-0 !h-auto !min-h-0"
+            class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
           >
             {{ getShowParameters(message.message_id) ? '隐藏参数' : '查看参数' }}
           </el-button>
@@ -217,9 +217,9 @@ const getShowResult = (messageId: string) => {
         <div v-if="message.data?.result !== undefined" class="mb-2">
           <el-button 
             size="small" 
-            type="text" 
+            type="default" 
             @click="chatStore.toggleToolResult(message.message_id)"
-            class="!text-purple-600 !p-0 !h-auto !min-h-0"
+            class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
           >
             {{ getShowResult(message.message_id) ? '隐藏结果' : '查看结果' }}
           </el-button>

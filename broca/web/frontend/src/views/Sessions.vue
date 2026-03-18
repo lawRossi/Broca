@@ -301,7 +301,7 @@ onMounted(async () => {
                 <el-icon><Search /></el-icon>
               </template>
               <template #append>
-                <el-button @click="handleSearch">搜索</el-button>
+                <el-button type="default" @click="handleSearch">搜索</el-button>
               </template>
             </el-input>
           </div>
@@ -580,7 +580,7 @@ onMounted(async () => {
     </el-form>
     <template #footer>
       <span class="dialog-footer">
-        <el-button @click="createDialogVisible = false">取消</el-button>
+        <el-button type="default" @click="createDialogVisible = false">取消</el-button>
         <el-button
           type="primary"
           :loading="creating"
