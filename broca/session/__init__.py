@@ -10,6 +10,11 @@ Session管理模块
 - 数据库迁移管理（Alembic集成）
 """
 
+from .db_migration import (
+    DatabaseMigrationManager,
+    handle_migration_command,
+    migration_manager,
+)
 from .models import (
     Agent,
     AgentConfig,
@@ -35,12 +40,6 @@ from .service import (
 )
 from .session_manager import (
     SessionManager,
-)
-from .db_migration import (
-    DatabaseMigrationManager,
-    migration_manager,
-    init_database_with_migrations,
-    handle_migration_command,
 )
 
 __all__ = [
@@ -70,6 +69,5 @@ __all__ = [
     # Database Migration
     "DatabaseMigrationManager",
     "migration_manager",
-    "init_database_with_migrations",
     "handle_migration_command",
 ]

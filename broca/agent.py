@@ -3,7 +3,8 @@ import json
 import logging
 import traceback
 import uuid
-from typing import Optional
+from enum import Enum
+from typing import Any, Dict, Optional
 
 from litellm import Message as LLMMessage
 from loguru import logger
@@ -18,6 +19,43 @@ from broca.tools.tool_manager import ToolManager
 
 # Standard logger for non-agent operations
 std_logger = logging.getLogger(__name__)
+
+
+class ExecutionStatus(str, Enum):
+    """Agent execution status enumeration"""
+
+    PENDING = "pending"
+    COMPLETED = "completed"
+    ERROR = "error"
+    ABORTED = "aborted"
+
+
+class ExecutionResult:
+    """Result of agent execution"""
+
+    def __init__(
+        self,
+        status: ExecutionStatus,
+        message: Optional[str] = None,
+        data: Optional[Dict[str, Any]] = None,
+        error: Optional[str] = None,
+    ):
+        self.status = status
+        self.message = message
+        self.data = data or {}
+        self.error = error
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary"""
+        return {
+            "status": self.status,
+            "message": self.message,
+            "data": self.data,
+            "error": self.error,
+        }
+
+    def __str__(self) -> str:
+        return f"ExecutionResult(status={self.status}, message={self.message})"
 
 
 class Agent:
@@ -232,7 +270,10 @@ class SocketIOAgent(Agent):
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
                 if message.message_type == MessageType.USER_MESSAGE:
                     content = message.data.get("content")
-                    await self.run_async(content, message.message_id)
+                    execution_result = await self.run_async(content, message.message_id)
+                    logger.debug(
+                        f"User message execution result: {execution_result.status}"
+                    )
                 elif message.message_type == MessageType.TASK_START:
                     task_id = message.data.get("task_id")
                     task = message.data.get("task_description")
@@ -242,14 +283,20 @@ class SocketIOAgent(Agent):
                     task_id = message.data.get("task_id")
                     result = message.data.get("result")
                     logger.info(f"Received task result of task {task_id}: {result}")
-                    await self.run_async(result)
+                    execution_result = await self.run_async(result)
+                    logger.debug(
+                        f"Task result execution result: {execution_result.status}"
+                    )
                 elif message.message_type == MessageType.TASK_FAILED:
                     task_id = message.data.get("task_id")
                     error_message = message.data.get("error_message")
                     logger.error(
                         f"Received task error of task {task_id}: {error_message}"
                     )
-                    await self.run_async(error_message)
+                    execution_result = await self.run_async(error_message)
+                    logger.debug(
+                        f"Task error execution result: {execution_result.status}"
+                    )
             except asyncio.TimeoutError:
                 continue
 
@@ -423,7 +470,7 @@ class SocketIOAgent(Agent):
             tool_call_result = {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
-                "content": tool_result.content
+                "content": tool_result.content,
             }
 
             # Save tool result to database for persistence
@@ -466,7 +513,7 @@ class SocketIOAgent(Agent):
         user_message: Optional[str] = None,
         message_id: Optional[str] = None,
         max_steps: Optional[int] = None,
-    ) -> None:
+    ) -> ExecutionResult:
         """
         Run agent in async mode (replaces command-line interaction)
 
@@ -476,6 +523,9 @@ class SocketIOAgent(Agent):
         Args:
             user_message: Optional user message
             max_steps: Maximum number of steps
+
+        Returns:
+            ExecutionResult: Result of the execution with status and details
         """
         # Reset abort state for new execution
         self.is_aborted = False
@@ -527,11 +577,28 @@ class SocketIOAgent(Agent):
                             logger.error(
                                 f"Failed to save turn start error: {save_error}"
                             )
+                    return ExecutionResult(
+                        status=ExecutionStatus.ERROR,
+                        message="Failed to initialize execution",
+                        error=str(e),
+                    )
 
                 # Execute complete round
                 await self._execute_round_async(max_steps)
+
+                # Get the latest assistant message as result
+                latest_message = self.context.get_latest_assistant_message()
+                return ExecutionResult(
+                    status=ExecutionStatus.COMPLETED,
+                    message="Execution completed successfully",
+                    data={"latest_message": latest_message},
+                )
+
         except asyncio.CancelledError:
-            logger.info("Agent execution cancelled by user")
+            logger.info("Agent execution aborted by user")
+            return ExecutionResult(
+                status=ExecutionStatus.ABORTED, message="Execution was aborted by user"
+            )
         except Exception as e:
             logger.error(f"Error in agent execution: {e}")
             # Save error to database
@@ -555,6 +622,12 @@ class SocketIOAgent(Agent):
                 )
             except Exception as send_error:
                 logger.error(f"Failed to send error response: {send_error}")
+
+            return ExecutionResult(
+                status=ExecutionStatus.ERROR,
+                message="Error occurred during execution",
+                error=str(e),
+            )
         finally:
             # Clear the abort task reference
             self._abort_task = None
@@ -589,6 +662,12 @@ class SocketIOAgent(Agent):
         if not self.config.save_history:
             self.reset()
 
+        # Return default result if no user message was provided
+        return ExecutionResult(
+            status=ExecutionStatus.COMPLETED,
+            message="No user message provided, execution skipped",
+        )
+
     async def _execute_round_async(self, max_steps: Optional[int] = None) -> None:
         """
         Execute a complete round of agent execution
@@ -603,7 +682,8 @@ class SocketIOAgent(Agent):
                 # Check for abort before running step
                 if self.is_aborted or self.abort_event.is_set():
                     logger.info("Round aborted by user")
-                    break
+                    # Raise a specific exception for abort
+                    raise asyncio.CancelledError("Execution aborted by user")
 
                 # Run one step
                 need_more_steps = await self.run_step_async()
@@ -619,9 +699,10 @@ class SocketIOAgent(Agent):
                     logger.warning(f"Max steps ({max_steps}) reached")
                     break
 
-            except asyncio.CancelledError:
-                logger.info("Round cancelled by user.")
-                break
+            except asyncio.CancelledError as e:
+                logger.info(f"Round cancelled: {e}")
+                # Re-raise to be handled by run_async
+                raise
             except Exception as e:
                 logger.error(f"Error in round execution: {e}")
                 logger.error(traceback.format_exc())
@@ -638,16 +719,29 @@ class SocketIOAgent(Agent):
                         )
                     except Exception as save_error:
                         logger.error(f"Failed to save round error: {save_error}")
-                break
+                # Re-raise to be handled by run_async
+                raise
 
     async def _handle_task(self, task_id: str, task: str, assigner: str) -> None:
         try:
-            await self.run_async(task)
-            msg = self.context.get_latest_assistant_message()
-            result = f"Message from agent {self.agent_id}: {msg}"
-            logger.info(result)
-            logger.info(f"send result to {assigner}")
-            await self.communicator.send_task_complete(task_id, result, assigner)
+            execution_result = await self.run_async(task)
+
+            # Check execution status
+            if execution_result.status == ExecutionStatus.COMPLETED:
+                msg = self.context.get_latest_assistant_message()
+                result = f"Message from agent {self.agent_id}: {msg}"
+                logger.info(result)
+                logger.info(f"send result to {assigner}")
+                await self.communicator.send_task_complete(task_id, result, assigner)
+            elif execution_result.status == ExecutionStatus.ABORTED:
+                result = f"The agent {self.agent_id} execution was aborted by user"
+                logger.warning(result)
+            elif execution_result.status == ExecutionStatus.ERROR:
+                result = f"The agent {self.agent_id} failed to finish the task: {execution_result.error}"
+                logger.error(result)
+                await self.communicator.send_task_error(
+                    task_id, result, receiver_id=assigner
+                )
         except Exception as e:
             logger.error(f"Error processing task: {e}")
             # Save task processing error to database
@@ -662,7 +756,7 @@ class SocketIOAgent(Agent):
                     )
                 except Exception as save_error:
                     logger.error(f"Failed to save task error: {save_error}")
-            result = f"The agent {self.agent_id} failed to finish the task"
+            result = f"The agent {self.agent_id} failed to finish the task: {e}"
             await self.communicator.send_task_error(
                 task_id, result, receiver_id=assigner
             )
