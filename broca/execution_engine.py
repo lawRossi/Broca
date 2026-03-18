@@ -12,7 +12,6 @@ This module handles the execution logic for agents, including:
 
 import asyncio
 import json
-import traceback
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +19,7 @@ from litellm import Message as LLMMessage
 from loguru import logger
 
 from broca.context import Context
+from broca.error_handler import AgentError, ErrorHandler
 from broca.llm import LLMClient
 from broca.session import MessageRole, MessageType, SessionManager
 from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
@@ -100,6 +100,13 @@ class ExecutionEngine:
         self.communicator = communicator
         self.session_manager = session_manager
 
+        # Initialize error handler
+        self.error_handler = ErrorHandler(
+            session_manager=session_manager,
+            turn_id=None,  # Will be set during execution
+            agent_id=None,  # Will be set during execution
+        )
+
         # Execution state
         self.is_aborted = False
         self.abort_event = asyncio.Event()
@@ -129,6 +136,12 @@ class ExecutionEngine:
         self.agent_id = agent_id
         self.session_id = session_id
         self.is_aborted = is_aborted
+
+        # Update error handler context
+        self.error_handler.set_context(
+            turn_id=turn_id, agent_id=agent_id, session_manager=self.session_manager
+        )
+
         if is_aborted:
             self.abort_event.set()
         else:
@@ -157,28 +170,19 @@ class ExecutionEngine:
                 return False
 
             try:
-                # Call LLM with timeout for cancellation support
-                response = await asyncio.wait_for(self._call_llm(), timeout=180)
-                break
-            except asyncio.TimeoutError:
-                logger.error("LLM call timed out")
+                # Use error handler context manager for LLM call
+                async with self.error_handler.handle_llm_call(context="execute_step"):
+                    # Call LLM with timeout for cancellation support
+                    response = await asyncio.wait_for(self._call_llm(), timeout=180)
+                    break
+            except AgentError as e:
                 errors += 1
-                await self._handle_llm_timeout_error()
-
                 if errors > 2:
-                    logger.error("Too many timeouts, aborting...")
+                    logger.error(f"Too many errors ({e.error_type}), aborting...")
                     return False
             except asyncio.CancelledError:
                 logger.info("Agent execution cancelled by user during LLM call")
                 return False
-            except Exception as e:
-                logger.error(f"LLM call failed: {e}")
-                errors += 1
-                await self._handle_llm_error(e)
-
-                if errors > 2:
-                    logger.error("Too many errors, aborting...")
-                    return False
 
         # Add response to history
         await self.context.add_message(response)
@@ -216,34 +220,6 @@ class ExecutionEngine:
             List of formatted tools
         """
         return [tool.format() for tool in self.tool_mapping.values()]
-
-    async def _handle_llm_timeout_error(self):
-        """Handle LLM timeout error"""
-        if self.turn_id:
-            try:
-                await self.session_manager.save_message(
-                    role=MessageRole.SYSTEM,
-                    content="LLM call timed out",
-                    message_type=MessageType.ERROR,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save timeout error: {save_error}")
-
-    async def _handle_llm_error(self, error: Exception):
-        """Handle LLM error"""
-        if self.turn_id:
-            try:
-                await self.session_manager.save_message(
-                    role=MessageRole.SYSTEM,
-                    content=f"LLM call failed: {error}",
-                    message_type=MessageType.ERROR,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save LLM error: {save_error}")
 
     async def _send_agent_response(self, response: LLMMessage):
         """
@@ -330,25 +306,26 @@ class ExecutionEngine:
                         subscription=self.session_id,
                     )
 
-                    # Execute tool asynchronously with timeout
-                    tool_result = await asyncio.wait_for(
-                        self.tool_mapping[tool_name].execute(arguments, context),
-                        timeout=60,
+                    # Use error handler context manager for tool execution
+                    async with self.error_handler.handle_tool_execution(
+                        tool_name=tool_name, context="tool_call_processing"
+                    ):
+                        # Execute tool asynchronously with timeout
+                        tool_result = await asyncio.wait_for(
+                            self.tool_mapping[tool_name].execute(arguments, context),
+                            timeout=60,
+                        )
+                except AgentError as e:
+                    logger.error(
+                        f"Tool execution failed with {e.error_type}: {e.message}"
                     )
-                except asyncio.TimeoutError:
-                    logger.error(f"Tool '{tool_name}' execution timed out")
                     tool_result = ToolResult(
                         status=ToolStatus.ERROR,
-                        content=f"Tool {tool_name} execution timed out",
+                        content=f"Tool {tool_name} execution failed: {e.message}",
                     )
                 except asyncio.CancelledError:
                     logger.info("Tool execution cancelled by user")
                     return
-                except Exception as e:
-                    logger.error(f"Tool execution failed: {e}")
-                    tool_result = ToolResult(
-                        status=ToolStatus.ERROR, content=f"Tool execution failed: {e}"
-                    )
 
             # Create tool call result
             tool_call_result = {
@@ -424,55 +401,35 @@ class ExecutionEngine:
         steps = 0
 
         while True:
+            # Check for abort before running step
+            if self.is_aborted or self.abort_event.is_set():
+                logger.info("Round aborted by user")
+                raise asyncio.CancelledError("Execution aborted by user")
+
             try:
-                # Check for abort before running step
-                if self.is_aborted or self.abort_event.is_set():
-                    logger.info("Round aborted by user")
-                    raise asyncio.CancelledError("Execution aborted by user")
+                # Use error handler context manager for execution step
+                async with self.error_handler.handle_execution_step(step_number=steps):
+                    # Run one step
+                    need_more_steps = await self.execute_step()
+                    steps += 1
 
-                # Run one step
-                need_more_steps = await self.execute_step()
-                steps += 1
+                    # Check if more steps are needed
+                    if not need_more_steps:
+                        logger.info(f"Round completed after {steps} steps")
+                        break
 
-                # Check if more steps are needed
-                if not need_more_steps:
-                    logger.info(f"Round completed after {steps} steps")
-                    break
+                    # Check max steps limit
+                    if max_steps is not None and steps >= max_steps:
+                        logger.warning(f"Max steps ({max_steps}) reached")
+                        break
 
-                # Check max steps limit
-                if max_steps is not None and steps >= max_steps:
-                    logger.warning(f"Max steps ({max_steps}) reached")
-                    break
-
+            except AgentError as e:
+                logger.error(f"Execution step failed with {e.error_type}: {e.message}")
+                # Error is already logged by error handler, just re-raise
+                raise
             except asyncio.CancelledError as e:
                 logger.info(f"Round cancelled: {e}")
                 raise
-            except Exception as e:
-                logger.error(f"Error in round execution: {e}")
-                logger.error(traceback.format_exc())
-
-                # Save round execution error to database
-                await self._save_round_error(e)
-                raise
-
-    async def _save_round_error(self, error: Exception):
-        """
-        Save round execution error to database
-
-        Args:
-            error: Exception that occurred
-        """
-        if self.turn_id:
-            try:
-                await self.session_manager.save_message(
-                    role=MessageRole.SYSTEM,
-                    content=f"Error in round execution: {error}\n{traceback.format_exc()}",
-                    message_type=MessageType.ERROR,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save round error: {save_error}")
 
     async def execute(
         self,
@@ -569,19 +526,24 @@ class ExecutionEngine:
             subscription=self.session_id,
         )
 
+        message_data = {
+            "role": "user",
+            "content": user_message,
+            "message_id": self.turn_id,
+        }
+        msg_content = json.dumps(message_data, ensure_ascii=False)
+
         # Save user message to database
         await self.session_manager.save_message(
             role=MessageRole.USER,
-            content=user_message,
+            content=msg_content,
             message_type=MessageType.USER_MESSAGE,
             turn_id=turn_id,
             agent_id=self.agent_id,
         )
 
         # Add to context history
-        await self.context.add_message(
-            {"role": "user", "content": user_message, "message_id": self.turn_id}
-        )
+        await self.context.add_message(message_data)
 
     async def _ensure_session(self):
         """Ensure session exists, create if not"""

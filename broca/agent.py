@@ -194,6 +194,9 @@ class SocketIOAgent(Agent):
         """
         await self.permission_manager.handle_permission_response(message)
 
+    def stop(self):
+        self.running = False
+
     async def run(self):
         self.running = True
 

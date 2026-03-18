@@ -528,6 +528,7 @@ class SocketIOClient:
         self,
         turn_id: str,
         result: Optional[str] = None,
+        turn_description: Optional[str] = None,
         receiver_id: Optional[str] = None,
         room: Optional[str] = None,
         subscription: Optional[str] = None,
@@ -537,6 +538,7 @@ class SocketIOClient:
         message = MessageProtocol.create_turn_end(
             turn_id=turn_id,
             result=result,
+            turn_description=turn_description,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
