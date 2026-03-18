@@ -77,7 +77,10 @@ class Context:
                 await self.add_message(Message.parse_obj(message_content))
 
     def get_latest_assistant_message(self) -> str | None:
-        for message in reversed(self._history):
-            if message["role"] == "assistant":
-                return message["content"]
+        if not self._history:
+            return None
+        message = self._history[-1]
+        if message["role"] == "assistant":
+            return message["content"]
+
         return None

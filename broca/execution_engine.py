@@ -28,6 +28,7 @@ from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
 class ExecutionStatus(str, Enum):
     """Agent execution status enumeration"""
 
+    RUNNING = "running"
     PENDING = "pending"
     COMPLETED = "completed"
     ERROR = "error"
@@ -147,7 +148,7 @@ class ExecutionEngine:
         else:
             self.abort_event.clear()
 
-    async def execute_step(self) -> bool:
+    async def execute_step(self) -> ExecutionStatus:
         """
         Execute one step of agent execution
 
@@ -157,9 +158,8 @@ class ExecutionEngine:
         # Check for abort before starting step
         if self.is_aborted or self.abort_event.is_set():
             logger.info("Agent execution aborted")
-            return False
+            return ExecutionStatus.ABORTED
 
-        need_more_steps = True
         errors = 0
 
         # Try LLM call with retries
@@ -167,7 +167,7 @@ class ExecutionEngine:
             # Check for abort during LLM call
             if self.is_aborted or self.abort_event.is_set():
                 logger.info("Agent execution aborted during LLM call")
-                return False
+                return ExecutionStatus.ABORTED
 
             try:
                 # Use error handler context manager for LLM call
@@ -179,10 +179,10 @@ class ExecutionEngine:
                 errors += 1
                 if errors > 2:
                     logger.error(f"Too many errors ({e.error_type}), aborting...")
-                    return False
+                    return ExecutionStatus.ERROR
             except asyncio.CancelledError:
                 logger.info("Agent execution cancelled by user during LLM call")
-                return False
+                return ExecutionStatus.ABORTED
 
         # Add response to history
         await self.context.add_message(response)
@@ -195,11 +195,15 @@ class ExecutionEngine:
 
         # Process tool calls if any
         if not response.tool_calls:
-            need_more_steps = False
+            return ExecutionStatus.COMPLETED
         else:
             await self._process_tool_calls(response.tool_calls)
 
-        return need_more_steps
+        if self.is_aborted or self.abort_event.is_set():
+            logger.info("Agent execution aborted after tool calls")
+            return ExecutionStatus.ABORTED
+
+        return ExecutionStatus.RUNNING
 
     async def _call_llm(self) -> LLMMessage:
         """
@@ -391,7 +395,7 @@ class ExecutionEngine:
             except Exception as save_error:
                 logger.error(f"Failed to save tool result: {save_error}")
 
-    async def execute_round(self, max_steps: Optional[int] = None) -> None:
+    async def execute_round(self, max_steps: Optional[int] = None) -> ExecutionStatus:
         """
         Execute a complete round of agent execution
 
@@ -410,26 +414,26 @@ class ExecutionEngine:
                 # Use error handler context manager for execution step
                 async with self.error_handler.handle_execution_step(step_number=steps):
                     # Run one step
-                    need_more_steps = await self.execute_step()
+                    status = await self.execute_step()
                     steps += 1
 
                     # Check if more steps are needed
-                    if not need_more_steps:
+                    if status == ExecutionStatus.COMPLETED:
                         logger.info(f"Round completed after {steps} steps")
-                        break
+                        return status
 
                     # Check max steps limit
                     if max_steps is not None and steps >= max_steps:
                         logger.warning(f"Max steps ({max_steps}) reached")
-                        break
+                        return ExecutionStatus.COMPLETED
 
             except AgentError as e:
                 logger.error(f"Execution step failed with {e.error_type}: {e.message}")
                 # Error is already logged by error handler, just re-raise
-                raise
+                return ExecutionStatus.ERROR
             except asyncio.CancelledError as e:
                 logger.info(f"Round cancelled: {e}")
-                raise
+                return ExecutionStatus.ABORTED
 
     async def execute(
         self,
@@ -463,15 +467,12 @@ class ExecutionEngine:
 
                 # Execute the round
                 try:
-                    await self.execute_round(max_steps)
+                    status = await self.execute_round(max_steps)
 
                     # Send turn completion
                     await self._send_turn_completion()
 
-                    return ExecutionResult(
-                        status=ExecutionStatus.COMPLETED,
-                        message="Execution completed successfully",
-                    )
+                    return ExecutionResult(status=status)
 
                 except asyncio.CancelledError:
                     logger.info("Execution cancelled by user")
