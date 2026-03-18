@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { sessionApi, type Session, type CreateSessionParams } from '@/api/session'
-import { ChatRound, Search, ArrowRight, Calendar, Timer, Plus, Delete, Loading } from '@element-plus/icons-vue'
+import { ChatRound, Search, ArrowRight, Calendar, Timer, Plus, Delete, Loading, FolderOpened } from '@element-plus/icons-vue'
 import { formatBeijingTime } from '@/utils/time'
 
 const router = useRouter()
@@ -112,6 +112,20 @@ const loadSessions = async () => {
 // 跳转到聊天页面
 const goToChat = (sessionId: string) => {
   router.push(`/chat/${sessionId}`)
+}
+
+// 跳转到文件浏览器页面
+const goToFiles = (workspace: string | undefined) => {
+  if (!workspace) {
+    ElMessage.warning('该会话没有工作空间')
+    return
+  }
+  
+  // 跳转到文件浏览器页面，并传递workspace路径作为查询参数
+  router.push({
+    path: '/files',
+    query: { path: workspace }
+  })
 }
 
 // 显示创建会话弹窗
@@ -426,7 +440,7 @@ onMounted(async () => {
                 </div>
               </template>
             </el-table-column>
-            <el-table-column label="操作" width="150" align="center" fixed="right">
+            <el-table-column label="操作" width="200" align="center" fixed="right">
               <template #default="{ row }">
                 <div class="flex items-center justify-center gap-2">
                   <el-button
@@ -435,6 +449,16 @@ onMounted(async () => {
                     @click="goToChat(row.session_id)"
                   >
                     进入
+                  </el-button>
+                  <el-button
+                    v-if="row.workspace"
+                    type="success"
+                    size="small"
+                    @click="goToFiles(row.workspace)"
+                    :title="`浏览工作空间: ${row.workspace}`"
+                  >
+                    <el-icon class="mr-1"><FolderOpened /></el-icon>
+                    文件
                   </el-button>
                   <el-button
                     type="danger"
@@ -516,8 +540,18 @@ onMounted(async () => {
                 </div>
               </div>
             </div>
-            <!-- 移动端单个删除按钮 -->
-            <div class="flex justify-end mt-3 pt-3 border-t">
+            <!-- 移动端操作按钮 -->
+            <div class="flex justify-end gap-2 mt-3 pt-3 border-t">
+              <el-button
+                v-if="session.workspace"
+                type="success"
+                size="small"
+                @click.stop="goToFiles(session.workspace)"
+                :title="`浏览工作空间: ${session.workspace}`"
+              >
+                <el-icon class="mr-1"><FolderOpened /></el-icon>
+                文件
+              </el-button>
               <el-button
                 type="danger"
                 size="small"

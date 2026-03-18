@@ -546,12 +546,12 @@ class ExecutionEngine:
         # Add to context history
         await self.context.add_message(message_data)
 
-    async def _ensure_session(self):
+    async def _ensure_session(self, workspace: str | None = None):
         """Ensure session exists, create if not"""
         if not self.session_id:
             # Try to get session_id from session_manager
             if not self.session_manager.session_id:
-                await self.session_manager.create_session()
+                await self.session_manager.create_session(workspace=workspace)
             self.session_id = self.session_manager.session_id
 
     async def _send_turn_completion(self):

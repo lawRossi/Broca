@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
-import { useRouter } from 'vue-router'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { House } from '@element-plus/icons-vue'
 // FolderOpened可能不可用，使用Folder代替
@@ -12,6 +12,7 @@ import { formatUnixTimestamp } from '@/utils/time'
 import { filesApi } from '@/api'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 
 // State
@@ -80,6 +81,21 @@ const handleResize = () => {
   checkIsMobile()
 }
 
+// 处理路由查询参数
+const handleRouteQuery = () => {
+  const pathFromQuery = route.query.path as string
+  if (pathFromQuery) {
+    currentPath.value = pathFromQuery
+  }
+}
+
+// 监听路由查询参数变化
+watch(() => route.query.path, (newPath) => {
+  if (newPath) {
+    currentPath.value = newPath as string
+  }
+})
+
 // Lifecycle
 onMounted(async () => {
   // 初始化用户状态
@@ -91,6 +107,9 @@ onMounted(async () => {
     router.push('/auth')
     return
   }
+  
+  // 处理路由查询参数
+  handleRouteQuery()
   
   checkIsMobile()
   window.addEventListener('resize', handleResize)

@@ -5,6 +5,7 @@ export interface Session {
   session_id: string
   status: string
   description?: string
+  workspace?: string
   created_at: string
   finished_at?: string
 }

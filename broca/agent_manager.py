@@ -39,7 +39,7 @@ class AgentFactory:
             boostrap_config_dir = Path(os.getcwd()) / ".agents/agents"
             agent_configs.extend(self._load_agent_configs(boostrap_config_dir))
             session_manager = SessionManager()
-            await session_manager.create_session()
+            await session_manager.create_session(workspace=workspace)
             agents = []
             for config in agent_configs:
                 agent = await self._create_agent(config, session_manager, workspace)

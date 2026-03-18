@@ -116,6 +116,7 @@ class Session(SQLModel, table=True):
     session_id: str = Field(index=True, primary_key=True, description="会话唯一标识符")
     status: SessionStatus = Field(default=SessionStatus.ACTIVE, description="会话状态")
     description: Optional[str] = Field(default=None, description="会话描述")
+    workspace: Optional[str] = Field(default=None, description="工作空间路径")
 
     # 元数据
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")

@@ -198,13 +198,14 @@ class SessionService(BaseService[Session]):
         super().__init__(Session)
 
     async def create_session(
-        self, session_id: str, description: Optional[str] = None
+        self, session_id: str, description: Optional[str] = None, workspace: Optional[str] = None
     ) -> Session:
         """创建新会话"""
         return await self.create(
             session_id=session_id,
             status=SessionStatus.ACTIVE,
             description=description,
+            workspace=workspace,
             created_at=datetime.utcnow(),
         )
 

@@ -147,13 +147,6 @@ class SocketIOAgent(Agent):
             session_manager=self.session_manager,
         )
 
-    async def _ensure_session(self):
-        """Ensure session exists, create if not"""
-        if not self.session_id:
-            if not self.session_manager.session_id:
-                await self.session_manager.create_session()
-            self.session_id = self.session_manager.session_id
-
     async def _receive_message(self, message: Message):
         """Receive message from communication channel"""
         logger.info("Received message")

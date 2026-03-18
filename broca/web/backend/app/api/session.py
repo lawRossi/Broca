@@ -3,8 +3,8 @@ import tempfile
 
 from broca.agent_manager import AgentFactory
 from broca.session.service import (
-    get_agent_service,
     get_agent_config_service,
+    get_agent_service,
     get_message_service,
     get_session_service,
     get_turn_service,
@@ -44,10 +44,16 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             task = asyncio.create_task(agent.run())
             task.add_done_callback(lambda _: agent.stop())
 
-        # 更新会话描述（如果提供）
+        # 更新会话描述和workspace
+        session_service = get_session_service()
+        update_data = {}
         if request.description:
-            session_service = get_session_service()
-            await session_service.update(session_id, description=request.description)
+            update_data["description"] = request.description
+        if workspace:
+            update_data["workspace"] = workspace
+        
+        if update_data:
+            await session_service.update(session_id, **update_data)
 
         logger.info(f"Session created: {session_id}, workspace: {workspace}")
 
@@ -132,6 +138,9 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
         raise
     except Exception as e:
         logger.error(f"Error getting session agents: {e}")
+        import traceback
+
+        traceback.print_exc()
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -260,7 +269,7 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
         agent = await agent_service.get(agent_id)
         if not agent:
             raise HTTPException(status_code=404, detail="Agent not found")
-        
+
         # 验证Agent是否属于该会话
         if agent.session_id != session_id:
             raise HTTPException(status_code=400, detail="Agent does not belong to this session")
@@ -273,6 +282,7 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
 
         # 解析配置内容
         import json
+
         try:
             config_content = json.loads(agent_config.config_content)
         except json.JSONDecodeError as e:
@@ -288,7 +298,7 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
             "config_name": agent_config.name,
             "config_content": config_content,
             "created_at": agent_config.created_at.isoformat() if agent_config.created_at else None,
-            "raw_config_content": agent_config.config_content  # 保留原始内容用于调试
+            "raw_config_content": agent_config.config_content,  # 保留原始内容用于调试
         }
 
         return ApiResponse.success(config_data, msg="Agent config retrieved successfully")
@@ -298,5 +308,6 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error getting agent config: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e

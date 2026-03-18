@@ -104,12 +104,13 @@ class SessionManager:
         """获取AgentConfigService实例"""
         return self._services["agent_config"]
 
-    async def create_session(self, description: str | None = None) -> str:
+    async def create_session(self, description: str | None = None, workspace: str | None = None) -> str:
         """
         创建新session
 
         Args:
             description: 可选的session描述
+            workspace: 可选的工作空间路径
 
         Returns:
             新创建的session ID
@@ -122,10 +123,11 @@ class SessionManager:
             session = await self.session_service.create_session(
                 session_id=session_id,
                 description=description,
+                workspace=workspace,
             )
 
             self.session_id = session.session_id
-            logger.info(f"Created new session: {session_id}")
+            logger.info(f"Created new session: {session_id}, workspace: {workspace}")
 
             return session_id
 
@@ -386,6 +388,7 @@ class SessionManager:
                 "session_id": session.session_id,
                 "status": session.status.value,
                 "description": session.description,
+                "workspace": session.workspace,
                 "created_at": session.created_at.isoformat(),
                 "finished_at": session.finished_at.isoformat()
                 if session.finished_at
