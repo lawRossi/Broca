@@ -421,6 +421,12 @@ class ExecutionEngine:
                     if status == ExecutionStatus.COMPLETED:
                         logger.info(f"Round completed after {steps} steps")
                         return status
+                    elif status == ExecutionStatus.ABORTED:
+                        logger.info(f"Round aborted after {steps} steps")
+                        return status
+                    elif status == ExecutionStatus.ERROR:
+                        logger.error(f"Round failed after {steps} steps")
+                        return status
 
                     # Check max steps limit
                     if max_steps is not None and steps >= max_steps:
