@@ -213,7 +213,10 @@ class ExecutionEngine:
             LLM response message
         """
         return await self.llm_client.get_response(
-            self.context.history, self._get_tools_list(), self.config.llm_config_name
+            self.config.provider,
+            self.config.model,
+            self.context.history,
+            self._get_tools_list(),
         )
 
     def _get_tools_list(self) -> List[Dict[str, Any]]:
@@ -443,8 +446,9 @@ class ExecutionEngine:
 
     async def execute(
         self,
-        user_message: Optional[str] = None,
+        message: Optional[str] = None,
         max_steps: Optional[int] = None,
+        from_agent: Optional[bool] = False,
     ) -> ExecutionResult:
         """
         Execute agent with the given user message
@@ -456,7 +460,7 @@ class ExecutionEngine:
         - Error handling
 
         Args:
-            user_message: User message to process
+            message: the message to process
             max_steps: Maximum number of execution steps
 
         Returns:
@@ -467,9 +471,9 @@ class ExecutionEngine:
         self.abort_event.clear()
 
         try:
-            if user_message:
+            if message:
                 # Set up execution context
-                await self._setup_execution_context(user_message)
+                await self._setup_execution_context(message, from_agent)
 
                 # Execute the round
                 try:
@@ -513,12 +517,12 @@ class ExecutionEngine:
             message="No user message provided, execution skipped",
         )
 
-    async def _setup_execution_context(self, user_message: str):
+    async def _setup_execution_context(self, message: str, from_agent: bool = False):
         """
         Set up execution context for a new turn
 
         Args:
-            user_message: User message to process
+            message: The message to process
         """
         await self._ensure_session()
 
@@ -529,25 +533,22 @@ class ExecutionEngine:
         # Send turn start notification
         await self.communicator.send_turn_start(
             turn_id=turn_id,
-            turn_description=f"Processing user message: {user_message[:50]}...",
+            turn_description=f"Processing user message: {message[:50]}...",
             subscription=self.session_id,
         )
 
-        message_data = {
-            "role": "user",
-            "content": user_message,
-            "message_id": self.turn_id,
-        }
+        message_data = {"role": "user", "content": message}
         msg_content = json.dumps(message_data, ensure_ascii=False)
 
         # Save user message to database
-        await self.session_manager.save_message(
-            role=MessageRole.USER,
-            content=msg_content,
-            message_type=MessageType.USER_MESSAGE,
-            turn_id=turn_id,
-            agent_id=self.agent_id,
-        )
+        if not from_agent:
+            await self.session_manager.save_message(
+                role=MessageRole.USER,
+                content=msg_content,
+                message_type=MessageType.USER_MESSAGE,
+                turn_id=turn_id,
+                agent_id=self.agent_id,
+            )
 
         # Add to context history
         await self.context.add_message(message_data)

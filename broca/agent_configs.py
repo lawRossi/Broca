@@ -7,7 +7,8 @@ class AgentConfig:
         self.name = None
         self.role = None
         self.role_description = None
-        self.llm_config_name = "deepseek"
+        self.provider = "openrouter"
+        self.model = "nemotron"
         self.log_file = "agent.log"
         self.system_prompt_template = None
         self.tools = None

@@ -26,10 +26,14 @@ class LLMClient:
                 self.config = json.load(f)
 
     async def get_response(
-        self, messages, tools=None, config_name="minimax"
+        self, provider, model, messages, tools=None
     ) -> Message:
         response = await acompletion(
-            messages=messages, tools=tools, **self.config[config_name]
+            base_url=self.config[provider]["base_url"],
+            api_key=self.config[provider]["api_key"],
+            messages=messages,
+            tools=tools, 
+            **self.config[provider][model]
         )
         logger.debug(
             f"LLM call - input tokens: {response.usage.prompt_tokens}, output tokens: {response.usage.completion_tokens}"

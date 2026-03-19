@@ -55,7 +55,7 @@ class AssignTask(Tool):
         task = arguments["task"]
         execution_type = arguments.get("execution_type", "blocking")
         if execution_type == "blocking":
-            execution_result = await target_agent.run_async(task)
+            execution_result = await target_agent.run_async(task, from_agent=True)
             message = target_agent.context.get_latest_assistant_message()
             if message:
                 content = "Message from agent: " + message

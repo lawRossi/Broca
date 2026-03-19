@@ -198,7 +198,7 @@ class SocketIOAgent(Agent):
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
                 if message.message_type == MessageType.USER_MESSAGE:
                     content = message.data.get("content")
-                    execution_result = await self.run_async(content, message.message_id)
+                    execution_result = await self.run_async(content)
                     logger.debug(
                         f"User message execution result: {execution_result.status}"
                     )
@@ -211,7 +211,7 @@ class SocketIOAgent(Agent):
                     task_id = message.data.get("task_id")
                     result = message.data.get("result")
                     logger.info(f"Received task result of task {task_id}: {result}")
-                    execution_result = await self.run_async(result)
+                    execution_result = await self.run_async(result, from_agent=True)
                     logger.debug(
                         f"Task result execution result: {execution_result.status}"
                     )
@@ -221,7 +221,7 @@ class SocketIOAgent(Agent):
                     logger.error(
                         f"Received task error of task {task_id}: {error_message}"
                     )
-                    execution_result = await self.run_async(error_message)
+                    execution_result = await self.run_async(error_message, from_agent=True)
                     logger.debug(
                         f"Task error execution result: {execution_result.status}"
                     )
@@ -230,9 +230,9 @@ class SocketIOAgent(Agent):
 
     async def run_async(
         self,
-        user_message: Optional[str] = None,
-        message_id: Optional[str] = None,
+        message: Optional[str] = None,
         max_steps: Optional[int] = None,
+        from_agent: Optional[bool] = False
     ) -> ExecutionResult:
         """
         Run agent in async mode (replaces command-line interaction)
@@ -267,7 +267,7 @@ class SocketIOAgent(Agent):
             )
 
             # Delegate execution to execution engine
-            return await self.execution_engine.execute(user_message, max_steps)
+            return await self.execution_engine.execute(message, max_steps, from_agent)
 
         except Exception as e:
             logger.error(f"Error in run_async: {e}")
@@ -286,7 +286,7 @@ class SocketIOAgent(Agent):
     async def _handle_task(self, task_id: str, task: str, assigner: str) -> None:
         """Handle task assignment from another agent"""
         try:
-            execution_result = await self.run_async(task)
+            execution_result = await self.run_async(task, from_agent=True)
 
             # Check execution status
             if execution_result.status == ExecutionStatus.COMPLETED:
