@@ -1,0 +1,40 @@
+{
+    "nvidia": {
+        "base_url": "https://integrate.api.nvidia.com/v1",
+        "api_key": "",
+        "minimax": {
+            "model": "openai/minimaxai/minimax-m2.5",
+            "temperature": 0.5
+        }
+    },
+    "z-ai": {
+        "base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "api_key": "",
+        "glm-4.7" : {
+            "model": "openai/glm-4.7-flash",
+            "temperature": 0.5
+        }
+    },
+    "deepseek": {
+        "base_url": "https://api.deepseek.com/v1",
+        "api_key": "",
+        "deepeek-chat": {
+            "model": "openai/deepseek-chat",
+            "temperature": 0.5
+        }
+    },
+    "openrouter": {
+        "base_url": "https://openrouter.ai/api/v1",
+        "api_key": "",
+        "nemotron": {
+            "model": "openai/nvidia/nemotron-3-super-120b-a12b:free",
+            "temperature": 0.5,
+            "extra_body": {"reasoning": {"enabled": true}}
+        },
+        "stepfun": {
+            "model": "openai/stepfun/step-3.5-flash:free",
+            "temperature": 0.5,
+            "extra_body": {"reasoning": {"enabled": true}}
+        }
+    }
+}
