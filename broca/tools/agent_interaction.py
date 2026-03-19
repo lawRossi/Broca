@@ -57,7 +57,8 @@ class AssignTask(Tool):
         if execution_type == "blocking":
             execution_result = await target_agent.run_async(task)
             message = target_agent.context.get_latest_assistant_message()
-            content = "Message from agent: " + message
+            if message:
+                content = "Message from agent: " + message
             if execution_result.status == ExecutionStatus.COMPLETED:
                 return ToolResult(status=ToolStatus.SUCCESS, content=content)
             elif execution_result.status == ExecutionStatus.ABORTED:
