@@ -279,6 +279,14 @@ export const useChatStore = defineStore('chat', () => {
 
     // 过滤连接/订阅相关的系统消息
     const contentStr = message.data?.content ?? ''
+
+    if (message.message_type === 'agent_response' && typeof contentStr === 'string') {
+      const parsed = JSON.parse(contentStr)
+      if(parsed.content === null || parsed.content === undefined || parsed.content === '') {
+        return null
+      }
+    }
+
     if (typeof contentStr === 'string' && (
       contentStr.toLowerCase().includes('connected to') || 
       contentStr.toLowerCase().includes('subscribed to')

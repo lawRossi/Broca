@@ -155,7 +155,7 @@ const getContent = (message: Message) => {
       return content
     }
   }
-  
+
   // 如果 content 不是字符串，直接返回
   return content
 }
