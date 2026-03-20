@@ -239,9 +239,7 @@ class ExecutionEngine:
         if content:
             content = content.strip()
 
-        reasoning_content = response.get("reasoning_content") or response.get(
-            "reasoning_details"
-        )
+        reasoning_content = response.get("reasoning_content"):
         if reasoning_content:
             reasoning_content = reasoning_content.strip()
 

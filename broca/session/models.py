@@ -278,11 +278,13 @@ class MessageProtocol:
         )
 
     @staticmethod
-    def create_agent_response(content: str, **kwargs) -> Message:
+    def create_agent_response(
+        content: str | None, reasoning_content: str | None, **kwargs
+    ) -> Message:
         """创建Agent响应"""
         data = kwargs.pop("data", {})
         data["content"] = content
-
+        data["reasoning_content"] = reasoning_content
         return Message(
             message_type=MessageType.AGENT_RESPONSE,
             role=MessageRole.ASSISTANT,
