@@ -25,7 +25,7 @@ class TaskManager:
         """Ensure the storage file exists and is properly initialized."""
         if not os.path.exists(self.storage_file):
             with open(self.storage_file, "w") as f:
-                json.dump({"tasks": []}, f, indent=2, default=str)
+                json.dump({"tasks": []}, f, indent=2, default=str, ensure_ascii=False)
 
     def _load_tasks(self) -> List[Dict[str, Any]]:
         """Load all tasks from the JSON file."""
@@ -39,7 +39,7 @@ class TaskManager:
     def _save_tasks(self, tasks: List[Dict[str, Any]]) -> None:
         """Save tasks to the JSON file."""
         with open(self.storage_file, "w") as f:
-            json.dump({"tasks": tasks}, f, indent=2, default=str)
+            json.dump({"tasks": tasks}, f, indent=2, default=str, ensure_ascii=False)
 
     def _task_to_dict(self, task: Task) -> Dict[str, Any]:
         """Convert a Task object to a dictionary for JSON serialization."""
