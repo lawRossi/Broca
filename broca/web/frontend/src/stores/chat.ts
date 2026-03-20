@@ -61,7 +61,7 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   const messages = ref<Message[]>([])
-  const messageStates = ref<Map<string, { showParameters: boolean; showResult: boolean }>>(new Map())
+  const messageStates = ref<Map<string, { showParameters: boolean; showResult: boolean; showReasoning: boolean }>>(new Map())
 
   // 更新特定agent的状态
   const updateAgentStatus = (agentId: string, status: AgentStatus) => {
@@ -240,7 +240,8 @@ export const useChatStore = defineStore('chat', () => {
     } else {
       messageStates.value.set(messageId, {
         showParameters: true,
-        showResult: false
+        showResult: false,
+        showReasoning: false
       })
     }
   }
@@ -255,7 +256,24 @@ export const useChatStore = defineStore('chat', () => {
     } else {
       messageStates.value.set(messageId, {
         showParameters: false,
-        showResult: true
+        showResult: true,
+        showReasoning: false
+      })
+    }
+  }
+
+  const toggleReasoning = (messageId: string) => {
+    const currentState = messageStates.value.get(messageId)
+    if (currentState) {
+      messageStates.value.set(messageId, {
+        ...currentState,
+        showReasoning: !currentState.showReasoning
+      })
+    } else {
+      messageStates.value.set(messageId, {
+        showParameters: false,
+        showResult: false,
+        showReasoning: true
       })
     }
   }
@@ -282,7 +300,8 @@ export const useChatStore = defineStore('chat', () => {
 
     if (message.message_type === 'agent_response' && typeof contentStr === 'string') {
       const parsed = JSON.parse(contentStr)
-      if(parsed.content === null || parsed.content === undefined || parsed.content === '') {
+      if((parsed.content === null || parsed.content === undefined || parsed.content === '')&&
+        (parsed.reasoning_content === null || parsed.reasoning_content === undefined || parsed.reasoning_content === '')) {
         return null
       }
     }
@@ -334,7 +353,8 @@ export const useChatStore = defineStore('chat', () => {
         if (!messageStates.value.has(existingMessage.message_id)) {
           messageStates.value.set(existingMessage.message_id, {
             showParameters: false,
-            showResult: false
+            showResult: false,
+            showReasoning: false
           })
         }
         
@@ -346,7 +366,8 @@ export const useChatStore = defineStore('chat', () => {
         if (!messageStates.value.has(message.message_id)) {
           messageStates.value.set(message.message_id, {
             showParameters: false,
-            showResult: false
+            showResult: false,
+            showReasoning: false
           })
         }
         return message
@@ -358,7 +379,8 @@ export const useChatStore = defineStore('chat', () => {
       if (!messageStates.value.has(message.message_id)) {
         messageStates.value.set(message.message_id, {
           showParameters: false,
-          showResult: false
+          showResult: false,
+          showReasoning: false
         })
       }
       return message
@@ -717,6 +739,7 @@ export const useChatStore = defineStore('chat', () => {
     scrollToBottom,
     toggleToolParameters,
     toggleToolResult,
+    toggleReasoning,
     toggleLeftSidebar,
     toggleRightSidebar,
     addMessage,

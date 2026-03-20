@@ -245,9 +245,11 @@ class ExecutionEngine:
 
         if content or reasoning_content:
             try:
+                # Use the same JSON format as database save for consistency
+                response_data = response.json()
                 await self.communicator.send_agent_response(
-                    content=content,
-                    reasoning_content=reasoning_content,
+                    content=json.dumps(response_data, ensure_ascii=False),
+                    reasoning_content=None,
                     subscription=self.session_id,
                 )
             except Exception as e:

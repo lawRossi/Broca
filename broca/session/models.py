@@ -326,15 +326,15 @@ class MessageProtocol:
         """从字典创建消息"""
         # 处理工具消息类型转换
         data["timestamp"] = datetime.fromisoformat(data["timestamp"])
-        message_type = data.get("message_type")
-        if message_type in ["tool_call", "tool_result"]:
-            data["message_type"] = "tool_call"
-            if "data" not in data:
-                data["data"] = {}
-            if message_type == "tool_call":
-                data["data"]["action"] = "call"
-            else:
-                data["data"]["action"] = "result"
+        # message_type = data.get("message_type")
+        # if message_type in ["tool_call", "tool_result"]:
+        #     data["message_type"] = "tool_call"
+        #     if "data" not in data:
+        #         data["data"] = {}
+        #     if message_type == "tool_call":
+        #         data["data"]["action"] = "call"
+        #     else:
+        #         data["data"]["action"] = "result"
 
         return Message(**data)
 

@@ -167,6 +167,31 @@ const getShowParameters = (messageId: string) => {
 const getShowResult = (messageId: string) => {
   return chatStore.messageStates.get(messageId)?.showResult || false
 }
+
+const getShowReasoning = (messageId: string) => {
+  return chatStore.messageStates.get(messageId)?.showReasoning || false
+}
+
+const getReasoningContentFromData = (message: Message): string => {
+  const content = message.data?.content
+  if (typeof content === 'string') {
+    try {
+      const parsed = JSON.parse(content)
+      return parsed.reasoning_content || ''
+    } catch {
+      return ''
+    }
+  }
+  return ''
+}
+
+const hasReasoningContent = (message: Message) => {
+  return !!(getReasoningContentFromData(message))
+}
+
+const getReasoningContent = (message: Message) => {
+  return getReasoningContentFromData(message)
+}
 </script>
 
 <template>
@@ -188,13 +213,35 @@ const getShowResult = (messageId: string) => {
         {{ formatBeijingTimeShort(message.timestamp) }}
       </div>
     </div>
-    
+
     <div>
+      <div v-if="(message.message_type === 'agent_response' && hasReasoningContent(message))" class="mb-2">
+        <el-button 
+          size="small" 
+          type="default" 
+          @click="chatStore.toggleReasoning(message.message_id)"
+          class="!text-amber-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
+        >
+          <span class="flex items-center gap-1">
+            <span>{{ getShowReasoning(message.message_id) ? '▼' : '▶' }}</span>
+            <span class="text-xs">推理过程</span>
+          </span>
+        </el-button>
+
+        <div v-if="getShowReasoning(message.message_id)" class="mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
+          <div class="text-xs font-semibold text-amber-700 mb-2 flex items-center gap-1">
+            <span>🤔</span>
+            <span>推理过程</span>
+          </div>
+          <pre class="text-xs font-mono text-amber-800 whitespace-pre-wrap break-words leading-relaxed">{{ getReasoningContent(message) }}</pre>
+        </div>
+      </div>
+
       <pre 
         class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
         :class="getContentClass(message)"
       >{{ getContent(message) }}</pre>
-      
+
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
         <div v-if="message.data?.arguments" class="mb-2">
           <el-button 
