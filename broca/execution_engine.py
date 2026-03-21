@@ -21,7 +21,7 @@ from loguru import logger
 from broca.context import Context
 from broca.error_handler import AgentError, ErrorHandler
 from broca.llm import LLMClient
-from broca.session import MessageRole, MessageType, SessionManager
+from broca.session import MessageRole, MessageType, SessionManager, generate_message_id
 from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
 
 
@@ -173,7 +173,9 @@ class ExecutionEngine:
                 # Use error handler context manager for LLM call
                 async with self.error_handler.handle_llm_call(context="execute_step"):
                     # Call LLM with timeout for cancellation support
-                    response = await asyncio.wait_for(self._call_llm(), timeout=180)
+                    response = await asyncio.wait_for(
+                        self._call_llm_streaming(), timeout=180
+                    )
                     break
             except AgentError as e:
                 errors += 1
@@ -186,9 +188,6 @@ class ExecutionEngine:
 
         # Add response to history
         await self.context.add_message(response)
-
-        # Send response via communication channel
-        await self._send_agent_response(response)
 
         # Save response to database
         await self._save_agent_response(response)
@@ -219,6 +218,59 @@ class ExecutionEngine:
             self._get_tools_list(),
         )
 
+    async def _call_llm_streaming(self) -> LLMMessage:
+        """
+        Call LLM with current context
+
+        Returns:
+            LLM response message
+        """
+        content_chunks = []
+        tool_call_chunks = []
+        sent = set()
+        message_id = generate_message_id()
+        index = 0
+        async for chunk in self.llm_client.get_stream_response(
+            self.config.provider,
+            self.config.model,
+            self.context.history,
+            self._get_tools_list(),
+        ):
+            if chunk["type"] in ["content", "reasoning_content"]:
+                content_chunks.append(chunk)
+                content = chunk["data"] if chunk["type"] == "content" else ""
+                reasoning_content = (
+                    chunk["data"] if chunk["type"] == "reasoning_content" else ""
+                )
+                await self._send_agent_response(
+                    content=content,
+                    reasoning_content=reasoning_content,
+                    index=index,
+                    message_id=message_id,
+                )
+                index += 1
+
+            elif chunk["type"] == "tool_call":
+                tool_call = chunk["data"]
+                tool_call_chunks.append(tool_call)
+                if (
+                    hasattr(tool_call, "id")
+                    and tool_call.id
+                    and tool_call.id not in sent
+                ):
+                    tool_call_id = tool_call["id"]
+                    if hasattr(tool_call, "function") and tool_call.function:
+                        tool_name = tool_call.function.name
+                        await self.communicator.send_tool_call(
+                            tool_name=tool_name,
+                            arguments=None,
+                            tool_call_id=tool_call_id,
+                            subscription=self.session_id,
+                        )
+                        sent.add(tool_call_id)
+
+        return self.llm_client.aggregate_message(content_chunks, tool_call_chunks)
+
     def _get_tools_list(self) -> List[Dict[str, Any]]:
         """
         Get formatted tools list for LLM
@@ -228,30 +280,36 @@ class ExecutionEngine:
         """
         return [tool.format() for tool in self.tool_mapping.values()]
 
-    async def _send_agent_response(self, response: LLMMessage):
+    async def _send_agent_response(
+        self,
+        content: str | None,
+        reasoning_content: str | None,
+        index: int = 0,
+        message_id: str | None = None,
+    ):
         """
         Send agent response via communication channel
 
         Args:
             response: LLM response message
         """
-        content = response.content
         if content:
             content = content.strip()
 
-        reasoning_content = response.get("reasoning_content")
         if reasoning_content:
             reasoning_content = reasoning_content.strip()
 
         if content or reasoning_content:
             try:
-                # Use the same JSON format as database save for consistency
-                response_data = response.json()
-                await self.communicator.send_agent_response(
-                    content=json.dumps(response_data, ensure_ascii=False),
-                    reasoning_content=None,
-                    subscription=self.session_id,
-                )
+                args = {
+                    "content": content,
+                    "reasoning_content": reasoning_content,
+                    "index": index,
+                    "subscription": self.session_id,
+                }
+                if message_id:
+                    args["message_id"] = message_id
+                await self.communicator.send_agent_response(**args)
             except Exception as e:
                 logger.error(f"Failed to send agent response: {e}")
 

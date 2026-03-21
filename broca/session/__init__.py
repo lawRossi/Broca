@@ -24,6 +24,7 @@ from .models import (
     Session,
     SessionStatus,
     Turn,
+    generate_message_id
 )
 from .service import (
     AgentConfigService,
@@ -52,6 +53,7 @@ __all__ = [
     "Session",
     "SessionStatus",
     "Turn",
+    "generate_message_id",
     # Services
     "BaseService",
     "SessionService",

@@ -5,6 +5,7 @@
 优化了消息模型，统一了字段结构。
 """
 
+import json
 import uuid
 from datetime import datetime
 from enum import Enum
@@ -279,12 +280,19 @@ class MessageProtocol:
 
     @staticmethod
     def create_agent_response(
-        content: str | None, reasoning_content: str | None, **kwargs
+        content: str | None, reasoning_content: str | None, index: int = 0, **kwargs
     ) -> Message:
         """创建Agent响应"""
         data = kwargs.pop("data", {})
-        data["content"] = content
-        data["reasoning_content"] = reasoning_content
+        data["content"] = json.dumps(
+            {
+                "content": content,
+                "reasoning_content": reasoning_content,
+                "index": index,
+            },
+            ensure_ascii=False,
+        )
+
         return Message(
             message_type=MessageType.AGENT_RESPONSE,
             role=MessageRole.ASSISTANT,

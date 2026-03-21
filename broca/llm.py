@@ -63,7 +63,6 @@ class LLMClient:
         )
 
         async for chunk in response:
-            print(chunk)
             if hasattr(chunk, "usage") and chunk.usage:
                 self.input_tokens_used += chunk.usage.prompt_tokens
                 self.output_tokens_used += chunk.usage.completion_tokens

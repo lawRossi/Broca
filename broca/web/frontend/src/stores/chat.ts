@@ -62,6 +62,40 @@ export const useChatStore = defineStore('chat', () => {
 
   const messages = ref<Message[]>([])
   const messageStates = ref<Map<string, { showParameters: boolean; showResult: boolean; showReasoning: boolean }>>(new Map())
+  const pendingChunks = ref<Map<string, Message[]>>(new Map())
+
+  const mergeAgentResponseChunks = (chunks: Message[]) => {
+    const parsedChunks: Array<{content: string, reasoning_content: string, index: number}> = []
+    
+    for (const chunk of chunks) {
+      try {
+        const data = JSON.parse(chunk.data?.content || '{}')
+        if (data.content || data.reasoning_content) {
+          parsedChunks.push({
+            content: data.content || '',
+            reasoning_content: data.reasoning_content || '',
+            index: data.index || 0
+          })
+        }
+      } catch (e) {}
+    }
+    
+    parsedChunks.sort((a, b) => a.index - b.index)
+    
+    let mergedContent = ''
+    let mergedReasoning = ''
+    
+    for (const chunk of parsedChunks) {
+      mergedContent += chunk.content
+      mergedReasoning += chunk.reasoning_content
+    }
+
+    return {
+      content: mergedContent,
+      reasoning_content: mergedReasoning,
+      index: 0
+    }
+  }
 
   // 更新特定agent的状态
   const updateAgentStatus = (agentId: string, status: AgentStatus) => {
@@ -338,24 +372,12 @@ export const useChatStore = defineStore('chat', () => {
           ...existingMessage.data,
           ...message.data
         }
-                
-        // 直接更新现有消息的data字段
-        // 在Vue 3中，我们需要确保触发响应式更新
-        // 由于existingMessage是响应式对象，直接赋值会触发更新
+
         existingMessage.data = mergedData
         
         // 更新时间戳
         if (message.timestamp) {
           existingMessage.timestamp = message.timestamp
-        }
-        
-        // 更新消息状态（保持原有的状态）
-        if (!messageStates.value.has(existingMessage.message_id)) {
-          messageStates.value.set(existingMessage.message_id, {
-            showParameters: false,
-            showResult: false,
-            showReasoning: false
-          })
         }
         
         return existingMessage
@@ -372,8 +394,54 @@ export const useChatStore = defineStore('chat', () => {
         }
         return message
       }
+    } else if (message.message_type === 'agent_response') {
+      const msgId = message.message_id
+
+      // 收集所有chunk
+      if (!pendingChunks.value.has(msgId)) {
+        pendingChunks.value.set(msgId, [])
+      }
+      pendingChunks.value.get(msgId)!.push(message)
+      
+      // 合并内容
+      const chunks = pendingChunks.value.get(msgId)!
+      const merged = mergeAgentResponseChunks(chunks)
+      
+      // 检查是否已存在该message_id的消息
+      const existingIndex = messages.value.findIndex(msg => 
+        msg.message_type === 'agent_response' && 
+        msg.message_id === msgId
+      )
+      
+      if (existingIndex !== -1) {
+        const existingMessage = messages.value[existingIndex]
+        existingMessage.data = {
+          ...existingMessage.data,
+          content: JSON.stringify(merged, null, 0)
+        }
+        
+        // 更新时间戳
+        if (message.timestamp) {
+          existingMessage.timestamp = message.timestamp
+        }
+        
+        return existingMessage
+      } else {
+        // 首次收到，加入消息的拷贝
+        const copy = JSON.parse(JSON.stringify(message))
+        messages.value.push(copy)
+      }
+      
+      if (!messageStates.value.has(message.message_id)) {
+        messageStates.value.set(message.message_id, {
+          showParameters: false,
+          showResult: false,
+          showReasoning: false
+        })
+      }
+      
+      return message
     } else {
-      // 不是TOOL_CALL消息，直接添加
       messages.value.push(message)
       // 初始化消息状态
       if (!messageStates.value.has(message.message_id)) {
@@ -733,6 +801,7 @@ export const useChatStore = defineStore('chat', () => {
     socketConfig,
     messages,
     messageStates,
+    pendingChunks,
     filteredMessages,
     statusText,
     agentStatusText,

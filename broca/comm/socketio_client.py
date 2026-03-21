@@ -462,19 +462,14 @@ class SocketIOClient:
         self,
         content: str,
         reasoning_content: Optional[str] = None,
-        receiver_id: Optional[str] = None,
-        room: Optional[str] = None,
-        subscription: Optional[str] = None,
+        index: int = 0,
         callback: Optional[Callable] = None,
+        **kwargs,
     ) -> str:
         """Send agent response"""
+        kwargs["sender_id"] = self.client_id
         message = MessageProtocol.create_agent_response(
-            content=content,
-            reasoning_content=reasoning_content,
-            sender_id=self.client_id,
-            receiver_id=receiver_id,
-            room=room,
-            subscription=subscription,
+            content=content, reasoning_content=reasoning_content, index=index, **kwargs
         )
         return await self.send_message(message, callback)
 
