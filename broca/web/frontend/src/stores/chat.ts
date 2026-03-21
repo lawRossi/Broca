@@ -35,12 +35,6 @@ export const useChatStore = defineStore('chat', () => {
   const showRightSidebar = ref(false)
   const isMobile = ref(false)
 
-  const messageFilters = reactive({
-    showUser: true,
-    showAssistant: true,
-    showSystem: true,
-    showError: true,
-  })
 
   const urlSessionId = computed(() => {
     return route.params.session_id as string || route.query.session_id as string || ''
@@ -201,41 +195,10 @@ export const useChatStore = defineStore('chat', () => {
     return { targetAgentId: null, cleanText: text.trim() }
   }
 
-  const filteredMessages = computed(() => {
-    return messages.value.filter(msg => {
-      if (msg.message_type === 'user_message') {
-        return messageFilters.showUser
-      } else if (msg.message_type === 'agent_response') {
-        return messageFilters.showAssistant
-      } else if (msg.message_type === 'system_message' || msg.role === 'system') {
-        return messageFilters.showSystem
-      } else if (msg.message_type === 'error' || msg.message_type === 'agent_error') {
-        return messageFilters.showError
-      } else if (msg.message_type === 'tool_call') {
-        return messageFilters.showAssistant
-      }
-      return true
-    })
-  })
 
   const statusText = computed(() => {
     if (connecting.value) return 'connecting'
     return connected.value ? 'connected' : 'disconnected'
-  })
-
-  const agentStatusText = computed(() => {
-    switch (agentStatus.value) {
-      case 'idle':
-        return 'Agent Idle'
-      case 'running':
-        return 'Agent Running...'
-      case 'connecting':
-        return 'Agent Connecting...'
-      case 'disconnected':
-        return 'Agent Disconnected'
-      default:
-        return 'Unknown'
-    }
   })
 
   let client: BrocaSocketClient | null = null
@@ -311,8 +274,6 @@ export const useChatStore = defineStore('chat', () => {
       })
     }
   }
-
-
 
   // 处理消息，决定是否显示
   const processMessage = (msg: any): Message | null => {
@@ -795,16 +756,13 @@ export const useChatStore = defineStore('chat', () => {
     showLeftSidebar,
     showRightSidebar,
     isMobile,
-    messageFilters,
     urlSessionId,
     permissionDialog,
     socketConfig,
     messages,
     messageStates,
     pendingChunks,
-    filteredMessages,
     statusText,
-    agentStatusText,
     scrollToBottom,
     toggleToolParameters,
     toggleToolResult,
