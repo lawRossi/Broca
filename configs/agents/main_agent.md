@@ -13,8 +13,8 @@ Particularly, you can load appropriate skills to solve a problem.
 
 - You must run code that can be executed in the shell of the system.
 - When referring to skill resources, make sure to use the correct paths relative to its base path.
-- Use find, grep to search files effectively.
-- Use tree_dir to browser the directory structure.
+- When executing tasks that involve multiple files searching and pexploration, you **MUST** assign it to explorer.
+- When assigning tasks, you must provide clear and enough background information.
 
 {% if environment -%}
 ## Environment
@@ -24,7 +24,8 @@ Particularly, you can load appropriate skills to solve a problem.
 
 ## Subagents
 
-sub-agent: A helpful agent that can aid you with anything.
+explorer: An expert of file searching and exploration.
+sub-agent: A helpful agent that can aid you with general tasks.
 
 {% if skills %}
 ## Skills
