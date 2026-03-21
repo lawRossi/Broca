@@ -160,6 +160,42 @@ const getContent = (message: Message) => {
   return content
 }
 
+// 检查是否为todo_management工具调用
+const isTodoManagement = (message: Message) => {
+  return message.message_type === 'tool_call' && message.data?.tool_name === 'todo_management'
+}
+
+// 获取todos列表
+const getTodos = (message: Message) => {
+  if (!isTodoManagement(message)) return null
+
+  const argumentsData = message.data?.arguments || message.data?.parameters
+  if (!argumentsData) return null
+  
+  if (typeof argumentsData !== 'object') {
+    const parsed = JSON.parse(argumentsData)
+    return parsed.todos || null
+  }
+
+  return argumentsData.todos || null
+}
+
+// 判断todo_management参数是否应该展开（默认展开）
+const shouldExpandParameters = (message: Message) => {
+  if (isTodoManagement(message)) {
+    return true // 默认展开
+  }
+  return getShowParameters(message.message_id)
+}
+
+// 判断是否显示结果（todo_management不显示结果）
+const shouldShowResult = (message: Message) => {
+  if (isTodoManagement(message)) {
+    return false // 不显示结果
+  }
+  return getShowResult(message.message_id)
+}
+
 const getShowParameters = (messageId: string) => {
   return chatStore.messageStates.get(messageId)?.showParameters || false
 }
@@ -239,8 +275,11 @@ const getReasoningContent = (message: Message) => {
       >{{ getContent(message) }}</pre>
 
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
-        <div v-if="message.data?.arguments" class="mb-2">
+        <!-- 参数展示 -->
+        <div v-if="message.data?.arguments || message.data?.parameters" class="mb-2">
+          <!-- 只有非todo_management工具才显示切换按钮 -->
           <el-button 
+            v-if="!isTodoManagement(message)"
             size="small" 
             type="default" 
             @click="chatStore.toggleToolParameters(message.message_id)"
@@ -249,15 +288,35 @@ const getReasoningContent = (message: Message) => {
             {{ getShowParameters(message.message_id) ? '隐藏参数' : '查看参数' }}
           </el-button>
 
-          <div v-if="getShowParameters(message.message_id)" class="mt-1 p-2 bg-purple-100 rounded border border-purple-200">
+          <!-- 参数内容：todo_management默认展开，其他工具根据状态 -->
+          <div v-if="shouldExpandParameters(message)" class="mt-1 p-2 bg-purple-100 rounded border border-purple-200">
             <div class="text-xs font-semibold text-purple-700 mb-1">参数:</div>
-            <pre class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border">
+            
+            <!-- 特殊处理todo_management的todos列表 -->
+            <div v-if="isTodoManagement(message) && getTodos(message)" class="bg-white p-2 rounded border">
+              <div v-for="(todo, index) in getTodos(message)" :key="index" class="mb-2 last:mb-0">
+                <div class="flex items-start gap-2">
+                  <input 
+                    type="checkbox" 
+                    :checked="todo.status === 'completed'" 
+                    disabled 
+                    class="mt-1 w-4 h-4 text-blue-600 rounded border-gray-300"
+                  />
+                  <div class="flex-1">
+                    <div class="text-sm font-medium text-gray-800">{{ todo.name }}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            
+            <!-- 其他工具显示原始JSON -->
+            <pre v-else class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border">
 {{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre>
           </div>
         </div>
         
-        <!-- 结果显示 - 只要有result就显示 -->
-        <div v-if="message.data?.result !== undefined" class="mb-2">
+        <!-- 结果展示：todo_management不显示，其他工具按状态显示 -->
+        <div v-if="message.data?.result !== undefined && shouldShowResult(message)" class="mb-2">
           <el-button 
             size="small" 
             type="default" 

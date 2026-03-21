@@ -293,11 +293,6 @@ class ExecutionEngine:
         Args:
             response: LLM response message
         """
-        if content:
-            content = content.strip()
-
-        if reasoning_content:
-            reasoning_content = reasoning_content.strip()
 
         if content or reasoning_content:
             try:

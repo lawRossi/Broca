@@ -11,7 +11,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from sqlalchemy import JSON, Column
+from sqlalchemy import JSON, Column, Integer
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -248,6 +248,28 @@ class Agent(SQLModel, table=True):
 
     name: Optional[str] = Field(description="Agent名称")
     role: Optional[str] = Field(description="Agent角色")
+
+    # LLM使用统计
+    total_input_tokens: int = Field(
+        default=0,
+        sa_column=Column(Integer, server_default="0", nullable=False),
+        description="累计输入token数"
+    )
+    total_output_tokens: int = Field(
+        default=0,
+        sa_column=Column(Integer, server_default="0", nullable=False),
+        description="累计输出token数"
+    )
+    total_llm_calls: int = Field(
+        default=0,
+        sa_column=Column(Integer, server_default="0", nullable=False),
+        description="LLM调用次数"
+    )
+    last_context_length: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, nullable=True),
+        description="最后一次调用的上下文长度"
+    )
 
     # 元数据
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
