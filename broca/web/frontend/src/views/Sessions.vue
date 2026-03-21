@@ -4,8 +4,10 @@ import { useRouter } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { sessionApi, type Session, type CreateSessionParams } from '@/api/session'
+import type { FileItem } from '@/api/files'
 import { ChatRound, Search, ArrowRight, Calendar, Timer, Plus, Delete, Loading, FolderOpened } from '@element-plus/icons-vue'
 import { formatBeijingTime } from '@/utils/time'
+import FileBrowser from '@/components/FileBrowser.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
@@ -26,6 +28,14 @@ const createForm = ref<CreateSessionParams>({
   description: '',
   workspace: ''
 })
+
+// Workspace autocomplete suggestions
+const workspaceAllSuggestions = ref<string[]>([])
+const workspaceInputRef = ref<any>(null)
+
+// Directory picker dialog
+const workspacePickerVisible = ref(false)
+const fileBrowserRef = ref<any>(null)
 
 // 计算属性：是否已登录
 const isLoggedIn = computed(() => userStore.isLoggedIn)
@@ -134,7 +144,111 @@ const showCreateDialog = () => {
     description: '',
     workspace: ''
   }
+  // 提取所有工作空间路径作为建议
+  extractWorkspaceSuggestions()
   createDialogVisible.value = true
+}
+
+// 从现有会话中提取工作空间路径建议
+const extractWorkspaceSuggestions = () => {
+  const workspaces = new Set<string>()
+  
+  // 从当前加载的会话中提取
+  sessions.value.forEach(session => {
+    if (session.workspace && session.workspace.trim()) {
+      workspaces.add(session.workspace.trim())
+    }
+  })
+  
+  // 也可以从本地存储获取之前使用的工作空间（可选）
+  try {
+    const localWorkspaces = localStorage.getItem('recent_workspaces')
+    if (localWorkspaces) {
+      const parsed = JSON.parse(localWorkspaces)
+      if (Array.isArray(parsed)) {
+        parsed.forEach((ws: string) => {
+          if (ws && ws.trim()) {
+            workspaces.add(ws.trim())
+          }
+        })
+      }
+    }
+  } catch (e) {
+    console.warn('Failed to parse local workspaces:', e)
+  }
+  
+  workspaceAllSuggestions.value = Array.from(workspaces).filter(ws => ws.length > 0)
+}
+
+// 过滤工作空间建议（计算属性）
+const filteredWorkspaceSuggestions = computed(() => {
+  const query = createForm.value.workspace?.toLowerCase().trim() || ''
+  
+  if (!query) {
+    return workspaceAllSuggestions.value
+  }
+  
+  return workspaceAllSuggestions.value.filter(ws => 
+    ws.toLowerCase().includes(query)
+  )
+})
+
+// 打开工作空间选择器
+const openWorkspacePicker = () => {
+  workspacePickerVisible.value = true
+}
+
+// 从文件浏览器选择工作空间（通过点击文件）
+const selectWorkspaceFromPicker = (file: FileItem) => {
+  if (file.is_dir) {
+    createForm.value.workspace = file.path
+    workspacePickerVisible.value = false
+    // 保存到本地存储以便下次使用
+    saveRecentWorkspace(file.path)
+  } else {
+    ElMessage.warning('请选择目录而不是文件')
+  }
+}
+
+// 确认选择当前工作空间（通过确认按钮）
+const confirmWorkspaceSelection = () => {
+  if (fileBrowserRef.value) {
+    const currentPath = fileBrowserRef.value.currentPath
+    if (currentPath) {
+      createForm.value.workspace = currentPath
+      workspacePickerVisible.value = false
+      saveRecentWorkspace(currentPath)
+    } else {
+      ElMessage.warning('无法获取当前路径')
+    }
+  } else {
+    ElMessage.warning('文件浏览器未就绪')
+  }
+}
+
+// 保存最近使用的工作空间到本地存储
+const saveRecentWorkspace = (workspace: string) => {
+  try {
+    const key = 'recent_workspaces'
+    let recent: string[] = []
+    const existing = localStorage.getItem(key)
+    if (existing) {
+      recent = JSON.parse(existing)
+    }
+    
+    // 移除已存在的相同路径，然后添加到开头
+    recent = recent.filter(ws => ws !== workspace)
+    recent.unshift(workspace)
+    
+    // 只保留最近10个
+    if (recent.length > 10) {
+      recent = recent.slice(0, 10)
+    }
+    
+    localStorage.setItem(key, JSON.stringify(recent))
+  } catch (e) {
+    console.warn('Failed to save recent workspace:', e)
+  }
 }
 
 // 处理创建会话
@@ -602,11 +716,33 @@ onMounted(async () => {
         />
       </el-form-item>
       <el-form-item label="工作目录（可选）">
-        <el-input
-          v-model="createForm.workspace"
-          placeholder="输入工作目录路径，留空则创建临时目录"
-          clearable
-        />
+        <div class="flex gap-2">
+          <el-autocomplete
+            ref="workspaceInputRef"
+            v-model="createForm.workspace"
+            :suggestions="filteredWorkspaceSuggestions"
+            :trigger-on-focus="false"
+            clearable
+            placeholder="输入或选择工作目录路径"
+            class="flex-1"
+            @select="(suggestion: string) => createForm.workspace = suggestion"
+          >
+            <template #default="{ item }">
+              <div class="flex items-center justify-between w-full">
+                <span>{{ item }}</span>
+                <el-icon class="text-gray-400"><FolderOpened /></el-icon>
+              </div>
+            </template>
+          </el-autocomplete>
+          <el-button
+            type="primary"
+            :icon="FolderOpened"
+            @click="openWorkspacePicker"
+            title="浏览工作目录"
+          >
+            浏览
+          </el-button>
+        </div>
         <div class="text-xs text-gray-500 mt-1">
           如果不指定，系统将自动创建临时目录作为工作空间
         </div>
@@ -622,6 +758,33 @@ onMounted(async () => {
         >
           创建
         </el-button>
+      </span>
+    </template>
+  </el-dialog>
+
+  <!-- Workspace Picker Dialog -->
+  <el-dialog
+    v-model="workspacePickerVisible"
+    title="选择工作目录"
+    width="80%"
+    :fullscreen="false"
+    :close-on-click-modal="false"
+  >
+    <div class="workspace-picker-dialog">
+      <p class="text-sm text-gray-600 mb-4">
+        浏览并选择一个目录作为工作空间。您可以点击目录进行导航，然后点击"确定选择当前目录"按钮，或直接点击目录自动选择并关闭。
+      </p>
+      <FileBrowser
+        ref="fileBrowserRef"
+        :initial-path="createForm.workspace || '/home'"
+        @file-click="selectWorkspaceFromPicker"
+        @path-change="(path: string) => console.log('Path changed:', path)"
+      />
+    </div>
+    <template #footer>
+      <span class="dialog-footer">
+        <el-button @click="workspacePickerVisible = false">取消</el-button>
+        <el-button type="primary" @click="confirmWorkspaceSelection">确定选择当前目录</el-button>
       </span>
     </template>
   </el-dialog>
@@ -652,5 +815,19 @@ onMounted(async () => {
 
 .smooth-transition:active {
   transform: scale(0.98);
+}
+
+/* Workspace picker dialog */
+.workspace-picker-dialog {
+  max-height: 70vh;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+:deep(.workspace-picker-dialog .file-browser) {
+  flex: 1;
+  min-height: 400px;
+  max-height: 55vh;
 }
 </style>

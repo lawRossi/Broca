@@ -314,7 +314,7 @@ const getReasoningContent = (message: Message) => {
 {{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre>
           </div>
         </div>
-        
+
         <!-- 结果展示：todo_management不显示，其他工具按状态显示 -->
         <div v-if="message.data?.result !== undefined && shouldShowResult(message)" class="mb-2">
           <el-button 

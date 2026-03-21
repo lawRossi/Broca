@@ -27,7 +27,7 @@ const emit = defineEmits<{
 }>()
 
 // Reactive state
-const currentPath = ref(props.initialPath || '.')
+const currentPath = ref(props.initialPath || '/home')
 const files = ref<FileItem[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
@@ -495,6 +495,11 @@ watch(() => props.initialPath, (newPath) => {
   if (newPath && newPath !== currentPath.value) {
     navigateTo(newPath)
   }
+})
+
+// Expose currentPath to parent component
+defineExpose({
+  currentPath
 })
 </script>
 
