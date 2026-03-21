@@ -316,7 +316,7 @@ const getReasoningContent = (message: Message) => {
         </div>
 
         <!-- 结果展示：todo_management不显示，其他工具按状态显示 -->
-        <div v-if="message.data?.result !== undefined && shouldShowResult(message)" class="mb-2">
+        <div v-if="message.data?.result !== undefined && !isTodoManagement(message)" class="mb-2">
           <el-button 
             size="small" 
             type="default" 
