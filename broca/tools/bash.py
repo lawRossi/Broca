@@ -231,13 +231,13 @@ class ExecuteCode(Tool):
         except subprocess.TimeoutExpired:
             result_dict = {
                 "returncode": -1,
-                "stdout": "Execution timed out.",
+                "stderr": "Execution timed out.",
             }
             status = ToolStatus.ERROR
         except Exception as e:
             result_dict = {
                 "returncode": -1,
-                "stdout": f"Execution failed: {e}",
+                "stderr": f"Execution failed: {e}",
             }
             status = ToolStatus.ERROR
         output = Template(self.code_output_template).render(output=result_dict)

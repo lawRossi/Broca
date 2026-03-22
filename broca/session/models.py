@@ -7,10 +7,11 @@
 
 import json
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from pydantic import ConfigDict
 from sqlalchemy import JSON, Column, Integer
 from sqlmodel import Field, Relationship, SQLModel
 
@@ -155,7 +156,7 @@ class Message(SQLModel, table=True):
         default_factory=generate_message_id,
     )
     message_type: MessageType = Field(description="消息类型")
-    timestamp: datetime = Field(default_factory=datetime.now, description="消息时间戳")
+    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="消息时间戳")
 
     # 通信字段（可选）
     sender_id: Optional[str] = Field(default=None, description="发送者ID")
@@ -200,6 +201,13 @@ class Message(SQLModel, table=True):
     session: Optional["Session"] = Relationship(back_populates="messages")
     turn: Optional["Turn"] = Relationship(back_populates="messages")
     agent: Optional["Agent"] = Relationship(back_populates="messages")
+
+    # Pydantic v2 配置：确保 datetime 序列化为带时区的 ISO 格式
+    model_config = ConfigDict(
+        json_encoders={
+            datetime: lambda v: v.astimezone(timezone.utc).isoformat() if v.tzinfo is not None else v.isoformat() + "+00:00"
+        }
+    )
 
 
 class AgentConfig(SQLModel, table=True):
@@ -253,22 +261,22 @@ class Agent(SQLModel, table=True):
     total_input_tokens: int = Field(
         default=0,
         sa_column=Column(Integer, server_default="0", nullable=False),
-        description="累计输入token数"
+        description="累计输入token数",
     )
     total_output_tokens: int = Field(
         default=0,
         sa_column=Column(Integer, server_default="0", nullable=False),
-        description="累计输出token数"
+        description="累计输出token数",
     )
     total_llm_calls: int = Field(
         default=0,
         sa_column=Column(Integer, server_default="0", nullable=False),
-        description="LLM调用次数"
+        description="LLM调用次数",
     )
     last_context_length: Optional[int] = Field(
         default=None,
         sa_column=Column(Integer, nullable=True),
-        description="最后一次调用的上下文长度"
+        description="最后一次调用的上下文长度",
     )
 
     # 元数据

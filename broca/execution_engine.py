@@ -371,9 +371,11 @@ class ExecutionEngine:
                         tool_name=tool_name, context="tool_call_processing"
                     ):
                         # Execute tool asynchronously with timeout
+                        # assign_task tool in blocking mode may take a long time, so use longer timeout
+                        timeout = 1800 if tool_name == "assign_task" else 60
                         tool_result = await asyncio.wait_for(
                             self.tool_mapping[tool_name].execute(arguments, context),
-                            timeout=60,
+                            timeout=timeout,
                         )
                 except AgentError as e:
                     logger.error(

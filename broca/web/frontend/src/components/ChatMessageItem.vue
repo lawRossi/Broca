@@ -247,6 +247,10 @@ const getReasoningContent = (message: Message) => {
       </div>
       <div class="text-xs opacity-70">
         {{ formatBeijingTimeShort(message.timestamp) }}
+        <!-- 调试：显示原始timestamp -->
+        <span v-if="false" class="text-red-500 ml-1">
+          [{{ typeof message.timestamp === 'number' ? 'num:' + message.timestamp : 'str:' + message.timestamp.substring(0, 20) }}]
+        </span>
       </div>
     </div>
 

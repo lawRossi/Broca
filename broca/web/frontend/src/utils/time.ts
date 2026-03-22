@@ -25,8 +25,9 @@ export const toBeijingTime = (date: Date | string | number | null | undefined): 
     return new Date()
   }
   
-  // 转换为北京时间 (UTC+8)
-  return new Date(d.getTime() + 8 * 60 * 60 * 1000)
+  // 直接返回 Date 对象，不进行时区偏移
+  // 时区转换应在 toLocaleString 等格式化函数中通过 timeZone 参数处理
+  return d
 }
 
 /**
