@@ -29,14 +29,15 @@ const fetchStats = async () => {
   }
 }
 
-// 启动轮询更新统计数据（每30秒）
+
+// 启动轮询更新统计数据（每10秒）
 const startStatsPolling = () => {
   if (statsPollingInterval) {
     clearInterval(statsPollingInterval)
   }
   statsPollingInterval = window.setInterval(() => {
     fetchStats()
-  }, 30000)
+  }, 10000)
 }
 
 // 停止轮询

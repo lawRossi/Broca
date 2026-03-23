@@ -22,6 +22,7 @@ class ToolCallContext:
     def __init__(self):
         self.agent = None
         self.workspace = None
+        self.session_id = None
 
 
 class Tool:

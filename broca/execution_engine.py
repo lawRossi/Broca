@@ -330,6 +330,7 @@ class ExecutionEngine:
         context = ToolCallContext()
         context.agent = self.agent
         context.workspace = self.config.workspace
+        context.session_id = self.session_id
 
         for tool_call in tool_calls:
             # Check for abort before processing each tool call

@@ -540,7 +540,8 @@ class JobService(BaseService[ScheduledJob]):
         trigger_type: str,
         trigger_config: Dict[str, Any],
         content: str,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        agent_id: Optional[str] = None
     ) -> ScheduledJob:
         """创建新任务"""
         return await self.create(
@@ -552,6 +553,7 @@ class JobService(BaseService[ScheduledJob]):
             trigger_config=trigger_config,
             content=content,
             session_id=session_id,
+            agent_id=agent_id,
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )

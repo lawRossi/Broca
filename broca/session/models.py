@@ -289,6 +289,9 @@ class Agent(SQLModel, table=True):
     messages: List["Message"] = Relationship(
         back_populates="agent", cascade_delete="all"
     )
+    scheduled_jobs: List["ScheduledJob"] = Relationship(
+        back_populates="agent", cascade_delete="all"
+    )
 
 
 # 消息协议辅助类
@@ -617,21 +620,28 @@ class ScheduledJob(SQLModel, table=True):
     # 执行内容
     content: str = Field(description="执行内容（消息或命令）")
 
-    # 元数据
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
-    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
-    next_run_time: Optional[datetime] = Field(default=None, description="下次执行时间")
-
-    # 会话关联（可选）
+    # 关联字段（可选）
     session_id: Optional[str] = Field(
         foreign_key="session.session_id",
         ondelete="SET NULL",
         default=None,
         description="关联的会话ID",
     )
+    agent_id: Optional[str] = Field(
+        foreign_key="agent.agent_id",
+        ondelete="SET NULL",
+        default=None,
+        description="关联的Agent ID（用于指定执行任务的Agent）",
+    )
+
+    # 元数据
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
+    next_run_time: Optional[datetime] = Field(default=None, description="下次执行时间")
 
     # 关联关系
     session: Optional["Session"] = Relationship(back_populates="scheduled_jobs")
+    agent: Optional["Agent"] = Relationship(back_populates="scheduled_jobs")
     executions: List["JobExecution"] = Relationship(
         back_populates="job", cascade_delete="all"
     )

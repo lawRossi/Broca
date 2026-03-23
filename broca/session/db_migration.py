@@ -162,3 +162,7 @@ def handle_migration_command(command: str, *args: str) -> bool:
         return False
 
     return commands[command]()
+
+
+if __name__ == "__main__":
+    handle_migration_command(sys.argv[1], *sys.argv[2:])
