@@ -80,6 +80,12 @@ export interface CreateSessionResponse {
   description?: string
 }
 
+export interface SessionStats {
+  total_messages: number
+  messages_by_type: Record<string, number>
+  tool_call_errors: number
+}
+
 export const sessionApi = {
   /**
    * 获取会话列表
@@ -156,6 +162,13 @@ export const sessionApi = {
     return request.delete('/session/sessions', {
       data: { session_ids: sessionIds }
     })
+  },
+
+  /**
+   * 获取会话统计信息
+   */
+  async getSessionStats(sessionId: string): Promise<SessionStats> {
+    return request.get(`/session/${sessionId}/stats`)
   }
 }
 

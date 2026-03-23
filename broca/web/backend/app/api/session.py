@@ -311,3 +311,35 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
 
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.get("/{session_id}/stats", response_model=ApiResponse)
+async def get_session_stats(session_id: str) -> ApiResponse:
+    """获取会话的统计信息
+
+    包括：
+    - 消息总数
+    - 按消息类型分组的统计
+    - 工具调用错误数量
+    """
+    try:
+        # 验证会话是否存在
+        session_service = get_session_service()
+        session = await session_service.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # 获取消息统计
+        message_service = get_message_service()
+        stats = await message_service.get_message_stats_by_session(session_id)
+
+        return ApiResponse.success(stats, msg="Session stats retrieved successfully")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session stats: {e}")
+        import traceback
+
+        logger.error(traceback.format_exc())
+        raise HTTPException(500, f"Internal server error: {e!s}") from e

@@ -375,6 +375,70 @@ class MessageService(BaseService[Message]):
                 return latest_message.sequence_number + 1
             return 1
 
+    async def get_message_stats_by_session(self, session_id: str) -> Dict[str, Any]:
+        """获取会话的消息统计信息
+
+        Returns:
+            包含以下字段的字典:
+            - total_messages: 消息总数
+            - messages_by_type: 按消息类型分组的数量统计
+            - tool_call_errors: 工具调用错误数量
+        """
+        async with db_manager.get_session() as session:
+            # 统计总消息数
+            total_statement = select(Message).where(Message.session_id == session_id)
+            total_result = await session.exec(total_statement)
+            total_messages = len(total_result.scalars().all())
+
+            # 按消息类型统计
+            from sqlalchemy import func
+            type_stats_statement = (
+                select(Message.message_type, func.count(Message.message_id))
+                .where(Message.session_id == session_id)
+                .group_by(Message.message_type)
+            )
+            type_stats_result = await session.exec(type_stats_statement)
+            type_stats_rows = type_stats_result.all()
+
+            messages_by_type = {}
+            for msg_type, count in type_stats_rows:
+                messages_by_type[str(msg_type)] = count
+
+            # 统计工具调用错误数量
+            # 工具调用错误判断逻辑：
+            # 1. 消息类型为 TOOL_CALL
+            # 2. 消息的data字段中包含错误信息（例如有error字段或error_code字段）
+            tool_error_statement = select(Message).where(
+                and_(
+                    Message.session_id == session_id,
+                    Message.message_type == MessageType.TOOL_CALL,
+                )
+            )
+            tool_calls_result = await session.exec(tool_error_statement)
+            tool_call_messages = tool_calls_result.scalars().all()
+
+            tool_call_errors = 0
+            for msg in tool_call_messages:
+                # 检查data字段中是否包含错误信息
+                data = msg.data or {}
+                # 判断是否为错误：有error字段、error_code字段，或content中包含错误关键词
+                is_error = False
+                if isinstance(data, dict):
+                    if 'error' in data or 'error_code' in data:
+                        is_error = True
+                    elif 'content' in data:
+                        content = data.get('content', '')
+                        if isinstance(content, str) and any(keyword in content.lower() for keyword in ['error', 'exception', 'failed', '失败', '错误']):
+                            is_error = True
+                if is_error:
+                    tool_call_errors += 1
+
+            return {
+                "total_messages": total_messages,
+                "messages_by_type": messages_by_type,
+                "tool_call_errors": tool_call_errors,
+            }
+
 
 class AgentConfigService(BaseService[AgentConfig]):
     """AgentConfig Service类"""
