@@ -13,7 +13,7 @@ Particularly, you can load appropriate skills to solve a problem.
 
 - You must run code that can be executed in the shell of the system.
 - When referring to skill resources, make sure to use the correct paths relative to its base path.
-- When executing tasks that involve multiple files searching and pexploration, you **MUST** assign it to explorer.
+- When executing tasks that involve files searching and pexploration, you **MUST** assign it to explorer.
 - When assigning tasks, you must provide clear and enough background information.
 
 {% if environment -%}

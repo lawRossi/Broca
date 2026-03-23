@@ -274,7 +274,10 @@ IGNORE_PATTERNS = [
     ".venv",
     "venv",
     "env",
-    ".pnpm"
+    ".pnpm",
+    ".mypy_cache",
+    ".pytest_cache",
+    ".ruff_cache"
 ]
 
 
