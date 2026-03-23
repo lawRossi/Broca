@@ -12,6 +12,32 @@ import FileBrowser from '@/components/FileBrowser.vue'
 const router = useRouter()
 const userStore = useUserStore()
 
+// LLM Provider 和 Model 选项（与后端 llm_config.json 保持一致）
+const LLM_PROVIDERS = [
+  { label: 'OpenRouter', value: 'openrouter' },
+  { label: 'DeepSeek', value: 'deepseek' },
+  { label: 'NVIDIA', value: 'nvidia' },
+  { label: 'Z-AI', value: 'z-ai' }
+]
+
+const LLM_MODELS: Record<string, { label: string; value: string }[]> = {
+  openrouter: [
+    { label: 'StepFun (Step-3.5-Flash)', value: 'stepfun' },
+    { label: 'Nemotron (NVIDIA)', value: 'nemotron' }
+  ],
+  deepseek: [
+    { label: 'DeepSeek Chat', value: 'deepeek-chat' }
+  ],
+  nvidia: [
+    { label: 'Minimax M2.1', value: 'minimax' },
+    { label: 'DeepSeek V3.2', value: 'deepseek-3.2' },
+    { label: 'GLM 4.7', value: 'glm' }
+  ],
+  z_ai: [
+    { label: 'GLM 4.7 Flash', value: 'glm-4.7' }
+  ]
+}
+
 // 响应式数据
 const sessions = ref<Session[]>([])
 const loading = ref(false)
@@ -26,7 +52,9 @@ const deleteLoading = ref(false)
 const selectedSessions = ref<string[]>([])
 const createForm = ref<CreateSessionParams>({
   description: '',
-  workspace: ''
+  workspace: '',
+  provider: undefined,
+  model: undefined
 })
 
 // Workspace autocomplete suggestions
@@ -142,7 +170,9 @@ const goToFiles = (workspace: string | undefined) => {
 const showCreateDialog = () => {
   createForm.value = {
     description: '',
-    workspace: ''
+    workspace: '',
+    provider: undefined,
+    model: undefined
   }
   // 提取所有工作空间路径作为建议
   extractWorkspaceSuggestions()
@@ -191,6 +221,17 @@ const filteredWorkspaceSuggestions = computed(() => {
   return workspaceAllSuggestions.value.filter(ws => 
     ws.toLowerCase().includes(query)
   )
+})
+
+// 根据选择的 provider 获取可用的 models
+const availableModels = computed(() => {
+  const provider = createForm.value.provider
+  if (!provider) {
+    return []
+  }
+  // 将 provider value 转换为对象键名（例如 "z-ai" -> "z_ai"）
+  const key = provider.replace('-', '_')
+  return LLM_MODELS[key] || []
 })
 
 // 打开工作空间选择器
@@ -261,7 +302,9 @@ const handleCreate = async () => {
     creating.value = true
     const response = await sessionApi.createSession({
       description: createForm.value.description || undefined,
-      workspace: createForm.value.workspace || undefined
+      workspace: createForm.value.workspace || undefined,
+      provider: createForm.value.provider || undefined,
+      model: createForm.value.model || undefined
     })
     
     ElMessage.success('会话创建成功')
@@ -715,6 +758,46 @@ onMounted(async () => {
           clearable
         />
       </el-form-item>
+      
+      <el-form-item label="LLM 提供商（可选）">
+        <el-select
+          v-model="createForm.provider"
+          placeholder="选择 LLM 提供商"
+          clearable
+          class="w-full"
+        >
+          <el-option
+            v-for="provider in LLM_PROVIDERS"
+            :key="provider.value"
+            :label="provider.label"
+            :value="provider.value"
+          />
+        </el-select>
+        <div class="text-xs text-gray-500 mt-1">
+          选择用于此会话的 LLM 提供商。留空则使用默认配置。
+        </div>
+      </el-form-item>
+      
+      <el-form-item label="LLM 模型（可选）" :disabled="!createForm.provider">
+        <el-select
+          v-model="createForm.model"
+          :disabled="!createForm.provider"
+          :placeholder="createForm.provider ? '选择 LLM 模型' : '请先选择提供商'"
+          clearable
+          class="w-full"
+        >
+          <el-option
+            v-for="model in availableModels"
+            :key="model.value"
+            :label="model.label"
+            :value="model.value"
+          />
+        </el-select>
+        <div class="text-xs text-gray-500 mt-1">
+          选择用于此会话的具体模型。留空则使用提供商默认模型。
+        </div>
+      </el-form-item>
+      
       <el-form-item label="工作目录（可选）">
         <div class="flex gap-2">
           <el-autocomplete

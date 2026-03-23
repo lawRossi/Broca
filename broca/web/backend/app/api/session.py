@@ -23,6 +23,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
     - 如果指定了 workspace，使用用户指定的目录
     - 如果没有指定 workspace，创建临时目录作为 workspace
+    - 如果指定了 provider 和 model，会覆盖 agent 配置中的 LLM 设置
     """
     try:
         # 确定 workspace
@@ -32,9 +33,13 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             workspace = tempfile.mkdtemp(prefix="broca_session_")
             logger.info(f"Created temporary workspace: {workspace}")
 
-        # 初始化 Agent
+        # 初始化 Agent，传递 LLM 配置
         factory = AgentFactory()
-        agents = await factory.init_session_agents(workspace=workspace)
+        agents = await factory.init_session_agents(
+            workspace=workspace,
+            provider=request.provider,
+            model=request.model
+        )
         session_id = None
         for agent in agents:
             await agent.connect()
@@ -44,18 +49,20 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             task = asyncio.create_task(agent.run())
             task.add_done_callback(lambda _: agent.stop())
 
-        # 更新会话描述和workspace
+        # 更新会话描述、workspace 和 LLM 配置
         session_service = get_session_service()
         update_data = {}
         if request.description:
             update_data["description"] = request.description
         if workspace:
             update_data["workspace"] = workspace
+        # 注意：Session 模型中目前没有 provider 和 model 字段
+        # 如果需要持久化，需要修改 Session 模型
         
         if update_data:
             await session_service.update(session_id, **update_data)
 
-        logger.info(f"Session created: {session_id}, workspace: {workspace}")
+        logger.info(f"Session created: {session_id}, workspace: {workspace}, provider: {request.provider}, model: {request.model}")
 
         return ApiResponse.success(
             {
@@ -63,6 +70,8 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
                 "workspace": workspace,
                 "agent_id": agent.agent_id if hasattr(agent, "agent_id") else "main_agent",
                 "description": request.description,
+                "provider": request.provider,
+                "model": request.model,
             },
             msg="Session created successfully",
         )

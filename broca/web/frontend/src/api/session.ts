@@ -71,6 +71,8 @@ export interface SessionQueryParams {
 export interface CreateSessionParams {
   description?: string
   workspace?: string
+  provider?: string  // LLM provider，如 openrouter、deepseek、nvidia、z-ai
+  model?: string    // LLM model，如 stepfun、nemotron、glm-4.7 等
 }
 
 export interface CreateSessionResponse {
@@ -78,6 +80,8 @@ export interface CreateSessionResponse {
   workspace: string
   agent_id: string
   description?: string
+  provider?: string
+  model?: string
 }
 
 export interface SessionStats {

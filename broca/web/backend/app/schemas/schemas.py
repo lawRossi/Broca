@@ -11,6 +11,8 @@ class CreateSessionRequest(BaseModel):
     """创建 Session 的请求模型"""
     description: Optional[str] = None
     workspace: Optional[str] = None
+    provider: Optional[str] = None  # LLM provider，如 openrouter、deepseek 等
+    model: Optional[str] = None  # LLM model，如 stepfun、nemotron 等
 
 
 class ApiResponse(BaseModel):

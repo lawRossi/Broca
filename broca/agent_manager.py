@@ -28,8 +28,17 @@ class AgentFactory:
             self._session_agents = {}
 
     async def init_session_agents(
-        self, session_id=None, workspace=None
+        self, session_id=None, workspace=None, provider=None, model=None
     ) -> list[SocketIOAgent]:
+        """
+        初始化会话的 Agent
+        
+        Args:
+            session_id: 可选的会话ID，如果提供则恢复该会话的 agents
+            workspace: 工作空间路径
+            provider: 可选的 LLM provider，会覆盖配置中的设置
+            model: 可选的 LLM model，会覆盖配置中的设置
+        """
         if session_id is not None:
             agents = await self.restore_agents_from_session(session_id)
             session_agents = {agent.name: agent for agent in agents}
@@ -42,7 +51,7 @@ class AgentFactory:
             await session_manager.create_session(workspace=workspace)
             agents = []
             for config in agent_configs:
-                agent = await self._create_agent(config, session_manager, workspace)
+                agent = await self._create_agent(config, session_manager, workspace, provider, model)
                 agents.append(agent)
             session_agents = {agent.name: agent for agent in agents}
             self._session_agents[session_manager.session_id] = session_agents
@@ -50,13 +59,30 @@ class AgentFactory:
         return agents
 
     async def _create_agent(
-        self, agent_config, session_manager, workspace=None
+        self, agent_config, session_manager, workspace=None, provider=None, model=None
     ) -> SocketIOAgent:
+        """
+        创建 Agent 实例
+        
+        Args:
+            agent_config: agent 配置字典
+            session_manager: session 管理器
+            workspace: 可选的 workspace 路径
+            provider: 可选的 LLM provider，会覆盖配置中的值
+            model: 可选的 LLM model，会覆盖配置中的值
+        """
         config = AgentConfig.from_config(agent_config)
         if workspace is not None:
             config.workspace = workspace
         if not config.workspace:
             config.workspace = os.getcwd()
+        
+        # 覆盖 LLM provider 和 model（如果提供了的话）
+        if provider is not None:
+            config.provider = provider
+        if model is not None:
+            config.model = model
+            
         if config.environment is None:
             config.environment = self._init_environment(config)
         # Each agent gets its own LLMClient instance
