@@ -5,21 +5,18 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { sessionApi, type Session, type CreateSessionParams } from '@/api/session'
 import type { FileItem } from '@/api/files'
-import { ChatRound, Search, ArrowRight, Calendar, Timer, Plus, Delete, Loading, FolderOpened } from '@element-plus/icons-vue'
-import { formatBeijingTime } from '@/utils/time'
-import FileBrowser from '@/components/FileBrowser.vue'
+import { ChatRound, Plus } from '@element-plus/icons-vue'
+
+// 导入拆分出的组件
+import SessionSearchFilter from '@/components/SessionSearchFilter.vue'
+import SessionList from '@/components/SessionList.vue'
+import CreateSessionDialog from '@/components/CreateSessionDialog.vue'
+import WorkspacePicker from '@/components/WorkspacePicker.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
 
-// LLM Provider 和 Model 选项（与后端 llm_config.json 保持一致）
-const LLM_PROVIDERS = [
-  { label: 'OpenRouter', value: 'openrouter' },
-  { label: 'DeepSeek', value: 'deepseek' },
-  { label: 'NVIDIA', value: 'nvidia' },
-  { label: 'Z-AI', value: 'z-ai' }
-]
-
+// LLM Model 选项（传递给 CreateSessionDialog 的 availableModels 计算使用）
 const LLM_MODELS: Record<string, { label: string; value: string }[]> = {
   openrouter: [
     { label: 'StepFun (Step-3.5-Flash)', value: 'stepfun' },
@@ -59,69 +56,22 @@ const createForm = ref<CreateSessionParams>({
 
 // Workspace autocomplete suggestions
 const workspaceAllSuggestions = ref<string[]>([])
-const workspaceInputRef = ref<any>(null)
 
-// Directory picker dialog
+// Workspace picker dialog
 const workspacePickerVisible = ref(false)
-const fileBrowserRef = ref<any>(null)
 
-// 计算属性：是否已登录
+// 计算属性
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
-// 计算属性：是否全选
-const isAllSelected = computed(() => {
-  return sessions.value.length > 0 && 
-    selectedSessions.value.length === sessions.value.length
-})
-
-// 计算属性：是否部分选择
-const isIndeterminate = computed(() => {
-  return selectedSessions.value.length > 0 && 
-    selectedSessions.value.length < sessions.value.length
-})
-
-// 计算属性：是否有选中项
-const hasSelection = computed(() => selectedSessions.value.length > 0)
-
-// 状态选项
-const statusOptions = [
-  { label: '全部状态', value: '' },
-  { label: '进行中', value: 'active' },
-  { label: '已完成', value: 'completed' },
-  { label: '已暂停', value: 'paused' },
-  { label: '错误', value: 'error' },
-]
-
-// 获取状态标签样式
-const getStatusType = (status: string) => {
-  const map: Record<string, string> = {
-    active: 'success',
-    completed: 'info',
-    paused: 'warning',
-    error: 'danger'
+// 根据选择的 provider 获取可用的 models
+const availableModels = computed(() => {
+  const provider = createForm.value.provider
+  if (!provider) {
+    return []
   }
-  return map[status] || 'info'
-}
-
-// 获取状态显示文本
-const getStatusLabel = (status: string) => {
-  const map: Record<string, string> = {
-    active: '进行中',
-    completed: '已完成',
-    paused: '已暂停',
-    error: '错误'
-  }
-  return map[status] || status
-}
-
-// 使用工具函数
-
-// 截断ID显示
-const truncateId = (id: string, length: number = 8) => {
-  if (!id) return ''
-  if (id.length <= length * 2 + 3) return id
-  return `${id.slice(0, length)}...${id.slice(-length)}`
-}
+  const key = provider.replace('-', '_')
+  return LLM_MODELS[key] || []
+})
 
 // 加载session列表
 const loadSessions = async () => {
@@ -147,25 +97,6 @@ const loadSessions = async () => {
   }
 }
 
-// 跳转到聊天页面
-const goToChat = (sessionId: string) => {
-  router.push(`/chat/${sessionId}`)
-}
-
-// 跳转到文件浏览器页面
-const goToFiles = (workspace: string | undefined) => {
-  if (!workspace) {
-    ElMessage.warning('该会话没有工作空间')
-    return
-  }
-  
-  // 跳转到文件浏览器页面，并传递workspace路径作为查询参数
-  router.push({
-    path: '/files',
-    query: { path: workspace }
-  })
-}
-
 // 显示创建会话弹窗
 const showCreateDialog = () => {
   createForm.value = {
@@ -174,7 +105,6 @@ const showCreateDialog = () => {
     provider: undefined,
     model: undefined
   }
-  // 提取所有工作空间路径作为建议
   extractWorkspaceSuggestions()
   createDialogVisible.value = true
 }
@@ -183,14 +113,12 @@ const showCreateDialog = () => {
 const extractWorkspaceSuggestions = () => {
   const workspaces = new Set<string>()
   
-  // 从当前加载的会话中提取
   sessions.value.forEach(session => {
     if (session.workspace && session.workspace.trim()) {
       workspaces.add(session.workspace.trim())
     }
   })
   
-  // 也可以从本地存储获取之前使用的工作空间（可选）
   try {
     const localWorkspaces = localStorage.getItem('recent_workspaces')
     if (localWorkspaces) {
@@ -210,64 +138,23 @@ const extractWorkspaceSuggestions = () => {
   workspaceAllSuggestions.value = Array.from(workspaces).filter(ws => ws.length > 0)
 }
 
-// 过滤工作空间建议（计算属性）
-const filteredWorkspaceSuggestions = computed(() => {
-  const query = createForm.value.workspace?.toLowerCase().trim() || ''
-  
-  if (!query) {
-    return workspaceAllSuggestions.value
-  }
-  
-  return workspaceAllSuggestions.value.filter(ws => 
-    ws.toLowerCase().includes(query)
-  )
-})
-
-// 根据选择的 provider 获取可用的 models
-const availableModels = computed(() => {
-  const provider = createForm.value.provider
-  if (!provider) {
-    return []
-  }
-  // 将 provider value 转换为对象键名（例如 "z-ai" -> "z_ai"）
-  const key = provider.replace('-', '_')
-  return LLM_MODELS[key] || []
-})
-
 // 打开工作空间选择器
 const openWorkspacePicker = () => {
   workspacePickerVisible.value = true
 }
 
-// 从文件浏览器选择工作空间（通过点击文件）
+// 从文件浏览器选择工作空间
 const selectWorkspaceFromPicker = (file: FileItem) => {
   if (file.is_dir) {
     createForm.value.workspace = file.path
     workspacePickerVisible.value = false
-    // 保存到本地存储以便下次使用
     saveRecentWorkspace(file.path)
   } else {
     ElMessage.warning('请选择目录而不是文件')
   }
 }
 
-// 确认选择当前工作空间（通过确认按钮）
-const confirmWorkspaceSelection = () => {
-  if (fileBrowserRef.value) {
-    const currentPath = fileBrowserRef.value.currentPath
-    if (currentPath) {
-      createForm.value.workspace = currentPath
-      workspacePickerVisible.value = false
-      saveRecentWorkspace(currentPath)
-    } else {
-      ElMessage.warning('无法获取当前路径')
-    }
-  } else {
-    ElMessage.warning('文件浏览器未就绪')
-  }
-}
-
-// 保存最近使用的工作空间到本地存储
+// 保存最近使用的工作空间
 const saveRecentWorkspace = (workspace: string) => {
   try {
     const key = 'recent_workspaces'
@@ -277,11 +164,9 @@ const saveRecentWorkspace = (workspace: string) => {
       recent = JSON.parse(existing)
     }
     
-    // 移除已存在的相同路径，然后添加到开头
     recent = recent.filter(ws => ws !== workspace)
     recent.unshift(workspace)
     
-    // 只保留最近10个
     if (recent.length > 10) {
       recent = recent.slice(0, 10)
     }
@@ -321,7 +206,15 @@ const handleCreate = async () => {
 }
 
 // 处理搜索
-const handleSearch = () => {
+const handleSearch = (keyword: string) => {
+  searchKeyword.value = keyword
+  currentPage.value = 1
+  loadSessions()
+}
+
+// 处理状态筛选
+const handleStatusFilterChange = (status: string) => {
+  statusFilter.value = status
   currentPage.value = 1
   loadSessions()
 }
@@ -339,18 +232,15 @@ const handleSizeChange = (size: number) => {
   loadSessions()
 }
 
-// 处理表格选择变化
-const handleSelectionChange = (selection: Session[]) => {
-  selectedSessions.value = selection.map(s => s.session_id)
+// 处理选择变化
+const handleSelect = (sessionId: string) => {
+  if (!selectedSessions.value.includes(sessionId)) {
+    selectedSessions.value.push(sessionId)
+  }
 }
 
-// 全选/取消全选
-const toggleSelectAll = () => {
-  if (isAllSelected.value) {
-    selectedSessions.value = []
-  } else {
-    selectedSessions.value = sessions.value.map(s => s.session_id)
-  }
+const handleDeselect = (sessionId: string) => {
+  selectedSessions.value = selectedSessions.value.filter(id => id !== sessionId)
 }
 
 // 删除单个会话
@@ -411,6 +301,16 @@ const handleBatchDelete = async () => {
   }
 }
 
+// 处理工作空间选择
+const handleWorkspaceSelect = (file: FileItem) => {
+  selectWorkspaceFromPicker(file)
+}
+
+const handleWorkspaceConfirm = (path: string) => {
+  createForm.value.workspace = path
+  saveRecentWorkspace(path)
+}
+
 // 监听筛选条件变化
 watch([statusFilter], () => {
   currentPage.value = 1
@@ -455,422 +355,59 @@ onMounted(async () => {
     </div>
 
     <!-- 主内容区 -->
-    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+    <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6 pb-20">
       <!-- 搜索和筛选栏 -->
       <div class="bg-white rounded-lg shadow-sm border p-4 mb-6">
-        <div class="flex flex-col sm:flex-row gap-4">
-          <!-- 搜索框 -->
-          <div class="flex-1">
-            <el-input
-              v-model="searchKeyword"
-              placeholder="搜索会话ID或描述..."
-              clearable
-              @keyup.enter="handleSearch"
-              @clear="handleSearch"
-            >
-              <template #prefix>
-                <el-icon><Search /></el-icon>
-              </template>
-              <template #append>
-                <el-button type="default" @click="handleSearch">搜索</el-button>
-              </template>
-            </el-input>
-          </div>
-          <!-- 状态筛选 -->
-          <div class="sm:w-48">
-            <el-select
-              v-model="statusFilter"
-              placeholder="状态筛选"
-              clearable
-              class="w-full"
-            >
-              <el-option
-                v-for="opt in statusOptions"
-                :key="opt.value"
-                :label="opt.label"
-                :value="opt.value"
-              />
-            </el-select>
-          </div>
-        </div>
-      </div>
-
-      <!-- 加载状态 -->
-      <div v-if="loading" class="bg-white rounded-lg shadow-sm border p-12">
-        <div class="flex flex-col items-center justify-center">
-          <el-icon class="text-4xl text-blue-500 animate-spin mb-4"><Loading /></el-icon>
-          <p class="text-gray-600">加载中...</p>
-        </div>
-      </div>
-
-      <!-- 空状态 -->
-      <div v-else-if="sessions.length === 0" class="bg-white rounded-lg shadow-sm border p-12">
-        <div class="flex flex-col items-center justify-center text-center">
-          <el-icon class="text-6xl text-gray-300 mb-4"><ChatRound /></el-icon>
-          <h3 class="text-lg font-medium text-gray-900 mb-2">暂无会话</h3>
-          <p class="text-gray-500 max-w-sm">
-            {{ searchKeyword || statusFilter ? '没有找到符合条件的会话，请尝试调整搜索条件' : '还没有创建任何会话，开始一个新的对话吧' }}
-          </p>
-          <el-button 
-            v-if="searchKeyword || statusFilter"
-            type="primary" 
-            class="mt-4"
-            @click="searchKeyword = ''; statusFilter = ''; handleSearch()"
-          >
-            清除筛选条件
-          </el-button>
-        </div>
+        <SessionSearchFilter
+          :search-keyword="searchKeyword"
+          :status-filter="statusFilter"
+          :is-logged-in="isLoggedIn"
+          @update:search-keyword="handleSearch"
+          @update:status-filter="handleStatusFilterChange"
+          @create="showCreateDialog"
+        />
       </div>
 
       <!-- 会话列表 -->
-      <div v-else class="space-y-4">
-        <!-- 批量操作栏 -->
-        <div class="bg-white rounded-lg shadow-sm border p-3">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-4">
-              <el-checkbox
-                :model-value="isAllSelected"
-                :indeterminate="isIndeterminate"
-                @change="toggleSelectAll"
-              >
-                全选
-              </el-checkbox>
-              <span class="text-sm text-gray-500">
-                已选择 {{ selectedSessions.length }} 项
-              </span>
-            </div>
-            <el-button
-              v-if="hasSelection"
-              type="danger"
-              :loading="deleteLoading"
-              @click="handleBatchDelete"
-            >
-              <el-icon class="mr-1"><Delete /></el-icon>
-              批量删除 ({{ selectedSessions.length }})
-            </el-button>
-          </div>
-        </div>
-
-        <!-- PC端表格视图 -->
-        <div class="hidden sm:block bg-white rounded-lg shadow-sm border overflow-hidden">
-          <el-table 
-            :data="sessions" 
-            stripe 
-            class="w-full"
-            @selection-change="handleSelectionChange"
-          >
-            <el-table-column type="selection" width="55" />
-            <el-table-column label="会话ID" min-width="180">
-              <template #default="{ row }">
-                <div class="font-mono text-sm text-gray-600">
-                  {{ truncateId(row.session_id, 12) }}
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="描述" min-width="200">
-              <template #default="{ row }">
-                <div class="text-gray-700 truncate">
-                  {{ row.description || '-' }}
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="状态" width="100" align="center">
-              <template #default="{ row }">
-                <el-tag :type="getStatusType(row.status)" size="small">
-                  {{ getStatusLabel(row.status) }}
-                </el-tag>
-              </template>
-            </el-table-column>
-            <el-table-column label="创建时间" width="180">
-              <template #default="{ row }">
-                <div class="text-sm text-gray-500 flex items-center gap-1">
-                  <el-icon class="text-xs"><Calendar /></el-icon>
-                  {{ formatBeijingTime(row.created_at) }}
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="结束时间" width="180">
-              <template #default="{ row }">
-                <div class="text-sm text-gray-500 flex items-center gap-1">
-                  <el-icon class="text-xs"><Timer /></el-icon>
-                  {{ row.finished_at ? formatBeijingTime(row.finished_at) : '-' }}
-                </div>
-              </template>
-            </el-table-column>
-            <el-table-column label="操作" width="200" align="center" fixed="right">
-              <template #default="{ row }">
-                <div class="flex items-center justify-center gap-2">
-                  <el-button
-                    type="primary"
-                    size="small"
-                    @click="goToChat(row.session_id)"
-                  >
-                    进入
-                  </el-button>
-                  <el-button
-                    v-if="row.workspace"
-                    type="success"
-                    size="small"
-                    @click="goToFiles(row.workspace)"
-                    :title="`浏览工作空间: ${row.workspace}`"
-                  >
-                    <el-icon class="mr-1"><FolderOpened /></el-icon>
-                    文件
-                  </el-button>
-                  <el-button
-                    type="danger"
-                    size="small"
-                    :loading="deleteLoading"
-                    @click="handleDelete(row)"
-                  >
-                    <el-icon class="mr-1"><Delete /></el-icon>
-                  </el-button>
-                </div>
-              </template>
-            </el-table-column>
-          </el-table>
-        </div>
-
-        <!-- 移动端卡片视图 -->
-        <div class="sm:hidden space-y-3">
-          <!-- 移动端批量操作栏 -->
-          <div v-if="hasSelection" class="bg-white rounded-lg shadow-sm border p-3 sticky top-20 z-10">
-            <div class="flex items-center justify-between">
-              <span class="text-sm text-gray-500">
-                已选择 {{ selectedSessions.length }} 项
-              </span>
-              <el-button
-                type="danger"
-                size="small"
-                :loading="deleteLoading"
-                @click="handleBatchDelete"
-              >
-                <el-icon class="mr-1"><Delete /></el-icon>
-                删除
-              </el-button>
-            </div>
-          </div>
-
-          <div
-            v-for="session in sessions"
-            :key="session.session_id"
-            class="bg-white rounded-lg shadow-sm border p-4"
-            :class="{ 'ring-2 ring-blue-500': selectedSessions.includes(session.session_id) }"
-          >
-            <div class="flex items-start gap-3">
-              <el-checkbox
-                :model-value="selectedSessions.includes(session.session_id)"
-                class="mt-1"
-                @change="(val: boolean) => {
-                  if (val) {
-                    selectedSessions.push(session.session_id)
-                  } else {
-                    selectedSessions = selectedSessions.filter(id => id !== session.session_id)
-                  }
-                }"
-              />
-              <div 
-                class="flex-1 min-w-0 active:bg-gray-50 transition-colors rounded"
-                @click="goToChat(session.session_id)"
-              >
-                <div class="flex items-start justify-between mb-3">
-                  <div class="flex-1 min-w-0">
-                    <div class="font-mono text-sm text-gray-500 mb-1">
-                      {{ truncateId(session.session_id, 10) }}
-                    </div>
-                    <div class="text-gray-900 font-medium truncate">
-                      {{ session.description || '无描述' }}
-                    </div>
-                  </div>
-                  <div class="ml-3 flex-shrink-0">
-                    <el-tag :type="getStatusType(session.status)" size="small">
-                      {{ getStatusLabel(session.status) }}
-                    </el-tag>
-                  </div>
-                </div>
-                <div class="flex items-center justify-between text-sm text-gray-500">
-                  <div class="flex items-center gap-1">
-                    <el-icon class="text-xs"><Calendar /></el-icon>
-                    <span>{{ formatBeijingTime(session.created_at).split(' ')[0] }}</span>
-                  </div>
-                  <el-icon class="text-gray-400"><ArrowRight /></el-icon>
-                </div>
-              </div>
-            </div>
-            <!-- 移动端操作按钮 -->
-            <div class="flex justify-end gap-2 mt-3 pt-3 border-t">
-              <el-button
-                v-if="session.workspace"
-                type="success"
-                size="small"
-                @click.stop="goToFiles(session.workspace)"
-                :title="`浏览工作空间: ${session.workspace}`"
-              >
-                <el-icon class="mr-1"><FolderOpened /></el-icon>
-                文件
-              </el-button>
-              <el-button
-                type="danger"
-                size="small"
-                :loading="deleteLoading"
-                @click.stop="handleDelete(session)"
-              >
-                <el-icon class="mr-1"><Delete /></el-icon>
-                删除
-              </el-button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 分页 -->
-        <div class="bg-white rounded-lg shadow-sm border p-4">
-          <el-pagination
-            v-model:current-page="currentPage"
-            v-model:page-size="pageSize"
-            :page-sizes="[10, 20, 50, 100]"
-            :total="total"
-            layout="total, sizes, prev, pager, next, jumper"
-            size="small"
-            @size-change="handleSizeChange"
-            @current-change="handlePageChange"
-          />
-        </div>
-      </div>
+      <SessionList
+        :sessions="sessions"
+        :loading="loading"
+        :total="total"
+        :current-page="currentPage"
+        :page-size="pageSize"
+        :selected-sessions="selectedSessions"
+        :delete-loading="deleteLoading"
+        @page-change="handlePageChange"
+        @size-change="handleSizeChange"
+        @select="handleSelect"
+        @deselect="handleDeselect"
+        @delete="handleDelete"
+        @batch-delete="handleBatchDelete"
+      />
     </div>
   </div>
 
   <!-- 创建会话弹窗 -->
-  <el-dialog
-    v-model="createDialogVisible"
-    title="创建新会话"
-    width="500px"
-    :close-on-click-modal="false"
-  >
-    <el-form
-      ref="createFormRef"
-      :model="createForm"
-      label-position="top"
-    >
-      <el-form-item label="描述（可选）">
-        <el-input
-          v-model="createForm.description"
-          placeholder="输入会话描述..."
-          clearable
-        />
-      </el-form-item>
-      
-      <el-form-item label="LLM 提供商（可选）">
-        <el-select
-          v-model="createForm.provider"
-          placeholder="选择 LLM 提供商"
-          clearable
-          class="w-full"
-        >
-          <el-option
-            v-for="provider in LLM_PROVIDERS"
-            :key="provider.value"
-            :label="provider.label"
-            :value="provider.value"
-          />
-        </el-select>
-        <div class="text-xs text-gray-500 mt-1">
-          选择用于此会话的 LLM 提供商。留空则使用默认配置。
-        </div>
-      </el-form-item>
-      
-      <el-form-item label="LLM 模型（可选）" :disabled="!createForm.provider">
-        <el-select
-          v-model="createForm.model"
-          :disabled="!createForm.provider"
-          :placeholder="createForm.provider ? '选择 LLM 模型' : '请先选择提供商'"
-          clearable
-          class="w-full"
-        >
-          <el-option
-            v-for="model in availableModels"
-            :key="model.value"
-            :label="model.label"
-            :value="model.value"
-          />
-        </el-select>
-        <div class="text-xs text-gray-500 mt-1">
-          选择用于此会话的具体模型。留空则使用提供商默认模型。
-        </div>
-      </el-form-item>
-      
-      <el-form-item label="工作目录（可选）">
-        <div class="flex gap-2">
-          <el-autocomplete
-            ref="workspaceInputRef"
-            v-model="createForm.workspace"
-            :suggestions="filteredWorkspaceSuggestions"
-            :trigger-on-focus="false"
-            clearable
-            placeholder="输入或选择工作目录路径"
-            class="flex-1"
-            @select="(suggestion: string) => createForm.workspace = suggestion"
-          >
-            <template #default="{ item }">
-              <div class="flex items-center justify-between w-full">
-                <span>{{ item }}</span>
-                <el-icon class="text-gray-400"><FolderOpened /></el-icon>
-              </div>
-            </template>
-          </el-autocomplete>
-          <el-button
-            type="primary"
-            :icon="FolderOpened"
-            @click="openWorkspacePicker"
-            title="浏览工作目录"
-          >
-            浏览
-          </el-button>
-        </div>
-        <div class="text-xs text-gray-500 mt-1">
-          如果不指定，系统将自动创建临时目录作为工作空间
-        </div>
-      </el-form-item>
-    </el-form>
-    <template #footer>
-      <span class="dialog-footer">
-        <el-button type="default" @click="createDialogVisible = false">取消</el-button>
-        <el-button
-          type="primary"
-          :loading="creating"
-          @click="handleCreate"
-        >
-          创建
-        </el-button>
-      </span>
-    </template>
-  </el-dialog>
+  <CreateSessionDialog
+    :visible="createDialogVisible"
+    :form-data="createForm"
+    :workspace-suggestions="workspaceAllSuggestions"
+    :available-models="availableModels"
+    :creating="creating"
+    @update:visible="createDialogVisible = $event"
+    @update:form-data="createForm = $event"
+    @create="handleCreate"
+    @open-workspace-picker="openWorkspacePicker"
+  />
 
-  <!-- Workspace Picker Dialog -->
-  <el-dialog
-    v-model="workspacePickerVisible"
-    title="选择工作目录"
-    width="80%"
-    :fullscreen="false"
-    :close-on-click-modal="false"
-  >
-    <div class="workspace-picker-dialog">
-      <p class="text-sm text-gray-600 mb-4">
-        浏览并选择一个目录作为工作空间。您可以点击目录进行导航，然后点击"确定选择当前目录"按钮，或直接点击目录自动选择并关闭。
-      </p>
-      <FileBrowser
-        ref="fileBrowserRef"
-        :initial-path="createForm.workspace || '/home'"
-        @file-click="selectWorkspaceFromPicker"
-        @path-change="(path: string) => console.log('Path changed:', path)"
-      />
-    </div>
-    <template #footer>
-      <span class="dialog-footer">
-        <el-button @click="workspacePickerVisible = false">取消</el-button>
-        <el-button type="primary" @click="confirmWorkspaceSelection">确定选择当前目录</el-button>
-      </span>
-    </template>
-  </el-dialog>
+  <!-- 工作空间选择器 -->
+  <WorkspacePicker
+    :visible="workspacePickerVisible"
+    :initial-path="createForm.workspace || '/home'"
+    @update:visible="workspacePickerVisible = $event"
+    @select="handleWorkspaceSelect"
+    @confirm="handleWorkspaceConfirm"
+  />
 </template>
 
 <style scoped>
@@ -889,28 +426,5 @@ onMounted(async () => {
   :deep(.el-pagination .el-pagination__total) {
     display: none;
   }
-}
-
-/* 卡片点击效果 */
-.smooth-transition {
-  transition: all 0.2s ease;
-}
-
-.smooth-transition:active {
-  transform: scale(0.98);
-}
-
-/* Workspace picker dialog */
-.workspace-picker-dialog {
-  max-height: 70vh;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-:deep(.workspace-picker-dialog .file-browser) {
-  flex: 1;
-  min-height: 400px;
-  max-height: 55vh;
 }
 </style>
