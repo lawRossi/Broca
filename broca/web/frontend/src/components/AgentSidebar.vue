@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref, watch, computed } from 'vue'
+import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
 import { useChatStore, useAgentStore } from '@/stores'
-import type { Agent, AgentConfig } from '@/stores/agent'
+import type { Agent } from '@/stores/agent'
 import { ElIcon, ElTooltip, ElTag, ElButton, ElDialog } from 'element-plus'
-import { User, Document, Search, List, PieChart, QuestionFilled, Loading, CircleCheck, CircleClose, Refresh, Setting, InfoFilled } from '@element-plus/icons-vue'
+import { User, Document, Search, List, PieChart, QuestionFilled, Loading, CircleCheck, CircleClose, Refresh, Setting, InfoFilled, ChatDotRound, TrendCharts, DataAnalysis } from '@element-plus/icons-vue'
 import { StarFilled } from '@element-plus/icons-vue'
 
 const chatStore = useChatStore()
@@ -12,6 +12,8 @@ const agentStore = useAgentStore()
 const showConfigDialog = ref(false)
 const loading = ref(false)
 const selectedAgent = ref<Agent | null>(null)
+const autoRefreshInterval = ref<number | null>(null)
+const lastRefreshTime = ref<Date>(new Date())
 
 // 使用 computed 从 agentStore 获取 agents 列表
 const agents = computed(() => agentStore.agents)
@@ -76,8 +78,33 @@ const refreshAgents = async () => {
   loading.value = true
   try {
     await agentStore.fetchAgents(chatStore.sessionId)
+    lastRefreshTime.value = new Date()
   } finally {
     loading.value = false
+  }
+}
+
+// 自动刷新相关
+const startAutoRefresh = (intervalMs: number = 10000) => {
+  if (autoRefreshInterval.value) {
+    stopAutoRefresh()
+  }
+  // 立即刷新一次
+  if (chatStore.sessionId) {
+    refreshAgents()
+  }
+  // 设置定时器
+  autoRefreshInterval.value = window.setInterval(() => {
+    if (chatStore.sessionId && !loading.value) {
+      refreshAgents()
+    }
+  }, intervalMs)
+}
+
+const stopAutoRefresh = () => {
+  if (autoRefreshInterval.value) {
+    window.clearInterval(autoRefreshInterval.value)
+    autoRefreshInterval.value = null
   }
 }
 
@@ -113,14 +140,23 @@ const sendMessageToAgent = () => {
 // 监听 session 变化，自动刷新 agents
 watch(() => chatStore.sessionId, (newSessionId) => {
   if (newSessionId) {
-    refreshAgents()
+    // 启动自动刷新（30秒间隔）
+    startAutoRefresh(30000)
+  } else {
+    // 停止自动刷新
+    stopAutoRefresh()
   }
 })
 
 onMounted(() => {
   if (chatStore.sessionId) {
-    refreshAgents()
+    // 启动自动刷新（30秒间隔）
+    startAutoRefresh(30000)
   }
+})
+
+onUnmounted(() => {
+  stopAutoRefresh()
 })
 </script>
 
@@ -148,6 +184,12 @@ onMounted(() => {
             <InfoFilled />
           </el-icon>
         </el-tooltip>
+        <el-tooltip v-if="autoRefreshInterval" content="自动刷新已开启 (30秒)" placement="top">
+          <div class="flex items-center gap-1">
+            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <span class="text-[10px] text-gray-500">自动</span>
+          </div>
+        </el-tooltip>
       </div>
       <el-button 
         size="small" 
@@ -171,39 +213,92 @@ onMounted(() => {
         }"
         @click="handleAgentClick(agent)"
       >
-        <div class="flex items-start justify-between mb-2">
-          <div class="flex items-center gap-2">
-            <el-icon :size="16" :color="getTypeColor(agent.type || 'assistant')">
-              <component :is="getTypeIcon(agent.type || 'assistant')" />
-            </el-icon>
-            <span class="text-sm font-medium text-gray-900 truncate">{{ agent.name }}</span>
-            <el-icon v-if="agent.role === 'main_agent' || agent.role === 'main-agent'" :size="12" class="text-yellow-500" title="Main Agent (默认)">
-              <StarFilled />
-            </el-icon>
+        <!-- Agent 头部：名称、类型、状态 -->
+        <div class="flex items-start justify-between mb-3">
+          <div class="flex items-center gap-2 min-w-0 flex-1">
+            <div class="relative">
+              <el-icon :size="20" :color="getTypeColor(agent.type || 'assistant')">
+                <component :is="getTypeIcon(agent.type || 'assistant')" />
+              </el-icon>
+              <el-icon v-if="agent.role === 'main_agent' || agent.role === 'main-agent'" :size="10" class="absolute -top-1 -right-1 text-yellow-500" title="Main Agent (默认)">
+                <StarFilled />
+              </el-icon>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="text-sm font-semibold text-gray-900 truncate">{{ agent.name }}</div>
+              <div class="text-xs text-gray-500">{{ agent.role || '未指定' }}</div>
+            </div>
           </div>
           <el-tag 
             size="small" 
             :type="agent.status ? statusColors[agent.status] || 'info' : 'info'" 
-            class="!text-xs"
+            class="!text-xs !px-2 !py-0 !h-5"
           >
-            <el-icon :size="12" class="mr-1">
-              <component :is="getStatusIcon(agent.status || 'disconnected')" />
+            <el-icon v-if="agent.status && agent.status !== 'disconnected'" :size="10" class="mr-1 animate-pulse">
+              <component :is="getStatusIcon(agent.status)" />
             </el-icon>
             {{ getStatusText(agent.status || 'disconnected') }}
           </el-tag>
         </div>
-        <p class="text-xs text-gray-600 mb-3 line-clamp-2">
-          {{ agent.description || `Agent ID: ${agent.agent_id}` }}
+
+        <!-- 描述 -->
+        <p class="text-xs text-gray-600 mb-3 line-clamp-2 leading-relaxed">
+          {{ agent.description || '暂无描述' }}
         </p>
-        <div class="flex items-center justify-between text-xs text-gray-500">
-          <div class="flex items-center gap-4">
-            <div class="flex items-center gap-1">
-              <span class="text-gray-400">角色:</span>
-              <span class="font-medium">{{ agent.role || '未指定' }}</span>
+
+        <!-- LLM 统计信息 -->
+        <div class="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-2.5 border border-gray-100">
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <!-- 调用次数 -->
+            <div class="flex items-center gap-1.5">
+              <div class="p-1 bg-blue-100 rounded">
+                <el-icon :size="12" class="text-blue-600">
+                  <ChatDotRound />
+                </el-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-gray-500 text-[10px]">调用次数</span>
+                <span class="font-semibold text-blue-700">{{ agent.total_llm_calls || 0 }}</span>
+              </div>
             </div>
-            <div class="flex items-center gap-1">
-              <span class="text-gray-400">配置:</span>
-              <span class="font-medium">{{ agent.config_id?.slice(0, 8) || 'default' }}</span>
+
+            <!-- 上下文长度 -->
+            <div class="flex items-center gap-1.5" v-if="agent.last_context_length !== undefined">
+              <div class="p-1 bg-purple-100 rounded">
+                <el-icon :size="12" class="text-purple-600">
+                  <Document />
+                </el-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-gray-500 text-[10px]">上下文</span>
+                <span class="font-semibold text-purple-700">{{ agent.last_context_length?.toLocaleString() }}</span>
+              </div>
+            </div>
+
+            <!-- Token 输入 -->
+            <div class="flex items-center gap-1.5">
+              <div class="p-1 bg-green-100 rounded">
+                <el-icon :size="12" class="text-green-600">
+                  <TrendCharts />
+                </el-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-gray-500 text-[10px]">输入 Token</span>
+                <span class="font-semibold text-green-700">{{ (agent.total_input_tokens || 0).toLocaleString() }}</span>
+              </div>
+            </div>
+
+            <!-- Token 输出 -->
+            <div class="flex items-center gap-1.5">
+              <div class="p-1 bg-orange-100 rounded">
+                <el-icon :size="12" class="text-orange-600">
+                  <DataAnalysis />
+                </el-icon>
+              </div>
+              <div class="flex flex-col">
+                <span class="text-gray-500 text-[10px]">输出 Token</span>
+                <span class="font-semibold text-orange-700">{{ (agent.total_output_tokens || 0).toLocaleString() }}</span>
+              </div>
             </div>
           </div>
         </div>

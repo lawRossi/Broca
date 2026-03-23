@@ -205,20 +205,6 @@ class ExecutionEngine:
 
         return ExecutionStatus.RUNNING
 
-    async def _call_llm(self) -> LLMMessage:
-        """
-        Call LLM with current context
-
-        Returns:
-            LLM response message
-        """
-        return await self.llm_client.get_response(
-            self.config.provider,
-            self.config.model,
-            self.context.history,
-            self._get_tools_list(),
-        )
-
     async def _call_llm_streaming(self) -> LLMMessage:
         """
         Call LLM with current context
@@ -269,6 +255,11 @@ class ExecutionEngine:
                             subscription=self.session_id,
                         )
                         sent.add(tool_call_id)
+
+        # Notify agent to update statistics
+        input_tokens = self.llm_client.input_tokens_used
+        output_tokens = self.llm_client.output_tokens_used
+        await self.agent.on_llm_call_completed(input_tokens, output_tokens)
 
         return self.llm_client.aggregate_message(content_chunks, tool_call_chunks)
 

@@ -10,9 +10,8 @@ This is the refactored version of agent.py with modular architecture:
 
 import asyncio
 import uuid
-from typing import Optional
+from typing import Any, Dict, Optional
 
-from litellm import Message as LLMMessage
 from loguru import logger
 
 from broca.agent_configs import AgentConfig
@@ -36,6 +35,12 @@ class Agent:
         self.name = config.name
         self.role = config.role
 
+        # LLM usage statistics (loaded from database)
+        self.total_input_tokens: int = 0
+        self.total_output_tokens: int = 0
+        self.total_llm_calls: int = 0
+        self.last_context_length: Optional[int] = None
+
         # Initialize core components
         self._setup_context(**kwargs)
         self._setup_tools()
@@ -43,6 +48,59 @@ class Agent:
 
         # Initialize error handler
         self.error_handler = ErrorHandler()
+
+    async def load_stats(self, session_manager: SessionManager) -> None:
+        """Load statistics from database"""
+        try:
+            agent = await session_manager.agent_service.get(self.agent_id)
+            if agent:
+                self.total_input_tokens = agent.total_input_tokens or 0
+                self.total_output_tokens = agent.total_output_tokens or 0
+                self.total_llm_calls = agent.total_llm_calls or 0
+                self.last_context_length = agent.last_context_length
+                logger.info(
+                    f"Loaded stats for agent {self.agent_id}: "
+                    f"calls={self.total_llm_calls}, "
+                    f"input={self.total_input_tokens}, "
+                    f"output={self.total_output_tokens}"
+                )
+        except Exception as e:
+            logger.warning(f"Failed to load agent stats: {e}")
+
+    async def update_stats(
+        self, input_tokens: int, output_tokens: int, session_manager: SessionManager
+    ) -> None:
+        """Update statistics and persist to database"""
+        self.total_input_tokens += input_tokens
+        self.total_output_tokens += output_tokens
+        self.total_llm_calls += 1
+        self.last_context_length = input_tokens + output_tokens
+
+        # Persist to database
+        try:
+            await session_manager.agent_service.update(
+                self.agent_id,
+                total_input_tokens=self.total_input_tokens,
+                total_output_tokens=self.total_output_tokens,
+                total_llm_calls=self.total_llm_calls,
+                last_context_length=self.last_context_length,
+            )
+            logger.debug(
+                f"Saved stats for agent {self.agent_id}: "
+                f"total_calls={self.total_llm_calls}"
+            )
+        except Exception as e:
+            logger.error(f"Failed to save agent stats: {e}")
+
+    def get_stats(self) -> Dict[str, Any]:
+        """Get current statistics"""
+        return {
+            "agent_id": self.agent_id,
+            "total_input_tokens": self.total_input_tokens,
+            "total_output_tokens": self.total_output_tokens,
+            "total_llm_calls": self.total_llm_calls,
+            "last_context_length": self.last_context_length,
+        }
 
     def _setup_context(self, **kwargs) -> None:
         """Set up agent context"""
@@ -58,14 +116,7 @@ class Agent:
     def _setup_logger(self):
         """Set up logger for the agent"""
         logger.remove()
-        logger.add(self.config.log_file, level="DEBUG")
-
-    async def _call_llm(self, context: Context) -> LLMMessage:
-        """Call LLM with current context (kept for backward compatibility)"""
-        message = await self.llm_client.get_response(
-            context.history, self.tools, self.config.llm_config_name
-        )
-        return message
+        logger.add(self.config.log_file, level="INFO")
 
     def reset(self):
         """Reset agent state"""
@@ -90,9 +141,13 @@ class SocketIOAgent(Agent):
         session_manager: SessionManager,
         **kwargs,
     ):
+        # Save session_manager reference before calling super().__init__
+        # because parent class may need it for stats loading
+        self.session_manager = session_manager
+
+        # Call parent initialization
         super().__init__(config, llm_client, **kwargs)
 
-        self.session_manager = session_manager
         self.session_id: Optional[str] = session_manager.session_id
         self.turn_id: Optional[str] = None
 
@@ -108,6 +163,9 @@ class SocketIOAgent(Agent):
         self.abort_event = asyncio.Event()
         self.is_aborted = False
         self._abort_task: Optional[asyncio.Task] = None
+
+        # Async load statistics from database (non-blocking)
+        asyncio.create_task(self.load_stats(session_manager))
 
     def _setup_communicator(self):
         """Set up communication interface"""
@@ -221,7 +279,9 @@ class SocketIOAgent(Agent):
                     logger.error(
                         f"Received task error of task {task_id}: {error_message}"
                     )
-                    execution_result = await self.run_async(error_message, from_agent=True)
+                    execution_result = await self.run_async(
+                        error_message, from_agent=True
+                    )
                     logger.debug(
                         f"Task error execution result: {execution_result.status}"
                     )
@@ -232,7 +292,7 @@ class SocketIOAgent(Agent):
         self,
         message: Optional[str] = None,
         max_steps: Optional[int] = None,
-        from_agent: Optional[bool] = False
+        from_agent: Optional[bool] = False,
     ) -> ExecutionResult:
         """
         Run agent in async mode (replaces command-line interaction)
@@ -342,6 +402,17 @@ class SocketIOAgent(Agent):
     async def connect(self):
         """Connect to server"""
         await self.communicator.connect()
+
+    async def on_llm_call_completed(self, input_tokens: int, output_tokens: int):
+        """
+        Callback for ExecutionEngine when LLM call completes.
+        Updates and persists statistics.
+
+        Args:
+            input_tokens: Number of input tokens used
+            output_tokens: Number of output tokens generated
+        """
+        await self.update_stats(input_tokens, output_tokens, self.session_manager)
 
     async def abort(self):
         """

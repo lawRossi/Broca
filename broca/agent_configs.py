@@ -8,7 +8,7 @@ class AgentConfig:
         self.role = None
         self.role_description = None
         self.provider = "openrouter"
-        self.model = "nemotron"
+        self.model = "stepfun"
         self.log_file = "agent.log"
         self.system_prompt_template = None
         self.tools = None

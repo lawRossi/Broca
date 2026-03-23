@@ -10,11 +10,12 @@ export type AgentConfig = ApiAgentConfig
 export interface Agent extends SessionAgent {
   status: 'idle' | 'running' | 'connecting' | 'disconnected'
   type: string
-  metrics?: {
-    total_messages: number
-    avg_response_time: number
-    success_rate: number
-  }
+  // LLM 使用统计
+  total_input_tokens?: number
+  total_output_tokens?: number
+  total_llm_calls?: number
+  // 上下文信息
+  last_context_length?: number
 }
 
 export const useAgentStore = defineStore('agent', () => {

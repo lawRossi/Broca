@@ -11,22 +11,16 @@ warnings.filterwarnings("ignore")
 
 
 class LLMClient:
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(LLMClient, cls).__new__(cls)
-        return cls._instance
+    """LLM Client for making API calls to various providers"""
 
     def __init__(self):
-        if not hasattr(self, "_initialized"):
-            self._initialized = True
-            self.input_tokens_used = 0
-            self.output_tokens_used = 0
-            self.context_size = 0
-            config_file = Path(__file__).parent.parent / "configs" / "llm_config.json"
-            with open(config_file) as f:
-                self.config = json.load(f)
+        """Initialize LLM Client"""
+        self.input_tokens_used = 0
+        self.output_tokens_used = 0
+
+        config_file = Path(__file__).parent.parent / "configs" / "llm_config.json"
+        with open(config_file) as f:
+            self.config = json.load(f)
 
     async def get_response(self, provider, model, messages, tools=None) -> LLMMessage:
         response = await acompletion(
@@ -39,13 +33,8 @@ class LLMClient:
         logger.debug(
             f"LLM call - input tokens: {response.usage.prompt_tokens}, output tokens: {response.usage.completion_tokens}"
         )
-        self.input_tokens_used += response.usage.prompt_tokens
-        self.output_tokens_used += response.usage.completion_tokens
-        self.context_size = response.usage.total_tokens
-
-        logger.debug(
-            f"LLM call - total input tokens: {self.input_tokens_used}, total output tokens: {self.output_tokens_used}"
-        )
+        self.input_tokens_used = response.usage.prompt_tokens
+        self.output_tokens_used = response.usage.completion_tokens
 
         return response.choices[0].message
 
@@ -64,9 +53,8 @@ class LLMClient:
 
         async for chunk in response:
             if hasattr(chunk, "usage") and chunk.usage:
-                self.input_tokens_used += chunk.usage.prompt_tokens
-                self.output_tokens_used += chunk.usage.completion_tokens
-                self.context_size = chunk.usage.total_tokens
+                self.input_tokens_used = chunk.usage.prompt_tokens
+                self.output_tokens_used = chunk.usage.completion_tokens
 
             if hasattr(chunk, "choices") and chunk.choices:
                 choice = chunk.choices[0]
@@ -87,10 +75,6 @@ class LLMClient:
                     # Handle finish reason
                     if hasattr(choice, "finish_reason") and choice.finish_reason:
                         yield {"type": "finish", "data": choice.finish_reason}
-
-        logger.debug(
-            f"LLM call - total input tokens: {self.input_tokens_used}, total output tokens: {self.output_tokens_used}"
-        )
 
     def aggregate_message(self, content_chunks, tool_call_chunks) -> LLMMessage:
         print(len(content_chunks), len(tool_call_chunks))

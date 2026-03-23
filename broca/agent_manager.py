@@ -24,7 +24,7 @@ class AgentFactory:
     def __init__(self):
         if not hasattr(self, "_initialized"):
             self._initialized = True
-            self.llm_client = LLMClient()
+            # Removed shared LLMClient - each agent will have its own instance
             self._session_agents = {}
 
     async def init_session_agents(
@@ -59,7 +59,9 @@ class AgentFactory:
             config.workspace = os.getcwd()
         if config.environment is None:
             config.environment = self._init_environment(config)
-        agent = SocketIOAgent(config, self.llm_client, session_manager)
+        # Each agent gets its own LLMClient instance
+        llm_client = LLMClient()
+        agent = SocketIOAgent(config, llm_client, session_manager)
         await session_manager.save_agent(agent)
         return agent
 
@@ -80,8 +82,10 @@ class AgentFactory:
         config = await session_manager.get_agent_config(agent_id)
         logger.info(f"Restoring agent from config: {config}, agent_id: {agent_id}")
         agent_config = AgentConfig.from_config(config)
+        # Each agent gets its own LLMClient instance
+        llm_client = LLMClient()
         agent = SocketIOAgent(
-            agent_config, self.llm_client, session_manager, agent_id=agent_id
+            agent_config, llm_client, session_manager, agent_id=agent_id
         )
         await agent.restore_from_session(agent_id)
         if session_manager.session_id not in self._session_agents:
