@@ -181,6 +181,7 @@ class ExecutionEngine:
                 errors += 1
                 if errors > 2:
                     logger.error(f"Too many errors ({e.error_type}), aborting...")
+                    await self._send_turn_error(e)
                     return ExecutionStatus.ERROR
             except asyncio.CancelledError:
                 logger.info("Agent execution cancelled by user during LLM call")
@@ -658,6 +659,9 @@ class ExecutionEngine:
         """Send turn error notification"""
         try:
             error_message = f"Turn failed with error: {error}"
+            await self.communicator.send_error(
+                error_message, subscription=self.session_id
+            )
             await self.communicator.send_turn_end(
                 turn_id=self.turn_id,
                 turn_description=error_message,

@@ -601,6 +601,26 @@ class SocketIOClient:
         )
         return await self.send_message(msg, callback)
 
+    async def send_error(
+        self,
+        error_message: str,
+        error_code: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
+        """Send error message"""
+        msg = MessageProtocol.create_error_message(
+            content=error_message,
+            error_code=error_code,
+            sender_id=self.client_id,
+            receiver_id=receiver_id,
+            room=room,
+            subscription=subscription,
+        )
+        return await self.send_message(msg, callback)
+
     async def subscribe(
         self, subscription: str, callback: Optional[Callable] = None
     ) -> str:
