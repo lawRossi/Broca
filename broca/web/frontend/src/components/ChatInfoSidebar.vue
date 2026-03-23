@@ -146,10 +146,6 @@ const totalMessagesFromApi = computed(() => {
           </span>
         </div>
         <div class="flex justify-between">
-          <span class="text-gray-500">Agent:</span>
-          <span class="font-mono text-xs">{{ chatStore.agentId }}</span>
-        </div>
-        <div class="flex justify-between">
           <span class="text-gray-500">Status:</span>
           <el-tag :type="chatStore.connected ? 'success' : 'info'" size="small">{{ chatStore.statusText }}</el-tag>
         </div>

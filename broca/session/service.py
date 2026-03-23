@@ -421,15 +421,7 @@ class MessageService(BaseService[Message]):
             for msg in tool_call_messages:
                 # 检查data字段中是否包含错误信息
                 data = msg.data or {}
-                # 判断是否为错误：有error字段、error_code字段，或content中包含错误关键词
-                is_error = False
-                if isinstance(data, dict):
-                    if 'error' in data or 'error_code' in data:
-                        is_error = True
-                    elif 'content' in data:
-                        content = data.get('content', '')
-                        if isinstance(content, str) and any(keyword in content.lower() for keyword in ['error', 'exception', 'failed', '失败', '错误']):
-                            is_error = True
+                is_error = data.get("status") == "error"
                 if is_error:
                     tool_call_errors += 1
 

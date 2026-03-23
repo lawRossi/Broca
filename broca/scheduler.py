@@ -362,14 +362,14 @@ class Scheduler:
             logger.error(f"Failed to get job {job_id}: {e}")
             return None
 
-    async def _execute_reminder(self, job_id: str, message: str, agent_id: Optional[str] = None):
+    async def _execute_reminder(self, job_id: str, message: str, agent_id):
         """执行提醒任务"""
         try:
             logger.info(f"Executing reminder job: {job_id}, message: {message}, agent_id: {agent_id}")
 
             # 如果指定了agent_id，向该agent发送消息
-            if agent_id:
-                await self._send_message_to_agent(agent_id, message)
+            message = "Reminder:" + message
+            await self._send_message_to_agent(agent_id, message)
 
             # 记录执行结果
             result = f"Reminder sent: {message}"
@@ -404,7 +404,8 @@ class Scheduler:
                 timeout=300,  # 5分钟超时
             )
 
-            output = f"命令: {command}\n"
+            output = f"job id:{job_id}\n"
+            output += f"命令: {command}\n"
             output += f"返回码: {result.returncode}\n"
             output += f"输出: {result.stdout}\n"
             if result.stderr:
@@ -462,7 +463,7 @@ class Scheduler:
         """向指定agent发送消息"""
         try:
             # 获取服务器URL，从环境变量或默认值
-            server_url = os.getenv("BROCA_SERVER_URL", "http://localhost:8000")
+            server_url = os.getenv("BROCA_SERVER_URL", "http://localhost:6868")
 
             # 创建临时socketio客户端
             from broca.comm.socketio_client import SocketIOClient

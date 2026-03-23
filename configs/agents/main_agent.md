@@ -1,7 +1,7 @@
 ---
 name: Broca
 role: main-agent
-tools: assign_task,edit_file,execute_code,list_dir,read_file,task_management,todo_management,tree_dir,write_file
+tools: assign_task,cron,edit_file,execute_code,list_dir,read_file,task_management,todo_management,tree_dir,web_fetch,web_search,write_file
 ---
 
 ## Role

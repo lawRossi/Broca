@@ -42,7 +42,7 @@ class SocketIOClient:
 
     def __init__(
         self,
-        server_url: str = "http://localhost:8000",
+        server_url: str = "http://localhost:6868",
         client_type: str = "cli",
         client_id: Optional[str] = None,
         user_id: Optional[str] = None,

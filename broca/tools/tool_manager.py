@@ -10,6 +10,7 @@ from broca.tools.skill import LoadSkill
 from broca.tools.task import TaskManagement
 from broca.tools.todo import TodoManagement
 from broca.tools.tool import Tool
+from broca.tools.web import WebSearch, WebFetch
 
 
 class ToolManager:
@@ -41,6 +42,8 @@ class ToolManager:
         self._add_tool(CronTool())
         load_skill = LoadSkill(SkillManager())
         self._add_tool(load_skill)
+        self._add_tool(WebFetch())
+        self._add_tool(WebSearch())
 
     def _add_tool(self, tool: Tool):
         if tool.name in self.tools:

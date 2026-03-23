@@ -365,7 +365,7 @@ class ExecutionEngine:
                     ):
                         # Execute tool asynchronously with timeout
                         # assign_task tool in blocking mode may take a long time, so use longer timeout
-                        timeout = 1800 if tool_name == "assign_task" else 60
+                        timeout = 1800 if tool_name == "assign_task" else 600
                         tool_result = await asyncio.wait_for(
                             self.tool_mapping[tool_name].execute(arguments, context),
                             timeout=timeout,

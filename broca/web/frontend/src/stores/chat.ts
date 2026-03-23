@@ -528,7 +528,6 @@ export const useChatStore = defineStore('chat', () => {
           ...agent,
           status: 'idle'
         }))
-        ElMessage.success('连接成功')
       })
       client.on('disconnect', () => {
         connected.value = false
