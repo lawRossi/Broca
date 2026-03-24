@@ -251,7 +251,19 @@ const handleDelete = async (session: Session) => {
     await sessionApi.deleteSession(session.session_id)
     ElMessage.success('删除成功')
     selectedSessions.value = selectedSessions.value.filter(id => id !== session.session_id)
-    loadSessions()
+    // 立即从本地列表移除已删除的session，避免用户点击到已删除的项
+    sessions.value = sessions.value.filter(s => s.session_id !== session.session_id)
+    total.value = Math.max(0, total.value - 1)
+    // 如果当前页没有数据了且不是第一页，跳转到前一页
+    if (sessions.value.length === 0 && currentPage.value > 1) {
+      currentPage.value = 1
+      loadSessions()
+    } else {
+      // 保持当前页，只更新总数
+      // 如果需要，可以在这里调用 loadSessions() 从服务器重新获取，确保数据一致性
+      // 但为了快速响应，先更新本地数据，稍后异步刷新
+      setTimeout(loadSessions, 500) // 延迟500ms刷新，避免与用户操作冲突
+    }
   } catch (error: any) {
     console.error('删除会话失败:', error)
     ElMessage.error('删除失败')
@@ -278,8 +290,20 @@ const handleBatchDelete = async () => {
     deleteLoading.value = true
     await sessionApi.deleteSessions(selectedSessions.value)
     ElMessage.success(`成功删除 ${selectedSessions.value.length} 个会话`)
+    // 立即从本地列表移除已删除的sessions
+    const deletedIds = new Set(selectedSessions.value)
+    sessions.value = sessions.value.filter(s => !deletedIds.has(s.session_id))
+    const removedCount = selectedSessions.value.length
+    total.value = Math.max(0, total.value - removedCount)
     selectedSessions.value = []
-    loadSessions()
+    // 如果当前页没有数据了且不是第一页，跳转到前一页
+    if (sessions.value.length === 0 && currentPage.value > 1) {
+      currentPage.value = 1
+      loadSessions()
+    } else {
+      // 延迟刷新列表
+      setTimeout(loadSessions, 500)
+    }
   } catch (error: any) {
     if (error !== 'cancel') {
       console.error('批量删除会话失败:', error)
