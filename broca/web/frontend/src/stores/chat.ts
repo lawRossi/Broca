@@ -292,7 +292,10 @@ export const useChatStore = defineStore('chat', () => {
       return null
     }
 
-    // 过滤连接/订阅相关的系统消息
+    if (message.message_type === 'user_message' && message.data?.from_agent) {
+      return null
+    }
+
     const contentStr = message.data?.content ?? ''
 
     if (message.message_type === 'agent_response' && typeof contentStr === 'string') {
