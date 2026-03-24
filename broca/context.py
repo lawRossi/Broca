@@ -11,7 +11,7 @@ from broca.skill_manager import SkillManager
 
 
 class Context:
-    BOOTSTRAP_FILES = ["AGENT.md", "SOUL.md", ".agents/AGENT.md", ".agents/SOUL.md"]
+    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", ".agents/AGENTS.md", ".agents/SOUL.md"]
 
     def __init__(self, agent_config: AgentConfig, **kwargs):
         self._history: list = []

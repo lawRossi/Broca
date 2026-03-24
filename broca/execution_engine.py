@@ -588,15 +588,14 @@ class ExecutionEngine:
         message_data = {"role": "user", "content": message}
         msg_content = json.dumps(message_data, ensure_ascii=False)
 
-        # Save user message to database
-        if not from_agent:
-            await self.session_manager.save_message(
-                role=MessageRole.USER,
-                content=msg_content,
-                message_type=MessageType.USER_MESSAGE,
-                turn_id=turn_id,
-                agent_id=self.agent_id,
-            )
+        await self.session_manager.save_message(
+            role=MessageRole.USER,
+            content=msg_content,
+            message_type=MessageType.USER_MESSAGE,
+            turn_id=turn_id,
+            agent_id=self.agent_id,
+            data={"from_agent": from_agent},
+        )
 
         # Add to context history
         await self.context.add_message(message_data)
