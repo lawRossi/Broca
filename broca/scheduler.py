@@ -4,6 +4,7 @@
 封装APScheduler，实现任务管理和持久化。
 """
 
+import os
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -13,22 +14,30 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from loguru import logger
 
-import os
-from broca.session.models import JobStatus, JobType, MessageProtocol, MessageRole, MessageType
+from broca.session.models import JobStatus, JobType, MessageProtocol
 from broca.session.service import get_job_execution_service, get_job_service
 
 
 class Scheduler:
     """调度器主类（封装APScheduler）"""
+    _instance = None
 
-    def __init__(self, session_id: Optional[str] = None):
-        self.session_id = session_id
-        self.apscheduler = AsyncIOScheduler()
-        self.job_service = get_job_service()
-        self.execution_service = get_job_execution_service()
-        logger.info(f"Scheduler initialized for session: {session_id}")
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super(Scheduler, cls).__new__(cls)
+        return cls._instance
 
-    def _serialize_trigger_config(self, trigger_config: Dict[str, Any]) -> Dict[str, Any]:
+    def __init__(self):
+        if not hasattr(self, "_initialized"):
+            self._initialized = True
+            self.apscheduler = AsyncIOScheduler()
+            self.job_service = get_job_service()
+            self.execution_service = get_job_execution_service()
+            logger.info("Scheduler initialized")
+
+    def _serialize_trigger_config(
+        self, trigger_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         """序列化触发器配置，将datetime对象转换为ISO字符串"""
         serialized = {}
         for key, value in trigger_config.items():
@@ -38,10 +47,9 @@ class Scheduler:
                 serialized[key] = value
         return serialized
 
-    def _deserialize_trigger_config(self, trigger_config: Dict[str, Any]) -> Dict[str, Any]:
-        """反序列化触发器配置，将ISO字符串转换回datetime（如果需要）"""
-        # 注意：APScheduler可以处理ISO字符串，所以不一定需要转换回datetime
-        # 这里我们保持原样，让APScheduler处理
+    def _deserialize_trigger_config(
+        self, trigger_config: Dict[str, Any]
+    ) -> Dict[str, Any]:
         return trigger_config
 
     def _parse_trigger(
@@ -61,9 +69,7 @@ class Scheduler:
             if isinstance(config, dict):
                 return IntervalTrigger(**config)
             else:
-                raise ValueError(
-                    f"Invalid trigger config for interval: {config}"
-                )
+                raise ValueError(f"Invalid trigger config for interval: {config}")
 
         elif trigger_type == "date":
             if isinstance(config, dict):
@@ -78,7 +84,7 @@ class Scheduler:
         """启动调度器，从数据库恢复任务"""
         try:
             # 从数据库加载ACTIVE状态的任务
-            jobs = await self.job_service.get_active_jobs(self.session_id)
+            jobs = await self.job_service.get_active_jobs()
             logger.info(f"Loading {len(jobs)} active jobs from database")
 
             # 初始化APScheduler
@@ -142,6 +148,7 @@ class Scheduler:
 
     async def add_job(
         self,
+        session_id: str,
         name: str,
         job_type: JobType,
         trigger_type: str,
@@ -178,7 +185,7 @@ class Scheduler:
                 trigger_type=trigger_type,
                 trigger_config=serialized_config,
                 content=content,
-                session_id=self.session_id,
+                session_id=session_id,
                 agent_id=agent_id,
             )
 
@@ -285,10 +292,10 @@ class Scheduler:
             logger.error(f"Failed to resume job {job_id}: {e}")
             return False
 
-    async def list_jobs(self) -> List[Dict[str, Any]]:
+    async def list_jobs(self, session_id: str) -> List[Dict[str, Any]]:
         """列出所有任务"""
         try:
-            jobs = await self.job_service.get_active_jobs(self.session_id)
+            jobs = await self.job_service.get_active_jobs(session_id)
 
             result = []
             for job in jobs:
@@ -365,7 +372,9 @@ class Scheduler:
     async def _execute_reminder(self, job_id: str, message: str, agent_id):
         """执行提醒任务"""
         try:
-            logger.info(f"Executing reminder job: {job_id}, message: {message}, agent_id: {agent_id}")
+            logger.info(
+                f"Executing reminder job: {job_id}, message: {message}, agent_id: {agent_id}"
+            )
 
             # 如果指定了agent_id，向该agent发送消息
             message = "Reminder:" + message
@@ -388,10 +397,14 @@ class Scheduler:
                 job_id=job_id, success=False, result=f"Error: {str(e)}"
             )
 
-    async def _execute_command(self, job_id: str, command: str, agent_id: Optional[str] = None):
+    async def _execute_command(
+        self, job_id: str, command: str, agent_id: Optional[str] = None
+    ):
         """执行命令任务"""
         try:
-            logger.info(f"Executing command job: {job_id}, command: {command}, agent_id: {agent_id}")
+            logger.info(
+                f"Executing command job: {job_id}, command: {command}, agent_id: {agent_id}"
+            )
 
             import shlex
             import subprocess
@@ -418,9 +431,13 @@ class Scheduler:
             # 如果指定了agent_id，将执行结果发送给agent
             if agent_id:
                 try:
-                    await self._send_message_to_agent(agent_id, f"命令执行完成:\n{output}")
+                    await self._send_message_to_agent(
+                        agent_id, f"命令执行完成:\n{output}"
+                    )
                 except Exception as e:
-                    logger.warning(f"Failed to send command result to agent {agent_id}: {e}")
+                    logger.warning(
+                        f"Failed to send command result to agent {agent_id}: {e}"
+                    )
 
             # 记录执行结果
             await self.execution_service.create_execution(
@@ -434,9 +451,13 @@ class Scheduler:
             # 如果指定了agent_id，通知超时
             if agent_id:
                 try:
-                    await self._send_message_to_agent(agent_id, f"命令执行超时: {command}")
+                    await self._send_message_to_agent(
+                        agent_id, f"命令执行超时: {command}"
+                    )
                 except Exception as e:
-                    logger.warning(f"Failed to send timeout notification to agent {agent_id}: {e}")
+                    logger.warning(
+                        f"Failed to send timeout notification to agent {agent_id}: {e}"
+                    )
 
             # 记录执行失败
             await self.execution_service.create_execution(
@@ -450,9 +471,13 @@ class Scheduler:
             # 如果指定了agent_id，通知错误
             if agent_id:
                 try:
-                    await self._send_message_to_agent(agent_id, f"命令执行失败:\n{error_msg}")
+                    await self._send_message_to_agent(
+                        agent_id, f"命令执行失败:\n{error_msg}"
+                    )
                 except Exception as e:
-                    logger.warning(f"Failed to send error notification to agent {agent_id}: {e}")
+                    logger.warning(
+                        f"Failed to send error notification to agent {agent_id}: {e}"
+                    )
 
             # 记录执行失败
             await self.execution_service.create_execution(
@@ -472,7 +497,7 @@ class Scheduler:
                 server_url=server_url,
                 client_type="scheduler",
                 client_id=f"scheduler_{id(self)}",
-                auto_reconnect=False
+                auto_reconnect=False,
             )
 
             # 连接到服务器
@@ -480,9 +505,7 @@ class Scheduler:
 
             # 创建用户消息发送给agent
             message = MessageProtocol.create_user_message(
-                content=content,
-                sender_id="scheduler",
-                receiver_id=agent_id
+                content=content, sender_id="scheduler", receiver_id=agent_id
             )
 
             # 发送消息
@@ -518,7 +541,9 @@ class Scheduler:
                 logger.warning(f"Job {job_id} is not active (status: {job.status})")
                 return False
 
-            logger.info(f"Executing job immediately: {job.name} (ID: {job_id}, type: {job.job_type}, agent_id: {job.agent_id})")
+            logger.info(
+                f"Executing job immediately: {job.name} (ID: {job_id}, type: {job.job_type}, agent_id: {job.agent_id})"
+            )
 
             # 根据job类型执行相应的任务
             if job.job_type == JobType.REMINDER:
