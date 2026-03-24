@@ -369,6 +369,25 @@ class Scheduler:
             logger.error(f"Failed to get job {job_id}: {e}")
             return None
 
+    async def _cleanup_one_time_job(self, job_id: str):
+        """
+        清理一次性date触发器任务
+
+        对于一次性任务，执行后标记为完成并从调度器移除
+        """
+        try:
+            job = await self.job_service.get(job_id)
+            if job and job.trigger_type == "date":
+                await self.job_service.complete_job(job_id)
+                try:
+                    self.apscheduler.remove_job(job_id)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to remove one-time job {job_id} from scheduler: {e}"
+                    )
+        except Exception as e:
+            logger.warning(f"Failed to check/complete one-time job {job_id}: {e}")
+
     async def _execute_reminder(self, job_id: str, message: str, agent_id):
         """执行提醒任务"""
         try:
@@ -396,6 +415,9 @@ class Scheduler:
             await self.execution_service.create_execution(
                 job_id=job_id, success=False, result=f"Error: {str(e)}"
             )
+
+        # 清理一次性任务
+        await self._cleanup_one_time_job(job_id)
 
     async def _execute_command(
         self, job_id: str, command: str, agent_id: Optional[str] = None
@@ -484,6 +506,9 @@ class Scheduler:
                 job_id=job_id, success=False, result=error_msg
             )
 
+        # 清理一次性任务
+        await self._cleanup_one_time_job(job_id)
+
     async def _send_message_to_agent(self, agent_id: str, content: str):
         """向指定agent发送消息"""
         try:
@@ -553,15 +578,6 @@ class Scheduler:
             else:
                 logger.error(f"Unsupported job type: {job.job_type}")
                 return False
-
-            # 对于date触发器的一次性任务，执行后标记为完成
-            if job.trigger_type == "date":
-                await self.job_service.complete_job(job_id)
-                # 从APScheduler中移除
-                try:
-                    self.apscheduler.remove_job(job_id)
-                except Exception as e:
-                    logger.warning(f"Failed to remove job from scheduler: {e}")
 
             logger.info(f"Job executed successfully: {job.name}")
             return True
