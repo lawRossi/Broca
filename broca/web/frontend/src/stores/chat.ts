@@ -537,7 +537,7 @@ export const useChatStore = defineStore('chat', () => {
           ...agent,
           status: 'disconnected'
         }))
-        ElMessage.warning('连接断开')
+        console.log('Disconnected from server')
       })
       client.on('message', (m: Message) => {
         addMessage(m)

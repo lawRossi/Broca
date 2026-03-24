@@ -28,14 +28,11 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             raise HTTPException(400, "workspace directory does not exist")
 
     workspace = None
-    temp_workspace_created = False
     agents = []
-    success = False
     try:
         workspace = request.workspace
         if workspace is None:
             workspace = tempfile.mkdtemp(prefix="broca_session_")
-            temp_workspace_created = True
             logger.info(f"Created temporary workspace: {workspace}")
 
         factory = AgentFactory()
@@ -71,8 +68,6 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
         if update_data:
             await session_service.update(session_id, **update_data)
 
-        success = True
-
         logger.info(
             f"Session created: {session_id}, workspace: {workspace}, provider: {request.provider}, model: {request.model}"
         )
@@ -93,15 +88,6 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error creating session: {e}")
         raise HTTPException(500, f"Failed to create session: {e!s}") from e
-    finally:
-        if temp_workspace_created and workspace and os.path.exists(workspace) and not success:
-            try:
-                import shutil
-
-                shutil.rmtree(workspace)
-                logger.info(f"Cleaned up temporary workspace: {workspace}")
-            except Exception as cleanup_error:
-                logger.warning(f"Failed to cleanup temporary workspace {workspace}: {cleanup_error}")
 
 
 @router.get("/sessions", response_model=ApiResponse)
@@ -207,28 +193,8 @@ async def delete_sessions(request: dict) -> ApiResponse:
 
         session_service = get_session_service()
 
-        # 先获取所有会话的workspace路径，以便后续清理
-        workspaces_to_clean = []
-        for session_id in session_ids:
-            session = await session_service.get(session_id)
-            if session and session.workspace:
-                workspaces_to_clean.append(session.workspace)
-
         # 批量删除会话
         deleted_count = await session_service.delete_batch(session_ids)
-
-        # 清理所有相关的workspace目录
-        if workspaces_to_clean:
-            import os
-            import shutil
-
-            for workspace in workspaces_to_clean:
-                try:
-                    if os.path.exists(workspace):
-                        shutil.rmtree(workspace)
-                        logger.info(f"Cleaned up workspace: {workspace}")
-                except Exception as cleanup_error:
-                    logger.warning(f"Failed to cleanup workspace {workspace}: {cleanup_error}")
 
         logger.info(f"Batch delete sessions: {session_ids}, deleted: {deleted_count}")
         return ApiResponse.success(
@@ -239,9 +205,6 @@ async def delete_sessions(request: dict) -> ApiResponse:
         raise
     except Exception as e:
         logger.error(f"Error batch deleting sessions: {e}")
-        import traceback
-
-        logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -255,27 +218,11 @@ async def delete_session(session_id: str) -> ApiResponse:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # 保存workspace路径以便后续清理
-        workspace = session.workspace
-
         # 删除会话（级联删除关联的turns、messages、agents等）
         success = await session_service.delete(session_id)
 
         if not success:
             raise HTTPException(status_code=500, detail="Failed to delete session")
-
-        # 清理workspace目录（如果是临时目录或用户指定的目录）
-        if workspace:
-            try:
-                import os
-                import shutil
-
-                if os.path.exists(workspace):
-                    shutil.rmtree(workspace)
-                    logger.info(f"Cleaned up workspace for session {session_id}: {workspace}")
-            except Exception as cleanup_error:
-                # 不因清理失败而影响删除操作的成功
-                logger.warning(f"Failed to cleanup workspace {workspace} for session {session_id}: {cleanup_error}")
 
         logger.info(f"Session deleted: {session_id}")
         return ApiResponse.success(msg="Session deleted successfully")

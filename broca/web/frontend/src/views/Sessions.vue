@@ -416,7 +416,7 @@ onMounted(async () => {
   <!-- 工作空间选择器 -->
   <WorkspacePicker
     :visible="workspacePickerVisible"
-    :initial-path="createForm.workspace || '/home'"
+    :initial-path="createForm.workspace || '/home/ubuntu'"
     @update:visible="workspacePickerVisible = $event"
     @select="handleWorkspaceSelect"
     @confirm="handleWorkspaceConfirm"
