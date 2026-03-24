@@ -1,0 +1,39 @@
+# Ruff configuration
+line-length = 120
+
+extend-exclude = ["alembic/versions"]
+
+
+[lint]
+select = ["E", "F", "W", "UP", "B", "I", "N", "D", "S", "RUF"]
+ignore = [
+    "B008",  # Do not perform function call `Depends` in argument defaults
+    "D100",  # Missing docstring in public module
+    "D101",
+    "D102",
+    "D103",
+    "D104",  # Missing docstring in public package
+    "D105",  # Missing docstring in magic method
+    "D107",  # Missing docstring in __init__
+    "D400",  # First line should ends with .
+    "D415",
+    "RUF001",
+    "RUF002",
+    "RUF003",
+    "S101",  # Use of assert detected (for tests)
+]
+exclude = ["**/.venv", "**/migrations", "**/__pycache__"]
+
+
+[lint.per-file-ignores]
+"app/tests/*" = ["S101", "D", "F401", "F403", "F405"]
+"__init__.py" = ["F401"]
+
+[format]
+indent-style = "space"
+
+[lint.isort]
+known-first-party = ["app"]
+
+[lint.mccabe]
+max-complexity = 10

@@ -1,0 +1,57 @@
+[project]
+name = "backend"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Your Name",email = "you@example.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi[all] (>=0.120.0,<0.121.0)",
+    "sqlmodel (>=0.0.21,<1.0.0)",
+    "aiosqlite (>=0.21.0,<0.22.0)",
+    "asyncpg (>=0.30.0,<1.0.0)",
+    "psycopg2-binary (>=2.9.0,<3.0.0)",
+    "alembic (>=1.17.0,<2.0.0)",
+    "python-dotenv (>=1.1.1,<2.0.0)",
+    "passlib[bcrypt] (>=1.7.4,<2.0.0)",
+    "python-jose[cryptography] (>=3.5.0,<4.0.0)",
+    "PyJWT[cryptography]>=2.8.0",
+    "supabase (>=2.24.0,<3.0.0)",
+    "boto3 (>=1.40.74,<2.0.0)",
+    "realtime (>=2.24.0,<3.0.0)",
+    "pydantic (>=2.12.5,<3.0.0)"
+]
+
+[tool.poetry]
+packages = [{include = "app", from = "."}]
+
+[[tool.poetry.source]]
+name = "tencent"
+url = "https://mirrors.cloud.tencent.com/pypi/simple/"
+priority = "primary"
+
+
+[[tool.poetry.source]]
+name = "PyPI"
+priority = "supplemental"
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
+
+[dependency-groups]
+dev = [
+    "pytest (>=8.4.2,<9.0.0)",
+    "pytest-asyncio (>=1.2.0,<2.0.0)",
+    "httpx (>=0.28.1,<0.29.0)",
+    "alembic (>=1.17.0,<2.0.0)",
+    "ruff (>=0.7.4,<1.0.0)",
+    "mypy (>=1.13.0,<2.0.0)",
+    "safety (>=3.2.7,<4.0.0)",
+    "bandit (>=1.7.10)",
+    "types-boto3 (>=1.41.0,<2.0.0)",
+    "types-python-jose (>=3.5.0.20250531,<4.0.0.0)",
+    "pytest-cov (>=7.0.0,<8.0.0)"
+]

@@ -1,0 +1,788 @@
+@import './theme.css';
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 全局重置和基础样式 */
+@layer base {
+  * {
+    box-sizing: border-box;
+  }
+
+  html {
+    font-size: 16px;
+    line-height: 1.5;
+    scroll-behavior: smooth;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    font-family: var(--font-family-sans);
+    font-size: var(--text-base);
+    font-weight: var(--font-normal);
+    color: var(--color-gray-900);
+    background-color: var(--color-gray-50);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* 标题层级 */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    margin: 0 0 var(--space-4) 0;
+    font-weight: var(--font-semibold);
+    line-height: 1.25;
+    color: var(--color-gray-900);
+  }
+
+  h1 {
+    font-size: var(--text-4xl);
+  }
+  h2 {
+    font-size: var(--text-3xl);
+  }
+  h3 {
+    font-size: var(--text-2xl);
+  }
+  h4 {
+    font-size: var(--text-xl);
+  }
+  h5 {
+    font-size: var(--text-lg);
+  }
+  h6 {
+    font-size: var(--text-base);
+  }
+
+  /* 段落和文本 */
+  p {
+    margin: 0 0 var(--space-4) 0;
+    line-height: 1.6;
+  }
+
+  /* 链接 */
+  a {
+    color: var(--color-primary-500);
+    text-decoration: none;
+    transition: color var(--transition-fast);
+  }
+
+  a:hover {
+    color: var(--color-primary-600);
+    text-decoration: underline;
+  }
+
+  /* 列表 */
+  ul,
+  ol {
+    margin: 0 0 var(--space-4) 0;
+    padding-left: var(--space-6);
+  }
+
+  li {
+    margin-bottom: var(--space-2);
+  }
+
+  /* 表格 */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: var(--space-4);
+  }
+
+  th,
+  td {
+    padding: var(--space-3) var(--space-4);
+    text-align: left;
+    border-bottom: 1px solid var(--color-gray-200);
+  }
+
+  th {
+    background-color: var(--color-gray-100);
+    font-weight: var(--font-medium);
+    color: var(--color-gray-900);
+  }
+
+  /* 表单元素 */
+  input,
+  textarea,
+  select,
+  button {
+    font-family: inherit;
+    font-size: var(--text-base);
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+}
+
+/* 通用组件样式 */
+@layer components {
+  /* 按钮组件 */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: var(--space-3) var(--space-6);
+    border: none;
+    border-radius: var(--radius);
+    font-size: var(--text-base);
+    font-weight: var(--font-medium);
+    line-height: 1;
+    text-decoration: none;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    user-select: none;
+    outline: none;
+  }
+
+  .btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .btn-primary {
+    background-color: var(--color-primary-500);
+    color: white;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-primary:hover:not(:disabled) {
+    background-color: var(--color-primary-600);
+    box-shadow: var(--shadow);
+  }
+
+  .btn-primary:active {
+    background-color: var(--color-primary-700);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-secondary {
+    background-color: var(--color-gray-100);
+    color: var(--color-gray-700);
+    border: 1px solid var(--color-gray-300);
+  }
+
+  .btn-secondary:hover:not(:disabled) {
+    background-color: var(--color-gray-200);
+    border-color: var(--color-gray-400);
+  }
+
+  .btn-outline {
+    background-color: transparent;
+    color: var(--color-primary-500);
+    border: 1px solid var(--color-primary-500);
+  }
+
+  .btn-outline:hover:not(:disabled) {
+    background-color: var(--color-primary-500);
+    color: white;
+  }
+
+  .btn-sm {
+    padding: var(--space-2) var(--space-4);
+    font-size: var(--text-sm);
+  }
+
+  .btn-lg {
+    padding: var(--space-4) var(--space-8);
+    font-size: var(--text-lg);
+  }
+
+  .btn-warning {
+    background-color: var(--color-warning);
+    color: white;
+    box-shadow: var(--shadow-sm);
+  }
+
+  .btn-warning:hover:not(:disabled) {
+    background-color: #d97706;
+    box-shadow: var(--shadow);
+  }
+
+  .btn-warning:active {
+    background-color: #b45309;
+    box-shadow: var(--shadow-sm);
+  }
+
+  /* 卡片组件 */
+  .card {
+    background-color: white;
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow-sm);
+    border: 1px solid var(--color-gray-200);
+    overflow: hidden;
+  }
+
+  .card-header {
+    padding: var(--space-6);
+    border-bottom: 1px solid var(--color-gray-200);
+    background-color: var(--color-gray-50);
+  }
+
+  .card-body {
+    padding: var(--space-6);
+  }
+
+  .card-footer {
+    padding: var(--space-6);
+    border-top: 1px solid var(--color-gray-200);
+    background-color: var(--color-gray-50);
+  }
+
+  /* 表单组件 */
+  .form-group {
+    margin-bottom: var(--space-4);
+  }
+
+  .form-label {
+    display: block;
+    margin-bottom: var(--space-2);
+    font-weight: var(--font-medium);
+    color: var(--color-gray-700);
+  }
+
+  .form-input {
+    width: 100%;
+    padding: var(--space-3);
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius);
+    font-size: var(--text-base);
+    background-color: white;
+    transition: border-color var(--transition-fast);
+  }
+
+  .form-input:focus {
+    outline: none;
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  }
+
+  .form-input::placeholder {
+    color: var(--color-gray-400);
+  }
+
+  .form-select {
+    width: 100%;
+    padding: var(--space-3);
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius);
+    font-size: var(--text-base);
+    background-color: white;
+    cursor: pointer;
+  }
+
+  .form-select:focus {
+    outline: none;
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  }
+
+  .form-textarea {
+    width: 100%;
+    padding: var(--space-3);
+    border: 1px solid var(--color-gray-300);
+    border-radius: var(--radius);
+    font-size: var(--text-base);
+    font-family: inherit;
+    background-color: white;
+    resize: vertical;
+    min-height: 100px;
+  }
+
+  .form-textarea:focus {
+    outline: none;
+    border-color: var(--color-primary-500);
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
+  }
+
+  /* 警告消息 */
+  .alert {
+    padding: var(--space-4);
+    border-radius: var(--radius);
+    margin-bottom: var(--space-4);
+    border: 1px solid;
+  }
+
+  .alert-success {
+    background-color: #d1fae5;
+    border-color: #10b981;
+    color: #065f46;
+  }
+
+  .alert-warning {
+    background-color: #fef3c7;
+    border-color: #f59e0b;
+    color: #92400e;
+  }
+
+  .alert-error {
+    background-color: #fee2e2;
+    border-color: #ef4444;
+    color: #991b1b;
+  }
+
+  .alert-info {
+    background-color: var(--color-primary-100);
+    border-color: var(--color-primary-500);
+    color: var(--color-primary-800);
+  }
+
+  /* 布局组件 */
+  .container {
+    max-width: var(--container-max-width);
+    margin: 0 auto;
+    padding: 0 var(--space-4);
+  }
+
+  .page-header {
+    background-color: white;
+    border-bottom: 1px solid var(--color-gray-200);
+    padding: var(--space-6) 0;
+    margin-bottom: var(--space-6);
+  }
+
+  .section {
+    margin-bottom: var(--space-8);
+  }
+
+  .grid {
+    display: grid;
+    gap: var(--space-6);
+  }
+
+  .grid-cols-1 {
+    grid-template-columns: repeat(1, 1fr);
+  }
+  .grid-cols-2 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .grid-cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+  .grid-cols-4 {
+    grid-template-columns: repeat(4, 1fr);
+  }
+
+  .flex {
+    display: flex;
+  }
+
+  .flex-col {
+    flex-direction: column;
+  }
+
+  .items-center {
+    align-items: center;
+  }
+
+  .justify-center {
+    justify-content: center;
+  }
+
+  .justify-between {
+    justify-content: space-between;
+  }
+
+  .gap-2 {
+    gap: var(--space-2);
+  }
+  .gap-4 {
+    gap: var(--space-4);
+  }
+  .gap-6 {
+    gap: var(--space-6);
+  }
+
+  /* 工具类 */
+  .text-center {
+    text-align: center;
+  }
+  .text-left {
+    text-align: left;
+  }
+  .text-right {
+    text-align: right;
+  }
+
+  .font-light {
+    font-weight: var(--font-light);
+  }
+  .font-normal {
+    font-weight: var(--font-normal);
+  }
+  .font-medium {
+    font-weight: var(--font-medium);
+  }
+  .font-semibold {
+    font-weight: var(--font-semibold);
+  }
+  .font-bold {
+    font-weight: var(--font-bold);
+  }
+
+  .text-xs {
+    font-size: var(--text-xs);
+  }
+  .text-sm {
+    font-size: var(--text-sm);
+  }
+  .text-base {
+    font-size: var(--text-base);
+  }
+  .text-lg {
+    font-size: var(--text-lg);
+  }
+  .text-xl {
+    font-size: var(--text-xl);
+  }
+  .text-2xl {
+    font-size: var(--text-2xl);
+  }
+  .text-3xl {
+    font-size: var(--text-3xl);
+  }
+
+  .m-0 {
+    margin: 0;
+  }
+  .mb-2 {
+    margin-bottom: var(--space-2);
+  }
+  .mb-4 {
+    margin-bottom: var(--space-4);
+  }
+  .mb-6 {
+    margin-bottom: var(--space-6);
+  }
+  .mb-8 {
+    margin-bottom: var(--space-8);
+  }
+
+  .p-0 {
+    padding: 0;
+  }
+  .p-4 {
+    padding: var(--space-4);
+  }
+  .p-6 {
+    padding: var(--space-6);
+  }
+  .p-8 {
+    padding: var(--space-8);
+  }
+
+  .rounded {
+    border-radius: var(--radius);
+  }
+  .rounded-md {
+    border-radius: var(--radius-md);
+  }
+  .rounded-lg {
+    border-radius: var(--radius-lg);
+  }
+  .rounded-full {
+    border-radius: var(--radius-full);
+  }
+
+  .shadow-sm {
+    box-shadow: var(--shadow-sm);
+  }
+  .shadow {
+    box-shadow: var(--shadow);
+  }
+  .shadow-md {
+    box-shadow: var(--shadow-md);
+  }
+  .shadow-lg {
+    box-shadow: var(--shadow-lg);
+  }
+
+  .bg-white {
+    background-color: white;
+  }
+  .bg-gray-50 {
+    background-color: var(--color-gray-50);
+  }
+  .bg-gray-100 {
+    background-color: var(--color-gray-100);
+  }
+  .bg-gray-200 {
+    background-color: var(--color-gray-200);
+  }
+
+  /* Primary background colors */
+  .bg-primary-50 {
+    background-color: var(--color-primary-50);
+  }
+  .bg-primary-100 {
+    background-color: var(--color-primary-100);
+  }
+  .bg-primary-200 {
+    background-color: var(--color-primary-200);
+  }
+  .bg-primary-500 {
+    background-color: var(--color-primary-500);
+  }
+  .bg-primary-600 {
+    background-color: var(--color-primary-600);
+  }
+
+  .text-gray-500 {
+    color: var(--color-gray-500);
+  }
+  .text-gray-600 {
+    color: var(--color-gray-600);
+  }
+  .text-gray-700 {
+    color: var(--color-gray-700);
+  }
+  .text-gray-900 {
+    color: var(--color-gray-900);
+  }
+
+  /* Primary text colors */
+  .text-primary-500 {
+    color: var(--color-primary-500);
+  }
+  .text-primary-600 {
+    color: var(--color-primary-600);
+  }
+  .text-primary-700 {
+    color: var(--color-primary-700);
+  }
+  .text-primary-800 {
+    color: var(--color-primary-800);
+  }
+
+  .border {
+    border: 1px solid var(--color-gray-200);
+  }
+  .border-gray-200 {
+    border-color: var(--color-gray-200);
+  }
+  .border-gray-300 {
+    border-color: var(--color-gray-300);
+  }
+  .border-primary {
+    border-color: var(--color-primary-500);
+  }
+  .border-primary-200 {
+    border-color: var(--color-primary-200);
+  }
+  .border-primary-500 {
+    border-color: var(--color-primary-500);
+  }
+
+  .w-full {
+    width: 100%;
+  }
+  .h-full {
+    height: 100%;
+  }
+
+  .relative {
+    position: relative;
+  }
+  .absolute {
+    position: absolute;
+  }
+  .fixed {
+    position: fixed;
+  }
+
+  .top-0 {
+    top: 0;
+  }
+  .right-0 {
+    right: 0;
+  }
+  .bottom-0 {
+    bottom: 0;
+  }
+  .left-0 {
+    left: 0;
+  }
+
+  .z-10 {
+    z-index: 10;
+  }
+  .z-50 {
+    z-index: 50;
+  }
+
+  .hidden {
+    display: none;
+  }
+  .block {
+    display: block;
+  }
+  .inline-block {
+    display: inline-block;
+  }
+  .flex {
+    display: flex;
+  }
+
+  .transition {
+    transition: all var(--transition-normal);
+  }
+  .transition-fast {
+    transition: all var(--transition-fast);
+  }
+
+  .cursor-pointer {
+    cursor: pointer;
+  }
+  .cursor-not-allowed {
+    cursor: not-allowed;
+  }
+
+  .select-none {
+    user-select: none;
+  }
+}
+
+/* 工具类扩展 */
+@layer utilities {
+  .hover-lift:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-md);
+    transition: all var(--transition-fast);
+  }
+
+  .hover-scale:hover {
+    transform: scale(1.05);
+    transition: all var(--transition-fast);
+  }
+
+  .focus-ring:focus {
+    outline: none;
+    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+  }
+
+  .glass-effect {
+    background-color: rgba(255, 255, 255, 0.8);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+  }
+
+  .truncate {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .line-clamp-2 {
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  .line-clamp-3 {
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+
+  /* 修复按钮悬停问题的工具类 */
+  .btn-hover-fix {
+    position: relative;
+    z-index: 10;
+  }
+
+  .btn-hover-fix:hover {
+    z-index: 20;
+  }
+}
+
+/* 响应式断点 */
+@media (max-width: 640px) {
+  .container {
+    padding: 0 var(--space-3);
+  }
+
+  .card-body {
+    padding: var(--space-4);
+  }
+
+  .grid-cols-2,
+  .grid-cols-3,
+  .grid-cols-4 {
+    grid-template-columns: repeat(1, 1fr);
+  }
+}
+
+@media (max-width: 768px) {
+  .grid-cols-3,
+  .grid-cols-4 {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 1024px) {
+  .grid-cols-4 {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+/* 打印样式 */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+
+  .print-only {
+    display: block !important;
+  }
+
+  body {
+    background: white !important;
+    color: black !important;
+  }
+
+  .card {
+    box-shadow: none !important;
+    border: 1px solid #ccc !important;
+  }
+}
+
+/* 暗色主题覆盖 */
+@media (prefers-color-scheme: dark) {
+  body {
+    background-color: var(--color-gray-50);
+    color: var(--color-gray-900);
+  }
+
+  .card {
+    background-color: var(--color-gray-100);
+    border-color: var(--color-gray-300);
+  }
+
+  .card-header,
+  .card-footer {
+    background-color: var(--color-gray-200);
+  }
+
+  .form-input,
+  .form-select,
+  .form-textarea {
+    background-color: var(--color-gray-100);
+    border-color: var(--color-gray-300);
+    color: var(--color-gray-900);
+  }
+
+  .form-input::placeholder,
+  .form-textarea::placeholder {
+    color: var(--color-gray-500);
+  }
+}
