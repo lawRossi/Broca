@@ -18,7 +18,9 @@ export const useChatStore = defineStore('chat', () => {
 
   const connected = ref(false)
   const connecting = ref(false)
+  const connectingSession = ref(false) // 防止重复执行连接流程
   const sessionId = ref<string>('')
+  const currentSessionId = ref('') // 跟踪当前订阅的sessionId
   const agents = ref<Agent[]>([])
   const agentId = ref('main_agent')
   const agentName = ref('Assistant')
@@ -694,12 +696,38 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // 清理当前session的状态
+  const cleanupSession = async () => {
+    // 清理消息和状态
+    messages.value = []
+    messageStates.value.clear()
+    pendingChunks.value.clear()
+    agents.value = []
+    agentId.value = 'main_agent'
+    agentName.value = 'Assistant'
+    agentStatus.value = 'disconnected'
+    currentSessionId.value = ''
+  }
+
   const autoConnectAndSubscribe = async () => {
     if (!urlSessionId.value) {
       ElMessage.info('未提供session_id，请手动输入')
       return
     }
 
+    // 防止重复执行相同的session连接
+    if (connectingSession.value && currentSessionId.value === urlSessionId.value) {
+      console.log('连接流程已在进行中，跳过')
+      return
+    }
+
+    // 如果切换到了不同的session，先清理旧状态
+    if (currentSessionId.value && currentSessionId.value !== urlSessionId.value) {
+      await cleanupSession()
+    }
+
+    connectingSession.value = true
+    currentSessionId.value = urlSessionId.value
     sessionId.value = urlSessionId.value
 
     try {
@@ -711,6 +739,10 @@ export const useChatStore = defineStore('chat', () => {
     } catch (error: any) {
       console.error('自动连接失败:', error)
       ElMessage.error(`自动连接失败: ${error.message || '未知错误'}`)
+      // 失败时重置状态
+      currentSessionId.value = ''
+    } finally {
+      connectingSession.value = false
     }
   }
 
@@ -725,10 +757,7 @@ export const useChatStore = defineStore('chat', () => {
     
     checkMobile()
     window.addEventListener('resize', checkMobile)
-
-    if (urlSessionId.value) {
-      autoConnectAndSubscribe()
-    }
+    // 不再自动连接，由watch监听urlSessionId变化来触发
   }
 
   const cleanup = () => {
@@ -737,12 +766,27 @@ export const useChatStore = defineStore('chat', () => {
       client.disconnect()
       client = null
     }
+    // 清理所有状态
+    connected.value = false
+    connecting.value = false
+    connectingSession.value = false
+    sessionId.value = ''
+    currentSessionId.value = ''
+    agents.value = []
+    agentId.value = 'main_agent'
+    agentName.value = 'Assistant'
+    agentStatus.value = 'disconnected'
+    messages.value = []
+    messageStates.value.clear()
+    pendingChunks.value.clear()
   }
 
   return {
     connected,
     connecting,
+    connectingSession,
     sessionId,
+    currentSessionId,
     agents,
     agentId,
     agentName,
@@ -780,5 +824,7 @@ export const useChatStore = defineStore('chat', () => {
     loadHistory,
     fetchSessionAgents,
     parseMention,
+    autoConnectAndSubscribe,
+    cleanupSession,
   }
 })

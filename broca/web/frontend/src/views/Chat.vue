@@ -13,16 +13,13 @@ const chatStore = useChatStore()
 
 watch(() => chatStore.urlSessionId, (newSessionId) => {
   if (newSessionId && newSessionId !== chatStore.sessionId) {
-    chatStore.sessionId = newSessionId
-    if (chatStore.connected) {
-      chatStore.doSubscribe()
-      chatStore.loadHistory(newSessionId)
-    }
+    chatStore.autoConnectAndSubscribe()
   }
-})
+}, { immediate: true })
 
 onMounted(() => {
   chatStore.init()
+  chatStore.autoConnectAndSubscribe()
 })
 
 onUnmounted(() => {
