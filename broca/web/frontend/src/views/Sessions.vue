@@ -245,27 +245,16 @@ const handleDeselect = (sessionId: string) => {
 
 // 删除单个会话
 const handleDelete = async (session: Session) => {
+  // 确认框已在 SessionCard 组件中弹出，这里直接执行删除
+  deleteLoading.value = true
   try {
-    await ElMessageBox.confirm(
-      `确定要删除会话 "${session.description || session.session_id}" 吗？此操作不可恢复。`,
-      '确认删除',
-      {
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-    
-    deleteLoading.value = true
     await sessionApi.deleteSession(session.session_id)
     ElMessage.success('删除成功')
     selectedSessions.value = selectedSessions.value.filter(id => id !== session.session_id)
     loadSessions()
   } catch (error: any) {
-    if (error !== 'cancel') {
-      console.error('删除会话失败:', error)
-      ElMessage.error('删除失败')
-    }
+    console.error('删除会话失败:', error)
+    ElMessage.error('删除失败')
   } finally {
     deleteLoading.value = false
   }

@@ -67,9 +67,8 @@ const handleCheckboxChange = (checked: boolean) => {
   }
 }
 
-// 卡片点击 - 跳转到聊天
+// 卡片点击 - 跳转到聊天（不触发选中）
 const handleCardClick = () => {
-  emit('select', props.session.session_id)
   router.push(`/chat/${props.session.session_id}`)
 }
 
