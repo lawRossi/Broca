@@ -144,10 +144,10 @@ class CronTool(Tool):
         else:
             raise ValueError(f"Unknown trigger type: {trigger_type}")
 
-    async def initialize(self, session_id: str):
+    async def initialize(self):
         """初始化调度器"""
         if self.scheduler is None:
-            self.scheduler = Scheduler(session_id=session_id)
+            self.scheduler = Scheduler()
             await self.scheduler.start()
             logger.info("CronTool scheduler initialized")
 
@@ -158,7 +158,7 @@ class CronTool(Tool):
 
         try:
             # 确保调度器已初始化
-            await self.initialize(context.session_id)
+            await self.initialize()
 
             if action == "add_reminder":
                 return await self._add_reminder(arguments, context)
@@ -205,6 +205,7 @@ class CronTool(Tool):
 
             # 添加任务到调度器
             job_id = await self.scheduler.add_job(
+                session_id=context.session_id,
                 name=name,
                 job_type=JobType.REMINDER,
                 trigger_type=trigger_type,
@@ -246,6 +247,7 @@ class CronTool(Tool):
 
             # 添加任务到调度器
             job_id = await self.scheduler.add_job(
+                session_id=context.session_id,
                 name=name,
                 job_type=JobType.COMMAND,
                 trigger_type=trigger_type,
@@ -267,7 +269,7 @@ class CronTool(Tool):
     async def _list_jobs(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         """列出所有任务"""
         try:
-            jobs = await self.scheduler.list_jobs()
+            jobs = await self.scheduler.list_jobs(context.session_id)
 
             if not jobs:
                 return ToolResult(status=ToolStatus.SUCCESS, content="当前没有定时任务")
