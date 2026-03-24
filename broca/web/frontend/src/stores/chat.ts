@@ -440,7 +440,7 @@ export const useChatStore = defineStore('chat', () => {
 
   const loadHistory = async (sessionId: string, isLoadMore: boolean = false) => {
     const limit = 50
-    
+  
     if (isLoadMore) {
       if (loadingMore.value || !hasMoreHistory.value) return
       loadingMore.value = true
@@ -456,13 +456,12 @@ export const useChatStore = defineStore('chat', () => {
       if (isLoadMore) {
         skip = historySkip.value
       } else {
-        const countResponse = await sessionApi.getSessionMessages(sessionId, 0, 1)
-        historyTotal.value = countResponse.total || 0
         skip = 0
       }
-      
+
       const response = await sessionApi.getSessionMessages(sessionId, skip, limit)
-      
+      historyTotal.value = response.total
+
       if (response.messages) {
         const allMessages = response.messages
         
@@ -476,8 +475,6 @@ export const useChatStore = defineStore('chat', () => {
         })
 
         if (isLoadMore) {
-          // 对于加载更多，需要将历史消息添加到现有消息前面
-          // 并且需要处理合并（历史消息在前，新消息在后）
           const combinedMessages = [...historyMessages, ...messages.value]
           messages.value = []
           messageStates.value.clear()

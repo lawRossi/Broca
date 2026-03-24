@@ -22,17 +22,8 @@ export interface Agent {
   description?: string
 }
 
-// 使用共享的Message类型
 export type { Message, MessageType, MessageRole }
 
-export interface Turn {
-  turn_id: string
-  session_id: string
-  agent_id: string
-  sequence_number: number
-  turn_description?: string
-  created_at: string
-}
 
 export interface LatestAgentResponse {
   agent_id: string
@@ -47,12 +38,6 @@ export interface MessagesResponse {
   limit: number
 }
 
-export interface TurnsResponse {
-  turns: Turn[]
-  total: number
-  skip: number
-  limit: number
-}
 
 export interface SessionsResponse {
   sessions: Session[]
@@ -71,8 +56,8 @@ export interface SessionQueryParams {
 export interface CreateSessionParams {
   description?: string
   workspace?: string
-  provider?: string  // LLM provider，如 openrouter、deepseek、nvidia、z-ai
-  model?: string    // LLM model，如 stepfun、nemotron、glm-4.7 等
+  provider?: string
+  model?: string
 }
 
 export interface CreateSessionResponse {
@@ -123,26 +108,6 @@ export const sessionApi = {
     return request.get(`/session/${sessionId}/messages`, {
       params: { skip, limit }
     })
-  },
-
-  /**
-   * 获取会话的轮次
-   */
-  async getSessionTurns(
-    sessionId: string,
-    skip: number = 0,
-    limit: number = 100
-  ): Promise<TurnsResponse> {
-    return request.get(`/session/${sessionId}/turns`, {
-      params: { skip, limit }
-    })
-  },
-
-  /**
-   * 获取会话的最新Agent（用于自动获取agent_id）
-   */
-  async getSessionLatestAgent(sessionId: string): Promise<LatestAgentResponse> {
-    return request.get(`/session/${sessionId}/latest-agent`)
   },
 
   /**

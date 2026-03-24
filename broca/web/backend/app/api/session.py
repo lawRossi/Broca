@@ -1,4 +1,5 @@
 import asyncio
+import os
 import tempfile
 
 from broca.agent_manager import AgentFactory
@@ -7,7 +8,6 @@ from broca.session.service import (
     get_agent_service,
     get_message_service,
     get_session_service,
-    get_turn_service,
 )
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
@@ -19,56 +19,68 @@ router = APIRouter()
 
 @router.post("/sessions", response_model=ApiResponse)
 async def create_session(request: CreateSessionRequest) -> ApiResponse:
-    """创建新会话，初始化 Agent 并设置 workspace
+    """创建新会话，初始化 Agent 并设置 workspace"""
+    # 输入验证
+    if request.workspace is not None:
+        if not os.path.isabs(request.workspace):
+            raise HTTPException(400, "workspace must be an absolute path")
+        if not os.path.exists(request.workspace):
+            raise HTTPException(400, "workspace directory does not exist")
 
-    - 如果指定了 workspace，使用用户指定的目录
-    - 如果没有指定 workspace，创建临时目录作为 workspace
-    - 如果指定了 provider 和 model，会覆盖 agent 配置中的 LLM 设置
-    """
+    workspace = None
+    temp_workspace_created = False
+    agents = []
+    success = False
     try:
-        # 确定 workspace
         workspace = request.workspace
         if workspace is None:
-            # 创建临时目录作为 workspace
             workspace = tempfile.mkdtemp(prefix="broca_session_")
+            temp_workspace_created = True
             logger.info(f"Created temporary workspace: {workspace}")
 
-        # 初始化 Agent，传递 LLM 配置
         factory = AgentFactory()
-        agents = await factory.init_session_agents(
-            workspace=workspace,
-            provider=request.provider,
-            model=request.model
-        )
-        session_id = None
+        agents = await factory.init_session_agents(workspace=workspace, provider=request.provider, model=request.model)
+
+        if not agents:
+            raise HTTPException(500, "No agents were initialized")
+
+        session_ids = set()
+        for agent in agents:
+            if not hasattr(agent, "session_manager") or not hasattr(agent.session_manager, "session_id"):
+                raise HTTPException(500, f"Agent {agent} does not have a valid session_manager.session_id")
+            session_ids.add(agent.session_manager.session_id)
+
+        if len(session_ids) != 1:
+            raise HTTPException(500, f"Agents have inconsistent session_ids: {session_ids}")
+
+        session_id = session_ids.pop()
+
         for agent in agents:
             await agent.connect()
-            if session_id is None:
-                session_id = agent.session_manager.session_id
             await agent.subscribe(session_id)
             task = asyncio.create_task(agent.run())
-            task.add_done_callback(lambda _: agent.stop())
+            task.add_done_callback(lambda t, a=agent: a.stop())
 
-        # 更新会话描述、workspace 和 LLM 配置
         session_service = get_session_service()
         update_data = {}
         if request.description:
             update_data["description"] = request.description
         if workspace:
             update_data["workspace"] = workspace
-        # 注意：Session 模型中目前没有 provider 和 model 字段
-        # 如果需要持久化，需要修改 Session 模型
-        
+
         if update_data:
             await session_service.update(session_id, **update_data)
 
-        logger.info(f"Session created: {session_id}, workspace: {workspace}, provider: {request.provider}, model: {request.model}")
+        success = True
+
+        logger.info(
+            f"Session created: {session_id}, workspace: {workspace}, provider: {request.provider}, model: {request.model}"
+        )
 
         return ApiResponse.success(
             {
                 "session_id": session_id,
                 "workspace": workspace,
-                "agent_id": agent.agent_id if hasattr(agent, "agent_id") else "main_agent",
                 "description": request.description,
                 "provider": request.provider,
                 "model": request.model,
@@ -76,12 +88,20 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             msg="Session created successfully",
         )
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error(f"Error creating session: {e}")
-        import traceback
-
-        logger.error(traceback.format_exc())
         raise HTTPException(500, f"Failed to create session: {e!s}") from e
+    finally:
+        if temp_workspace_created and workspace and os.path.exists(workspace) and not success:
+            try:
+                import shutil
+
+                shutil.rmtree(workspace)
+                logger.info(f"Cleaned up temporary workspace: {workspace}")
+            except Exception as cleanup_error:
+                logger.warning(f"Failed to cleanup temporary workspace {workspace}: {cleanup_error}")
 
 
 @router.get("/sessions", response_model=ApiResponse)
@@ -97,11 +117,9 @@ async def get_sessions(
         if status:
             filters["status"] = status
 
-        # 获取总数
-        total = await session_service.count(filters=filters if filters else None)
-
         # 获取分页数据
-        sessions = await session_service.get_all(filters=filters if filters else None, order_by="created_at desc")
+        sessions = await session_service.get_batch(filters=filters if filters else None, order_by="created_at desc")
+        total = len(sessions)
         sessions = sessions[skip : skip + limit]
 
         # 关键词过滤（在内存中过滤）
@@ -123,6 +141,7 @@ async def get_sessions(
 @router.get("/{session_id}/agents", response_model=ApiResponse)
 async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
     """获取会话的Agent列表"""
+    restored_agents = []
     try:
         # 获取会话的Agent
         agent_service = get_agent_service()
@@ -139,17 +158,15 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
                 await agent.connect()
                 await agent.subscribe(session_id)
                 task = asyncio.create_task(agent.run())
-                task.add_done_callback(lambda _: agent.stop())
+                task.add_done_callback(lambda t, a=agent: a.stop())
+                restored_agents.append(agent)
                 logger.info(f"Agent {db_agent.name} restored")
 
         return ApiResponse.success(agents)
-    except HTTPException:
-        raise
     except Exception as e:
+        for agent in restored_agents:
+            agent.stop()
         logger.error(f"Error getting session agents: {e}")
-        import traceback
-
-        traceback.print_exc()
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -157,51 +174,23 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
 async def get_session_messages(session_id: str, skip: int = 0, limit: int = 50) -> ApiResponse:
     """获取会话的消息历史（按时间正序），支持分页"""
     try:
-        # 验证会话是否存在
         session_service = get_session_service()
         session = await session_service.get(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # 获取消息
         message_service = get_message_service()
-        messages = await message_service.get_messages_by_session(session_id)
+        total = await message_service.count({"session_id": session_id})
+        messages = await message_service.get_messages_by_session(
+            session_id, order_by="sequence_number desc", skip=skip, limit=limit
+        )
+        messages.reverse()
 
-        messages_sorted = sorted(messages, key=lambda m: m.timestamp, reverse=True)
-        total = len(messages_sorted)
-        paginated_messages = messages_sorted[skip : skip + limit]
-        paginated_messages.reverse()
-        print(total)
-        return ApiResponse.success({"messages": paginated_messages, "total": total, "skip": skip, "limit": limit})
+        return ApiResponse.success({"messages": messages, "total": total, "skip": skip, "limit": limit})
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error getting session messages: {e}")
-        raise HTTPException(500, f"Internal server error: {e!s}") from e
-
-
-@router.get("/{session_id}/turns", response_model=ApiResponse)
-async def get_session_turns(session_id: str, skip: int = 0, limit: int = 100) -> ApiResponse:
-    """获取会话的轮次"""
-    try:
-        # 验证会话是否存在
-        session_service = get_session_service()
-        session = await session_service.get(session_id)
-        if not session:
-            raise HTTPException(status_code=404, detail="Session not found")
-
-        # 获取会话的轮次
-        turn_service = get_turn_service()
-        turns = await turn_service.get_turns_by_session(session_id)
-
-        # 应用分页
-        paginated_turns = turns[skip : skip + limit]
-
-        return ApiResponse.success({"turns": paginated_turns, "total": len(turns), "skip": skip, "limit": limit})
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error getting session turns: {e}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -217,7 +206,29 @@ async def delete_sessions(request: dict) -> ApiResponse:
             raise HTTPException(status_code=400, detail="session_ids must be a list")
 
         session_service = get_session_service()
+
+        # 先获取所有会话的workspace路径，以便后续清理
+        workspaces_to_clean = []
+        for session_id in session_ids:
+            session = await session_service.get(session_id)
+            if session and session.workspace:
+                workspaces_to_clean.append(session.workspace)
+
+        # 批量删除会话
         deleted_count = await session_service.delete_batch(session_ids)
+
+        # 清理所有相关的workspace目录
+        if workspaces_to_clean:
+            import os
+            import shutil
+
+            for workspace in workspaces_to_clean:
+                try:
+                    if os.path.exists(workspace):
+                        shutil.rmtree(workspace)
+                        logger.info(f"Cleaned up workspace: {workspace}")
+                except Exception as cleanup_error:
+                    logger.warning(f"Failed to cleanup workspace {workspace}: {cleanup_error}")
 
         logger.info(f"Batch delete sessions: {session_ids}, deleted: {deleted_count}")
         return ApiResponse.success(
@@ -244,11 +255,27 @@ async def delete_session(session_id: str) -> ApiResponse:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
+        # 保存workspace路径以便后续清理
+        workspace = session.workspace
+
         # 删除会话（级联删除关联的turns、messages、agents等）
         success = await session_service.delete(session_id)
 
         if not success:
             raise HTTPException(status_code=500, detail="Failed to delete session")
+
+        # 清理workspace目录（如果是临时目录或用户指定的目录）
+        if workspace:
+            try:
+                import os
+                import shutil
+
+                if os.path.exists(workspace):
+                    shutil.rmtree(workspace)
+                    logger.info(f"Cleaned up workspace for session {session_id}: {workspace}")
+            except Exception as cleanup_error:
+                # 不因清理失败而影响删除操作的成功
+                logger.warning(f"Failed to cleanup workspace {workspace} for session {session_id}: {cleanup_error}")
 
         logger.info(f"Session deleted: {session_id}")
         return ApiResponse.success(msg="Session deleted successfully")

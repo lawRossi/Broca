@@ -10,7 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
 from loguru import logger
-from sqlalchemy import select
+from sqlalchemy import desc, func, select
 from sqlmodel import SQLModel, and_
 
 from .database import db_manager
@@ -83,12 +83,15 @@ class BaseService(Generic[T]):
             result = await session.exec(statement)
             return result.scalars().first()
 
-    async def get_all(
+    async def get_batch(
         self,
         filters: Optional[Dict[str, Any]] = None,
         order_by: Optional[str] = None,
+        skip=None,
+        limit=None,
     ) -> List[T]:
-        """获取所有记录，支持分页和过滤"""
+        """获取批量记录"""
+
         async with db_manager.get_session() as session:
             statement = select(self.model_class)
 
@@ -100,17 +103,18 @@ class BaseService(Generic[T]):
                 if conditions:
                     statement = statement.where(and_(*conditions))
             if order_by:
-                # 支持 "column desc" 或 "column asc" 格式的排序
                 parts = order_by.strip().split()
                 if len(parts) >= 1:
                     column_name = parts[0]
                     if hasattr(self.model_class, column_name):
                         column = getattr(self.model_class, column_name)
-                        if len(parts) >= 2 and parts[1].lower() == 'desc':
-                            from sqlalchemy import desc
+                        if len(parts) >= 2 and parts[1].lower() == "desc":
                             statement = statement.order_by(desc(column))
                         else:
                             statement = statement.order_by(column)
+
+            if skip and limit:
+                statement = statement.offset(skip).limit(limit)
 
             result = await session.exec(statement)
             # 使用scalars()获取模型实例列表
@@ -158,26 +162,26 @@ class BaseService(Generic[T]):
         """批量删除记录，返回删除数量"""
         if not ids:
             return 0
-        
+
         async with db_manager.get_session() as session:
             statement = select(self.model_class).where(
                 getattr(self.model_class, self.id_field).in_(ids)
             )
             result = await session.exec(statement)
             instances = result.scalars().all()
-            
+
             count = 0
             for instance in instances:
                 await session.delete(instance)
                 count += 1
-            
+
             await session.commit()
             return count
 
     async def count(self, filters: Optional[Dict[str, Any]] = None) -> int:
         """统计记录数量"""
         async with db_manager.get_session() as session:
-            statement = select(self.model_class)
+            statement = select(func.count(self.id_field))
 
             if filters:
                 conditions = []
@@ -188,7 +192,7 @@ class BaseService(Generic[T]):
                     statement = statement.where(and_(*conditions))
 
             result = await session.exec(statement)
-            return len(result.scalars().all())
+            return result.scalar()
 
 
 class SessionService(BaseService[Session]):
@@ -198,7 +202,10 @@ class SessionService(BaseService[Session]):
         super().__init__(Session)
 
     async def create_session(
-        self, session_id: str, description: Optional[str] = None, workspace: Optional[str] = None
+        self,
+        session_id: str,
+        description: Optional[str] = None,
+        workspace: Optional[str] = None,
     ) -> Session:
         """创建新会话"""
         return await self.create(
@@ -208,14 +215,6 @@ class SessionService(BaseService[Session]):
             workspace=workspace,
             created_at=datetime.utcnow(),
         )
-
-    async def get_active_sessions(self) -> List[Session]:
-        """获取所有活跃会话"""
-        return await self.get_all(filters={"status": SessionStatus.ACTIVE})
-
-    async def get_session_by_status(self, status: SessionStatus) -> List[Session]:
-        """根据状态获取会话"""
-        return await self.get_all(filters={"status": status})
 
     async def close_session(self, session_id: str) -> Optional[Session]:
         """关闭会话"""
@@ -249,14 +248,6 @@ class TurnService(BaseService[Turn]):
             turn_description=turn_description,
             created_at=datetime.utcnow(),
         )
-
-    async def get_turns_by_session(self, session_id: str) -> List[Turn]:
-        """根据会话ID获取轮次"""
-        return await self.get_all(filters={"session_id": session_id})
-
-    async def get_turns_by_agent(self, agent_id: str) -> List[Turn]:
-        """根据Agent ID获取轮次"""
-        return await self.get_all(filters={"agent_id": agent_id})
 
     async def get_latest_turn(self, session_id: str) -> Optional[Turn]:
         """获取会话的最新轮次"""
@@ -301,7 +292,7 @@ class MessageService(BaseService[Message]):
         message_data = data or {}
         if content:
             message_data["content"] = content
-        
+
         return await self.create(
             message_id=message_id,
             session_id=session_id,
@@ -314,51 +305,22 @@ class MessageService(BaseService[Message]):
             data=message_data,
         )
 
-    async def get_messages_by_session(self, session_id: str) -> List[Message]:
+    async def get_messages_by_session(
+        self, session_id: str, order_by="sequence_number", skip=None, limit=None
+    ) -> List[Message]:
         """根据会话ID获取消息"""
-        return await self.get_all(
-            filters={"session_id": session_id}, order_by="sequence_number"
-        )
-
-    async def get_recent_messages(self, session_id: str, limit: int = 50) -> List[Message]:
-        """获取最近的消息，按时间倒序返回（最新的在前），用于前端直接展示"""
-        async with db_manager.get_session() as session:
-            statement = (
-                select(Message)
-                .where(Message.session_id == session_id)
-                .order_by(Message.timestamp.desc())
-                .limit(limit)
-            )
-            result = await session.exec(statement)
-            messages = result.scalars().all()
-            # 反转顺序，最旧的在前面，最新的在后面（按时间正序）
-            return list(reversed(messages))
-
-    async def get_messages_by_turn(self, turn_id: str) -> List[Message]:
-        """根据轮次ID获取消息"""
-        return await self.get_all(
-            filters={"turn_id": turn_id}, order_by="sequence_number"
+        return await self.get_batch(
+            filters={"session_id": session_id},
+            order_by=order_by,
+            skip=skip,
+            limit=limit,
         )
 
     async def get_messages_by_agent(self, agent_id: str) -> List[Message]:
         """根据Agent ID获取消息"""
-        return await self.get_all(
+        return await self.get_batch(
             filters={"agent_id": agent_id}, order_by="sequence_number"
         )
-
-    async def get_messages_by_type(
-        self, session_id: str, message_type: MessageType
-    ) -> List[Message]:
-        """根据会话ID和消息类型获取消息"""
-        async with db_manager.get_session() as session:
-            statement = select(Message).where(
-                and_(
-                    Message.session_id == session_id,
-                    Message.message_type == message_type,
-                )
-            )
-            result = await session.exec(statement)
-            return result.scalars().all()
 
     async def get_next_sequence_number(self, session_id: str) -> int:
         """获取下一个消息序列号"""
@@ -385,13 +347,9 @@ class MessageService(BaseService[Message]):
             - tool_call_errors: 工具调用错误数量
         """
         async with db_manager.get_session() as session:
-            # 统计总消息数
-            total_statement = select(Message).where(Message.session_id == session_id)
-            total_result = await session.exec(total_statement)
-            total_messages = len(total_result.scalars().all())
+            total_messages = await self.count(filters={"session_id": session_id})
+            print(total_messages)
 
-            # 按消息类型统计
-            from sqlalchemy import func
             type_stats_statement = (
                 select(Message.message_type, func.count(Message.message_id))
                 .where(Message.session_id == session_id)
@@ -404,10 +362,6 @@ class MessageService(BaseService[Message]):
             for msg_type, count in type_stats_rows:
                 messages_by_type[str(msg_type)] = count
 
-            # 统计工具调用错误数量
-            # 工具调用错误判断逻辑：
-            # 1. 消息类型为 TOOL_CALL
-            # 2. 消息的data字段中包含错误信息（例如有error字段或error_code字段）
             tool_error_statement = select(Message).where(
                 and_(
                     Message.session_id == session_id,
@@ -453,7 +407,7 @@ class AgentConfigService(BaseService[AgentConfig]):
 
     async def get_configs_by_session(self, session_id: str) -> List[AgentConfig]:
         """根据会话ID获取配置"""
-        return await self.get_all(filters={"session_id": session_id})
+        return await self.get_batch(filters={"session_id": session_id})
 
 
 class AgentService(BaseService[Agent]):
@@ -482,7 +436,7 @@ class AgentService(BaseService[Agent]):
 
     async def get_agents_by_session(self, session_id: str) -> List[Agent]:
         """根据会话ID获取Agent"""
-        return await self.get_all(filters={"session_id": session_id})
+        return await self.get_batch(filters={"session_id": session_id})
 
 
 # 全局Service实例
@@ -533,7 +487,7 @@ class JobService(BaseService[ScheduledJob]):
         trigger_config: Dict[str, Any],
         content: str,
         session_id: Optional[str] = None,
-        agent_id: Optional[str] = None
+        agent_id: Optional[str] = None,
     ) -> ScheduledJob:
         """创建新任务"""
         return await self.create(
@@ -550,32 +504,32 @@ class JobService(BaseService[ScheduledJob]):
             updated_at=datetime.utcnow(),
         )
 
-    async def get_active_jobs(self, session_id: Optional[str] = None) -> List[ScheduledJob]:
+    async def get_active_jobs(
+        self, session_id: Optional[str] = None
+    ) -> List[ScheduledJob]:
         """获取活跃任务"""
         filters = {"status": JobStatus.ACTIVE}
         if session_id:
             filters["session_id"] = session_id
-        return await self.get_all(filters=filters, order_by="created_at")
+        return await self.get_batch(filters=filters, order_by="created_at")
 
     async def get_jobs_by_session(self, session_id: str) -> List[ScheduledJob]:
         """根据会话ID获取任务"""
-        return await self.get_all(filters={"session_id": session_id}, order_by="created_at")
+        return await self.get_batch(
+            filters={"session_id": session_id}, order_by="created_at"
+        )
 
     async def update_job_status(self, job_id: str, status: JobStatus) -> bool:
         """更新任务状态"""
-        job = await self.update(
-            job_id,
-            status=status,
-            updated_at=datetime.utcnow()
-        )
+        job = await self.update(job_id, status=status, updated_at=datetime.utcnow())
         return job is not None
 
-    async def update_next_run_time(self, job_id: str, next_run_time: Optional[datetime]) -> bool:
+    async def update_next_run_time(
+        self, job_id: str, next_run_time: Optional[datetime]
+    ) -> bool:
         """更新下次执行时间"""
         job = await self.update(
-            job_id,
-            next_run_time=next_run_time,
-            updated_at=datetime.utcnow()
+            job_id, next_run_time=next_run_time, updated_at=datetime.utcnow()
         )
         return job is not None
 
@@ -603,10 +557,7 @@ class JobExecutionService(BaseService[JobExecution]):
         super().__init__(JobExecution)
 
     async def create_execution(
-        self,
-        job_id: str,
-        success: bool,
-        result: Optional[str] = None
+        self, job_id: str, success: bool, result: Optional[str] = None
     ) -> JobExecution:
         """创建执行记录"""
         execution_id = f"exec_{uuid.uuid4().hex}"
@@ -618,7 +569,9 @@ class JobExecutionService(BaseService[JobExecution]):
             executed_at=datetime.utcnow(),
         )
 
-    async def get_executions_by_job(self, job_id: str, limit: int = 10) -> List[JobExecution]:
+    async def get_executions_by_job(
+        self, job_id: str, limit: int = 10
+    ) -> List[JobExecution]:
         """根据任务ID获取执行记录"""
         async with db_manager.get_session() as session:
             statement = (
