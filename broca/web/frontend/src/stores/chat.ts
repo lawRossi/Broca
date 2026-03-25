@@ -13,9 +13,8 @@ export const useChatStore = defineStore('chat', () => {
 
   const connected = computed(() => socketStore.connected)
   const connecting = computed(() => socketStore.connecting)
-  const connectingSession = ref(false) // 防止重复执行连接流程
+  const connectingSession = ref(false)
   const sessionId = ref<string>('')
-  const currentSessionId = ref('') // 跟踪当前订阅的sessionId
   const input = ref('')
   const loading = ref(false)
   const loadingMore = ref(false)
@@ -28,10 +27,6 @@ export const useChatStore = defineStore('chat', () => {
   const showRightSidebar = ref(false)
   const isMobile = ref(false)
 
-  const agents = agentStore.agents
-  const agentId = agentStore.currentAgentId
-  const agentName = agentStore.currentAgentName
-  const agentStatus = computed(() => agentStore.currentAgentStatus)
 
   const urlSessionId = computed(() => {
     return (route.params.session_id as string) || (route.query.session_id as string) || ''
@@ -411,17 +406,14 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const doConnect = async () => {
-    agentStore.currentAgentStatus = 'connecting'
 
     socketStore.onConnect = () => {
-      agentStore.currentAgentStatus = 'idle'
       agentStore.agents = agentStore.agents.map((agent) => ({
         ...agent,
         status: 'idle',
       }))
     }
     socketStore.onDisconnect = () => {
-      agentStore.currentAgentStatus = 'disconnected'
       agentStore.agents = agentStore.agents.map((agent) => ({
         ...agent,
         status: 'disconnected',
@@ -517,8 +509,8 @@ export const useChatStore = defineStore('chat', () => {
       receiverId: targetAgentId
     })
 
-    // 更新agent状态为idle
-    agentStore.updateAgentStatus(targetAgentId, 'idle')
+    // // 更新agent状态为idle
+    // agentStore.updateAgentStatus(targetAgentId, 'idle')
   }
 
   const respondPermission = async (granted: boolean) => {
@@ -538,10 +530,6 @@ export const useChatStore = defineStore('chat', () => {
     messageStates.value.clear()
     pendingChunks.value.clear()
     agentStore.agents = []
-    agentStore.currentAgentId = 'main_agent'
-    agentStore.currentAgentName = 'Assistant'
-    agentStore.currentAgentStatus = 'disconnected'
-    currentSessionId.value = ''
   }
 
   const autoConnectAndSubscribe = async () => {
@@ -549,28 +537,27 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
-    if (connectingSession.value && currentSessionId.value === urlSessionId.value) {
+    if (connectingSession.value && sessionId.value === urlSessionId.value) {
       console.log('连接流程已在进行中，跳过')
       return
     }
 
-    if (currentSessionId.value && currentSessionId.value !== urlSessionId.value) {
+    if (sessionId.value && sessionId.value !== urlSessionId.value) {
       await cleanupSession()
     }
 
     connectingSession.value = true
-    currentSessionId.value = urlSessionId.value
     sessionId.value = urlSessionId.value
 
     try {
-      await agentStore.fetchSessionAgents(urlSessionId.value, connected.value)
+      await agentStore.fetchAgents(urlSessionId.value, connected.value)
       await doConnect()
       await doSubscribe()
       await loadHistory(urlSessionId.value)
       scrollToBottom()
     } catch (error: any) {
       console.error('自动连接失败:', error)
-      currentSessionId.value = ''
+      sessionId.value = ''
     } finally {
       connectingSession.value = false
     }
@@ -579,7 +566,6 @@ export const useChatStore = defineStore('chat', () => {
   const init = async () => {
     await userStore.init()
 
-    // 检查登录状态
     if (!userStore.isLoggedIn) {
       console.log('用户未登录，无法初始化聊天')
       return
@@ -587,7 +573,6 @@ export const useChatStore = defineStore('chat', () => {
 
     checkMobile()
     window.addEventListener('resize', checkMobile)
-    // 不再自动连接，由watch监听urlSessionId变化来触发
   }
 
   const cleanup = () => {
@@ -595,11 +580,7 @@ export const useChatStore = defineStore('chat', () => {
     socketStore.cleanup()
     connectingSession.value = false
     sessionId.value = ''
-    currentSessionId.value = ''
     agentStore.agents = []
-    agentStore.currentAgentId = 'main_agent'
-    agentStore.currentAgentName = 'Assistant'
-    agentStore.currentAgentStatus = 'disconnected'
     messages.value = []
     messageStates.value.clear()
     pendingChunks.value.clear()
@@ -610,10 +591,6 @@ export const useChatStore = defineStore('chat', () => {
     connecting,
     connectingSession,
     sessionId,
-    currentSessionId,
-    agents,
-    agentId,
-    agentName,
     input,
     loading,
     loadingMore,

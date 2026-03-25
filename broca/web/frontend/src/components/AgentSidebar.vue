@@ -241,7 +241,7 @@ onUnmounted(() => {
         :key="agent.agent_id"
         class="bg-white rounded-lg border p-3 shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
         :class="{
-          'ring-2 ring-blue-500': chatStore.agentId === agent.agent_id,
+          'ring-2 ring-blue-500': agentStore.currentAgentId === agent.agent_id,
           'ring-2 ring-yellow-500': agent.role === 'main_agent' || agent.role === 'main-agent',
         }"
         @click="handleAgentClick(agent)"

@@ -232,7 +232,7 @@ const getReasoningContent = (message: Message) => {
       <div class="flex items-center gap-2">
         <span class="text-lg">{{ getIcon(message) }}</span>
         <span class="font-semibold text-sm" :class="getHeaderColor(message)">
-          {{ getSenderName(message, chatStore.agentName) }}
+          {{ getSenderName(message, agentStore.currentAgentName) }}
         </span>
       </div>
       <div class="text-xs text-gray-500 opacity-70">
