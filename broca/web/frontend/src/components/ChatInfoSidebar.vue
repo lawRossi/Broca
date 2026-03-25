@@ -133,11 +133,15 @@ const totalMessagesFromApi = computed(() => {
   >
     <div v-if="chatStore.isMobile && chatStore.showRightSidebar" class="flex justify-between items-center lg:hidden">
       <span class="text-sm font-semibold text-gray-700">Info</span>
-      <el-button size="small" @click="chatStore.showRightSidebar = false">✕</el-button>
+      <el-button size="small" @click="chatStore.showRightSidebar = false">
+        ✕
+      </el-button>
     </div>
 
     <div class="bg-white rounded-lg border p-3 sm:p-4 shadow-sm">
-      <div class="text-sm font-semibold text-gray-900 mb-3">Session Info</div>
+      <div class="text-sm font-semibold text-gray-900 mb-3">
+        Session Info
+      </div>
       <div class="space-y-3 text-sm">
         <div class="flex justify-between">
           <span class="text-gray-500">Session:</span>
@@ -147,7 +151,9 @@ const totalMessagesFromApi = computed(() => {
         </div>
         <div class="flex justify-between">
           <span class="text-gray-500">Status:</span>
-          <el-tag :type="chatStore.connected ? 'success' : 'info'" size="small">{{ chatStore.statusText }}</el-tag>
+          <el-tag :type="chatStore.connected ? 'success' : 'info'" size="small">
+            {{ chatStore.statusText }}
+          </el-tag>
         </div>
         <div class="flex justify-between">
           <span class="text-gray-500">Total Messages:</span>
@@ -155,16 +161,20 @@ const totalMessagesFromApi = computed(() => {
         </div>
         <div v-if="statsLoading" class="flex justify-between">
           <span class="text-gray-500">Loading stats...</span>
-          <el-icon class="is-loading"><Loading /></el-icon>
+          <el-icon class="is-loading">
+            <Loading />
+          </el-icon>
         </div>
       </div>
     </div>
 
     <div class="bg-white rounded-lg border p-3 sm:p-4 shadow-sm">
       <div class="flex items-center justify-between mb-3">
-        <div class="text-sm font-semibold text-gray-900">Message Statistics</div>
+        <div class="text-sm font-semibold text-gray-900">
+          Message Statistics
+        </div>
         <el-tooltip content="Auto-refresh every 30s" placement="top">
-          <el-button size="small" circle @click="fetchStats" :loading="statsLoading">
+          <el-button size="small" circle :loading="statsLoading" @click="fetchStats">
             <el-icon><Refresh /></el-icon>
           </el-button>
         </el-tooltip>
@@ -172,28 +182,28 @@ const totalMessagesFromApi = computed(() => {
       <div class="space-y-2">
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-600 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-blue-500"></span>
+            <span class="w-2 h-2 rounded-full bg-blue-500" />
             User Messages
           </span>
           <span class="font-mono text-sm">{{ userMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-600 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-green-500"></span>
+            <span class="w-2 h-2 rounded-full bg-green-500" />
             Assistant Responses
           </span>
           <span class="font-mono text-sm">{{ assistantMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-600 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-gray-500"></span>
+            <span class="w-2 h-2 rounded-full bg-gray-500" />
             System Messages
           </span>
           <span class="font-mono text-sm">{{ systemMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-600 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-red-500"></span>
+            <span class="w-2 h-2 rounded-full bg-red-500" />
             Tool Call Errors
           </span>
           <span class="font-mono text-sm" :class="{'text-red-600 font-bold': toolCallErrorsFromApi > 0}">
@@ -202,7 +212,7 @@ const totalMessagesFromApi = computed(() => {
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-600 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-purple-500"></span>
+            <span class="w-2 h-2 rounded-full bg-purple-500" />
             Tool Calls
           </span>
           <span class="font-mono text-sm">{{ toolCallsFromApi }}</span>

@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { ref, onMounted, computed, watch } from 'vue'
+import { computed, onMounted, watch, ref } from 'vue'
 import { useRouter } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
-import { useUserStore } from '@/stores'
-import { sessionApi, type Session, type CreateSessionParams } from '@/api/session'
+import { useUserStore, useSessionStore } from '@/stores'
+import type { Session } from '@/api/session'
 import type { FileItem } from '@/api/files'
+import { jobApi } from '@/api/job'
 import { ChatRound, Plus } from '@element-plus/icons-vue'
 
 // 导入拆分出的组件
@@ -15,6 +15,7 @@ import WorkspacePicker from '@/components/WorkspacePicker.vue'
 
 const router = useRouter()
 const userStore = useUserStore()
+const sessionStore = useSessionStore()
 
 // LLM Model 选项（传递给 CreateSessionDialog 的 availableModels 计算使用）
 const LLM_MODELS: Record<string, { label: string; value: string }[]> = {
@@ -35,32 +36,27 @@ const LLM_MODELS: Record<string, { label: string; value: string }[]> = {
   ]
 }
 
-// 响应式数据
-const sessions = ref<Session[]>([])
-const loading = ref(false)
-const total = ref(0)
-const currentPage = ref(1)
-const pageSize = ref(20)
-const searchKeyword = ref('')
-const statusFilter = ref('')
-const createDialogVisible = ref(false)
-const creating = ref(false)
-const deleteLoading = ref(false)
-const selectedSessions = ref<string[]>([])
-const createForm = ref<CreateSessionParams>({
-  description: '',
-  workspace: '',
-  provider: undefined,
-  model: undefined
-})
+// 计算属性（从store获取）
+const sessions = computed(() => sessionStore.sessions)
+const loading = computed(() => sessionStore.loading)
+const total = computed(() => sessionStore.total)
+const currentPage = computed(() => sessionStore.currentPage)
+const pageSize = computed(() => sessionStore.pageSize)
+const searchKeyword = computed(() => sessionStore.searchKeyword)
+const statusFilter = computed(() => sessionStore.statusFilter)
+const selectedSessions = computed(() => sessionStore.selectedSessions)
+const createDialogVisible = computed(() => sessionStore.createDialogVisible)
+const creating = computed(() => sessionStore.creating)
+const deleteLoading = computed(() => sessionStore.deleteLoading)
+const createForm = computed(() => sessionStore.createForm)
+const workspaceAllSuggestions = computed(() => sessionStore.workspaceAllSuggestions)
+const workspacePickerVisible = computed(() => sessionStore.workspacePickerVisible)
 
-// Workspace autocomplete suggestions
-const workspaceAllSuggestions = ref<string[]>([])
+// Session job counts
+const jobCounts = ref<Record<string, number>>({})
+const loadingJobCounts = ref(false)
 
-// Workspace picker dialog
-const workspacePickerVisible = ref(false)
-
-// 计算属性
+// 计算属性：是否已登录
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
 // 根据选择的 provider 获取可用的 models
@@ -73,271 +69,134 @@ const availableModels = computed(() => {
   return LLM_MODELS[key] || []
 })
 
-// 加载session列表
-const loadSessions = async () => {
-  if (!isLoggedIn.value) {
-    return
-  }
-
-  try {
-    loading.value = true
-    const response = await sessionApi.getSessions({
-      skip: (currentPage.value - 1) * pageSize.value,
-      limit: pageSize.value,
-      status: statusFilter.value || undefined,
-      keyword: searchKeyword.value || undefined
-    })
-    sessions.value = response.sessions || []
-    total.value = response.total || 0
-  } catch (error: any) {
-    console.error('加载会话列表失败:', error)
-    ElMessage.error('加载会话列表失败')
-  } finally {
-    loading.value = false
-  }
-}
-
-// 显示创建会话弹窗
-const showCreateDialog = () => {
-  createForm.value = {
-    description: '',
-    workspace: '',
-    provider: undefined,
-    model: undefined
-  }
-  extractWorkspaceSuggestions()
-  createDialogVisible.value = true
-}
-
-// 从现有会话中提取工作空间路径建议
-const extractWorkspaceSuggestions = () => {
-  const workspaces = new Set<string>()
-  
-  sessions.value.forEach(session => {
-    if (session.workspace && session.workspace.trim()) {
-      workspaces.add(session.workspace.trim())
-    }
-  })
-  
-  try {
-    const localWorkspaces = localStorage.getItem('recent_workspaces')
-    if (localWorkspaces) {
-      const parsed = JSON.parse(localWorkspaces)
-      if (Array.isArray(parsed)) {
-        parsed.forEach((ws: string) => {
-          if (ws && ws.trim()) {
-            workspaces.add(ws.trim())
-          }
-        })
-      }
-    }
-  } catch (e) {
-    console.warn('Failed to parse local workspaces:', e)
-  }
-  
-  workspaceAllSuggestions.value = Array.from(workspaces).filter(ws => ws.length > 0)
-}
-
-// 打开工作空间选择器
-const openWorkspacePicker = () => {
-  workspacePickerVisible.value = true
-}
-
-// 从文件浏览器选择工作空间
-const selectWorkspaceFromPicker = (file: FileItem) => {
-  if (file.is_dir) {
-    createForm.value.workspace = file.path
-    workspacePickerVisible.value = false
-    saveRecentWorkspace(file.path)
-  } else {
-    ElMessage.warning('请选择目录而不是文件')
-  }
-}
-
-// 保存最近使用的工作空间
-const saveRecentWorkspace = (workspace: string) => {
-  try {
-    const key = 'recent_workspaces'
-    let recent: string[] = []
-    const existing = localStorage.getItem(key)
-    if (existing) {
-      recent = JSON.parse(existing)
-    }
-    
-    recent = recent.filter(ws => ws !== workspace)
-    recent.unshift(workspace)
-    
-    if (recent.length > 10) {
-      recent = recent.slice(0, 10)
-    }
-    
-    localStorage.setItem(key, JSON.stringify(recent))
-  } catch (e) {
-    console.warn('Failed to save recent workspace:', e)
-  }
-}
-
-// 处理创建会话
-const handleCreate = async () => {
-  if (!isLoggedIn.value) {
-    return
-  }
-
-  try {
-    creating.value = true
-    const response = await sessionApi.createSession({
-      description: createForm.value.description || undefined,
-      workspace: createForm.value.workspace || undefined,
-      provider: createForm.value.provider || undefined,
-      model: createForm.value.model || undefined
-    })
-    
-    ElMessage.success('会话创建成功')
-    createDialogVisible.value = false
-    
-    // 跳转到新创建的会话
-    router.push(`/chat/${response.session_id}`)
-  } catch (error: any) {
-    console.error('创建会话失败:', error)
-    ElMessage.error('创建会话失败: ' + (error.message || '未知错误'))
-  } finally {
-    creating.value = false
-  }
-}
-
-// 处理搜索
+// 搜索
 const handleSearch = (keyword: string) => {
-  searchKeyword.value = keyword
-  currentPage.value = 1
-  loadSessions()
+  sessionStore.setSearchKeyword(keyword)
 }
 
-// 处理状态筛选
+// 状态筛选
 const handleStatusFilterChange = (status: string) => {
-  statusFilter.value = status
-  currentPage.value = 1
-  loadSessions()
+  sessionStore.setStatusFilter(status)
 }
 
-// 处理页码变化
+// 分页
 const handlePageChange = (page: number) => {
-  currentPage.value = page
-  loadSessions()
+  sessionStore.setCurrentPage(page)
+  sessionStore.fetchSessions()
 }
 
-// 处理每页条数变化
 const handleSizeChange = (size: number) => {
-  pageSize.value = size
-  currentPage.value = 1
-  loadSessions()
+  sessionStore.setPageSize(size)
 }
 
-// 处理选择变化
+// 选择会话
 const handleSelect = (sessionId: string) => {
-  if (!selectedSessions.value.includes(sessionId)) {
-    selectedSessions.value.push(sessionId)
-  }
+  sessionStore.selectSession(sessionId)
 }
 
 const handleDeselect = (sessionId: string) => {
-  selectedSessions.value = selectedSessions.value.filter(id => id !== sessionId)
+  sessionStore.deselectSession(sessionId)
+}
+
+// 创建会话
+const handleCreate = async () => {
+  const response = await sessionStore.createSession(createForm.value)
+  if (response?.session_id) {
+    router.push(`/chat/${response.session_id}`)
+  }
 }
 
 // 删除单个会话
 const handleDelete = async (session: Session) => {
-  // 确认框已在 SessionCard 组件中弹出，这里直接执行删除
-  deleteLoading.value = true
-  try {
-    await sessionApi.deleteSession(session.session_id)
-    ElMessage.success('删除成功')
-    selectedSessions.value = selectedSessions.value.filter(id => id !== session.session_id)
-    // 立即从本地列表移除已删除的session，避免用户点击到已删除的项
-    sessions.value = sessions.value.filter(s => s.session_id !== session.session_id)
-    total.value = Math.max(0, total.value - 1)
-    // 如果当前页没有数据了且不是第一页，跳转到前一页
-    if (sessions.value.length === 0 && currentPage.value > 1) {
-      currentPage.value = 1
-      loadSessions()
-    } else {
-      // 保持当前页，只更新总数
-      // 如果需要，可以在这里调用 loadSessions() 从服务器重新获取，确保数据一致性
-      // 但为了快速响应，先更新本地数据，稍后异步刷新
-      setTimeout(loadSessions, 500) // 延迟500ms刷新，避免与用户操作冲突
-    }
-  } catch (error: any) {
-    console.error('删除会话失败:', error)
-    ElMessage.error('删除失败')
-  } finally {
-    deleteLoading.value = false
-  }
+  await sessionStore.deleteSession(session.session_id)
 }
 
 // 批量删除会话
 const handleBatchDelete = async () => {
-  if (selectedSessions.value.length === 0) return
-  
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除选中的 ${selectedSessions.value.length} 个会话吗？此操作不可恢复。`,
-      '确认批量删除',
-      {
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-    
-    deleteLoading.value = true
-    await sessionApi.deleteSessions(selectedSessions.value)
-    ElMessage.success(`成功删除 ${selectedSessions.value.length} 个会话`)
-    // 立即从本地列表移除已删除的sessions
-    const deletedIds = new Set(selectedSessions.value)
-    sessions.value = sessions.value.filter(s => !deletedIds.has(s.session_id))
-    const removedCount = selectedSessions.value.length
-    total.value = Math.max(0, total.value - removedCount)
-    selectedSessions.value = []
-    // 如果当前页没有数据了且不是第一页，跳转到前一页
-    if (sessions.value.length === 0 && currentPage.value > 1) {
-      currentPage.value = 1
-      loadSessions()
-    } else {
-      // 延迟刷新列表
-      setTimeout(loadSessions, 500)
-    }
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      console.error('批量删除会话失败:', error)
-      ElMessage.error('批量删除失败')
-    }
-  } finally {
-    deleteLoading.value = false
-  }
+  await sessionStore.deleteSessions(selectedSessions.value)
 }
 
-// 处理工作空间选择
+// 工作空间选择
 const handleWorkspaceSelect = (file: FileItem) => {
-  selectWorkspaceFromPicker(file)
+  sessionStore.selectWorkspaceFromPicker(file)
 }
 
 const handleWorkspaceConfirm = (path: string) => {
-  createForm.value.workspace = path
-  saveRecentWorkspace(path)
+  sessionStore.handleWorkspaceConfirm(path)
+}
+
+// 打开工作空间选择器
+const openWorkspacePicker = () => {
+  sessionStore.setWorkspacePickerVisible(true)
+}
+
+// 显示创建会话弹窗
+const showCreateDialog = () => {
+  sessionStore.extractWorkspaceSuggestions()
+  sessionStore.setCreateDialogVisible(true)
+}
+
+// 获取所有会话的定时任务数量
+const fetchJobCounts = async () => {
+  const sessionList = sessions.value
+  if (sessionList.length === 0) {
+    jobCounts.value = {}
+    return
+  }
+
+  loadingJobCounts.value = true
+  try {
+    const counts: Record<string, number> = {}
+    // 并行请求所有会话的任务数量
+    await Promise.all(
+      sessionList.map(async (session) => {
+        try {
+          const response = await jobApi.getJobs({
+            session_id: session.session_id,
+            limit: 0 // 只获取总数，不获取具体数据
+          })
+          counts[session.session_id] = response.total
+        } catch (error) {
+          console.error(`Failed to fetch job count for session ${session.session_id}:`, error)
+          counts[session.session_id] = 0
+        }
+      })
+    )
+    jobCounts.value = counts
+  } finally {
+    loadingJobCounts.value = false
+  }
 }
 
 // 监听筛选条件变化
-watch([statusFilter], () => {
-  currentPage.value = 1
-  loadSessions()
-})
+watch(
+  [statusFilter, searchKeyword],
+  () => {
+    sessionStore.fetchSessions()
+  },
+  { deep: true }
+)
 
-// 组件挂载时执行
+// 监听 sessions 列表变化，重新获取 job counts
+watch(
+  sessions,
+  () => {
+    if (sessions.value.length > 0) {
+      fetchJobCounts()
+    }
+  },
+  { deep: true }
+)
+
+// 组件挂载
 onMounted(async () => {
   await userStore.init()
   if (!isLoggedIn.value) {
     router.push('/auth')
     return
   }
-  loadSessions()
+  await sessionStore.fetchSessions()
+  await fetchJobCounts()
 })
 </script>
 
@@ -348,8 +207,12 @@ onMounted(async () => {
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-16">
           <div class="flex items-center gap-3">
-            <el-icon class="text-blue-600 text-xl"><ChatRound /></el-icon>
-            <h1 class="text-xl font-bold text-gray-900">会话管理</h1>
+            <el-icon class="text-blue-600 text-xl">
+              <ChatRound />
+            </el-icon>
+            <h1 class="text-xl font-bold text-gray-900">
+              会话管理
+            </h1>
           </div>
           <div class="flex items-center gap-4">
             <div class="text-sm text-gray-500">
@@ -390,6 +253,7 @@ onMounted(async () => {
         :page-size="pageSize"
         :selected-sessions="selectedSessions"
         :delete-loading="deleteLoading"
+        :job-counts="jobCounts"
         @page-change="handlePageChange"
         @size-change="handleSizeChange"
         @select="handleSelect"
@@ -407,8 +271,8 @@ onMounted(async () => {
     :workspace-suggestions="workspaceAllSuggestions"
     :available-models="availableModels"
     :creating="creating"
-    @update:visible="createDialogVisible = $event"
-    @update:form-data="createForm = $event"
+    @update:visible="sessionStore.setCreateDialogVisible($event)"
+    @update:form-data="sessionStore.setCreateForm($event)"
     @create="handleCreate"
     @open-workspace-picker="openWorkspacePicker"
   />
@@ -417,7 +281,7 @@ onMounted(async () => {
   <WorkspacePicker
     :visible="workspacePickerVisible"
     :initial-path="createForm.workspace || '/home/ubuntu'"
-    @update:visible="workspacePickerVisible = $event"
+    @update:visible="sessionStore.setWorkspacePickerVisible($event)"
     @select="handleWorkspaceSelect"
     @confirm="handleWorkspaceConfirm"
   />

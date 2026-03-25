@@ -10,7 +10,9 @@ const socketStore = useSocketStore()
     <div class="mx-auto max-w-7xl px-3 sm:px-4 py-2 sm:py-3">
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-2 sm:gap-3">
-          <div class="font-bold text-lg sm:text-xl text-gray-900">Broca</div>
+          <div class="font-bold text-lg sm:text-xl text-gray-900">
+            Broca
+          </div>
           <el-tag
             :type="chatStore.connected ? 'success' : chatStore.connecting ? 'warning' : 'info'"
             size="small"
@@ -25,7 +27,7 @@ const socketStore = useSocketStore()
               'bg-yellow-500': chatStore.connecting,
               'bg-gray-400': !chatStore.connected && !chatStore.connecting,
             }"
-          ></div>
+          />
         </div>
 
         <!-- 中间部分：显示客户端信息 -->

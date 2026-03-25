@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { useJobStore } from '@/stores/job'
@@ -12,6 +12,7 @@ import JobList from '@/components/JobList.vue'
 import JobDetail from '@/components/JobDetail.vue'
 
 const router = useRouter()
+const route = useRoute()
 const userStore = useUserStore()
 const jobStore = useJobStore()
 
@@ -24,6 +25,7 @@ const pageSize = computed(() => jobStore.pageSize)
 const searchKeyword = computed(() => jobStore.searchKeyword)
 const statusFilter = computed(() => jobStore.statusFilter)
 const jobTypeFilter = computed(() => jobStore.jobTypeFilter)
+const sessionFilter = computed(() => jobStore.sessionFilter)
 const selectedJobs = computed(() => jobStore.selectedJobs)
 const detailDrawerVisible = computed(() => jobStore.detailDrawerVisible)
 const selectedJobId = computed(() => jobStore.selectedJobId)
@@ -59,6 +61,12 @@ const handleStatusFilterChange = (status: string) => {
 // 类型筛选
 const handleTypeFilterChange = (type: string) => {
   jobStore.setJobTypeFilter(type as any)
+}
+
+// 清除 session 筛选
+const clearSessionFilter = () => {
+  jobStore.setSessionFilter('')
+  router.replace('/jobs')
 }
 
 // 分页
@@ -134,12 +142,21 @@ const handleDelete = async (job: Job) => {
 
 // 监听筛选条件变化
 watch(
-  [searchKeyword, statusFilter, jobTypeFilter],
+  [searchKeyword, statusFilter, jobTypeFilter, sessionFilter],
   () => {
     // 筛选条件变化时重新加载
     jobStore.fetchJobs()
   },
   { deep: true }
+)
+
+// 监听路由参数变化
+watch(
+  () => route.query.session_id,
+  (newSessionId) => {
+    jobStore.setSessionFilter(newSessionId as string || '')
+  },
+  { immediate: true }
 )
 
 // 组件挂载
@@ -149,6 +166,13 @@ onMounted(async () => {
     router.push('/auth')
     return
   }
+  
+  // 从路由参数中获取 session_id
+  const sessionIdFromRoute = route.query.session_id as string
+  if (sessionIdFromRoute) {
+    jobStore.setSessionFilter(sessionIdFromRoute)
+  }
+  
   await jobStore.fetchJobs()
 })
 </script>
@@ -160,8 +184,12 @@ onMounted(async () => {
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
         <div class="flex items-center justify-between h-16">
           <div class="flex items-center gap-3">
-            <el-icon class="text-blue-600 text-xl"><Bell /></el-icon>
-            <h1 class="text-xl font-bold text-gray-900">定时任务管理</h1>
+            <el-icon class="text-blue-600 text-xl">
+              <Bell />
+            </el-icon>
+            <h1 class="text-xl font-bold text-gray-900">
+              定时任务管理
+            </h1>
           </div>
           <div class="flex items-center gap-4">
             <div class="text-sm text-gray-500">
@@ -194,7 +222,7 @@ onMounted(async () => {
             @keyup.enter="handleSearch(searchKeyword)"
           >
             <template #prefix>
-              <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></svg></el-icon>
+              <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" /></svg></el-icon>
             </template>
           </el-input>
 
@@ -229,6 +257,17 @@ onMounted(async () => {
               :value="option.value"
             />
           </el-select>
+
+          <!-- Session 筛选提示 -->
+          <el-tag
+            v-if="sessionFilter"
+            type="info"
+            closable
+            class="ml-2"
+            @close="clearSessionFilter"
+          >
+            会话: {{ sessionFilter.slice(0, 8) }}...
+          </el-tag>
         </div>
       </div>
 

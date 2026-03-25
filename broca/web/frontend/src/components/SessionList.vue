@@ -12,6 +12,7 @@ interface Props {
   pageSize: number
   selectedSessions: string[]
   deleteLoading: boolean
+  jobCounts?: Record<string, number>
   showActions?: boolean
 }
 
@@ -25,7 +26,8 @@ interface Emits {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  showActions: true
+  showActions: true,
+  jobCounts: () => ({})
 })
 
 const emit = defineEmits<Emits>()
@@ -138,7 +140,9 @@ const handleBatchDelete = () => {
         <FolderOpened />
       </el-icon>
       <p>暂无会话</p>
-      <p class="text-sm mt-1">点击上方"创建会话"按钮开始</p>
+      <p class="text-sm mt-1">
+        点击上方"创建会话"按钮开始
+      </p>
     </div>
 
     <!-- 会话列表 -->
@@ -151,6 +155,7 @@ const handleBatchDelete = () => {
         :key="session.session_id"
         :session="session"
         :is-selected="selectedSessions.includes(session.session_id)"
+        :job-count="jobCounts?.[session.session_id]"
         :show-actions="showActions"
         @select="handleSessionSelect"
         @deselect="handleSessionDeselect"

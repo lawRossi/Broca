@@ -133,15 +133,17 @@ const handleCreate = () => {
             <template #default="{ item }">
               <div class="flex items-center justify-between w-full">
                 <span>{{ item }}</span>
-                <el-icon class="text-gray-400"><FolderOpened /></el-icon>
+                <el-icon class="text-gray-400">
+                  <FolderOpened />
+                </el-icon>
               </div>
             </template>
           </el-autocomplete>
           <el-button
             type="primary"
             :icon="FolderOpened"
-            @click="handleOpenWorkspacePicker"
             title="浏览工作目录"
+            @click="handleOpenWorkspacePicker"
           >
             浏览
           </el-button>

@@ -15,6 +15,7 @@ export const useJobStore = defineStore('job', () => {
   const searchKeyword = ref('')
   const statusFilter = ref<JobStatus | ''>('')
   const jobTypeFilter = ref<JobType | ''>('')
+  const sessionFilter = ref<string>('')
 
   // 选中的任务
   const selectedJobs = ref<string[]>([])
@@ -63,6 +64,7 @@ export const useJobStore = defineStore('job', () => {
     limit?: number
     status?: JobStatus
     job_type?: JobType
+    session_id?: string
     keyword?: string
     order_by?: string
   }) => {
@@ -74,6 +76,7 @@ export const useJobStore = defineStore('job', () => {
         limit: params?.limit ?? pageSize.value,
         status: params?.status ?? (statusFilter.value || undefined),
         job_type: params?.job_type ?? (jobTypeFilter.value || undefined),
+        session_id: params?.session_id ?? (sessionFilter.value || undefined),
         keyword: params?.keyword ?? (searchKeyword.value || undefined),
         order_by: params?.order_by ?? 'created_at desc',
       })
@@ -261,6 +264,11 @@ export const useJobStore = defineStore('job', () => {
     currentPage.value = 1
   }
 
+  const setSessionFilter = (sessionId: string) => {
+    sessionFilter.value = sessionId
+    currentPage.value = 1
+  }
+
   const setPage = (page: number) => {
     currentPage.value = page
   }
@@ -291,6 +299,7 @@ export const useJobStore = defineStore('job', () => {
     searchKeyword,
     statusFilter,
     jobTypeFilter,
+    sessionFilter,
     selectedJobs,
     detailDrawerVisible,
     selectedJobId,
@@ -321,6 +330,7 @@ export const useJobStore = defineStore('job', () => {
     setSearchKeyword,
     setStatusFilter,
     setJobTypeFilter,
+    setSessionFilter,
     setPage,
     setPageSize,
     refresh,

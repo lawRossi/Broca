@@ -42,10 +42,18 @@ const handleScroll = (event: Event) => {
     </div>
     
     <div v-if="!chatStore.messages.length" class="flex flex-col items-center justify-center h-full text-gray-400">
-      <div class="text-4xl mb-2">💬</div>
-      <div v-if="chatStore.urlSessionId && !chatStore.connected" class="text-sm">正在自动连接...</div>
-      <div v-else-if="chatStore.urlSessionId && chatStore.connected" class="text-sm">已连接，等待消息...</div>
-      <div v-else class="text-sm">未设置session_id。请手动输入或通过URL参数传入。</div>
+      <div class="text-4xl mb-2">
+        💬
+      </div>
+      <div v-if="chatStore.urlSessionId && !chatStore.connected" class="text-sm">
+        正在自动连接...
+      </div>
+      <div v-else-if="chatStore.urlSessionId && chatStore.connected" class="text-sm">
+        已连接，等待消息...
+      </div>
+      <div v-else class="text-sm">
+        未设置session_id。请手动输入或通过URL参数传入。
+      </div>
     </div>
 
     <ChatMessageItem
