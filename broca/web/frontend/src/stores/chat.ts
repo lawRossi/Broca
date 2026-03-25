@@ -433,22 +433,18 @@ export const useChatStore = defineStore('chat', () => {
       scrollToBottom()
     }
     socketStore.onTurnStart = (m: Message) => {
-      agentStore.currentAgentStatus = 'running'
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
     }
     socketStore.onTurnEnd = (m: Message) => {
-      agentStore.currentAgentStatus = 'idle'
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'idle')
     }
     socketStore.onAgentResponse = (m: Message) => {
-      agentStore.currentAgentStatus = 'running'
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
     }
     socketStore.onToolCall = (m: Message) => {
-      agentStore.currentAgentStatus = 'running'
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
     }
@@ -504,12 +500,25 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
-  const sendAbort = async () => {
-    if (agentStore.currentAgentStatus !== 'running') {
+  const sendAbort = async (agentId?: string) => {
+    // 如果指定了agentId，检查该agent的状态
+    let targetAgentId = agentId
+    if (!targetAgentId) {
+      // 如果没有指定，使用当前agent
+      targetAgentId = agentStore.currentAgentId
+    }
+
+    const targetAgent = agentStore.agents.find((a: any) => a.agent_id === targetAgentId)
+    if (!targetAgent || targetAgent.status !== 'running') {
       return
     }
 
-    await socketStore.sendAbort(sessionId.value)
+    await socketStore.sendAbort({
+      receiverId: targetAgentId
+    })
+
+    // 更新agent状态为idle
+    agentStore.updateAgentStatus(targetAgentId, 'idle')
   }
 
   const respondPermission = async (granted: boolean) => {
@@ -605,7 +614,6 @@ export const useChatStore = defineStore('chat', () => {
     agents,
     agentId,
     agentName,
-    agentStatus,
     input,
     loading,
     loadingMore,
