@@ -1,18 +1,18 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage } from 'element-plus'
-import { useUserStore, useAgentStore } from '@/stores'
-import { BrocaSocketClient, type Message } from '@/api/brocaSocket'
+import { useUserStore, useAgentStore, useSocketStore } from '@/stores'
+import { type Message } from '@/api/brocaSocket'
 import { sessionApi } from '@/api/session'
 
 export const useChatStore = defineStore('chat', () => {
   const route = useRoute()
   const userStore = useUserStore()
   const agentStore = useAgentStore()
+  const socketStore = useSocketStore()
 
-  const connected = ref(false)
-  const connecting = ref(false)
+  const connected = computed(() => socketStore.connected)
+  const connecting = computed(() => socketStore.connecting)
   const connectingSession = ref(false) // 防止重复执行连接流程
   const sessionId = ref<string>('')
   const currentSessionId = ref('') // 跟踪当前订阅的sessionId
@@ -28,11 +28,10 @@ export const useChatStore = defineStore('chat', () => {
   const showRightSidebar = ref(false)
   const isMobile = ref(false)
 
-  // 代理到 agentStore（直接返回ref，模板自动解包）
   const agents = agentStore.agents
   const agentId = agentStore.currentAgentId
   const agentName = agentStore.currentAgentName
-  const agentStatus = agentStore.currentAgentStatus
+  const agentStatus = computed(() => agentStore.currentAgentStatus)
 
   const urlSessionId = computed(() => {
     return (route.params.session_id as string) || (route.query.session_id as string) || ''
@@ -43,13 +42,6 @@ export const useChatStore = defineStore('chat', () => {
     requestId: '' as string | undefined,
     senderId: '' as string | undefined,
     message: '',
-  })
-
-  const socketConfig = reactive({
-    serverUrl: 'http://81.71.49.200:6868',
-    clientType: 'browser',
-    clientId: `browser_${Math.random().toString(16).slice(2)}`,
-    userId: computed(() => userStore.userId || undefined),
   })
 
   const messages = ref<Message[]>([])
@@ -96,12 +88,7 @@ export const useChatStore = defineStore('chat', () => {
     return agentStore.parseMention(text)
   }
 
-  const statusText = computed(() => {
-    if (connecting.value) return 'connecting'
-    return connected.value ? 'connected' : 'disconnected'
-  })
-
-  let client: BrocaSocketClient | null = null
+  const statusText = computed(() => socketStore.statusText)
 
   const checkMobile = () => {
     isMobile.value = window.innerWidth < 1024
@@ -424,116 +411,68 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const doConnect = async () => {
-    if (connected.value || connecting.value) return
-    connecting.value = true
     agentStore.currentAgentStatus = 'connecting'
-    try {
-      client = new BrocaSocketClient({
-        serverUrl: socketConfig.serverUrl,
-        clientType: socketConfig.clientType,
-        clientId: socketConfig.clientId,
-        userId: socketConfig.userId,
-      })
 
-      client.on('connect', () => {
-        connected.value = true
-        connecting.value = false
-        agentStore.currentAgentStatus = 'idle'
-        // 将所有agent状态重置为idle
-        agentStore.agents = agentStore.agents.map((agent) => ({
-          ...agent,
-          status: 'idle',
-        }))
-      })
-      client.on('disconnect', () => {
-        connected.value = false
-        connecting.value = false
-        agentStore.currentAgentStatus = 'disconnected'
-        // 将所有agent状态设置为disconnected
-        agentStore.agents = agentStore.agents.map((agent) => ({
-          ...agent,
-          status: 'disconnected',
-        }))
-        console.log('Disconnected from server')
-      })
-      client.on('message', (m: Message) => {
-        addMessage(m)
-        scrollToBottom()
-      })
-
-      client.on('turn_start', (m: Message) => {
-        agentStore.currentAgentStatus = 'running'
-        // 更新特定agent的状态
-        const targetAgentId = m.sender_id || agentStore.currentAgentId
-        agentStore.updateAgentStatus(targetAgentId, 'running')
-      })
-      client.on('turn_end', (m: Message) => {
-        agentStore.currentAgentStatus = 'idle'
-        // 更新特定agent的状态
-        const targetAgentId = m.sender_id || agentStore.currentAgentId
-        agentStore.updateAgentStatus(targetAgentId, 'idle')
-      })
-      client.on('agent_response', (m: Message) => {
-        agentStore.currentAgentStatus = 'running'
-        // 更新特定agent的状态
-        const targetAgentId = m.sender_id || agentStore.currentAgentId
-        agentStore.updateAgentStatus(targetAgentId, 'running')
-      })
-      client.on('tool_call', (m: Message) => {
-        agentStore.currentAgentStatus = 'running'
-        // 更新特定agent的状态
-        const targetAgentId = m.sender_id || agentStore.currentAgentId
-        agentStore.updateAgentStatus(targetAgentId, 'running')
-      })
-
-      client.on('permission_request', (m: Message) => {
-        permissionDialog.visible = true
-        permissionDialog.requestId = m.data?.request_id
-        permissionDialog.senderId = m.sender_id
-        permissionDialog.message = m.data?.message || 'Permission required'
-      })
-
-      await client.connect()
-    } catch (e: any) {
-      connecting.value = false
-      connected.value = false
-      agentStore.currentAgentStatus = 'disconnected'
-      ElMessage.error(e?.message || '连接失败')
-      throw e
+    socketStore.onConnect = () => {
+      agentStore.currentAgentStatus = 'idle'
+      agentStore.agents = agentStore.agents.map((agent) => ({
+        ...agent,
+        status: 'idle',
+      }))
     }
+    socketStore.onDisconnect = () => {
+      agentStore.currentAgentStatus = 'disconnected'
+      agentStore.agents = agentStore.agents.map((agent) => ({
+        ...agent,
+        status: 'disconnected',
+      }))
+      console.log('Disconnected from server')
+    }
+    socketStore.onMessage = (m: Message) => {
+      addMessage(m)
+      scrollToBottom()
+    }
+    socketStore.onTurnStart = (m: Message) => {
+      agentStore.currentAgentStatus = 'running'
+      const targetAgentId = m.sender_id || agentStore.currentAgentId
+      agentStore.updateAgentStatus(targetAgentId, 'running')
+    }
+    socketStore.onTurnEnd = (m: Message) => {
+      agentStore.currentAgentStatus = 'idle'
+      const targetAgentId = m.sender_id || agentStore.currentAgentId
+      agentStore.updateAgentStatus(targetAgentId, 'idle')
+    }
+    socketStore.onAgentResponse = (m: Message) => {
+      agentStore.currentAgentStatus = 'running'
+      const targetAgentId = m.sender_id || agentStore.currentAgentId
+      agentStore.updateAgentStatus(targetAgentId, 'running')
+    }
+    socketStore.onToolCall = (m: Message) => {
+      agentStore.currentAgentStatus = 'running'
+      const targetAgentId = m.sender_id || agentStore.currentAgentId
+      agentStore.updateAgentStatus(targetAgentId, 'running')
+    }
+    socketStore.onPermissionRequest = (m: Message) => {
+      permissionDialog.visible = true
+      permissionDialog.requestId = m.data?.request_id
+      permissionDialog.senderId = m.sender_id
+      permissionDialog.message = m.data?.message || 'Permission required'
+    }
+
+    await socketStore.connect()
   }
 
   const doSubscribe = async () => {
-    if (!client) {
-      ElMessage.warning('请先连接')
-      return
-    }
-    if (!sessionId.value.trim()) {
-      ElMessage.warning('请输入session_id')
-      return
-    }
-    try {
-      await client.subscribe(sessionId.value.trim())
-    } catch (e: any) {
-      ElMessage.error(e?.message || '订阅失败')
-      throw e
-    }
+    await socketStore.subscribe(sessionId.value)
   }
 
   const sendUserMessage = async () => {
-    if (!client) {
-      ElMessage.warning('请先连接')
-      return
-    }
     const text = input.value.trim()
     if (!text) return
 
-    // 解析@mention
     const { targetAgentId, cleanText } = parseMention(text)
 
-    // 检查cleanText是否为空或只包含空格
     if (!cleanText.trim()) {
-      ElMessage.warning('请输入消息内容')
       return
     }
 
@@ -541,7 +480,6 @@ export const useChatStore = defineStore('chat', () => {
 
     const targetAgent = targetAgentId || agentStore.currentAgentId
 
-    // 获取目标agent的名称用于显示
     const targetAgentObj = agentStore.agents.find((a: any) => a.agent_id === targetAgent)
     const displayAgentName = targetAgentObj?.name || targetAgent
 
@@ -559,55 +497,29 @@ export const useChatStore = defineStore('chat', () => {
       },
     } as Message)
 
-    try {
-      await client.sendUserMessage({
-        content: cleanText,
-        receiverId: targetAgent,
-        subscription: sessionId.value,
-      })
-    } catch (e: any) {
-      ElMessage.error(e?.message || '发送失败')
-    }
+    await socketStore.sendUserMessage({
+      content: cleanText,
+      receiverId: targetAgent,
+      subscription: sessionId.value,
+    })
   }
 
   const sendAbort = async () => {
-    if (!client) {
-      ElMessage.warning('请先连接')
-      return
-    }
-
     if (agentStore.currentAgentStatus !== 'running') {
-      ElMessage.info('Agent 未在运行中，无需 abort')
       return
     }
 
-    try {
-      await client.sendCommand({
-        command: 'abort',
-        arguments: {},
-        subscription: sessionId.value,
-      })
-
-      ElMessage.success('Abort 命令已发送')
-    } catch (e: any) {
-      ElMessage.error(e?.message || '发送 abort 失败')
-    }
+    await socketStore.sendAbort(sessionId.value)
   }
 
   const respondPermission = async (granted: boolean) => {
-    if (!client) return
-    try {
-      await client.sendPermissionResponse({
-        granted,
-        requestId: permissionDialog.requestId,
-        receiverId: permissionDialog.senderId || '',
-        subscription: sessionId.value,
-      })
-    } catch (e: any) {
-      ElMessage.error(e?.message || '权限响应失败')
-    } finally {
-      permissionDialog.visible = false
-    }
+    await socketStore.respondPermission({
+      granted,
+      requestId: permissionDialog.requestId,
+      receiverId: permissionDialog.senderId || '',
+      subscription: sessionId.value,
+    })
+    permissionDialog.visible = false
   }
 
   // 清理当前session的状态
@@ -625,17 +537,14 @@ export const useChatStore = defineStore('chat', () => {
 
   const autoConnectAndSubscribe = async () => {
     if (!urlSessionId.value) {
-      ElMessage.info('未提供session_id，请手动输入')
       return
     }
 
-    // 防止重复执行相同的session连接
     if (connectingSession.value && currentSessionId.value === urlSessionId.value) {
       console.log('连接流程已在进行中，跳过')
       return
     }
 
-    // 如果切换到了不同的session，先清理旧状态
     if (currentSessionId.value && currentSessionId.value !== urlSessionId.value) {
       await cleanupSession()
     }
@@ -652,8 +561,6 @@ export const useChatStore = defineStore('chat', () => {
       scrollToBottom()
     } catch (error: any) {
       console.error('自动连接失败:', error)
-      ElMessage.error(`自动连接失败: ${error.message || '未知错误'}`)
-      // 失败时重置状态
       currentSessionId.value = ''
     } finally {
       connectingSession.value = false
@@ -676,13 +583,7 @@ export const useChatStore = defineStore('chat', () => {
 
   const cleanup = () => {
     window.removeEventListener('resize', checkMobile)
-    if (client) {
-      client.disconnect()
-      client = null
-    }
-    // 清理所有状态
-    connected.value = false
-    connecting.value = false
+    socketStore.cleanup()
     connectingSession.value = false
     sessionId.value = ''
     currentSessionId.value = ''
@@ -715,7 +616,6 @@ export const useChatStore = defineStore('chat', () => {
     isMobile,
     urlSessionId,
     permissionDialog,
-    socketConfig,
     messages,
     messageStates,
     pendingChunks,
