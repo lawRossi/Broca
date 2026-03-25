@@ -2,29 +2,20 @@ import { defineStore } from 'pinia'
 import { ref, computed, reactive, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
-import { useUserStore } from '@/stores'
+import { useUserStore, useAgentStore } from '@/stores'
 import { BrocaSocketClient, type Message } from '@/api/brocaSocket'
-import { sessionApi, type Agent as SessionAgent } from '@/api/session'
-
-
-export type AgentStatus = 'idle' | 'running' | 'connecting' | 'disconnected'
-
-// 使用SessionAgent类型
-type Agent = SessionAgent
+import { sessionApi } from '@/api/session'
 
 export const useChatStore = defineStore('chat', () => {
   const route = useRoute()
   const userStore = useUserStore()
+  const agentStore = useAgentStore()
 
   const connected = ref(false)
   const connecting = ref(false)
   const connectingSession = ref(false) // 防止重复执行连接流程
   const sessionId = ref<string>('')
   const currentSessionId = ref('') // 跟踪当前订阅的sessionId
-  const agents = ref<Agent[]>([])
-  const agentId = ref('main_agent')
-  const agentName = ref('Assistant')
-  const agentStatus = ref<AgentStatus>('disconnected')
   const input = ref('')
   const loading = ref(false)
   const loadingMore = ref(false)
@@ -37,9 +28,14 @@ export const useChatStore = defineStore('chat', () => {
   const showRightSidebar = ref(false)
   const isMobile = ref(false)
 
+  // 代理到 agentStore（直接返回ref，模板自动解包）
+  const agents = agentStore.agents
+  const agentId = agentStore.currentAgentId
+  const agentName = agentStore.currentAgentName
+  const agentStatus = agentStore.currentAgentStatus
 
   const urlSessionId = computed(() => {
-    return route.params.session_id as string || route.query.session_id as string || ''
+    return (route.params.session_id as string) || (route.query.session_id as string) || ''
   })
 
   const permissionDialog = reactive({
@@ -57,12 +53,14 @@ export const useChatStore = defineStore('chat', () => {
   })
 
   const messages = ref<Message[]>([])
-  const messageStates = ref<Map<string, { showParameters: boolean; showResult: boolean; showReasoning: boolean }>>(new Map())
+  const messageStates = ref<Map<string, { showParameters: boolean; showResult: boolean; showReasoning: boolean }>>(
+    new Map()
+  )
   const pendingChunks = ref<Map<string, Message[]>>(new Map())
 
   const mergeAgentResponseChunks = (chunks: Message[]) => {
-    const parsedChunks: Array<{content: string, reasoning_content: string, index: number}> = []
-    
+    const parsedChunks: Array<{ content: string; reasoning_content: string; index: number }> = []
+
     for (const chunk of chunks) {
       try {
         const data = JSON.parse(chunk.data?.content || '{}')
@@ -70,17 +68,17 @@ export const useChatStore = defineStore('chat', () => {
           parsedChunks.push({
             content: data.content || '',
             reasoning_content: data.reasoning_content || '',
-            index: data.index || 0
+            index: data.index || 0,
           })
         }
-      } catch (e) {}
+      } catch {}
     }
-    
+
     parsedChunks.sort((a, b) => a.index - b.index)
-    
+
     let mergedContent = ''
     let mergedReasoning = ''
-    
+
     for (const chunk of parsedChunks) {
       mergedContent += chunk.content
       mergedReasoning += chunk.reasoning_content
@@ -89,114 +87,14 @@ export const useChatStore = defineStore('chat', () => {
     return {
       content: mergedContent,
       reasoning_content: mergedReasoning,
-      index: 0
+      index: 0,
     }
   }
 
-  // 更新特定agent的状态
-  const updateAgentStatus = (agentId: string, status: AgentStatus) => {
-    const agentIndex = agents.value.findIndex(a => a.agent_id === agentId)
-    if (agentIndex !== -1) {
-      const agent = agents.value[agentIndex]
-      if (agent) {
-        // 创建新的agent对象以触发响应式更新
-        const updatedAgent = { ...agent, status }
-        agents.value.splice(agentIndex, 1, updatedAgent)
-      }
-    } else {
-      // 如果agent不在列表中，可能是新创建的agent，尝试重新获取agents列表
-      console.log(`Agent ${agentId} not found in list, refreshing agents...`)
-      if (sessionId.value) {
-        fetchSessionAgents(sessionId.value)
-      }
-    }
+  // 解析输入中的@mention - 代理到 agentStore
+  const parseMention = (text: string) => {
+    return agentStore.parseMention(text)
   }
-
-  // 获取session中的所有agents
-  const fetchSessionAgents = async (sessionId: string) => {
-    try {
-      const response = await sessionApi.getSessionAgents(sessionId)
-      // 为每个agent设置默认状态
-      const agentsWithStatus = response.map(agent => ({
-        ...agent,
-        status: (agent.status as AgentStatus) || (connected.value ? 'idle' : 'disconnected')
-      }))
-      agents.value = agentsWithStatus
-      
-      // 设置默认agent：优先选择role为main_agent或main-agent的，否则选择第一个agent
-      const mainAgent = agentsWithStatus.find(agent => agent.role === 'main_agent' || agent.role === 'main-agent')
-      if (mainAgent) {
-        agentId.value = mainAgent.agent_id
-        agentName.value = mainAgent.name || 'Main Agent'
-      } else if (agentsWithStatus.length > 0) {
-        const firstAgent = agentsWithStatus[0]
-        if (firstAgent) {
-          agentId.value = firstAgent.agent_id
-          agentName.value = firstAgent.name || 'Assistant'
-        } else {
-          // 如果没有agent，使用默认值
-          agentId.value = 'main_agent'
-          agentName.value = 'Assistant'
-        }
-      } else {
-        // 如果没有agent，使用默认值
-        agentId.value = 'main_agent'
-        agentName.value = 'Assistant'
-      }
-      
-      agentStatus.value = 'idle'
-    } catch (error: any) {
-      console.error('获取session agents失败:', error)
-      agentName.value = 'Assistant'
-      agentStatus.value = 'disconnected'
-    }
-  }
-
-  // 解析输入中的@mention，返回目标agentId
-  const parseMention = (text: string): { targetAgentId: string | null, cleanText: string } => {
-    // 如果agents列表为空，直接返回
-    if (!agents.value || agents.value.length === 0) {
-      return { targetAgentId: null, cleanText: text }
-    }
-  
-    // 改进的正则表达式，支持中文、字母、数字、下划线和连字符
-    // 匹配 @mention 或 @ mention（允许有空格）
-    const mentionRegex = /@([\w\u4e00-\u9fa5\-]+)(?:\s|$)/
-    const match = text.match(mentionRegex)
-
-    if (match && match[1]) {
-      const mentionName = match[1]
-      const cleanText = text.replace(mentionRegex, '').trim()
-
-      // 查找匹配的agent
-      const targetAgent = agents.value.find(agent => {
-        if (!agent) return false
-        
-        const agentNameLower = agent.name?.toLowerCase() || ''
-        const mentionNameLower = mentionName.toLowerCase()
-        
-        // 检查name是否包含mentionName（支持部分匹配）
-        if (agentNameLower && agentNameLower === mentionNameLower) {
-          return true
-        }
-        return false
-      })
-            
-      if (targetAgent) {
-        return { targetAgentId: targetAgent.agent_id, cleanText }
-      } else {
-        console.log('未找到匹配的agent')
-      }
-    }
-
-    // 如果文本只包含@符号，返回空字符串作为cleanText
-    if (text.trim() === '@') {
-      return { targetAgentId: null, cleanText: '' }
-    }
-
-    return { targetAgentId: null, cleanText: text.trim() }
-  }
-
 
   const statusText = computed(() => {
     if (connecting.value) return 'connecting'
@@ -234,13 +132,13 @@ export const useChatStore = defineStore('chat', () => {
     if (currentState) {
       messageStates.value.set(messageId, {
         ...currentState,
-        showParameters: !currentState.showParameters
+        showParameters: !currentState.showParameters,
       })
     } else {
       messageStates.value.set(messageId, {
         showParameters: true,
         showResult: false,
-        showReasoning: false
+        showReasoning: false,
       })
     }
   }
@@ -250,13 +148,13 @@ export const useChatStore = defineStore('chat', () => {
     if (currentState) {
       messageStates.value.set(messageId, {
         ...currentState,
-        showResult: !currentState.showResult
+        showResult: !currentState.showResult,
       })
     } else {
       messageStates.value.set(messageId, {
         showParameters: false,
         showResult: true,
-        showReasoning: false
+        showReasoning: false,
       })
     }
   }
@@ -266,13 +164,13 @@ export const useChatStore = defineStore('chat', () => {
     if (currentState) {
       messageStates.value.set(messageId, {
         ...currentState,
-        showReasoning: !currentState.showReasoning
+        showReasoning: !currentState.showReasoning,
       })
     } else {
       messageStates.value.set(messageId, {
         showParameters: false,
         showResult: false,
-        showReasoning: true
+        showReasoning: true,
       })
     }
   }
@@ -280,14 +178,25 @@ export const useChatStore = defineStore('chat', () => {
   // 处理消息，决定是否显示
   const processMessage = (msg: any): Message | null => {
     const message = msg as Message
-    
+
     // 过滤不需要显示的消息类型
     const filteredTypes = [
-      'turn_start', 'turn_end', 'command', 'permission_request', 'permission_response',
-      'subscribe', 'unsubscribe', 'connect', 'disconnect',
-      'ping', 'pong', 'task_start', 'task_complete', 'task_error'
+      'turn_start',
+      'turn_end',
+      'command',
+      'permission_request',
+      'permission_response',
+      'subscribe',
+      'unsubscribe',
+      'connect',
+      'disconnect',
+      'ping',
+      'pong',
+      'task_start',
+      'task_complete',
+      'task_error',
     ]
-    
+
     if (filteredTypes.includes(message.message_type)) {
       return null
     }
@@ -300,19 +209,21 @@ export const useChatStore = defineStore('chat', () => {
 
     if (message.message_type === 'agent_response' && typeof contentStr === 'string') {
       const parsed = JSON.parse(contentStr)
-      if((parsed.content === null || parsed.content === undefined || parsed.content === '')&&
-        (parsed.reasoning_content === null || parsed.reasoning_content === undefined || parsed.reasoning_content === '')) {
+      if (
+        (parsed.content === null || parsed.content === undefined || parsed.content === '') &&
+        (parsed.reasoning_content === null || parsed.reasoning_content === undefined || parsed.reasoning_content === '')
+      ) {
         return null
       }
     }
 
-    if (typeof contentStr === 'string' && (
-      contentStr.toLowerCase().includes('connected to') || 
-      contentStr.toLowerCase().includes('subscribed to')
-    )) {
+    if (
+      typeof contentStr === 'string' &&
+      (contentStr.toLowerCase().includes('connected to') || contentStr.toLowerCase().includes('subscribed to'))
+    ) {
       return null
     }
-    
+
     return message
   }
 
@@ -321,31 +232,31 @@ export const useChatStore = defineStore('chat', () => {
     // 如果是TOOL_CALL消息，检查是否有相同tool_call_id的消息需要合并
     if (message.message_type === 'tool_call' && message.data?.tool_call_id) {
       const toolCallId = message.data.tool_call_id
-      
+
       // 查找是否已经存在相同tool_call_id的消息
-      const existingIndex = messages.value.findIndex(msg => 
-        msg.message_type === 'tool_call' && 
-        msg.data?.tool_call_id === toolCallId
+      const existingIndex = messages.value.findIndex(
+        (msg) => msg.message_type === 'tool_call' && msg.data?.tool_call_id === toolCallId
       )
-      
+
       if (existingIndex !== -1) {
         // 合并消息：直接更新现有消息的data字段
         // 这样可以保持Vue的响应性
         const existingMessage = messages.value[existingIndex]
-        
+        if (!existingMessage) return message
+
         // 合并data字段
         const mergedData = {
           ...existingMessage.data,
-          ...message.data
+          ...message.data,
         }
 
         existingMessage.data = mergedData
-        
+
         // 更新时间戳
         if (message.timestamp) {
           existingMessage.timestamp = message.timestamp
         }
-        
+
         return existingMessage
       } else {
         // 没有相同tool_call_id的消息，直接添加
@@ -355,7 +266,7 @@ export const useChatStore = defineStore('chat', () => {
           messageStates.value.set(message.message_id, {
             showParameters: false,
             showResult: false,
-            showReasoning: false
+            showReasoning: false,
           })
         }
         return message
@@ -368,44 +279,48 @@ export const useChatStore = defineStore('chat', () => {
         pendingChunks.value.set(msgId, [])
       }
       pendingChunks.value.get(msgId)!.push(message)
-      
+
       // 合并内容
       const chunks = pendingChunks.value.get(msgId)!
       const merged = mergeAgentResponseChunks(chunks)
-      
+
       // 检查是否已存在该message_id的消息
-      const existingIndex = messages.value.findIndex(msg => 
-        msg.message_type === 'agent_response' && 
-        msg.message_id === msgId
+      const existingIndex = messages.value.findIndex(
+        (msg) => msg.message_type === 'agent_response' && msg.message_id === msgId
       )
-      
+
       if (existingIndex !== -1) {
         const existingMessage = messages.value[existingIndex]
+        if (!existingMessage) {
+          const copy = JSON.parse(JSON.stringify(message))
+          messages.value.push(copy)
+          return message
+        }
         existingMessage.data = {
           ...existingMessage.data,
-          content: JSON.stringify(merged, null, 0)
+          content: JSON.stringify(merged, null, 0),
         }
-        
+
         // 更新时间戳
         if (message.timestamp) {
           existingMessage.timestamp = message.timestamp
         }
-        
+
         return existingMessage
       } else {
         // 首次收到，加入消息的拷贝
         const copy = JSON.parse(JSON.stringify(message))
         messages.value.push(copy)
       }
-      
+
       if (!messageStates.value.has(message.message_id)) {
         messageStates.value.set(message.message_id, {
           showParameters: false,
           showResult: false,
-          showReasoning: false
+          showReasoning: false,
         })
       }
-      
+
       return message
     } else {
       messages.value.push(message)
@@ -414,7 +329,7 @@ export const useChatStore = defineStore('chat', () => {
         messageStates.value.set(message.message_id, {
           showParameters: false,
           showResult: false,
-          showReasoning: false
+          showReasoning: false,
         })
       }
       return message
@@ -422,7 +337,6 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const addMessage = (m: Message) => {
-    
     const processed = processMessage(m)
     if (processed) {
       addMessageToList(processed)
@@ -436,14 +350,14 @@ export const useChatStore = defineStore('chat', () => {
       timestamp: new Date().toISOString(),
       role: 'system',
       sender_id: 'system',
-      data: { content }
+      data: { content },
     }
     addMessageToList(msg)
   }
 
   const loadHistory = async (sessionId: string, isLoadMore: boolean = false) => {
     const limit = 50
-  
+
     if (isLoadMore) {
       if (loadingMore.value || !hasMoreHistory.value) return
       loadingMore.value = true
@@ -467,7 +381,7 @@ export const useChatStore = defineStore('chat', () => {
 
       if (response.messages) {
         const allMessages = response.messages
-        
+
         const historyMessages: Message[] = []
 
         allMessages.forEach((msg: any) => {
@@ -481,16 +395,16 @@ export const useChatStore = defineStore('chat', () => {
           const combinedMessages = [...historyMessages, ...messages.value]
           messages.value = []
           messageStates.value.clear()
-          
+
           // 重新添加所有消息，确保TOOL_CALL消息正确合并
-          combinedMessages.forEach(msg => {
+          combinedMessages.forEach((msg) => {
             addMessageToList(msg)
           })
         } else {
           // 对于首次加载，直接设置消息
           messages.value = []
           messageStates.value.clear()
-          historyMessages.forEach(msg => {
+          historyMessages.forEach((msg) => {
             addMessageToList(msg)
           })
         }
@@ -512,7 +426,7 @@ export const useChatStore = defineStore('chat', () => {
   const doConnect = async () => {
     if (connected.value || connecting.value) return
     connecting.value = true
-    agentStatus.value = 'connecting'
+    agentStore.currentAgentStatus = 'connecting'
     try {
       client = new BrocaSocketClient({
         serverUrl: socketConfig.serverUrl,
@@ -524,21 +438,21 @@ export const useChatStore = defineStore('chat', () => {
       client.on('connect', () => {
         connected.value = true
         connecting.value = false
-        agentStatus.value = 'idle'
+        agentStore.currentAgentStatus = 'idle'
         // 将所有agent状态重置为idle
-        agents.value = agents.value.map(agent => ({
+        agentStore.agents = agentStore.agents.map((agent) => ({
           ...agent,
-          status: 'idle'
+          status: 'idle',
         }))
       })
       client.on('disconnect', () => {
         connected.value = false
         connecting.value = false
-        agentStatus.value = 'disconnected'
+        agentStore.currentAgentStatus = 'disconnected'
         // 将所有agent状态设置为disconnected
-        agents.value = agents.value.map(agent => ({
+        agentStore.agents = agentStore.agents.map((agent) => ({
           ...agent,
-          status: 'disconnected'
+          status: 'disconnected',
         }))
         console.log('Disconnected from server')
       })
@@ -548,28 +462,28 @@ export const useChatStore = defineStore('chat', () => {
       })
 
       client.on('turn_start', (m: Message) => {
-        agentStatus.value = 'running'
+        agentStore.currentAgentStatus = 'running'
         // 更新特定agent的状态
-        const targetAgentId = m.sender_id || agentId.value
-        updateAgentStatus(targetAgentId, 'running')
+        const targetAgentId = m.sender_id || agentStore.currentAgentId
+        agentStore.updateAgentStatus(targetAgentId, 'running')
       })
       client.on('turn_end', (m: Message) => {
-        agentStatus.value = 'idle'
+        agentStore.currentAgentStatus = 'idle'
         // 更新特定agent的状态
-        const targetAgentId = m.sender_id || agentId.value
-        updateAgentStatus(targetAgentId, 'idle')
+        const targetAgentId = m.sender_id || agentStore.currentAgentId
+        agentStore.updateAgentStatus(targetAgentId, 'idle')
       })
       client.on('agent_response', (m: Message) => {
-        agentStatus.value = 'running'
+        agentStore.currentAgentStatus = 'running'
         // 更新特定agent的状态
-        const targetAgentId = m.sender_id || agentId.value
-        updateAgentStatus(targetAgentId, 'running')
+        const targetAgentId = m.sender_id || agentStore.currentAgentId
+        agentStore.updateAgentStatus(targetAgentId, 'running')
       })
       client.on('tool_call', (m: Message) => {
-        agentStatus.value = 'running'
+        agentStore.currentAgentStatus = 'running'
         // 更新特定agent的状态
-        const targetAgentId = m.sender_id || agentId.value
-        updateAgentStatus(targetAgentId, 'running')
+        const targetAgentId = m.sender_id || agentStore.currentAgentId
+        agentStore.updateAgentStatus(targetAgentId, 'running')
       })
 
       client.on('permission_request', (m: Message) => {
@@ -583,7 +497,7 @@ export const useChatStore = defineStore('chat', () => {
     } catch (e: any) {
       connecting.value = false
       connected.value = false
-      agentStatus.value = 'disconnected'
+      agentStore.currentAgentStatus = 'disconnected'
       ElMessage.error(e?.message || '连接失败')
       throw e
     }
@@ -616,7 +530,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // 解析@mention
     const { targetAgentId, cleanText } = parseMention(text)
-    
+
     // 检查cleanText是否为空或只包含空格
     if (!cleanText.trim()) {
       ElMessage.warning('请输入消息内容')
@@ -625,12 +539,12 @@ export const useChatStore = defineStore('chat', () => {
 
     input.value = ''
 
-    const targetAgent = targetAgentId || agentId.value
+    const targetAgent = targetAgentId || agentStore.currentAgentId
 
     // 获取目标agent的名称用于显示
-    const targetAgentObj = agents.value.find(a => a.agent_id === targetAgent)
+    const targetAgentObj = agentStore.agents.find((a: any) => a.agent_id === targetAgent)
     const displayAgentName = targetAgentObj?.name || targetAgent
-  
+
     addMessage({
       message_id: `user_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -639,10 +553,10 @@ export const useChatStore = defineStore('chat', () => {
       sender_id: 'user',
       receiver_id: targetAgent,
       subscription: sessionId.value,
-      data: { 
+      data: {
         content: cleanText,
-        mention: targetAgentId ? displayAgentName : undefined
-      }
+        mention: targetAgentId ? displayAgentName : undefined,
+      },
     } as Message)
 
     try {
@@ -662,7 +576,7 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
-    if (agentStatus.value !== 'running') {
+    if (agentStore.currentAgentStatus !== 'running') {
       ElMessage.info('Agent 未在运行中，无需 abort')
       return
     }
@@ -671,7 +585,7 @@ export const useChatStore = defineStore('chat', () => {
       await client.sendCommand({
         command: 'abort',
         arguments: {},
-        subscription: sessionId.value
+        subscription: sessionId.value,
       })
 
       ElMessage.success('Abort 命令已发送')
@@ -702,10 +616,10 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
     messageStates.value.clear()
     pendingChunks.value.clear()
-    agents.value = []
-    agentId.value = 'main_agent'
-    agentName.value = 'Assistant'
-    agentStatus.value = 'disconnected'
+    agentStore.agents = []
+    agentStore.currentAgentId = 'main_agent'
+    agentStore.currentAgentName = 'Assistant'
+    agentStore.currentAgentStatus = 'disconnected'
     currentSessionId.value = ''
   }
 
@@ -731,7 +645,7 @@ export const useChatStore = defineStore('chat', () => {
     sessionId.value = urlSessionId.value
 
     try {
-      await fetchSessionAgents(urlSessionId.value)
+      await agentStore.fetchSessionAgents(urlSessionId.value, connected.value)
       await doConnect()
       await doSubscribe()
       await loadHistory(urlSessionId.value)
@@ -748,13 +662,13 @@ export const useChatStore = defineStore('chat', () => {
 
   const init = async () => {
     await userStore.init()
-    
+
     // 检查登录状态
     if (!userStore.isLoggedIn) {
       console.log('用户未登录，无法初始化聊天')
       return
     }
-    
+
     checkMobile()
     window.addEventListener('resize', checkMobile)
     // 不再自动连接，由watch监听urlSessionId变化来触发
@@ -772,10 +686,10 @@ export const useChatStore = defineStore('chat', () => {
     connectingSession.value = false
     sessionId.value = ''
     currentSessionId.value = ''
-    agents.value = []
-    agentId.value = 'main_agent'
-    agentName.value = 'Assistant'
-    agentStatus.value = 'disconnected'
+    agentStore.agents = []
+    agentStore.currentAgentId = 'main_agent'
+    agentStore.currentAgentName = 'Assistant'
+    agentStore.currentAgentStatus = 'disconnected'
     messages.value = []
     messageStates.value.clear()
     pendingChunks.value.clear()
@@ -822,7 +736,6 @@ export const useChatStore = defineStore('chat', () => {
     doConnect,
     doSubscribe,
     loadHistory,
-    fetchSessionAgents,
     parseMention,
     autoConnectAndSubscribe,
     cleanupSession,
