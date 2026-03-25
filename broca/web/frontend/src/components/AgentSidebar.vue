@@ -168,8 +168,8 @@ watch(
   () => chatStore.sessionId,
   (newSessionId) => {
     if (newSessionId) {
-      // 启动自动刷新（30秒间隔）
-      startAutoRefresh(30000)
+      // 启动自动刷新（10秒间隔）
+      startAutoRefresh(10000)
     } else {
       // 停止自动刷新
       stopAutoRefresh()
@@ -179,8 +179,8 @@ watch(
 
 onMounted(() => {
   if (chatStore.sessionId) {
-    // 启动自动刷新（30秒间隔）
-    startAutoRefresh(30000)
+    // 启动自动刷新（10秒间隔）
+    startAutoRefresh(10000)
   }
 })
 
