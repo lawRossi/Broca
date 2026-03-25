@@ -234,8 +234,8 @@ onUnmounted(() => {
     <div class="mt-2 text-xs text-gray-400 flex justify-between">
       <div class="flex items-center gap-2">
         <span class="hidden sm:inline">Press Enter to send</span>
-        <span v-if="chatStore.agents.length > 0" class="text-gray-500">
-          当前session有 {{ chatStore.agents.length }} 个agent
+        <span v-if="agentStore.agents.length > 0" class="text-gray-500">
+          当前session有 {{ agentStore.agents.length }} 个agent
         </span>
       </div>
       <span v-if="!chatStore.connected" class="text-red-500">Not connected</span>

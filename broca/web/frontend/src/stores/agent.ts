@@ -36,16 +36,16 @@ export const useAgentStore = defineStore('agent', () => {
   // 当前选中的 agent 信息（从 chat.ts 移过来的）
   const currentAgentId = ref('main_agent')
   const currentAgentName = ref('Assistant')
-  const currentAgentStatus = ref<AgentStatus>('disconnected')
 
   const setSessionId = (id: string) => {
     sessionId.value = id
   }
 
-  const fetchAgents = async (sessionId?: string) => {
+  const fetchAgents = async (sessionId?: string, isConnected?: boolean) => {
     loading.value = true
     error.value = ''
-
+    console.log(isConnected)
+  
     try {
       if (!sessionId) {
         // 如果没有提供sessionId，清空agents
@@ -53,17 +53,35 @@ export const useAgentStore = defineStore('agent', () => {
         return
       }
 
-      // 使用sessionApi获取session中的agents
+      const originalStatusMap = new Map(agents.value.map((agent) => [agent.agent_id, agent.status]))
       const sessionAgents = await sessionApi.getSessionAgents(sessionId)
 
-      // 转换为Agent类型，添加默认状态
       agents.value = sessionAgents.map((agent) => ({
         ...agent,
-        status: 'idle' as const,
+        status: originalStatusMap.get(agent.agent_id) || (isConnected ? 'idle' : 'disconnected'),
         type: agent.type || 'assistant',
       }))
 
-      if (agents.value.length > 0 && !selectedAgentId.value) {
+      const mainAgent = agents.value.find((agent) => agent.role === 'main_agent' || agent.role === 'main-agent')
+      if (mainAgent) {
+        currentAgentId.value = mainAgent.agent_id
+        currentAgentName.value = mainAgent.name || 'Main Agent'
+      } else if (agents.value.length > 0) {
+        const firstAgent = agents.value[0]
+        if (firstAgent) {
+          currentAgentId.value = firstAgent.agent_id
+          currentAgentName.value = firstAgent.name || 'Assistant'
+        } else {
+          currentAgentId.value = 'main_agent'
+          currentAgentName.value = 'Assistant'
+        }
+      } else {
+        currentAgentId.value = 'main_agent'
+        currentAgentName.value = 'Assistant'
+      }
+
+      // 如果需要设置 selectedAgent（侧边栏场景）且尚未选择
+      if (!selectedAgentId.value && agents.value.length > 0) {
         const firstAgent = agents.value[0]
         if (firstAgent) {
           selectedAgentId.value = firstAgent.agent_id
@@ -78,43 +96,6 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
-  // 从 chat.ts 移过来的：获取session中的所有agents
-  const fetchSessionAgents = async (sid: string, isConnected: boolean = false) => {
-    try {
-      const response = await sessionApi.getSessionAgents(sid)
-      const agentsWithStatus: Agent[] = response.map((agent) => ({
-        ...agent,
-        status: (agent.status as AgentStatus) || (isConnected ? 'idle' : 'disconnected'),
-        type: agent.type || 'assistant',
-      }))
-      agents.value = agentsWithStatus
-
-      const mainAgent = agentsWithStatus.find((agent) => agent.role === 'main_agent' || agent.role === 'main-agent')
-      if (mainAgent) {
-        currentAgentId.value = mainAgent.agent_id
-        currentAgentName.value = mainAgent.name || 'Main Agent'
-      } else if (agentsWithStatus.length > 0) {
-        const firstAgent = agentsWithStatus[0]
-        if (firstAgent) {
-          currentAgentId.value = firstAgent.agent_id
-          currentAgentName.value = firstAgent.name || 'Assistant'
-        } else {
-          currentAgentId.value = 'main_agent'
-          currentAgentName.value = 'Assistant'
-        }
-      } else {
-        currentAgentId.value = 'main_agent'
-        currentAgentName.value = 'Assistant'
-      }
-
-      currentAgentStatus.value = 'idle'
-    } catch (error: any) {
-      console.error('获取session agents失败:', error)
-      currentAgentName.value = 'Assistant'
-      currentAgentStatus.value = 'disconnected'
-    }
-  }
-
   // 从 chat.ts 移过来的：更新特定agent的状态
   const updateAgentStatus = (agentId: string, status: AgentStatus) => {
     const agentIndex = agents.value.findIndex((a) => a.agent_id === agentId)
@@ -123,11 +104,6 @@ export const useAgentStore = defineStore('agent', () => {
       if (agent) {
         const updatedAgent = { ...agent, status }
         agents.value.splice(agentIndex, 1, updatedAgent)
-      }
-    } else {
-      console.log(`Agent ${agentId} not found in list, refreshing agents...`)
-      if (sessionId.value) {
-        fetchSessionAgents(sessionId.value)
       }
     }
   }
@@ -301,12 +277,12 @@ export const useAgentStore = defineStore('agent', () => {
     return typeColors[type] || 'gray'
   }
 
-  const init = async (sessionId?: string) => {
-    if (sessionId) {
-      await fetchAgents(sessionId)
-    }
-    // 不自动获取所有配置，按需获取
-  }
+  // const init = async (sessionId?: string) => {
+  //   if (sessionId) {
+  //     await fetchAgents(sessionId)
+  //   }
+  //   // 不自动获取所有配置，按需获取
+  // }
 
   // 清除缓存
   const clearCache = () => {
@@ -331,13 +307,10 @@ export const useAgentStore = defineStore('agent', () => {
     loading,
     error,
 
-    // 当前选中的 agent 信息（从 chat.ts 移过来）
     currentAgentId,
     currentAgentName,
-    currentAgentStatus,
 
     fetchAgents,
-    fetchSessionAgents,
     fetchAgentConfig,
     fetchAgentConfigs,
     selectAgent,
@@ -349,7 +322,6 @@ export const useAgentStore = defineStore('agent', () => {
     getStatusText,
     getTypeIcon,
     getTypeColor,
-    init,
     clearCache,
   }
 })
