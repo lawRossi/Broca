@@ -206,7 +206,9 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
         <Bell />
       </el-icon>
       <p>暂无定时任务</p>
-      <p class="text-sm mt-1">您可以通过Agent的cron工具创建定时任务</p>
+      <p class="text-sm mt-1">
+        您可以通过Agent的cron工具创建定时任务
+      </p>
     </div>
 
     <!-- 任务列表 -->
@@ -224,8 +226,8 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
           <!-- 选择框 -->
           <el-checkbox
             :model-value="selectedJobs.includes(job.job_id)"
-            @change="(val: boolean) => val ? handleJobSelect(job.job_id) : handleJobDeselect(job.job_id)"
             class="mt-1"
+            @change="(val: boolean) => val ? handleJobSelect(job.job_id) : handleJobDeselect(job.job_id)"
           />
 
           <!-- 任务图标和基本信息 -->
@@ -293,29 +295,29 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
                 :disabled="job.status !== JobStatus.ACTIVE"
                 @click="handleExecute(job)"
               >
-                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg></el-icon>
+                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z" /></svg></el-icon>
               </el-button>
             </el-tooltip>
 
-            <el-tooltip content="暂停" placement="top" v-if="job.status === JobStatus.ACTIVE">
+            <el-tooltip v-if="job.status === JobStatus.ACTIVE" content="暂停" placement="top">
               <el-button
                 size="small"
                 type="warning"
                 text
                 @click="handlePause(job)"
               >
-                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></svg></el-icon>
+                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg></el-icon>
               </el-button>
             </el-tooltip>
 
-            <el-tooltip content="恢复" placement="top" v-if="job.status === JobStatus.PAUSED">
+            <el-tooltip v-if="job.status === JobStatus.PAUSED" content="恢复" placement="top">
               <el-button
                 size="small"
                 type="success"
                 text
                 @click="handleResume(job)"
               >
-                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z"/></svg></el-icon>
+                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z" /></svg></el-icon>
               </el-button>
             </el-tooltip>
 
@@ -326,7 +328,7 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
                 text
                 @click="handleDelete(job)"
               >
-                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z"/></svg></el-icon>
+                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg></el-icon>
               </el-button>
             </el-tooltip>
           </div>

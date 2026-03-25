@@ -132,7 +132,9 @@ onUnmounted(() => {
               <el-icon :size="24" class="text-primary-600">
                 <Folder />
               </el-icon>
-              <h1 class="text-xl font-semibold text-gray-900">File Browser</h1>
+              <h1 class="text-xl font-semibold text-gray-900">
+                File Browser
+              </h1>
             </div>
             <span class="text-sm text-gray-500 hidden sm:inline">
               Browse and manage files
@@ -143,8 +145,8 @@ onUnmounted(() => {
             <el-button
               :icon="House"
               size="small"
-              @click="goHome"
               title="Go Home"
+              @click="goHome"
             >
               <span class="hidden sm:inline">Home</span>
             </el-button>
@@ -163,8 +165,6 @@ onUnmounted(() => {
           @path-change="handlePathChange"
         />
       </div>
-      
-
     </main>
     
     <!-- File Info Dialog -->
@@ -178,17 +178,23 @@ onUnmounted(() => {
         <el-icon class="is-loading text-2xl text-primary-500">
           <House />
         </el-icon>
-        <p class="mt-2 text-gray-600">Loading file information...</p>
+        <p class="mt-2 text-gray-600">
+          Loading file information...
+        </p>
       </div>
       
       <div v-else-if="fileInfo" class="space-y-4">
         <!-- Basic Info -->
         <div class="bg-gray-50 p-4 rounded-lg">
-          <h4 class="font-semibold text-gray-900 mb-3">Basic Information</h4>
+          <h4 class="font-semibold text-gray-900 mb-3">
+            Basic Information
+          </h4>
           <div class="grid grid-cols-2 gap-3 text-sm">
             <div>
               <span class="text-gray-600">Name:</span>
-              <div class="font-medium text-gray-900 mt-1">{{ fileInfo.name }}</div>
+              <div class="font-medium text-gray-900 mt-1">
+                {{ fileInfo.name }}
+              </div>
             </div>
             <div>
               <span class="text-gray-600">Type:</span>
@@ -213,7 +219,9 @@ onUnmounted(() => {
         
         <!-- Timestamps -->
         <div class="bg-gray-50 p-4 rounded-lg">
-          <h4 class="font-semibold text-gray-900 mb-3">Timestamps</h4>
+          <h4 class="font-semibold text-gray-900 mb-3">
+            Timestamps
+          </h4>
           <div class="space-y-2 text-sm">
             <div class="flex justify-between">
               <span class="text-gray-600">Created:</span>
@@ -232,31 +240,43 @@ onUnmounted(() => {
         
         <!-- Permissions -->
         <div class="bg-gray-50 p-4 rounded-lg">
-          <h4 class="font-semibold text-gray-900 mb-3">Permissions</h4>
+          <h4 class="font-semibold text-gray-900 mb-3">
+            Permissions
+          </h4>
           <div class="space-y-3">
             <div class="flex items-center justify-between">
               <div>
-                <div class="font-mono text-lg">{{ fileInfo.permissions }}</div>
-                <div class="text-xs text-gray-500 mt-1">Unix permissions</div>
+                <div class="font-mono text-lg">
+                  {{ fileInfo.permissions }}
+                </div>
+                <div class="text-xs text-gray-500 mt-1">
+                  Unix permissions
+                </div>
               </div>
               <div class="flex items-center gap-4">
                 <div class="text-center">
                   <div class="text-2xl" :class="fileInfo.readable ? 'text-green-600' : 'text-red-600'">
                     {{ fileInfo.readable ? '✓' : '✗' }}
                   </div>
-                  <div class="text-xs text-gray-600 mt-1">Read</div>
+                  <div class="text-xs text-gray-600 mt-1">
+                    Read
+                  </div>
                 </div>
                 <div class="text-center">
                   <div class="text-2xl" :class="fileInfo.writable ? 'text-green-600' : 'text-red-600'">
                     {{ fileInfo.writable ? '✓' : '✗' }}
                   </div>
-                  <div class="text-xs text-gray-600 mt-1">Write</div>
+                  <div class="text-xs text-gray-600 mt-1">
+                    Write
+                  </div>
                 </div>
                 <div class="text-center">
                   <div class="text-2xl" :class="fileInfo.executable ? 'text-green-600' : 'text-red-600'">
                     {{ fileInfo.executable ? '✓' : '✗' }}
                   </div>
-                  <div class="text-xs text-gray-600 mt-1">Execute</div>
+                  <div class="text-xs text-gray-600 mt-1">
+                    Execute
+                  </div>
                 </div>
               </div>
             </div>
@@ -265,23 +285,33 @@ onUnmounted(() => {
         
         <!-- System Info -->
         <div class="bg-gray-50 p-4 rounded-lg">
-          <h4 class="font-semibold text-gray-900 mb-3">System Information</h4>
+          <h4 class="font-semibold text-gray-900 mb-3">
+            System Information
+          </h4>
           <div class="grid grid-cols-2 gap-3 text-sm">
             <div>
               <span class="text-gray-600">Inode:</span>
-              <div class="font-medium text-gray-900 mt-1">{{ fileInfo.inode }}</div>
+              <div class="font-medium text-gray-900 mt-1">
+                {{ fileInfo.inode }}
+              </div>
             </div>
             <div>
               <span class="text-gray-600">Device:</span>
-              <div class="font-medium text-gray-900 mt-1">{{ fileInfo.device }}</div>
+              <div class="font-medium text-gray-900 mt-1">
+                {{ fileInfo.device }}
+              </div>
             </div>
             <div>
               <span class="text-gray-600">Hard Links:</span>
-              <div class="font-medium text-gray-900 mt-1">{{ fileInfo.hard_links }}</div>
+              <div class="font-medium text-gray-900 mt-1">
+                {{ fileInfo.hard_links }}
+              </div>
             </div>
             <div>
               <span class="text-gray-600">Owner (UID/GID):</span>
-              <div class="font-medium text-gray-900 mt-1">{{ fileInfo.uid }}/{{ fileInfo.gid }}</div>
+              <div class="font-medium text-gray-900 mt-1">
+                {{ fileInfo.uid }}/{{ fileInfo.gid }}
+              </div>
             </div>
           </div>
         </div>

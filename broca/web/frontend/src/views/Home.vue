@@ -303,21 +303,39 @@ onMounted(async () => {
           <!-- 功能导航 -->
           <div class="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
             <router-link to="/sessions" class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all">
-              <div class="text-2xl mb-2">💬</div>
-              <h4 class="font-semibold text-gray-900">Chat Sessions</h4>
-              <p class="text-sm text-gray-600 mt-1">Manage your chat sessions</p>
+              <div class="text-2xl mb-2">
+                💬
+              </div>
+              <h4 class="font-semibold text-gray-900">
+                Chat Sessions
+              </h4>
+              <p class="text-sm text-gray-600 mt-1">
+                Manage your chat sessions
+              </p>
             </router-link>
 
             <router-link to="/jobs" class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all">
-              <div class="text-2xl mb-2">⏰</div>
-              <h4 class="font-semibold text-gray-900">Scheduled Jobs</h4>
-              <p class="text-sm text-gray-600 mt-1">Manage scheduled tasks</p>
+              <div class="text-2xl mb-2">
+                ⏰
+              </div>
+              <h4 class="font-semibold text-gray-900">
+                Scheduled Jobs
+              </h4>
+              <p class="text-sm text-gray-600 mt-1">
+                Manage scheduled tasks
+              </p>
             </router-link>
 
             <router-link to="/files" class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all">
-              <div class="text-2xl mb-2">📁</div>
-              <h4 class="font-semibold text-gray-900">File Browser</h4>
-              <p class="text-sm text-gray-600 mt-1">Browse and manage files</p>
+              <div class="text-2xl mb-2">
+                📁
+              </div>
+              <h4 class="font-semibold text-gray-900">
+                File Browser
+              </h4>
+              <p class="text-sm text-gray-600 mt-1">
+                Browse and manage files
+              </p>
             </router-link>
           </div>
 

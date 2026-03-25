@@ -270,7 +270,9 @@ const handleClose = () => {
         <div class="flex items-center gap-3 mb-4">
           <span class="text-2xl">{{ getJobTypeInfo(jobDetail.job.job_type).icon }}</span>
           <div class="flex-1">
-            <h2 class="text-lg font-bold text-gray-900">{{ jobDetail.job.name }}</h2>
+            <h2 class="text-lg font-bold text-gray-900">
+              {{ jobDetail.job.name }}
+            </h2>
             <div class="flex items-center gap-2 mt-1">
               <el-tag
                 :type="getStatusType(jobDetail.job.status)"
@@ -293,7 +295,9 @@ const handleClose = () => {
 
         <!-- 触发器配置 -->
         <div class="mb-3">
-          <div class="text-sm font-medium text-gray-700 mb-1">触发器配置</div>
+          <div class="text-sm font-medium text-gray-700 mb-1">
+            触发器配置
+          </div>
           <div class="text-sm text-gray-600 bg-white p-3 rounded border">
             {{ formatTriggerConfig(jobDetail.job.trigger_type, jobDetail.job.trigger_config) }}
           </div>
@@ -301,7 +305,9 @@ const handleClose = () => {
 
         <!-- 执行内容 -->
         <div class="mb-3">
-          <div class="text-sm font-medium text-gray-700 mb-1">执行内容</div>
+          <div class="text-sm font-medium text-gray-700 mb-1">
+            执行内容
+          </div>
           <div class="text-sm text-gray-600 bg-white p-3 rounded border whitespace-pre-wrap">
             {{ jobDetail.job.content }}
           </div>
@@ -369,7 +375,9 @@ const handleClose = () => {
       <!-- 执行历史 -->
       <div>
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold text-gray-900">执行历史</h3>
+          <h3 class="text-base font-semibold text-gray-900">
+            执行历史
+          </h3>
           <el-button
             v-if="jobDetail.executions.length > 5 && !showAllExecutions"
             type="primary"

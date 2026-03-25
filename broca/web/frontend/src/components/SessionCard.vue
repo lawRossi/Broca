@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { Delete, FolderOpened, ArrowRight, Calendar } from '@element-plus/icons-vue'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { Delete, FolderOpened, ArrowRight, Calendar, Bell } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { formatBeijingTime } from '@/utils/time'
 import type { Session } from '@/api/session'
 
@@ -10,6 +10,7 @@ const router = useRouter()
 interface Props {
   session: Session
   isSelected: boolean
+  jobCount?: number
   showActions?: boolean
 }
 
@@ -20,7 +21,8 @@ interface Emits {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  showActions: true
+  showActions: true,
+  jobCount: 0
 })
 
 const emit = defineEmits<Emits>()
@@ -89,24 +91,19 @@ const handleBrowseFiles = (event: Event) => {
 }
 
 // 删除点击
-const handleDelete = async (event: Event) => {
+const handleDelete = (event: Event) => {
   event.stopPropagation()
   emit('deselect', props.session.session_id)
-  
-  try {
-    await ElMessageBox.confirm(
-      `确定要删除会话 "${props.session.description || '无描述'}" 吗？`,
-      '删除确认',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'warning'
-      }
-    )
-    emit('delete', props.session)
-  } catch {
-    // 用户取消
-  }
+  emit('delete', props.session)
+}
+
+// 查看定时任务
+const handleViewJobs = (event: Event) => {
+  event.stopPropagation()
+  router.push({
+    path: '/jobs',
+    query: { session_id: props.session.session_id }
+  })
 }
 </script>
 
@@ -148,7 +145,9 @@ const handleDelete = async (event: Event) => {
     <!-- 底部：创建时间、操作按钮 -->
     <div class="flex items-center justify-between text-sm text-gray-500">
       <div class="flex items-center gap-1">
-        <el-icon class="text-xs"><Calendar /></el-icon>
+        <el-icon class="text-xs">
+          <Calendar />
+        </el-icon>
         <span>{{ formatBeijingTime(session.created_at).split(' ')[0] }}</span>
       </div>
 
@@ -159,11 +158,32 @@ const handleDelete = async (event: Event) => {
           type="primary"
           size="small"
           plain
-          @click.stop="handleBrowseFiles"
           :title="`浏览工作空间: ${session.workspace}`"
+          @click.stop="handleBrowseFiles"
         >
-          <el-icon class="mr-1"><FolderOpened /></el-icon>
+          <el-icon class="mr-1">
+            <FolderOpened />
+          </el-icon>
           文件
+        </el-button>
+        <el-button
+          type="info"
+          size="small"
+          plain
+          :title="`查看定时任务${jobCount ? ` (${jobCount})` : ''}`"
+          @click.stop="handleViewJobs"
+        >
+          <el-icon class="mr-1">
+            <Bell />
+          </el-icon>
+          任务
+          <el-badge
+            v-if="jobCount && jobCount > 0"
+            :value="jobCount"
+            class="ml-1"
+            type="info"
+            is-dot
+          />
         </el-button>
         <el-button
           type="danger"
@@ -171,13 +191,17 @@ const handleDelete = async (event: Event) => {
           plain
           @click.stop="handleDelete"
         >
-          <el-icon class="mr-1"><Delete /></el-icon>
+          <el-icon class="mr-1">
+            <Delete />
+          </el-icon>
           删除
         </el-button>
       </div>
 
       <!-- 桌面端显示箭头 -->
-      <el-icon v-else class="text-gray-400"><ArrowRight /></el-icon>
+      <el-icon v-else class="text-gray-400">
+        <ArrowRight />
+      </el-icon>
     </div>
   </div>
 </template>

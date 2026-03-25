@@ -190,11 +190,11 @@ onUnmounted(() => {
         <el-input
           v-model="chatStore.input"
           placeholder="Type message... 使用 @ 指定agent"
-          @keyup.enter="chatStore.sendUserMessage"
-          @keydown="handleKeyDown"
           :disabled="!chatStore.connected"
           :size="chatStore.isMobile ? 'default' : 'large'"
           clearable
+          @keyup.enter="chatStore.sendUserMessage"
+          @keydown="handleKeyDown"
         />
 
         <!-- @mention 建议列表 -->
@@ -222,9 +222,9 @@ onUnmounted(() => {
 
       <el-button
         type="primary"
-        @click="chatStore.sendUserMessage"
         :disabled="!chatStore.connected || !canSendMessage"
         :size="chatStore.isMobile ? 'default' : 'large'"
+        @click="chatStore.sendUserMessage"
       >
         <span class="hidden sm:inline">Send</span>
         <span class="sm:hidden">➤</span>

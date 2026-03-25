@@ -245,8 +245,8 @@ const getReasoningContent = (message: Message) => {
         <el-button
           size="small"
           type="default"
-          @click="chatStore.toggleReasoning(message.message_id)"
           class="!text-amber-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
+          @click="chatStore.toggleReasoning(message.message_id)"
         >
           <span class="flex items-center gap-1">
             <span>{{ getShowReasoning(message.message_id) ? '▼' : '▶' }}</span>
@@ -267,8 +267,7 @@ const getReasoningContent = (message: Message) => {
       <pre
         class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
         :class="getContentClass(message)"
-        >{{ getContent(message) }}</pre
-      >
+      >{{ getContent(message) }}</pre>
 
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
         <!-- 参数展示 -->
@@ -278,15 +277,17 @@ const getReasoningContent = (message: Message) => {
             v-if="!isTodoManagement(message)"
             size="small"
             type="default"
-            @click="chatStore.toggleToolParameters(message.message_id)"
             class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
+            @click="chatStore.toggleToolParameters(message.message_id)"
           >
             {{ getShowParameters(message.message_id) ? '隐藏参数' : '查看参数' }}
           </el-button>
 
           <!-- 参数内容：todo_management默认展开，其他工具根据状态 -->
           <div v-if="shouldExpandParameters(message)" class="mt-1 p-2 bg-purple-100 rounded border border-purple-200">
-            <div class="text-xs font-semibold text-purple-700 mb-1">参数:</div>
+            <div class="text-xs font-semibold text-purple-700 mb-1">
+              参数:
+            </div>
 
             <!-- 特殊处理todo_management的todos列表 -->
             <div v-if="isTodoManagement(message) && getTodos(message)" class="bg-white p-2 rounded border">
@@ -297,9 +298,11 @@ const getReasoningContent = (message: Message) => {
                     :checked="todo.status === 'completed'"
                     disabled
                     class="mt-1 w-4 h-4 text-blue-600 rounded border-gray-300"
-                  />
+                  >
                   <div class="flex-1">
-                    <div class="text-sm font-medium text-gray-800">{{ todo.name }}</div>
+                    <div class="text-sm font-medium text-gray-800">
+                      {{ todo.name }}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -309,8 +312,7 @@ const getReasoningContent = (message: Message) => {
             <pre
               v-else
               class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
-              >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre
-            >
+            >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre>
           </div>
         </div>
 
@@ -319,14 +321,16 @@ const getReasoningContent = (message: Message) => {
           <el-button
             size="small"
             type="default"
-            @click="chatStore.toggleToolResult(message.message_id)"
             class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
+            @click="chatStore.toggleToolResult(message.message_id)"
           >
             {{ getShowResult(message.message_id) ? '隐藏结果' : '查看结果' }}
           </el-button>
 
           <div v-if="getShowResult(message.message_id)" class="mt-1 p-2 bg-green-50 rounded border border-green-200">
-            <div class="text-xs font-semibold text-green-700 mb-1">结果:</div>
+            <div class="text-xs font-semibold text-green-700 mb-1">
+              结果:
+            </div>
             <pre class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border">{{
               typeof message.data.result === 'string'
                 ? message.data.result

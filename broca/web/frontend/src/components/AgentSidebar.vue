@@ -205,13 +205,17 @@ onUnmounted(() => {
       class="flex justify-between items-center lg:hidden mb-4"
     >
       <span class="text-sm font-semibold text-gray-700">Session Agents</span>
-      <el-button size="small" @click="chatStore.showLeftSidebar = false">✕</el-button>
+      <el-button size="small" @click="chatStore.showLeftSidebar = false">
+        ✕
+      </el-button>
     </div>
 
     <!-- Agent面板标题 -->
     <div class="flex items-center justify-between mb-2">
       <div class="flex items-center gap-2">
-        <h3 class="text-sm font-semibold text-gray-900">Session Agents</h3>
+        <h3 class="text-sm font-semibold text-gray-900">
+          Session Agents
+        </h3>
         <el-tooltip content="点击Agent查看详情，使用 @agent名称 发送消息给指定agent" placement="top">
           <el-icon :size="14" class="text-gray-400 cursor-help">
             <InfoFilled />
@@ -219,7 +223,7 @@ onUnmounted(() => {
         </el-tooltip>
         <el-tooltip v-if="autoRefreshInterval" content="自动刷新已开启 (30秒)" placement="top">
           <div class="flex items-center gap-1">
-            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             <span class="text-[10px] text-gray-500">自动</span>
           </div>
         </el-tooltip>
@@ -228,9 +232,9 @@ onUnmounted(() => {
         size="small"
         :icon="Refresh"
         :loading="loading"
-        @click="refreshAgents"
         class="!p-1 !h-6 !w-6"
         :disabled="!chatStore.sessionId"
+        @click="refreshAgents"
       />
     </div>
 
@@ -263,8 +267,12 @@ onUnmounted(() => {
               </el-icon>
             </div>
             <div class="min-w-0 flex-1">
-              <div class="text-sm font-semibold text-gray-900 truncate">{{ agent.name }}</div>
-              <div class="text-xs text-gray-500">{{ agent.role || '未指定' }}</div>
+              <div class="text-sm font-semibold text-gray-900 truncate">
+                {{ agent.name }}
+              </div>
+              <div class="text-xs text-gray-500">
+                {{ agent.role || '未指定' }}
+              </div>
             </div>
           </div>
           <div class="flex items-center gap-1">
@@ -290,9 +298,9 @@ onUnmounted(() => {
                 type="danger"
                 size="small"
                 :icon="CircleClose"
-                @click.stop="chatStore.sendAbort(agent.agent_id)"
                 class="!px-2 !py-1 !h-7 !w-auto min-w-[32px] border-0 bg-red-500 hover:bg-red-600 text-white shadow-sm hover:shadow transition-all duration-200 transform hover:scale-105 active:scale-95"
                 title="中断此Agent"
+                @click.stop="chatStore.sendAbort(agent.agent_id)"
               >
                 <span class="text-xs font-medium">停止</span>
               </el-button>
@@ -322,7 +330,7 @@ onUnmounted(() => {
             </div>
 
             <!-- 上下文长度 -->
-            <div class="flex items-center gap-1.5" v-if="agent.last_context_length !== undefined">
+            <div v-if="agent.last_context_length !== undefined" class="flex items-center gap-1.5">
               <div class="p-1 bg-purple-100 rounded">
                 <el-icon :size="12" class="text-purple-600">
                   <Document />
@@ -371,7 +379,9 @@ onUnmounted(() => {
           <User />
         </el-icon>
         <p>暂无Agent</p>
-        <p class="text-xs mt-1" v-if="!chatStore.sessionId">请先进入一个会话</p>
+        <p v-if="!chatStore.sessionId" class="text-xs mt-1">
+          请先进入一个会话
+        </p>
       </div>
     </div>
   </div>
@@ -386,8 +396,12 @@ onUnmounted(() => {
   >
     <!-- 刷新配置按钮 -->
     <div v-if="selectedAgent" class="flex items-center gap-2 mb-4">
-      <el-button size="small" :icon="Refresh" @click="refreshConfig" :loading="configLoading"> 刷新配置 </el-button>
-      <el-tag v-if="selectedAgentConfig" size="small" type="success"> 已加载 </el-tag>
+      <el-button size="small" :icon="Refresh" :loading="configLoading" @click="refreshConfig">
+        刷新配置
+      </el-button>
+      <el-tag v-if="selectedAgentConfig" size="small" type="success">
+        已加载
+      </el-tag>
     </div>
 
     <!-- 加载状态 -->
@@ -396,7 +410,9 @@ onUnmounted(() => {
         <Loading />
       </el-icon>
       <p>正在获取配置信息...</p>
-      <p class="text-xs mt-1">请稍候</p>
+      <p class="text-xs mt-1">
+        请稍候
+      </p>
     </div>
 
     <!-- JSON配置信息展示 -->
@@ -461,14 +477,20 @@ onUnmounted(() => {
         <Setting />
       </el-icon>
       <p>暂无配置信息</p>
-      <p class="text-xs mt-1">请选择一个Agent查看配置</p>
+      <p class="text-xs mt-1">
+        请选择一个Agent查看配置
+      </p>
     </div>
 
     <!-- 弹窗底部按钮 -->
     <template #footer>
       <div class="flex justify-end gap-2">
-        <el-button size="small" @click="closeConfigDialog">关闭</el-button>
-        <el-button type="primary" size="small" @click="sendMessageToAgent"> 发送消息给此Agent </el-button>
+        <el-button size="small" @click="closeConfigDialog">
+          关闭
+        </el-button>
+        <el-button type="primary" size="small" @click="sendMessageToAgent">
+          发送消息给此Agent
+        </el-button>
       </div>
     </template>
   </el-dialog>
