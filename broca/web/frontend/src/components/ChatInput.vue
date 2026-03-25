@@ -219,16 +219,7 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <el-button
-        v-if="chatStore.agentStatus === 'running'"
-        type="danger"
-        @click="chatStore.sendAbort"
-        :size="chatStore.isMobile ? 'default' : 'large'"
-        title="Abort current operation"
-      >
-        <span class="hidden sm:inline">Abort</span>
-        <span class="sm:hidden">⏹</span>
-      </el-button>
+
       <el-button
         type="primary"
         @click="chatStore.sendUserMessage"

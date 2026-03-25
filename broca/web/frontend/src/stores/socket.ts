@@ -127,7 +127,7 @@ export const useSocketStore = defineStore('socket', () => {
     }
   }
 
-  const sendAbort = async (subscription?: string) => {
+  const sendAbort = async (params: { subscription?: string; receiverId?: string }) => {
     if (!client) {
       ElMessage.warning('请先连接')
       return
@@ -137,7 +137,8 @@ export const useSocketStore = defineStore('socket', () => {
       await client.sendCommand({
         command: 'abort',
         arguments: {},
-        subscription,
+        subscription: params.subscription,
+        receiverId: params.receiverId,
       })
       ElMessage.success('Abort 命令已发送')
     } catch (e: any) {

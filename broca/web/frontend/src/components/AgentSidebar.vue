@@ -267,16 +267,37 @@ onUnmounted(() => {
               <div class="text-xs text-gray-500">{{ agent.role || '未指定' }}</div>
             </div>
           </div>
-          <el-tag
-            size="small"
-            :type="(agent.status ? statusColors[agent.status] : 'info') as any"
-            class="!text-xs !px-2 !py-0 !h-5"
-          >
-            <el-icon v-if="agent.status && agent.status !== 'disconnected'" :size="10" class="mr-1 animate-pulse">
-              <component :is="getStatusIcon(agent.status)" />
-            </el-icon>
-            {{ getStatusText(agent.status || 'disconnected') }}
-          </el-tag>
+          <div class="flex items-center gap-1">
+            <el-tag
+              size="small"
+              :type="(agent.status ? statusColors[agent.status] : 'info') as any"
+              class="!text-xs !px-2 !py-0 !h-5"
+            >
+              <el-icon v-if="agent.status && agent.status !== 'disconnected'" :size="10" class="mr-1 animate-pulse">
+                <component :is="getStatusIcon(agent.status)" />
+              </el-icon>
+              {{ getStatusText(agent.status || 'disconnected') }}
+            </el-tag>
+            <!-- Abort 按钮：仅当agent状态为running时显示 -->
+            <!-- Abort 按钮：仅当agent状态为running时显示 -->
+            <el-tooltip
+              v-if="agent.status === 'running'"
+              content="中断此Agent"
+              placement="top"
+              :show-after="300"
+            >
+              <el-button
+                type="danger"
+                size="small"
+                :icon="CircleClose"
+                @click.stop="chatStore.sendAbort(agent.agent_id)"
+                class="!px-2 !py-1 !h-7 !w-auto min-w-[32px] border-0 bg-red-500 hover:bg-red-600 text-white shadow-sm hover:shadow transition-all duration-200 transform hover:scale-105 active:scale-95"
+                title="中断此Agent"
+              >
+                <span class="text-xs font-medium">停止</span>
+              </el-button>
+            </el-tooltip>
+          </div>
         </div>
 
         <!-- 描述 -->
