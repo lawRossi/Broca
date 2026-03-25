@@ -3,7 +3,23 @@ import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
 import { useChatStore, useAgentStore } from '@/stores'
 import type { Agent } from '@/stores/agent'
 import { ElIcon, ElTooltip, ElTag, ElButton, ElDialog } from 'element-plus'
-import { User, Document, Search, List, PieChart, QuestionFilled, Loading, CircleCheck, CircleClose, Refresh, Setting, InfoFilled, ChatDotRound, TrendCharts, DataAnalysis } from '@element-plus/icons-vue'
+import {
+  User,
+  Document,
+  Search,
+  List,
+  PieChart,
+  QuestionFilled,
+  Loading,
+  CircleCheck,
+  CircleClose,
+  Refresh,
+  Setting,
+  InfoFilled,
+  ChatDotRound,
+  TrendCharts,
+  DataAnalysis,
+} from '@element-plus/icons-vue'
 import { StarFilled } from '@element-plus/icons-vue'
 
 const chatStore = useChatStore()
@@ -26,7 +42,7 @@ const statusColors: Record<string, string> = {
   idle: 'success',
   running: 'primary',
   connecting: 'warning',
-  disconnected: 'danger'
+  disconnected: 'danger',
 }
 
 const typeIcons: Record<string, any> = {
@@ -34,7 +50,7 @@ const typeIcons: Record<string, any> = {
   code_assistant: Document,
   research_assistant: Search,
   task_manager: List,
-  data_analyst: PieChart
+  data_analyst: PieChart,
 }
 
 const typeColors: Record<string, string> = {
@@ -42,26 +58,36 @@ const typeColors: Record<string, string> = {
   code_assistant: 'green',
   research_assistant: 'orange',
   task_manager: 'purple',
-  data_analyst: 'cyan'
+  data_analyst: 'cyan',
 }
 
 const getStatusIcon = (status: string) => {
   switch (status) {
-    case 'idle': return CircleCheck
-    case 'running': return Loading
-    case 'connecting': return Loading
-    case 'disconnected': return CircleClose
-    default: return QuestionFilled
+    case 'idle':
+      return CircleCheck
+    case 'running':
+      return Loading
+    case 'connecting':
+      return Loading
+    case 'disconnected':
+      return CircleClose
+    default:
+      return QuestionFilled
   }
 }
 
 const getStatusText = (status: string) => {
   switch (status) {
-    case 'idle': return '空闲'
-    case 'running': return '运行中'
-    case 'connecting': return '连接中'
-    case 'disconnected': return '断开连接'
-    default: return '未知'
+    case 'idle':
+      return '空闲'
+    case 'running':
+      return '运行中'
+    case 'connecting':
+      return '连接中'
+    case 'disconnected':
+      return '断开连接'
+    default:
+      return '未知'
   }
 }
 
@@ -138,15 +164,18 @@ const sendMessageToAgent = () => {
 }
 
 // 监听 session 变化，自动刷新 agents
-watch(() => chatStore.sessionId, (newSessionId) => {
-  if (newSessionId) {
-    // 启动自动刷新（30秒间隔）
-    startAutoRefresh(30000)
-  } else {
-    // 停止自动刷新
-    stopAutoRefresh()
+watch(
+  () => chatStore.sessionId,
+  (newSessionId) => {
+    if (newSessionId) {
+      // 启动自动刷新（30秒间隔）
+      startAutoRefresh(30000)
+    } else {
+      // 停止自动刷新
+      stopAutoRefresh()
+    }
   }
-})
+)
 
 onMounted(() => {
   if (chatStore.sessionId) {
@@ -161,16 +190,20 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div 
-    class="col-span-12 lg:col-span-3 flex-col gap-4 overflow-y-auto pr-1" 
-    :class="{ 
-      'flex': !chatStore.isMobile || chatStore.showLeftSidebar, 
-      'hidden': chatStore.isMobile && !chatStore.showLeftSidebar,
-      'absolute inset-x-2 top-20 bottom-4 z-40 bg-gray-50 p-3 rounded-lg shadow-xl border': chatStore.isMobile && chatStore.showLeftSidebar 
+  <div
+    class="col-span-12 lg:col-span-3 flex-col gap-4 overflow-y-auto pr-1"
+    :class="{
+      flex: !chatStore.isMobile || chatStore.showLeftSidebar,
+      hidden: chatStore.isMobile && !chatStore.showLeftSidebar,
+      'absolute inset-x-2 top-20 bottom-4 z-40 bg-gray-50 p-3 rounded-lg shadow-xl border':
+        chatStore.isMobile && chatStore.showLeftSidebar,
     }"
   >
     <!-- 移动端标题 -->
-    <div v-if="chatStore.isMobile && chatStore.showLeftSidebar" class="flex justify-between items-center lg:hidden mb-4">
+    <div
+      v-if="chatStore.isMobile && chatStore.showLeftSidebar"
+      class="flex justify-between items-center lg:hidden mb-4"
+    >
       <span class="text-sm font-semibold text-gray-700">Session Agents</span>
       <el-button size="small" @click="chatStore.showLeftSidebar = false">✕</el-button>
     </div>
@@ -191,25 +224,25 @@ onUnmounted(() => {
           </div>
         </el-tooltip>
       </div>
-      <el-button 
-        size="small" 
-        :icon="Refresh" 
-        :loading="loading" 
-        @click="refreshAgents" 
-        class="!p-1 !h-6 !w-6" 
-        :disabled="!chatStore.sessionId" 
+      <el-button
+        size="small"
+        :icon="Refresh"
+        :loading="loading"
+        @click="refreshAgents"
+        class="!p-1 !h-6 !w-6"
+        :disabled="!chatStore.sessionId"
       />
     </div>
 
     <!-- Agent列表 -->
     <div class="space-y-3">
-      <div 
-        v-for="agent in agents" 
-        :key="agent.agent_id" 
+      <div
+        v-for="agent in agents"
+        :key="agent.agent_id"
         class="bg-white rounded-lg border p-3 shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
-        :class="{ 
-          'ring-2 ring-blue-500': chatStore.agentId === agent.agent_id, 
-          'ring-2 ring-yellow-500': agent.role === 'main_agent' || agent.role === 'main-agent' 
+        :class="{
+          'ring-2 ring-blue-500': chatStore.agentId === agent.agent_id,
+          'ring-2 ring-yellow-500': agent.role === 'main_agent' || agent.role === 'main-agent',
         }"
         @click="handleAgentClick(agent)"
       >
@@ -220,7 +253,12 @@ onUnmounted(() => {
               <el-icon :size="20" :color="getTypeColor(agent.type || 'assistant')">
                 <component :is="getTypeIcon(agent.type || 'assistant')" />
               </el-icon>
-              <el-icon v-if="agent.role === 'main_agent' || agent.role === 'main-agent'" :size="10" class="absolute -top-1 -right-1 text-yellow-500" title="Main Agent (默认)">
+              <el-icon
+                v-if="agent.role === 'main_agent' || agent.role === 'main-agent'"
+                :size="10"
+                class="absolute -top-1 -right-1 text-yellow-500"
+                title="Main Agent (默认)"
+              >
                 <StarFilled />
               </el-icon>
             </div>
@@ -229,9 +267,9 @@ onUnmounted(() => {
               <div class="text-xs text-gray-500">{{ agent.role || '未指定' }}</div>
             </div>
           </div>
-          <el-tag 
-            size="small" 
-            :type="agent.status ? statusColors[agent.status] || 'info' : 'info'" 
+          <el-tag
+            size="small"
+            :type="(agent.status ? statusColors[agent.status] : 'info') as any"
             class="!text-xs !px-2 !py-0 !h-5"
           >
             <el-icon v-if="agent.status && agent.status !== 'disconnected'" :size="10" class="mr-1 animate-pulse">
@@ -297,7 +335,9 @@ onUnmounted(() => {
               </div>
               <div class="flex flex-col">
                 <span class="text-gray-500 text-[10px]">输出 Token</span>
-                <span class="font-semibold text-orange-700">{{ (agent.total_output_tokens || 0).toLocaleString() }}</span>
+                <span class="font-semibold text-orange-700">{{
+                  (agent.total_output_tokens || 0).toLocaleString()
+                }}</span>
               </div>
             </div>
           </div>
@@ -325,17 +365,8 @@ onUnmounted(() => {
   >
     <!-- 刷新配置按钮 -->
     <div v-if="selectedAgent" class="flex items-center gap-2 mb-4">
-      <el-button 
-        size="small" 
-        :icon="Refresh" 
-        @click="refreshConfig" 
-        :loading="configLoading" 
-      >
-        刷新配置
-      </el-button>
-      <el-tag v-if="selectedAgentConfig" size="small" type="success">
-        已加载
-      </el-tag>
+      <el-button size="small" :icon="Refresh" @click="refreshConfig" :loading="configLoading"> 刷新配置 </el-button>
+      <el-tag v-if="selectedAgentConfig" size="small" type="success"> 已加载 </el-tag>
     </div>
 
     <!-- 加载状态 -->
@@ -358,7 +389,9 @@ onUnmounted(() => {
           <span class="text-sm font-medium text-gray-700">配置内容 (config_content)</span>
         </div>
         <div class="bg-white p-3 rounded border">
-          <pre class="text-sm font-mono text-gray-800 max-h-48 overflow-y-auto whitespace-pre-wrap break-all">{{ JSON.stringify(selectedAgentConfig.config_content, null, 2) }}</pre>
+          <pre class="text-sm font-mono text-gray-800 max-h-48 overflow-y-auto whitespace-pre-wrap break-all">{{
+            JSON.stringify(selectedAgentConfig.config_content, null, 2)
+          }}</pre>
         </div>
       </div>
 
@@ -379,11 +412,17 @@ onUnmounted(() => {
             <span class="text-gray-600">角色:</span>
             <span class="font-medium text-gray-800">{{ selectedAgentConfig.config_content.role }}</span>
           </div>
-          <div v-if="selectedAgentConfig.config_content.llm_config_name" class="flex justify-between items-center text-sm">
+          <div
+            v-if="selectedAgentConfig.config_content.llm_config_name"
+            class="flex justify-between items-center text-sm"
+          >
             <span class="text-gray-600">LLM配置:</span>
             <span class="font-medium text-gray-800">{{ selectedAgentConfig.config_content.llm_config_name }}</span>
           </div>
-          <div v-if="selectedAgentConfig.config_content.tools && selectedAgentConfig.config_content.tools.length > 0" class="flex justify-between items-center text-sm">
+          <div
+            v-if="selectedAgentConfig.config_content.tools && selectedAgentConfig.config_content.tools.length > 0"
+            class="flex justify-between items-center text-sm"
+          >
             <span class="text-gray-600">工具数量:</span>
             <span class="font-medium text-gray-800">{{ selectedAgentConfig.config_content.tools.length }}</span>
           </div>
@@ -408,9 +447,7 @@ onUnmounted(() => {
     <template #footer>
       <div class="flex justify-end gap-2">
         <el-button size="small" @click="closeConfigDialog">关闭</el-button>
-        <el-button type="primary" size="small" @click="sendMessageToAgent">
-          发送消息给此Agent
-        </el-button>
+        <el-button type="primary" size="small" @click="sendMessageToAgent"> 发送消息给此Agent </el-button>
       </div>
     </template>
   </el-dialog>
@@ -429,8 +466,12 @@ onUnmounted(() => {
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .overflow-y-auto::-webkit-scrollbar {

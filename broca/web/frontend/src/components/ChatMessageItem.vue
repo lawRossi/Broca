@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { useChatStore } from '@/stores'
+import { useChatStore, useAgentStore } from '@/stores'
 import type { Message } from '@/api/brocaSocket'
 import { formatBeijingTimeShort } from '@/utils/time'
 
 const chatStore = useChatStore()
+const agentStore = useAgentStore()
 
 defineProps<{
   message: Message
@@ -20,7 +21,7 @@ const getIcon = (message: Message) => {
     // 根据工具调用状态显示不同的图标
     const status = message.data?.status
     const hasResult = message.data?.result !== undefined
-    
+
     if (!hasResult) {
       // 工具调用进行中
       return '🔧⏳'
@@ -44,8 +45,8 @@ const getSenderName = (message: Message, agentName: string) => {
     // 显示发送给谁
     // 优先使用receiver_id（实时消息），如果没有则使用agent_id（历史消息）
     const targetAgentId = message.receiver_id || message.agent_id
-    if (targetAgentId && targetAgentId !== chatStore.agentId) {
-      const targetAgent = chatStore.agents.find(a => a.agent_id === targetAgentId)
+    if (targetAgentId && targetAgentId !== agentStore.currentAgentId) {
+      const targetAgent = agentStore.agents.find((a) => a.agent_id === targetAgentId)
       const targetName = targetAgent?.name || targetAgentId
       return `You → @${targetName}`
     }
@@ -54,8 +55,8 @@ const getSenderName = (message: Message, agentName: string) => {
     // 显示来自哪个agent
     // 优先使用sender_id（实时消息），如果没有则使用agent_id（历史消息）
     const senderAgentId = message.sender_id || message.agent_id
-    if (senderAgentId && senderAgentId !== chatStore.agentId) {
-      const senderAgent = chatStore.agents.find(a => a.agent_id === senderAgentId)
+    if (senderAgentId && senderAgentId !== agentStore.currentAgentId) {
+      const senderAgent = agentStore.agents.find((a) => a.agent_id === senderAgentId)
       const senderName = senderAgent?.name || senderAgentId
       return `@${senderName}`
     }
@@ -66,8 +67,8 @@ const getSenderName = (message: Message, agentName: string) => {
     // 显示来自哪个agent的工具调用
     // 优先使用sender_id（实时消息），如果没有则使用agent_id（历史消息）
     const senderAgentId = message.sender_id || message.agent_id
-    if (senderAgentId && senderAgentId !== chatStore.agentId) {
-      const senderAgent = chatStore.agents.find(a => a.agent_id === senderAgentId)
+    if (senderAgentId && senderAgentId !== agentStore.currentAgentId) {
+      const senderAgent = agentStore.agents.find((a) => a.agent_id === senderAgentId)
       const senderName = senderAgent?.name || senderAgentId
       return `@${senderName} - Tool`
     }
@@ -126,7 +127,7 @@ const getContent = (message: Message) => {
     const toolName = message.data?.tool_name || 'unknown_tool'
     const status = message.data?.status
     const hasResult = message.data?.result !== undefined
-  
+
     if (!hasResult) {
       return `${toolName}`
     } else if (status === true || status === 'success') {
@@ -139,7 +140,7 @@ const getContent = (message: Message) => {
   }
 
   const content = message.data?.content || message.data?.message || ''
-  
+
   // 尝试解析 JSON 格式的 content
   if (typeof content === 'string') {
     try {
@@ -171,7 +172,7 @@ const getTodos = (message: Message) => {
 
   const argumentsData = message.data?.arguments || message.data?.parameters
   if (!argumentsData) return null
-  
+
   if (typeof argumentsData !== 'object') {
     const parsed = JSON.parse(argumentsData)
     return parsed.todos || null
@@ -186,14 +187,6 @@ const shouldExpandParameters = (message: Message) => {
     return true // 默认展开
   }
   return getShowParameters(message.message_id)
-}
-
-// 判断是否显示结果（todo_management不显示结果）
-const shouldShowResult = (message: Message) => {
-  if (isTodoManagement(message)) {
-    return false // 不显示结果
-  }
-  return getShowResult(message.message_id)
 }
 
 const getShowParameters = (messageId: string) => {
@@ -222,7 +215,7 @@ const getReasoningContentFromData = (message: Message): string => {
 }
 
 const hasReasoningContent = (message: Message) => {
-  return !!(getReasoningContentFromData(message))
+  return !!getReasoningContentFromData(message)
 }
 
 const getReasoningContent = (message: Message) => {
@@ -231,11 +224,8 @@ const getReasoningContent = (message: Message) => {
 </script>
 
 <template>
-  <div
-    class="rounded-lg p-2 sm:p-3 transition-all duration-200"
-    :class="getBgClass(message)"
-  >
-    <div 
+  <div class="rounded-lg p-2 sm:p-3 transition-all duration-200" :class="getBgClass(message)">
+    <div
       v-if="message.message_type !== 'system_message' && message.role !== 'system'"
       class="flex items-center justify-between gap-2 mb-2"
     >
@@ -251,10 +241,10 @@ const getReasoningContent = (message: Message) => {
     </div>
 
     <div>
-      <div v-if="(message.message_type === 'agent_response' && hasReasoningContent(message))" class="mb-2">
-        <el-button 
-          size="small" 
-          type="default" 
+      <div v-if="message.message_type === 'agent_response' && hasReasoningContent(message)" class="mb-2">
+        <el-button
+          size="small"
+          type="default"
           @click="chatStore.toggleReasoning(message.message_id)"
           class="!text-amber-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
         >
@@ -264,24 +254,30 @@ const getReasoningContent = (message: Message) => {
           </span>
         </el-button>
 
-        <div v-if="getShowReasoning(message.message_id)" class="mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
-          <pre class="text-xs font-mono text-amber-800 whitespace-pre-wrap break-words leading-relaxed">{{ getReasoningContent(message) }}</pre>
+        <div
+          v-if="getShowReasoning(message.message_id)"
+          class="mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200"
+        >
+          <pre class="text-xs font-mono text-amber-800 whitespace-pre-wrap break-words leading-relaxed">{{
+            getReasoningContent(message)
+          }}</pre>
         </div>
       </div>
 
-      <pre 
+      <pre
         class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
         :class="getContentClass(message)"
-      >{{ getContent(message) }}</pre>
+        >{{ getContent(message) }}</pre
+      >
 
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
         <!-- 参数展示 -->
         <div v-if="message.data?.arguments || message.data?.parameters" class="mb-2">
           <!-- 只有非todo_management工具才显示切换按钮 -->
-          <el-button 
+          <el-button
             v-if="!isTodoManagement(message)"
-            size="small" 
-            type="default" 
+            size="small"
+            type="default"
             @click="chatStore.toggleToolParameters(message.message_id)"
             class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
           >
@@ -291,15 +287,15 @@ const getReasoningContent = (message: Message) => {
           <!-- 参数内容：todo_management默认展开，其他工具根据状态 -->
           <div v-if="shouldExpandParameters(message)" class="mt-1 p-2 bg-purple-100 rounded border border-purple-200">
             <div class="text-xs font-semibold text-purple-700 mb-1">参数:</div>
-            
+
             <!-- 特殊处理todo_management的todos列表 -->
             <div v-if="isTodoManagement(message) && getTodos(message)" class="bg-white p-2 rounded border">
               <div v-for="(todo, index) in getTodos(message)" :key="index" class="mb-2 last:mb-0">
                 <div class="flex items-start gap-2">
-                  <input 
-                    type="checkbox" 
-                    :checked="todo.status === 'completed'" 
-                    disabled 
+                  <input
+                    type="checkbox"
+                    :checked="todo.status === 'completed'"
+                    disabled
                     class="mt-1 w-4 h-4 text-blue-600 rounded border-gray-300"
                   />
                   <div class="flex-1">
@@ -308,18 +304,21 @@ const getReasoningContent = (message: Message) => {
                 </div>
               </div>
             </div>
-            
+
             <!-- 其他工具显示原始JSON -->
-            <pre v-else class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border">
-{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre>
+            <pre
+              v-else
+              class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
+              >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre
+            >
           </div>
         </div>
 
         <!-- 结果展示：todo_management不显示，其他工具按状态显示 -->
         <div v-if="message.data?.result !== undefined && !isTodoManagement(message)" class="mb-2">
-          <el-button 
-            size="small" 
-            type="default" 
+          <el-button
+            size="small"
+            type="default"
             @click="chatStore.toggleToolResult(message.message_id)"
             class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
           >
@@ -328,8 +327,11 @@ const getReasoningContent = (message: Message) => {
 
           <div v-if="getShowResult(message.message_id)" class="mt-1 p-2 bg-green-50 rounded border border-green-200">
             <div class="text-xs font-semibold text-green-700 mb-1">结果:</div>
-            <pre class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border">
-{{ typeof message.data.result === 'string' ? message.data.result : JSON.stringify(message.data.result, null, 2) }}</pre>
+            <pre class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border">{{
+              typeof message.data.result === 'string'
+                ? message.data.result
+                : JSON.stringify(message.data.result, null, 2)
+            }}</pre>
           </div>
         </div>
       </div>
