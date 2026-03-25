@@ -340,5 +340,22 @@ onMounted(async () => {
   .el-input {
     width: 100% !important;
   }
+  
+  /* 筛选区域 */
+  .flex.flex-wrap.gap-4.items-center .el-select {
+    flex: 1 1 auto;
+    min-width: 120px;
+  }
+  
+  /* 批量操作栏 */
+  .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 {
+    bottom: 20px;
+    padding: 8px 12px;
+    max-width: 95% !important;
+  }
+  
+  .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 .text-sm {
+    font-size: 0.75rem;
+  }
 }
 </style>

@@ -194,18 +194,35 @@ const handleBatchDelete = () => {
 
 /* 优化移动端显示 */
 @media (max-width: 640px) {
-  .batch-actions {
-    padding: 0.75rem 1rem;
+  /* 批量操作栏 */
+  .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 {
+    bottom: 20px;
+    padding: 8px 12px;
     max-width: 95% !important;
   }
   
-  .batch-actions .el-checkbox {
-    margin-right: 0.5rem;
+  .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 .text-sm {
+    font-size: 0.75rem;
   }
   
-  .batch-actions .el-button {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.875rem;
+  .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 .el-button--small {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+  }
+  
+  /* 分页器 */
+  :deep(.el-pagination) {
+    justify-content: center;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  :deep(.el-pagination .el-pagination__sizes) {
+    margin-right: 0;
+  }
+  
+  :deep(.el-pagination .el-pagination__total) {
+    display: none;
   }
 }
 </style>

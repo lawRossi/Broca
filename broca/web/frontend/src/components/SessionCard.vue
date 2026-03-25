@@ -233,4 +233,61 @@ const handleViewJobs = (event: Event) => {
   border-radius: 6px;
   font-weight: 500;
 }
+
+/* 移动端优化 */
+@media (max-width: 640px) {
+  .session-card {
+    padding: 0.75rem 1rem;
+  }
+  
+  .session-card .flex.items-start.gap-3 {
+    gap: 0.75rem;
+  }
+  
+  /* 描述截断 */
+  .session-card .text-gray-900 {
+    max-width: 180px;
+    font-size: 0.875rem;
+  }
+  
+  /* ID 字体更小 */
+  .session-card .font-mono.text-xs {
+    font-size: 0.7rem;
+  }
+  
+  /* 操作按钮垂直排列或缩小 */
+  .session-card .flex.items-center.gap-2 {
+    gap: 0.25rem;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
+  
+  .session-card .el-button--small {
+    padding: 4px 8px;
+    font-size: 0.75rem;
+    min-height: auto;
+  }
+  
+  .session-card .el-button .el-icon {
+    font-size: 12px;
+  }
+  
+  /* 徽章缩小 */
+  .session-card .el-badge {
+    font-size: 0.7rem;
+  }
+  
+  /* 状态标签缩小 */
+  .session-card .el-tag--small {
+    height: 18px;
+    padding: 0 6px;
+    font-size: 10px;
+    line-height: 16px;
+  }
+  
+  /* 时间显示 */
+  .session-card .text-sm.text-gray-500 {
+    font-size: 0.75rem;
+  }
+}
 </style>

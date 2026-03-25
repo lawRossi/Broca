@@ -219,10 +219,10 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
       <div
         v-for="job in jobs"
         :key="job.job_id"
-        class="bg-white rounded-lg border p-4 hover:shadow-md transition-shadow cursor-pointer"
+        class="job-card bg-white rounded-lg border p-4 hover:shadow-md transition-shadow cursor-pointer"
         :class="{ 'ring-2 ring-blue-500': selectedJobs.includes(job.job_id) }"
       >
-        <div class="flex items-start gap-4">
+        <div class="flex items-start gap-3 sm:gap-4">
           <!-- 选择框 -->
           <el-checkbox
             :model-value="selectedJobs.includes(job.job_id)"
@@ -232,39 +232,41 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
 
           <!-- 任务图标和基本信息 -->
           <div class="flex-1 min-w-0" @click="handleView(job)">
-            <div class="flex items-center gap-2 mb-2">
-              <span class="text-xl">{{ getJobTypeInfo(job.job_type).icon }}</span>
-              <h3 class="text-base font-semibold text-gray-900 truncate">
+            <div class="flex items-center gap-2 mb-2 flex-wrap">
+              <span class="text-lg sm:text-xl">{{ getJobTypeInfo(job.job_type).icon }}</span>
+              <h3 class="text-sm sm:text-base font-semibold text-gray-900 truncate max-w-[200px] sm:max-w-none">
                 {{ job.name }}
               </h3>
-              <el-tag
-                :type="getStatusType(job.status)"
-                size="small"
-                class="ml-2"
-              >
-                {{ getStatusText(job.status) }}
-              </el-tag>
-              <el-tag size="small" type="info">
-                {{ getJobTypeInfo(job.job_type).text }}
-              </el-tag>
+              <div class="flex items-center gap-1 flex-wrap">
+                <el-tag
+                  :type="getStatusType(job.status)"
+                  size="small"
+                  class="text-xs"
+                >
+                  {{ getStatusText(job.status) }}
+                </el-tag>
+                <el-tag size="small" type="info" class="text-xs">
+                  {{ getJobTypeInfo(job.job_type).text }}
+                </el-tag>
+              </div>
             </div>
 
             <!-- 触发器信息 -->
-            <div class="text-sm text-gray-600 mb-2">
-              <div class="flex items-center gap-2">
+            <div class="text-xs sm:text-sm text-gray-600 mb-2 space-y-1">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-medium">触发器:</span>
-                <span>{{ formatTrigger(job) }}</span>
+                <span class="truncate">{{ formatTrigger(job) }}</span>
               </div>
-              <div class="flex items-center gap-2 mt-1">
+              <div class="flex items-center gap-2 flex-wrap">
                 <span class="font-medium">下次执行:</span>
-                <span :class="{ 'text-orange-600': job.next_run_time }">
+                <span :class="{ 'text-orange-600': job.next_run_time, 'text-xs': true, 'sm:text-sm': true }">
                   {{ formatNextRunTime(job.next_run_time) }}
                 </span>
               </div>
             </div>
 
             <!-- 执行内容预览 -->
-            <div class="text-sm text-gray-500 truncate">
+            <div class="text-xs sm:text-sm text-gray-500 truncate">
               <span class="font-medium">内容:</span>
               {{ job.content.length > 80 ? job.content.substring(0, 80) + '...' : job.content }}
             </div>
@@ -276,14 +278,17 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
           </div>
 
           <!-- 操作按钮 -->
-          <div class="flex items-center gap-2" @click.stop>
+          <div class="flex items-center gap-1 sm:gap-2 flex-col sm:flex-row" @click.stop>
             <el-tooltip content="查看详情" placement="top">
               <el-button
                 size="small"
-                text
+                circle
+                class="!p-1 sm:!p-1.5"
                 @click="handleView(job)"
               >
-                <el-icon><InfoFilled /></el-icon>
+                <el-icon class="text-sm">
+                  <InfoFilled />
+                </el-icon>
               </el-button>
             </el-tooltip>
 
@@ -291,11 +296,14 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
               <el-button
                 size="small"
                 type="primary"
-                text
+                circle
+                class="!p-1 sm:!p-1.5"
                 :disabled="job.status !== JobStatus.ACTIVE"
                 @click="handleExecute(job)"
               >
-                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z" /></svg></el-icon>
+                <el-icon class="text-sm">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M8 5v14l11-7z" /></svg>
+                </el-icon>
               </el-button>
             </el-tooltip>
 
@@ -303,10 +311,13 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
               <el-button
                 size="small"
                 type="warning"
-                text
+                circle
+                class="!p-1 sm:!p-1.5"
                 @click="handlePause(job)"
               >
-                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg></el-icon>
+                <el-icon class="text-sm">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" /></svg>
+                </el-icon>
               </el-button>
             </el-tooltip>
 
@@ -314,10 +325,13 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
               <el-button
                 size="small"
                 type="success"
-                text
+                circle
+                class="!p-1 sm:!p-1.5"
                 @click="handleResume(job)"
               >
-                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M8 5v14l11-7z" /></svg></el-icon>
+                <el-icon class="text-sm">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M8 5v14l11-7z" /></svg>
+                </el-icon>
               </el-button>
             </el-tooltip>
 
@@ -325,10 +339,13 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
               <el-button
                 size="small"
                 type="danger"
-                text
+                circle
+                class="!p-1 sm:!p-1.5"
                 @click="handleDelete(job)"
               >
-                <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg></el-icon>
+                <el-icon class="text-sm">
+                  <svg viewBox="0 0 24 24" width="14" height="14"><path fill="currentColor" d="M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z" /></svg>
+                </el-icon>
               </el-button>
             </el-tooltip>
           </div>
@@ -343,15 +360,47 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
   width: 100%;
 }
 
-/* 优化移动端显示 */
+/* 移动端优化 */
 @media (max-width: 640px) {
   .job-card {
     padding: 0.75rem 1rem;
   }
   
-  .job-card .flex.items-center.gap-2 {
-    flex-wrap: wrap;
-    gap: 0.5rem;
+  .job-card .flex.items-start.gap-3 {
+    gap: 0.75rem;
+  }
+  
+  /* 操作按钮垂直排列 */
+  .job-card .flex.items-center.gap-1 {
+    flex-direction: row;
+    gap: 0.25rem;
+  }
+  
+  /* 标题截断 */
+  .job-card h3 {
+    max-width: 180px;
+  }
+  
+  /* 标签缩小 */
+  .job-card .el-tag {
+    padding: 0 6px;
+    font-size: 10px;
+    height: 18px;
+    line-height: 16px;
+  }
+  
+  /* 调整表格在移动端的显示 */
+  :deep(.el-table) {
+    font-size: 12px;
+  }
+  
+  :deep(.el-table .cell) {
+    padding: 8px 4px;
+  }
+  
+  /* 抽屉内容调整 */
+  :deep(.el-drawer__body) {
+    padding: 12px;
   }
 }
 </style>

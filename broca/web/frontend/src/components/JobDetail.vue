@@ -248,10 +248,12 @@ const handleClose = () => {
 
 <template>
   <el-drawer
-    v-model="props.visible"
+    :model-value="props.visible"
     title="任务详情"
     size="600px"
     :before-close="handleClose"
+    :class="{ 'mobile-drawer': true }"
+    @update:model-value="(val) => emit('update:visible', val)"
   >
     <div v-if="loading" class="flex items-center justify-center py-12">
       <el-icon class="is-loading" size="24">
@@ -392,65 +394,105 @@ const handleClose = () => {
           <p>暂无执行记录</p>
         </div>
 
-        <el-table
-          v-else
-          :data="displayedExecutions"
-          stripe
-          size="small"
-          :show-overflow-tooltip="true"
-        >
-          <el-table-column
-            prop="executed_at"
-            label="执行时间"
-            width="180"
-          >
-            <template #default="{ row }">
-              {{ formatDateTime(row.executed_at) }}
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="success"
-            label="状态"
-            width="100"
-          >
-            <template #default="{ row }">
-              <el-tag
-                :type="row.success ? 'success' : 'danger'"
-                size="small"
+        <div v-else>
+          <!-- 桌面端：表格 -->
+          <div class="hidden sm:block overflow-x-auto">
+            <el-table
+              :data="displayedExecutions"
+              stripe
+              size="small"
+              :show-overflow-tooltip="true"
+            >
+              <el-table-column
+                prop="executed_at"
+                label="执行时间"
+                width="180"
               >
-                {{ row.success ? '成功' : '失败' }}
-              </el-tag>
-            </template>
-          </el-table-column>
-          <el-table-column
-            prop="result"
-            label="结果摘要"
-            min-width="200"
-          >
-            <template #default="{ row }">
-              <div class="truncate">
-                {{ row.result?.substring(0, 100) || '无输出' }}
-                <span v-if="row.result && row.result.length > 100">...</span>
+                <template #default="{ row }">
+                  {{ formatDateTime(row.executed_at) }}
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="success"
+                label="状态"
+                width="100"
+              >
+                <template #default="{ row }">
+                  <el-tag
+                    :type="row.success ? 'success' : 'danger'"
+                    size="small"
+                  >
+                    {{ row.success ? '成功' : '失败' }}
+                  </el-tag>
+                </template>
+              </el-table-column>
+              <el-table-column
+                prop="result"
+                label="结果摘要"
+                min-width="200"
+              >
+                <template #default="{ row }">
+                  <div class="truncate">
+                    {{ row.result?.substring(0, 100) || '无输出' }}
+                    <span v-if="row.result && row.result.length > 100">...</span>
+                  </div>
+                </template>
+              </el-table-column>
+              <el-table-column
+                label="操作"
+                width="80"
+              >
+                <template #default="{ row }">
+                  <el-button
+                    v-if="row.result"
+                    type="primary"
+                    link
+                    size="small"
+                    @click="handleViewExecutionResult(row)"
+                  >
+                    查看详情
+                  </el-button>
+                </template>
+              </el-table-column>
+            </el-table>
+          </div>
+
+          <!-- 移动端：卡片列表 -->
+          <div class="sm:hidden space-y-3">
+            <div
+              v-for="(execution, index) in displayedExecutions"
+              :key="index"
+              class="bg-white border rounded-lg p-3"
+            >
+              <div class="flex items-start justify-between mb-2">
+                <div class="flex items-center gap-2 flex-1 min-w-0">
+                  <el-tag
+                    :type="execution.success ? 'success' : 'danger'"
+                    size="small"
+                  >
+                    {{ execution.success ? '成功' : '失败' }}
+                  </el-tag>
+                  <span class="text-xs text-gray-500 truncate">
+                    {{ formatDateTime(execution.executed_at) }}
+                  </span>
+                </div>
+                <el-button
+                  v-if="execution.result"
+                  type="primary"
+                  size="small"
+                  link
+                  @click="handleViewExecutionResult(execution)"
+                >
+                  详情
+                </el-button>
               </div>
-            </template>
-          </el-table-column>
-          <el-table-column
-            label="操作"
-            width="80"
-          >
-            <template #default="{ row }">
-              <el-button
-                v-if="row.result"
-                type="primary"
-                link
-                size="small"
-                @click="handleViewExecutionResult(row)"
-              >
-                查看详情
-              </el-button>
-            </template>
-          </el-table-column>
-        </el-table>
+              <div class="text-xs text-gray-600 truncate">
+                {{ execution.result?.substring(0, 80) || '无输出' }}
+                <span v-if="execution.result && execution.result.length > 80">...</span>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   </el-drawer>
@@ -469,5 +511,148 @@ const handleClose = () => {
 code {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
   font-size: 0.75rem;
+}
+
+/* 移动端优化 */
+@media (max-width: 640px) {
+  :deep(.el-drawer) {
+    width: 95% !important;
+  }
+  
+  :deep(.el-drawer__header) {
+    padding: 12px 16px;
+    margin: 0;
+    font-size: 16px;
+  }
+  
+  :deep(.el-drawer__body) {
+    padding: 12px;
+  }
+  
+  /* 基本信息卡片 */
+  .bg-gray-50.rounded-lg {
+    padding: 12px;
+    margin-bottom: 12px;
+  }
+  
+  /* 图标和标题 */
+  .text-2xl {
+    font-size: 1.25rem;
+  }
+  
+  .text-lg {
+    font-size: 0.95rem;
+  }
+  
+  .text-sm {
+    font-size: 0.8rem;
+  }
+  
+  .text-xs {
+    font-size: 0.7rem;
+  }
+  
+  /* 任务标题 */
+  .font-bold.text-gray-900 {
+    font-size: 1rem;
+    line-height: 1.3;
+  }
+  
+  /* 标签组 */
+  .flex.items-center.gap-2.mt-1 {
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+  }
+  
+  /* 任务ID */
+  .text-sm.text-gray-600.mb-2 {
+    font-size: 0.75rem;
+    margin-bottom: 8px;
+  }
+  
+  code {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    word-break: break-all;
+    display: inline-block;
+    max-width: 150px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: middle;
+  }
+  
+  /* 配置区域 */
+  .mb-3 {
+    margin-bottom: 10px;
+  }
+  
+  .text-sm.font-medium.text-gray-700.mb-1 {
+    font-size: 0.75rem;
+    margin-bottom: 4px;
+  }
+  
+  .bg-white.p-3.rounded.border {
+    padding: 10px;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    word-break: break-word;
+  }
+  
+  /* 网格布局 */
+  .grid.grid-cols-2 {
+    grid-template-columns: 1fr;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  
+  .grid.grid-cols-2 > div {
+    font-size: 0.75rem;
+    padding: 4px 0;
+  }
+  
+  .font-medium.text-gray-700 {
+    font-size: 0.75rem;
+  }
+  
+  /* 按钮组 */
+  .flex.items-center.gap-3 {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    margin-top: 12px;
+  }
+  
+  .flex.items-center.gap-3 .el-button {
+    width: 100%;
+    justify-content: center;
+    height: 36px;
+    font-size: 0.875rem;
+  }
+  
+  /* 执行历史标题 */
+  .text-base.font-semibold.text-gray-900 {
+    font-size: 0.9rem;
+  }
+  
+  /* 移动端卡片样式已在上方定义 */
+  
+  /* 标签缩小 */
+  :deep(.el-tag--small) {
+    height: 18px;
+    padding: 0 6px;
+    font-size: 10px;
+    line-height: 16px;
+  }
+  
+  /* 空状态 */
+  .text-center.py-8 {
+    padding: 20px 0;
+  }
+  
+  .text-center.py-8 p {
+    font-size: 0.875rem;
+  }
 }
 </style>
