@@ -5,6 +5,7 @@
 """
 
 import os
+import uuid
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
@@ -20,6 +21,7 @@ from broca.session.service import get_job_execution_service, get_job_service
 
 class Scheduler:
     """调度器主类（封装APScheduler）"""
+
     _instance = None
 
     def __new__(cls):
@@ -172,7 +174,7 @@ class Scheduler:
         """
         try:
             # 生成任务ID
-            job_id = f"{job_type.value}_{name}_{datetime.now().timestamp()}"
+            job_id = f"job_{uuid.uuid4()}"
 
             # 序列化trigger_config，将datetime转换为ISO字符串
             serialized_config = self._serialize_trigger_config(trigger_config)
