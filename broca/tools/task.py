@@ -1,12 +1,14 @@
 import json
-from pathlib import Path
 
-from broca.task import TaskContext, TaskPriority, TaskStatus
-from broca.task_manager import TaskManager
+from broca.session.models import TaskPriority, TaskStatus
+from broca.task_manager import TaskContext, TaskManager
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class TaskManagement(Tool):
+    def __init__(self):
+        super().__init__()
+        self.task_manager = TaskManager()
 
     @property
     def name(self):
@@ -94,31 +96,30 @@ class TaskManagement(Tool):
         }
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
-        storage_file = Path(context.workspace) / "tasks.json"
-        task_manager = TaskManager(storage_file)
-
         action = arguments.get("action")
+        arguments["session_id"] = context.session_id
         try:
+            task_manager = self.task_manager
             if action == "create":
-                return self._create_task(arguments, task_manager)
+                return await self._create_task(arguments, task_manager)
             elif action == "get":
-                return self._get_task(arguments, task_manager)
+                return await self._get_task(arguments, task_manager)
             elif action == "get_all":
-                return self._get_all_tasks(task_manager)
+                return await self._get_all_tasks(task_manager, arguments)
             elif action == "get_by_status":
-                return self._get_tasks_by_status(arguments, task_manager)
+                return await self._get_tasks_by_status(arguments, task_manager)
             elif action == "get_by_assignee":
-                return self._get_tasks_by_assignee(arguments, task_manager)
+                return await self._get_tasks_by_assignee(arguments, task_manager)
             elif action == "update":
-                return self._update_task(arguments, task_manager)
+                return await self._update_task(arguments, task_manager)
             elif action == "delete":
-                return self._delete_task(arguments, task_manager)
+                return await self._delete_task(arguments, task_manager)
             elif action == "add_comment":
-                return self._add_comment(arguments, task_manager)
+                return await self._add_comment(arguments, task_manager)
             elif action == "get_children":
-                return self._get_child_tasks(arguments, task_manager)
+                return await self._get_child_tasks(arguments, task_manager)
             elif action == "search":
-                return self._search_tasks(arguments, task_manager)
+                return await self._search_tasks(arguments, task_manager)
             else:
                 return ToolResult(
                     status=ToolStatus.ERROR, content=f"Unknown action: {action}"
@@ -129,14 +130,13 @@ class TaskManagement(Tool):
                 content=f"Error executing action '{action}': {e}",
             )
 
-    def _create_task(self, arguments, task_manager) -> ToolResult:
+    async def _create_task(self, arguments, task_manager) -> ToolResult:
         required_fields = ["name", "description"]
         for field in required_fields:
             if field not in arguments:
                 return ToolResult(
                     status=ToolStatus.ERROR, content=f"Missing required field: {field}"
                 )
-
         try:
             priority = TaskPriority.MEDIUM
             if "priority" in arguments:
@@ -148,7 +148,7 @@ class TaskManagement(Tool):
                 notes=arguments.get("notes"),
             )
 
-            task = task_manager.create_task(
+            task = await task_manager.create_task(
                 name=arguments["name"],
                 description=arguments["description"],
                 priority=priority,
@@ -158,11 +158,12 @@ class TaskManagement(Tool):
                 details=arguments.get("details"),
                 context=task_context,
                 acceptance_criteria=arguments.get("acceptance_criteria"),
+                session_id=arguments.get("session_id"),
             )
 
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                content=f"Task created successfully with ID: {task.metadata.id}",
+                content=f"Task created successfully with ID: {task.task_id}",
             )
         except ValueError as e:
             return ToolResult(status=ToolStatus.ERROR, content=f"Invalid value: {e}")
@@ -171,14 +172,14 @@ class TaskManagement(Tool):
                 status=ToolStatus.ERROR, content=f"Error creating task: {str(e)}"
             )
 
-    def _get_task(self, arguments, task_manager) -> ToolResult:
+    async def _get_task(self, arguments, task_manager) -> ToolResult:
         task_id = arguments.get("task_id")
         if not task_id:
             return ToolResult(
                 status=ToolStatus.ERROR, content="Missing required field: task_id"
             )
 
-        task = task_manager.get_task(task_id)
+        task = await task_manager.get_task(task_id)
         if task:
             return ToolResult(
                 status=ToolStatus.SUCCESS,
@@ -189,8 +190,9 @@ class TaskManagement(Tool):
                 status=ToolStatus.ERROR, content=f"Task with ID {task_id} not found"
             )
 
-    def _get_all_tasks(self, task_manager) -> ToolResult:
-        tasks = task_manager.get_all_tasks()
+    async def _get_all_tasks(self, task_manager, arguments) -> ToolResult:
+        session_id = arguments.get("session_id")
+        tasks = await task_manager.get_all_tasks(session_id=session_id)
         return ToolResult(
             status=ToolStatus.SUCCESS,
             content=json.dumps(
@@ -198,7 +200,8 @@ class TaskManagement(Tool):
             ),
         )
 
-    def _get_tasks_by_status(self, arguments, task_manager) -> ToolResult:
+    async def _get_tasks_by_status(self, arguments, task_manager) -> ToolResult:
+        session_id = arguments.get("session_id")
         status = arguments.get("status")
         if not status:
             return ToolResult(
@@ -207,7 +210,9 @@ class TaskManagement(Tool):
 
         try:
             status_enum = TaskStatus(status.lower())
-            tasks = task_manager.get_tasks_by_status(status_enum)
+            tasks = await task_manager.get_tasks_by_status(
+                session_id=session_id, status=status_enum
+            )
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 content=json.dumps(
@@ -220,14 +225,15 @@ class TaskManagement(Tool):
                 content=f"Invalid status: {status}. Valid values: pending, in_progress, blocked, completed",
             )
 
-    def _get_tasks_by_assignee(self, arguments, task_manager) -> ToolResult:
+    async def _get_tasks_by_assignee(self, arguments, task_manager) -> ToolResult:
+        session_id = arguments.get("session_id")
         assignee = arguments.get("assignee")
         if not assignee:
             return ToolResult(
                 status=ToolStatus.ERROR, content="Missing required field: assignee"
             )
 
-        tasks = task_manager.get_tasks_by_assignee(assignee)
+        tasks = await task_manager.get_tasks_by_assignee(session_id, assignee)
         return ToolResult(
             status=ToolStatus.SUCCESS,
             content=json.dumps(
@@ -235,7 +241,7 @@ class TaskManagement(Tool):
             ),
         )
 
-    def _update_task(self, arguments, task_manager) -> ToolResult:
+    async def _update_task(self, arguments, task_manager) -> ToolResult:
         task_id = arguments.get("task_id")
         if not task_id:
             return ToolResult(
@@ -257,7 +263,7 @@ class TaskManagement(Tool):
                 notes=arguments.get("notes"),
             )
 
-            task = task_manager.update_task(
+            task = await task_manager.update_task(
                 task_id=task_id,
                 name=arguments.get("name"),
                 description=arguments.get("description"),
@@ -288,14 +294,14 @@ class TaskManagement(Tool):
                 status=ToolStatus.ERROR, content=f"Error updating task: {str(e)}"
             )
 
-    def _delete_task(self, arguments, task_manager) -> ToolResult:
+    async def _delete_task(self, arguments, task_manager) -> ToolResult:
         task_id = arguments.get("task_id")
         if not task_id:
             return ToolResult(
                 status=ToolStatus.ERROR, content="Missing required field: task_id"
             )
 
-        success = task_manager.delete_task(task_id)
+        success = await task_manager.delete_task(task_id)
         if success:
             return ToolResult(
                 status=ToolStatus.SUCCESS,
@@ -306,7 +312,7 @@ class TaskManagement(Tool):
                 status=ToolStatus.ERROR, content=f"Task with ID {task_id} not found"
             )
 
-    def _add_comment(self, arguments, task_manager) -> ToolResult:
+    async def _add_comment(self, arguments, task_manager) -> ToolResult:
         task_id = arguments.get("task_id")
         author = arguments.get("author")
         content = arguments.get("content")
@@ -324,7 +330,9 @@ class TaskManagement(Tool):
                 status=ToolStatus.ERROR, content="Missing required field: content"
             )
 
-        task = task_manager.add_comment(task_id=task_id, author=author, content=content)
+        task = await task_manager.add_comment(
+            task_id=task_id, author=author, content=content
+        )
 
         if task:
             return ToolResult(
@@ -336,14 +344,14 @@ class TaskManagement(Tool):
                 status=ToolStatus.ERROR, content=f"Task with ID {task_id} not found"
             )
 
-    def _get_child_tasks(self, arguments, task_manager) -> ToolResult:
+    async def _get_child_tasks(self, arguments, task_manager) -> ToolResult:
         parent_id = arguments.get("task_id")
         if not parent_id:
             return ToolResult(
                 status=ToolStatus.ERROR, content="Missing required field: task_id"
             )
 
-        tasks = task_manager.get_child_tasks(parent_id)
+        tasks = await task_manager.get_child_tasks(parent_id)
         return ToolResult(
             status=ToolStatus.SUCCESS,
             content=json.dumps(
@@ -351,14 +359,15 @@ class TaskManagement(Tool):
             ),
         )
 
-    def _search_tasks(self, arguments, task_manager) -> ToolResult:
+    async def _search_tasks(self, arguments, task_manager) -> ToolResult:
+        session_id = arguments.get("session_id")
         query = arguments.get("query")
         if not query:
             return ToolResult(
                 status=ToolStatus.ERROR, content="Missing required field: query"
             )
 
-        tasks = task_manager.search_tasks(query)
+        tasks = await task_manager.search_tasks(query=query, session_id=session_id)
         return ToolResult(
             status=ToolStatus.SUCCESS,
             content=json.dumps(

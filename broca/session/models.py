@@ -139,6 +139,7 @@ class Session(SQLModel, table=True):
     scheduled_jobs: List["ScheduledJob"] = Relationship(
         back_populates="session", cascade_delete="all"
     )
+    tasks: List["Task"] = Relationship(back_populates="session", cascade_delete="all")
 
 
 def generate_message_id() -> str:
@@ -664,3 +665,127 @@ class JobExecution(SQLModel, table=True):
 
     # 关联关系
     job: ScheduledJob = Relationship(back_populates="executions")
+
+
+# ============================================================================
+# Task 管理相关模型
+# ============================================================================
+
+
+class TaskStatus(str, Enum):
+    """任务状态枚举"""
+
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    BLOCKED = "blocked"
+    COMPLETED = "completed"
+
+
+class TaskPriority(str, Enum):
+    """任务优先级枚举"""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+def generate_task_id() -> str:
+    """生成任务ID"""
+    return "task-" + str(uuid.uuid4())
+
+
+def generate_comment_id() -> str:
+    """生成评论ID"""
+    return "comment-" + str(uuid.uuid4())
+
+
+class TaskComment(SQLModel, table=True):
+    """任务评论模型"""
+
+    __tablename__ = "task_comment"
+
+    comment_id: str = Field(
+        primary_key=True, description="评论唯一标识符", default_factory=generate_comment_id
+    )
+    task_id: str = Field(
+        foreign_key="task.task_id", ondelete="CASCADE", description="关联的任务ID"
+    )
+    author: str = Field(description="评论作者")
+    content: str = Field(description="评论内容")
+    created_at: datetime = Field(
+        default_factory=datetime.now, description="创建时间"
+    )
+
+    # 关联关系
+    task: "Task" = Relationship(back_populates="comments")
+
+
+class Task(SQLModel, table=True):
+    """
+    任务模型
+
+    存储任务的基本信息，包括任务名称、描述、状态、优先级等。
+    对应原有的 Task 和 TaskMetadata 的组合。
+    """
+
+    __tablename__ = "task"
+
+    task_id: str = Field(
+        index=True, primary_key=True, description="任务唯一标识符", default_factory=generate_task_id
+    )
+    name: str = Field(description="任务名称")
+    description: str = Field(description="任务描述")
+
+    # 会话关联
+    session_id: Optional[str] = Field(
+        foreign_key="session.session_id", ondelete="CASCADE", default=None, description="关联的会话ID"
+    )
+
+    # 从 TaskMetadata 扁平化过来的字段
+    parent_id: Optional[str] = Field(
+        foreign_key="task.task_id", ondelete="SET NULL", default=None, description="父任务ID"
+    )
+    status: TaskStatus = Field(default=TaskStatus.PENDING, description="任务状态")
+    priority: TaskPriority = Field(default=TaskPriority.MEDIUM, description="任务优先级")
+    assignee: Optional[str] = Field(default=None, description="任务分配对象")
+
+    # 可选字段
+    details: Optional[str] = Field(default=None, description="详细描述")
+    acceptance_criteria: Optional[List[str]] = Field(
+        sa_column=Column(JSON, nullable=True, default=None), description="验收标准列表"
+    )
+    context_files: Optional[List[str]] = Field(
+        sa_column=Column(JSON, nullable=True, default=None), description="关联文件列表"
+    )
+    context_links: Optional[List[str]] = Field(
+        sa_column=Column(JSON, nullable=True, default=None), description="关联链接列表"
+    )
+    context_notes: Optional[str] = Field(default=None, description="上下文笔记")
+    report: Optional[str] = Field(default=None, description="任务报告")
+
+    # 依赖关系（JSON 数组存储）
+    dependencies: Optional[List[str]] = Field(
+        sa_column=Column(JSON, nullable=True, default=None), description="依赖任务ID列表"
+    )
+
+    # 元数据
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
+
+    # 关联关系
+    session: Optional["Session"] = Relationship(back_populates="tasks")
+    parent: Optional["Task"] = Relationship(
+        back_populates="children",
+        sa_relationship_kwargs={"remote_side": "Task.task_id"}
+    )
+    children: List["Task"] = Relationship(
+        back_populates="parent",
+        cascade_delete="all"
+    )
+    comments: List[TaskComment] = Relationship(
+        back_populates="task", cascade_delete="all"
+    )
+
+    def update_timestamp(self):
+        """更新更新时间戳"""
+        self.updated_at = datetime.now()

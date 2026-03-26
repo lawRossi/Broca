@@ -26,6 +26,10 @@ from .models import (
     ScheduledJob,
     Session,
     SessionStatus,
+    Task,
+    TaskComment,
+    TaskPriority,
+    TaskStatus,
     Turn,
 )
 
@@ -608,3 +612,238 @@ def get_job_service() -> JobService:
 def get_job_execution_service() -> JobExecutionService:
     """获取JobExecutionService实例"""
     return job_execution_service
+
+
+class TaskCommentService(BaseService[TaskComment]):
+    """任务评论Service类"""
+
+    def __init__(self):
+        super().__init__(TaskComment)
+
+    async def get_comments_by_task(self, task_id: str) -> List[TaskComment]:
+        """根据任务ID获取评论"""
+        return await self.get_batch(filters={"task_id": task_id}, order_by="created_at")
+
+    async def get_comments_by_author(self, author: str) -> List[TaskComment]:
+        """根据作者获取评论"""
+        return await self.get_batch(filters={"author": author}, order_by="created_at")
+
+
+class TaskService(BaseService[Task]):
+    """任务Service类"""
+
+    def __init__(self):
+        super().__init__(Task)
+
+    def _get_id_field_name(self) -> str:
+        """重写ID字段名获取方法"""
+        return "task_id"
+
+    async def create_task(
+        self,
+        name: str,
+        description: str,
+        priority: TaskPriority = TaskPriority.MEDIUM,
+        parent_id: Optional[str] = None,
+        assignee: Optional[str] = None,
+        dependencies: Optional[List[str]] = None,
+        details: Optional[str] = None,
+        context_files: Optional[List[str]] = None,
+        context_links: Optional[List[str]] = None,
+        context_notes: Optional[str] = None,
+        acceptance_criteria: Optional[List[str]] = None,
+        report: Optional[str] = None,
+        session_id: Optional[str] = None,
+    ) -> Task:
+        """创建新任务"""
+        now = datetime.now()
+        return await self.create(
+            name=name,
+            description=description,
+            session_id=session_id,
+            parent_id=parent_id,
+            status=TaskStatus.PENDING,
+            priority=priority,
+            assignee=assignee,
+            dependencies=dependencies,
+            details=details,
+            acceptance_criteria=acceptance_criteria,
+            context_files=context_files,
+            context_links=context_links,
+            context_notes=context_notes,
+            report=report,
+            created_at=now,
+            updated_at=now,
+        )
+
+    async def get_tasks_by_session(
+        self, session_id: str, status: Optional[TaskStatus] = None
+    ) -> List[Task]:
+        """根据会话ID获取任务"""
+        filters = {"session_id": session_id}
+        if status:
+            filters["status"] = status
+        return await self.get_batch(filters=filters, order_by="created_at desc")
+
+    async def get_tasks_by_status(
+        self, session_id: str, status: TaskStatus
+    ) -> List[Task]:
+        """根据状态获取任务"""
+        return await self.get_batch(
+            filters={"session_id": session_id, "status": status},
+            order_by="created_at desc",
+        )
+
+    async def get_tasks_by_assignee(self, session_id: str, assignee: str) -> List[Task]:
+        """根据分配对象获取任务"""
+        return await self.get_batch(
+            filters={"session_id": session_id, "assignee": assignee},
+            order_by="created_at desc",
+        )
+
+    async def get_child_tasks(self, parent_id: str) -> List[Task]:
+        """获取子任务"""
+        return await self.get_batch(
+            filters={"parent_id": parent_id}, order_by="created_at desc"
+        )
+
+    async def get_root_tasks(self, session_id: Optional[str] = None) -> List[Task]:
+        """获取根任务（没有父任务的任务）"""
+        async with db_manager.get_session() as session:
+            statement = select(Task).where(Task.parent_id.is_(None))
+
+            if session_id:
+                statement = statement.where(Task.session_id == session_id)
+
+            statement = statement.order_by(Task.created_at)
+            result = await session.exec(statement)
+            return result.scalars().all()
+
+    async def update_task(
+        self,
+        task_id: str,
+        name: Optional[str] = None,
+        description: Optional[str] = None,
+        status: Optional[TaskStatus] = None,
+        priority: Optional[TaskPriority] = None,
+        assignee: Optional[str] = None,
+        dependencies: Optional[List[str]] = None,
+        details: Optional[str] = None,
+        context_files: Optional[List[str]] = None,
+        context_links: Optional[List[str]] = None,
+        context_notes: Optional[str] = None,
+        acceptance_criteria: Optional[List[str]] = None,
+        report: Optional[str] = None,
+    ) -> Optional[Task]:
+        """更新任务"""
+        update_data = {}
+        if name is not None:
+            update_data["name"] = name
+        if description is not None:
+            update_data["description"] = description
+        if status is not None:
+            update_data["status"] = status
+        if priority is not None:
+            update_data["priority"] = priority
+        if assignee is not None:
+            update_data["assignee"] = assignee
+        if dependencies is not None:
+            update_data["dependencies"] = dependencies
+        if details is not None:
+            update_data["details"] = details
+        if acceptance_criteria is not None:
+            update_data["acceptance_criteria"] = acceptance_criteria
+        if context_files is not None:
+            update_data["context_files"] = context_files
+        if context_links is not None:
+            update_data["context_links"] = context_links
+        if context_notes is not None:
+            update_data["context_notes"] = context_notes
+        if report is not None:
+            update_data["report"] = report
+
+        if update_data:
+            update_data["updated_at"] = datetime.now()
+
+        return await self.update(task_id, **update_data)
+
+    async def search_tasks(
+        self, query: str, session_id: Optional[str] = None
+    ) -> List[Task]:
+        """搜索任务（按名称和描述）"""
+        async with db_manager.get_session() as session:
+            statement = select(Task)
+
+            conditions = []
+            if session_id:
+                conditions.append(Task.session_id == session_id)
+
+            # 添加搜索条件
+            query_lower = query.lower()
+            # 由于SQLite的LIKE限制，我们会在Python中进行额外的过滤
+            statement = statement.order_by(Task.created_at)
+
+            if conditions:
+                statement = statement.where(and_(*conditions))
+
+            result = await session.exec(statement)
+            tasks = result.scalars().all()
+
+            # 在Python中进行模糊匹配
+            filtered_tasks = []
+            for task in tasks:
+                if (
+                    query_lower in task.name.lower()
+                    or query_lower in task.description.lower()
+                    or (task.details and query_lower in task.details.lower())
+                ):
+                    filtered_tasks.append(task)
+
+            return filtered_tasks
+
+    async def add_comment(
+        self, task_id: str, author: str, content: str
+    ) -> Optional[TaskComment]:
+        """为任务添加评论"""
+        # 验证任务存在
+        task = await self.get(task_id)
+        if not task:
+            return None
+
+        comment_service = TaskCommentService()
+        comment = await comment_service.create(
+            task_id=task_id,
+            author=author,
+            content=content,
+            created_at=datetime.now(),
+        )
+
+        # 更新任务的updated_at
+        await self.update(task_id, updated_at=datetime.now())
+
+        return comment
+
+    async def get_task_with_comments(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """获取任务及其所有评论"""
+        task = await self.get(task_id)
+        if not task:
+            return None
+
+        comment_service = TaskCommentService()
+        comments = await comment_service.get_comments_by_task(task_id)
+        return {"task": task, "comments": comments}
+
+
+# 全局Service实例
+task_service = TaskService()
+task_comment_service = TaskCommentService()
+
+
+def get_task_service() -> TaskService:
+    """获取TaskService实例"""
+    return task_service
+
+
+def get_task_comment_service() -> TaskCommentService:
+    """获取TaskCommentService实例"""
+    return task_comment_service
