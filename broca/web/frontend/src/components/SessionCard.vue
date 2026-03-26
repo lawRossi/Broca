@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { useRouter } from 'vue-router'
-import { Delete, FolderOpened, ArrowRight, Calendar, Bell } from '@element-plus/icons-vue'
+import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document } from '@element-plus/icons-vue'
 import { ElMessage } from 'element-plus'
 import { formatBeijingTime } from '@/utils/time'
 import type { Session } from '@/api/session'
@@ -105,6 +105,15 @@ const handleViewJobs = (event: Event) => {
     query: { session_id: props.session.session_id }
   })
 }
+
+// 管理任务（跳转到任务管理页面）
+const handleManageTasks = (event: Event) => {
+  event.stopPropagation()
+  router.push({
+    path: '/tasks',
+    query: { session_id: props.session.session_id }
+  })
+}
 </script>
 
 <template>
@@ -176,7 +185,7 @@ const handleViewJobs = (event: Event) => {
           <el-icon class="mr-1">
             <Bell />
           </el-icon>
-          任务
+          定时任务
           <el-badge
             v-if="jobCount && jobCount > 0"
             :value="jobCount"
@@ -184,6 +193,18 @@ const handleViewJobs = (event: Event) => {
             type="info"
             is-dot
           />
+        </el-button>
+        <el-button
+          type="success"
+          size="small"
+          plain
+          title="管理任务"
+          @click.stop="handleManageTasks"
+        >
+          <el-icon class="mr-1">
+            <Document />
+          </el-icon>
+          管理任务
         </el-button>
         <el-button
           type="danger"
