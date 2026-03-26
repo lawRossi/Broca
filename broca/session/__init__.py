@@ -23,6 +23,10 @@ from .models import (
     MessageType,
     Session,
     SessionStatus,
+    Task,
+    TaskComment,
+    TaskPriority,
+    TaskStatus,
     Turn,
     generate_message_id
 )
@@ -32,11 +36,15 @@ from .service import (
     BaseService,
     MessageService,
     SessionService,
+    TaskCommentService,
+    TaskService,
     TurnService,
     get_agent_config_service,
     get_agent_service,
     get_message_service,
     get_session_service,
+    get_task_comment_service,
+    get_task_service,
     get_turn_service,
 )
 from .session_manager import (
@@ -52,6 +60,10 @@ __all__ = [
     "MessageType",
     "Session",
     "SessionStatus",
+    "Task",
+    "TaskComment",
+    "TaskPriority",
+    "TaskStatus",
     "Turn",
     "generate_message_id",
     # Services
@@ -61,11 +73,15 @@ __all__ = [
     "MessageService",
     "AgentService",
     "AgentConfigService",
+    "TaskService",
+    "TaskCommentService",
     "get_session_service",
     "get_turn_service",
     "get_message_service",
     "get_agent_service",
     "get_agent_config_service",
+    "get_task_service",
+    "get_task_comment_service",
     # Session Manager
     "SessionManager",
     # Database Migration

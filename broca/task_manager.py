@@ -1,55 +1,43 @@
-import json
-import os
-from datetime import datetime
-from pathlib import Path
-from typing import Any, Dict, List, Optional
-from uuid import uuid4
+"""
+任务管理器模块（数据库版本）
 
-from .task import Task, TaskComment, TaskContext, TaskMetadata, TaskPriority, TaskStatus
+使用数据库进行任务持久化存储，提供完整的任务管理功能。
+全部接口为异步。
+"""
+
+from typing import Any, Dict, List, Optional
+
+from pydantic import BaseModel
+
+from .session.models import Task, TaskComment, TaskPriority, TaskStatus
+from .session.service import get_task_comment_service, get_task_service
+
+
+class TaskContext(BaseModel):
+    files: Optional[List[str]] = None
+    links: Optional[List[str]] = None
+    notes: Optional[str] = None
 
 
 class TaskManager:
-    """Manages tasks with CRUD operations using JSON file storage."""
+    """
+    任务管理器
 
-    def __init__(self, storage_file: str | Path):
+    使用数据库进行任务持久化存储，提供CRUD操作和高级查询功能。
+    所有方法都是异步的。
+    """
+
+    def __init__(self, session_id: Optional[str] = None):
         """
-        Initialize the TaskManager.
+        初始化任务管理器。
 
         Args:
-            storage_file: Path to the JSON file for task storage
+            session_id: 可选的会话ID，用于关联任务与会话
         """
-        self.storage_file = storage_file
-        self._ensure_storage_file()
+        self._task_service = get_task_service()
+        self._comment_service = get_task_comment_service()
 
-    def _ensure_storage_file(self) -> None:
-        """Ensure the storage file exists and is properly initialized."""
-        if not os.path.exists(self.storage_file):
-            with open(self.storage_file, "w") as f:
-                json.dump({"tasks": []}, f, indent=2, default=str, ensure_ascii=False)
-
-    def _load_tasks(self) -> List[Dict[str, Any]]:
-        """Load all tasks from the JSON file."""
-        try:
-            with open(self.storage_file, "r") as f:
-                data = json.load(f)
-                return data.get("tasks", [])
-        except (json.JSONDecodeError, FileNotFoundError):
-            return []
-
-    def _save_tasks(self, tasks: List[Dict[str, Any]]) -> None:
-        """Save tasks to the JSON file."""
-        with open(self.storage_file, "w") as f:
-            json.dump({"tasks": tasks}, f, indent=2, default=str, ensure_ascii=False)
-
-    def _task_to_dict(self, task: Task) -> Dict[str, Any]:
-        """Convert a Task object to a dictionary for JSON serialization."""
-        return task.model_dump()
-
-    def _dict_to_task(self, task_dict: Dict[str, Any]) -> Task:
-        """Convert a dictionary to a Task object."""
-        return Task.model_validate(task_dict)
-
-    def create_task(
+    async def create_task(
         self,
         name: str,
         description: str,
@@ -60,114 +48,113 @@ class TaskManager:
         details: Optional[str] = None,
         context: Optional[TaskContext] = None,
         acceptance_criteria: Optional[List[str]] = None,
+        session_id: Optional[str] = None,
     ) -> Task:
         """
-        Create a new task.
+        创建新任务。
 
         Args:
-            name: Task name
-            description: Task description
-            priority: Task priority
-            parent_id: Optional parent task ID
-            assignee: Optional assignee
-            dependencies: Optional list of dependency task IDs
-            details: Optional detailed description
-            context: Optional task context
-            acceptance_criteria: Optional list of acceptance criteria
+            name: 任务名称
+            description: 任务描述
+            priority: 任务优先级
+            parent_id: 可选的父任务ID
+            assignee: 可选的分配对象
+            dependencies: 可选的依赖任务ID列表
+            details: 可选的详细描述
+            context: 可选的上下文信息
+            acceptance_criteria: 可选的验收标准列表
+            session_id: 可选的会话ID（如果不提供则使用初始化时的session_id）
 
         Returns:
-            Created Task object
+            创建的Task对象
         """
-        task_id = str(uuid4())
-        now = datetime.now()
+        # 提取上下文字段
+        context_files = None
+        context_links = None
+        context_notes = None
+        if context:
+            context_files = context.files
+            context_links = context.links
+            context_notes = context.notes
 
-        metadata = TaskMetadata(
-            id=task_id,
-            parent_id=parent_id,
-            created=now,
-            updated=now,
-            status=TaskStatus.PENDING,
-            priority=priority,
-            dependencies=dependencies,
-            assignee=assignee,
-        )
-
-        task = Task(
-            metadata=metadata,
+        return await self._task_service.create_task(
             name=name,
             description=description,
+            priority=priority,
+            parent_id=parent_id,
+            assignee=assignee,
+            dependencies=dependencies,
             details=details,
-            context=context,
+            context_files=context_files,
+            context_links=context_links,
+            context_notes=context_notes,
             acceptance_criteria=acceptance_criteria,
+            session_id=session_id,
         )
 
-        tasks = self._load_tasks()
-        tasks.append(self._task_to_dict(task))
-        self._save_tasks(tasks)
-
-        return task
-
-    def get_task(self, task_id: str) -> Optional[Task]:
+    async def get_task(self, task_id: str) -> Optional[Task]:
         """
-        Get a task by ID.
+        根据ID获取任务。
 
         Args:
-            task_id: The ID of the task to retrieve
+            task_id: 任务ID
 
         Returns:
-            Task object if found, None otherwise
+            Task对象如果存在，否则返回None
         """
-        tasks = self._load_tasks()
-        for task_dict in tasks:
-            if task_dict.get("metadata", {}).get("id") == task_id:
-                return self._dict_to_task(task_dict)
-        return None
+        return await self._task_service.get(task_id)
 
-    def get_all_tasks(self) -> List[Task]:
+    async def get_all_tasks(
+        self,
+        session_id: str,
+        status: Optional[TaskStatus] = None,
+        assignee: Optional[str] = None,
+    ) -> List[Task]:
         """
-        Get all tasks.
-
-        Returns:
-            List of all Task objects
-        """
-        tasks = self._load_tasks()
-        return [self._dict_to_task(task_dict) for task_dict in tasks]
-
-    def get_tasks_by_status(self, status: TaskStatus) -> List[Task]:
-        """
-        Get tasks by status.
+        获取所有任务，支持过滤。
 
         Args:
-            status: The status to filter by
+            session_id: 可选的会话ID过滤
+            status: 可选的状态过滤
+            assignee: 可选的分配对象过滤
 
         Returns:
-            List of Task objects with the specified status
+            Task对象列表
         """
-        tasks = self._load_tasks()
-        filtered_tasks = []
-        for task_dict in tasks:
-            if task_dict.get("metadata", {}).get("status") == status:
-                filtered_tasks.append(self._dict_to_task(task_dict))
-        return filtered_tasks
+        tasks = await self._task_service.get_tasks_by_session(session_id, status)
 
-    def get_tasks_by_assignee(self, assignee: str) -> List[Task]:
+        if assignee:
+            tasks = [task for task in tasks if task.assignee == assignee]
+
+        return tasks
+
+    async def get_tasks_by_status(
+        self, session_id: str, status: TaskStatus
+    ) -> List[Task]:
         """
-        Get tasks by assignee.
+        根据状态获取任务。
 
         Args:
-            assignee: The assignee to filter by
+            status: 任务状态
 
         Returns:
-            List of Task objects assigned to the specified assignee
+            具有指定状态的Task对象列表
         """
-        tasks = self._load_tasks()
-        filtered_tasks = []
-        for task_dict in tasks:
-            if task_dict.get("metadata", {}).get("assignee") == assignee:
-                filtered_tasks.append(self._dict_to_task(task_dict))
-        return filtered_tasks
+        return await self._task_service.get_tasks_by_status(session_id, status)
 
-    def update_task(
+    async def get_tasks_by_assignee(self, session_id: str, assignee: str) -> List[Task]:
+        """
+        根据分配对象获取任务。
+
+        Args:
+            assignee: 分配对象
+
+        Returns:
+            分配给指定对象的Task对象列表
+        """
+        return await self._task_service.get_tasks_by_assignee(session_id, assignee)
+
+    async def update_task(
         self,
         task_id: str,
         name: Optional[str] = None,
@@ -181,157 +168,153 @@ class TaskManager:
         acceptance_criteria: Optional[List[str]] = None,
     ) -> Optional[Task]:
         """
-        Update an existing task.
+        更新现有任务。
 
         Args:
-            task_id: The ID of the task to update
-            name: Optional new name
-            description: Optional new description
-            status: Optional new status
-            priority: Optional new priority
-            assignee: Optional new assignee
-            dependencies: Optional new dependencies
-            details: Optional new details
-            context: Optional new context
-            acceptance_criteria: Optional new acceptance criteria
+            task_id: 要更新的任务ID
+            name: 可选的新名称
+            description: 可选的新描述
+            status: 可选的新状态
+            priority: 可选的新优先级
+            assignee: 可选的新分配对象
+            dependencies: 可选的新依赖列表
+            details: 可选的新详细描述
+            context: 可选的新上下文信息
+            acceptance_criteria: 可选的新验收标准
 
         Returns:
-            Updated Task object if found, None otherwise
+            更新后的Task对象如果找到，否则返回None
         """
-        tasks = self._load_tasks()
-        for i, task_dict in enumerate(tasks):
-            if task_dict.get("metadata", {}).get("id") == task_id:
-                task = self._dict_to_task(task_dict)
+        # 处理上下文更新
+        context_files = None
+        context_links = None
+        context_notes = None
+        if context:
+            context_files = context.files
+            context_links = context.links
+            context_notes = context.notes
 
-                # Update fields if provided
-                if name is not None:
-                    task.name = name
-                if description is not None:
-                    task.description = description
-                if status is not None:
-                    task.metadata.status = status
-                if priority is not None:
-                    task.metadata.priority = priority
-                if assignee is not None:
-                    task.metadata.assignee = assignee
-                if dependencies is not None:
-                    task.metadata.dependencies = dependencies
-                if details is not None:
-                    task.details = details
-                if context is not None:
-                    task.context = context
-                if acceptance_criteria is not None:
-                    task.acceptance_criteria = acceptance_criteria
+        return await self._task_service.update_task(
+            task_id=task_id,
+            name=name,
+            description=description,
+            status=status,
+            priority=priority,
+            assignee=assignee,
+            dependencies=dependencies,
+            details=details,
+            context_files=context_files,
+            context_links=context_links,
+            context_notes=context_notes,
+            acceptance_criteria=acceptance_criteria,
+        )
 
-                # Update the timestamp
-                task.metadata.updated = datetime.now()
-
-                # Save the updated task
-                tasks[i] = self._task_to_dict(task)
-                self._save_tasks(tasks)
-
-                return task
-
-        return None
-
-    def delete_task(self, task_id: str) -> bool:
+    async def delete_task(self, task_id: str) -> bool:
         """
-        Delete a task by ID.
+        删除任务。
 
         Args:
-            task_id: The ID of the task to delete
+            task_id: 要删除的任务ID
 
         Returns:
-            True if task was deleted, False if task was not found
+            如果任务被删除返回True，否则返回False
         """
-        tasks = self._load_tasks()
-        original_length = len(tasks)
+        return await self._task_service.delete(task_id)
 
-        # Filter out the task to delete
-        tasks = [
-            task_dict
-            for task_dict in tasks
-            if task_dict.get("metadata", {}).get("id") != task_id
-        ]
-
-        if len(tasks) < original_length:
-            self._save_tasks(tasks)
-            return True
-
-        return False
-
-    def add_comment(self, task_id: str, author: str, content: str) -> Optional[Task]:
+    async def add_comment(
+        self, task_id: str, author: str, content: str
+    ) -> Optional[TaskComment]:
         """
-        Add a comment to a task.
+        为任务添加评论。
 
         Args:
-            task_id: The ID of the task
-            author: The comment author
-            content: The comment content
+            task_id: 任务ID
+            author: 评论作者
+            content: 评论内容
 
         Returns:
-            Updated Task object if found, None otherwise
+            创建的TaskComment对象如果任务存在，否则返回None
         """
-        tasks = self._load_tasks()
-        for i, task_dict in enumerate(tasks):
-            if task_dict.get("metadata", {}).get("id") == task_id:
-                task = self._dict_to_task(task_dict)
+        return await self._task_service.add_comment(
+            task_id=task_id, author=author, content=content
+        )
 
-                if task.discussion is None:
-                    task.discussion = []
-
-                comment = TaskComment(
-                    author=author, content=content, created=datetime.now()
-                )
-
-                task.discussion.append(comment)
-                task.metadata.updated = datetime.now()
-
-                tasks[i] = self._task_to_dict(task)
-                self._save_tasks(tasks)
-
-                return task
-
-        return None
-
-    def get_child_tasks(self, parent_id: str) -> List[Task]:
+    async def get_comments(self, task_id: str) -> List[TaskComment]:
         """
-        Get all child tasks of a parent task.
+        获取任务的所有评论。
 
         Args:
-            parent_id: The ID of the parent task
+            task_id: 任务ID
 
         Returns:
-            List of Task objects that are children of the specified parent
+            TaskComment对象列表
         """
-        tasks = self._load_tasks()
-        child_tasks = []
-        for task_dict in tasks:
-            if task_dict.get("metadata", {}).get("parent_id") == parent_id:
-                child_tasks.append(self._dict_to_task(task_dict))
-        return child_tasks
+        return await self._comment_service.get_comments_by_task(task_id)
 
-    def search_tasks(self, query: str) -> List[Task]:
+    async def get_child_tasks(self, parent_id: str) -> List[Task]:
         """
-        Search tasks by name or description.
+        获取父任务的所有子任务。
 
         Args:
-            query: The search query
+            parent_id: 父任务ID
 
         Returns:
-            List of Task objects matching the search query
+            子Task对象列表
         """
-        tasks = self._load_tasks()
-        matching_tasks = []
-        query_lower = query.lower()
+        return await self._task_service.get_child_tasks(parent_id)
 
-        for task_dict in tasks:
-            task = self._dict_to_task(task_dict)
-            if (
-                query_lower in task.name.lower()
-                or query_lower in task.description.lower()
-                or (task.details and query_lower in task.details.lower())
-            ):
-                matching_tasks.append(task)
+    async def search_tasks(
+        self, query: str, session_id: Optional[str] = None
+    ) -> List[Task]:
+        """
+        搜索任务（按名称和描述）。
 
-        return matching_tasks
+        Args:
+            query: 搜索关键词
+            session_id: 可选的会话ID过滤
+
+        Returns:
+            匹配的Task对象列表
+        """
+        return await self._task_service.search_tasks(query=query, session_id=session_id)
+
+    async def get_task_with_comments(self, task_id: str) -> Optional[Dict[str, Any]]:
+        """
+        获取任务及其所有评论。
+
+        Args:
+            task_id: 任务ID
+
+        Returns:
+            包含任务和评论的字典，或None
+        """
+        task = await self._task_service.get(task_id)
+        if not task:
+            return None
+
+        comments = await self._comment_service.get_comments_by_task(task_id)
+        return {"task": task, "comments": comments}
+
+    async def get_tasks_by_parent(self, parent_id: str) -> List[Task]:
+        """
+        获取指定父任务的所有子任务。
+
+        Args:
+            parent_id: 父任务ID
+
+        Returns:
+            子Task对象列表
+        """
+        return await self._task_service.get_child_tasks(parent_id)
+
+    async def get_root_tasks(self, session_id: Optional[str] = None) -> List[Task]:
+        """
+        获取根任务（没有父任务的任务）。
+
+        Args:
+            session_id: 可选的会话ID过滤
+
+        Returns:
+            根Task对象列表
+        """
+        return await self._task_service.get_root_tasks(session_id=session_id)
