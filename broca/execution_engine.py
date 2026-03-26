@@ -174,7 +174,7 @@ class ExecutionEngine:
                 async with self.error_handler.handle_llm_call(context="execute_step"):
                     # Call LLM with timeout for cancellation support
                     response = await asyncio.wait_for(
-                        self._call_llm_streaming(), timeout=180
+                        self._call_llm_streaming(), timeout=300
                     )
                     break
             except AgentError as e:

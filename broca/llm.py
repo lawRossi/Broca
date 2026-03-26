@@ -1,3 +1,4 @@
+import asyncio
 import json
 import warnings
 from pathlib import Path
@@ -6,6 +7,10 @@ from typing import AsyncGenerator
 from litellm import Message as LLMMessage
 from litellm import acompletion
 from loguru import logger
+
+
+class FirstChunkTimeoutError(Exception):
+    pass
 
 warnings.filterwarnings("ignore")
 
@@ -39,7 +44,7 @@ class LLMClient:
         return response.choices[0].message
 
     async def get_stream_response(
-        self, provider, model, messages, tools=None
+        self, provider, model, messages, tools=None, first_chunk_timeout=60
     ) -> AsyncGenerator[dict, None]:
         response = await acompletion(
             base_url=self.config[provider]["base_url"],
@@ -51,36 +56,54 @@ class LLMClient:
             **self.config[provider][model],
         )
 
-        async for chunk in response:
-            if hasattr(chunk, "usage") and chunk.usage:
-                self.input_tokens_used = chunk.usage.prompt_tokens
-                self.output_tokens_used = chunk.usage.completion_tokens
+        iterator = response.__aiter__()
+        first_chunk_task = asyncio.create_task(iterator.__anext__())
 
-            if hasattr(chunk, "choices") and chunk.choices:
-                choice = chunk.choices[0]
-                if hasattr(choice, "delta") and choice.delta:
-                    delta = choice.delta
-                    # Handle content
-                    if hasattr(delta, "content") and delta.content:
-                        yield {"type": "content", "data": delta.content}
-                    if hasattr(delta, "reasoning_content") and delta.reasoning_content:
-                        yield {
-                            "type": "reasoning_content",
-                            "data": delta.reasoning_content,
-                        }
-                    # Handle tool calls
-                    if hasattr(delta, "tool_calls") and delta.tool_calls:
-                        for tool_call in delta.tool_calls:
-                            yield {"type": "tool_call", "data": tool_call}
-                    # Handle finish reason
-                    if hasattr(choice, "finish_reason") and choice.finish_reason:
-                        yield {"type": "finish", "data": choice.finish_reason}
+        try:
+            first_chunk = await asyncio.wait_for(
+                first_chunk_task, timeout=first_chunk_timeout
+            )
+            async for result in self._process_chunk(first_chunk):
+                yield result
+        except asyncio.TimeoutError:
+            first_chunk_task.cancel()
+            try:
+                await first_chunk_task
+            except asyncio.CancelledError:
+                pass
+            raise FirstChunkTimeoutError(
+                f"First chunk timeout after {first_chunk_timeout} seconds"
+            )
+
+        async for chunk in iterator:
+            async for result in self._process_chunk(chunk):
+                yield result
+
+    async def _process_chunk(self, chunk) -> AsyncGenerator[dict, None]:
+        if hasattr(chunk, "usage") and chunk.usage:
+            self.input_tokens_used = chunk.usage.prompt_tokens
+            self.output_tokens_used = chunk.usage.completion_tokens
+
+        if hasattr(chunk, "choices") and chunk.choices:
+            choice = chunk.choices[0]
+            if hasattr(choice, "delta") and choice.delta:
+                delta = choice.delta
+                if hasattr(delta, "content") and delta.content:
+                    yield {"type": "content", "data": delta.content}
+                if hasattr(delta, "reasoning_content") and delta.reasoning_content:
+                    yield {
+                        "type": "reasoning_content",
+                        "data": delta.reasoning_content,
+                    }
+                if hasattr(delta, "tool_calls") and delta.tool_calls:
+                    for tool_call in delta.tool_calls:
+                        yield {"type": "tool_call", "data": tool_call}
+            if hasattr(choice, "finish_reason") and choice.finish_reason:
+                yield {"type": "finish", "data": choice.finish_reason}
 
     def aggregate_message(self, content_chunks, tool_call_chunks) -> LLMMessage:
-        print(len(content_chunks), len(tool_call_chunks))
         content = self.aggregate_content(content_chunks)
         tool_calls = self.aggregate_tool_calls(tool_call_chunks)
-        print(tool_calls)
         return LLMMessage.parse_obj(
             {
                 "role": "assistant",
