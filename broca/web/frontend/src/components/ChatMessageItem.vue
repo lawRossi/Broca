@@ -160,6 +160,11 @@ const isTodoManagement = (message: Message) => {
   return message.message_type === 'tool_call' && message.data?.tool_name === 'todo_management'
 }
 
+// 检查是否为ask_user工具调用
+const isAskUser = (message: Message) => {
+  return message.message_type === 'tool_call' && message.data?.tool_name === 'ask_user'
+}
+
 // 获取todos列表
 const getTodos = (message: Message) => {
   if (!isTodoManagement(message)) return null
@@ -175,12 +180,36 @@ const getTodos = (message: Message) => {
   return argumentsData.todos || null
 }
 
-// 判断todo_management参数是否应该展开（默认展开）
+// 解析ask_user参数
+const getAskUserParams = (message: Message) => {
+  if (!isAskUser(message)) return null
+
+  const args = message.data?.arguments || message.data?.parameters
+  if (!args) return null
+
+  return typeof args === 'string' ? JSON.parse(args) : args
+}
+
+// 解析ask_user结果
+const getAskUserResult = (message: Message) => {
+  if (!isAskUser(message)) return null
+  return message.data?.result
+}
+
+// 判断参数是否应该展开（默认展开）
 const shouldExpandParameters = (message: Message) => {
-  if (isTodoManagement(message)) {
-    return true // 默认展开
+  if (isTodoManagement(message) || isAskUser(message)) {
+    return true
   }
   return getShowParameters(message.message_id)
+}
+
+// 判断结果是否应该展开（默认展开）
+const shouldExpandResult = (message: Message) => {
+  if (isAskUser(message)) {
+    return true
+  }
+  return getShowResult(message.message_id)
 }
 
 const getShowParameters = (messageId: string) => {
@@ -261,14 +290,15 @@ const getReasoningContent = (message: Message) => {
       <pre
         class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
         :class="getContentClass(message)"
-      >{{ getContent(message) }}</pre>
+        >{{ getContent(message) }}</pre
+      >
 
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
         <!-- 参数展示 -->
         <div v-if="message.data?.arguments || message.data?.parameters" class="mb-2">
-          <!-- 只有非todo_management工具才显示切换按钮 -->
+          <!-- 只有非todo_management且非ask_user工具才显示切换按钮 -->
           <el-button
-            v-if="!isTodoManagement(message)"
+            v-if="!isTodoManagement(message) && !isAskUser(message)"
             size="small"
             type="default"
             class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
@@ -277,22 +307,19 @@ const getReasoningContent = (message: Message) => {
             {{ getShowParameters(message.message_id) ? '隐藏参数' : '查看参数' }}
           </el-button>
 
-          <!-- 参数内容：todo_management默认展开，其他工具根据状态 -->
+          <!-- 参数内容：特殊处理todo_management和ask_user -->
           <div v-if="shouldExpandParameters(message)" class="mt-1 p-2 bg-purple-100 rounded border border-purple-200">
-            <div class="text-xs font-semibold text-purple-700 mb-1">
-              参数:
-            </div>
+            <div v-if="isAskUser(message)" class="text-xs font-semibold text-purple-700 mb-1">问题:</div>
 
             <!-- 特殊处理todo_management的todos列表 -->
             <div v-if="isTodoManagement(message) && getTodos(message)" class="bg-white p-2 rounded border">
               <div v-for="(todo, index) in getTodos(message)" :key="index" class="mb-2 last:mb-0">
                 <div class="flex items-start gap-2">
-                  <input
-                    type="checkbox"
-                    :checked="todo.status === 'completed'"
-                    disabled
-                    class="mt-1 w-4 h-4 text-blue-600 rounded border-gray-300"
-                  >
+                  <span class="mt-1 text-sm">
+                    <span v-if="todo.status === 'completed'">✅</span>
+                    <span v-else-if="todo.status === 'in_progress'">⏳</span>
+                    <span v-else>⬜️</span>
+                  </span>
                   <div class="flex-1">
                     <div class="text-sm font-medium text-gray-800">
                       {{ todo.name }}
@@ -302,17 +329,37 @@ const getReasoningContent = (message: Message) => {
               </div>
             </div>
 
+            <!-- 特殊处理ask_user的参数 -->
+            <div v-else-if="isAskUser(message) && getAskUserParams(message)" class="bg-white p-3 rounded border">
+              <div class="text-sm font-medium text-gray-800 mb-2">
+                {{ getAskUserParams(message).question }}
+              </div>
+              <div v-if="getAskUserParams(message).options?.length" class="space-y-1 ml-2">
+                <div
+                  v-for="(opt, optIndex) in getAskUserParams(message).options"
+                  :key="optIndex"
+                  class="text-xs text-gray-600 flex items-start gap-1"
+                >
+                  <span class="text-purple-600">•</span>
+                  <span>{{ opt.name }}</span>
+                  <span v-if="opt.description" class="text-gray-400">- {{ opt.description }}</span>
+                </div>
+              </div>
+            </div>
+
             <!-- 其他工具显示原始JSON -->
             <pre
               v-else
               class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
-            >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre>
+              >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre
+            >
           </div>
         </div>
 
-        <!-- 结果展示：todo_management不显示，其他工具按状态显示 -->
+        <!-- 结果展示：todo_management不显示，ask_user默认展开 -->
         <div v-if="message.data?.result !== undefined && !isTodoManagement(message)" class="mb-2">
           <el-button
+            v-if="!isAskUser(message)"
             size="small"
             type="default"
             class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
@@ -321,15 +368,25 @@ const getReasoningContent = (message: Message) => {
             {{ getShowResult(message.message_id) ? '隐藏结果' : '查看结果' }}
           </el-button>
 
-          <div v-if="getShowResult(message.message_id)" class="mt-1 p-2 bg-green-50 rounded border border-green-200">
-            <div class="text-xs font-semibold text-green-700 mb-1">
-              结果:
+          <!-- ask_user结果默认展开 -->
+          <div v-if="shouldExpandResult(message)" class="mt-1 p-2 bg-green-50 rounded border border-green-200">
+            <div v-if="isAskUser(message)" class="text-xs font-semibold text-green-700 mb-1">回答:</div>
+
+            <!-- 特殊处理ask_user结果 -->
+            <div v-if="isAskUser(message) && getAskUserResult(message)" class="bg-white p-2 rounded border">
+              <div class="text-sm text-gray-800">{{ getAskUserResult(message) }}</div>
             </div>
-            <pre class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border">{{
-              typeof message.data.result === 'string'
-                ? message.data.result
-                : JSON.stringify(message.data.result, null, 2)
-            }}</pre>
+
+            <!-- 其他工具显示原始JSON -->
+            <pre
+              v-else
+              class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
+              >{{
+                typeof message.data.result === 'string'
+                  ? message.data.result
+                  : JSON.stringify(message.data.result, null, 2)
+              }}</pre
+            >
           </div>
         </div>
       </div>
