@@ -1,7 +1,7 @@
 from contextlib import AsyncExitStack
 
 from broca.skill_manager import SkillManager
-from broca.tools.agent_interaction import AssignTask
+from broca.tools.agent_interaction import AskUser, AssignTask
 from broca.tools.bash import ExecuteCode
 from broca.tools.cron import CronTool
 from broca.tools.filesystem import EditFile, ListDir, ReadFile, TreeDir, WriteFile
@@ -10,7 +10,7 @@ from broca.tools.skill import LoadSkill
 from broca.tools.task import TaskManagement
 from broca.tools.todo import TodoManagement
 from broca.tools.tool import Tool
-from broca.tools.web import WebSearch, WebFetch
+from broca.tools.web import WebFetch, WebSearch
 
 
 class ToolManager:
@@ -44,6 +44,7 @@ class ToolManager:
         self._add_tool(load_skill)
         self._add_tool(WebFetch())
         self._add_tool(WebSearch())
+        self._add_tool(AskUser())
 
     def _add_tool(self, tool: Tool):
         if tool.name in self.tools:
