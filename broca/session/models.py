@@ -38,11 +38,13 @@ class MessageType(str, Enum):
     PONG = "pong"
     ERROR = "error"
 
-    # 用户交互消息
     USER_MESSAGE = "user_message"
     AGENT_RESPONSE = "agent_response"
     AGENT_ERROR = "agent_error"
     SYSTEM_MESSAGE = "system_message"
+
+    AGENT_QUERY = "agent_query"
+    USER_ANSWER = "user_answer"
 
     # 工具执行（合并tool_call和tool_result）
     TOOL_CALL = "tool_call"
@@ -156,7 +158,9 @@ class Message(SQLModel, table=True):
         default_factory=generate_message_id,
     )
     message_type: MessageType = Field(description="消息类型")
-    timestamp: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), description="消息时间戳")
+    timestamp: datetime = Field(
+        default_factory=lambda: datetime.now(timezone.utc), description="消息时间戳"
+    )
 
     # 通信字段（可选）
     sender_id: Optional[str] = Field(default=None, description="发送者ID")
@@ -205,7 +209,11 @@ class Message(SQLModel, table=True):
     # Pydantic v2 配置：确保 datetime 序列化为带时区的 ISO 格式
     model_config = ConfigDict(
         json_encoders={
-            datetime: lambda v: v.astimezone(timezone.utc).isoformat() if v.tzinfo is not None else v.isoformat() + "+00:00"
+            datetime: lambda v: (
+                v.astimezone(timezone.utc).isoformat()
+                if v.tzinfo is not None
+                else v.isoformat() + "+00:00"
+            )
         }
     )
 
@@ -367,15 +375,6 @@ class MessageProtocol:
         """从字典创建消息"""
         # 处理工具消息类型转换
         data["timestamp"] = datetime.fromisoformat(data["timestamp"])
-        # message_type = data.get("message_type")
-        # if message_type in ["tool_call", "tool_result"]:
-        #     data["message_type"] = "tool_call"
-        #     if "data" not in data:
-        #         data["data"] = {}
-        #     if message_type == "tool_call":
-        #         data["data"]["action"] = "call"
-        #     else:
-        #         data["data"]["action"] = "result"
 
         return Message(**data)
 

@@ -208,6 +208,10 @@ class SocketIOClient:
             await self._handle_permission_request(message)
         elif message.message_type == MessageType.PERMISSION_RESPONSE:
             await self._handle_permission_response(message)
+        elif message.message_type == MessageType.AGENT_QUERY:
+            await self._handle_agent_query(message)
+        elif message.message_type == MessageType.USER_ANSWER:
+            await self._handle_user_answer(message)
         elif message.message_type == MessageType.ERROR:
             await self._handle_error(message)
         elif message.message_type == MessageType.SUBSCRIBE:
@@ -287,6 +291,14 @@ class SocketIOClient:
     async def _handle_permission_response(self, message: Message):
         """Handle permission response"""
         await self._trigger_event("permission_response", message)
+
+    async def _handle_agent_query(self, message: Message):
+        """Handle agent query"""
+        await self._trigger_event("agent_query", message)
+
+    async def _handle_user_answer(self, message: Message):
+        """Handle user answer"""
+        await self._trigger_event("user_answer", message)
 
     async def _trigger_event(self, event_name: str, *args):
         """Trigger event handlers"""

@@ -185,6 +185,9 @@ class SocketIOAgent(Agent):
         self.communicator.register_event_handler(
             "permission_response", self._on_permission_response
         )
+        
+        from broca.tools.agent_interaction import AskUserToolManager
+        self.communicator.register_event_handler("user_answer", AskUserToolManager.handle_user_answer)
 
     def _setup_execution_engine(self):
         """Set up execution engine"""
