@@ -403,8 +403,6 @@ class Scheduler:
 
             # 记录执行结果
             result = f"Reminder sent: {message}"
-            if agent_id:
-                result += f" (to agent: {agent_id})"
 
             await self.execution_service.create_execution(
                 job_id=job_id, success=True, result=result
