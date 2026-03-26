@@ -39,6 +39,14 @@ export const useChatStore = defineStore('chat', () => {
     message: '',
   })
 
+  const agentQueryDialog = reactive({
+    visible: false,
+    requestId: '' as string | undefined,
+    senderId: '' as string | undefined,
+    question: '',
+    options: [] as Array<{ name: string; description: string }>,
+  })
+
   const messages = ref<Message[]>([])
   const messageStates = ref<Map<string, { showParameters: boolean; showResult: boolean; showReasoning: boolean }>>(
     new Map()
@@ -168,6 +176,8 @@ export const useChatStore = defineStore('chat', () => {
       'command',
       'permission_request',
       'permission_response',
+      'agent_query',
+      'user_answer',
       'subscribe',
       'unsubscribe',
       'connect',
@@ -447,6 +457,14 @@ export const useChatStore = defineStore('chat', () => {
       permissionDialog.message = m.data?.message || 'Permission required'
     }
 
+    socketStore.onAgentQuery = (m: Message) => {
+      agentQueryDialog.visible = true
+      agentQueryDialog.requestId = m.data?.request_id
+      agentQueryDialog.senderId = m.sender_id
+      agentQueryDialog.question = m.data?.question || m.data?.content || ''
+      agentQueryDialog.options = m.data?.options || []
+    }
+
     await socketStore.connect()
   }
 
@@ -521,6 +539,15 @@ export const useChatStore = defineStore('chat', () => {
       subscription: sessionId.value,
     })
     permissionDialog.visible = false
+  }
+
+  const respondUserAnswer = async (answer: string) => {
+    await socketStore.sendUserAnswer({
+      answer,
+      requestId: agentQueryDialog.requestId,
+      receiverId: agentQueryDialog.senderId || ''
+    })
+    agentQueryDialog.visible = false
   }
 
   // 清理当前session的状态
@@ -601,6 +628,7 @@ export const useChatStore = defineStore('chat', () => {
     isMobile,
     urlSessionId,
     permissionDialog,
+    agentQueryDialog,
     messages,
     messageStates,
     pendingChunks,
@@ -618,6 +646,7 @@ export const useChatStore = defineStore('chat', () => {
     sendUserMessage,
     sendAbort,
     respondPermission,
+    respondUserAnswer,
     doConnect,
     doSubscribe,
     loadHistory,

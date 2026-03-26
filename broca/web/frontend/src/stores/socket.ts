@@ -32,6 +32,7 @@ export const useSocketStore = defineStore('socket', () => {
   const onAgentResponse = ref<((message: Message) => void) | null>(null)
   const onToolCall = ref<((message: Message) => void) | null>(null)
   const onPermissionRequest = ref<((message: Message) => void) | null>(null)
+  const onAgentQuery = ref<((message: Message) => void) | null>(null)
 
   const connect = async () => {
     if (connected.value || connecting.value) return
@@ -71,6 +72,9 @@ export const useSocketStore = defineStore('socket', () => {
       })
       client.on('permission_request', (m: Message) => {
         onPermissionRequest.value?.(m)
+      })
+      client.on('agent_query', (m: Message) => {
+        onAgentQuery.value?.(m)
       })
 
       await client.connect()
@@ -165,6 +169,24 @@ export const useSocketStore = defineStore('socket', () => {
     }
   }
 
+  const sendUserAnswer = async (params: {
+    answer: string
+    requestId?: string
+    receiverId?: string
+  }) => {
+    if (!client) return
+    console.log(params)
+    try {
+      await client.sendUserAnswer({
+        answer: params.answer,
+        requestId: params.requestId,
+        receiverId: params.receiverId
+      })
+    } catch (e: any) {
+      ElMessage.error(e?.message || '发送回答失败')
+    }
+  }
+
   const cleanup = () => {
     disconnect()
     socketConfig.clientId = `browser_${Math.random().toString(16).slice(2)}`
@@ -183,12 +205,14 @@ export const useSocketStore = defineStore('socket', () => {
     onAgentResponse,
     onToolCall,
     onPermissionRequest,
+    onAgentQuery,
     connect,
     disconnect,
     subscribe,
     sendUserMessage,
     sendAbort,
     respondPermission,
+    sendUserAnswer,
     cleanup,
   }
 })

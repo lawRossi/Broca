@@ -31,6 +31,9 @@ export type MessageType =
   // 权限消息
   | 'permission_request'
   | 'permission_response'
+  // 用户问答消息
+  | 'agent_query'
+  | 'user_answer'
 
 // 与后端session.models.py中的MessageRole保持一致
 export type MessageRole =

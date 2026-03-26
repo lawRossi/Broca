@@ -42,8 +42,6 @@ const getIcon = (message: Message) => {
 
 const getSenderName = (message: Message, agentName: string) => {
   if (message.message_type === 'user_message' || message.role === 'user') {
-    // 显示发送给谁
-    // 优先使用receiver_id（实时消息），如果没有则使用agent_id（历史消息）
     const targetAgentId = message.receiver_id || message.agent_id
     if (targetAgentId && targetAgentId !== agentStore.currentAgentId) {
       const targetAgent = agentStore.agents.find((a) => a.agent_id === targetAgentId)
@@ -52,8 +50,6 @@ const getSenderName = (message: Message, agentName: string) => {
     }
     return 'You'
   } else if (message.message_type === 'agent_response' || message.role === 'assistant') {
-    // 显示来自哪个agent
-    // 优先使用sender_id（实时消息），如果没有则使用agent_id（历史消息）
     const senderAgentId = message.sender_id || message.agent_id
     if (senderAgentId && senderAgentId !== agentStore.currentAgentId) {
       const senderAgent = agentStore.agents.find((a) => a.agent_id === senderAgentId)
@@ -64,8 +60,6 @@ const getSenderName = (message: Message, agentName: string) => {
   } else if (message.message_type === 'error' || message.message_type === 'agent_error') {
     return 'Error'
   } else if (message.message_type === 'tool_call') {
-    // 显示来自哪个agent的工具调用
-    // 优先使用sender_id（实时消息），如果没有则使用agent_id（历史消息）
     const senderAgentId = message.sender_id || message.agent_id
     if (senderAgentId && senderAgentId !== agentStore.currentAgentId) {
       const senderAgent = agentStore.agents.find((a) => a.agent_id === senderAgentId)
