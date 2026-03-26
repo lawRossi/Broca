@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import type { Job, JobExecution, TriggerConfig } from '@/api/job'
 import { JobStatus, JobType } from '@/api/job'
@@ -19,7 +19,6 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
-// 响应式数据
 const jobDetail = ref<{
   job: Job
   executions: JobExecution[]
@@ -27,8 +26,23 @@ const jobDetail = ref<{
 const loading = ref(false)
 const executing = ref(false)
 const showAllExecutions = ref(false)
+const isMobile = ref(false)
 
-// 计算属性：展示的执行历史
+const updateIsMobile = () => {
+  isMobile.value = window.innerWidth <= 640
+}
+
+onMounted(() => {
+  updateIsMobile()
+  window.addEventListener('resize', updateIsMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateIsMobile)
+})
+
+const drawerSize = computed(() => (isMobile.value ? '100%' : '600px'))
+
 const displayedExecutions = computed(() => {
   if (!jobDetail.value) return []
   if (showAllExecutions.value) {
@@ -37,7 +51,6 @@ const displayedExecutions = computed(() => {
   return jobDetail.value.executions.slice(0, 5)
 })
 
-// 状态标签类型
 const getStatusType = (status: JobStatus): string => {
   switch (status) {
     case JobStatus.ACTIVE:
@@ -53,7 +66,6 @@ const getStatusType = (status: JobStatus): string => {
   }
 }
 
-// 状态标签文本
 const getStatusText = (status: JobStatus): string => {
   switch (status) {
     case JobStatus.ACTIVE:
@@ -69,7 +81,6 @@ const getStatusText = (status: JobStatus): string => {
   }
 }
 
-// 任务类型信息
 const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
   switch (jobType) {
     case JobType.REMINDER:
@@ -81,12 +92,11 @@ const getJobTypeInfo = (jobType: JobType): { icon: string; text: string } => {
   }
 }
 
-// 格式化触发器显示
 const formatTriggerConfig = (trigger_type: string, trigger_config: TriggerConfig): string => {
   switch (trigger_type) {
     case 'cron':
       const cronConfig = trigger_config as Record<string, any>
-      return `Cron 表达式: ${cronConfig.minute || '*'} ${cronConfig.hour || '*'} ${cronConfig.day || '*'} ${cronConfig.month || '*'} ${cronConfig.day_of_week || '*'}`
+      return `Cron: ${cronConfig.minute || '*'} ${cronConfig.hour || '*'} ${cronConfig.day || '*'} ${cronConfig.month || '*'} ${cronConfig.day_of_week || '*'}`
     case 'interval':
       const intervalConfig = trigger_config as Record<string, any>
       const parts = []
@@ -95,16 +105,15 @@ const formatTriggerConfig = (trigger_type: string, trigger_config: TriggerConfig
       if (intervalConfig.hours) parts.push(`${intervalConfig.hours}小时`)
       if (intervalConfig.minutes) parts.push(`${intervalConfig.minutes}分钟`)
       if (intervalConfig.seconds) parts.push(`${intervalConfig.seconds}秒`)
-      return `间隔时间: ${parts.join('') || '未配置'}`
+      return `间隔: ${parts.join('') || '未配置'}`
     case 'date':
       const dateConfig = trigger_config as Record<string, any>
-      return `执行时间: ${dateConfig.run_date || '未配置'}`
+      return `时间: ${dateConfig.run_date || '未配置'}`
     default:
-      return '未知触发器类型'
+      return '未知触发器'
   }
 }
 
-// 格式化日期时间
 const formatDateTime = (dateStr?: string): string => {
   if (!dateStr) return '未设置'
   try {
@@ -115,17 +124,15 @@ const formatDateTime = (dateStr?: string): string => {
       day: '2-digit',
       hour: '2-digit',
       minute: '2-digit',
-      second: '2-digit'
+      second: '2-digit',
     })
   } catch {
     return dateStr
   }
 }
 
-// 加载任务详情
 const loadJobDetail = async () => {
   if (!props.jobId) return
-
   try {
     loading.value = true
     const response = await jobApi.getJobDetail(props.jobId, 50)
@@ -139,15 +146,12 @@ const loadJobDetail = async () => {
   }
 }
 
-// 立即执行任务
 const handleExecute = async () => {
   if (!props.jobId) return
-
   try {
     executing.value = true
     await jobApi.executeJobNow(props.jobId)
     ElMessage.success('任务已触发执行')
-    // 刷新详情
     await loadJobDetail()
     emit('refresh')
   } catch (error: any) {
@@ -158,10 +162,8 @@ const handleExecute = async () => {
   }
 }
 
-// 暂停任务
 const handlePause = async () => {
   if (!props.jobId) return
-
   try {
     await jobApi.pauseJob(props.jobId)
     ElMessage.success('任务已暂停')
@@ -173,10 +175,8 @@ const handlePause = async () => {
   }
 }
 
-// 恢复任务
 const handleResume = async () => {
   if (!props.jobId) return
-
   try {
     await jobApi.resumeJob(props.jobId)
     ElMessage.success('任务已恢复')
@@ -188,21 +188,14 @@ const handleResume = async () => {
   }
 }
 
-// 删除任务
 const handleDelete = async () => {
   if (!props.jobId) return
-
   try {
-    await ElMessageBox.confirm(
-      '确定要删除这个定时任务吗？此操作不可恢复。',
-      '确认删除',
-      {
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      }
-    )
-
+    await ElMessageBox.confirm('确定要删除这个定时任务吗？此操作不可恢复。', '确认删除', {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
     await jobApi.deleteJob(props.jobId)
     ElMessage.success('任务已删除')
     emit('refresh')
@@ -215,32 +208,30 @@ const handleDelete = async () => {
   }
 }
 
-// 查看完整执行结果
 const handleViewExecutionResult = (execution: JobExecution) => {
-  // 这里可以使用 Dialog 或 MessageBox 展示完整结果
+  const maxHeight = isMobile.value ? '70vh' : '60vh'
   ElMessageBox.alert(
-    `<pre style="white-space: pre-wrap; word-wrap: break-word; max-height: 400px; overflow-y: auto;">${execution.result || '无输出'}</pre>`,
+    `<pre class="result-pre" style="max-height: ${maxHeight}; overflow-y: auto;">${execution.result || '无输出'}</pre>`,
     '执行结果',
     {
       confirmButtonText: '关闭',
       dangerouslyUseHTMLString: true,
-      customStyle: {
-        width: '600px'
-      }
+      customStyle: { width: isMobile.value ? '92%' : '600px', maxWidth: isMobile.value ? '92%' : '600px' },
     }
   )
 }
 
-// 监听显示状态
-watch(() => props.visible, (newVal) => {
-  if (newVal && props.jobId) {
-    loadJobDetail()
-  } else {
-    jobDetail.value = null
+watch(
+  () => props.visible,
+  (newVal) => {
+    if (newVal && props.jobId) {
+      loadJobDetail()
+    } else {
+      jobDetail.value = null
+    }
   }
-})
+)
 
-// 关闭详情
 const handleClose = () => {
   emit('update:visible', false)
 }
@@ -250,9 +241,8 @@ const handleClose = () => {
   <el-drawer
     :model-value="props.visible"
     title="任务详情"
-    size="600px"
+    :size="drawerSize"
     :before-close="handleClose"
-    :class="{ 'mobile-drawer': true }"
     @update:model-value="(val) => emit('update:visible', val)"
   >
     <div v-if="loading" class="flex items-center justify-center py-12">
@@ -266,20 +256,17 @@ const handleClose = () => {
       <p>任务不存在或已被删除</p>
     </div>
 
-    <div v-else class="space-y-6">
-      <!-- 任务基本信息 -->
+    <div v-else class="space-y-4">
+      <!-- 基本信息 -->
       <div class="bg-gray-50 rounded-lg p-4">
-        <div class="flex items-center gap-3 mb-4">
-          <span class="text-2xl">{{ getJobTypeInfo(jobDetail.job.job_type).icon }}</span>
-          <div class="flex-1">
-            <h2 class="text-lg font-bold text-gray-900">
+        <div class="flex items-start gap-3 mb-3">
+          <span class="text-xl">{{ getJobTypeInfo(jobDetail.job.job_type).icon }}</span>
+          <div class="flex-1 min-w-0">
+            <h2 class="text-sm font-bold text-gray-900 break-words">
               {{ jobDetail.job.name }}
             </h2>
-            <div class="flex items-center gap-2 mt-1">
-              <el-tag
-                :type="getStatusType(jobDetail.job.status)"
-                size="small"
-              >
+            <div class="flex gap-1 mt-2 flex-wrap">
+              <el-tag :type="getStatusType(jobDetail.job.status)" size="small">
                 {{ getStatusText(jobDetail.job.status) }}
               </el-tag>
               <el-tag size="small" type="info">
@@ -289,65 +276,68 @@ const handleClose = () => {
           </div>
         </div>
 
-        <!-- 任务ID -->
-        <div class="text-sm text-gray-600 mb-2">
-          <span class="font-medium">任务ID:</span>
-          <code class="ml-2 px-2 py-1 bg-gray-100 rounded text-xs">{{ jobDetail.job.job_id }}</code>
-        </div>
-
-        <!-- 触发器配置 -->
-        <div class="mb-3">
-          <div class="text-sm font-medium text-gray-700 mb-1">
-            触发器配置
-          </div>
-          <div class="text-sm text-gray-600 bg-white p-3 rounded border">
-            {{ formatTriggerConfig(jobDetail.job.trigger_type, jobDetail.job.trigger_config) }}
-          </div>
-        </div>
-
-        <!-- 执行内容 -->
-        <div class="mb-3">
-          <div class="text-sm font-medium text-gray-700 mb-1">
-            执行内容
-          </div>
-          <div class="text-sm text-gray-600 bg-white p-3 rounded border whitespace-pre-wrap">
-            {{ jobDetail.job.content }}
-          </div>
-        </div>
-
-        <!-- 关联信息 -->
-        <div class="grid grid-cols-2 gap-4 text-sm">
-          <div v-if="jobDetail.job.session_id">
-            <span class="font-medium text-gray-700">关联会话:</span>
-            <span class="ml-2 text-gray-600">{{ jobDetail.job.session_id.substring(0, 12) }}...</span>
-          </div>
-          <div v-if="jobDetail.job.agent_id">
-            <span class="font-medium text-gray-700">指定Agent:</span>
-            <span class="ml-2 text-gray-600">{{ jobDetail.job.agent_id.substring(0, 12) }}...</span>
-          </div>
+        <div class="space-y-3">
           <div>
-            <span class="font-medium text-gray-700">创建时间:</span>
-            <span class="ml-2 text-gray-600">{{ formatDateTime(jobDetail.job.created_at) }}</span>
+            <div class="text-xs font-medium text-gray-500 mb-1">
+              任务ID
+            </div>
+            <code class="block p-2 bg-gray-100 rounded text-xs break-all">{{ jobDetail.job.job_id }}</code>
           </div>
+
           <div>
-            <span class="font-medium text-gray-700">更新时间:</span>
-            <span class="ml-2 text-gray-600">{{ formatDateTime(jobDetail.job.updated_at) }}</span>
+            <div class="text-xs font-medium text-gray-500 mb-1">
+              触发器
+            </div>
+            <div class="p-2 bg-white rounded border text-xs text-gray-600 break-all">
+              {{ formatTriggerConfig(jobDetail.job.trigger_type, jobDetail.job.trigger_config) }}
+            </div>
           </div>
+
           <div>
-            <span class="font-medium text-gray-700">下次执行:</span>
-            <span class="ml-2" :class="jobDetail.job.next_run_time ? 'text-orange-600 font-medium' : 'text-gray-600'">
-              {{ formatDateTime(jobDetail.job.next_run_time) }}
-            </span>
+            <div class="text-xs font-medium text-gray-500 mb-1">
+              执行内容
+            </div>
+            <pre class="p-3 bg-gray-800 text-gray-100 rounded text-xs overflow-auto max-h-48 whitespace-pre-wrap">{{
+              jobDetail.job.content || '无内容'
+            }}</pre>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2 text-xs">
+            <div v-if="jobDetail.job.session_id">
+              <span class="text-gray-500">关联会话</span>
+              <p class="text-gray-700 break-all">
+                {{ jobDetail.job.session_id }}
+              </p>
+            </div>
+            <div v-if="jobDetail.job.agent_id">
+              <span class="text-gray-500">指定Agent</span>
+              <p class="text-gray-700 break-all">
+                {{ jobDetail.job.agent_id }}
+              </p>
+            </div>
+            <div>
+              <span class="text-gray-500">创建时间</span>
+              <p class="text-gray-700">
+                {{ formatDateTime(jobDetail.job.created_at) }}
+              </p>
+            </div>
+            <div>
+              <span class="text-gray-500">下次执行</span>
+              <p class="text-gray-700" :class="jobDetail.job.next_run_time ? 'text-orange-600 font-medium' : ''">
+                {{ formatDateTime(jobDetail.job.next_run_time) }}
+              </p>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- 操作按钮 -->
-      <div class="flex items-center gap-3">
+      <div class="flex flex-wrap gap-2">
         <el-button
           type="primary"
           :loading="executing"
           :disabled="jobDetail.job.status !== JobStatus.ACTIVE"
+          class="flex-1 sm:flex-none"
           @click="handleExecute"
         >
           立即执行
@@ -355,6 +345,7 @@ const handleClose = () => {
         <el-button
           v-if="jobDetail.job.status === JobStatus.ACTIVE"
           type="warning"
+          class="flex-1 sm:flex-none"
           @click="handlePause"
         >
           暂停
@@ -362,14 +353,12 @@ const handleClose = () => {
         <el-button
           v-if="jobDetail.job.status === JobStatus.PAUSED"
           type="success"
+          class="flex-1 sm:flex-none"
           @click="handleResume"
         >
           恢复
         </el-button>
-        <el-button
-          type="danger"
-          @click="handleDelete"
-        >
+        <el-button type="danger" class="flex-1 sm:flex-none" @click="handleDelete">
           删除
         </el-button>
       </div>
@@ -395,86 +384,45 @@ const handleClose = () => {
         </div>
 
         <div v-else>
-          <!-- 桌面端：表格 -->
+          <!-- 桌面端表格 -->
           <div class="hidden sm:block overflow-x-auto">
-            <el-table
-              :data="displayedExecutions"
-              stripe
-              size="small"
-              :show-overflow-tooltip="true"
-            >
-              <el-table-column
-                prop="executed_at"
-                label="执行时间"
-                width="180"
-              >
+            <el-table :data="displayedExecutions" stripe size="small">
+              <el-table-column prop="executed_at" label="执行时间" width="180">
                 <template #default="{ row }">
                   {{ formatDateTime(row.executed_at) }}
                 </template>
               </el-table-column>
-              <el-table-column
-                prop="success"
-                label="状态"
-                width="100"
-              >
+              <el-table-column prop="success" label="状态" width="80">
                 <template #default="{ row }">
-                  <el-tag
-                    :type="row.success ? 'success' : 'danger'"
-                    size="small"
-                  >
+                  <el-tag :type="row.success ? 'success' : 'danger'" size="small">
                     {{ row.success ? '成功' : '失败' }}
                   </el-tag>
                 </template>
               </el-table-column>
-              <el-table-column
-                prop="result"
-                label="结果摘要"
-                min-width="200"
-              >
+              <el-table-column prop="result" label="结果摘要" min-width="200">
                 <template #default="{ row }">
-                  <div class="truncate">
-                    {{ row.result?.substring(0, 100) || '无输出' }}
-                    <span v-if="row.result && row.result.length > 100">...</span>
-                  </div>
+                  <span class="truncate block max-w-xs">{{ row.result?.substring(0, 100) || '无输出' }}</span>
                 </template>
               </el-table-column>
-              <el-table-column
-                label="操作"
-                width="80"
-              >
+              <el-table-column label="操作" width="80">
                 <template #default="{ row }">
-                  <el-button
-                    v-if="row.result"
-                    type="primary"
-                    link
-                    size="small"
-                    @click="handleViewExecutionResult(row)"
-                  >
-                    查看详情
+                  <el-button v-if="row.result" type="primary" link size="small" @click="handleViewExecutionResult(row)">
+                    详情
                   </el-button>
                 </template>
               </el-table-column>
             </el-table>
           </div>
 
-          <!-- 移动端：卡片列表 -->
-          <div class="sm:hidden space-y-3">
-            <div
-              v-for="(execution, index) in displayedExecutions"
-              :key="index"
-              class="bg-white border rounded-lg p-3"
-            >
-              <div class="flex items-start justify-between mb-2">
-                <div class="flex items-center gap-2 flex-1 min-w-0">
-                  <el-tag
-                    :type="execution.success ? 'success' : 'danger'"
-                    size="small"
-                  >
+          <!-- 移动端卡片 -->
+          <div class="sm:hidden space-y-2">
+            <div v-for="(execution, index) in displayedExecutions" :key="index" class="bg-white border rounded-lg p-3">
+              <div class="flex items-center justify-between mb-2">
+                <div class="flex items-center gap-2">
+                  <el-tag :type="execution.success ? 'success' : 'danger'" size="small">
                     {{ execution.success ? '成功' : '失败' }}
                   </el-tag>
-                  <span class="text-xs text-gray-500 truncate">
-                    {{ formatDateTime(execution.executed_at) }}
-                  </span>
+                  <span class="text-xs text-gray-500">{{ formatDateTime(execution.executed_at) }}</span>
                 </div>
                 <el-button
                   v-if="execution.result"
@@ -486,10 +434,9 @@ const handleClose = () => {
                   详情
                 </el-button>
               </div>
-              <div class="text-xs text-gray-600 truncate">
+              <p class="text-xs text-gray-600 truncate">
                 {{ execution.result?.substring(0, 80) || '无输出' }}
-                <span v-if="execution.result && execution.result.length > 80">...</span>
-              </div>
+              </p>
             </div>
           </div>
         </div>
@@ -499,160 +446,56 @@ const handleClose = () => {
 </template>
 
 <style scoped>
-/* 自定义样式 */
 :deep(.el-drawer__body) {
-  padding: 20px;
+  padding: 16px;
+  overflow-y: auto;
 }
 
-:deep(.el-tag) {
-  font-weight: 500;
-}
-
-code {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
-  font-size: 0.75rem;
-}
-
-/* 移动端优化 */
 @media (max-width: 640px) {
   :deep(.el-drawer) {
-    width: 95% !important;
+    width: 100% !important;
   }
-  
+
   :deep(.el-drawer__header) {
     padding: 12px 16px;
-    margin: 0;
+    margin-bottom: 0;
+  }
+
+  :deep(.el-drawer__title) {
     font-size: 16px;
+    font-weight: 600;
   }
-  
-  :deep(.el-drawer__body) {
-    padding: 12px;
-  }
-  
-  /* 基本信息卡片 */
+
   .bg-gray-50.rounded-lg {
     padding: 12px;
-    margin-bottom: 12px;
   }
-  
-  /* 图标和标题 */
-  .text-2xl {
-    font-size: 1.25rem;
+
+  .text-sm.font-bold {
+    font-size: 15px;
   }
-  
-  .text-lg {
-    font-size: 0.95rem;
-  }
-  
-  .text-sm {
-    font-size: 0.8rem;
-  }
-  
-  .text-xs {
-    font-size: 0.7rem;
-  }
-  
-  /* 任务标题 */
-  .font-bold.text-gray-900 {
-    font-size: 1rem;
-    line-height: 1.3;
-  }
-  
-  /* 标签组 */
-  .flex.items-center.gap-2.mt-1 {
-    flex-wrap: wrap;
-    gap: 4px;
-    margin-top: 4px;
-  }
-  
-  /* 任务ID */
-  .text-sm.text-gray-600.mb-2 {
-    font-size: 0.75rem;
-    margin-bottom: 8px;
-  }
-  
-  code {
-    font-size: 0.65rem;
-    padding: 2px 6px;
-    word-break: break-all;
-    display: inline-block;
-    max-width: 150px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    vertical-align: middle;
-  }
-  
-  /* 配置区域 */
-  .mb-3 {
-    margin-bottom: 10px;
-  }
-  
-  .text-sm.font-medium.text-gray-700.mb-1 {
-    font-size: 0.75rem;
-    margin-bottom: 4px;
-  }
-  
-  .bg-white.p-3.rounded.border {
-    padding: 10px;
-    font-size: 0.75rem;
-    line-height: 1.4;
-    word-break: break-word;
-  }
-  
-  /* 网格布局 */
+
   .grid.grid-cols-2 {
     grid-template-columns: 1fr;
-    gap: 6px;
-    margin-top: 8px;
-  }
-  
-  .grid.grid-cols-2 > div {
-    font-size: 0.75rem;
-    padding: 4px 0;
-  }
-  
-  .font-medium.text-gray-700 {
-    font-size: 0.75rem;
-  }
-  
-  /* 按钮组 */
-  .flex.items-center.gap-3 {
-    flex-direction: column;
-    align-items: stretch;
     gap: 8px;
-    margin-top: 12px;
   }
-  
-  .flex.items-center.gap-3 .el-button {
-    width: 100%;
-    justify-content: center;
-    height: 36px;
-    font-size: 0.875rem;
-  }
-  
-  /* 执行历史标题 */
-  .text-base.font-semibold.text-gray-900 {
-    font-size: 0.9rem;
-  }
-  
-  /* 移动端卡片样式已在上方定义 */
-  
-  /* 标签缩小 */
-  :deep(.el-tag--small) {
-    height: 18px;
-    padding: 0 6px;
-    font-size: 10px;
-    line-height: 16px;
-  }
-  
-  /* 空状态 */
-  .text-center.py-8 {
-    padding: 20px 0;
-  }
-  
-  .text-center.py-8 p {
-    font-size: 0.875rem;
-  }
+}
+
+.result-pre {
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  margin: 0;
+  padding: 16px;
+  background: #1f2937;
+  color: #e5e7eb;
+  border-radius: 8px;
+  font-size: 13px;
+  line-height: 1.5;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+}
+
+:deep(.el-message-box__content) {
+  max-height: 70vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
 }
 </style>
