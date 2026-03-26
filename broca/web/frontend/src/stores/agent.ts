@@ -44,7 +44,6 @@ export const useAgentStore = defineStore('agent', () => {
   const fetchAgents = async (sessionId?: string, isConnected?: boolean) => {
     loading.value = true
     error.value = ''
-    console.log(isConnected)
   
     try {
       if (!sessionId) {
@@ -276,13 +275,6 @@ export const useAgentStore = defineStore('agent', () => {
     }
     return typeColors[type] || 'gray'
   }
-
-  // const init = async (sessionId?: string) => {
-  //   if (sessionId) {
-  //     await fetchAgents(sessionId)
-  //   }
-  //   // 不自动获取所有配置，按需获取
-  // }
 
   // 清除缓存
   const clearCache = () => {

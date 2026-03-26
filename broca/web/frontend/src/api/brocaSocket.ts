@@ -270,6 +270,43 @@ export class BrocaSocketClient {
     })
   }
 
+  async sendUserAnswer(params: {
+    answer: string
+    requestId?: string
+    receiverId?: string
+    room?: string
+    subscription?: string
+  }): Promise<void> {
+    if (!this.socket || !this.isConnected) {
+      throw new Error('Not connected')
+    }
+
+    const message: Message = {
+      message_id: this.generateMessageId(),
+      message_type: 'user_answer',
+      timestamp: new Date().toISOString(),
+      role: 'user',
+      sender_id: this.options.clientId,
+      receiver_id: params.receiverId,
+      room: params.room,
+      subscription: params.subscription,
+      data: {
+        answer: params.answer,
+        request_id: params.requestId,
+      },
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket!.emit('message', message, (response: any) => {
+        if (response?.error) {
+          reject(new Error(response.error))
+        } else {
+          resolve()
+        }
+      })
+    })
+  }
+
   private parseMessage(data: any): Message {
     // Ensure data has required fields
     if (!data || typeof data !== 'object') {

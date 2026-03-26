@@ -8,6 +8,7 @@ import ChatInput from '@/components/ChatInput.vue'
 import ChatInfoSidebar from '@/components/ChatInfoSidebar.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import PermissionDialog from '@/components/PermissionDialog.vue'
+import AgentQueryDialog from '@/components/AgentQueryDialog.vue'
 
 const chatStore = useChatStore()
 
@@ -52,6 +53,7 @@ onUnmounted(() => {
     </div>
 
     <PermissionDialog />
+    <AgentQueryDialog />
   </div>
 </template>
 
