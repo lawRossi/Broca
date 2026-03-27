@@ -54,7 +54,6 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
         for agent in agents:
             await agent.connect()
-            await agent.subscribe(session_id)
             task = asyncio.create_task(agent.run())
             task.add_done_callback(lambda t, a=agent: a.stop())
 
@@ -137,18 +136,22 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
 
         runtime = req.app.state.socketio_runtime
         factory = AgentFactory()
+        response_agents: list[dict] = []
         for db_agent in agents:
+            response_agent = db_agent.model_dump()
             if not runtime.is_client_connected(db_agent.agent_id):
                 logger.info(f"Agent {db_agent.name} is not connected")
                 agent = await factory.restore_agent(db_agent.agent_id, session_id=session_id)
                 await agent.connect()
-                await agent.subscribe(session_id)
                 task = asyncio.create_task(agent.run())
                 task.add_done_callback(lambda t, a=agent: a.stop())
                 restored_agents.append(agent)
+                response_agent["status"] = "idle" if agent.is_connected() else "disconnected"
                 logger.info(f"Agent {db_agent.name} restored")
-
-        return ApiResponse.success(agents)
+            else:
+                response_agent["status"] = "idel"
+            response_agents.append(response_agent)
+        return ApiResponse.success(response_agents)
     except Exception as e:
         for agent in restored_agents:
             agent.stop()
