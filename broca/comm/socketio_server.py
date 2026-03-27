@@ -257,7 +257,7 @@ class SocketIOServer:
                     logger.debug(f"Message delivered successfully: {result}")
             elif isinstance(result, bool):
                 if not result:
-                    logger.warning(f"Message failed to deliver to target")
+                    logger.warning("Message failed to deliver to target")
 
         # Trigger appropriate event
         event_name = (
@@ -300,7 +300,9 @@ class SocketIOServer:
             logger.error(f"Failed to send message to room {room}: {e}")
             return False
 
-    async def _send_to_subscription(self, subscription: str, message: Message) -> Dict[str, int]:
+    async def _send_to_subscription(
+        self, subscription: str, message: Message
+    ) -> Dict[str, int]:
         """Send message to subscription
 
         Returns:
@@ -328,7 +330,9 @@ class SocketIOServer:
                 MessageProtocol.to_dict(message),
                 room=sids,
             )
-            logger.debug(f"Sent message to subscription {subscription} ({total_clients} clients)")
+            logger.debug(
+                f"Sent message to subscription {subscription} ({total_clients} clients)"
+            )
             return {"total": total_clients, "sent": total_clients, "failed": 0}
         except Exception as e:
             logger.error(f"Failed to send message to subscription {subscription}: {e}")
@@ -345,7 +349,9 @@ class SocketIOServer:
             # 广播无法知道确切数量，但可以记录已发送
             async with self._lock:
                 total_clients = len(self.clients)
-            logger.debug(f"Broadcasted message to all clients ({total_clients} connected)")
+            logger.debug(
+                f"Broadcasted message to all clients ({total_clients} connected)"
+            )
             return {"total": total_clients, "sent": total_clients, "failed": 0}
         except Exception as e:
             logger.error(f"Failed to broadcast message: {e}")
