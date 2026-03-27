@@ -1,12 +1,13 @@
+import asyncio
 import inspect
 import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from socketio import AsyncServer
 from loguru import logger
+from socketio import AsyncServer
 
-from broca.session.models import Message, MessageProtocol, MessageType, MessageRole
+from broca.session.models import Message, MessageProtocol, MessageRole, MessageType
 
 
 @dataclass
@@ -51,6 +52,12 @@ class SocketIOServer:
         self.subscriptions: Dict[str, Set[str]] = {}
         self.event_handlers: Dict[str, List[Callable]] = {}
 
+        # 添加锁保护共享状态访问
+        self._lock = asyncio.Lock()
+
+        # 保存 runner 引用以便正确清理
+        self._runner = None
+
         self._setup_event_handlers()
         logger.info(f"Socket.io server initialized on {host}:{port}")
 
@@ -71,55 +78,61 @@ class SocketIOServer:
                 client_id=client_id, client_type=client_type, user_id=user_id
             )
 
-            self.clients[sid] = client_info
-            self.client_sids[client_id] = sid
+            # 使用锁保护共享状态
+            async with self._lock:
+                self.clients[sid] = client_info
+                self.client_sids[client_id] = sid
 
             connect_msg = Message(
                 message_type=MessageType.CONNECT,
                 role=MessageRole.SYSTEM,
                 sender_id="server",
                 receiver_id=client_id,
-                data={"content": "Connected to server"}
+                data={"content": "Connected to server"},
             )
-            await self.sio.emit("message", MessageProtocol.to_dict(connect_msg), room=sid)
+            await self.sio.emit(
+                "message", MessageProtocol.to_dict(connect_msg), room=sid
+            )
             await self._trigger_event("connect", client_info)
             logger.info(f"Client {client_id} ({client_type}) connected successfully")
 
         @self.sio.event
         async def disconnect(sid):
-            if sid not in self.clients:
-                return
+            client_info = None
+            client_id = None
 
-            client_info = self.clients[sid]
-            client_id = client_info.client_id
+            # 使用锁保护共享状态读取和修改
+            async with self._lock:
+                if sid not in self.clients:
+                    return
 
-            for subscription in client_info.subscriptions:
-                self.subscriptions.get(subscription, set()).discard(client_id)
+                client_info = self.clients[sid]
+                client_id = client_info.client_id
 
-            del self.clients[sid]
-            self.client_sids.pop(client_id, None)
+                # 清理订阅
+                for subscription in client_info.subscriptions:
+                    if subscription in self.subscriptions:
+                        self.subscriptions[subscription].discard(client_id)
+                        # 如果订阅为空，删除该订阅
+                        if not self.subscriptions[subscription]:
+                            del self.subscriptions[subscription]
 
-            await self._trigger_event("disconnect", client_info)
-            logger.info(f"Client {client_id} disconnected successfully")
+                # 清理客户端
+                del self.clients[sid]
+                self.client_sids.pop(client_id, None)
+
+            if client_info:
+                await self._trigger_event("disconnect", client_info)
+                logger.info(f"Client {client_id} disconnected successfully")
 
         @self.sio.event
         async def message(sid, data):
             try:
-                # 解析消息数据
                 message_data = json.loads(data) if isinstance(data, str) else data
                 message = MessageProtocol.from_dict(message_data)
-                
-                # 简单的验证
-                is_valid = True
-                error_msg = None
+
                 if not message.message_type:
-                    is_valid = False
                     error_msg = "Message type is required"
-                elif message.message_type == MessageType.USER_MESSAGE:
-                    if not message.data.get("content"):
-                        is_valid = False
-                        error_msg = "User message requires content"
-                if not is_valid:
                     await self._send_error(
                         sid, "VALIDATION_ERROR", error_msg, message.sender_id
                     )
@@ -132,6 +145,7 @@ class SocketIOServer:
                 )
             except Exception as e:
                 import traceback
+
                 logger.error(traceback.format_exc())
                 await self._send_error(
                     sid, "PROCESS_ERROR", f"Error processing message: {e}"
@@ -186,7 +200,7 @@ class SocketIOServer:
                 sender_id="server",
                 receiver_id=client_id,
                 subscription=subscription,
-                data={"content": content}
+                data={"content": content},
             )
             await self.sio.emit("message", MessageProtocol.to_dict(ack_msg), room=sid)
 
@@ -208,9 +222,11 @@ class SocketIOServer:
             sender_id="server",
             receiver_id=receiver_id,
             error_code=error_code,
-            data={"error_message": error_message}
+            data={"error_message": error_message},
         )
-        await self.sio.emit("message", MessageProtocol.to_dict(error_response), room=sid)
+        await self.sio.emit(
+            "message", MessageProtocol.to_dict(error_response), room=sid
+        )
 
     async def _process_message(self, sid: str, message: Message):
         """Process incoming message"""
@@ -232,9 +248,7 @@ class SocketIOServer:
 
         # Trigger appropriate event
         event_name = (
-            message.message_type
-            if message.message_type is not None
-            else "message"
+            message.message_type if message.message_type is not None else "message"
         )
         await self._trigger_event(event_name, client_info, message)
 
@@ -259,13 +273,20 @@ class SocketIOServer:
             logger.warning(f"Subscription {subscription} not found")
             return
 
-        for client_id in self.subscriptions[subscription]:
-            if client_id in self.client_sids:
-                await self.sio.emit(
-                    "message", MessageProtocol.to_dict(message), room=self.client_sids[client_id]
-                )
+        sids = []
+        async with self._lock:
+            for client_id in self.subscriptions[subscription]:
+                if client_id in self.client_sids:
+                    sids.append(self.client_sids[client_id])
 
-        logger.debug(f"Sent message to subscription {subscription}")
+        if sids:
+            await self.sio.emit(
+                "message",
+                MessageProtocol.to_dict(message),
+                room=sids,
+            )
+
+        logger.debug(f"Sent message to subscription {subscription} ({len(sids)} clients)")
 
     async def _broadcast(self, message: Message):
         """Broadcast message to all clients"""
@@ -335,7 +356,7 @@ class SocketIOServer:
             role=MessageRole.SYSTEM,
             sender_id=sender_id,
             subscription=subscription,
-            data={"content": content}
+            data={"content": content},
         )
         await self.send_message(message, subscription=subscription)
 
@@ -348,7 +369,7 @@ class SocketIOServer:
             role=MessageRole.USER,
             sender_id=sender_id,
             receiver_id=client_id,
-            data={"content": content}
+            data={"content": content},
         )
         await self.send_message(message, client_id=client_id)
 
@@ -377,15 +398,21 @@ class SocketIOServer:
 
         app = web.Application()
         self.sio.attach(app)
-        runner = web.AppRunner(app)
-        await runner.setup()
-        site = web.TCPSite(runner, self.host, self.port)
+        self._runner = web.AppRunner(app)
+        await self._runner.setup()
+        site = web.TCPSite(self._runner, self.host, self.port)
         await site.start()
 
     async def stop(self):
         """Stop the server"""
         logger.info("Stopping Socket.io server")
         await self.sio.shutdown()
+
+        # 清理 runner 资源
+        if self._runner:
+            await self._runner.cleanup()
+            self._runner = None
+
         logger.info("Socket.io server stopped")
 
     def is_client_connected(self, client_id: str) -> bool:
