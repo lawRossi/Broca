@@ -445,10 +445,16 @@ export const useChatStore = defineStore('chat', () => {
     socketStore.onAgentResponse = (m: Message) => {
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
+      // 收到 agent_response 时隐藏对话框
+      permissionDialog.visible = false
+      agentQueryDialog.visible = false
     }
     socketStore.onToolCall = (m: Message) => {
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
+      // 收到 tool_call 时隐藏对话框
+      permissionDialog.visible = false
+      agentQueryDialog.visible = false
     }
     socketStore.onPermissionRequest = (m: Message) => {
       permissionDialog.visible = true
