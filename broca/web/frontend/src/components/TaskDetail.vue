@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, ref, watch, onMounted, onUnmounted } from 'vue'
 import { ElMessage } from 'element-plus'
 import type { TaskStatus, TaskPriority } from '@/api/task'
 import { TaskStatus as TaskStatusEnum, TaskPriority as TaskPriorityEnum } from '@/api/task'
@@ -13,7 +13,8 @@ interface Props {
 }
 
 interface Emits {
-  (e: 'update:visible', visible: boolean): void
+  (e: 'update:visible', value: boolean): void
+  (e: 'refresh'): void
 }
 
 const props = defineProps<Props>()
@@ -39,11 +40,49 @@ const editForm = ref({
   report: '',
 })
 
+// 移动端适配
+const isMobile = ref(false)
+const updateIsMobile = () => {
+  isMobile.value = window.innerWidth <= 640
+}
+
+onMounted(() => {
+  updateIsMobile()
+  window.addEventListener('resize', updateIsMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', updateIsMobile)
+})
+
+const drawerSize = computed(() => (isMobile.value ? '100%' : '50%'))
+
+// 显示控制
+const showAllChildren = ref(false)
+const showAllComments = ref(false)
+
 // 计算属性
 const task = computed(() => taskStore.taskDetail?.task)
 const comments = computed(() => taskStore.taskDetail?.comments || [])
 const children = computed(() => taskStore.taskDetail?.children || [])
 const loading = computed(() => taskStore.detailLoading)
+
+const displayedChildren = computed(() => {
+  if (showAllChildren.value) {
+    return children.value
+  }
+  return children.value.slice(0, 5)
+})
+
+const displayedComments = computed(() => {
+  if (showAllComments.value) {
+    return comments.value
+  }
+  return comments.value.slice(0, 5)
+})
+
+const hasMoreChildren = computed(() => children.value.length > 5)
+const hasMoreComments = computed(() => comments.value.length > 5)
 
 const statusOptions = computed(() => [
   { value: TaskStatusEnum.PENDING, label: '待处理', icon: Clock, type: 'info' },
@@ -58,11 +97,7 @@ const priorityOptions = computed(() => [
   { value: TaskPriorityEnum.HIGH, label: '高', type: 'danger' },
 ])
 
-// 方法
-const handleClose = () => {
-  emit('update:visible', false)
-  editing.value = false
-}
+
 
 const handleUpdateStatus = async (status: TaskStatus) => {
   if (!task.value) return
@@ -147,14 +182,19 @@ const handleCancelEdit = () => {
 }
 
 const formatDate = (dateString: string): string => {
-  const date = new Date(dateString)
-  return date.toLocaleString('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
+  if (!dateString) return '未设置'
+  try {
+    const date = new Date(dateString)
+    return date.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+    })
+  } catch {
+    return dateString
+  }
 }
 
 const getStatusInfo = (status: TaskStatus) => {
@@ -163,6 +203,21 @@ const getStatusInfo = (status: TaskStatus) => {
 
 const getPriorityInfo = (priority: TaskPriority) => {
   return priorityOptions.value.find(option => option.value === priority) || priorityOptions.value[1]
+}
+
+const handleShowAllChildren = () => {
+  showAllChildren.value = true
+}
+
+const handleShowAllComments = () => {
+  showAllComments.value = true
+}
+
+const handleClose = () => {
+  emit('update:visible', false)
+  editing.value = false
+  showAllChildren.value = false
+  showAllComments.value = false
 }
 
 // 监听任务ID变化
@@ -178,32 +233,38 @@ watch(() => props.visible, (visible) => {
     taskStore.fetchTaskDetail(props.taskId)
   } else {
     editing.value = false
+    showAllChildren.value = false
+    showAllComments.value = false
   }
 })
 </script>
 
 <template>
   <el-drawer
-    :model-value="visible"
-    @update:model-value="handleClose"
+    :model-value="props.visible"
+    :size="drawerSize"
+    :before-close="handleClose"
+    @update:model-value="(val) => emit('update:visible', val)"
     title="任务详情"
-    size="50%"
-    direction="rtl"
     class="task-detail-drawer"
   >
-    <!-- 加载状态 -->
-    <div v-if="loading" class="flex items-center justify-center h-full">
+    <div v-if="loading" class="flex items-center justify-center py-12">
       <el-icon class="is-loading" size="24">
         <Loading />
       </el-icon>
       <span class="ml-2 text-gray-500">加载中...</span>
     </div>
 
-    <!-- 任务详情 -->
-    <div v-else-if="task" class="h-full flex flex-col">
-      <!-- 头部信息 -->
-      <div class="border-b pb-4 mb-4">
-        <!-- 编辑模式 -->
+    <div v-else-if="!task" class="text-center py-12 text-gray-500">
+      <el-icon size="48" class="mb-4">
+        <Document />
+      </el-icon>
+      <p>任务不存在</p>
+    </div>
+
+    <div v-else class="space-y-4">
+      <!-- 基本信息 -->
+      <div class="bg-gray-50 rounded-lg p-4">
         <div v-if="editing" class="space-y-3">
           <el-input v-model="editForm.name" placeholder="任务名称" />
           <el-input v-model="editForm.description" type="textarea" placeholder="任务描述" :rows="2" />
@@ -214,12 +275,13 @@ watch(() => props.visible, (visible) => {
           </div>
         </div>
 
-        <!-- 查看模式 -->
         <div v-else>
-          <div class="flex items-start justify-between mb-3">
-            <div class="flex-1">
-              <h2 class="text-xl font-bold text-gray-900 mb-2">{{ task.name }}</h2>
-              <p class="text-gray-600 mb-3">{{ task.description }}</p>
+          <div class="flex items-start gap-3 mb-3">
+            <div class="flex-1 min-w-0">
+              <h2 class="text-sm font-bold text-gray-900 break-words">
+                {{ task.name }}
+              </h2>
+              <p class="text-xs text-gray-600 mt-1 break-words">{{ task.description }}</p>
             </div>
             <el-button type="warning" circle @click="handleEdit">
               <el-icon><Edit /></el-icon>
@@ -286,45 +348,51 @@ watch(() => props.visible, (visible) => {
           </div>
 
           <!-- 元信息 -->
-          <div class="text-sm text-gray-500 space-y-1">
-            <div>创建时间: {{ formatDate(task.created_at) }}</div>
-            <div>更新时间: {{ formatDate(task.updated_at) }}</div>
-            <div v-if="task.session_id">会话ID: {{ task.session_id }}</div>
-            <div v-if="task.parent_id">父任务ID: {{ task.parent_id }}</div>
+          <div class="space-y-1 text-xs text-gray-500">
+            <div class="flex flex-wrap gap-x-4 gap-y-1">
+              <span>创建时间: {{ formatDate(task.created_at) }}</span>
+              <span>更新时间: {{ formatDate(task.updated_at) }}</span>
+            </div>
+            <div v-if="task.session_id" class="break-all">
+              会话ID: {{ task.session_id }}
+            </div>
+            <div v-if="task.parent_id" class="break-all">
+              父任务ID: {{ task.parent_id }}
+            </div>
           </div>
         </div>
       </div>
 
       <!-- 内容区域 -->
-      <div class="flex-1 overflow-y-auto space-y-6">
+      <div class="space-y-4">
         <!-- 详细描述 -->
         <div v-if="task.details" class="border rounded-lg p-4">
-          <h3 class="text-lg font-semibold mb-2 flex items-center gap-2">
+          <h3 class="text-sm font-semibold mb-2 flex items-center gap-2">
             <el-icon><Document /></el-icon>
             详细描述
           </h3>
-          <div class="text-gray-700 whitespace-pre-wrap">{{ task.details }}</div>
+          <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">{{ task.details }}</div>
         </div>
 
         <!-- 验收标准 -->
         <div v-if="task.acceptance_criteria && task.acceptance_criteria.length > 0" class="border rounded-lg p-4">
-          <h3 class="text-lg font-semibold mb-2">验收标准</h3>
+          <h3 class="text-sm font-semibold mb-2">验收标准</h3>
           <ul class="space-y-2">
-            <li v-for="(criterion, index) in task.acceptance_criteria" :key="index" class="flex items-start gap-2">
-              <el-icon class="text-green-500 mt-0.5"><Check /></el-icon>
-              <span class="text-gray-700">{{ criterion }}</span>
+            <li v-for="(criterion, index) in task.acceptance_criteria" :key="index" class="flex items-start gap-2 text-sm">
+              <el-icon class="text-green-500 mt-0.5 flex-shrink-0"><Check /></el-icon>
+              <span class="text-gray-700 break-words">{{ criterion }}</span>
             </li>
           </ul>
         </div>
 
         <!-- 关联文件 -->
         <div v-if="task.context_files && task.context_files.length > 0" class="border rounded-lg p-4">
-          <h3 class="text-lg font-semibold mb-2 flex items-center gap-2">
+          <h3 class="text-sm font-semibold mb-2 flex items-center gap-2">
             <el-icon><Paperclip /></el-icon>
             关联文件
           </h3>
           <div class="space-y-1">
-            <div v-for="(file, index) in task.context_files" :key="index" class="text-blue-600 hover:underline cursor-pointer">
+            <div v-for="(file, index) in task.context_files" :key="index" class="text-blue-600 hover:underline cursor-pointer text-sm truncate" :title="file">
               {{ file }}
             </div>
           </div>
@@ -332,7 +400,7 @@ watch(() => props.visible, (visible) => {
 
         <!-- 关联链接 -->
         <div v-if="task.context_links && task.context_links.length > 0" class="border rounded-lg p-4">
-          <h3 class="text-lg font-semibold mb-2 flex items-center gap-2">
+          <h3 class="text-sm font-semibold mb-2 flex items-center gap-2">
             <el-icon><Link /></el-icon>
             关联链接
           </h3>
@@ -342,7 +410,8 @@ watch(() => props.visible, (visible) => {
               :key="index"
               :href="link"
               target="_blank"
-              class="text-blue-600 hover:underline block truncate"
+              class="text-blue-600 hover:underline block text-sm truncate"
+              :title="link"
             >
               {{ link }}
             </a>
@@ -351,21 +420,21 @@ watch(() => props.visible, (visible) => {
 
         <!-- 上下文笔记 -->
         <div v-if="task.context_notes" class="border rounded-lg p-4">
-          <h3 class="text-lg font-semibold mb-2">上下文笔记</h3>
-          <div class="text-gray-700 whitespace-pre-wrap">{{ task.context_notes }}</div>
+          <h3 class="text-sm font-semibold mb-2">上下文笔记</h3>
+          <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">{{ task.context_notes }}</div>
         </div>
 
         <!-- 任务报告 -->
         <div v-if="task.report" class="border rounded-lg p-4">
-          <h3 class="text-lg font-semibold mb-2">任务报告</h3>
-          <div class="text-gray-700 whitespace-pre-wrap">{{ task.report }}</div>
+          <h3 class="text-sm font-semibold mb-2">任务报告</h3>
+          <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">{{ task.report }}</div>
         </div>
 
         <!-- 依赖关系 -->
         <div v-if="task.dependencies && task.dependencies.length > 0" class="border rounded-lg p-4">
-          <h3 class="text-lg font-semibold mb-2">依赖任务</h3>
+          <h3 class="text-sm font-semibold mb-2">依赖任务</h3>
           <div class="space-y-1">
-            <div v-for="(dependency, index) in task.dependencies" :key="index" class="text-gray-700">
+            <div v-for="(dependency, index) in task.dependencies" :key="index" class="text-sm text-gray-700 break-all">
               {{ dependency }}
             </div>
           </div>
@@ -373,20 +442,34 @@ watch(() => props.visible, (visible) => {
 
         <!-- 子任务 -->
         <div v-if="children.length > 0" class="border rounded-lg p-4">
-          <h3 class="text-lg font-semibold mb-2">子任务 ({{ children.length }})</h3>
+          <div class="flex items-center justify-between mb-3">
+            <h3 class="text-sm font-semibold text-gray-900">
+              子任务 ({{ children.length }})
+            </h3>
+            <el-button
+              v-if="hasMoreChildren && !showAllChildren"
+              type="primary"
+              link
+              size="small"
+              @click="handleShowAllChildren"
+            >
+              查看全部
+            </el-button>
+          </div>
+
           <div class="space-y-2">
             <div
-              v-for="child in children"
+              v-for="child in displayedChildren"
               :key="child.task_id"
               class="border rounded p-3 hover:bg-gray-50 cursor-pointer"
               @click="taskStore.openDetail(child.task_id)"
             >
-              <div class="flex items-center justify-between">
-                <div>
-                  <div class="font-medium">{{ child.name }}</div>
-                  <div class="text-sm text-gray-500">{{ child.description }}</div>
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium text-sm truncate">{{ child.name }}</div>
+                  <div class="text-xs text-gray-500 truncate">{{ child.description }}</div>
                 </div>
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-1 flex-shrink-0">
                   <el-tag :type="getStatusInfo(child.status).type" size="small">
                     {{ getStatusInfo(child.status).label }}
                   </el-tag>
@@ -401,20 +484,36 @@ watch(() => props.visible, (visible) => {
 
         <!-- 评论区域 -->
         <div class="border rounded-lg p-4">
-          <h3 class="text-lg font-semibold mb-4 flex items-center gap-2">
-            <el-icon><Message /></el-icon>
-            评论 ({{ comments.length }})
-          </h3>
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-sm font-semibold text-gray-900 flex items-center gap-2">
+              <el-icon><Message /></el-icon>
+              评论 ({{ comments.length }})
+            </h3>
+            <el-button
+              v-if="hasMoreComments && !showAllComments"
+              type="primary"
+              link
+              size="small"
+              @click="handleShowAllComments"
+            >
+              查看全部
+            </el-button>
+          </div>
 
           <!-- 评论列表 -->
-          <div v-if="comments.length > 0" class="space-y-4 mb-4">
-            <div v-for="comment in comments" :key="comment.comment_id" class="border-b pb-4 last:border-0">
+          <div v-if="displayedComments.length > 0" class="space-y-4 mb-4">
+            <div v-for="comment in displayedComments" :key="comment.comment_id" class="border-b pb-4 last:border-0">
               <div class="flex items-start justify-between mb-2">
-                <div class="font-medium">{{ comment.author }}</div>
-                <div class="text-sm text-gray-500">{{ formatDate(comment.created_at) }}</div>
+                <div class="font-medium text-sm">{{ comment.author }}</div>
+                <div class="text-xs text-gray-500">{{ formatDate(comment.created_at) }}</div>
               </div>
-              <div class="text-gray-700 whitespace-pre-wrap">{{ comment.content }}</div>
+              <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">{{ comment.content }}</div>
             </div>
+          </div>
+
+          <!-- 空状态 -->
+          <div v-else class="text-center py-4 text-gray-500 text-sm">
+            暂无评论
           </div>
 
           <!-- 添加评论 -->
@@ -433,7 +532,6 @@ watch(() => props.visible, (visible) => {
                 :disabled="!newComment.trim()"
                 @click="handleSubmitComment"
               >
-                <!-- <el-icon class="mr-1"><Send /></el-icon> -->
                 发表评论
               </el-button>
             </div>
@@ -441,26 +539,58 @@ watch(() => props.visible, (visible) => {
         </div>
       </div>
     </div>
-
-    <!-- 任务不存在 -->
-    <div v-else class="flex flex-col items-center justify-center h-full text-gray-500">
-      <el-icon size="48" class="mb-4">
-        <Document />
-      </el-icon>
-      <p>任务不存在</p>
-    </div>
   </el-drawer>
 </template>
 
 <style scoped>
-.task-detail-drawer :deep(.el-drawer__body) {
-  padding: 20px;
+:deep(.el-drawer__body) {
+  padding: 16px;
   overflow-y: auto;
 }
 
-@media (max-width: 768px) {
-  .task-detail-drawer :deep(.el-drawer) {
+@media (max-width: 640px) {
+  :deep(.el-drawer) {
     width: 100% !important;
   }
+
+  :deep(.el-drawer__header) {
+    padding: 12px 16px;
+    margin-bottom: 0;
+  }
+
+  :deep(.el-drawer__title) {
+    font-size: 16px;
+    font-weight: 600;
+  }
+
+  .bg-gray-50.rounded-lg {
+    padding: 12px;
+  }
+
+  .text-sm.font-bold {
+    font-size: 15px;
+  }
+
+  .grid.grid-cols-2 {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+
+/* Truncation utility */
+.truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Break words for long text */
+.break-words {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+.break-all {
+  word-break: break-all;
 }
 </style>

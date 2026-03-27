@@ -2,7 +2,7 @@
 import { computed } from 'vue'
 import type { Task } from '@/api/task'
 import { TaskStatus, TaskPriority } from '@/api/task'
-import { Loading, Document, Edit, Delete, Check, Clock, Warning, User, Link, MoreFilled } from '@element-plus/icons-vue'
+import { Loading, Document, Edit, Delete, Check, Clock, Warning, User, Link, MoreFilled, StarFilled } from '@element-plus/icons-vue'
 
 interface Props {
   tasks: Task[]
@@ -17,6 +17,7 @@ interface Emits {
   (e: 'edit', task: Task): void
   (e: 'delete', task: Task): void
   (e: 'update-status', task: Task, status: TaskStatus): void
+  (e: 'toggle-star', task: Task): void
 }
 
 const props = defineProps<Props>()
@@ -52,6 +53,7 @@ const handleView = (task: Task) => emit('view', task)
 const handleEdit = (task: Task) => emit('edit', task)
 const handleDelete = (task: Task) => emit('delete', task)
 const handleUpdateStatus = (task: Task, status: TaskStatus) => emit('update-status', task, status)
+const handleToggleStar = (task: Task) => emit('toggle-star', task)
 
 const getStatusType = (status: TaskStatus): string => {
   switch (status) {
@@ -155,6 +157,12 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
 
   return allStatuses.filter((option) => option.value !== currentStatus)
 }
+
+// 检查任务是否被标记为重要（模拟功能）
+const isTaskStarred = (task: Task): boolean => {
+  // 这里可以根据实际业务逻辑实现，暂时模拟
+  return task.priority === TaskPriority.HIGH || task.status === TaskStatus.BLOCKED
+}
 </script>
 
 <template>
@@ -173,18 +181,18 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
         class="fixed bottom-4 left-4 right-4 md:left-auto md:right-4 md:w-auto z-50 md:z-40"
       >
         <div
-          class="mx-auto md:mx-0 bg-gray-900 text-white rounded-xl shadow-xl px-4 py-3 flex items-center justify-between md:justify-start gap-3 md:gap-4 max-w-md"
+          class="mx-auto md:mx-0 bg-gradient-to-r from-primary-600 to-primary-800 text-white rounded-xl shadow-2xl px-4 py-3 flex items-center justify-between md:justify-start gap-3 md:gap-4 max-w-md glass-dark"
         >
           <div class="flex items-center gap-2">
             <el-checkbox
               :model-value="isAllSelected"
               :indeterminate="isIndeterminate"
-              @change="handleSelectAll"
               class="task-checkbox"
+              @change="handleSelectAll"
             />
             <span class="text-sm font-medium">已选 {{ selectedTasks.length }} 项</span>
           </div>
-          <span class="text-xs text-gray-400 hidden sm:inline">批量操作暂未开放</span>
+          <span class="text-xs text-primary-200 hidden sm:inline">批量操作暂未开放</span>
         </div>
       </div>
     </Transition>
@@ -192,59 +200,139 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
     <!-- 加载状态 -->
     <div v-if="loading" class="flex flex-col items-center justify-center py-16">
       <div class="relative">
-        <el-icon class="is-loading text-primary-500" size="32">
-          <Loading />
-        </el-icon>
+        <div class="w-16 h-16 rounded-full bg-gradient-to-r from-primary-100 to-primary-200 flex items-center justify-center animate-pulse">
+          <el-icon class="is-loading text-primary-600" size="28">
+            <Loading />
+          </el-icon>
+        </div>
       </div>
-      <span class="mt-3 text-gray-500 text-sm">加载中...</span>
+      <span class="mt-4 text-gray-600 text-sm font-medium">加载任务中...</span>
+      <span class="mt-1 text-gray-400 text-xs">请稍候</span>
     </div>
 
     <!-- 空状态 -->
-    <div v-else-if="tasks.length === 0" class="flex flex-col items-center justify-center py-16 text-gray-400">
-      <div class="w-20 h-20 mb-4 rounded-full bg-gray-100 flex items-center justify-center">
-        <el-icon size="36" class="text-gray-300">
+    <div v-else-if="tasks.length === 0" class="flex flex-col items-center justify-center py-16">
+      <div class="w-24 h-24 mb-6 rounded-full bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center shadow-inner">
+        <el-icon size="40" class="text-gray-400">
           <Document />
         </el-icon>
       </div>
-      <p class="text-gray-500 font-medium">暂无任务</p>
-      <p class="text-sm mt-1 text-gray-400">可通过Agent的task工具创建</p>
+      <p class="text-gray-700 font-semibold text-lg mb-2">
+        暂无任务
+      </p>
+      <p class="text-gray-500 text-sm text-center max-w-xs">
+        通过Agent的task工具创建任务<br>或点击右上角的"新建任务"按钮
+      </p>
+      <div class="mt-6 flex gap-3">
+        <el-button type="primary" size="small" class="rounded-full px-4">
+          <el-icon class="mr-1">
+            <Edit />
+          </el-icon>
+          创建任务
+        </el-button>
+        <el-button type="default" size="small" class="rounded-full px-4">
+          查看教程
+        </el-button>
+      </div>
     </div>
 
     <!-- 任务列表 -->
-    <div v-else class="space-y-3">
+    <div v-else class="space-y-4">
       <div
         v-for="task in tasks"
         :key="task.task_id"
-        class="task-card group bg-white rounded-xl border border-gray-100 p-4 cursor-pointer transition-all duration-200 hover:border-gray-200 hover:shadow-md"
+        class="task-card group bg-white rounded-2xl border border-gray-100 p-5 cursor-pointer transition-all duration-300 hover:shadow-lg hover-lift"
         :class="{
-          'ring-2 ring-primary-500 border-primary-500 bg-primary-50/30': selectedTasks.includes(task.task_id),
-          'hover:-translate-y-0.5': !selectedTasks.includes(task.task_id),
+          'ring-2 ring-primary-500 border-primary-500 bg-gradient-to-r from-primary-50/50 to-primary-50/20': selectedTasks.includes(task.task_id),
+          'hover:border-primary-200': !selectedTasks.includes(task.task_id),
         }"
         @click="handleView(task)"
       >
-        <div class="flex gap-3">
-          <!-- 选择框 -->
-          <div class="pt-1" @click.stop>
+        <div class="flex gap-4">
+          <!-- 选择框和重要标记 -->
+          <div class="flex flex-col items-center gap-3 pt-1" @click.stop>
             <el-checkbox
               :model-value="selectedTasks.includes(task.task_id)"
               class="task-checkbox"
               @change="(val: boolean) => (val ? handleTaskSelect(task.task_id) : handleTaskDeselect(task.task_id))"
             />
+            
+            <!-- 重要标记 -->
+            <el-button
+              v-if="isTaskStarred(task)"
+              size="small"
+              text
+              class="!p-0 !h-6 !w-6"
+              @click.stop="handleToggleStar(task)"
+            >
+              <el-icon class="text-amber-500 hover:text-amber-600 transition-colors">
+                <StarFilled />
+              </el-icon>
+            </el-button>
           </div>
 
           <!-- 主内容区 -->
           <div class="flex-1 min-w-0">
             <!-- 标题行 -->
-            <div class="flex items-start justify-between gap-2 mb-2">
-              <div class="flex items-center gap-2 min-w-0 flex-1">
-                <h3 class="text-base font-semibold text-gray-900 truncate">
-                  {{ task.name }}
-                </h3>
+            <div class="flex items-start justify-between gap-3 mb-3">
+              <div class="flex items-start gap-3 min-w-0 flex-1">
+                <!-- 状态指示器 -->
+                <div class="flex-shrink-0 mt-1">
+                  <div
+                    class="w-3 h-3 rounded-full" :class="{
+                      'bg-blue-500': task.status === TaskStatus.PENDING,
+                      'bg-primary-500': task.status === TaskStatus.IN_PROGRESS,
+                      'bg-amber-500': task.status === TaskStatus.BLOCKED,
+                      'bg-green-500': task.status === TaskStatus.COMPLETED,
+                    }"
+                  />
+                </div>
+                
+                <div class="min-w-0 flex-1">
+                  <h3 class="text-lg font-semibold text-gray-900 truncate mb-1">
+                    {{ task.name }}
+                  </h3>
+                  
+                  <!-- 标签行 -->
+                  <div class="flex items-center gap-2 mb-3 flex-wrap">
+                    <el-tag 
+                      :type="getStatusType(task.status)" 
+                      size="small" 
+                      effect="plain" 
+                      round 
+                      class="task-tag border-0 font-medium"
+                    >
+                      <el-icon class="mr-1" size="12">
+                        <component :is="getStatusIcon(task.status)" />
+                      </el-icon>
+                      {{ getStatusText(task.status) }}
+                    </el-tag>
+                    <el-tag 
+                      :type="getPriorityType(task.priority)" 
+                      size="small" 
+                      effect="plain" 
+                      round 
+                      class="task-tag border-0 font-medium"
+                    >
+                      {{ getPriorityText(task.priority) }}
+                    </el-tag>
+                    
+                    <!-- 紧急标记 -->
+                    <span 
+                      v-if="task.priority === TaskPriority.HIGH" 
+                      class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
+                    >
+                      <el-icon size="10" class="mr-1"><Warning /></el-icon>
+                      紧急
+                    </span>
+                  </div>
+                </div>
               </div>
 
               <!-- 移动端：显示更多菜单 -->
               <el-dropdown
                 trigger="click"
+                class="md:hidden"
                 @command="
                   (cmd: string) => {
                     if (cmd === 'edit') handleEdit(task)
@@ -254,23 +342,28 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
                   }
                 "
                 @click.stop
-                class="md:hidden"
               >
-                <el-button size="small" text class="opacity-0 group-hover:opacity-100 transition-opacity">
+                <el-button size="small" text class="opacity-70 hover:opacity-100 transition-opacity">
                   <el-icon><MoreFilled /></el-icon>
                 </el-button>
                 <template #dropdown>
                   <el-dropdown-menu>
                     <el-dropdown-item command="status">
-                      <el-icon class="mr-1"><Link /></el-icon>
+                      <el-icon class="mr-2">
+                        <Link />
+                      </el-icon>
                       修改状态
                     </el-dropdown-item>
                     <el-dropdown-item command="edit">
-                      <el-icon class="mr-1"><Edit /></el-icon>
+                      <el-icon class="mr-2">
+                        <Edit />
+                      </el-icon>
                       编辑
                     </el-dropdown-item>
                     <el-dropdown-item command="delete" divided>
-                      <el-icon class="mr-1 text-red-500"><Delete /></el-icon>
+                      <el-icon class="mr-2 text-red-500">
+                        <Delete />
+                      </el-icon>
                       <span class="text-red-500">删除</span>
                     </el-dropdown-item>
                   </el-dropdown-menu>
@@ -278,62 +371,60 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
               </el-dropdown>
             </div>
 
-            <!-- 标签行 -->
-            <div class="flex items-center gap-2 mb-3 flex-wrap">
-              <el-tag :type="getStatusType(task.status)" size="small" effect="light" round class="task-tag">
-                <el-icon class="mr-0.5" size="10">
-                  <component :is="getStatusIcon(task.status)" />
-                </el-icon>
-                {{ getStatusText(task.status) }}
-              </el-tag>
-              <el-tag :type="getPriorityType(task.priority)" size="small" effect="light" round class="task-tag">
-                {{ getPriorityText(task.priority) }}
-              </el-tag>
-            </div>
-
             <!-- 描述 -->
-            <div v-if="task.description" class="text-sm text-gray-500 mb-3 line-clamp-2">
+            <div v-if="task.description" class="text-sm text-gray-600 mb-4 line-clamp-2 leading-relaxed">
               {{ getDescriptionPreview(task.description) }}
             </div>
 
             <!-- 信息行 -->
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3 text-xs text-gray-400">
+            <div class="flex items-center justify-between pt-3 border-t border-gray-100">
+              <div class="flex items-center gap-4 text-xs text-gray-500">
                 <!-- 分配者 -->
-                <div v-if="task.assignee" class="flex items-center gap-1">
-                  <el-icon size="12">
-                    <User />
-                  </el-icon>
-                  <span class="truncate max-w-[80px]">{{ task.assignee }}</span>
+                <div v-if="task.assignee" class="flex items-center gap-1.5">
+                  <div class="w-6 h-6 rounded-full bg-primary-100 flex items-center justify-center">
+                    <el-icon size="10" class="text-primary-600">
+                      <User />
+                    </el-icon>
+                  </div>
+                  <span class="font-medium truncate max-w-[100px]">{{ task.assignee }}</span>
                 </div>
 
                 <!-- 依赖数量 -->
-                <div v-if="task.dependencies && task.dependencies.length > 0" class="flex items-center gap-1">
-                  <el-icon size="12">
-                    <Link />
-                  </el-icon>
-                  <span>{{ task.dependencies.length }}</span>
+                <div v-if="task.dependencies && task.dependencies.length > 0" class="flex items-center gap-1.5">
+                  <div class="w-6 h-6 rounded-full bg-purple-100 flex items-center justify-center">
+                    <el-icon size="10" class="text-purple-600">
+                      <Link />
+                    </el-icon>
+                  </div>
+                  <span class="font-medium">{{ task.dependencies.length }} 个依赖</span>
                 </div>
 
                 <!-- 子任务 -->
-                <div v-if="task.parent_id" class="flex items-center gap-1">
-                  <span class="text-gray-300">↳</span>
-                  <span>子任务</span>
+                <div v-if="task.parent_id" class="flex items-center gap-1.5">
+                  <div class="w-6 h-6 rounded-full bg-green-100 flex items-center justify-center">
+                    <span class="text-green-600 text-xs">↳</span>
+                  </div>
+                  <span class="font-medium">子任务</span>
                 </div>
               </div>
 
-              <div class="text-xs text-gray-400">
+              <div class="text-xs text-gray-500 font-medium">
                 {{ formatDate(task.updated_at) }}
               </div>
             </div>
           </div>
 
           <!-- 桌面端操作按钮 -->
-          <div class="hidden md:flex flex-col items-center gap-2 ml-2" @click.stop>
+          <div class="hidden md:flex flex-col items-center gap-3 ml-2" @click.stop>
             <!-- 状态切换 -->
             <el-dropdown @command="(status: TaskStatus) => handleUpdateStatus(task, status)">
-              <el-button size="small" type="primary" circle class="task-action-btn">
-                <el-icon size="12">
+              <el-button 
+                size="small" 
+                type="primary" 
+                circle 
+                class="task-action-btn hover-scale !w-10 !h-10 !shadow-md"
+              >
+                <el-icon size="16">
                   <component :is="getStatusIcon(task.status)" />
                 </el-icon>
               </el-button>
@@ -343,8 +434,9 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
                     v-for="option in getStatusOptions(task.status)"
                     :key="option.value"
                     :command="option.value"
+                    class="!px-4 !py-2"
                   >
-                    <el-icon class="mr-2">
+                    <el-icon class="mr-3">
                       <component :is="option.icon" />
                     </el-icon>
                     {{ option.label }}
@@ -354,8 +446,14 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
             </el-dropdown>
 
             <!-- 编辑按钮 -->
-            <el-button size="small" type="default" circle class="task-action-btn" @click="handleEdit(task)">
-              <el-icon size="12">
+            <el-button 
+              size="small" 
+              type="default" 
+              circle 
+              class="task-action-btn hover-scale !w-10 !h-10 !shadow-sm hover:!border-primary-300"
+              @click="handleEdit(task)"
+            >
+              <el-icon size="16" class="text-gray-600">
                 <Edit />
               </el-icon>
             </el-button>
@@ -365,10 +463,10 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
               size="small"
               type="default"
               circle
-              class="task-action-btn hover:text-red-500"
+              class="task-action-btn hover-scale !w-10 !h-10 !shadow-sm hover:!border-red-300 hover:!text-red-500"
               @click="handleDelete(task)"
             >
-              <el-icon size="12">
+              <el-icon size="16" class="text-gray-600">
                 <Delete />
               </el-icon>
             </el-button>
@@ -386,6 +484,18 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
 
 .task-card {
   contain: layout style;
+  position: relative;
+  overflow: hidden;
+}
+
+.task-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgba(14, 165, 233, 0.1), transparent);
 }
 
 .task-card:hover .task-action-btn {
@@ -393,30 +503,76 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
 }
 
 .task-action-btn {
-  opacity: 0.6;
-  transition: all 0.2s ease;
+  opacity: 0.8;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid transparent;
 }
 
 .task-action-btn:hover {
   opacity: 1;
-  transform: scale(1.1);
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(14, 165, 233, 0.15);
 }
 
 .task-tag {
-  font-size: 11px;
-  padding: 0 8px;
-  height: 22px;
-  line-height: 20px;
+  font-size: 12px;
+  padding: 0 10px;
+  height: 24px;
+  line-height: 22px;
+  font-weight: 500;
+  letter-spacing: 0.3px;
 }
 
 .task-checkbox :deep(.el-checkbox__inner) {
-  border-radius: 4px;
+  border-radius: 6px;
+  border-width: 2px;
+  width: 18px;
+  height: 18px;
+}
+
+.task-checkbox :deep(.el-checkbox__inner::after) {
+  border-width: 2px;
+  height: 9px;
+  left: 5px;
+  top: 1px;
+  width: 5px;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  .task-card {
+    padding: 16px;
+    border-radius: 16px;
+    margin: 0 -8px;
+  }
+
+  .task-card h3 {
+    font-size: 16px;
+    line-height: 1.4;
+  }
+
+  .task-tag {
+    font-size: 11px;
+    padding: 0 8px;
+    height: 22px;
+    line-height: 20px;
+  }
+
+  .task-card .el-button--small {
+    padding: 8px;
+    height: 32px;
+    width: 32px;
+  }
+
+  .task-card .el-button--small .el-icon {
+    font-size: 14px;
+  }
 }
 
 @media (max-width: 640px) {
   .task-card {
-    padding: 12px;
-    border-radius: 12px;
+    padding: 14px;
+    border-radius: 14px;
   }
 
   .task-card h3 {
@@ -425,26 +581,74 @@ const getStatusOptions = (currentStatus: TaskStatus) => {
 
   .task-tag {
     font-size: 10px;
+    padding: 0 7px;
+    height: 20px;
+    line-height: 18px;
+  }
+}
+
+@media (max-width: 480px) {
+  .task-card {
+    padding: 12px;
+    border-radius: 12px;
+  }
+
+  .task-card h3 {
+    font-size: 14px;
+  }
+
+  .task-tag {
+    font-size: 9px;
     padding: 0 6px;
     height: 18px;
     line-height: 16px;
   }
 
-  .task-card .el-button--small {
-    padding: 6px;
-    height: 28px;
-    width: 28px;
-  }
-
-  .task-card .el-button--small .el-icon {
-    font-size: 12px;
+  .task-list {
+    margin: 0 -4px;
+    padding: 0 4px;
   }
 }
 
-@media (max-width: 480px) {
-  .task-list {
-    margin: 0 -12px;
-    padding: 0 12px;
+/* 触摸设备优化 */
+@media (hover: none) and (pointer: coarse) {
+  .task-card {
+    -webkit-tap-highlight-color: transparent;
+  }
+  
+  .task-action-btn {
+    opacity: 1;
+    min-height: 44px;
+    min-width: 44px;
+  }
+  
+  .task-checkbox :deep(.el-checkbox__inner) {
+    width: 20px;
+    height: 20px;
+  }
+}
+
+/* 暗色模式支持 */
+@media (prefers-color-scheme: dark) {
+  .task-card {
+    background-color: #1f2937;
+    border-color: #374151;
+  }
+  
+  .task-card:hover {
+    border-color: #4b5563;
+  }
+  
+  .task-card h3 {
+    color: #f9fafb;
+  }
+  
+  .task-card .text-gray-600 {
+    color: #d1d5db;
+  }
+  
+  .task-card .border-gray-100 {
+    border-color: #374151;
   }
 }
 </style>

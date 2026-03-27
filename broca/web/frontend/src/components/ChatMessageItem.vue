@@ -290,8 +290,7 @@ const getReasoningContent = (message: Message) => {
       <pre
         class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
         :class="getContentClass(message)"
-        >{{ getContent(message) }}</pre
-      >
+      >{{ getContent(message) }}</pre>
 
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
         <!-- 参数展示 -->
@@ -309,7 +308,9 @@ const getReasoningContent = (message: Message) => {
 
           <!-- 参数内容：特殊处理todo_management和ask_user -->
           <div v-if="shouldExpandParameters(message)" class="mt-1 p-2 bg-purple-100 rounded border border-purple-200">
-            <div v-if="isAskUser(message)" class="text-xs font-semibold text-purple-700 mb-1">问题:</div>
+            <div v-if="isAskUser(message)" class="text-xs font-semibold text-purple-700 mb-1">
+              问题:
+            </div>
 
             <!-- 特殊处理todo_management的todos列表 -->
             <div v-if="isTodoManagement(message) && getTodos(message)" class="bg-white p-2 rounded border">
@@ -351,8 +352,7 @@ const getReasoningContent = (message: Message) => {
             <pre
               v-else
               class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
-              >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre
-            >
+            >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre>
           </div>
         </div>
 
@@ -370,23 +370,26 @@ const getReasoningContent = (message: Message) => {
 
           <!-- ask_user结果默认展开 -->
           <div v-if="shouldExpandResult(message)" class="mt-1 p-2 bg-green-50 rounded border border-green-200">
-            <div v-if="isAskUser(message)" class="text-xs font-semibold text-green-700 mb-1">回答:</div>
+            <div v-if="isAskUser(message)" class="text-xs font-semibold text-green-700 mb-1">
+              回答:
+            </div>
 
             <!-- 特殊处理ask_user结果 -->
             <div v-if="isAskUser(message) && getAskUserResult(message)" class="bg-white p-2 rounded border">
-              <div class="text-sm text-gray-800">{{ getAskUserResult(message) }}</div>
+              <div class="text-sm text-gray-800">
+                {{ getAskUserResult(message) }}
+              </div>
             </div>
 
             <!-- 其他工具显示原始JSON -->
             <pre
               v-else
               class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
-              >{{
+            >{{
                 typeof message.data.result === 'string'
                   ? message.data.result
                   : JSON.stringify(message.data.result, null, 2)
-              }}</pre
-            >
+            }}</pre>
           </div>
         </div>
       </div>

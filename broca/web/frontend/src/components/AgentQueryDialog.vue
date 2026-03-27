@@ -36,7 +36,9 @@ const selectOption = (optionName: string) => {
     class="agent-query-dialog"
   >
     <div class="flex items-start gap-3" :class="{ 'gap-2': chatStore.isMobile }">
-      <div class="text-3xl" :class="{ 'text-2xl': chatStore.isMobile }">❓</div>
+      <div class="text-3xl" :class="{ 'text-2xl': chatStore.isMobile }">
+        ❓
+      </div>
       <div
         class="text-sm text-gray-700 whitespace-pre-wrap flex-1 leading-relaxed"
         :class="{ 'text-base': chatStore.isMobile }"
@@ -46,7 +48,9 @@ const selectOption = (optionName: string) => {
     </div>
 
     <div v-if="hasOptions" class="mt-5" :class="chatStore.isMobile ? 'pl-0' : 'pl-11'">
-      <div class="text-sm text-gray-500 mb-3" :class="{ 'mb-2': chatStore.isMobile }">Options:</div>
+      <div class="text-sm text-gray-500 mb-3" :class="{ 'mb-2': chatStore.isMobile }">
+        Options:
+      </div>
       <div class="flex flex-col gap-2 sm:gap-3">
         <div
           v-for="option in chatStore.agentQueryDialog.options"
@@ -82,8 +86,12 @@ const selectOption = (optionName: string) => {
 
     <template #footer>
       <div class="flex justify-end gap-2">
-        <el-button @click="submitAnswer('')"> Cancel </el-button>
-        <el-button :disabled="!customAnswer.trim()" type="primary" @click="handleSubmit"> Submit </el-button>
+        <el-button @click="submitAnswer('')">
+          Cancel
+        </el-button>
+        <el-button :disabled="!customAnswer.trim()" type="primary" @click="handleSubmit">
+          Submit
+        </el-button>
       </div>
     </template>
   </el-dialog>
