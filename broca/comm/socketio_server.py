@@ -232,19 +232,32 @@ class SocketIOServer:
         """Process incoming message"""
         client_info = self.clients.get(sid)
         if not client_info:
+            logger.warning(f"Received message from unknown SID: {sid}")
             return
 
         logger.debug(f"Processing message from {client_info.client_id}: {message}")
 
         # Route message based on target
+        result = None
         if message.receiver_id:
-            await self._send_to_client(message.receiver_id, message)
+            result = await self._send_to_client(message.receiver_id, message)
         elif message.room:
-            await self._send_to_room(message.room, message)
+            result = await self._send_to_room(message.room, message)
         elif message.subscription:
-            await self._send_to_subscription(message.subscription, message)
+            result = await self._send_to_subscription(message.subscription, message)
         else:
-            await self._broadcast(message)
+            result = await self._broadcast(message)
+
+        # 记录发送状态
+        if result:
+            if isinstance(result, dict):
+                if result.get("failed", 0) > 0:
+                    logger.warning(f"Message delivery incomplete: {result}")
+                else:
+                    logger.debug(f"Message delivered successfully: {result}")
+            elif isinstance(result, bool):
+                if not result:
+                    logger.warning(f"Message failed to deliver to target")
 
         # Trigger appropriate event
         event_name = (
@@ -252,46 +265,91 @@ class SocketIOServer:
         )
         await self._trigger_event(event_name, client_info, message)
 
-    async def _send_to_client(self, client_id: str, message: Message):
-        """Send message to specific client"""
-        if client_id not in self.client_sids:
-            logger.warning(f"Client {client_id} not found")
-            return
+    async def _send_to_client(self, client_id: str, message: Message) -> bool:
+        """Send message to specific client
 
-        sid = self.client_sids[client_id]
-        await self.sio.emit("message", MessageProtocol.to_dict(message), room=sid)
-        logger.debug(f"Sent message to client {client_id}")
+        Returns:
+            bool: True if message was sent successfully, False otherwise
+        """
+        sid = None
+        async with self._lock:
+            if client_id not in self.client_sids:
+                logger.warning(f"Client {client_id} not found, cannot send message")
+                return False
+            sid = self.client_sids[client_id]
 
-    async def _send_to_room(self, room: str, message: Message):
-        """Send message to room"""
-        await self.sio.emit("message", MessageProtocol.to_dict(message), room=room)
-        logger.info(f"Sent message to room {room}")
+        try:
+            await self.sio.emit("message", MessageProtocol.to_dict(message), room=sid)
+            logger.debug(f"Sent message to client {client_id} (sid: {sid})")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send message to client {client_id}: {e}")
+            return False
 
-    async def _send_to_subscription(self, subscription: str, message: Message):
-        """Send message to subscription"""
+    async def _send_to_room(self, room: str, message: Message) -> bool:
+        """Send message to room
+
+        Returns:
+            bool: True if message was sent successfully, False otherwise
+        """
+        try:
+            await self.sio.emit("message", MessageProtocol.to_dict(message), room=room)
+            logger.info(f"Sent message to room {room}")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to send message to room {room}: {e}")
+            return False
+
+    async def _send_to_subscription(self, subscription: str, message: Message) -> Dict[str, int]:
+        """Send message to subscription
+
+        Returns:
+            Dict with 'total', 'sent', 'failed' counts
+        """
         if subscription not in self.subscriptions:
             logger.warning(f"Subscription {subscription} not found")
-            return
+            return {"total": 0, "sent": 0, "failed": 0}
 
+        # 收集所有有效的 SID
         sids = []
         async with self._lock:
             for client_id in self.subscriptions[subscription]:
                 if client_id in self.client_sids:
                     sids.append(self.client_sids[client_id])
 
-        if sids:
+        total_clients = len(sids)
+        if not sids:
+            logger.debug(f"Subscription {subscription} has no connected clients")
+            return {"total": 0, "sent": 0, "failed": 0}
+
+        try:
             await self.sio.emit(
                 "message",
                 MessageProtocol.to_dict(message),
                 room=sids,
             )
+            logger.debug(f"Sent message to subscription {subscription} ({total_clients} clients)")
+            return {"total": total_clients, "sent": total_clients, "failed": 0}
+        except Exception as e:
+            logger.error(f"Failed to send message to subscription {subscription}: {e}")
+            return {"total": total_clients, "sent": 0, "failed": total_clients}
 
-        logger.debug(f"Sent message to subscription {subscription} ({len(sids)} clients)")
+    async def _broadcast(self, message: Message) -> Dict[str, int]:
+        """Broadcast message to all clients
 
-    async def _broadcast(self, message: Message):
-        """Broadcast message to all clients"""
-        await self.sio.emit("message", MessageProtocol.to_dict(message))
-        logger.debug("Broadcasted message to all clients")
+        Returns:
+            Dict with 'total', 'sent', 'failed' counts
+        """
+        try:
+            await self.sio.emit("message", MessageProtocol.to_dict(message))
+            # 广播无法知道确切数量，但可以记录已发送
+            async with self._lock:
+                total_clients = len(self.clients)
+            logger.debug(f"Broadcasted message to all clients ({total_clients} connected)")
+            return {"total": total_clients, "sent": total_clients, "failed": 0}
+        except Exception as e:
+            logger.error(f"Failed to broadcast message: {e}")
+            return {"total": 0, "sent": 0, "failed": 0}
 
     async def _trigger_event(
         self,
@@ -333,24 +391,38 @@ class SocketIOServer:
         client_id: Optional[str] = None,
         room: Optional[str] = None,
         subscription: Optional[str] = None,
-    ):
-        """Send message from server"""
+    ) -> Dict[str, Any]:
+        """Send message from server
+
+        Returns:
+            Dict with send status, e.g.:
+            - For client_id: {"success": bool}
+            - For room/subscription/broadcast: {"total": int, "sent": int, "failed": int}
+        """
         if client_id:
-            await self._send_to_client(client_id, message)
+            success = await self._send_to_client(client_id, message)
+            return {"success": success}
         elif room:
-            await self._send_to_room(room, message)
+            success = await self._send_to_room(room, message)
+            return {"success": success}
         elif subscription:
-            await self._send_to_subscription(subscription, message)
+            stats = await self._send_to_subscription(subscription, message)
+            return stats
         else:
-            await self._broadcast(message)
+            stats = await self._broadcast(message)
+            return stats
 
     async def broadcast(
         self,
         content: str,
         subscription: Optional[str] = None,
         sender_id: str = "server",
-    ):
-        """Broadcast message from server"""
+    ) -> Dict[str, Any]:
+        """Broadcast message from server
+
+        Returns:
+            Dict with send status (total, sent, failed counts)
+        """
         message = Message(
             message_type=MessageType.BROADCAST,
             role=MessageRole.SYSTEM,
@@ -358,12 +430,16 @@ class SocketIOServer:
             subscription=subscription,
             data={"content": content},
         )
-        await self.send_message(message, subscription=subscription)
+        return await self.send_message(message, subscription=subscription)
 
     async def send_to_client(
         self, client_id: str, content: str, sender_id: str = "server"
-    ):
-        """Send message to specific client from server"""
+    ) -> Dict[str, Any]:
+        """Send message to specific client from server
+
+        Returns:
+            Dict with send status, e.g. {"success": bool}
+        """
         message = Message(
             message_type=MessageType.USER_MESSAGE,
             role=MessageRole.USER,
@@ -371,7 +447,7 @@ class SocketIOServer:
             receiver_id=client_id,
             data={"content": content},
         )
-        await self.send_message(message, client_id=client_id)
+        return await self.send_message(message, client_id=client_id)
 
     def get_clients(self) -> List[Dict[str, Any]]:
         """Get list of connected clients"""
