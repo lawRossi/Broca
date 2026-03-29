@@ -1,7 +1,23 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, onMounted, onUnmounted } from 'vue'
 import { FolderOpened } from '@element-plus/icons-vue'
 import type { CreateSessionParams } from '@/api/session'
+
+// 移动端检测
+const isMobile = ref(false)
+
+const checkIsMobile = () => {
+  isMobile.value = window.innerWidth < 768
+}
+
+onMounted(() => {
+  checkIsMobile()
+  window.addEventListener('resize', checkIsMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkIsMobile)
+})
 
 // LLM Provider 选项（与后端 llm_config.json 保持一致）
 const LLM_PROVIDERS = [
@@ -62,7 +78,8 @@ const handleCreate = () => {
   <el-dialog
     :model-value="visible"
     title="创建新会话"
-    width="500px"
+    :width="isMobile ? '100%' : '500px'"
+    :fullscreen="isMobile"
     :close-on-click-modal="false"
     @update:model-value="handleClose"
   >
@@ -171,5 +188,69 @@ const handleCreate = () => {
 <style scoped>
 :deep(.el-select) {
   width: 100%;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  :deep(.el-dialog) {
+    margin: 0 !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+  
+  :deep(.el-dialog__header) {
+    padding: 16px 20px;
+    margin: 0;
+    border-bottom: 1px solid var(--el-border-color-light);
+  }
+  
+  :deep(.el-dialog__title) {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  
+  :deep(.el-dialog__body) {
+    padding: 16px 20px;
+    overflow-y: auto;
+    flex: 1;
+    max-height: calc(100vh - 120px);
+  }
+  
+  :deep(.el-dialog__footer) {
+    padding: 12px 20px;
+    border-top: 1px solid var(--el-border-color-light);
+  }
+  
+  :deep(.el-form-item) {
+    margin-bottom: 20px;
+  }
+  
+  :deep(.el-form-item__label) {
+    font-size: 14px;
+    font-weight: 500;
+    margin-bottom: 8px;
+    line-height: 1.4;
+  }
+  
+  :deep(.el-input__inner) {
+    font-size: 16px; /* 防止iOS缩放 */
+    padding: 12px 16px;
+  }
+  
+  :deep(.el-button) {
+    min-height: 44px; /* 触摸设备最小点击区域 */
+    min-width: 44px;
+  }
+  
+  /* 工作目录输入区域 */
+  :deep(.el-autocomplete) {
+    width: 100% !important;
+  }
+  
+  :deep(.el-autocomplete .el-input__inner) {
+    padding-right: 40px;
+  }
 }
 </style>

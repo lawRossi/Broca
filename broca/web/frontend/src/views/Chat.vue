@@ -29,19 +29,18 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="h-screen bg-gray-50 flex flex-col overflow-hidden">
+  <div class="h-[100dvh] bg-gray-50 flex flex-col overflow-hidden">
     <LoadingOverlay :visible="chatStore.loading" />
     <ChatHeader />
     
     <div class="flex-1 mx-auto max-w-7xl w-full px-2 sm:px-4 py-2 sm:py-4 overflow-hidden">
-      <div class="grid grid-cols-12 gap-2 sm:gap-4 h-full">
+      <div class="grid grid-cols-12 gap-2 sm:gap-4 h-full relative">
         <AgentSidebar />
         
         <div 
           class="flex flex-col gap-2 sm:gap-4 h-full overflow-hidden"
           :class="{
-            'col-span-12 lg:col-span-6': true,
-            'hidden lg:flex': (chatStore.isMobile && chatStore.showLeftSidebar) || (chatStore.isMobile && chatStore.showRightSidebar)
+            'col-span-12 lg:col-span-6': true
           }"
         >
           <ChatMessageList />

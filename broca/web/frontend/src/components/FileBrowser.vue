@@ -812,7 +812,7 @@ defineExpose({
     </el-dialog>
 
     <!-- Save Confirmation Dialog -->
-    <el-dialog v-model="showSaveConfirm" title="Confirm Save" width="400px">
+    <el-dialog v-model="showSaveConfirm" title="Confirm Save" :width="isMobile ? '90%' : '400px'" :fullscreen="isMobile">
       <div class="space-y-4">
         <div class="flex items-start gap-3">
           <el-icon class="text-yellow-500 mt-0.5">
@@ -892,5 +892,44 @@ textarea {
 .syntax-badge {
   font-size: 10px;
   opacity: 0.7;
+}
+
+/* 移动端优化 - 保存确认对话框 */
+@media (max-width: 768px) {
+  :deep(.el-dialog) {
+    margin: 0 !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+  
+  :deep(.el-dialog__header) {
+    padding: 16px 20px;
+    margin: 0;
+    border-bottom: 1px solid var(--el-border-color-light);
+  }
+  
+  :deep(.el-dialog__title) {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  
+  :deep(.el-dialog__body) {
+    padding: 20px !important;
+    overflow-y: auto;
+    flex: 1;
+    max-height: calc(100vh - 120px);
+  }
+  
+  :deep(.el-dialog__footer) {
+    padding: 12px 20px;
+    border-top: 1px solid var(--el-border-color-light);
+  }
+  
+  :deep(.el-button) {
+    min-height: 44px;
+    min-width: 44px;
+  }
 }
 </style>
