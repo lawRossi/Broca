@@ -128,7 +128,7 @@ const totalMessagesFromApi = computed(() => {
     :class="{
       'flex': !chatStore.isMobile || chatStore.showRightSidebar,
       'hidden': chatStore.isMobile && !chatStore.showRightSidebar,
-      'absolute inset-x-2 top-20 bottom-4 z-40 bg-gray-50 p-3 rounded-lg shadow-xl border': chatStore.isMobile && chatStore.showRightSidebar
+      'fixed inset-x-0 top-[57px] bottom-0 z-40 bg-gray-50 p-3 rounded-none border-t lg:rounded-lg shadow-xl border': chatStore.isMobile && chatStore.showRightSidebar
     }"
   >
     <div v-if="chatStore.isMobile && chatStore.showRightSidebar" class="flex justify-between items-center lg:hidden">

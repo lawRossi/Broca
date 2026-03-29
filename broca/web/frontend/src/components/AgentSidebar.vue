@@ -195,7 +195,7 @@ onUnmounted(() => {
     :class="{
       flex: !chatStore.isMobile || chatStore.showLeftSidebar,
       hidden: chatStore.isMobile && !chatStore.showLeftSidebar,
-      'absolute inset-x-2 top-20 bottom-4 z-40 bg-gray-50 p-3 rounded-lg shadow-xl border':
+      'fixed inset-x-0 top-[57px] bottom-0 z-40 bg-gray-50 p-3 rounded-none border-t lg:rounded-lg shadow-xl border':
         chatStore.isMobile && chatStore.showLeftSidebar,
     }"
   >
@@ -390,7 +390,8 @@ onUnmounted(() => {
   <el-dialog
     v-model="showConfigDialog"
     :title="`Agent 配置详情 - ${selectedAgent?.name || '未知'}`"
-    width="700px"
+    :width="chatStore.isMobile ? '100%' : '700px'"
+    :fullscreen="chatStore.isMobile"
     :close-on-click-modal="false"
     class="agent-config-dialog"
   >
@@ -541,5 +542,44 @@ onUnmounted(() => {
 
 :deep(.agent-config-dialog .el-dialog__body) {
   padding: 20px;
+}
+
+/* 移动端优化 */
+@media (max-width: 768px) {
+  :deep(.agent-config-dialog) {
+    margin: 0 !important;
+    border-radius: 0 !important;
+    width: 100% !important;
+    max-height: 100vh;
+    overflow: hidden;
+  }
+  
+  :deep(.agent-config-dialog .el-dialog__header) {
+    padding: 16px 20px;
+    margin: 0;
+    border-bottom: 1px solid var(--el-border-color-light);
+  }
+  
+  :deep(.agent-config-dialog .el-dialog__title) {
+    font-size: 18px;
+    font-weight: 600;
+  }
+  
+  :deep(.agent-config-dialog .el-dialog__body) {
+    padding: 16px 20px !important;
+    overflow-y: auto;
+    flex: 1;
+    max-height: calc(100vh - 120px);
+  }
+  
+  :deep(.agent-config-dialog .el-dialog__footer) {
+    padding: 12px 20px;
+    border-top: 1px solid var(--el-border-color-light);
+  }
+  
+  :deep(.agent-config-dialog pre) {
+    font-size: 12px;
+    line-height: 1.4;
+  }
 }
 </style>
