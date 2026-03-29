@@ -2,9 +2,27 @@
 import { useChatStore, useAgentStore } from '@/stores'
 import type { Message } from '@/api/brocaSocket'
 import { formatBeijingTimeShort } from '@/utils/time'
+import { marked } from 'marked'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
+
+// 配置 marked 选项
+marked.setOptions({
+  breaks: true, // 将换行符转换为 <br>
+  gfm: true // 启用 GitHub 风格 Markdown
+})
+
+// 渲染 Markdown 内容
+const renderMarkdown = (content: string): string => {
+  if (!content) return ''
+  try {
+    return marked(content, { async: false }) as string
+  } catch (e) {
+    console.error('Markdown rendering error:', e)
+    return content
+  }
+}
 
 defineProps<{
   message: Message
@@ -287,7 +305,15 @@ const getReasoningContent = (message: Message) => {
         </div>
       </div>
 
+      <!-- agent_response 使用 markdown 渲染，其他类型保持原样 -->
+      <div
+        v-if="message.message_type === 'agent_response' || message.role === 'assistant'"
+        class="markdown-content text-xs sm:text-sm leading-relaxed mb-2"
+        :class="getContentClass(message)"
+        v-html="renderMarkdown(getContent(message))"
+      ></div>
       <pre
+        v-else
         class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
         :class="getContentClass(message)"
       >{{ getContent(message) }}</pre>
@@ -396,3 +422,141 @@ const getReasoningContent = (message: Message) => {
     </div>
   </div>
 </template>
+<style scoped>
+/* Markdown 内容样式 */
+:deep(.markdown-content) {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
+
+:deep(.markdown-content h1),
+:deep(.markdown-content h2),
+:deep(.markdown-content h3),
+:deep(.markdown-content h4),
+:deep(.markdown-content h5),
+:deep(.markdown-content h6) {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+:deep(.markdown-content h1) {
+  font-size: 1.5em;
+  border-bottom: 1px solid #eaecef;
+  padding-bottom: 0.3em;
+}
+
+:deep(.markdown-content h2) {
+  font-size: 1.3em;
+  border-bottom: 1px solid #eaecef;
+  padding-bottom: 0.3em;
+}
+
+:deep(.markdown-content h3) {
+  font-size: 1.1em;
+}
+
+:deep(.markdown-content p) {
+  margin-bottom: 1em;
+  line-height: 1.6;
+}
+
+:deep(.markdown-content ul),
+:deep(.markdown-content ol) {
+  padding-left: 2em;
+  margin-bottom: 1em;
+}
+
+:deep(.markdown-content li) {
+  margin-bottom: 0.25em;
+}
+
+:deep(.markdown-content blockquote) {
+  margin: 1em 0;
+  padding: 0 1em;
+  color: #6a737d;
+  border-left: 0.25em solid #dfe2e5;
+  background-color: #f6f8fa;
+  padding: 0.5em 1em;
+  border-radius: 0 4px 4px 0;
+}
+
+:deep(.markdown-content code) {
+  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-size: 0.875em;
+  background-color: rgba(175, 184, 193, 0.2);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+}
+
+:deep(.markdown-content pre) {
+  background-color: #f6f8fa;
+  border-radius: 6px;
+  padding: 1em;
+  overflow: auto;
+  margin: 1em 0;
+}
+
+:deep(.markdown-content pre code) {
+  background-color: transparent;
+  padding: 0;
+  font-size: 0.8em;
+  line-height: 1.45;
+}
+
+:deep(.markdown-content table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+
+:deep(.markdown-content table th),
+:deep(.markdown-content table td) {
+  border: 1px solid #dfe2e5;
+  padding: 0.6em 1em;
+}
+
+:deep(.markdown-content table th) {
+  font-weight: 600;
+  background-color: #f6f8fa;
+}
+
+:deep(.markdown-content tr:nth-child(2n)) {
+  background-color: #f6f8fa;
+}
+
+:deep(.markdown-content a) {
+  color: #0366d6;
+  text-decoration: none;
+}
+
+:deep(.markdown-content a:hover) {
+  text-decoration: underline;
+}
+
+:deep(.markdown-content img) {
+  max-width: 100%;
+  height: auto;
+}
+
+:deep(.markdown-content hr) {
+  height: 0.25em;
+  padding: 0;
+  margin: 1.5em 0;
+  background-color: #e1e4e8;
+  border: 0;
+}
+
+:deep(.markdown-content strong) {
+  font-weight: 600;
+}
+
+:deep(.markdown-content em) {
+  font-style: italic;
+}
+
+:deep(.markdown-content del) {
+  text-decoration: line-through;
+}
+</style>
