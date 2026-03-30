@@ -33,12 +33,12 @@ onUnmounted(() => {
     <LoadingOverlay :visible="chatStore.loading" />
     <ChatHeader />
     
-    <div class="flex-1 mx-auto max-w-7xl w-full px-2 sm:px-4 py-2 sm:py-4 overflow-hidden">
+    <div class="flex-1 mx-auto max-w-7xl w-full px-2 sm:px-2 py-2 sm:py-2 overflow-hidden">
       <div class="grid grid-cols-12 gap-2 sm:gap-4 h-full relative">
         <AgentSidebar />
         
         <div 
-          class="flex flex-col gap-2 sm:gap-4 h-full overflow-hidden"
+          class="flex flex-col gap-1 sm:gap-2 h-full overflow-hidden"
           :class="{
             'col-span-12 lg:col-span-6': true
           }"

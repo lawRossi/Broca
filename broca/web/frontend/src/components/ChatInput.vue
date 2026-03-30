@@ -177,12 +177,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="bg-white rounded-lg border shadow-sm p-2 sm:p-4 relative">
+  <div class="bg-white rounded-lg border shadow-sm p-1 sm:p-2 relative">
     <!-- 目标agent提示 -->
     <div class="mb-2 text-xs text-gray-500 flex items-center gap-1">
       <span>发送给:</span>
       <span class="font-medium text-blue-600">{{ targetAgentDisplay }}</span>
-      <span class="text-gray-400 ml-1">(使用 @agent名称 指定其他agent)</span>
     </div>
 
     <div class="flex gap-2">
@@ -191,7 +190,7 @@ onUnmounted(() => {
           v-model="chatStore.input"
           placeholder="Type message... 使用 @ 指定agent"
           :disabled="!chatStore.connected"
-          :size="chatStore.isMobile ? 'default' : 'large'"
+          size="default"
           clearable
           @keyup.enter="chatStore.sendUserMessage"
           @keydown="handleKeyDown"
@@ -223,22 +222,12 @@ onUnmounted(() => {
       <el-button
         type="primary"
         :disabled="!chatStore.connected || !canSendMessage"
-        :size="chatStore.isMobile ? 'default' : 'large'"
+        size="default"
         @click="chatStore.sendUserMessage"
       >
         <span class="hidden sm:inline">Send</span>
         <span class="sm:hidden">➤</span>
       </el-button>
-    </div>
-
-    <div class="mt-2 text-xs text-gray-400 flex justify-between">
-      <div class="flex items-center gap-2">
-        <span class="hidden sm:inline">Press Enter to send</span>
-        <span v-if="agentStore.agents.length > 0" class="text-gray-500">
-          当前session有 {{ agentStore.agents.length }} 个agent
-        </span>
-      </div>
-      <span v-if="!chatStore.connected" class="text-red-500">Not connected</span>
     </div>
   </div>
 </template>
