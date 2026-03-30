@@ -60,9 +60,6 @@ const handleConfirm = () => {
     @update:model-value="handleClose"
   >
     <div class="workspace-picker-dialog">
-      <p class="text-sm text-gray-600 mb-4">
-        浏览并选择一个目录作为工作空间。您可以点击目录进行导航，然后点击"确定选择当前目录"按钮，或直接点击目录自动选择并关闭。
-      </p>
       <FileBrowser
         ref="fileBrowserRef"
         :initial-path="initialPath"
