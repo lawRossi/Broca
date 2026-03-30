@@ -77,14 +77,12 @@ def run_frontend(host: str = "127.0.0.1", port: int = 5166):
     print(f"Starting frontend at http://{host}:{port}")
 
     try:
-        cmd = ["pnpm", "dev", "--host", host, "--port", str(port)]
+        cmd = ["sudo", "pnpm", "dev", "--host", host, "--port", str(port)]
         process = subprocess.Popen(
             cmd,
             cwd=frontend_path,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
+            stdout=None,  # 继承父进程 stdout
+            stderr=None,  # 继承父进程 stderr
         )
         return process
     except Exception as e:
@@ -99,13 +97,6 @@ def run_backend(host: str = "127.0.0.1", port: int = 9000, reload: bool = True):
     if not backend_path.exists():
         print(f"Error: Backend not found at {backend_path}")
         return None
-
-    backend_path_str = str(backend_path)
-    if backend_path_str not in sys.path:
-        sys.path.insert(0, backend_path_str)
-
-    original_cwd = os.getcwd()
-    os.chdir(backend_path)
 
     try:
         cmd = [
@@ -125,14 +116,15 @@ def run_backend(host: str = "127.0.0.1", port: int = 9000, reload: bool = True):
         print(f"Starting backend at http://{host}:{port}")
 
         process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1
+            cmd,
+            cwd=str(backend_path),
+            stdout=None,  # 继承父进程 stdout
+            stderr=None,  # 继承父进程 stderr
         )
 
-        os.chdir(original_cwd)
         return process
     except Exception as e:
         print(f"Error starting backend: {e}")
-        os.chdir(original_cwd)
         return None
 
 
@@ -144,6 +136,7 @@ def run_all_services(
     reload=False,
 ):
     """Start both frontend and backend services"""
+    import time
     frontend_process = None
     backend_process = None
 
@@ -159,7 +152,8 @@ def run_all_services(
 
         backend_process = run_backend(backend_host, backend_port, reload)
         if not backend_process:
-            frontend_process.terminate()
+            if frontend_process and frontend_process.poll() is None:
+                frontend_process.terminate()
             sys.exit(1)
 
         print()
@@ -175,32 +169,70 @@ def run_all_services(
         print()
 
         while True:
-            if frontend_process.poll() is not None:
-                print("Frontend process stopped unexpectedly")
+            frontend_exited = frontend_process.poll() is not None
+            backend_exited = backend_process.poll() is not None
+
+            if frontend_exited or backend_exited:
+                if frontend_exited:
+                    print("Frontend process stopped unexpectedly")
+                if backend_exited:
+                    print("Backend process stopped unexpectedly")
+
+                # 终止仍在运行的进程
+                if frontend_process and frontend_process.poll() is None:
+                    print("Stopping frontend...")
+                    frontend_process.terminate()
+                    try:
+                        frontend_process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        print("Frontend did not stop, forcing...")
+                        frontend_process.kill()
+
+                if backend_process and backend_process.poll() is None:
+                    print("Stopping backend...")
+                    backend_process.terminate()
+                    try:
+                        backend_process.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        print("Backend did not stop, forcing...")
+                        backend_process.kill()
+
                 break
 
-            if backend_process.poll() is not None:
-                print("Backend process stopped unexpectedly")
-                break
-
-            asyncio.run(asyncio.sleep(0.5))
+            time.sleep(0.5)
 
     except KeyboardInterrupt:
         print("\nShutting down services...")
     finally:
+        # 优雅终止所有进程
+        processes = []
         if frontend_process and frontend_process.poll() is None:
-            frontend_process.terminate()
-            print("Frontend stopped")
-
+            processes.append(("Frontend", frontend_process))
         if backend_process and backend_process.poll() is None:
-            backend_process.terminate()
-            print("Backend stopped")
+            processes.append(("Backend", backend_process))
+
+        for name, proc in processes:
+            print(f"Stopping {name}...")
+            proc.terminate()
+            try:
+                proc.wait(timeout=5)
+                print(f"{name} stopped")
+            except subprocess.TimeoutExpired:
+                print(f"{name} did not stop, forcing...")
+                proc.kill()
+                try:
+                    proc.wait(timeout=2)
+                    print(f"{name} killed")
+                except subprocess.TimeoutExpired:
+                    print(f"{name} could not be stopped")
 
         print("All services stopped")
 
 
 def run_frontend_only(host="127.0.0.1", port=5166):
     """Start only the frontend service"""
+    import time
+
     if not check_pnpm():
         print("Error: pnpm is not installed. Please install pnpm first.")
         print("Visit: https://pnpm.io/installation")
@@ -224,18 +256,31 @@ def run_frontend_only(host="127.0.0.1", port=5166):
         print("=" * 50)
 
         while frontend_process.poll() is None:
-            asyncio.run(asyncio.sleep(0.5))
+            time.sleep(0.5)
 
     except KeyboardInterrupt:
         print("\nShutting down frontend...")
     finally:
         if frontend_process and frontend_process.poll() is None:
+            print("Stopping frontend...")
             frontend_process.terminate()
-            print("Frontend stopped")
+            try:
+                frontend_process.wait(timeout=5)
+                print("Frontend stopped")
+            except subprocess.TimeoutExpired:
+                print("Frontend did not stop, forcing...")
+                frontend_process.kill()
+                try:
+                    frontend_process.wait(timeout=2)
+                    print("Frontend killed")
+                except subprocess.TimeoutExpired:
+                    print("Frontend could not be stopped")
 
 
 def run_backend_only(host="127.0.0.1", port=9000, reload=False):
     """Start only the backend service"""
+    import time
+
     backend_process = None
 
     try:
@@ -254,14 +299,25 @@ def run_backend_only(host="127.0.0.1", port=9000, reload=False):
         print("=" * 50)
 
         while backend_process.poll() is None:
-            asyncio.run(asyncio.sleep(0.5))
+            time.sleep(0.5)
 
     except KeyboardInterrupt:
         print("\nShutting down backend...")
     finally:
         if backend_process and backend_process.poll() is None:
+            print("Stopping backend...")
             backend_process.terminate()
-            print("Backend stopped")
+            try:
+                backend_process.wait(timeout=5)
+                print("Backend stopped")
+            except subprocess.TimeoutExpired:
+                print("Backend did not stop, forcing...")
+                backend_process.kill()
+                try:
+                    backend_process.wait(timeout=2)
+                    print("Backend killed")
+                except subprocess.TimeoutExpired:
+                    print("Backend could not be stopped")
 
 
 def create_parser():
@@ -348,9 +404,7 @@ examples:
         help="Start only the frontend service",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
-    frontend_sub.add_argument(
-        "--host", default="127.0.0.1", help="Frontend host address (default: 127.0.0.1)"
-    )
+    frontend_sub.add_argument("--host", default="0.0.0.0", help="Frontend host address")
     frontend_sub.add_argument(
         "--port", type=int, default=5166, help="Frontend port number (default: 5166)"
     )

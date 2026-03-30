@@ -1,15 +1,24 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores'
 import { sessionApi, type SessionStats } from '@/api/session'
+import { jobApi } from '@/api/job'
+import { taskApi } from '@/api/task'
 import { Loading, Refresh } from '@element-plus/icons-vue'
 
+const router = useRouter()
 const chatStore = useChatStore()
 
 // 统计数据（从API获取）
 const stats = ref<SessionStats | null>(null)
 const statsLoading = ref(false)
 let statsPollingInterval: number | null = null
+
+// Job和Task统计
+const jobCount = ref(0)
+const taskCount = ref(0)
+const jobTaskLoading = ref(false)
 
 // 获取统计数据
 const fetchStats = async () => {
@@ -29,6 +38,37 @@ const fetchStats = async () => {
   }
 }
 
+// 获取Job和Task统计
+const fetchJobAndTaskStats = async () => {
+  if (!chatStore.sessionId) {
+    return
+  }
+
+  try {
+    jobTaskLoading.value = true
+    
+    // 并行获取job和task统计
+    const [jobsRes, tasksRes] = await Promise.all([
+      jobApi.getJobs({ 
+        session_id: chatStore.sessionId, 
+        limit: 1 // 只需要总数，不需要具体数据
+      }),
+      taskApi.getTasks({ 
+        session_id: chatStore.sessionId, 
+        limit: 1 // 只需要总数，不需要具体数据
+      })
+    ])
+    
+    jobCount.value = jobsRes.total
+    taskCount.value = tasksRes.total
+  } catch (error) {
+    console.error('Failed to fetch job and task stats:', error)
+    // 静默失败，不影响其他功能
+  } finally {
+    jobTaskLoading.value = false
+  }
+}
+
 
 // 启动轮询更新统计数据（每10秒）
 const startStatsPolling = () => {
@@ -37,6 +77,7 @@ const startStatsPolling = () => {
   }
   statsPollingInterval = window.setInterval(() => {
     fetchStats()
+    fetchJobAndTaskStats()
   }, 10000)
 }
 
@@ -52,6 +93,7 @@ const stopStatsPolling = () => {
 watch(() => chatStore.sessionId, (newSessionId, oldSessionId) => {
   if (newSessionId && newSessionId !== oldSessionId) {
     fetchStats()
+    fetchJobAndTaskStats()
   }
 }, { immediate: true })
 
@@ -59,6 +101,7 @@ onMounted(() => {
   // 页面加载时获取统计数据
   if (chatStore.sessionId) {
     fetchStats()
+    fetchJobAndTaskStats()
     startStatsPolling()
   }
 })
@@ -144,20 +187,38 @@ const totalMessagesFromApi = computed(() => {
       </div>
       <div class="space-y-3 text-sm">
         <div class="flex justify-between">
-          <span class="text-gray-500">Session:</span>
+          <span class="text-gray-500">Session ID:</span>
           <span class="font-mono text-xs truncate max-w-[150px]" :title="chatStore.sessionId">
             {{ chatStore.sessionId || '未设置' }}
           </span>
         </div>
         <div class="flex justify-between">
-          <span class="text-gray-500">Status:</span>
-          <el-tag :type="chatStore.connected ? 'success' : 'info'" size="small">
-            {{ chatStore.statusText }}
-          </el-tag>
-        </div>
-        <div class="flex justify-between">
           <span class="text-gray-500">Total Messages:</span>
           <span class="font-mono">{{ totalMessagesFromApi }}</span>
+        </div>
+        <div class="flex justify-between items-center cursor-pointer hover:bg-gray-50 p-1 rounded" @click="router.push({ name: 'Jobs', query: { session_id: chatStore.sessionId } })" title="Click to view jobs for this session">
+          <span class="text-gray-500 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-orange-500" />
+            Jobs:
+          </span>
+          <div class="flex items-center gap-2">
+            <span v-if="jobTaskLoading" class="font-mono text-sm">
+              <el-icon class="is-loading"><Loading /></el-icon>
+            </span>
+            <span v-else class="font-mono text-sm">{{ jobCount }}</span>
+          </div>
+        </div>
+        <div class="flex justify-between items-center cursor-pointer hover:bg-gray-50 p-1 rounded" @click="router.push({ name: 'Tasks', query: { session_id: chatStore.sessionId } })" title="Click to view tasks for this session">
+          <span class="text-gray-500 flex items-center gap-2">
+            <span class="w-2 h-2 rounded-full bg-indigo-500" />
+            Tasks:
+          </span>
+          <div class="flex items-center gap-2">
+            <span v-if="jobTaskLoading" class="font-mono text-sm">
+              <el-icon class="is-loading"><Loading /></el-icon>
+            </span>
+            <span v-else class="font-mono text-sm">{{ taskCount }}</span>
+          </div>
         </div>
         <div v-if="statsLoading" class="flex justify-between">
           <span class="text-gray-500">Loading stats...</span>
