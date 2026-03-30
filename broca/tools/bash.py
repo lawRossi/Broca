@@ -216,7 +216,7 @@ class ExecuteCode(Tool):
 
         return True
 
-    def _run_code(self, code: str, timeout: int = 10) -> ToolResult:
+    def _run_code(self, code: str, timeout: int = 600) -> ToolResult:
         status: ToolStatus = ToolStatus.SUCCESS
         try:
             result = subprocess.run(
