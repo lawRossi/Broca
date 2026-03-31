@@ -262,6 +262,51 @@ const hasReasoningContent = (message: Message) => {
 const getReasoningContent = (message: Message) => {
   return getReasoningContentFromData(message)
 }
+
+// 打开文件 URL
+const openFileUrl = (url: string) => {
+  window.open(url, '_blank')
+}
+
+// 获取文件图标
+const getFileIcon = (fileType?: string, fileName?: string): string => {
+  const type = fileType?.toLowerCase() || ''
+  const name = fileName?.toLowerCase() || ''
+
+  if (type.startsWith('image/') || /\.(jpg|jpeg|png|gif|bmp|svg|webp)$/.test(name)) {
+    return '🖼️'
+  }
+  if (type.startsWith('video/') || /\.(mp4|mov|avi|wmv|flv|mkv)$/.test(name)) {
+    return '📹'
+  }
+  if (type.startsWith('audio/') || /\.(mp3|wav|ogg|m4a)$/.test(name)) {
+    return '🎵'
+  }
+  if (type.includes('pdf') || /\.pdf$/.test(name)) {
+    return '📄'
+  }
+  if (type.includes('word') || type.includes('document') || /\.(doc|docx)$/.test(name)) {
+    return '📝'
+  }
+  if (type.includes('excel') || type.includes('spreadsheet') || /\.(xls|xlsx|csv)$/.test(name)) {
+    return '📊'
+  }
+  if (type.includes('text/') || /\.(txt|md|json|xml|html|css|js|ts)$/.test(name)) {
+    return '📃'
+  }
+  if (type.includes('zip') || type.includes('compressed') || /\.(zip|rar|7z|tar|gz)$/.test(name)) {
+    return '📦'
+  }
+  return '📎'
+}
+
+// 格式化文件大小
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
+}
 </script>
 
 <template>
@@ -305,13 +350,49 @@ const getReasoningContent = (message: Message) => {
         </div>
       </div>
 
-      <!-- agent_response 使用 markdown 渲染，其他类型保持原样 -->
+      <!-- 用户消息：内容 + 文件附件 -->
+      <template v-if="message.message_type === 'user_message' || message.role === 'user'">
+        <!-- 用户消息使用普通文本渲染，不使用 markdown -->
+        <pre
+          class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
+          :class="getContentClass(message)"
+        >{{ getContent(message) }}</pre>
+
+        <!-- 文件附件显示 -->
+        <div v-if="message.data?.files && message.data.files.length > 0" class="mt-2 space-y-2">
+          <div
+            v-for="(file, index) in message.data.files"
+            :key="index"
+            class="flex items-center gap-3 p-2 bg-white border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
+            @click="openFileUrl(file.url)"
+          >
+            <!-- 文件图标 -->
+            <span class="text-2xl">{{ getFileIcon(file.type, file.name) }}</span>
+
+            <!-- 文件信息 -->
+            <div class="flex-1 min-w-0">
+              <div class="font-medium text-sm text-gray-800 truncate">{{ file.name }}</div>
+              <div class="text-xs text-gray-500">
+                {{ formatFileSize(file.size) }}
+                <span v-if="file.type" class="ml-1">• {{ file.type }}</span>
+              </div>
+            </div>
+
+            <!-- 下载/打开图标 -->
+            <span class="text-gray-400 hover:text-blue-500">🔗</span>
+          </div>
+        </div>
+      </template>
+
+      <!-- agent_response 使用 markdown 渲染 -->
       <div
-        v-if="message.message_type === 'agent_response' || message.role === 'assistant'"
+        v-else-if="message.message_type === 'agent_response' || message.role === 'assistant'"
         class="markdown-content text-xs sm:text-sm leading-relaxed mb-2"
         :class="getContentClass(message)"
         v-html="renderMarkdown(getContent(message))"
       ></div>
+
+      <!-- 其他消息类型 -->
       <pre
         v-else
         class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"

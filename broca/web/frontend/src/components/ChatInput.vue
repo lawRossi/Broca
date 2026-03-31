@@ -1,9 +1,31 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useChatStore, useAgentStore } from '@/stores'
+import { useChatStore, useAgentStore, useUserStore } from '@/stores'
+import { SupabaseStorage } from '@/utils/supabase'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
+const userStore = useUserStore()
+
+// 文件上传相关状态
+const fileInputRef = ref<HTMLInputElement>()
+const pendingFiles = ref<Array<{
+  file: File
+  id: string
+  status: 'pending' | 'uploading' | 'success' | 'error'
+  progress: number
+  error?: string
+  uploadedData?: {
+    name: string
+    url: string
+    path: string
+    size: number
+    type: string
+  }
+}>>([])
+
+const userId = computed(() => userStore.userId)
+const isUploading = ref(false)
 
 const showMentionSuggestions = ref(false)
 const mentionSuggestions = ref<Array<{ id: string; name: string }>>([])
@@ -157,23 +179,238 @@ const targetAgentDisplay = computed(() => {
 // 检查是否可以发送消息
 const canSendMessage = computed(() => {
   const text = chatStore.input.trim()
-  if (!text) return false
 
   // 解析@mention
   const { cleanText } = chatStore.parseMention(text)
+  const hasValidText = cleanText.trim().length > 0
 
-  // 检查cleanText是否为空或只包含空格
-  return cleanText.trim().length > 0
+  // 如果有文件正在上传，不能发送
+  if (isAnyUploading.value) return false
+
+  // 有文本内容 或 有已上传成功的文件 都可以发送
+  return hasValidText || allFilesUploaded.value
 })
 
 // 添加和移除全局点击事件监听器
-onMounted(() => {
+onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
+  await userStore.init()
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
+
+// 触发文件选择
+const triggerFileSelect = () => {
+  fileInputRef.value?.click()
+}
+
+// 处理文件选择
+const handleFileChange = async (event: Event) => {
+  const target = event.target as HTMLInputElement
+  if (!target.files) return
+
+  const files = Array.from(target.files)
+  if (files.length === 0) return
+
+  // 为每个文件创建待上传记录
+  files.forEach((file) => {
+    const id = Math.random().toString(36).substr(2, 9)
+    pendingFiles.value.push({
+      file,
+      id,
+      status: 'pending',
+      progress: 0,
+    })
+  })
+
+  // 重置 input 以便下次可以选择相同文件
+  target.value = ''
+
+  // 自动开始上传
+  await uploadPendingFiles()
+}
+
+// 移除待上传文件
+const removePendingFile = (id: string) => {
+  const index = pendingFiles.value.findIndex((f) => f.id === id)
+  if (index !== -1) {
+    const record = pendingFiles.value[index]
+    if (!record) return
+    // 如果文件正在上传，不能移除（需要取消上传功能，这里简化为不允许移除）
+    if (record.status === 'uploading') {
+      return
+    }
+    pendingFiles.value.splice(index, 1)
+  }
+}
+
+// 上传单个文件
+const uploadSingleFile = async (fileRecord: typeof pendingFiles.value[0]): Promise<{
+  name: string
+  url: string
+  path: string
+  size: number
+  type: string
+} | null> => {
+  const { file, id } = fileRecord
+
+  // 更新状态为上传中
+  const index = pendingFiles.value.findIndex((f) => f.id === id)
+  if (index === -1) return null
+
+  const fileRecordRef = pendingFiles.value[index]
+  if (!fileRecordRef) return null
+
+  fileRecordRef.status = 'uploading'
+  fileRecordRef.progress = 0
+
+  try {
+    const date = new Date()
+    const year = date.getFullYear()
+    const month = String(date.getMonth() + 1).padStart(2, '0')
+    const day = String(date.getDate()).padStart(2, '0')
+    const safeFilename = SupabaseStorage.generateUniqueFilename(file.name)
+    const path = `${userId.value}/${year}${month}${day}/${safeFilename}`
+    console.log(path)
+    // 上传到 Supabase Storage
+    await SupabaseStorage.upload('upload', path, file)
+
+    // 获取公网 URL
+    const url = SupabaseStorage.getPublicUrl('upload', path)
+
+    // 更新状态为成功
+    if (index !== -1) {
+      const record = pendingFiles.value[index]
+      if (record) {
+        record.status = 'success'
+        record.progress = 100
+        record.uploadedData = {
+          name: file.name,
+          url,
+          path,
+          size: file.size,
+          type: file.type,
+        }
+      }
+    }
+
+    const successRecord = pendingFiles.value[index]
+    return successRecord?.uploadedData ?? null
+  } catch (error: any) {
+    console.error('文件上传失败:', error)
+    if (index !== -1) {
+      const record = pendingFiles.value[index]
+      if (record) {
+        record.status = 'error'
+        record.error = error.message || '上传失败'
+      }
+    }
+    return null
+  }
+}
+
+// 上传所有待上传文件
+const uploadPendingFiles = async () => {
+  if (isUploading.value) return
+
+  const pending = pendingFiles.value.filter((f) => f.status === 'pending')
+  if (pending.length === 0) return
+
+  isUploading.value = true
+
+  // 串行上传（避免并发问题）
+  for (const fileRecord of pending) {
+    if (fileRecord.status === 'pending') {
+      await uploadSingleFile(fileRecord)
+    }
+  }
+
+  isUploading.value = false
+}
+
+// 获取文件图标
+const getFileIcon = (file: File) => {
+  const type = file.type.toLowerCase()
+  if (type.startsWith('image/')) return '🖼️'
+  if (type.startsWith('video/')) return '📹'
+  if (type.startsWith('audio/')) return '🎵'
+  if (type.includes('pdf')) return '📄'
+  if (type.includes('word') || type.includes('document')) return '📝'
+  if (type.includes('excel') || type.includes('spreadsheet')) return '📊'
+  if (type.includes('text/')) return '📃'
+  return '📦'
+}
+
+// 格式化文件大小
+const formatFileSize = (bytes: number): string => {
+  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
+  if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
+  return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
+}
+
+// 检查是否所有文件都已上传成功
+const allFilesUploaded = computed(() => {
+  const files = pendingFiles.value
+  return files.length > 0 && files.every((f) => f.status === 'success')
+})
+
+// 检查是否正在上传
+const isAnyUploading = computed(() => {
+  return pendingFiles.value.some((f) => f.status === 'uploading')
+})
+
+// 处理发送消息（包含文件上传）
+const handleSendMessage = async () => {
+  const text = chatStore.input.trim()
+  const { targetAgentId, cleanText } = chatStore.parseMention(text)
+
+  if (!cleanText.trim() && pendingFiles.value.length === 0) {
+    return
+  }
+
+  // 如果有待上传的文件，先上传
+  const pending = pendingFiles.value.filter((f) => f.status === 'pending')
+  if (pending.length > 0) {
+    await uploadPendingFiles()
+  }
+
+  // 检查是否有上传失败的文件
+  const failedFiles = pendingFiles.value.filter((f) => f.status === 'error')
+  if (failedFiles.length > 0) {
+    // 可以提示用户，但继续发送成功的文件
+    console.warn('部分文件上传失败:', failedFiles.map(f => f.error))
+  }
+
+  // 获取上传成功的文件数据
+  const uploadedFiles = pendingFiles.value
+    .filter((f) => f.status === 'success')
+    .map((f) => {
+      const data = f.uploadedData
+      if (!data) return null
+      return {
+        name: data.name,
+        url: data.url,
+        path: data.path,
+        size: data.size,
+        type: data.type,
+        upload_time: new Date().toISOString(),
+      }
+    })
+    .filter((f): f is NonNullable<typeof f> => f !== undefined)
+
+  // 清空待上传文件列表
+  pendingFiles.value = []
+
+  // 清空输入框
+  chatStore.input = ''
+
+  // 调用 chatStore 的发送方法，传递文件数据
+  // targetAgentId 可能是 null，转换为 undefined
+  await chatStore.sendUserMessage(cleanText, targetAgentId || undefined, uploadedFiles)
+}
 </script>
 
 <template>
@@ -184,15 +421,62 @@ onUnmounted(() => {
       <span class="font-medium text-blue-600">{{ targetAgentDisplay }}</span>
     </div>
 
+    <!-- 文件预览区域 -->
+    <div v-if="pendingFiles.length > 0" class="mb-2 space-y-1 max-h-32 overflow-y-auto">
+      <div
+        v-for="fileRecord in pendingFiles"
+        :key="fileRecord.id"
+        class="flex items-center gap-2 p-2 bg-gray-50 rounded border text-xs"
+        :class="{
+          'border-red-300 bg-red-50': fileRecord.status === 'error',
+          'border-green-300 bg-green-50': fileRecord.status === 'success',
+          'border-blue-300 bg-blue-50': fileRecord.status === 'uploading'
+        }"
+      >
+        <span class="text-lg">{{ getFileIcon(fileRecord.file) }}</span>
+        <div class="flex-1 min-w-0">
+          <div class="font-medium truncate">{{ fileRecord.file.name }}</div>
+          <div class="text-gray-500 text-xs">
+            {{ formatFileSize(fileRecord.file.size) }}
+            <span v-if="fileRecord.status === 'uploading'"> - 上传中... {{ fileRecord.progress }}%</span>
+            <span v-if="fileRecord.status === 'success'"> - 上传成功</span>
+            <span v-if="fileRecord.status === 'error'" class="text-red-600"> - {{ fileRecord.error }}</span>
+          </div>
+        </div>
+        <!-- 删除按钮（非上传中状态可删除） -->
+        <button
+          v-if="fileRecord.status !== 'uploading'"
+          type="button"
+          class="text-gray-400 hover:text-red-500 p-1"
+          @click="removePendingFile(fileRecord.id)"
+        >
+          ✕
+        </button>
+        <!-- 上传进度条 -->
+        <div v-if="fileRecord.status === 'uploading'" class="w-12 h-1 bg-gray-200 rounded overflow-hidden">
+          <div class="h-full bg-blue-500 transition-all" :style="{ width: fileRecord.progress + '%' }"></div>
+        </div>
+      </div>
+    </div>
+
     <div class="flex gap-2">
       <div class="flex-1 relative">
+        <!-- 隐藏的文件输入 -->
+        <input
+          ref="fileInputRef"
+          type="file"
+          multiple
+          class="hidden"
+          @change="handleFileChange"
+        />
+
         <el-input
           v-model="chatStore.input"
           placeholder="Type message... 使用 @ 指定agent"
-          :disabled="!chatStore.connected"
+          :disabled="!chatStore.connected || isUploading"
           size="default"
           clearable
-          @keyup.enter="chatStore.sendUserMessage"
+          @keyup.enter="handleSendMessage"
           @keydown="handleKeyDown"
         />
 
@@ -218,12 +502,23 @@ onUnmounted(() => {
         </div>
       </div>
 
+      <!-- 文件上传按钮 -->
+      <el-button
+        type="default"
+        :disabled="!chatStore.connected || isUploading"
+        size="default"
+        class="!px-3"
+        @click="triggerFileSelect"
+        title="上传文件"
+      >
+        📎
+      </el-button>
 
       <el-button
         type="primary"
-        :disabled="!chatStore.connected || !canSendMessage"
+        :disabled="!chatStore.connected || !canSendMessage || isUploading"
         size="default"
-        @click="chatStore.sendUserMessage"
+        @click="handleSendMessage"
       >
         <span class="hidden sm:inline">Send</span>
         <span class="sm:hidden">➤</span>

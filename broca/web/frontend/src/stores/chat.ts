@@ -478,23 +478,57 @@ export const useChatStore = defineStore('chat', () => {
     await socketStore.subscribe(sessionId.value)
   }
 
-  const sendUserMessage = async () => {
-    const text = input.value.trim()
-    if (!text) return
+  const sendUserMessage = async (content?: string, targetAgentId?: string, files?: Array<{
+    name: string
+    url: string
+    path: string
+    size: number
+    type: string
+    upload_time: string
+  }>) => {
+    // 如果传入了参数，使用参数；否则从 input 获取（兼容旧调用）
+    let text = content ?? input.value.trim()
+    if (!text && (!files || files.length === 0)) return
 
-    const { targetAgentId, cleanText } = parseMention(text)
+    // 如果没有传入 targetAgentId，从 input 解析
+    let parsedTargetAgentId: string | null | undefined = targetAgentId
+    let cleanText = text
+    if (!targetAgentId) {
+      const parsed = parseMention(text)
+      parsedTargetAgentId = parsed.targetAgentId
+      cleanText = parsed.cleanText
+    }
 
-    if (!cleanText.trim()) {
+    if (!cleanText.trim() && (!files || files.length === 0)) {
       return
     }
 
-    input.value = ''
+    // 清空输入框（只在从 input 获取内容时）
+    if (!content) {
+      input.value = ''
+    }
 
-    const targetAgent = targetAgentId || agentStore.currentAgentId
+    const targetAgent = parsedTargetAgentId || agentStore.currentAgentId
 
     const targetAgentObj = agentStore.agents.find((a: any) => a.agent_id === targetAgent)
     const displayAgentName = targetAgentObj?.name || targetAgent
 
+    // 构建消息 data
+    const messageData: any = {
+      content: cleanText,
+    }
+
+    // 添加 mention（如果有）
+    if (parsedTargetAgentId) {
+      messageData.mention = displayAgentName
+    }
+
+    // 添加 files（如果有）
+    if (files && files.length > 0) {
+      messageData.files = files
+    }
+
+    // 乐观更新：添加本地消息
     addMessage({
       message_id: `user_${Date.now()}`,
       timestamp: new Date().toISOString(),
@@ -502,17 +536,16 @@ export const useChatStore = defineStore('chat', () => {
       role: 'user',
       sender_id: 'user',
       receiver_id: targetAgent,
-      subscription: sessionId.value,
-      data: {
-        content: cleanText,
-        mention: targetAgentId ? displayAgentName : undefined,
-      },
+      subscription: sessionId.value ? String(sessionId.value) : undefined,
+      data: messageData,
     } as Message)
 
+    // 通过 WebSocket 发送
     await socketStore.sendUserMessage({
       content: cleanText,
       receiverId: targetAgent,
-      subscription: sessionId.value,
+      subscription: sessionId.value ? String(sessionId.value) : undefined,
+      files: files, // 传递文件数组
     })
   }
 
@@ -542,7 +575,7 @@ export const useChatStore = defineStore('chat', () => {
       granted,
       requestId: permissionDialog.requestId,
       receiverId: permissionDialog.senderId || '',
-      subscription: sessionId.value,
+      subscription: sessionId.value ? String(sessionId.value) : undefined,
     })
     permissionDialog.visible = false
   }
