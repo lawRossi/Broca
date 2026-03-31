@@ -112,19 +112,32 @@ export const useSocketStore = defineStore('socket', () => {
     }
   }
 
-  const sendUserMessage = async (params: { content: string; receiverId?: string; subscription?: string }) => {
+  const sendUserMessage = async (params: {
+    content: string
+    receiverId?: string
+    subscription?: string
+    files?: Array<{
+      name: string
+      url: string
+      path: string
+      size: number
+      type: string
+      upload_time: string
+    }>
+  }) => {
     if (!client) {
       ElMessage.warning('请先连接')
       return
     }
     const text = params.content.trim()
-    if (!text) return
+    if (!text && (!params.files || params.files.length === 0)) return
 
     try {
       await client.sendUserMessage({
         content: text,
         receiverId: params.receiverId,
         subscription: params.subscription,
+        files: params.files,
       })
     } catch (e: any) {
       ElMessage.error(e?.message || '发送失败')

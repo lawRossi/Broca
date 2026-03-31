@@ -166,6 +166,14 @@ export class BrocaSocketClient {
     receiverId?: string
     room?: string
     subscription?: string
+    files?: Array<{
+      name: string
+      url: string
+      path: string
+      size: number
+      type: string
+      upload_time: string
+    }>
   }): Promise<void> {
     if (!this.socket || !this.isConnected) {
       throw new Error('Not connected')
@@ -182,8 +190,11 @@ export class BrocaSocketClient {
       subscription: params.subscription,
       data: {
         content: params.content,
+        ...(params.files && { files: params.files }),
       },
     }
+
+    console.log(message)
 
     return new Promise((resolve, reject) => {
       this.socket!.emit('message', message, (response: any) => {
