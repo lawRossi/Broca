@@ -546,7 +546,11 @@ class MessageProtocol:
         return Message(
             message_type=MessageType.TASK_START,
             role=MessageRole.AGENT,
-            data={"task_id": task_id, "task_description": task_description},
+            data={
+                "task_id": task_id,
+                "task_description": task_description,
+                "assigner": kwargs.get("sender_id"),
+            },
             **kwargs,
         )
 
@@ -705,16 +709,16 @@ class TaskComment(SQLModel, table=True):
     __tablename__ = "task_comment"
 
     comment_id: str = Field(
-        primary_key=True, description="评论唯一标识符", default_factory=generate_comment_id
+        primary_key=True,
+        description="评论唯一标识符",
+        default_factory=generate_comment_id,
     )
     task_id: str = Field(
         foreign_key="task.task_id", ondelete="CASCADE", description="关联的任务ID"
     )
     author: str = Field(description="评论作者")
     content: str = Field(description="评论内容")
-    created_at: datetime = Field(
-        default_factory=datetime.now, description="创建时间"
-    )
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
     # 关联关系
     task: "Task" = Relationship(back_populates="comments")
@@ -731,22 +735,33 @@ class Task(SQLModel, table=True):
     __tablename__ = "task"
 
     task_id: str = Field(
-        index=True, primary_key=True, description="任务唯一标识符", default_factory=generate_task_id
+        index=True,
+        primary_key=True,
+        description="任务唯一标识符",
+        default_factory=generate_task_id,
     )
     name: str = Field(description="任务名称")
     description: str = Field(description="任务描述")
 
     # 会话关联
     session_id: Optional[str] = Field(
-        foreign_key="session.session_id", ondelete="CASCADE", default=None, description="关联的会话ID"
+        foreign_key="session.session_id",
+        ondelete="CASCADE",
+        default=None,
+        description="关联的会话ID",
     )
 
     # 从 TaskMetadata 扁平化过来的字段
     parent_id: Optional[str] = Field(
-        foreign_key="task.task_id", ondelete="SET NULL", default=None, description="父任务ID"
+        foreign_key="task.task_id",
+        ondelete="SET NULL",
+        default=None,
+        description="父任务ID",
     )
     status: TaskStatus = Field(default=TaskStatus.PENDING, description="任务状态")
-    priority: TaskPriority = Field(default=TaskPriority.MEDIUM, description="任务优先级")
+    priority: TaskPriority = Field(
+        default=TaskPriority.MEDIUM, description="任务优先级"
+    )
     assignee: Optional[str] = Field(default=None, description="任务分配对象")
 
     # 可选字段
@@ -765,7 +780,8 @@ class Task(SQLModel, table=True):
 
     # 依赖关系（JSON 数组存储）
     dependencies: Optional[List[str]] = Field(
-        sa_column=Column(JSON, nullable=True, default=None), description="依赖任务ID列表"
+        sa_column=Column(JSON, nullable=True, default=None),
+        description="依赖任务ID列表",
     )
 
     # 元数据
@@ -776,12 +792,9 @@ class Task(SQLModel, table=True):
     session: Optional["Session"] = Relationship(back_populates="tasks")
     parent: Optional["Task"] = Relationship(
         back_populates="children",
-        sa_relationship_kwargs={"remote_side": "Task.task_id"}
+        sa_relationship_kwargs={"remote_side": "Task.task_id"},
     )
-    children: List["Task"] = Relationship(
-        back_populates="parent",
-        cascade_delete="all"
-    )
+    children: List["Task"] = Relationship(back_populates="parent", cascade_delete="all")
     comments: List[TaskComment] = Relationship(
         back_populates="task", cascade_delete="all"
     )

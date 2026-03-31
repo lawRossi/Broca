@@ -21,7 +21,13 @@ from loguru import logger
 from broca.context import Context
 from broca.error_handler import AgentError, ErrorHandler
 from broca.llm import LLMClient
-from broca.session import MessageRole, MessageType, SessionManager, generate_message_id
+from broca.session import (
+    Message,
+    MessageRole,
+    MessageType,
+    SessionManager,
+    generate_message_id,
+)
 from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
 
 
@@ -33,6 +39,7 @@ class ExecutionStatus(str, Enum):
     COMPLETED = "completed"
     ERROR = "error"
     ABORTED = "aborted"
+    SKIPPED = "skipped"
 
 
 class ExecutionResult:
@@ -363,8 +370,6 @@ class ExecutionEngine:
                     async with self.error_handler.handle_tool_execution(
                         tool_name=tool_name, context="tool_call_processing"
                     ):
-                        # Execute tool asynchronously with timeout
-                        # assign_task tool in blocking mode may take a long time, so use longer timeout
                         timeout = 1800 if tool_name == "assign_task" else 600
                         tool_result = await asyncio.wait_for(
                             self.tool_mapping[tool_name].execute(arguments, context),
@@ -494,7 +499,7 @@ class ExecutionEngine:
 
     async def execute(
         self,
-        message: Optional[str] = None,
+        message: Optional[Message],
         max_steps: Optional[int] = None,
         from_agent: Optional[bool] = False,
     ) -> ExecutionResult:
@@ -515,39 +520,39 @@ class ExecutionEngine:
             ExecutionResult: Result of the execution
         """
         # Reset abort state for new execution
+        if not message:
+            return ExecutionResult(status=ExecutionStatus.SKIPPED)
+
         self.is_aborted = False
         self.abort_event.clear()
 
         try:
-            if message:
-                # Set up execution context
-                await self._setup_execution_context(message, from_agent)
+            await self._setup_execution_context(message, from_agent)
 
-                # Execute the round
-                try:
-                    status = await self.execute_round(max_steps)
+            try:
+                status = await self.execute_round(max_steps)
 
-                    # Send turn completion
-                    await self._send_turn_completion()
+                # Send turn completion
+                await self._send_turn_completion()
 
-                    return ExecutionResult(status=status)
+                return ExecutionResult(status=status)
 
-                except asyncio.CancelledError:
-                    logger.info("Execution cancelled by user")
-                    await self._send_turn_cancellation()
-                    return ExecutionResult(
-                        status=ExecutionStatus.ABORTED,
-                        message="Execution aborted by user",
-                    )
+            except asyncio.CancelledError:
+                logger.info("Execution cancelled by user")
+                await self._send_turn_cancellation()
+                return ExecutionResult(
+                    status=ExecutionStatus.ABORTED,
+                    message="Execution aborted by user",
+                )
 
-                except Exception as e:
-                    logger.error(f"Error during execution: {e}")
-                    await self._send_turn_error(e)
-                    return ExecutionResult(
-                        status=ExecutionStatus.ERROR,
-                        message=f"Execution failed: {e}",
-                        error=str(e),
-                    )
+            except Exception as e:
+                logger.error(f"Error during execution: {e}")
+                await self._send_turn_error(e)
+                return ExecutionResult(
+                    status=ExecutionStatus.ERROR,
+                    message=f"Execution failed: {e}",
+                    error=str(e),
+                )
 
             logger.debug("No user message provided, execution skipped")
 
@@ -565,7 +570,9 @@ class ExecutionEngine:
             message="No user message provided, execution skipped",
         )
 
-    async def _setup_execution_context(self, message: str, from_agent: bool = False):
+    async def _setup_execution_context(
+        self, message: Message, from_agent: Optional[bool] = False
+    ):
         """
         Set up execution context for a new turn
 
@@ -578,27 +585,61 @@ class ExecutionEngine:
         turn_id = await self.session_manager.start_turn(self.agent_id)
         self.turn_id = turn_id
 
-        # Send turn start notification
+        user_message = self._parse_message(message)
+        message_content = user_message.get("content")
+        logger.info(f"Processing user message: {message_content[:50]}...")
         await self.communicator.send_turn_start(
             turn_id=turn_id,
-            turn_description=f"Processing user message: {message[:50]}...",
+            turn_description=f"Processing user message: {message_content[:50]}...",
             subscription=self.session_id,
         )
 
-        message_data = {"role": "user", "content": message}
-        msg_content = json.dumps(message_data, ensure_ascii=False)
-
+        message.data["from_agent"] = from_agent
         await self.session_manager.save_message(
             role=MessageRole.USER,
-            content=msg_content,
+            content=json.dumps(user_message, ensure_ascii=False),
             message_type=MessageType.USER_MESSAGE,
             turn_id=turn_id,
             agent_id=self.agent_id,
-            data={"from_agent": from_agent},
+            data=message.data,
         )
 
         # Add to context history
-        await self.context.add_message(message_data)
+        await self.context.add_message(user_message)
+
+    def _parse_message(self, message: Message) -> dict:
+        """
+        将内部 Message 对象解析为 LLM 需要的消息格式
+
+        Args:
+            message: 内部消息对象
+
+        Returns:
+            LLM 消息格式的字典，包含 role 和 content 字段
+            对于 tool_call 消息，还包含 tool_calls 字段
+        """
+        if message.message_type == MessageType.USER_MESSAGE:
+            content = message.data.get("content", "")
+            files = message.data.get("files")
+            if files:
+                file_info_parts = []
+                for file in files:
+                    file_url = file.get("url", "")
+                    file_type = file.get("type", "")
+                    file_info = f"文件类型：{file_type}\n文件链接：{file_url}"
+                    file_info_parts.append(file_info)
+
+                if file_info_parts:
+                    files_section = "\n\n[附件文件]:\n" + "\n".join(file_info_parts)
+                    content = content + files_section
+        elif message.message_type == MessageType.TASK_START:
+            content = message.data.get("task_description")
+        elif message.message_type == MessageType.TASK_COMPLETE:
+            content = message.data.get("result")
+        elif message.message_type == MessageType.TASK_ERROR:
+            content = message.data.get("error_message")
+
+        return {"role": "user", "content": content}
 
     async def _ensure_session(self, workspace: str | None = None):
         """Ensure session exists, create if not"""
