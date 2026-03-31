@@ -185,9 +185,12 @@ class SocketIOAgent(Agent):
         self.communicator.register_event_handler(
             "permission_response", self._on_permission_response
         )
-        
+
         from broca.tools.agent_interaction import AskUserToolManager
-        self.communicator.register_event_handler("user_answer", AskUserToolManager.handle_user_answer)
+
+        self.communicator.register_event_handler(
+            "user_answer", AskUserToolManager.handle_user_answer
+        )
 
     def _setup_execution_engine(self):
         """Set up execution engine"""
@@ -210,7 +213,7 @@ class SocketIOAgent(Agent):
 
     async def _receive_message(self, message: Message):
         """Receive message from communication channel"""
-        logger.info("Received message")
+        logger.info(f"Received message {message.message_type}")
         await self.message_queue.put(message)
 
     async def _on_error(self, message: Message):
@@ -258,42 +261,20 @@ class SocketIOAgent(Agent):
             try:
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
                 if message.message_type == MessageType.USER_MESSAGE:
-                    content = message.data.get("content")
-                    execution_result = await self.run_async(content)
-                    logger.debug(
-                        f"User message execution result: {execution_result.status}"
-                    )
+                    await self.run_async(message)
                 elif message.message_type == MessageType.TASK_START:
-                    task_id = message.data.get("task_id")
-                    task = message.data.get("task_description")
-                    assigner = message.data.get("assigner")
-                    await self._handle_task(task_id, task, assigner)
-                elif message.message_type == MessageType.TASK_COMPLETE:
-                    task_id = message.data.get("task_id")
-                    result = message.data.get("result")
-                    logger.info(f"Received task result of task {task_id}: {result}")
-                    execution_result = await self.run_async(result, from_agent=True)
-                    logger.debug(
-                        f"Task result execution result: {execution_result.status}"
-                    )
-                elif message.message_type == MessageType.TASK_FAILED:
-                    task_id = message.data.get("task_id")
-                    error_message = message.data.get("error_message")
-                    logger.error(
-                        f"Received task error of task {task_id}: {error_message}"
-                    )
-                    execution_result = await self.run_async(
-                        error_message, from_agent=True
-                    )
-                    logger.debug(
-                        f"Task error execution result: {execution_result.status}"
-                    )
+                    await self._handle_task(message)
+                elif message.message_type in [
+                    MessageType.TASK_COMPLETE,
+                    MessageType.TASK_ERROR,
+                ]:
+                    await self.run_async(message, from_agent=True)
             except asyncio.TimeoutError:
                 continue
 
     async def run_async(
         self,
-        message: Optional[str] = None,
+        message: Message,
         max_steps: Optional[int] = None,
         from_agent: Optional[bool] = False,
     ) -> ExecutionResult:
@@ -346,16 +327,17 @@ class SocketIOAgent(Agent):
 
             self._abort_task = None
 
-    async def _handle_task(self, task_id: str, task: str, assigner: str) -> None:
+    async def _handle_task(self, message: Message) -> None:
         """Handle task assignment from another agent"""
         try:
-            execution_result = await self.run_async(task, from_agent=True)
+            task_id = message.data.get("task_id")
+            assigner = message.data.get("assigner")
+            execution_result = await self.run_async(message, from_agent=True)
 
             # Check execution status
             if execution_result.status == ExecutionStatus.COMPLETED:
                 msg = self.context.get_latest_assistant_message()
-                result = f"Message from agent {self.agent_id}: {msg}"
-                logger.info(result)
+                result = f"Message from agent {self.name}: {msg}"
                 logger.info(f"send result to {assigner}")
                 await self.communicator.send_task_complete(task_id, result, assigner)
             elif execution_result.status == ExecutionStatus.ABORTED:

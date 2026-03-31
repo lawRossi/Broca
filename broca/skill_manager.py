@@ -19,18 +19,23 @@ class SkillManager:
             self.skill_spec_template = "Base path of skill: {base_path}\nSpecification of {skill_name}:{skill_spec}"
             self._load_installed_skills()
 
-    def get_skills(
-        self, workspace: str, skill_names: list[str] | None = None
-    ) -> dict[str, dict]:
+    def get_skills(self, workspace: str, skill_names: str | None) -> dict[str, dict]:
         skills: dict[str, dict] = {}
-        if skill_names is not None:
+        if skill_names == "all":
+            skills.update(self.skills)
+            for skill in self._load_workspace_skills(workspace).values():
+                if skill["name"] not in skills:
+                    skills[skill["name"]] = skill
+                else:
+                    logger.warning(f"Duplicate skill ignored: {skill['name']}")
+        elif skill_names:
             found = set()
-            for name in skill_names:
+            for name in skill_names.split(","):
                 if name in self.skills:
                     skills[name] = self.skills[name]
                     found.add(name)
 
-            not_found = set(skill_names) - found
+            not_found = set(skill_names.split(",")) - found
             if not_found:
                 workspace_skills = self._load_workspace_skills(workspace)
                 for name in not_found:
@@ -38,20 +43,12 @@ class SkillManager:
                         skills[name] = workspace_skills[name]
                     else:
                         raise ValueError(f"Skill '{name}' not found.")
-            return skills
-        else:
-            skills.update(self.skills)
-            for skill in self._load_workspace_skills(workspace).values():
-                if skill["name"] not in skills:
-                    skills[skill["name"]] = skill
-                else:
-                    logger.warning(f"Duplicate skill ignored: {skill['name']}")
-            return skills
+        return skills
 
     def _load_installed_skills(self) -> None:
         boostrap_dirs = [
             Path(__file__).parent.parent / "skills",
-            Path("~/.broca/skills"),
+            Path.home() / ".agents/skills",
         ]
 
         self.skills: dict[str, dict] = {}
@@ -71,7 +68,7 @@ class SkillManager:
         skills: dict[str, dict] = {}
         for skills_dir in boostrap_dirs:
             for skill in self._load_batch_skills(skills_dir).values():
-                if skill["name"] not in skills:
+                if skill["name"] not in skills and skill["name"] not in self.skills:
                     skills[skill["name"]] = skill
                 else:
                     logger.warning(f"Duplicate skill ignored: {skill['name']}")

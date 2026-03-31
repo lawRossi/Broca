@@ -74,18 +74,22 @@ class TaskManagement(Tool):
                     "items": {"type": "string"},
                     "description": "List of task related links (optional for create and update actions)",
                 },
+                "notes": {
+                    "type": "string",
+                    "description": "Task notes (optional for create and update actions)",
+                },
                 "acceptance_criteria": {
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "List of acceptance criteria (optional for create and update actions)",
                 },
-                "author": {
-                    "type": "string",
-                    "description": "Comment author (required for add_comment action)",
-                },
                 "content": {
                     "type": "string",
                     "description": "Comment content (required for add_comment action)",
+                },
+                "report": {
+                    "type": "string",
+                    "description": "Report content (optional for update action)",
                 },
                 "query": {
                     "type": "string",
@@ -98,6 +102,7 @@ class TaskManagement(Tool):
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         action = arguments.get("action")
         arguments["session_id"] = context.session_id
+        arguments["author"] = context.agent.name
         try:
             task_manager = self.task_manager
             if action == "create":
@@ -120,6 +125,8 @@ class TaskManagement(Tool):
                 return await self._get_child_tasks(arguments, task_manager)
             elif action == "search":
                 return await self._search_tasks(arguments, task_manager)
+            elif action == "write_report":
+                return await self._write_report(arguments, task_manager)
             else:
                 return ToolResult(
                     status=ToolStatus.ERROR, content=f"Unknown action: {action}"
@@ -320,10 +327,6 @@ class TaskManagement(Tool):
         if not task_id:
             return ToolResult(
                 status=ToolStatus.ERROR, content="Missing required field: task_id"
-            )
-        if not author:
-            return ToolResult(
-                status=ToolStatus.ERROR, content="Missing required field: author"
             )
         if not content:
             return ToolResult(
