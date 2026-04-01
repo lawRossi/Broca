@@ -270,10 +270,6 @@ const getReasoningContent = (message: Message) => {
   return getReasoningContentFromData(message)
 }
 
-// 打开文件 URL
-const openFileUrl = (url: string) => {
-  window.open(url, '_blank')
-}
 
 // 打开文件预览
 const openFilePreview = (file: { url?: string; path?: string; name?: string; type?: string }) => {
