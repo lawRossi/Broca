@@ -130,7 +130,7 @@ Update task status as you work:
 
 ## Task Management Actions Reference
 
-You can refer to `references/task_reference.md` for more details.
+You can refer to `references/task_management_reference.md` for more details.
 
 ### Create Task
 ```json
