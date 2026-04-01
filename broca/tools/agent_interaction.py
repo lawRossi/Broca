@@ -5,7 +5,7 @@ from typing import Dict, Optional
 from loguru import logger
 
 from broca.execution_engine import ExecutionStatus
-from broca.session import Message, MessageRole, MessageType
+from broca.session import Message, MessageProtocol, MessageRole, MessageType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
@@ -82,7 +82,10 @@ class AssignTask(Tool):
         task = arguments["task"]
         execution_type = arguments.get("execution_type", "blocking")
         if execution_type == "blocking":
-            execution_result = await target_agent.run_async(task, from_agent=True)
+            trigger_message = MessageProtocol.create_user_message(content=task)
+            execution_result = await target_agent.run_async(
+                trigger_message, from_agent=True
+            )
             message = target_agent.context.get_latest_assistant_message()
             if message:
                 content = "Message from agent: " + message

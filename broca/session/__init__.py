@@ -19,6 +19,7 @@ from .models import (
     Agent,
     AgentConfig,
     Message,
+    MessageProtocol,
     MessageRole,
     MessageType,
     Session,
@@ -28,7 +29,7 @@ from .models import (
     TaskPriority,
     TaskStatus,
     Turn,
-    generate_message_id
+    generate_message_id,
 )
 from .service import (
     AgentConfigService,
@@ -56,6 +57,7 @@ __all__ = [
     "Agent",
     "AgentConfig",
     "Message",
+    "MessageProtocol",
     "MessageRole",
     "MessageType",
     "Session",

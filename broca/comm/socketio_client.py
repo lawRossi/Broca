@@ -13,7 +13,7 @@ from typing import Any, Callable, Dict, List, Optional
 from loguru import logger
 from socketio import AsyncClient
 
-from broca.session.models import Message, MessageProtocol, MessageType
+from broca.session.models import Message, MessageProtocol, MessageRole, MessageType
 
 
 @dataclass
@@ -632,6 +632,70 @@ class SocketIOClient:
             subscription=subscription,
         )
         return await self.send_message(msg, callback)
+
+    async def send_task_start(
+        self,
+        task_id: str,
+        task_description: str,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> str:
+        """Send task start message"""
+        message = MessageProtocol.create_task_start(
+            task_id=task_id,
+            task_description=task_description,
+            sender_id=self.client_id,
+            receiver_id=receiver_id,
+            room=room,
+            subscription=subscription,
+        )
+
+        return await self.send_message(message)
+
+    async def send_task_complete(
+        self,
+        task_id: str,
+        result: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> str:
+        """Send task complete message"""
+        data = {"task_id": task_id}
+        if result:
+            data["result"] = result
+
+        message = Message(
+            message_type=MessageType.TASK_COMPLETE,
+            role=MessageRole.AGENT,
+            sender_id=self.client_id,
+            receiver_id=receiver_id,
+            room=room,
+            subscription=subscription,
+            data=data,
+        )
+        return await self.send_message(message)
+
+    async def send_task_error(
+        self,
+        task_id: str,
+        error_message: str,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> str:
+        """Send task error message"""
+        message = MessageProtocol.create_task_error(
+            task_id=task_id,
+            error_message=error_message,
+            sender_id=self.client_id,
+            receiver_id=receiver_id,
+            room=room,
+            subscription=subscription,
+        )
+
+        return await self.send_message(message)
 
     async def subscribe(
         self, subscription: str, callback: Optional[Callable] = None
