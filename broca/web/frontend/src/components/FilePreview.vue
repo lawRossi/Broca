@@ -303,6 +303,13 @@ const closePreview = () => {
   emit('close')
 }
 
+/** 在新窗口打开文件 */
+const openInNewWindow = () => {
+  if (props.fileUrl) {
+    window.open(props.fileUrl, '_blank')
+  }
+}
+
 /** 获取文件图标 */
 const getFileIcon = computed(() => {
   if (isImageFile.value) return Picture
@@ -475,7 +482,7 @@ defineExpose({
 
     <template #footer>
       <div class="w-full flex justify-end gap-2">
-        <el-button v-if="previewMode === 'direct' && props.fileUrl" @click="window.open(props.fileUrl, '_blank')">
+        <el-button v-if="previewMode === 'direct' && props.fileUrl" @click="openInNewWindow">
           Open in New Window
         </el-button>
         <el-button @click="closePreview">Close</el-button>
