@@ -19,7 +19,7 @@ from litellm import Message as LLMMessage
 from loguru import logger
 
 from broca.context import Context
-from broca.error_handler import AgentError, ErrorHandler
+from broca.error_handler import AgentError, ErrorHandler, ErrorType
 from broca.llm import LLMClient
 from broca.session import (
     Message,
@@ -40,6 +40,7 @@ class ExecutionStatus(str, Enum):
     ERROR = "error"
     ABORTED = "aborted"
     SKIPPED = "skipped"
+    LIMIT_EXCEEDED = "limit_exceeded"
 
 
 class ExecutionResult:
@@ -162,14 +163,8 @@ class ExecutionEngine:
         Returns:
             True if more steps are needed, False otherwise
         """
-        # Check for abort before starting step
-        if self.is_aborted or self.abort_event.is_set():
-            logger.info("Agent execution aborted")
-            return ExecutionStatus.ABORTED
-
         errors = 0
 
-        # Try LLM call with retries
         while errors < 3:
             # Check for abort during LLM call
             if self.is_aborted or self.abort_event.is_set():
@@ -188,29 +183,32 @@ class ExecutionEngine:
                 errors += 1
                 if errors > 2:
                     logger.error(f"Too many errors ({e.error_type}), aborting...")
-                    await self._send_turn_error(e)
                     return ExecutionStatus.ERROR
+                if e.error_type == ErrorType.LLM_RATE_LIMIT_ERROR:
+                    await asyncio.sleep(3)
             except asyncio.CancelledError:
                 logger.info("Agent execution cancelled by user during LLM call")
                 return ExecutionStatus.ABORTED
 
+        if self.is_aborted or self.abort_event.is_set():
+            logger.info("Agent execution aborted after tool calls")
+            return ExecutionStatus.ABORTED
+
+        if not await self.session_manager.save_agent_response(
+            response, self.turn_id, self.agent_id
+        ):
+            logger.error("Failed to save agent response")
+            return ExecutionStatus.ERROR
+
         # Add response to history
         await self.context.add_message(response)
-
-        # Save response to database
-        await self._save_agent_response(response)
 
         # Process tool calls if any
         if not response.tool_calls:
             return ExecutionStatus.COMPLETED
         else:
             await self._process_tool_calls(response.tool_calls)
-
-        if self.is_aborted or self.abort_event.is_set():
-            logger.info("Agent execution aborted after tool calls")
-            return ExecutionStatus.ABORTED
-
-        return ExecutionStatus.RUNNING
+            return ExecutionStatus.RUNNING
 
     async def _call_llm_streaming(self) -> LLMMessage:
         """
@@ -230,17 +228,22 @@ class ExecutionEngine:
             self.context.history,
             self._get_tools_list(),
         ):
+            if self.is_aborted or self.abort_event.is_set():
+                logger.info("Agent execution aborted during LLM call")
+                raise asyncio.CancelledError("Execution aborted by user")
+
             if chunk["type"] in ["content", "reasoning_content"]:
                 content_chunks.append(chunk)
                 content = chunk["data"] if chunk["type"] == "content" else ""
                 reasoning_content = (
                     chunk["data"] if chunk["type"] == "reasoning_content" else ""
                 )
-                await self._send_agent_response(
+                await self.communicator.send_agent_response(
                     content=content,
                     reasoning_content=reasoning_content,
                     index=index,
                     message_id=message_id,
+                    subscription=self.session_id,
                 )
                 index += 1
 
@@ -252,7 +255,7 @@ class ExecutionEngine:
                     and tool_call.id
                     and tool_call.id not in sent
                 ):
-                    tool_call_id = tool_call["id"]
+                    tool_call_id = tool_call.id
                     if hasattr(tool_call, "function") and tool_call.function:
                         tool_name = tool_call.function.name
                         await self.communicator.send_tool_call(
@@ -279,54 +282,6 @@ class ExecutionEngine:
         """
         return [tool.format() for tool in self.tool_mapping.values()]
 
-    async def _send_agent_response(
-        self,
-        content: str | None,
-        reasoning_content: str | None,
-        index: int = 0,
-        message_id: str | None = None,
-    ):
-        """
-        Send agent response via communication channel
-
-        Args:
-            response: LLM response message
-        """
-
-        if content or reasoning_content:
-            try:
-                args = {
-                    "content": content,
-                    "reasoning_content": reasoning_content,
-                    "index": index,
-                    "subscription": self.session_id,
-                }
-                if message_id:
-                    args["message_id"] = message_id
-                await self.communicator.send_agent_response(**args)
-            except Exception as e:
-                logger.error(f"Failed to send agent response: {e}")
-
-    async def _save_agent_response(self, response: LLMMessage):
-        """
-        Save agent response to database
-
-        Args:
-            response: LLM response message
-        """
-        if self.turn_id:
-            try:
-                msg_content = json.dumps(response.json(), ensure_ascii=False)
-                await self.session_manager.save_message(
-                    role=MessageRole.ASSISTANT,
-                    content=msg_content,
-                    message_type=MessageType.AGENT_RESPONSE,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save agent response: {save_error}")
-
     async def _process_tool_calls(self, tool_calls: List[Any]):
         """
         Process tool calls from LLM response
@@ -348,25 +303,20 @@ class ExecutionEngine:
             tool_name = tool_call.function.name
             arguments = tool_call.function.arguments
 
+            await self.communicator.send_tool_call(
+                tool_name=tool_name,
+                arguments=arguments,
+                tool_call_id=tool_call.id,
+                subscription=self.session_id,
+            )
+
             if tool_name not in self.tool_mapping:
                 logger.error(f"Tool '{tool_name}' not found.")
                 tool_result = ToolResult(
                     status=ToolStatus.ERROR, content=f"Tool {tool_name} not found"
                 )
             else:
-                logger.debug(
-                    f"Executing tool '{tool_name}', arguments: {arguments[:50]}..."
-                )
                 try:
-                    # Send tool call notification
-                    await self.communicator.send_tool_call(
-                        tool_name=tool_name,
-                        arguments=arguments,
-                        tool_call_id=tool_call.id,
-                        subscription=self.session_id,
-                    )
-
-                    # Use error handler context manager for tool execution
                     async with self.error_handler.handle_tool_execution(
                         tool_name=tool_name, context="tool_call_processing"
                     ):
@@ -385,31 +335,23 @@ class ExecutionEngine:
                     )
                 except asyncio.CancelledError:
                     logger.info("Tool execution cancelled by user")
-                    return
+                    raise
 
-            # Create tool call result
+            if not await self.process_tool_call_result(tool_call, tool_result):
+                raise Exception("Tool call result processing failed")
+
             tool_call_result = {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
                 "content": tool_result.content,
             }
-
-            # Save tool result to database
-            await self._save_tool_result(
-                tool_name, arguments, tool_call.id, tool_result, tool_call_result
-            )
-
-            # Add to history
             await self.context.add_message(tool_call_result)
 
-    async def _save_tool_result(
+    async def process_tool_call_result(
         self,
-        tool_name: str,
-        arguments: str,
-        tool_call_id: str,
-        tool_result: ToolResult,
-        tool_call_result: Dict[str, Any],
-    ):
+        tool_call: Any,
+        tool_result: ToolResult
+    ) -> bool:
         """
         Save tool execution result to database
 
@@ -420,36 +362,21 @@ class ExecutionEngine:
             tool_result: Tool execution result
             tool_call_result: Formatted tool call result
         """
-        if self.turn_id:
-            try:
-                # Send tool call result
-                await self.communicator.send_tool_call(
-                    tool_name=tool_name,
-                    arguments=arguments,
-                    tool_call_id=tool_call_id,
-                    result=tool_result.content,
-                    status=tool_result.status,
-                    subscription=self.session_id,
-                )
+        await self.communicator.send_tool_call(
+            tool_name=tool_call.function.name,
+            arguments=tool_call.function.arguments,
+            tool_call_id=tool_call.id,
+            result=tool_result.content,
+            status=tool_result.status,
+            subscription=self.session_id
+        )
 
-                # Save to database
-                await self.session_manager.save_message(
-                    role=MessageRole.TOOL,
-                    content=None,  # content is in data field
-                    message_type=MessageType.TOOL_CALL,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                    data={
-                        "content": json.dumps(tool_call_result, ensure_ascii=False),
-                        "action": "result",
-                        "tool_name": tool_name,
-                        "arguments": arguments,
-                        "result": tool_result.content,
-                        "status": tool_result.status,
-                    },
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save tool result: {save_error}")
+        return await self.session_manager.save_tool_call(
+            turn_id=self.turn_id,
+            agent_id=self.agent_id,
+            tool_call=tool_call,
+            tool_result=tool_result
+        )
 
     async def execute_round(self, max_steps: Optional[int] = None) -> ExecutionStatus:
         """
@@ -483,18 +410,14 @@ class ExecutionEngine:
                     elif status == ExecutionStatus.ERROR:
                         logger.error(f"Round failed after {steps} steps")
                         return status
-
                     # Check max steps limit
                     if max_steps is not None and steps >= max_steps:
                         logger.warning(f"Max steps ({max_steps}) reached")
-                        return ExecutionStatus.COMPLETED
-
+                        return ExecutionStatus.LIMIT_EXCEEDED
             except AgentError as e:
                 logger.error(f"Execution step failed with {e.error_type}: {e.message}")
-                # Error is already logged by error handler, just re-raise
                 return ExecutionStatus.ERROR
-            except asyncio.CancelledError as e:
-                logger.info(f"Round cancelled: {e}")
+            except asyncio.CancelledError:
                 return ExecutionStatus.ABORTED
 
     async def execute(
@@ -528,46 +451,48 @@ class ExecutionEngine:
 
         try:
             await self._setup_execution_context(message, from_agent)
+            status = await self.execute_round(max_steps)
+            result = ExecutionResult(status=status)
 
-            try:
-                status = await self.execute_round(max_steps)
-
-                # Send turn completion
-                await self._send_turn_completion()
-
-                return ExecutionResult(status=status)
-
-            except asyncio.CancelledError:
-                logger.info("Execution cancelled by user")
-                await self._send_turn_cancellation()
-                return ExecutionResult(
-                    status=ExecutionStatus.ABORTED,
-                    message="Execution aborted by user",
-                )
-
-            except Exception as e:
-                logger.error(f"Error during execution: {e}")
-                await self._send_turn_error(e)
-                return ExecutionResult(
-                    status=ExecutionStatus.ERROR,
-                    message=f"Execution failed: {e}",
-                    error=str(e),
-                )
-
-            logger.debug("No user message provided, execution skipped")
+        except asyncio.CancelledError:
+            logger.info("Execution cancelled by user")
+            result = ExecutionResult(
+                status=ExecutionStatus.ABORTED, message="Execution cancelled by user"
+            )
 
         except Exception as e:
             logger.error(f"Error in execute: {e}")
-            return ExecutionResult(
-                status=ExecutionStatus.ERROR,
-                message=f"Failed to start execution: {e}",
-                error=str(e),
+            result = ExecutionResult(
+                status=ExecutionStatus.ERROR, message=f"Error in execute: {e}"
             )
 
-        # Return default result if no user message was provided
-        return ExecutionResult(
-            status=ExecutionStatus.COMPLETED,
-            message="No user message provided, execution skipped",
+        await self.process_turn_end(result)
+        return result
+
+    async def process_turn_end(self, result: ExecutionResult) -> bool:
+        await self.communicator.send_turn_end(
+            turn_id=self.turn_id, subscription=self.session_id
+        )
+        if result.status == ExecutionStatus.COMPLETED:
+            message = "Turn completed successfully"
+        elif result.status == ExecutionStatus.ABORTED:
+            message = "Turn aborted by user"
+        elif result.status == ExecutionStatus.LIMIT_EXCEEDED:
+            message = "Turn step limit exceeded"
+            await self.communicator.send_error(
+                message, subscription=self.session_id
+            )
+        elif result.status == ExecutionStatus.ERROR:
+            message = "Turn failed"
+            error_message = result.message
+            await self.communicator.send_error(
+                error_message, subscription=self.session_id
+            )
+
+        return await self.session_manager.save_turn_end(
+            turn_id=self.turn_id,
+            agent_id=self.agent_id,
+            message=message
         )
 
     async def _setup_execution_context(
@@ -648,67 +573,6 @@ class ExecutionEngine:
             if not self.session_manager.session_id:
                 await self.session_manager.create_session(workspace=workspace)
             self.session_id = self.session_manager.session_id
-
-    async def _send_turn_completion(self):
-        """Send turn completion notification"""
-        try:
-            await self.communicator.send_turn_end(
-                turn_id=self.turn_id,
-                turn_description="Turn completed successfully",
-                subscription=self.session_id,
-            )
-
-            await self.session_manager.save_message(
-                role=MessageRole.SYSTEM,
-                content="Turn completed successfully",
-                message_type=MessageType.TURN_END,
-                turn_id=self.turn_id,
-                agent_id=self.agent_id,
-            )
-        except Exception as e:
-            logger.error(f"Failed to send turn completion: {e}")
-
-    async def _send_turn_cancellation(self):
-        """Send turn cancellation notification"""
-        try:
-            await self.communicator.send_turn_end(
-                turn_id=self.turn_id,
-                turn_description="Turn cancelled by user",
-                subscription=self.session_id,
-            )
-
-            await self.session_manager.save_message(
-                role=MessageRole.SYSTEM,
-                content="Turn cancelled by user",
-                message_type=MessageType.TURN_END,
-                turn_id=self.turn_id,
-                agent_id=self.agent_id,
-            )
-        except Exception as e:
-            logger.error(f"Failed to send turn cancellation: {e}")
-
-    async def _send_turn_error(self, error: Exception):
-        """Send turn error notification"""
-        try:
-            error_message = f"Turn failed with error: {error}"
-            await self.communicator.send_error(
-                error_message, subscription=self.session_id
-            )
-            await self.communicator.send_turn_end(
-                turn_id=self.turn_id,
-                turn_description=error_message,
-                subscription=self.session_id,
-            )
-
-            await self.session_manager.save_message(
-                role=MessageRole.SYSTEM,
-                content=error_message,
-                message_type=MessageType.ERROR,
-                turn_id=self.turn_id,
-                agent_id=self.agent_id,
-            )
-        except Exception as e:
-            logger.error(f"Failed to send turn error: {e}")
 
     def abort(self):
         """

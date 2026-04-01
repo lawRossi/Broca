@@ -10,8 +10,10 @@ import json
 import uuid
 from typing import Any, Dict, List, Optional
 
+from litellm import Message as LLMMessage
 from loguru import logger
 
+from broca.tools.tool import ToolResult
 from .models import Message, MessageRole, MessageType
 from .service import (
     AgentConfigService,
@@ -104,7 +106,9 @@ class SessionManager:
         """获取AgentConfigService实例"""
         return self._services["agent_config"]
 
-    async def create_session(self, description: str | None = None, workspace: str | None = None) -> str:
+    async def create_session(
+        self, description: str | None = None, workspace: str | None = None
+    ) -> str:
         """
         创建新session
 
@@ -452,3 +456,68 @@ class SessionManager:
         except Exception as e:
             logger.error(f"Failed to get agent config: {e}")
             return None
+
+    async def save_agent_response(
+        self, response: LLMMessage, turn_id: str | None, agent_id: str | None
+    ) -> bool:
+        if not turn_id or not agent_id:
+            return False
+
+        msg_content = json.dumps(response.json(), ensure_ascii=False)
+        message = await self.save_message(
+            role=MessageRole.ASSISTANT,
+            content=msg_content,
+            message_type=MessageType.AGENT_RESPONSE,
+            turn_id=turn_id,
+            agent_id=agent_id,
+        )
+
+        return message is not None
+
+    async def save_turn_end(
+        self, turn_id: str | None, agent_id: str | None, message: str | None
+    ) -> bool:
+        if not turn_id or not agent_id:
+            return False
+
+        msg = await self.save_message(
+            role=MessageRole.SYSTEM,
+            content=message,
+            message_type=MessageType.TURN_END,
+            turn_id=turn_id,
+            agent_id=agent_id,
+        )
+
+        return msg is not None
+
+    async def save_tool_call(
+        self,
+        turn_id: str | None,
+        agent_id: str | None,
+        tool_call: Any,
+        tool_result: ToolResult,
+    ) -> bool:
+        if not turn_id or not agent_id:
+            return False
+
+        tool_call_result = {
+            "role": "tool",
+            "tool_call_id": tool_call.id,
+            "content": tool_result.content,
+        }
+        message = await self.save_message(
+            role=MessageRole.TOOL,
+            content=None,
+            message_type=MessageType.TOOL_CALL,
+            turn_id=turn_id,
+            agent_id=agent_id,
+            data={
+                "content": json.dumps(tool_call_result, ensure_ascii=False),
+                "tool_name": tool_call.function.name,
+                "arguments": tool_call.function.arguments,
+                "result": tool_result.content,
+                "status": tool_result.status,
+            }
+        )
+
+        return message is not None

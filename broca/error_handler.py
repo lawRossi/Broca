@@ -14,6 +14,7 @@ from contextlib import asynccontextmanager
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
+from openai import RateLimitError
 from loguru import logger
 
 from broca.session import MessageRole, MessageType, SessionManager
@@ -23,6 +24,8 @@ class ErrorType(str, Enum):
     """Error type enumeration"""
 
     LLM_ERROR = "llm_error"
+    LLM_TIMEOUT_ERROR = "llm_error"
+    LLM_RATE_LIMIT_ERROR = "llm_rate_limit_error"
     TOOL_ERROR = "tool_error"
     PERMISSION_ERROR = "permission_error"
     COMMUNICATION_ERROR = "communication_error"
@@ -118,20 +121,27 @@ class ErrorHandler:
             yield
         except asyncio.TimeoutError as e:
             await self._handle_timeout_error(
-                ErrorType.LLM_ERROR,
+                ErrorType.LLM_TIMEOUT_ERROR,
                 f"LLM call timed out: {context}",
                 {"context": context},
                 e,
             )
             raise AgentError(
-                ErrorType.TIMEOUT_ERROR,
+                ErrorType.LLM_TIMEOUT_ERROR,
                 f"LLM call timed out: {context}",
+                {"context": context},
+                e,
+            )
+        except RateLimitError as e:
+            raise AgentError(
+                ErrorType.LLM_RATE_LIMIT_ERROR,
+                f"LLM call rate limited: {context}",
                 {"context": context},
                 e,
             )
         except Exception as e:
             await self._handle_generic_error(
-                ErrorType.LLM_ERROR,
+                ErrorType.L,
                 f"LLM call failed: {context}",
                 {"context": context},
                 e,
