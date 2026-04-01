@@ -194,8 +194,6 @@ export class BrocaSocketClient {
       },
     }
 
-    console.log(message)
-
     return new Promise((resolve, reject) => {
       this.socket!.emit('message', message, (response: any) => {
         if (response?.error) {
