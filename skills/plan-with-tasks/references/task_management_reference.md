@@ -1,4 +1,4 @@
-# Task Management Tool
+# Task Management Tool Reference
 
 ## Overview
 
@@ -134,6 +134,7 @@ Updates an existing task with new values.
 - `links`: New related urls of the task (array of strings)
 - `notes`: New concise notes that is useful for task execution (string)
 - `acceptance_criteria`: New acceptance criteria (array of strings)
+- `report`: New report (string)
 
 **Example:**
 ```json
@@ -168,7 +169,6 @@ Adds a comment to a task for collaboration.
 **Required Parameters:**
 - `action`: "add_comment"
 - `task_id`: Task ID (string)
-- `author`: Comment author (string)
 - `content`: Comment content (string)
 
 **Example:**
@@ -176,7 +176,6 @@ Adds a comment to a task for collaboration.
 {
     "action": "add_comment",
     "task_id": "123e4567-e89b-12d3-a456-426614174000",
-    "author": "john_doe",
     "content": "This task is almost complete, just need to add tests."
 }
 ```
