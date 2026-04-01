@@ -3,9 +3,16 @@ import { useChatStore, useAgentStore } from '@/stores'
 import type { Message } from '@/api/brocaSocket'
 import { formatBeijingTimeShort } from '@/utils/time'
 import { marked } from 'marked'
+import { ref } from 'vue'
+import FilePreview from './FilePreview.vue'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
+
+// 文件预览状态
+const showFilePreview = ref(false)
+const previewFilePath = ref<string>('')
+const previewFileUrl = ref<string>('')
 
 // 配置 marked 选项
 marked.setOptions({
@@ -268,6 +275,19 @@ const openFileUrl = (url: string) => {
   window.open(url, '_blank')
 }
 
+// 打开文件预览
+const openFilePreview = (file: { url?: string; path?: string; name?: string; type?: string }) => {
+  // 优先使用 url（Supabase Storage），否则使用 path（本地文件）
+  if (file.url) {
+    previewFilePath.value = '' // 清空 path
+    previewFileUrl.value = file.url
+  } else if (file.path) {
+    previewFileUrl.value = '' // 清空 url
+    previewFilePath.value = file.path
+  }
+  showFilePreview.value = true
+}
+
 // 获取文件图标
 const getFileIcon = (fileType?: string, fileName?: string): string => {
   const type = fileType?.toLowerCase() || ''
@@ -364,7 +384,7 @@ const formatFileSize = (bytes: number): string => {
             v-for="(file, index) in message.data.files"
             :key="index"
             class="flex items-center gap-3 p-2 bg-white border rounded-lg hover:bg-gray-50 cursor-pointer transition-colors"
-            @click="openFileUrl(file.url)"
+            @click="openFilePreview(file)"
           >
             <!-- 文件图标 -->
             <span class="text-2xl">{{ getFileIcon(file.type, file.name) }}</span>
@@ -378,8 +398,8 @@ const formatFileSize = (bytes: number): string => {
               </div>
             </div>
 
-            <!-- 下载/打开图标 -->
-            <span class="text-gray-400 hover:text-blue-500">🔗</span>
+            <!-- 预览图标 -->
+            <span class="text-gray-400 hover:text-blue-500">👁️</span>
           </div>
         </div>
       </template>
@@ -502,6 +522,14 @@ const formatFileSize = (bytes: number): string => {
       </div>
     </div>
   </div>
+
+  <!-- 文件预览组件 -->
+  <FilePreview
+    v-model:visible="showFilePreview"
+    :file-path="previewFilePath"
+    :file-url="previewFileUrl"
+    @close="showFilePreview = false"
+  />
 </template>
 <style scoped>
 /* Markdown 内容样式 */
