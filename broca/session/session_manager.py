@@ -14,6 +14,7 @@ from litellm import Message as LLMMessage
 from loguru import logger
 
 from broca.tools.tool import ToolResult
+
 from .models import Message, MessageRole, MessageType
 from .service import (
     AgentConfigService,
@@ -148,7 +149,7 @@ class SessionManager:
         agent_id: str,
         message_id: str | None = None,
         data: Dict[str, Any] | None = None,
-    ) -> Message | None:
+    ) -> bool:
         """
         保存消息到数据库
 
@@ -166,20 +167,17 @@ class SessionManager:
         """
 
         if not self.session_id:
-            raise ValueError("No session ID provided. Call create_session() first.")
-
-        await self._ensure_initialized()
-
-        # 生成消息ID
-        message_id = message_id or f"msg_{uuid.uuid4().hex[:16]}"
-
-        # 构建data字段
-        message_data = data or {}
-        if content:
-            message_data["content"] = content
+            return False
 
         try:
-            # 获取下一个序列号
+            await self._ensure_initialized()
+
+            message_id = message_id or f"msg_{uuid.uuid4().hex[:16]}"
+            message_data = data or {}
+
+            if content:
+                message_data["content"] = content
+
             seq_num = await self.message_service.get_next_sequence_number(
                 self.session_id
             )
@@ -195,11 +193,11 @@ class SessionManager:
                 data=message_data,
             )
 
-            return message
+            return message is not None
 
         except Exception as e:
             logger.error(f"Failed to save message: {e}")
-            return None
+            return False
 
     async def get_messages(
         self,
@@ -236,7 +234,7 @@ class SessionManager:
         self,
         agent_id: str,
         description: str | None = None,
-    ) -> str:
+    ) -> str|None:
         """
         开始新的对话轮次
 
@@ -249,33 +247,31 @@ class SessionManager:
         """
 
         if not self.session_id:
-            raise ValueError("No session ID provided. Call create_session() first.")
-
-        await self._ensure_initialized()
-
-        # 生成turn ID
-        turn_id = f"turn_{uuid.uuid4().hex[:16]}"
+            return None
 
         try:
-            # 获取下一个序列号
+            await self._ensure_initialized()
+            turn_id = f"turn_{uuid.uuid4().hex[:16]}"
             seq_num = await self.turn_service.get_next_sequence_number(self.session_id)
 
-            # 创建turn
-            await self.turn_service.create_turn(
+            turn = await self.turn_service.create_turn(
                 turn_id=turn_id,
                 session_id=self.session_id,
                 agent_id=agent_id,
                 sequence_number=seq_num,
                 turn_description=description,
             )
+            if not turn:
+                return None
 
-            await self.save_message(
+            if not await self.save_message(
                 role=MessageRole.AGENT,
                 content="",
                 message_type=MessageType.TURN_START,
                 turn_id=turn_id,
                 agent_id=agent_id,
-            )
+            ):
+                return None
 
             logger.info(f"Started new turn: {turn_id}")
 
@@ -283,7 +279,7 @@ class SessionManager:
 
         except Exception as e:
             logger.error(f"Failed to start turn: {e}")
-            raise
+            return None
 
     async def end_turn(self, turn_id: str, agent_id: str) -> bool:
         """
@@ -301,16 +297,14 @@ class SessionManager:
 
         try:
             await self._ensure_initialized()
-            await self.save_message(
+            logger.info(f"Ended turn: {turn_id}")
+            return await self.save_message(
                 role=MessageRole.SYSTEM,
                 content="",
                 message_type=MessageType.TURN_END,
                 turn_id=turn_id,
                 agent_id=agent_id,
             )
-            logger.info(f"Ended turn: {turn_id}")
-            return True
-
         except Exception as e:
             logger.error(f"Failed to end turn: {e}")
             return False
@@ -464,7 +458,7 @@ class SessionManager:
             return False
 
         msg_content = json.dumps(response.json(), ensure_ascii=False)
-        message = await self.save_message(
+        return await self.save_message(
             role=MessageRole.ASSISTANT,
             content=msg_content,
             message_type=MessageType.AGENT_RESPONSE,
@@ -472,23 +466,19 @@ class SessionManager:
             agent_id=agent_id,
         )
 
-        return message is not None
-
     async def save_turn_end(
         self, turn_id: str | None, agent_id: str | None, message: str | None
     ) -> bool:
         if not turn_id or not agent_id:
             return False
 
-        msg = await self.save_message(
+        return await self.save_message(
             role=MessageRole.SYSTEM,
             content=message,
             message_type=MessageType.TURN_END,
             turn_id=turn_id,
             agent_id=agent_id,
         )
-
-        return msg is not None
 
     async def save_tool_call(
         self,
@@ -505,7 +495,8 @@ class SessionManager:
             "tool_call_id": tool_call.id,
             "content": tool_result.content,
         }
-        message = await self.save_message(
+        
+        return await self.save_message(
             role=MessageRole.TOOL,
             content=None,
             message_type=MessageType.TOOL_CALL,
@@ -517,7 +508,5 @@ class SessionManager:
                 "arguments": tool_call.function.arguments,
                 "result": tool_result.content,
                 "status": tool_result.status,
-            }
+            },
         )
-
-        return message is not None

@@ -158,18 +158,17 @@ class PermissionManager:
             message: Permission request message
             request_id: Permission request ID
         """
-        if self.turn_id:
-            try:
-                await self.session_manager.save_message(
-                    role=MessageRole.AGENT,
-                    content=message,
-                    message_type=MessageType.PERMISSION_REQUEST,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                    data={"request_id": request_id},
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save permission request: {save_error}")
+        try:
+            await self.session_manager.save_message(
+                role=MessageRole.AGENT,
+                content=message,
+                message_type=MessageType.PERMISSION_REQUEST,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+                data={"request_id": request_id},
+            )
+        except Exception as save_error:
+            logger.error(f"Failed to save permission request: {save_error}")
 
     async def _log_permission_response(self, request_id: str, granted: bool):
         """
@@ -179,18 +178,17 @@ class PermissionManager:
             request_id: Permission request ID
             granted: Whether permission was granted
         """
-        if self.turn_id:
-            try:
-                await self.session_manager.save_message(
-                    role=MessageRole.AGENT,
-                    content=f"Permission request {request_id}: {'granted' if granted else 'denied'}",
-                    message_type=MessageType.PERMISSION_RESPONSE,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                    data={"request_id": request_id, "granted": granted},
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save permission response: {save_error}")
+        try:
+            await self.session_manager.save_message(
+                role=MessageRole.AGENT,
+                content=f"Permission request {request_id}: {'granted' if granted else 'denied'}",
+                message_type=MessageType.PERMISSION_RESPONSE,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+                data={"request_id": request_id, "granted": granted},
+            )
+        except Exception as save_error:
+            logger.error(f"Failed to save permission response: {save_error}")
 
     async def _log_permission_timeout(self, request_id: str):
         """
@@ -199,18 +197,17 @@ class PermissionManager:
         Args:
             request_id: Permission request ID
         """
-        if self.turn_id:
-            try:
-                await self.session_manager.save_message(
-                    role=MessageRole.SYSTEM,
-                    content="Permission request timed out",
-                    message_type=MessageType.ERROR,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                    data={"request_id": request_id},
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save permission timeout: {save_error}")
+        try:
+            await self.session_manager.save_message(
+                role=MessageRole.SYSTEM,
+                content="Permission request timed out",
+                message_type=MessageType.ERROR,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+                data={"request_id": request_id},
+            )
+        except Exception as save_error:
+            logger.error(f"Failed to save permission timeout: {save_error}")
 
     async def _log_permission_error(self, error: Exception):
         """
@@ -219,17 +216,16 @@ class PermissionManager:
         Args:
             error: Exception that occurred
         """
-        if self.turn_id:
-            try:
-                await self.session_manager.save_message(
-                    role=MessageRole.SYSTEM,
-                    content=f"Failed to send permission request: {error}",
-                    message_type=MessageType.ERROR,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save permission error: {save_error}")
+        try:
+            await self.session_manager.save_message(
+                role=MessageRole.SYSTEM,
+                content=f"Failed to send permission request: {error}",
+                message_type=MessageType.ERROR,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+            )
+        except Exception as save_error:
+            logger.error(f"Failed to save permission error: {save_error}")
 
     async def _cleanup_permission_request(self, request_id: str):
         """

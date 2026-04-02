@@ -116,45 +116,12 @@ class ExecutionEngine:
             agent_id=None,  # Will be set during execution
         )
 
-        # Execution state
         self.is_aborted = False
         self.abort_event = asyncio.Event()
 
-        # For backward compatibility
-        self.turn_id = None
-        self.agent_id = None
-        self.session_id = None
-
-    def set_execution_state(
-        self,
-        turn_id: Optional[str] = None,
-        agent_id: Optional[str] = None,
-        session_id: Optional[str] = None,
-        is_aborted: bool = False,
-    ):
-        """
-        Set execution state variables
-
-        Args:
-            turn_id: Current turn ID
-            agent_id: Agent ID
-            session_id: Session ID
-            is_aborted: Whether execution is aborted
-        """
-        self.turn_id = turn_id
-        self.agent_id = agent_id
-        self.session_id = session_id
-        self.is_aborted = is_aborted
-
-        # Update error handler context
-        self.error_handler.set_context(
-            turn_id=turn_id, agent_id=agent_id, session_manager=self.session_manager
-        )
-
-        if is_aborted:
-            self.abort_event.set()
-        else:
-            self.abort_event.clear()
+        self.agent_id = agent.agent_id
+        self.session_id = session_manager.session_id
+        self.turn_id: str | None = None
 
     async def execute_step(self) -> ExecutionStatus:
         """
@@ -348,9 +315,7 @@ class ExecutionEngine:
             await self.context.add_message(tool_call_result)
 
     async def process_tool_call_result(
-        self,
-        tool_call: Any,
-        tool_result: ToolResult
+        self, tool_call: Any, tool_result: ToolResult
     ) -> bool:
         """
         Save tool execution result to database
@@ -368,17 +333,17 @@ class ExecutionEngine:
             tool_call_id=tool_call.id,
             result=tool_result.content,
             status=tool_result.status,
-            subscription=self.session_id
+            subscription=self.session_id,
         )
 
         return await self.session_manager.save_tool_call(
             turn_id=self.turn_id,
             agent_id=self.agent_id,
             tool_call=tool_call,
-            tool_result=tool_result
+            tool_result=tool_result,
         )
 
-    async def execute_round(self, max_steps: Optional[int] = None) -> ExecutionStatus:
+    async def execute_round(self, max_steps: Optional[int] = None) -> ExecutionResult:
         """
         Execute a complete round of agent execution
 
@@ -402,23 +367,35 @@ class ExecutionEngine:
 
                     # Check if more steps are needed
                     if status == ExecutionStatus.COMPLETED:
-                        logger.info(f"Round completed after {steps} steps")
-                        return status
+                        return ExecutionResult(
+                            status=ExecutionStatus.COMPLETED,
+                            message=f"Round completed after {steps} steps",
+                        )
                     elif status == ExecutionStatus.ABORTED:
-                        logger.info(f"Round aborted after {steps} steps")
-                        return status
+                        return ExecutionResult(
+                            status=ExecutionStatus.ABORTED,
+                            message=f"Round aborted by user after {steps} steps",
+                        )
                     elif status == ExecutionStatus.ERROR:
-                        logger.error(f"Round failed after {steps} steps")
-                        return status
-                    # Check max steps limit
+                        return ExecutionResult(
+                            status=ExecutionStatus.ERROR,
+                            message=f"Round failed after {steps} steps",
+                        )
                     if max_steps is not None and steps >= max_steps:
-                        logger.warning(f"Max steps ({max_steps}) reached")
-                        return ExecutionStatus.LIMIT_EXCEEDED
+                        return ExecutionResult(
+                            status=ExecutionStatus.LIMIT_EXCEEDED,
+                            message=f"Max steps ({max_steps}) reached",
+                        )
             except AgentError as e:
-                logger.error(f"Execution step failed with {e.error_type}: {e.message}")
-                return ExecutionStatus.ERROR
+                return ExecutionResult(
+                    status=ExecutionStatus.ERROR,
+                    message=f"Round failed with {e.error_type}: {e.message}",
+                )
             except asyncio.CancelledError:
-                return ExecutionStatus.ABORTED
+                return ExecutionResult(
+                    status=ExecutionStatus.ABORTED,
+                    message="Round aborted by user",
+                )
 
     async def execute(
         self,
@@ -449,88 +426,114 @@ class ExecutionEngine:
         self.is_aborted = False
         self.abort_event.clear()
 
-        try:
-            await self._setup_execution_context(message, from_agent)
-            status = await self.execute_round(max_steps)
-            result = ExecutionResult(status=status)
+        if not await self._setup_execution_context(message, from_agent):
+            return ExecutionResult(
+                status=ExecutionStatus.ERROR,
+                message="Error setting up execution context",
+            )
 
+        try:
+            result = await self.execute_round(max_steps)
         except asyncio.CancelledError:
             logger.info("Execution cancelled by user")
             result = ExecutionResult(
                 status=ExecutionStatus.ABORTED, message="Execution cancelled by user"
             )
-
         except Exception as e:
             logger.error(f"Error in execute: {e}")
             result = ExecutionResult(
                 status=ExecutionStatus.ERROR, message=f"Error in execute: {e}"
             )
 
-        await self.process_turn_end(result)
+        if not await self.process_turn_end(result):
+            logger.warning("Turn end processing failed")
+
         return result
 
     async def process_turn_end(self, result: ExecutionResult) -> bool:
-        await self.communicator.send_turn_end(
-            turn_id=self.turn_id, subscription=self.session_id
-        )
-        if result.status == ExecutionStatus.COMPLETED:
-            message = "Turn completed successfully"
-        elif result.status == ExecutionStatus.ABORTED:
-            message = "Turn aborted by user"
-        elif result.status == ExecutionStatus.LIMIT_EXCEEDED:
-            message = "Turn step limit exceeded"
-            await self.communicator.send_error(
-                message, subscription=self.session_id
+        try:
+            await self.communicator.send_turn_end(
+                turn_id=self.turn_id, subscription=self.session_id
             )
-        elif result.status == ExecutionStatus.ERROR:
-            message = "Turn failed"
-            error_message = result.message
-            await self.communicator.send_error(
-                error_message, subscription=self.session_id
-            )
+            if result.status == ExecutionStatus.COMPLETED:
+                message = "Turn completed successfully"
+            elif result.status == ExecutionStatus.ABORTED:
+                message = "Turn aborted by user"
+            elif result.status == ExecutionStatus.LIMIT_EXCEEDED:
+                message = "Turn step limit exceeded"
+                await self.communicator.send_error(
+                    message, subscription=self.session_id
+                )
+            elif result.status == ExecutionStatus.ERROR:
+                message = "Turn failed"
+                error_message = result.message
+                await self.communicator.send_error(
+                    error_message, subscription=self.session_id
+                )
+            elif result.status == ExecutionStatus.SKIPPED:
+                message = "Turn skipped"
+            else:
+                message = "Turn failed"
 
-        return await self.session_manager.save_turn_end(
-            turn_id=self.turn_id,
-            agent_id=self.agent_id,
-            message=message
-        )
+            return await self.session_manager.save_turn_end(
+                turn_id=self.turn_id, agent_id=self.agent_id, message=message
+            )
+        except Exception as e:
+            logger.error(f"Error in process_turn_end: {e}")
+            return False
 
     async def _setup_execution_context(
         self, message: Message, from_agent: Optional[bool] = False
-    ):
+    ) -> bool:
         """
         Set up execution context for a new turn
 
         Args:
             message: The message to process
         """
-        await self._ensure_session()
-
-        # Start new turn
-        turn_id = await self.session_manager.start_turn(self.agent_id)
-        self.turn_id = turn_id
-
         user_message = self._parse_message(message)
-        message_content = user_message.get("content")
-        logger.info(f"Processing user message: {message_content[:50]}...")
-        await self.communicator.send_turn_start(
-            turn_id=turn_id,
-            turn_description=f"Processing user message: {message_content[:50]}...",
-            subscription=self.session_id,
-        )
+        if not user_message:
+            return False
 
-        message.data["from_agent"] = from_agent
-        await self.session_manager.save_message(
-            role=MessageRole.USER,
-            content=json.dumps(user_message, ensure_ascii=False),
-            message_type=MessageType.USER_MESSAGE,
-            turn_id=turn_id,
-            agent_id=self.agent_id,
-            data=message.data,
-        )
+        try:
+            await self._ensure_session()
 
-        # Add to context history
-        await self.context.add_message(user_message)
+            turn_id = await self.session_manager.start_turn(self.agent_id)
+            if not turn_id:
+                return False
+
+            self.turn_id = turn_id
+            self.agent.turn_id = turn_id
+            self.error_handler.set_context(
+                turn_id=turn_id,
+                agent_id=self.agent_id,
+                session_manager=self.session_manager,
+            )
+
+            message_content = user_message.get("content")
+
+            await self.communicator.send_turn_start(
+                turn_id=turn_id,
+                turn_description=f"Processing user message: {message_content}",
+                subscription=self.session_id,
+            )
+
+            message.data["from_agent"] = from_agent
+            if not await self.session_manager.save_message(
+                role=MessageRole.USER,
+                content=json.dumps(user_message, ensure_ascii=False),
+                message_type=MessageType.USER_MESSAGE,
+                turn_id=turn_id,
+                agent_id=self.agent_id,
+                data=message.data,
+            ):
+                return False
+
+            await self.context.add_message(user_message)
+            return True
+        except Exception as e:
+            logger.error(f"Error in _setup_execution_context: {e}")
+            return False
 
     def _parse_message(self, message: Message) -> dict:
         """
@@ -563,6 +566,8 @@ class ExecutionEngine:
             content = message.data.get("result")
         elif message.message_type == MessageType.TASK_ERROR:
             content = message.data.get("error_message")
+        else:
+            return {}
 
         return {"role": "user", "content": content}
 
