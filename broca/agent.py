@@ -1,11 +1,7 @@
 """
-Refactored Agent Module
+Agent Module
 
-This is the refactored version of agent.py with modular architecture:
-- Execution logic moved to execution_engine.py
-- Permission management moved to permission_manager.py
-- Error handling unified in error_handler.py
-- Core agent responsibilities remain here
+This module defines the core Agent class, which encapsulates the agent's behavior and functionality.
 """
 
 import asyncio
@@ -24,16 +20,29 @@ from broca.permission_manager import PermissionManager
 from broca.session import Message, MessageRole, MessageType, SessionManager
 from broca.tools.tool_manager import ToolManager
 
+logger.remove()
+logger.add("agent.log", level="INFO")
+
 
 class Agent:
     """Base Agent class with core functionality"""
 
-    def __init__(self, config: AgentConfig, llm_client: LLMClient, **kwargs):
+    def __init__(
+        self,
+        config: AgentConfig,
+        llm_client: LLMClient,
+        session_manager: SessionManager,
+        **kwargs,
+    ):
         self.config = config
         self.llm_client = llm_client
+        self.session_manager = session_manager
         self.agent_id = kwargs.get("agent_id") or uuid.uuid4().hex
         self.name = config.name
         self.role = config.role
+
+        self.session_id: Optional[str] = session_manager.session_id
+        self.turn_id: Optional[str] = None
 
         # LLM usage statistics (loaded from database)
         self.total_input_tokens: int = 0
@@ -44,10 +53,14 @@ class Agent:
         # Initialize core components
         self._setup_context(**kwargs)
         self._setup_tools()
-        self._setup_logger()
+        self._setup_communicator()
+        self._setup_execution_engine()
+        self._setup_permission_manager()
 
-        # Initialize error handler
+        self.message_queue: asyncio.Queue = asyncio.Queue(3)
         self.error_handler = ErrorHandler()
+
+        asyncio.create_task(self.load_stats(session_manager))
 
     async def load_stats(self, session_manager: SessionManager) -> None:
         """Load statistics from database"""
@@ -112,60 +125,6 @@ class Agent:
         tools = tool_manager.get_tools(tool_names=self.config.tools)
         self.tools = [tool.format() for tool in tools]
         self.tool_mapping = {tool.name: tool for tool in tools}
-
-    def _setup_logger(self):
-        """Set up logger for the agent"""
-        logger.remove()
-        logger.add(self.config.log_file, level="INFO")
-
-    def reset(self):
-        """Reset agent state"""
-        # Base implementation - can be overridden by subclasses
-        pass
-
-
-class SocketIOAgent(Agent):
-    """
-    Socket.io-enabled Agent (Refactored)
-
-    This agent uses Socket.io for communication with modular architecture:
-    - Execution logic in ExecutionEngine
-    - Permission management in PermissionManager
-    - Error handling in ErrorHandler
-    """
-
-    def __init__(
-        self,
-        config: AgentConfig,
-        llm_client: LLMClient,
-        session_manager: SessionManager,
-        **kwargs,
-    ):
-        # Save session_manager reference before calling super().__init__
-        # because parent class may need it for stats loading
-        self.session_manager = session_manager
-
-        # Call parent initialization
-        super().__init__(config, llm_client, **kwargs)
-
-        self.session_id: Optional[str] = session_manager.session_id
-        self.turn_id: Optional[str] = None
-
-        # Initialize modular components
-        self._setup_communicator()
-        self._setup_execution_engine()
-        self._setup_permission_manager()
-
-        # Message queue for async communication
-        self.message_queue: asyncio.Queue = asyncio.Queue(3)
-
-        # Abort control
-        self.abort_event = asyncio.Event()
-        self.is_aborted = False
-        self._abort_task: Optional[asyncio.Task] = None
-
-        # Async load statistics from database (non-blocking)
-        asyncio.create_task(self.load_stats(session_manager))
 
     def _setup_communicator(self):
         """Set up communication interface"""
@@ -254,25 +213,25 @@ class SocketIOAgent(Agent):
     def stop(self):
         self.running = False
 
-    async def run(self):
+    async def start(self):
         self.running = True
 
         while self.running:
             try:
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
                 if message.message_type == MessageType.USER_MESSAGE:
-                    await self.run_async(message)
+                    await self.run(message)
                 elif message.message_type == MessageType.TASK_START:
                     await self._handle_task(message)
                 elif message.message_type in [
                     MessageType.TASK_COMPLETE,
                     MessageType.TASK_ERROR,
                 ]:
-                    await self.run_async(message, from_agent=True)
+                    await self.run(message, from_agent=True)
             except asyncio.TimeoutError:
                 continue
 
-    async def run_async(
+    async def run(
         self,
         message: Message,
         max_steps: Optional[int] = None,
@@ -291,14 +250,11 @@ class SocketIOAgent(Agent):
         Returns:
             ExecutionResult: Result of the execution with status and details
         """
-        # Store the current execution task for potential cancellation
-        self._abort_task = asyncio.current_task()
-
         try:
             return await self.execution_engine.execute(message, max_steps, from_agent)
 
         except Exception as e:
-            logger.error(f"Error in run_async: {e}")
+            logger.error(f"Error in run: {e}")
             return ExecutionResult(
                 status=ExecutionStatus.ERROR,
                 message=f"Failed to start execution: {e}",
@@ -309,14 +265,12 @@ class SocketIOAgent(Agent):
             if not self.config.save_history:
                 await self.reset()
 
-            self._abort_task = None
-
     async def _handle_task(self, message: Message) -> None:
         """Handle task assignment from another agent"""
         try:
             task_id = message.data.get("task_id")
             assigner = message.data.get("assigner")
-            execution_result = await self.run_async(message, from_agent=True)
+            execution_result = await self.run(message, from_agent=True)
 
             # Check execution status
             if execution_result.status == ExecutionStatus.COMPLETED:
@@ -343,17 +297,9 @@ class SocketIOAgent(Agent):
     async def reset(self):
         """Reset agent state"""
         super().reset()
-
-        # Reset abort state
-        self.is_aborted = False
-        self.abort_event.clear()
-        self._abort_task = None
-
-        # Reset modular components
         self.execution_engine.reset()
         await self.permission_manager.reset()
 
-        # Reset state variables
         self.turn_id = None
 
     async def subscribe(self, subscription: str):
@@ -390,27 +336,7 @@ class SocketIOAgent(Agent):
         This method sets the abort flag and cancels the current execution task.
         """
         logger.info("Aborting agent execution")
-        self.is_aborted = True
-        self.abort_event.set()
-
-        # Abort execution engine
         self.execution_engine.abort()
-
-        # Cancel the current execution task if it exists
-        if self._abort_task and not self._abort_task.done():
-            logger.info("Cancelling execution task...")
-            self._abort_task.cancel()
-            # Wait a bit for the task to be cancelled gracefully
-            try:
-                await asyncio.wait_for(asyncio.shield(self._abort_task), timeout=2)
-            except asyncio.CancelledError:
-                logger.info("Task cancelled successfully")
-            except asyncio.TimeoutError:
-                logger.warning("Task cancellation timed out, forcing abort")
-            except Exception as e:
-                logger.warning(f"Error during task cancellation: {e}")
-            finally:
-                self._abort_task = None
 
     async def _on_command(self, message: Message):
         """

@@ -5,7 +5,7 @@ from pathlib import Path
 import yaml
 from loguru import logger
 
-from broca.agent import AgentConfig, SocketIOAgent
+from broca.agent import Agent, AgentConfig
 from broca.llm import LLMClient
 from broca.session import SessionManager
 
@@ -29,7 +29,7 @@ class AgentFactory:
 
     async def init_session_agents(
         self, session_id=None, workspace=None, provider=None, model=None
-    ) -> list[SocketIOAgent]:
+    ) -> list[Agent]:
         """
         初始化会话的 Agent
 
@@ -62,7 +62,7 @@ class AgentFactory:
 
     async def _create_agent(
         self, agent_config, session_manager, workspace=None, provider=None, model=None
-    ) -> SocketIOAgent:
+    ) -> Agent:
         """
         创建 Agent 实例
 
@@ -89,11 +89,11 @@ class AgentFactory:
             config.environment = self._init_environment(config)
         # Each agent gets its own LLMClient instance
         llm_client = LLMClient()
-        agent = SocketIOAgent(config, llm_client, session_manager)
+        agent = Agent(config, llm_client, session_manager)
         await session_manager.save_agent(agent)
         return agent
 
-    async def restore_agents_from_session(self, session_id) -> list[SocketIOAgent]:
+    async def restore_agents_from_session(self, session_id) -> list[Agent]:
         session_manager = SessionManager()
         await session_manager.load_session(session_id)
         db_agents = await session_manager.get_agents()
@@ -112,7 +112,7 @@ class AgentFactory:
         agent_config = AgentConfig.from_config(config)
         # Each agent gets its own LLMClient instance
         llm_client = LLMClient()
-        agent = SocketIOAgent(
+        agent = Agent(
             agent_config, llm_client, session_manager, agent_id=agent_id
         )
         await agent.restore_from_session(agent_id)
@@ -156,7 +156,7 @@ class AgentFactory:
                 logger.error(f"YAML parsing error in {config_path}: {e}")
                 return {}
 
-    def get_agent(self, session_id, agent_name) -> SocketIOAgent | None:
+    def get_agent(self, session_id, agent_name) -> Agent | None:
         if session_id not in self._session_agents:
             return None
         return self._session_agents[session_id].get(agent_name)

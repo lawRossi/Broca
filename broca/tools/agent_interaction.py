@@ -83,7 +83,7 @@ class AssignTask(Tool):
         execution_type = arguments.get("execution_type", "blocking")
         if execution_type == "blocking":
             trigger_message = MessageProtocol.create_user_message(content=task)
-            execution_result = await target_agent.run_async(
+            execution_result = await target_agent.run(
                 trigger_message, from_agent=True
             )
             message = target_agent.context.get_latest_assistant_message()
