@@ -295,22 +295,6 @@ class SocketIOAgent(Agent):
         self._abort_task = asyncio.current_task()
 
         try:
-            # Update execution engine state
-            self.execution_engine.set_execution_state(
-                turn_id=self.turn_id,
-                agent_id=self.agent_id,
-                session_id=self.session_id,
-                is_aborted=self.is_aborted,
-            )
-
-            # Update error handler context
-            self.error_handler.set_context(
-                turn_id=self.turn_id,
-                agent_id=self.agent_id,
-                session_manager=self.session_manager,
-            )
-
-            # Delegate execution to execution engine
             return await self.execution_engine.execute(message, max_steps, from_agent)
 
         except Exception as e:
@@ -437,17 +421,13 @@ class SocketIOAgent(Agent):
         command = message.data.get("command")
         logger.info(f"Received command: {command}")
 
-        if self.turn_id:
-            try:
-                await self.session_manager.save_message(
-                    role=MessageRole.SYSTEM,
-                    content=command,
-                    message_type=MessageType.COMMAND,
-                    turn_id=self.turn_id,
-                    agent_id=self.agent_id,
-                )
-            except Exception as save_error:
-                logger.error(f"Failed to save command: {save_error}")
+        await self.session_manager.save_message(
+            role=MessageRole.SYSTEM,
+            content=command,
+            message_type=MessageType.COMMAND,
+            turn_id=self.turn_id,
+            agent_id=self.agent_id,
+        )
 
         if command == "abort":
             logger.info("Received abort command from user")
