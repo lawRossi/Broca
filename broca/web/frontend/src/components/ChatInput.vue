@@ -495,8 +495,8 @@ const handleSendMessage = async () => {
             @click="handleMentionClick($event, suggestion.id, suggestion.name)"
           >
             <div class="flex items-center gap-2">
-              <span class="text-blue-500">@</span>
-              <span class="font-medium">{{ suggestion.name }}</span>
+              <span class="text-blue-600">@</span>
+              <span class="font-medium text-gray-900">{{ suggestion.name }}</span>
             </div>
           </div>
         </div>
