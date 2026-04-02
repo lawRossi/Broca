@@ -54,7 +54,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
         for agent in agents:
             await agent.connect()
-            task = asyncio.create_task(agent.run())
+            task = asyncio.create_task(agent.start())
             task.add_done_callback(lambda t, a=agent: a.stop())
 
         session_service = get_session_service()
@@ -143,7 +143,7 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
                 logger.info(f"Agent {db_agent.name} is not connected")
                 agent = await factory.restore_agent(db_agent.agent_id, session_id=session_id)
                 await agent.connect()
-                task = asyncio.create_task(agent.run())
+                task = asyncio.create_task(agent.start())
                 task.add_done_callback(lambda t, a=agent: a.stop())
                 restored_agents.append(agent)
                 response_agent["status"] = "idle" if agent.is_connected() else "disconnected"
