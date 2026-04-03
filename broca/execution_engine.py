@@ -88,6 +88,10 @@ class ExecutionEngine:
         config: Any,
         communicator: Any,
         session_manager: SessionManager,
+        step_max_errors = 3,
+        llm_retry_delay = 3,
+        tool_call_timeout = 600,
+        assign_task_timeout = 1800 
     ):
         """
         Initialize the execution engine
@@ -109,19 +113,20 @@ class ExecutionEngine:
         self.communicator = communicator
         self.session_manager = session_manager
 
-        # Initialize error handler
         self.error_handler = ErrorHandler(
-            session_manager=session_manager,
-            turn_id=None,  # Will be set during execution
-            agent_id=None,  # Will be set during execution
+            session_manager=session_manager, turn_id=None, agent_id=None
         )
 
-        self.is_aborted = False
         self.abort_event = asyncio.Event()
 
         self.agent_id = agent.agent_id
         self.session_id = session_manager.session_id
         self.turn_id: str | None = None
+
+        self.step_max_errors = step_max_errors
+        self.llm_retry_delay = llm_retry_delay
+        self.tool_call_timeout = tool_call_timeout
+        self.assign_task_timeout = assign_task_timeout
 
     async def execute_step(self) -> ExecutionStatus:
         """
@@ -132,32 +137,32 @@ class ExecutionEngine:
         """
         errors = 0
 
-        while errors < 3:
-            # Check for abort during LLM call
-            if self.is_aborted or self.abort_event.is_set():
+        while errors < self.step_max_errors:
+            if self.abort_event.is_set():
                 logger.info("Agent execution aborted during LLM call")
                 return ExecutionStatus.ABORTED
 
             try:
-                # Use error handler context manager for LLM call
                 async with self.error_handler.handle_llm_call(context="execute_step"):
-                    # Call LLM with timeout for cancellation support
                     response = await asyncio.wait_for(
                         self._call_llm_streaming(), timeout=300
                     )
                     break
             except AgentError as e:
                 errors += 1
-                if errors > 2:
+                if errors == self.step_max_errors:
                     logger.error(f"Too many errors ({e.error_type}), aborting...")
                     return ExecutionStatus.ERROR
                 if e.error_type == ErrorType.LLM_RATE_LIMIT_ERROR:
-                    await asyncio.sleep(3)
+                    await asyncio.sleep(self.llm_retry_delay)
+                await self.communicator.send_error(
+                    "calling LLM failed, retrying...", subscription=self.session_id
+                )
             except asyncio.CancelledError:
                 logger.info("Agent execution cancelled by user during LLM call")
                 return ExecutionStatus.ABORTED
 
-        if self.is_aborted or self.abort_event.is_set():
+        if self.abort_event.is_set():
             logger.info("Agent execution aborted after tool calls")
             return ExecutionStatus.ABORTED
 
@@ -167,10 +172,8 @@ class ExecutionEngine:
             logger.error("Failed to save agent response")
             return ExecutionStatus.ERROR
 
-        # Add response to history
         await self.context.add_message(response)
 
-        # Process tool calls if any
         if not response.tool_calls:
             return ExecutionStatus.COMPLETED
         else:
@@ -195,7 +198,7 @@ class ExecutionEngine:
             self.context.history,
             self._get_tools_list(),
         ):
-            if self.is_aborted or self.abort_event.is_set():
+            if self.abort_event.is_set():
                 logger.info("Agent execution aborted during LLM call")
                 raise asyncio.CancelledError("Execution aborted by user")
 
@@ -233,7 +236,6 @@ class ExecutionEngine:
                         )
                         sent.add(tool_call_id)
 
-        # Notify agent to update statistics
         input_tokens = self.llm_client.input_tokens_used
         output_tokens = self.llm_client.output_tokens_used
         await self.agent.on_llm_call_completed(input_tokens, output_tokens)
@@ -262,8 +264,7 @@ class ExecutionEngine:
         context.session_id = self.session_id
 
         for tool_call in tool_calls:
-            # Check for abort before processing each tool call
-            if self.is_aborted or self.abort_event.is_set():
+            if self.abort_event.is_set():
                 logger.info("Agent execution aborted during tool call processing")
                 return
 
@@ -287,10 +288,10 @@ class ExecutionEngine:
                     async with self.error_handler.handle_tool_execution(
                         tool_name=tool_name, context="tool_call_processing"
                     ):
-                        timeout = 1800 if tool_name == "assign_task" else 600
+                        timeout = self.assign_task_timeout if tool_name == "assign_task" else self.tool_call_timeout
                         tool_result = await asyncio.wait_for(
                             self.tool_mapping[tool_name].execute(arguments, context),
-                            timeout=timeout,
+                            timeout=timeout
                         )
                 except AgentError as e:
                     logger.error(
@@ -353,19 +354,15 @@ class ExecutionEngine:
         steps = 0
 
         while True:
-            # Check for abort before running step
-            if self.is_aborted or self.abort_event.is_set():
+            if self.abort_event.is_set():
                 logger.info("Round aborted by user")
                 raise asyncio.CancelledError("Execution aborted by user")
 
             try:
-                # Use error handler context manager for execution step
                 async with self.error_handler.handle_execution_step(step_number=steps):
-                    # Run one step
                     status = await self.execute_step()
                     steps += 1
 
-                    # Check if more steps are needed
                     if status == ExecutionStatus.COMPLETED:
                         return ExecutionResult(
                             status=ExecutionStatus.COMPLETED,
@@ -419,11 +416,9 @@ class ExecutionEngine:
         Returns:
             ExecutionResult: Result of the execution
         """
-        # Reset abort state for new execution
         if not message:
             return ExecutionResult(status=ExecutionStatus.SKIPPED)
 
-        self.is_aborted = False
         self.abort_event.clear()
 
         if not await self._setup_execution_context(message, from_agent):
@@ -574,7 +569,6 @@ class ExecutionEngine:
     async def _ensure_session(self, workspace: str | None = None):
         """Ensure session exists, create if not"""
         if not self.session_id:
-            # Try to get session_id from session_manager
             if not self.session_manager.session_id:
                 await self.session_manager.create_session(workspace=workspace)
             self.session_id = self.session_manager.session_id
@@ -586,7 +580,6 @@ class ExecutionEngine:
         This method sets the abort flag to stop execution
         """
         logger.info("Aborting execution engine")
-        self.is_aborted = True
         self.abort_event.set()
 
     def reset(self):
@@ -595,7 +588,6 @@ class ExecutionEngine:
 
         Clears abort state and resets execution flags
         """
-        self.is_aborted = False
         self.abort_event.clear()
         self.turn_id = None
         self.agent_id = None

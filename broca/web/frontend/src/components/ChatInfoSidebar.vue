@@ -188,13 +188,13 @@ const totalMessagesFromApi = computed(() => {
       <div class="space-y-3 text-sm">
         <div class="flex justify-between">
           <span class="text-gray-700">Session ID:</span>
-          <span class="font-mono text-xs truncate max-w-[150px] text-gray-900" :title="chatStore.sessionId">
+          <span class="font-mono text-xs truncate max-w-[150px] text-gray-800" :title="chatStore.sessionId">
             {{ chatStore.sessionId || '未设置' }}
           </span>
         </div>
         <div class="flex justify-between">
           <span class="text-gray-700">Total Messages:</span>
-          <span class="font-mono text-gray-900">{{ totalMessagesFromApi }}</span>
+          <span class="font-mono text-gray-800">{{ totalMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center cursor-pointer hover:bg-gray-50 p-1 rounded" @click="router.push({ name: 'Jobs', query: { session_id: chatStore.sessionId } })" title="Click to view jobs for this session">
           <span class="text-gray-700 flex items-center gap-2">
@@ -205,7 +205,7 @@ const totalMessagesFromApi = computed(() => {
             <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
               <el-icon class="is-loading"><Loading /></el-icon>
             </span>
-            <span v-else class="font-mono text-sm text-gray-900">{{ jobCount }}</span>
+            <span v-else class="font-mono text-sm text-gray-800">{{ jobCount }}</span>
           </div>
         </div>
         <div class="flex justify-between items-center cursor-pointer hover:bg-gray-50 p-1 rounded" @click="router.push({ name: 'Tasks', query: { session_id: chatStore.sessionId } })" title="Click to view tasks for this session">
@@ -217,7 +217,7 @@ const totalMessagesFromApi = computed(() => {
             <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
               <el-icon class="is-loading"><Loading /></el-icon>
             </span>
-            <span v-else class="font-mono text-sm text-gray-900">{{ taskCount }}</span>
+            <span v-else class="font-mono text-sm text-gray-800">{{ taskCount }}</span>
           </div>
         </div>
         <div v-if="statsLoading" class="flex justify-between">
@@ -246,28 +246,28 @@ const totalMessagesFromApi = computed(() => {
             <span class="w-2 h-2 rounded-full bg-blue-500" />
             User Messages
           </span>
-          <span class="font-mono text-sm text-gray-900">{{ userMessagesFromApi }}</span>
+          <span class="font-mono text-sm text-gray-800">{{ userMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-700 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-green-500" />
             Assistant Responses
           </span>
-          <span class="font-mono text-sm text-gray-900">{{ assistantMessagesFromApi }}</span>
+          <span class="font-mono text-sm text-gray-800">{{ assistantMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-700 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-gray-500" />
             System Messages
           </span>
-          <span class="font-mono text-sm text-gray-900">{{ systemMessagesFromApi }}</span>
+          <span class="font-mono text-sm text-gray-800">{{ systemMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-700 flex items-center gap-2">
             <span class="w-2 h-2 rounded-full bg-red-500" />
             Tool Call Errors
           </span>
-          <span class="font-mono text-sm text-gray-900" :class="{'text-red-600 font-bold': toolCallErrorsFromApi > 0}">
+          <span class="font-mono text-sm text-gray-800" :class="{'text-red-600 font-bold': toolCallErrorsFromApi > 0}">
             {{ toolCallErrorsFromApi }}
           </span>
         </div>
@@ -276,7 +276,7 @@ const totalMessagesFromApi = computed(() => {
             <span class="w-2 h-2 rounded-full bg-purple-500" />
             Tool Calls
           </span>
-          <span class="font-mono text-sm text-gray-900">{{ toolCallsFromApi }}</span>
+          <span class="font-mono text-sm text-gray-800">{{ toolCallsFromApi }}</span>
         </div>
       </div>
     </div>
