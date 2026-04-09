@@ -9,7 +9,6 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
-from sqlalchemy.pool import StaticPool
 from sqlmodel.ext.asyncio.session import AsyncSession
 
 # 数据库文件路径
@@ -41,8 +40,12 @@ class AsyncDatabaseManager:
         # 创建异步引擎
         self._engine = create_async_engine(
             f"sqlite+aiosqlite:///{DATABASE_PATH}",
-            poolclass=StaticPool,
             connect_args={"check_same_thread": False},
+            pool_size=5,
+            max_overflow=10,
+            pool_recycle=3600,
+            pool_timeout=30,
+            pool_pre_ping=True,
             echo=False,
         )
 
@@ -67,7 +70,6 @@ class AsyncDatabaseManager:
         async with self._session_factory() as session:
             try:
                 yield session
-                await session.commit()
             except Exception:
                 await session.rollback()
                 raise
