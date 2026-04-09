@@ -21,7 +21,7 @@ from broca.session import Message, MessageRole, MessageType, SessionManager
 from broca.tools.tool_manager import ToolManager
 
 logger.remove()
-logger.add("agent.log", level="INFO")
+logger.add("/home/ubuntu/code/Broca/agent.log", level="INFO")
 
 
 class Agent:

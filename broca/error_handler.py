@@ -14,8 +14,8 @@ from contextlib import asynccontextmanager
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
-from openai import RateLimitError
 from loguru import logger
+from openai import RateLimitError
 
 from broca.session import MessageRole, MessageType, SessionManager
 
@@ -141,7 +141,7 @@ class ErrorHandler:
             )
         except Exception as e:
             await self._handle_generic_error(
-                ErrorType.L,
+                ErrorType.LLM_ERROR,
                 f"LLM call failed: {context}",
                 {"context": context},
                 e,
