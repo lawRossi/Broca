@@ -234,7 +234,7 @@ class SessionManager:
         self,
         agent_id: str,
         description: str | None = None,
-    ) -> str|None:
+    ) -> str | None:
         """
         开始新的对话轮次
 
@@ -495,7 +495,7 @@ class SessionManager:
             "tool_call_id": tool_call.id,
             "content": tool_result.content,
         }
-        
+
         return await self.save_message(
             role=MessageRole.TOOL,
             content=None,
