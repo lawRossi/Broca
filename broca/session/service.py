@@ -117,7 +117,7 @@ class BaseService(Generic[T]):
                         else:
                             statement = statement.order_by(column)
 
-            if skip and limit:
+            if skip is not None and limit is not None:
                 statement = statement.offset(skip).limit(limit)
 
             result = await session.exec(statement)
@@ -352,7 +352,6 @@ class MessageService(BaseService[Message]):
         """
         async with db_manager.get_session() as session:
             total_messages = await self.count(filters={"session_id": session_id})
-            print(total_messages)
 
             type_stats_statement = (
                 select(Message.message_type, func.count(Message.message_id))
