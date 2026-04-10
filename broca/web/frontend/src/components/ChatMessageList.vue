@@ -1,12 +1,44 @@
 <script setup lang="ts">
-import { ref, watch, nextTick } from 'vue'
+import { ref, watch, nextTick, onUnmounted } from 'vue'
 import { useChatStore } from '@/stores'
 import ChatMessageItem from './ChatMessageItem.vue'
 
 const chatStore = useChatStore()
 const containerRef = ref<HTMLElement>()
+const isRestoringScroll = ref(false)
+const scrollTimeout = ref<number | null>(null)
+
+const saveScrollState = () => {
+  if (!containerRef.value) return null
+  return {
+    scrollTop: containerRef.value.scrollTop,
+    scrollHeight: containerRef.value.scrollHeight,
+    clientHeight: containerRef.value.clientHeight
+  }
+}
+
+const restoreScrollState = (prevState: any) => {
+  if (!containerRef.value || !prevState) return
+  
+  isRestoringScroll.value = true
+  nextTick(() => {
+    const container = containerRef.value!
+    const newScrollHeight = container.scrollHeight
+    const heightDiff = newScrollHeight - prevState.scrollHeight
+    
+    container.scrollTop = prevState.scrollTop + heightDiff
+    
+    if (scrollTimeout.value) clearTimeout(scrollTimeout.value)
+    scrollTimeout.value = setTimeout(() => {
+      isRestoringScroll.value = false
+      scrollTimeout.value = null
+    }, 150) as unknown as number
+  })
+}
 
 const scrollToBottom = () => {
+  if (isRestoringScroll.value) return
+  
   nextTick(() => {
     if (containerRef.value) {
       containerRef.value.scrollTop = containerRef.value.scrollHeight
@@ -15,6 +47,8 @@ const scrollToBottom = () => {
 }
 
 watch(() => chatStore.messages.length, () => {
+  if (isRestoringScroll.value) return
+  
   if (!chatStore.loadingMore) {
     scrollToBottom()
   }
@@ -22,10 +56,28 @@ watch(() => chatStore.messages.length, () => {
 
 const handleScroll = (event: Event) => {
   const target = event.target as HTMLElement
-  if (target.scrollTop < 50) {
-    chatStore.loadHistory(chatStore.sessionId, true)
-  }
+  
+  if (scrollTimeout.value) clearTimeout(scrollTimeout.value)
+  
+  scrollTimeout.value = setTimeout(() => {
+    if (target.scrollTop < 50 && !chatStore.loadingMore && chatStore.hasMoreHistory) {
+      const scrollState = saveScrollState()
+      
+      chatStore.loadHistory(chatStore.sessionId, true).then(() => {
+        restoreScrollState(scrollState)
+      }).catch((error) => {
+        console.error('加载历史消息失败:', error)
+        isRestoringScroll.value = false
+      })
+    }
+  }, 200) as unknown as number
 }
+
+onUnmounted(() => {
+  if (scrollTimeout.value) {
+    clearTimeout(scrollTimeout.value)
+  }
+})
 </script>
 
 <template>

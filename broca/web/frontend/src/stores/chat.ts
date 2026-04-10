@@ -377,20 +377,26 @@ export const useChatStore = defineStore('chat', () => {
         })
 
         if (isLoadMore) {
-          const combinedMessages = [...historyMessages, ...messages.value]
-          messages.value = []
+          const newMessages = [...historyMessages, ...messages.value]
+          messages.value.splice(0, messages.value.length, ...newMessages)
+          
           messageStates.value.clear()
-
-          // 重新添加所有消息，确保TOOL_CALL消息正确合并
-          combinedMessages.forEach((msg) => {
-            addMessageToList(msg)
+          newMessages.forEach(msg => {
+            messageStates.value.set(msg.message_id, {
+              showParameters: false,
+              showResult: false,
+              showReasoning: false,
+            })
           })
         } else {
-          // 对于首次加载，直接设置消息
-          messages.value = []
+          messages.value = historyMessages
           messageStates.value.clear()
           historyMessages.forEach((msg) => {
-            addMessageToList(msg)
+            messageStates.value.set(msg.message_id, {
+              showParameters: false,
+              showResult: false,
+              showReasoning: false,
+            })
           })
         }
         historySkip.value = skip + limit
@@ -400,7 +406,6 @@ export const useChatStore = defineStore('chat', () => {
     } catch (error: any) {
       console.error('加载历史消息失败:', error)
     } finally {
-      //await new Promise((resolve) => setTimeout(resolve, 2000))
       loading.value = false
       loadingMore.value = false
     }
