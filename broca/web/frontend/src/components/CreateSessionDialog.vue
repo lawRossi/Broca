@@ -39,7 +39,6 @@ const loadLLMProviders = async () => {
   try {
     loadingProviders.value = true
     const providers = await configApi.getLLMProviders()
-    console.log(providers)
     llmProviders.value = providers
   } catch (error) {
     console.error('Failed to load LLM providers:', error)    

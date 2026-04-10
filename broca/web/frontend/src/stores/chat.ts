@@ -111,12 +111,6 @@ export const useChatStore = defineStore('chat', () => {
     if (showRightSidebar.value) showLeftSidebar.value = false
   }
 
-  const scrollToBottom = () => {
-    if (messagesContainer.value) {
-      messagesContainer.value.scrollTop = messagesContainer.value.scrollHeight
-    }
-  }
-
   const toggleToolParameters = (messageId: string) => {
     const currentState = messageStates.value.get(messageId)
     if (currentState) {
@@ -373,7 +367,6 @@ export const useChatStore = defineStore('chat', () => {
 
       if (response.messages) {
         const allMessages = response.messages
-
         const historyMessages: Message[] = []
 
         allMessages.forEach((msg: any) => {
@@ -407,11 +400,9 @@ export const useChatStore = defineStore('chat', () => {
     } catch (error: any) {
       console.error('加载历史消息失败:', error)
     } finally {
+      //await new Promise((resolve) => setTimeout(resolve, 2000))
       loading.value = false
       loadingMore.value = false
-      if (!isLoadMore) {
-        nextTick(() => scrollToBottom())
-      }
     }
   }
 
@@ -432,7 +423,6 @@ export const useChatStore = defineStore('chat', () => {
     }
     socketStore.onMessage = (m: Message) => {
       addMessage(m)
-      scrollToBottom()
     }
     socketStore.onTurnStart = (m: Message) => {
       const targetAgentId = m.sender_id || agentStore.currentAgentId
@@ -620,7 +610,6 @@ export const useChatStore = defineStore('chat', () => {
       await doConnect()
       await doSubscribe()
       await loadHistory(urlSessionId.value)
-      scrollToBottom()
     } catch (error: any) {
       console.error('自动连接失败:', error)
       sessionId.value = ''
@@ -672,7 +661,6 @@ export const useChatStore = defineStore('chat', () => {
     messageStates,
     pendingChunks,
     statusText,
-    scrollToBottom,
     toggleToolParameters,
     toggleToolResult,
     toggleReasoning,
