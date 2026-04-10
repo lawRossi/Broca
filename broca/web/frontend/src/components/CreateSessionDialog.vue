@@ -1,37 +1,13 @@
 <script setup lang="ts">
-import { computed, ref, onMounted, onUnmounted } from 'vue'
+import { computed, ref, onMounted, onUnmounted, watch } from 'vue'
 import { FolderOpened } from '@element-plus/icons-vue'
 import type { CreateSessionParams } from '@/api/session'
-
-// 移动端检测
-const isMobile = ref(false)
-
-const checkIsMobile = () => {
-  isMobile.value = window.innerWidth < 768
-}
-
-onMounted(() => {
-  checkIsMobile()
-  window.addEventListener('resize', checkIsMobile)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('resize', checkIsMobile)
-})
-
-// LLM Provider 选项（与后端 llm_config.json 保持一致）
-const LLM_PROVIDERS = [
-  { label: 'OpenRouter', value: 'openrouter' },
-  { label: 'DeepSeek', value: 'deepseek' },
-  { label: 'NVIDIA', value: 'nvidia' },
-  { label: 'Z-AI', value: 'z-ai' }
-]
+import { configApi, type LLMProvider } from '@/api/config'
 
 interface Props {
   visible: boolean
   formData: CreateSessionParams
   workspaceSuggestions: string[]
-  availableModels: { label: string; value: string }[]
   creating: boolean
 }
 
@@ -44,6 +20,92 @@ interface Emits {
 
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
+
+// 移动端检测
+const isMobile = ref(false)
+
+const checkIsMobile = () => {
+  isMobile.value = window.innerWidth < 768
+}
+
+// LLM Provider 选项（从接口动态获取）
+const llmProviders = ref<LLMProvider[]>([])
+const loadingProviders = ref(false)
+const availableModels = ref<Array<{ id: string; name: string }>>([])
+const loadingModels = ref(false)
+
+// 加载LLM提供商列表
+const loadLLMProviders = async () => {
+  try {
+    loadingProviders.value = true
+    const providers = await configApi.getLLMProviders()
+    console.log(providers)
+    llmProviders.value = providers
+  } catch (error) {
+    console.error('Failed to load LLM providers:', error)    
+  } finally {
+    loadingProviders.value = false
+  }
+}
+
+// 加载指定提供商的模型列表
+const loadLLMModels = async (provider: string) => {
+  if (!provider) {
+    availableModels.value = []
+    return
+  }
+  
+  try {
+    loadingModels.value = true
+    const models = await configApi.getLLMModels(provider)
+    // 转换为前端需要的格式
+    availableModels.value = models.map(model => ({
+      id: model.id,
+      name: model.name
+    }))
+  } catch (error) {
+    console.error(`Failed to load models for provider ${provider}:`, error)
+    availableModels.value = []
+  } finally {
+    loadingModels.value = false
+  }
+}
+
+// 处理提供商变化
+const handleProviderChange = (provider: string) => {
+  // 清空已选择的模型
+  emit('update:formData', {
+    ...props.formData,
+    model: undefined
+  })
+  
+  // 加载新提供商的模型
+  loadLLMModels(provider)
+}
+
+// 组件挂载时加载提供商列表
+onMounted(() => {
+  loadLLMProviders()
+  
+  // 如果已经有选中的提供商，加载对应的模型
+  if (props.formData.provider) {
+    loadLLMModels(props.formData.provider)
+  }
+
+  checkIsMobile()
+  window.addEventListener('resize', checkIsMobile)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('resize', checkIsMobile)
+})
+
+// 监听formData.provider变化
+watch(() => props.formData.provider, (newProvider, oldProvider) => {
+  if (newProvider !== oldProvider) {
+    loadLLMModels(newProvider || '')
+  }
+})
 
 // 过滤工作空间建议
 const filteredWorkspaceSuggestions = computed(() => {
@@ -102,13 +164,19 @@ const handleCreate = () => {
           placeholder="选择 LLM 提供商"
           clearable
           class="w-full"
+          :loading="loadingProviders"
+          @change="handleProviderChange"
         >
           <el-option
-            v-for="provider in LLM_PROVIDERS"
-            :key="provider.value"
-            :label="provider.label"
-            :value="provider.value"
-          />
+            v-for="provider in llmProviders"
+            :key="provider.id"
+            :label="provider.name"
+            :value="provider.id"
+          >
+            <div class="flex items-center justify-between">
+              <span>{{ provider.name }}</span>
+            </div>
+          </el-option>
         </el-select>
         <div class="text-xs text-gray-500 mt-1">
           选择用于此会话的 LLM 提供商。留空则使用默认配置。
@@ -122,12 +190,13 @@ const handleCreate = () => {
           :placeholder="formData.provider ? '选择 LLM 模型' : '请先选择提供商'"
           clearable
           class="w-full"
+          :loading="loadingModels"
         >
           <el-option
             v-for="model in availableModels"
-            :key="model.value"
-            :label="model.label"
-            :value="model.value"
+            :key="model.id"
+            :label="model.name"
+            :value="model.id"
           />
         </el-select>
         <div class="text-xs text-gray-500 mt-1">

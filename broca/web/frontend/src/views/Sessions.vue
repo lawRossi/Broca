@@ -17,24 +17,7 @@ const router = useRouter()
 const userStore = useUserStore()
 const sessionStore = useSessionStore()
 
-// LLM Model 选项（传递给 CreateSessionDialog 的 availableModels 计算使用）
-const LLM_MODELS: Record<string, { label: string; value: string }[]> = {
-  openrouter: [
-    { label: 'StepFun (Step-3.5-Flash)', value: 'stepfun' },
-    { label: 'Nemotron (NVIDIA)', value: 'nemotron' }
-  ],
-  deepseek: [
-    { label: 'DeepSeek Chat', value: 'deepeek-chat' }
-  ],
-  nvidia: [
-    { label: 'Minimax M2.1', value: 'minimax' },
-    { label: 'DeepSeek V3.2', value: 'deepseek-3.2' },
-    { label: 'GLM 4.7', value: 'glm' }
-  ],
-  z_ai: [
-    { label: 'GLM 4.7 Flash', value: 'glm-4.7' }
-  ]
-}
+
 
 // 计算属性（从store获取）
 const sessions = computed(() => sessionStore.sessions)
@@ -59,15 +42,7 @@ const loadingJobCounts = ref(false)
 // 计算属性：是否已登录
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
-// 根据选择的 provider 获取可用的 models
-const availableModels = computed(() => {
-  const provider = createForm.value.provider
-  if (!provider) {
-    return []
-  }
-  const key = provider.replace('-', '_')
-  return LLM_MODELS[key] || []
-})
+
 
 // 搜索
 const handleSearch = (keyword: string) => {
@@ -269,7 +244,6 @@ onMounted(async () => {
     :visible="createDialogVisible"
     :form-data="createForm"
     :workspace-suggestions="workspaceAllSuggestions"
-    :available-models="availableModels"
     :creating="creating"
     @update:visible="sessionStore.setCreateDialogVisible($event)"
     @update:form-data="sessionStore.setCreateForm($event)"
