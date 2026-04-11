@@ -12,6 +12,7 @@ from loguru import logger
 
 from broca.agent_configs import AgentConfig
 from broca.comm.agent_communicator import AgentCommunicator
+from broca.configs import get_configs
 from broca.context import Context
 from broca.error_handler import ErrorHandler
 from broca.execution_engine import ExecutionEngine, ExecutionResult, ExecutionStatus
@@ -20,8 +21,9 @@ from broca.permission_manager import PermissionManager
 from broca.session import Message, MessageRole, MessageType, SessionManager
 from broca.tools.tool_manager import ToolManager
 
+configs = get_configs()
 logger.remove()
-logger.add("/home/ubuntu/code/Broca/agent.log", level="INFO")
+logger.add(configs.log_file, level=configs.log_level)
 
 
 class Agent:
