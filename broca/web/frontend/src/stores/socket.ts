@@ -4,6 +4,10 @@ import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { BrocaSocketClient, type Message } from '@/api/brocaSocket'
 
+
+const serverUrl = import.meta.env.VITE_BROCA_SOCKET_SERVER_URL
+
+
 export const useSocketStore = defineStore('socket', () => {
   const userStore = useUserStore()
 
@@ -11,7 +15,7 @@ export const useSocketStore = defineStore('socket', () => {
   const connecting = ref(false)
 
   const socketConfig = reactive({
-    serverUrl: 'http://81.71.49.200:6868',
+    serverUrl: serverUrl,
     clientType: 'browser',
     clientId: `browser_${Math.random().toString(16).slice(2)}`,
     userId: computed(() => userStore.userId || undefined),
