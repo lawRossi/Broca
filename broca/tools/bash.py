@@ -11,7 +11,7 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 class ExecuteCode(Tool):
     def __init__(self):
         super().__init__()
-        self.code_output_template = "return code: {{output.returncode}}\n{% if output.returncode == 0 -%}\noutput:{{ output.stdout if output.stdout.strip() else 'execution succeeded'}}\n{% endif %}\n{%- if output.stderr -%}error: {{output.stderr}}{% endif %}"
+        self.code_output_template = "return code: {{output.returncode}}\n{% if output.stdout -%}\noutput:{{ output.stdout if output.stdout.strip() else 'execution succeeded'}}\n{% endif %}\n{%- if output.stderr -%}error: {{output.stderr}}{% endif %}"
         self._init_tree_sitter()
 
     @property
