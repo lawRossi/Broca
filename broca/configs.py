@@ -7,6 +7,7 @@ class BrocaConfig:
         self.database_dir = None
         self.log_file = None
         self.log_level = "INFO"
+        self.llm_config_file = None
 
     @classmethod
     def from_config(cls, config):
