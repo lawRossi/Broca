@@ -1,6 +1,7 @@
 import json
 from pathlib import Path
 
+from broca.configs import get_configs
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
@@ -8,8 +9,8 @@ from app.schemas.schemas import ApiResponse
 
 router = APIRouter()
 
-# 获取LLM配置文件的路径
-LLM_CONFIG_PATH = Path("/home/ubuntu/code/Broca/configs/llm_config.json")
+configs = get_configs()
+LLM_CONFIG_PATH = Path(configs.llm_config_file)
 
 
 @router.get("/llm/providers", response_model=ApiResponse)
