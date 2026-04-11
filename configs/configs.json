@@ -1,0 +1,5 @@
+{
+    "database_dir": "/home/ubuntu/code/Broca/data",
+    "log_file": "/home/ubuntu/code/Broca/agent.log",
+    "log_level": "INFO"
+}

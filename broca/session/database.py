@@ -2,18 +2,30 @@
 数据库连接管理模块
 
 负责数据库连接、会话工厂和初始化管理。
+支持从环境变量或 .env 文件配置数据库路径。
 """
 
 import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlmodel.ext.asyncio.session import AsyncSession
 
-# 数据库文件路径
-DATABASE_DIR = "/home/ubuntu/code/Broca/data"
-DATABASE_PATH = os.path.join(DATABASE_DIR, "sessions.db")
+from broca.configs import get_configs
+
+
+def _get_database_config() -> tuple[str, str]:
+    """获取数据库配置，从环境变量或默认值"""
+    configs = get_configs()
+    database_dir = str(Path(configs.database_dir).resolve())
+    database_path = os.path.join(database_dir, "sessions.db")
+    return database_dir, database_path
+
+
+# 获取数据库配置
+DATABASE_DIR, DATABASE_PATH = _get_database_config()
 
 
 class AsyncDatabaseManager:
