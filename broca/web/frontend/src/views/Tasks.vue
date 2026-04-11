@@ -146,7 +146,7 @@ const handleCreateTask = async () => {
       }
     })
 
-    const name = result.value.trim()
+    const name = (result as any).value.trim()
     const description = await ElMessageBox.prompt('请输入任务描述', '任务描述', {
       confirmButtonText: '创建',
       cancelButtonText: '取消',
@@ -162,7 +162,7 @@ const handleCreateTask = async () => {
 
     await taskStore.createTask({
       name,
-      description: description.value.trim(),
+      description: (description as any).value.trim(),
       session_id: sessionFilter.value || undefined
     })
   } catch (error: any) {

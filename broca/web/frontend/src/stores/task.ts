@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { taskApi, type Task, TaskStatus, TaskPriority, type TaskDetail, type TaskComment } from '@/api/task'
+import { taskApi, type Task, TaskStatus, TaskPriority, type TaskDetail } from '@/api/task'
 
 export const useTaskStore = defineStore('task', () => {
   // 状态

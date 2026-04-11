@@ -133,11 +133,11 @@ const handleUpdateAssignee = async (assignee: string) => {
 }
 
 const handleSubmitComment = async () => {
-  if (!newComment.value.trim() || !task.value || !userStore.user) return
+  if (!newComment.value.trim() || !task.value || !userStore.userInfo) return
   
   submittingComment.value = true
   try {
-    await taskStore.addComment(task.value.task_id, userStore.user.name || '匿名用户', newComment.value)
+    await taskStore.addComment(task.value.task_id, userStore.userInfo.name || '匿名用户', newComment.value)
     newComment.value = ''
     ElMessage.success('评论添加成功')
   } catch (error) {
@@ -197,11 +197,13 @@ const formatDate = (dateString: string): string => {
   }
 }
 
-const getStatusInfo = (status: TaskStatus) => {
+const getStatusInfo = (status?: TaskStatus) => {
+  if (!status) return statusOptions.value[0]
   return statusOptions.value.find(option => option.value === status) || statusOptions.value[0]
 }
 
-const getPriorityInfo = (priority: TaskPriority) => {
+const getPriorityInfo = (priority?: TaskPriority) => {
+  if (!priority) return priorityOptions.value[1]
   return priorityOptions.value.find(option => option.value === priority) || priorityOptions.value[1]
 }
 
@@ -244,7 +246,7 @@ watch(() => props.visible, (visible) => {
     :model-value="props.visible"
     :size="drawerSize"
     :before-close="handleClose"
-    @update:model-value="(val) => emit('update:visible', val)"
+    @update:model-value="(val: boolean) => emit('update:visible', val)"
     title="任务详情"
     class="task-detail-drawer"
   >
@@ -291,11 +293,11 @@ watch(() => props.visible, (visible) => {
           <div class="flex flex-wrap gap-2 mb-3">
             <!-- 状态 -->
             <el-dropdown @command="handleUpdateStatus">
-              <el-tag :type="getStatusInfo(task.status).type" size="large" class="cursor-pointer">
+              <el-tag :type="getStatusInfo(task?.status).type" size="large" class="cursor-pointer">
                 <el-icon class="mr-1">
-                  <component :is="getStatusInfo(task.status).icon" />
+                  <component :is="getStatusInfo(task?.status).icon" />
                 </el-icon>
-                {{ getStatusInfo(task.status).label }}
+                {{ getStatusInfo(task?.status).label }}
               </el-tag>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -303,7 +305,7 @@ watch(() => props.visible, (visible) => {
                     v-for="option in statusOptions"
                     :key="option.value"
                     :command="option.value"
-                    :disabled="option.value === task.status"
+                    :disabled="option.value === task?.status"
                   >
                     <el-icon class="mr-2">
                       <component :is="option.icon" />
@@ -316,8 +318,8 @@ watch(() => props.visible, (visible) => {
 
             <!-- 优先级 -->
             <el-dropdown @command="handleUpdatePriority">
-              <el-tag :type="getPriorityInfo(task.priority).type" size="large" class="cursor-pointer">
-                {{ getPriorityInfo(task.priority).label }}
+              <el-tag :type="getPriorityInfo(task?.priority).type" size="large" class="cursor-pointer">
+                {{ getPriorityInfo(task?.priority).label }}
               </el-tag>
               <template #dropdown>
                 <el-dropdown-menu>
@@ -470,11 +472,11 @@ watch(() => props.visible, (visible) => {
                   <div class="text-xs text-gray-500 truncate">{{ child.description }}</div>
                 </div>
                 <div class="flex items-center gap-1 flex-shrink-0">
-                  <el-tag :type="getStatusInfo(child.status).type" size="small">
-                    {{ getStatusInfo(child.status).label }}
+                  <el-tag :type="getStatusInfo(child?.status).type" size="small">
+                    {{ getStatusInfo(child?.status).label }}
                   </el-tag>
-                  <el-tag :type="getPriorityInfo(child.priority).type" size="small">
-                    {{ getPriorityInfo(child.priority).label }}
+                  <el-tag :type="getPriorityInfo(child?.priority).type" size="small">
+                    {{ getPriorityInfo(child?.priority).label }}
                   </el-tag>
                 </div>
               </div>

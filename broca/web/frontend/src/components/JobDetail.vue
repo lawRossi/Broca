@@ -243,7 +243,7 @@ const handleClose = () => {
     title="任务详情"
     :size="drawerSize"
     :before-close="handleClose"
-    @update:model-value="(val) => emit('update:visible', val)"
+    @update:model-value="(val: boolean) => emit('update:visible', val)"
   >
     <div v-if="loading" class="flex items-center justify-center py-12">
       <el-icon class="is-loading" size="24">

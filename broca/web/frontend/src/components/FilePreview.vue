@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Document, Picture, VideoPlay, Headset, Warning, Refresh } from '@element-plus/icons-vue'
+import { Document, Warning, Refresh } from '@element-plus/icons-vue'
 
 // Props
 const props = defineProps<{
@@ -53,20 +53,6 @@ const previewMode = computed(() => {
     return 'api' // 通过API预览（本地文件系统）
   }
   return 'none'
-})
-
-// 获取实际使用的文件URL
-const effectiveFileUrl = computed(() => {
-  // 优先使用直接提供的fileUrl
-  if (props.fileUrl) {
-    return props.fileUrl
-  }
-  // 如果是文本文件且已通过API获取内容，返回data URL
-  if (isTextFile.value && previewContent.value) {
-    // 对于文本内容，直接显示在预览区域，不使用URL
-    return ''
-  }
-  return ''
 })
 
 // 获取文件名
@@ -158,7 +144,7 @@ const extensionMap: Record<string, { type: string; category: string }> = {
 /** 获取文件扩展名 */
 const getFileExtension = (filename: string): string => {
   const parts = filename.split('.')
-  return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : ''
+  return parts.length > 1 ? (parts[parts.length - 1] || '').toLowerCase() : ''
 }
 
 /** 判断文件类型 */
@@ -309,23 +295,6 @@ const openInNewWindow = () => {
     window.open(props.fileUrl, '_blank')
   }
 }
-
-/** 获取文件图标 */
-const getFileIcon = computed(() => {
-  if (isImageFile.value) return Picture
-  if (isVideoFile.value) return VideoPlay
-  if (isAudioFile.value) return Headset
-  return Document
-})
-
-/** 获取文件类型描述 */
-const getFileTypeDescription = computed(() => {
-  if (isImageFile.value) return 'Image'
-  if (isVideoFile.value) return 'Video'
-  if (isAudioFile.value) return 'Audio'
-  if (isTextFile.value) return 'Text/Code'
-  return 'File'
-})
 
 /** 语法高亮类名 */
 const syntaxHighlightClass = computed(() => {

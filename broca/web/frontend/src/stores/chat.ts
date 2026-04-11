@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, reactive, nextTick } from 'vue'
+import { ref, computed, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUserStore, useAgentStore, useSocketStore } from '@/stores'
 import { type Message } from '@/api/brocaSocket'
