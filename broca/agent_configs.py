@@ -9,7 +9,6 @@ class AgentConfig:
         self.role_description = None
         self.provider = "openrouter"
         self.model = "glm"
-        self.log_file = "agent.log"
         self.system_prompt_template = None
         self.tools = None
         self.skills = None
