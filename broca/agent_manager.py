@@ -9,8 +9,6 @@ from broca.agent import Agent, AgentConfig
 from broca.llm import LLMClient
 from broca.session import SessionManager
 
-logger.add("agent.log", level="DEBUG")
-
 
 class AgentFactory:
     _instance = None
@@ -112,9 +110,7 @@ class AgentFactory:
         agent_config = AgentConfig.from_config(config)
         # Each agent gets its own LLMClient instance
         llm_client = LLMClient()
-        agent = Agent(
-            agent_config, llm_client, session_manager, agent_id=agent_id
-        )
+        agent = Agent(agent_config, llm_client, session_manager, agent_id=agent_id)
         await agent.restore_from_session(agent_id)
         if session_manager.session_id not in self._session_agents:
             self._session_agents[session_manager.session_id] = {}
