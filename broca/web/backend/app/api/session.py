@@ -152,7 +152,6 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
                 logger.info(f"Agent {db_agent.name} restored")
             elif agent is not None:
                 response_agent["status"] = agent.status
-                print(agent.status)
             else:
                 response_agent["status"] = "idle"
             response_agents.append(response_agent)
