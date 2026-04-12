@@ -611,7 +611,7 @@ export const useChatStore = defineStore('chat', () => {
     sessionId.value = urlSessionId.value
 
     try {
-      await agentStore.fetchAgents(urlSessionId.value, connected.value)
+      await agentStore.fetchAgents(urlSessionId.value)
       await doConnect()
       await doSubscribe()
       await loadHistory(urlSessionId.value)

@@ -126,7 +126,6 @@ async def get_sessions(
 @router.get("/{session_id}/agents", response_model=ApiResponse)
 async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
     """获取会话的Agent列表"""
-    restored_agents = []
     try:
         # 获取会话的Agent
         agent_service = get_agent_service()
@@ -139,22 +138,26 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
         response_agents: list[dict] = []
         for db_agent in agents:
             response_agent = db_agent.model_dump()
+            agent = factory.get_agent(session_id, db_agent.name)
             if not runtime.is_client_connected(db_agent.agent_id):
                 logger.info(f"Agent {db_agent.name} is not connected")
-                agent = await factory.restore_agent(db_agent.agent_id, session_id=session_id)
-                await agent.connect()
-                task = asyncio.create_task(agent.start())
-                task.add_done_callback(lambda t, a=agent: a.stop())
-                restored_agents.append(agent)
-                response_agent["status"] = "idle" if agent.is_connected() else "disconnected"
+                if agent is None:
+                    agent = await factory.restore_agent(db_agent.agent_id, session_id=session_id)
+                    await agent.connect()
+                    task = asyncio.create_task(agent.start())
+                    task.add_done_callback(lambda t, a=agent: a.stop())
+                else:
+                    await agent.connect()
+                response_agent["status"] = agent.status
                 logger.info(f"Agent {db_agent.name} restored")
+            elif agent is not None:
+                response_agent["status"] = agent.status
+                print(agent.status)
             else:
-                response_agent["status"] = "idel"
+                response_agent["status"] = "idle"
             response_agents.append(response_agent)
         return ApiResponse.success(response_agents)
     except Exception as e:
-        for agent in restored_agents:
-            agent.stop()
         logger.error(f"Error getting session agents: {e}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 

@@ -309,7 +309,7 @@ class SocketIOClient:
                 except Exception as e:
                     logger.error(f"Error in event handler {event_name}: {e}")
 
-    async def connect(self, timeout: float = 10.0):
+    async def connect(self, timeout: float = 10.0) -> bool:
         """Connect to server
 
         Args:
@@ -317,7 +317,7 @@ class SocketIOClient:
         """
         if self.connection_info.connected:
             logger.warning("Already connected to server")
-            return
+            return True
 
         self._should_reconnect = True
 
@@ -341,10 +341,12 @@ class SocketIOClient:
             # Wait for the connect event to be triggered
             try:
                 await asyncio.wait_for(self._connect_event.wait(), timeout=timeout)
+                return True
             except asyncio.TimeoutError:
                 logger.error(f"Connection timeout after {timeout}s")
                 await self.sio.disconnect()
                 raise RuntimeError(f"Connection timeout after {timeout}s")
+                return False
 
             logger.info(f"Connected to server at {self.server_url}")
 
@@ -352,7 +354,7 @@ class SocketIOClient:
             logger.error(f"Failed to connect to server: {e}")
             if self.auto_reconnect:
                 self._reconnect_task = asyncio.create_task(self._reconnect())
-            raise
+            return False
 
     async def disconnect(self):
         """Disconnect from server"""

@@ -29,6 +29,10 @@ logger.add(configs.log_file, level=configs.log_level)
 class Agent:
     """Base Agent class with core functionality"""
 
+    STATUS_IDEL = "idle"
+    STATUS_RUNNING = "running"
+    STATUS_DISCONNECTED = "disconnected"
+
     def __init__(
         self,
         config: AgentConfig,
@@ -42,6 +46,7 @@ class Agent:
         self.agent_id = kwargs.get("agent_id") or uuid.uuid4().hex
         self.name = config.name
         self.role = config.role
+        self.status = self.STATUS_DISCONNECTED
 
         self.session_id: Optional[str] = session_manager.session_id
         self.turn_id: Optional[str] = None
@@ -256,10 +261,9 @@ class Agent:
         """
         # Store the current execution task for potential cancellation
         self._abort_task = asyncio.current_task()
-
+        self.status = self.STATUS_RUNNING
         try:
             return await self.execution_engine.execute(message, max_steps, from_agent)
-
         except Exception as e:
             logger.error(f"Error in run: {e}")
             return ExecutionResult(
@@ -272,6 +276,7 @@ class Agent:
             if not self.config.save_history:
                 await self.reset()
             self._abort_task = None
+            self.status = self.STATUS_IDEL
 
     async def _handle_task(self, message: Message) -> None:
         """Handle task assignment from another agent"""
@@ -307,6 +312,7 @@ class Agent:
         self.execution_engine.reset()
         await self.permission_manager.reset()
         self.turn_id = None
+        self.status = self.STATUS_IDEL
 
     async def subscribe(self, subscription: str):
         """Subscribe to channel"""
@@ -322,7 +328,9 @@ class Agent:
 
     async def connect(self):
         """Connect to server"""
-        await self.communicator.connect()
+        connected = await self.communicator.connect()
+        if connected:
+            self.status = self.STATUS_IDEL
 
     async def on_llm_call_completed(self, input_tokens: int, output_tokens: int):
         """
@@ -351,6 +359,7 @@ class Agent:
                 logger.error(f"Failed to cancel execution task: {e}")
             finally:
                 self._abort_task = None
+        self.status = self.STATUS_IDEL
 
     async def _on_command(self, message: Message):
         """
@@ -376,6 +385,7 @@ class Agent:
     async def disconnect(self):
         """Disconnect from server"""
         await self.communicator.disconnect()
+        self.status = self.STATUS_DISCONNECTED
 
     async def restore_from_session(self, agent_id):
         """Restore agent state from session"""

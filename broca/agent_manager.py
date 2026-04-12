@@ -101,7 +101,9 @@ class AgentFactory:
             agents.append(agent)
         return agents
 
-    async def restore_agent(self, agent_id, session_manager=None, session_id=None):
+    async def restore_agent(
+        self, agent_id, session_manager=None, session_id=None
+    ) -> Agent:
         if session_manager is None:
             session_manager = SessionManager()
             await session_manager.load_session(session_id)

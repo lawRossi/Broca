@@ -286,8 +286,6 @@ onUnmounted(() => {
               </el-icon>
               {{ getStatusText(agent.status || 'disconnected') }}
             </el-tag>
-            <!-- Abort 按钮：仅当agent状态为running时显示 -->
-            <!-- Abort 按钮：仅当agent状态为running时显示 -->
             <el-tooltip
               v-if="agent.status === 'running'"
               content="中断此Agent"
