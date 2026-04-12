@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { ElMessage } from 'element-plus'
-import { Document, Warning, Refresh } from '@element-plus/icons-vue'
+import { Document, Warning, Refresh, Headset } from '@element-plus/icons-vue'
 
 // Props
 const props = defineProps<{

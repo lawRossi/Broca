@@ -297,3 +297,18 @@ async def edit_file(path: str, request: FileEditRequest) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error editing file {path}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+@router.get("/files/home", response_model=ApiResponse)
+async def get_home_directory() -> ApiResponse:
+    """获取用户的home目录
+    
+    返回当前用户的home目录路径，用于前端初始化工作空间选择器
+    """
+    try:
+        home_dir = str(Path.home())
+        logger.info(f"Home directory: {home_dir}")
+        return ApiResponse.success({"home_dir": home_dir}, msg="Home directory retrieved successfully")
+    except Exception as e:
+        logger.error(f"Error getting home directory: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error") from e

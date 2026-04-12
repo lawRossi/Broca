@@ -170,6 +170,8 @@ onMounted(async () => {
     router.push('/auth')
     return
   }
+  // 获取home目录
+  await sessionStore.fetchHomeDirectory()
   await sessionStore.fetchSessions()
   await fetchJobCounts()
 })
@@ -254,7 +256,7 @@ onMounted(async () => {
   <!-- 工作空间选择器 -->
   <WorkspacePicker
     :visible="workspacePickerVisible"
-    :initial-path="createForm.workspace || '/home/ubuntu'"
+    :initial-path="createForm.workspace || sessionStore.homeDirectory"
     @update:visible="sessionStore.setWorkspacePickerVisible($event)"
     @select="handleWorkspaceSelect"
     @confirm="handleWorkspaceConfirm"

@@ -88,6 +88,13 @@ export const filesApi = {
     return request.put('/files/edit', { content }, {
       params: { path }
     })
+  },
+
+  /**
+   * 获取用户的home目录
+   */
+  async getHomeDirectory(): Promise<{ home_dir: string }> {
+    return request.get('/files/home')
   }
 }
 
