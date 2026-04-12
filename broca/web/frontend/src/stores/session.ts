@@ -2,7 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { sessionApi, type Session, type CreateSessionParams } from '@/api/session'
-import type { FileItem } from '@/api/files'
+import { filesApi, type FileItem } from '@/api/files'
 import { useUserStore } from './user'
 
 export const useSessionStore = defineStore('session', () => {
@@ -37,6 +37,9 @@ export const useSessionStore = defineStore('session', () => {
 
   // Workspace picker
   const workspacePickerVisible = ref(false)
+
+  // Home directory
+  const homeDirectory = ref<string>('')
 
   // Computed
   const isLoggedIn = computed(() => userStore.isLoggedIn)
@@ -269,6 +272,28 @@ export const useSessionStore = defineStore('session', () => {
     workspacePickerVisible.value = visible
   }
 
+  // Home directory related
+  const fetchHomeDirectory = async () => {
+    try {
+      const response = await filesApi.getHomeDirectory()
+      homeDirectory.value = response.home_dir
+      return homeDirectory.value
+    } catch (error: any) {
+      console.error('获取home目录失败:', error)
+      // 如果获取失败，使用默认值
+      homeDirectory.value = '/home/ubuntu'
+      return homeDirectory.value
+    }
+  }
+
+  const getHomeDirectory = () => {
+    return homeDirectory.value
+  }
+
+  const setHomeDirectory = (path: string) => {
+    homeDirectory.value = path
+  }
+
   // Workspace related
   const extractWorkspaceSuggestions = () => {
     const workspaces = new Set<string>()
@@ -367,6 +392,7 @@ export const useSessionStore = defineStore('session', () => {
     createForm,
     workspaceAllSuggestions,
     workspacePickerVisible,
+    homeDirectory,
 
     // Computed
     isLoggedIn,
@@ -399,6 +425,9 @@ export const useSessionStore = defineStore('session', () => {
     selectWorkspaceFromPicker,
     handleWorkspaceConfirm,
     resetCreateForm,
+    fetchHomeDirectory,
+    getHomeDirectory,
+    setHomeDirectory,
     refresh,
   }
 })

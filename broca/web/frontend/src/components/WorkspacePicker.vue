@@ -18,7 +18,7 @@ interface Emits {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  initialPath: '/home'
+  initialPath: '/'
 })
 
 const emit = defineEmits<Emits>()
