@@ -1,5 +1,5 @@
+import asyncio
 import re
-import subprocess
 
 from jinja2 import Template
 from loguru import logger
@@ -64,7 +64,35 @@ class ExecuteCode(Tool):
                     content="User refused to run potentially dangerous code",
                 )
 
-        return self._run_code(code)
+        # 检查是否需要流式输出
+        if self._needs_streaming(code):
+            return await self._run_code_streaming(code, context)
+        else:
+            return await self._run_code_async(code)
+
+    def _needs_streaming(self, code: str) -> bool:
+        """判断命令是否需要流式输出"""
+        lines = code.strip().split("\n")
+        first_line = lines[0].strip() if lines else ""
+
+        # 提取第一个命令
+        first_word = first_line.split()[0] if first_line else ""
+
+        # 需要流式输出的命令
+        streaming_commands = {}
+
+        # 检查命令特征
+        if first_word in streaming_commands:
+            return True
+
+        # 检查是否是长时间运行的命令
+        if any(
+            indicator in code.lower()
+            for indicator in ["build", "install", "download", "compile"]
+        ):
+            return True
+
+        return False
 
     def _validate_code(self, code: str) -> bool:
         """Validate code using tree-sitter for better parsing, with regex fallback"""
@@ -207,6 +235,10 @@ class ExecuteCode(Tool):
             r"^\s*os\.system\s*\(",
             # subprocess.call() usage
             r"^\s*subprocess\.call\s*\(",
+            # git dangerous command
+            r"^\s*git\s+rm\s+",
+            r"^\s*git\s+reset\s+",
+            r"^\s*git\s+restore\s+",
         ]
 
         for pattern in dangerous_patterns:
@@ -216,29 +248,149 @@ class ExecuteCode(Tool):
 
         return True
 
-    def _run_code(self, code: str, timeout: int = 600) -> ToolResult:
+    async def _run_code_async(self, code: str, timeout: int = 300) -> ToolResult:
+        """异步执行代码"""
         status: ToolStatus = ToolStatus.SUCCESS
         try:
-            result = subprocess.run(
-                code, capture_output=True, text=True, timeout=timeout, shell=True
+            # 使用 asyncio.create_subprocess_shell 异步执行
+            process = await asyncio.create_subprocess_shell(
+                code,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                shell=True,
             )
-            result_dict = {
-                "returncode": result.returncode,
-                "stdout": result.stdout,
-                "stderr": result.stderr,
-            }
-            status = ToolStatus.SUCCESS if result.returncode == 0 else ToolStatus.ERROR
-        except subprocess.TimeoutExpired:
-            result_dict = {
-                "returncode": -1,
-                "stderr": "Execution timed out.",
-            }
-            status = ToolStatus.ERROR
+
+            try:
+                # 等待进程完成，带超时
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=timeout
+                )
+
+                result_dict = {
+                    "returncode": process.returncode,
+                    "stdout": stdout.decode("utf-8", errors="replace")
+                    if stdout
+                    else "",
+                    "stderr": stderr.decode("utf-8", errors="replace")
+                    if stderr
+                    else "",
+                }
+                status = (
+                    ToolStatus.SUCCESS if process.returncode == 0 else ToolStatus.ERROR
+                )
+
+            except asyncio.TimeoutError:
+                # 超时处理
+                try:
+                    process.kill()
+                    await process.wait()
+                except Exception:
+                    pass
+                result_dict = {
+                    "returncode": -1,
+                    "stderr": f"Execution timed out after {timeout} seconds.",
+                }
+                status = ToolStatus.ERROR
+
         except Exception as e:
             result_dict = {
                 "returncode": -1,
                 "stderr": f"Execution failed: {e}",
             }
             status = ToolStatus.ERROR
+
+        output = Template(self.code_output_template).render(output=result_dict)
+        return ToolResult(status=status, content=output)
+
+    async def _run_code_streaming(
+        self, code: str, context: ToolCallContext, timeout: int = 600
+    ) -> ToolResult:
+        """流式执行代码，实时输出结果"""
+        status: ToolStatus = ToolStatus.SUCCESS
+
+        try:
+            # 使用 asyncio.create_subprocess_shell 异步执行
+            process = await asyncio.create_subprocess_shell(
+                code,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                shell=True,
+            )
+
+            # 创建任务来同时读取 stdout 和 stderr
+            async def read_stream(stream, is_stderr=False):
+                chunks = []
+                try:
+                    while True:
+                        chunk = await stream.read(4096)
+                        if not chunk:
+                            break
+                        decoded = chunk.decode("utf-8", errors="replace")
+                        chunks.append(decoded)
+
+                        # 实时发送输出（如果有通信器）
+                        if (
+                            hasattr(context, "agent")
+                            and context.agent
+                            and hasattr(context.agent, "communicator")
+                        ):
+                            try:
+                                await context.agent.communicator.send_progress_update(
+                                    message=f"{'STDERR' if is_stderr else 'STDOUT'}: {decoded[:100]}...",
+                                    subscription=context.session_id,
+                                )
+                            except:
+                                pass
+
+                except Exception as e:
+                    logger.error(f"Error reading stream: {e}")
+                return "".join(chunks)
+
+            # 并行读取 stdout 和 stderr
+            stdout_task = asyncio.create_task(read_stream(process.stdout, False))
+            stderr_task = asyncio.create_task(read_stream(process.stderr, True))
+
+            try:
+                # 等待进程完成，带超时
+                await asyncio.wait_for(process.wait(), timeout=timeout)
+
+                # 获取输出
+                stdout_result = await stdout_task
+                stderr_result = await stderr_task
+
+                result_dict = {
+                    "returncode": process.returncode,
+                    "stdout": stdout_result,
+                    "stderr": stderr_result,
+                }
+                status = (
+                    ToolStatus.SUCCESS if process.returncode == 0 else ToolStatus.ERROR
+                )
+
+            except asyncio.TimeoutError:
+                # 超时处理
+                try:
+                    process.kill()
+                    await process.wait()
+                except Exception:
+                    pass
+
+                # 取消读取任务
+                stdout_task.cancel()
+                stderr_task.cancel()
+
+                result_dict = {
+                    "returncode": -1,
+                    "stderr": f"Execution timed out after {timeout} seconds.",
+                }
+                status = ToolStatus.ERROR
+
+        except Exception as e:
+            result_dict = {
+                "returncode": -1,
+                "stderr": f"Execution failed: {e}",
+            }
+            status = ToolStatus.ERROR
+
         output = Template(self.code_output_template).render(output=result_dict)
         return ToolResult(status=status, content=output)
