@@ -21,11 +21,10 @@ export interface Agent extends SessionAgent {
 }
 
 export const useAgentStore = defineStore('agent', () => {
-  // 当前 session 的 sessionId（需要外部传入或从 chatStore 获取）
   const sessionId = ref<string>('')
 
   const agents = ref<Agent[]>([])
-  const agentConfigs = ref<Map<string, AgentConfig>>(new Map()) // 使用Map缓存配置
+  const agentConfigs = ref<Map<string, AgentConfig>>(new Map())
   const selectedAgentId = ref<string>('')
   const loading = ref(false)
   const error = ref<string>('')
@@ -33,7 +32,6 @@ export const useAgentStore = defineStore('agent', () => {
   const selectedAgent = ref<Agent | null>(null)
   const selectedAgentConfig = ref<AgentConfig | null>(null)
 
-  // 当前选中的 agent 信息（从 chat.ts 移过来的）
   const currentAgentId = ref('main_agent')
   const currentAgentName = ref('Assistant')
 
@@ -41,10 +39,10 @@ export const useAgentStore = defineStore('agent', () => {
     sessionId.value = id
   }
 
-  const fetchAgents = async (sessionId?: string, isConnected?: boolean) => {
+  const fetchAgents = async (sessionId?: string) => {
     loading.value = true
     error.value = ''
-  
+
     try {
       if (!sessionId) {
         // 如果没有提供sessionId，清空agents
@@ -52,12 +50,11 @@ export const useAgentStore = defineStore('agent', () => {
         return
       }
 
-      const originalStatusMap = new Map(agents.value.map((agent) => [agent.agent_id, agent.status]))
       const sessionAgents = await sessionApi.getSessionAgents(sessionId)
 
       agents.value = sessionAgents.map((agent) => ({
         ...agent,
-        status: originalStatusMap.get(agent.agent_id) || (isConnected ? 'idle' : 'disconnected'),
+        status: agent.status,
         type: agent.type || 'assistant',
       }))
 
