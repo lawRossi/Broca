@@ -62,6 +62,8 @@ class Agent:
         self.message_queue: asyncio.Queue = asyncio.Queue(3)
         self.error_handler = ErrorHandler()
 
+        self._abort_task: Optional[asyncio.Task] = None
+
         asyncio.create_task(self.load_stats(session_manager))
 
     async def load_stats(self, session_manager: SessionManager) -> None:
@@ -252,6 +254,9 @@ class Agent:
         Returns:
             ExecutionResult: Result of the execution with status and details
         """
+        # Store the current execution task for potential cancellation
+        self._abort_task = asyncio.current_task()
+
         try:
             return await self.execution_engine.execute(message, max_steps, from_agent)
 
@@ -266,6 +271,7 @@ class Agent:
             # Clean up
             if not self.config.save_history:
                 await self.reset()
+            self._abort_task = None
 
     async def _handle_task(self, message: Message) -> None:
         """Handle task assignment from another agent"""
@@ -298,10 +304,8 @@ class Agent:
 
     async def reset(self):
         """Reset agent state"""
-        super().reset()
         self.execution_engine.reset()
         await self.permission_manager.reset()
-
         self.turn_id = None
 
     async def subscribe(self, subscription: str):
@@ -339,6 +343,14 @@ class Agent:
         """
         logger.info("Aborting agent execution")
         self.execution_engine.abort()
+        if self._abort_task and not self._abort_task.done():
+            logger.info("Cancelling execution task...")
+            try:
+                self._abort_task.cancel()
+            except Exception as e:
+                logger.error(f"Failed to cancel execution task: {e}")
+            finally:
+                self._abort_task = None
 
     async def _on_command(self, message: Message):
         """
