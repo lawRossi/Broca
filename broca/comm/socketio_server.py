@@ -4,10 +4,12 @@ import json
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional, Set
 
-from loguru import logger
 from socketio import AsyncServer
 
+from broca.logging_config import get_logger
 from broca.session.models import Message, MessageProtocol, MessageRole, MessageType
+
+logger = get_logger(__name__)
 
 
 @dataclass

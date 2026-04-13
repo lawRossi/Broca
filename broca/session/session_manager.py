@@ -11,12 +11,11 @@ import uuid
 from typing import Any, Dict, List, Optional
 
 from litellm import Message as LLMMessage
-from loguru import logger
 
+from broca.logging_config import get_logger
 from broca.tools.tool import ToolResult
-
-from .models import Message, MessageRole, MessageType
-from .service import (
+from broca.session.models import Message, MessageRole, MessageType
+from broca.session.service import (
     AgentConfigService,
     AgentService,
     MessageService,
@@ -29,8 +28,7 @@ from .service import (
     get_turn_service,
 )
 
-logger.remove()
-logger.add("db.log", level="DEBUG")
+logger = get_logger(__name__)
 
 
 class SessionManager:

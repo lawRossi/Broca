@@ -8,11 +8,12 @@ import json
 from datetime import datetime
 from typing import Any, Dict, Optional
 
-from loguru import logger
-
+from broca.logging_config import get_logger
 from broca.scheduler import Scheduler
 from broca.session.models import JobType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+
+logger = get_logger(__name__)
 
 
 class CronTool(Tool):

@@ -10,7 +10,9 @@ import argparse
 import asyncio
 from typing import Optional
 
-from loguru import logger
+from broca.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 from .tui_app import BrocaTUIApp
 

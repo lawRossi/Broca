@@ -6,7 +6,10 @@ from typing import AsyncGenerator
 
 from litellm import Message as LLMMessage
 from litellm import acompletion
-from loguru import logger
+
+from broca.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class FirstChunkTimeoutError(Exception):

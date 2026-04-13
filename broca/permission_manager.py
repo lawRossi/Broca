@@ -12,9 +12,10 @@ import asyncio
 import uuid
 from typing import Any, Dict, Optional
 
-from loguru import logger
-
+from broca.logging_config import get_logger
 from broca.session import Message, MessageRole, MessageType, SessionManager
+
+logger = get_logger(__name__)
 
 
 class PermissionManager:

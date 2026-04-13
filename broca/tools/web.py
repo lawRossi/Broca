@@ -1,7 +1,9 @@
-from loguru import logger
 from tavily import TavilyClient
 
+from broca.logging_config import get_logger
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+
+logger = get_logger(__name__)
 
 
 class WebFetch(Tool):

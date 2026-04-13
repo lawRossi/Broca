@@ -14,10 +14,13 @@ from contextlib import asynccontextmanager
 from enum import Enum
 from typing import Any, Callable, Dict, Optional
 
-from loguru import logger
+
 from openai import RateLimitError
 
+from broca.logging_config import get_logger
 from broca.session import MessageRole, MessageType, SessionManager
+
+logger = get_logger(__name__)
 
 
 class ErrorType(str, Enum):

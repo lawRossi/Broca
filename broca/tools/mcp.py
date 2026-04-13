@@ -2,12 +2,14 @@ import asyncio
 from contextlib import AsyncExitStack
 
 import httpx
-from loguru import logger
 from mcp import ClientSession, StdioServerParameters, types
 from mcp.client.stdio import stdio_client
 from mcp.client.streamable_http import streamable_http_client
 
+from broca.logging_config import get_logger
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+
+logger = get_logger(__name__)
 
 
 class MCPTool(Tool):

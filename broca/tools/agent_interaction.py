@@ -2,11 +2,12 @@ import asyncio
 import uuid
 from typing import Dict, Optional
 
-from loguru import logger
-
 from broca.execution_engine import ExecutionStatus
+from broca.logging_config import get_logger
 from broca.session import Message, MessageProtocol, MessageRole, MessageType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+
+logger = get_logger(__name__)
 
 
 class AskUserToolManager:

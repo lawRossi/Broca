@@ -3,11 +3,13 @@ import platform
 from pathlib import Path
 
 import yaml
-from loguru import logger
 
 from broca.agent import Agent, AgentConfig
 from broca.llm import LLMClient
+from broca.logging_config import get_logger
 from broca.session import SessionManager
+
+logger = get_logger(__name__)
 
 
 class AgentFactory:
