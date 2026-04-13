@@ -2,7 +2,10 @@ import os
 from pathlib import Path
 
 import yaml
-from loguru import logger
+
+from broca.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class SkillManager:

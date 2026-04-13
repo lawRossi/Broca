@@ -9,12 +9,13 @@ import uuid
 from datetime import datetime
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
-from loguru import logger
 from sqlalchemy import desc, func, select
 from sqlmodel import SQLModel, and_
 
-from .database import db_manager
-from .models import (
+from broca.logging_config import get_logger
+
+from broca.session.database import db_manager
+from broca.session.models import (
     Agent,
     AgentConfig,
     JobExecution,
@@ -33,8 +34,7 @@ from .models import (
     Turn,
 )
 
-logger.remove()
-logger.add("db.log", level="DEBUG")
+logger = get_logger(__name__)
 
 # 泛型类型变量
 T = TypeVar("T", bound=SQLModel)

@@ -1,7 +1,9 @@
 import json
 from enum import Enum
 
-from loguru import logger
+from broca.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 class ToolStatus(str, Enum):

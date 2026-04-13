@@ -16,11 +16,11 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from litellm import Message as LLMMessage
-from loguru import logger
 
 from broca.context import Context
 from broca.error_handler import AgentError, ErrorHandler, ErrorType
 from broca.llm import LLMClient
+from broca.logging_config import get_logger
 from broca.session import (
     Message,
     MessageRole,
@@ -29,6 +29,8 @@ from broca.session import (
     generate_message_id,
 )
 from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
+
+logger = get_logger(__name__)
 
 
 class ExecutionStatus(str, Enum):

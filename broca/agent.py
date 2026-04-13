@@ -8,22 +8,18 @@ import asyncio
 import uuid
 from typing import Any, Dict, Optional
 
-from loguru import logger
-
 from broca.agent_configs import AgentConfig
 from broca.comm.agent_communicator import AgentCommunicator
-from broca.configs import get_configs
 from broca.context import Context
 from broca.error_handler import ErrorHandler
 from broca.execution_engine import ExecutionEngine, ExecutionResult, ExecutionStatus
 from broca.llm import LLMClient
+from broca.logging_config import get_logger
 from broca.permission_manager import PermissionManager
 from broca.session import Message, MessageRole, MessageType, SessionManager
 from broca.tools.tool_manager import ToolManager
 
-configs = get_configs()
-logger.remove()
-logger.add(configs.log_file, level=configs.log_level)
+logger = get_logger(__name__)
 
 
 class Agent:

@@ -6,13 +6,11 @@ replacing command-line interaction with multi-endpoint communication.
 """
 
 import asyncio
-from typing import Optional
 
-from loguru import logger
+from broca.comm.socketio_client import SocketIOClient
+from broca.logging_config import get_logger
 
-from broca.session.models import Message, MessageProtocol, MessageRole, MessageType
-
-from .socketio_client import SocketIOClient
+logger = get_logger(__name__)
 
 
 class AgentCommunicator(SocketIOClient):

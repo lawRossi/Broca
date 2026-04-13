@@ -2,10 +2,12 @@ import asyncio
 import re
 
 from jinja2 import Template
-from loguru import logger
 from tree_sitter import Language, Parser
 
+from broca.logging_config import get_logger
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+
+logger = get_logger(__name__)
 
 
 class ExecuteCode(Tool):

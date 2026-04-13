@@ -7,7 +7,9 @@ Contains the main BrocaTUIApp class and related functionality.
 import asyncio
 from typing import Any, Callable, Dict, Optional
 
-from loguru import logger
+from broca.logging_config import get_logger
+
+logger = get_logger(__name__)
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Vertical

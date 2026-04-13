@@ -4,12 +4,13 @@ Broca CLI - Command Line Interface Entry Point
 
 import argparse
 import asyncio
-import os
 import subprocess
 import sys
 from pathlib import Path
 
-from loguru import logger
+from broca.logging_config import get_logger
+
+logger = get_logger(__name__)
 
 
 def get_version():
@@ -137,6 +138,7 @@ def run_all_services(
 ):
     """Start both frontend and backend services"""
     import time
+
     frontend_process = None
     backend_process = None
 
