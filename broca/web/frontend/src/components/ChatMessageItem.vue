@@ -164,11 +164,16 @@ const getContent = (message: Message) => {
   if (typeof content === 'string') {
     try {
       const parsed = JSON.parse(content)
-      // 如果解析成功且包含 content 字段，则返回该字段
       if (parsed && typeof parsed === 'object' && parsed.content !== undefined) {
-        return parsed.content
+        // 如果是数组
+        if (Array.isArray(parsed.content)) {
+          //获取type为text的部份
+          const textParts = parsed.content.filter((part: any) => part.type === 'text')
+          return textParts.map((part: any) => part.text).join('')
+        } else {
+          return parsed.content
+        }
       }
-      // 否则返回原始解析结果（转换为字符串）
       return JSON.stringify(parsed, null, 2)
     } catch (e) {
       // 如果不是有效的 JSON，返回原始字符串
