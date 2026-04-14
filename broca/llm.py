@@ -1,4 +1,5 @@
 import asyncio
+import copy
 import json
 import warnings
 from pathlib import Path
@@ -8,12 +9,14 @@ from litellm import Message as LLMMessage
 from litellm import acompletion
 
 from broca.logging_config import get_logger
+from broca.session.models import Message, MessageType
 
 logger = get_logger(__name__)
 
 
 class FirstChunkTimeoutError(Exception):
     pass
+
 
 warnings.filterwarnings("ignore")
 
@@ -30,13 +33,93 @@ class LLMClient:
         with open(config_file) as f:
             self.config = json.load(f)
 
+    def parse_message(self, provider: str, model: str, message: Message) -> dict:
+        """
+        将内部 Message 对象解析为 LLM 需要的消息格式
+
+        Args:
+            provider: LLM 提供商
+            model: LLM 模型
+            message: 内部消息对象
+
+        Returns:
+            LLM 消息格式的字典，包含 role 和 content 字段
+        """
+
+        if provider not in self.config:
+            raise ValueError(f"Unknown provider: {provider}")
+        if model not in self.config[provider]:
+            raise ValueError(f"Unknown model: {model}")
+
+        modality = self.config[provider][model]["modality"]
+
+        if message.message_type == MessageType.USER_MESSAGE:
+            text_content = message.data.get("content", "")
+            image_content = []
+            audio_content = []
+            video_content = []
+            files = message.data.get("files")
+            if files:
+                file_info_parts = []
+                for file in files:
+                    file_url = file.get("url", "")
+                    file_type = file.get("type", "")
+                    if file_type.startswith("image") and "image" in modality:
+                        image_part = {
+                            "type": "image_url",
+                            "image_url": {"url": file_url},
+                        }
+                        image_part.update(modality["image"])
+                        image_content.append(image_part)
+                    elif file_type.startswith("video") and "video" in modality:
+                        video_part = {
+                            "type": "video_url",
+                            "video_url": {"url": file_url},
+                        }
+                        video_part.update(modality["video"])
+                        video_content.append(video_part)
+                    elif file_type.startswith("audio") and "audio" in modality:
+                        pass
+                    else:
+                        file_info = f"文件类型：{file_type}\n文件链接：{file_url}"
+                        file_info_parts.append(file_info)
+
+                if file_info_parts:
+                    files_section = "\n\n[附件文件]:\n" + "\n".join(file_info_parts)
+                    text_content = text_content + files_section
+        elif message.message_type == MessageType.TASK_START:
+            text_content = message.data.get("task_description")
+        elif message.message_type == MessageType.TASK_COMPLETE:
+            text_content = message.data.get("result")
+        elif message.message_type == MessageType.TASK_ERROR:
+            text_content = message.data.get("error_message")
+        else:
+            return {}
+        if image_content:
+            content = image_content
+        elif video_content:
+            content = video_content
+        elif audio_content:
+            content = audio_content
+        else:
+            content = text_content
+        if isinstance(content, list):
+            content.append({"type": "text", "text": text_content})
+        return {"role": "user", "content": content}
+
     async def get_response(self, provider, model, messages, tools=None) -> LLMMessage:
+        if provider not in self.config:
+            raise ValueError(f"Unknown provider: {provider}")
+        if model not in self.config[provider]:
+            raise ValueError(f"Unknown model: {model}")
+        args = copy.deepcopy(self.config[provider][model])
+        del args["modality"]
         response = await acompletion(
             base_url=self.config[provider]["base_url"],
             api_key=self.config[provider]["api_key"],
             messages=messages,
             tools=tools,
-            **self.config[provider][model],
+            **args,
         )
         logger.debug(
             f"LLM call - input tokens: {response.usage.prompt_tokens}, output tokens: {response.usage.completion_tokens}"

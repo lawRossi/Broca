@@ -90,10 +90,10 @@ class ExecutionEngine:
         config: Any,
         communicator: Any,
         session_manager: SessionManager,
-        step_max_errors = 3,
-        llm_retry_delay = 3,
-        tool_call_timeout = 600,
-        assign_task_timeout = 1800 
+        step_max_errors=3,
+        llm_retry_delay=3,
+        tool_call_timeout=600,
+        assign_task_timeout=1800,
     ):
         """
         Initialize the execution engine
@@ -290,10 +290,14 @@ class ExecutionEngine:
                     async with self.error_handler.handle_tool_execution(
                         tool_name=tool_name, context="tool_call_processing"
                     ):
-                        timeout = self.assign_task_timeout if tool_name == "assign_task" else self.tool_call_timeout
+                        timeout = (
+                            self.assign_task_timeout
+                            if tool_name == "assign_task"
+                            else self.tool_call_timeout
+                        )
                         tool_result = await asyncio.wait_for(
                             self.tool_mapping[tool_name].execute(arguments, context),
-                            timeout=timeout
+                            timeout=timeout,
                         )
                 except AgentError as e:
                     logger.error(
@@ -488,7 +492,9 @@ class ExecutionEngine:
         Args:
             message: The message to process
         """
-        user_message = self._parse_message(message)
+        user_message = self.llm_client.parse_message(
+            provider=self.config.provider, model=self.config.model, message=message
+        )
         if not user_message:
             return False
 
@@ -531,42 +537,6 @@ class ExecutionEngine:
         except Exception as e:
             logger.error(f"Error in _setup_execution_context: {e}")
             return False
-
-    def _parse_message(self, message: Message) -> dict:
-        """
-        将内部 Message 对象解析为 LLM 需要的消息格式
-
-        Args:
-            message: 内部消息对象
-
-        Returns:
-            LLM 消息格式的字典，包含 role 和 content 字段
-            对于 tool_call 消息，还包含 tool_calls 字段
-        """
-        if message.message_type == MessageType.USER_MESSAGE:
-            content = message.data.get("content", "")
-            files = message.data.get("files")
-            if files:
-                file_info_parts = []
-                for file in files:
-                    file_url = file.get("url", "")
-                    file_type = file.get("type", "")
-                    file_info = f"文件类型：{file_type}\n文件链接：{file_url}"
-                    file_info_parts.append(file_info)
-
-                if file_info_parts:
-                    files_section = "\n\n[附件文件]:\n" + "\n".join(file_info_parts)
-                    content = content + files_section
-        elif message.message_type == MessageType.TASK_START:
-            content = message.data.get("task_description")
-        elif message.message_type == MessageType.TASK_COMPLETE:
-            content = message.data.get("result")
-        elif message.message_type == MessageType.TASK_ERROR:
-            content = message.data.get("error_message")
-        else:
-            return {}
-
-        return {"role": "user", "content": content}
 
     async def _ensure_session(self, workspace: str | None = None):
         """Ensure session exists, create if not"""

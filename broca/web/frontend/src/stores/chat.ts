@@ -560,9 +560,6 @@ export const useChatStore = defineStore('chat', () => {
     await socketStore.sendAbort({
       receiverId: targetAgentId
     })
-
-    // // 更新agent状态为idle
-    // agentStore.updateAgentStatus(targetAgentId, 'idle')
   }
 
   const respondPermission = async (granted: boolean) => {
