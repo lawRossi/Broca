@@ -91,6 +91,11 @@ const handleProviderChange = (provider: string) => {
   loadLLMModels(provider)
 }
 
+// 处理模型变化
+const handleModelChange = (model: string) => {
+  emit('update:formData', localFormData.value)
+}
+
 // 组件挂载时加载提供商列表
 onMounted(() => {
   loadLLMProviders()
@@ -185,6 +190,7 @@ const handleCreate = () => {
           clearable
           class="w-full"
           :loading="loadingModels"
+          @change="handleModelChange"
         >
           <el-option v-for="model in availableModels" :key="model.id" :label="model.name" :value="model.id" />
         </el-select>
