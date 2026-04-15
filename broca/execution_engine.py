@@ -152,6 +152,7 @@ class ExecutionEngine:
                     break
             except AgentError as e:
                 errors += 1
+                logger.error(f"LLM call failed with error: {e}")
                 if errors == self.step_max_errors:
                     logger.error(f"Too many errors ({e.error_type}), aborting...")
                     return ExecutionStatus.ERROR
