@@ -12,7 +12,7 @@ from broca.session.service import (
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
-from app.schemas.schemas import ApiResponse, CreateSessionRequest
+from app.schemas.schemas import ApiResponse, CreateSessionRequest, UpdateSessionRequest
 
 router = APIRouter()
 
@@ -157,6 +157,8 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
             response_agents.append(response_agent)
         return ApiResponse.success(response_agents)
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logger.error(f"Error getting session agents: {e}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
@@ -210,6 +212,32 @@ async def delete_sessions(request: dict) -> ApiResponse:
         raise
     except Exception as e:
         logger.error(f"Error batch deleting sessions: {e}")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.put("/{session_id}", response_model=ApiResponse)
+async def update_session(session_id: str, request: UpdateSessionRequest) -> ApiResponse:
+    """更新会话信息（如描述）"""
+    try:
+        session_service = get_session_service()
+        session = await session_service.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # 构建更新数据
+        update_data = {}
+        if request.description is not None:
+            update_data["description"] = request.description
+
+        if update_data:
+            await session_service.update(session_id, **update_data)
+            logger.info(f"Session updated: {session_id}, updates: {update_data}")
+
+        return ApiResponse.success({"session_id": session_id, **update_data}, msg="Session updated successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating session: {e}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
