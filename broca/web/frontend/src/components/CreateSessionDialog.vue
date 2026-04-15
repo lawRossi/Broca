@@ -21,6 +21,21 @@ interface Emits {
 const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
+const localFormData = ref({ ...props.formData })
+
+watch(
+  () => props.formData,
+  (newVal) => {
+    localFormData.value = { ...newVal }
+  },
+  { deep: true }
+)
+
+const updateFormData = (updates: Partial<CreateSessionParams>) => {
+  localFormData.value = { ...localFormData.value, ...updates }
+  emit('update:formData', localFormData.value)
+}
+
 // 移动端检测
 const isMobile = ref(false)
 
@@ -72,13 +87,7 @@ const loadLLMModels = async (provider: string) => {
 
 // 处理提供商变化
 const handleProviderChange = (provider: string) => {
-  // 清空已选择的模型
-  emit('update:formData', {
-    ...props.formData,
-    model: undefined,
-  })
-
-  // 加载新提供商的模型
+  updateFormData({ model: undefined })
   loadLLMModels(provider)
 }
 
@@ -87,8 +96,8 @@ onMounted(() => {
   loadLLMProviders()
 
   // 如果已经有选中的提供商，加载对应的模型
-  if (props.formData.provider) {
-    loadLLMModels(props.formData.provider)
+  if (localFormData.value.provider) {
+    loadLLMModels(localFormData.value.provider)
   }
 
   checkIsMobile()
@@ -99,9 +108,9 @@ onUnmounted(() => {
   window.removeEventListener('resize', checkIsMobile)
 })
 
-// 监听formData.provider变化
+// 监听localFormData.provider变化
 watch(
-  () => props.formData.provider,
+  () => localFormData.value.provider,
   (newProvider, oldProvider) => {
     if (newProvider !== oldProvider) {
       loadLLMModels(newProvider || '')
@@ -111,7 +120,7 @@ watch(
 
 // 过滤工作空间建议
 const filteredWorkspaceSuggestions = computed(() => {
-  const query = props.formData.workspace?.toLowerCase().trim() || ''
+  const query = localFormData.value.workspace?.toLowerCase().trim() || ''
 
   if (!query) {
     return props.workspaceSuggestions
@@ -145,14 +154,14 @@ const handleCreate = () => {
     :close-on-click-modal="false"
     @update:model-value="handleClose"
   >
-    <el-form ref="createFormRef" :model="formData" label-position="top">
+    <el-form ref="createFormRef" :model="localFormData" label-position="top">
       <el-form-item label="描述（可选）">
-        <el-input v-model="formData.description" placeholder="输入会话描述..." clearable />
+        <el-input v-model="localFormData.description" placeholder="输入会话描述..." clearable />
       </el-form-item>
 
       <el-form-item label="LLM 提供商（可选）">
         <el-select
-          v-model="formData.provider"
+          v-model="localFormData.provider"
           placeholder="选择 LLM 提供商"
           clearable
           class="w-full"
@@ -168,11 +177,11 @@ const handleCreate = () => {
         <div class="text-xs text-gray-500 mt-1">选择用于此会话的 LLM 提供商。留空则使用默认配置。</div>
       </el-form-item>
 
-      <el-form-item label="LLM 模型（可选）" :disabled="!formData.provider">
+      <el-form-item label="LLM 模型（可选）" :disabled="!localFormData.provider">
         <el-select
-          v-model="formData.model"
-          :disabled="!formData.provider"
-          :placeholder="formData.provider ? '选择 LLM 模型' : '请先选择提供商'"
+          v-model="localFormData.model"
+          :disabled="!localFormData.provider"
+          :placeholder="localFormData.provider ? '选择 LLM 模型' : '请先选择提供商'"
           clearable
           class="w-full"
           :loading="loadingModels"
@@ -186,13 +195,13 @@ const handleCreate = () => {
         <div class="flex gap-2">
           <el-autocomplete
             ref="workspaceInputRef"
-            v-model="formData.workspace"
+            v-model="localFormData.workspace"
             :suggestions="filteredWorkspaceSuggestions"
             :trigger-on-focus="false"
             clearable
             placeholder="输入或选择工作目录路径"
             class="flex-1"
-            @select="(suggestion: string) => (formData.workspace = suggestion)"
+            @select="(suggestion: string) => (localFormData.workspace = suggestion)"
           >
             <template #default="{ item }">
               <div class="flex items-center justify-between w-full">
