@@ -11,7 +11,6 @@ import type { Message, MessageType, MessageRole } from './types'
 // 导出共享的类型
 export type { Message, MessageType, MessageRole }
 
-
 export interface BrocaConnectionOptions {
   serverUrl: string
   clientType: string
@@ -29,7 +28,7 @@ export class BrocaSocketClient {
   private isConnected = false
 
   private options: BrocaConnectionOptions
-  
+
   constructor(options: BrocaConnectionOptions) {
     this.options = options
   }
@@ -51,7 +50,7 @@ export class BrocaSocketClient {
   private emit(event: BrocaEventName, payload?: any) {
     const handlers = this.handlers.get(event)
     if (handlers) {
-      handlers.forEach(handler => handler(payload))
+      handlers.forEach((handler) => handler(payload))
     }
   }
 
@@ -97,7 +96,7 @@ export class BrocaSocketClient {
       try {
         const message = this.parseMessage(data)
         this.emit('message', message)
-        
+
         // Dispatch by message_type (mirroring broca.comm.socketio_client.py)
         if (message.message_type) {
           this.emit(message.message_type, message)

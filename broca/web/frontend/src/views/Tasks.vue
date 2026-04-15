@@ -39,14 +39,14 @@ const statusOptions = computed(() => [
   { label: '待处理', value: TaskStatusEnum.PENDING },
   { label: '进行中', value: TaskStatusEnum.IN_PROGRESS },
   { label: '已阻塞', value: TaskStatusEnum.BLOCKED },
-  { label: '已完成', value: TaskStatusEnum.COMPLETED }
+  { label: '已完成', value: TaskStatusEnum.COMPLETED },
 ])
 
 const priorityOptions = computed(() => [
   { label: '全部优先级', value: '' },
   { label: '低', value: TaskPriorityEnum.LOW },
   { label: '中', value: TaskPriorityEnum.MEDIUM },
-  { label: '高', value: TaskPriorityEnum.HIGH }
+  { label: '高', value: TaskPriorityEnum.HIGH },
 ])
 
 // 计算属性：是否已登录
@@ -143,7 +143,7 @@ const handleCreateTask = async () => {
           return '任务名称不能为空'
         }
         return true
-      }
+      },
     })
 
     const name = (result as any).value.trim()
@@ -157,13 +157,13 @@ const handleCreateTask = async () => {
           return '任务描述不能为空'
         }
         return true
-      }
+      },
     })
 
     await taskStore.createTask({
       name,
       description: (description as any).value.trim(),
-      session_id: sessionFilter.value || undefined
+      session_id: sessionFilter.value || undefined,
     })
   } catch (error: any) {
     if (error !== 'cancel') {
@@ -186,7 +186,7 @@ watch(
 watch(
   () => route.query.session_id,
   (newSessionId) => {
-    taskStore.setSessionFilter(newSessionId as string || '')
+    taskStore.setSessionFilter((newSessionId as string) || '')
   },
   { immediate: true }
 )
@@ -194,7 +194,7 @@ watch(
 watch(
   () => route.query.parent_id,
   (newParentId) => {
-    taskStore.setParentFilter(newParentId as string || '')
+    taskStore.setParentFilter((newParentId as string) || '')
   },
   { immediate: true }
 )
@@ -206,19 +206,19 @@ onMounted(async () => {
     router.push('/auth')
     return
   }
-  
+
   // 从路由参数中获取 session_id 和 parent_id
   const sessionIdFromRoute = route.query.session_id as string
   const parentIdFromRoute = route.query.parent_id as string
-  
+
   if (sessionIdFromRoute) {
     taskStore.setSessionFilter(sessionIdFromRoute)
   }
-  
+
   if (parentIdFromRoute) {
     taskStore.setParentFilter(parentIdFromRoute)
   }
-  
+
   await taskStore.fetchTasks()
 })
 </script>
@@ -233,28 +233,12 @@ onMounted(async () => {
             <el-icon class="text-blue-600 text-xl">
               <Document />
             </el-icon>
-            <h1 class="text-xl font-bold text-gray-900">
-              任务管理
-            </h1>
+            <h1 class="text-xl font-bold text-gray-900">任务管理</h1>
           </div>
           <div class="flex items-center gap-4">
-            <div class="text-sm text-gray-500">
-              共 {{ total }} 个任务
-            </div>
-            <el-button
-              type="primary"
-              :icon="Plus"
-              @click="handleCreateTask"
-            >
-              新建任务
-            </el-button>
-            <el-button
-              :loading="loading"
-              :icon="Refresh"
-              @click="taskStore.refresh()"
-            >
-              刷新
-            </el-button>
+            <div class="text-sm text-gray-500">共 {{ total }} 个任务</div>
+            <el-button type="primary" :icon="Plus" @click="handleCreateTask"> 新建任务 </el-button>
+            <el-button :loading="loading" :icon="Refresh" @click="taskStore.refresh()"> 刷新 </el-button>
           </div>
         </div>
       </div>
@@ -275,7 +259,13 @@ onMounted(async () => {
             @keyup.enter="handleSearch(searchKeyword)"
           >
             <template #prefix>
-              <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" /></svg></el-icon>
+              <el-icon
+                ><svg viewBox="0 0 24 24" width="16" height="16">
+                  <path
+                    fill="currentColor"
+                    d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                  /></svg
+              ></el-icon>
             </template>
           </el-input>
 
@@ -326,24 +316,12 @@ onMounted(async () => {
           </el-input>
 
           <!-- Session 筛选提示 -->
-          <el-tag
-            v-if="sessionFilter"
-            type="info"
-            closable
-            class="ml-2"
-            @close="clearSessionFilter"
-          >
+          <el-tag v-if="sessionFilter" type="info" closable class="ml-2" @close="clearSessionFilter">
             会话: {{ sessionFilter.slice(0, 8) }}...
           </el-tag>
 
           <!-- Parent 筛选提示 -->
-          <el-tag
-            v-if="parentFilter"
-            type="info"
-            closable
-            class="ml-2"
-            @close="clearParentFilter"
-          >
+          <el-tag v-if="parentFilter" type="info" closable class="ml-2" @close="clearParentFilter">
             父任务: {{ parentFilter.slice(0, 8) }}...
           </el-tag>
         </div>
@@ -363,10 +341,7 @@ onMounted(async () => {
       />
 
       <!-- 分页器 -->
-      <div
-        v-if="!loading && total > 0"
-        class="mt-4 bg-white rounded-lg shadow-sm border p-4"
-      >
+      <div v-if="!loading && total > 0" class="mt-4 bg-white rounded-lg shadow-sm border p-4">
         <el-pagination
           :current-page="currentPage"
           :page-size="pageSize"
@@ -381,11 +356,7 @@ onMounted(async () => {
     </div>
 
     <!-- 任务详情抽屉 -->
-    <TaskDetail
-      :visible="detailDrawerVisible"
-      :task-id="selectedTaskId"
-      @update:visible="taskStore.closeDetail()"
-    />
+    <TaskDetail :visible="detailDrawerVisible" :task-id="selectedTaskId" @update:visible="taskStore.closeDetail()" />
   </div>
 </template>
 
@@ -417,20 +388,20 @@ onMounted(async () => {
   .el-input {
     width: 100% !important;
   }
-  
+
   /* 筛选区域 */
   .flex.flex-wrap.gap-4.items-center .el-select {
     flex: 1 1 auto;
     min-width: 120px;
   }
-  
+
   /* 批量操作栏 */
   .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 {
     bottom: 20px;
     padding: 8px 12px;
     max-width: 95% !important;
   }
-  
+
   .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 .text-sm {
     font-size: 0.75rem;
   }

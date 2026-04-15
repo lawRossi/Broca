@@ -84,7 +84,9 @@ export const useTaskStore = defineStore('task', () => {
 
       tasks.value = response.tasks
       total.value = response.total
-      currentPage.value = params?.skip ? Math.floor(params.skip / (params.limit || pageSize.value)) + 1 : currentPage.value
+      currentPage.value = params?.skip
+        ? Math.floor(params.skip / (params.limit || pageSize.value)) + 1
+        : currentPage.value
     } catch (error: any) {
       console.error('获取任务列表失败:', error)
       ElMessage.error('加载任务列表失败')
@@ -145,15 +147,11 @@ export const useTaskStore = defineStore('task', () => {
 
   const deleteTask = async (taskId: string) => {
     try {
-      await ElMessageBox.confirm(
-        '确定要删除这个任务吗？此操作不可恢复。',
-        '确认删除',
-        {
-          confirmButtonText: '确定删除',
-          cancelButtonText: '取消',
-          type: 'warning',
-        }
-      )
+      await ElMessageBox.confirm('确定要删除这个任务吗？此操作不可恢复。', '确认删除', {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
 
       await taskApi.deleteTask(taskId)
       ElMessage.success('任务已删除')

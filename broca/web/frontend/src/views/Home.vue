@@ -160,20 +160,14 @@ onMounted(async () => {
       <!-- 加载状态 -->
       <div v-if="loading" class="text-center py-12">
         <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-primary-600" />
-        <p class="mt-2 text-gray-600">
-          加载中...
-        </p>
+        <p class="mt-2 text-gray-600">加载中...</p>
       </div>
 
       <!-- 已登录但没有用户信息 - 显示添加表单 -->
       <div v-else-if="isLoggedIn && !userInfo" class="card">
         <div class="card-header">
-          <h2 class="text-2xl font-bold text-gray-900">
-            完善个人信息
-          </h2>
-          <p class="text-gray-600 mt-2">
-            请添加您的基本信息以完成设置
-          </p>
+          <h2 class="text-2xl font-bold text-gray-900">完善个人信息</h2>
+          <p class="text-gray-600 mt-2">请添加您的基本信息以完成设置</p>
         </div>
 
         <div class="card-body">
@@ -197,7 +191,7 @@ onMounted(async () => {
                   :src="addInfoForm.avatarPreview"
                   alt="头像预览"
                   class="w-16 h-16 rounded-full object-cover border-2 border-gray-200"
-                >
+                />
                 <button
                   type="button"
                   class="text-red-500 hover:text-red-700 text-sm underline"
@@ -217,7 +211,7 @@ onMounted(async () => {
                   class="hidden"
                   :disabled="addingInfo"
                   @change="handleFileSelect"
-                >
+                />
                 <button
                   type="button"
                   class="btn btn-outline btn-sm"
@@ -263,9 +257,7 @@ onMounted(async () => {
       <!-- 已登录且有用户信息 - 显示用户信息 -->
       <div v-else-if="isLoggedIn && userInfo" class="card">
         <div class="card-header">
-          <h2 class="text-2xl font-bold text-gray-900">
-            欢迎回来，{{ userInfo.name }}！
-          </h2>
+          <h2 class="text-2xl font-bold text-gray-900">欢迎回来，{{ userInfo.name }}！</h2>
         </div>
 
         <div class="card-body">
@@ -277,7 +269,7 @@ onMounted(async () => {
                 :src="userInfo.avatar"
                 alt="用户头像"
                 class="w-20 h-20 rounded-full object-cover border-2 border-gray-200"
-              >
+              />
               <div v-else class="w-20 h-20 rounded-full bg-gray-300 flex items-center justify-center">
                 <svg class="w-8 h-8 text-gray-600" fill="currentColor" viewBox="0 0 20 20">
                   <path
@@ -294,56 +286,43 @@ onMounted(async () => {
               <h3 class="text-xl font-semibold text-gray-900 mb-2">
                 {{ userInfo.name }}
               </h3>
-              <p class="text-gray-600">
-                用户 ID: {{ userInfo.id }}
-              </p>
+              <p class="text-gray-600">用户 ID: {{ userInfo.id }}</p>
             </div>
           </div>
 
           <!-- 功能导航 -->
           <div class="mt-8 grid grid-cols-1 sm:grid-cols-3 gap-4">
-            <router-link to="/sessions" class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all">
-              <div class="text-2xl mb-2">
-                💬
-              </div>
-              <h4 class="font-semibold text-gray-900">
-                Chat Sessions
-              </h4>
-              <p class="text-sm text-gray-600 mt-1">
-                Manage your chat sessions
-              </p>
+            <router-link
+              to="/sessions"
+              class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all"
+            >
+              <div class="text-2xl mb-2">💬</div>
+              <h4 class="font-semibold text-gray-900">Chat Sessions</h4>
+              <p class="text-sm text-gray-600 mt-1">Manage your chat sessions</p>
             </router-link>
 
-            <router-link to="/jobs" class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all">
-              <div class="text-2xl mb-2">
-                ⏰
-              </div>
-              <h4 class="font-semibold text-gray-900">
-                Scheduled Jobs
-              </h4>
-              <p class="text-sm text-gray-600 mt-1">
-                Manage scheduled tasks
-              </p>
+            <router-link
+              to="/jobs"
+              class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all"
+            >
+              <div class="text-2xl mb-2">⏰</div>
+              <h4 class="font-semibold text-gray-900">Scheduled Jobs</h4>
+              <p class="text-sm text-gray-600 mt-1">Manage scheduled tasks</p>
             </router-link>
 
-            <router-link to="/files" class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all">
-              <div class="text-2xl mb-2">
-                📁
-              </div>
-              <h4 class="font-semibold text-gray-900">
-                File Browser
-              </h4>
-              <p class="text-sm text-gray-600 mt-1">
-                Browse and manage files
-              </p>
+            <router-link
+              to="/files"
+              class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all"
+            >
+              <div class="text-2xl mb-2">📁</div>
+              <h4 class="font-semibold text-gray-900">File Browser</h4>
+              <p class="text-sm text-gray-600 mt-1">Browse and manage files</p>
             </router-link>
           </div>
 
           <!-- 退出登录按钮 -->
           <div class="mt-6 flex justify-end">
-            <button class="btn btn-outline" @click="handleLogout">
-              退出登录
-            </button>
+            <button class="btn btn-outline" @click="handleLogout">退出登录</button>
           </div>
         </div>
       </div>

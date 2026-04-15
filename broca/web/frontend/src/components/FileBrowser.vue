@@ -555,9 +555,7 @@ defineExpose({
         <el-icon class="is-loading text-2xl text-primary-500">
           <Refresh />
         </el-icon>
-        <p class="mt-2 text-gray-600">
-          Loading files...
-        </p>
+        <p class="mt-2 text-gray-600">Loading files...</p>
       </div>
 
       <div v-else-if="filteredFiles.length === 0" class="p-8 text-center">
@@ -576,21 +574,13 @@ defineExpose({
             <table class="w-full">
               <thead class="bg-gray-50 border-b">
                 <tr>
-                  <th class="text-left p-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Name
-                  </th>
-                  <th class="text-left p-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Size
-                  </th>
-                  <th class="text-left p-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Modified
-                  </th>
+                  <th class="text-left p-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Name</th>
+                  <th class="text-left p-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Size</th>
+                  <th class="text-left p-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Modified</th>
                   <th class="text-left p-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">
                     Permissions
                   </th>
-                  <th class="text-left p-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">
-                    Actions
-                  </th>
+                  <th class="text-left p-3 text-xs font-semibold text-gray-700 uppercase tracking-wider">Actions</th>
                 </tr>
               </thead>
               <tbody class="divide-y divide-gray-200">
@@ -697,18 +687,14 @@ defineExpose({
         <el-icon class="is-loading text-2xl text-primary-500">
           <Refresh />
         </el-icon>
-        <p class="mt-2 text-gray-600">
-          Loading preview...
-        </p>
+        <p class="mt-2 text-gray-600">Loading preview...</p>
       </div>
 
       <div v-else-if="previewContent === null || previewContent === ''" class="p-8 text-center">
         <el-icon class="text-3xl text-gray-400">
           <Document />
         </el-icon>
-        <p class="mt-2 text-gray-600">
-          Cannot preview this file
-        </p>
+        <p class="mt-2 text-gray-600">Cannot preview this file</p>
       </div>
 
       <div v-else>
@@ -762,12 +748,8 @@ defineExpose({
               </span>
             </div>
             <div class="flex items-center gap-2">
-              <el-button size="small" @click="cancelEditing">
-                Cancel
-              </el-button>
-              <el-button type="primary" size="small" :loading="saveLoading" @click="confirmSave">
-                Save
-              </el-button>
+              <el-button size="small" @click="cancelEditing"> Cancel </el-button>
+              <el-button type="primary" size="small" :loading="saveLoading" @click="confirmSave"> Save </el-button>
             </div>
           </div>
           <div class="bg-gray-900 rounded-lg overflow-auto max-h-[60vh] flex border border-gray-700">
@@ -812,16 +794,19 @@ defineExpose({
     </el-dialog>
 
     <!-- Save Confirmation Dialog -->
-    <el-dialog v-model="showSaveConfirm" title="Confirm Save" :width="isMobile ? '90%' : '400px'" :fullscreen="isMobile">
+    <el-dialog
+      v-model="showSaveConfirm"
+      title="Confirm Save"
+      :width="isMobile ? '90%' : '400px'"
+      :fullscreen="isMobile"
+    >
       <div class="space-y-4">
         <div class="flex items-start gap-3">
           <el-icon class="text-yellow-500 mt-0.5">
             <Warning />
           </el-icon>
           <div>
-            <p class="font-medium text-gray-900">
-              Are you sure you want to save changes?
-            </p>
+            <p class="font-medium text-gray-900">Are you sure you want to save changes?</p>
             <p class="text-sm text-gray-600 mt-1">
               This will overwrite the original file. A backup will be created with .bak extension.
             </p>
@@ -903,30 +888,30 @@ textarea {
     max-height: 100vh;
     overflow: hidden;
   }
-  
+
   :deep(.el-dialog__header) {
     padding: 16px 20px;
     margin: 0;
     border-bottom: 1px solid var(--el-border-color-light);
   }
-  
+
   :deep(.el-dialog__title) {
     font-size: 18px;
     font-weight: 600;
   }
-  
+
   :deep(.el-dialog__body) {
     padding: 20px !important;
     overflow-y: auto;
     flex: 1;
     max-height: calc(100vh - 120px);
   }
-  
+
   :deep(.el-dialog__footer) {
     padding: 12px 20px;
     border-top: 1px solid var(--el-border-color-light);
   }
-  
+
   :deep(.el-button) {
     min-height: 44px;
     min-width: 44px;

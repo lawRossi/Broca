@@ -75,14 +75,14 @@ export const agentApi = {
     const [agent, config] = await Promise.all([
       // 这里需要先获取agent基本信息，暂时使用sessionApi
       Promise.resolve({ agent_id: agentId } as SessionAgent),
-      this.getAgentConfig({ sessionId, agentId }).catch(() => null)
+      this.getAgentConfig({ sessionId, agentId }).catch(() => null),
     ])
-    
+
     return {
       ...agent,
-      config: config || undefined
+      config: config || undefined,
     }
-  }
+  },
 }
 
 export default agentApi

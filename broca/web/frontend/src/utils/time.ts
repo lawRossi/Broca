@@ -12,19 +12,19 @@ export const toBeijingTime = (date: Date | string | number | null | undefined): 
   if (date === null || date === undefined) {
     return new Date()
   }
-  
+
   let d: Date
   if (typeof date === 'string' || typeof date === 'number') {
     d = new Date(date)
   } else {
     d = date
   }
-  
+
   // 检查是否是无效日期
   if (isNaN(d.getTime())) {
     return new Date()
   }
-  
+
   // 直接返回 Date 对象，不进行时区偏移
   // 时区转换应在 toLocaleString 等格式化函数中通过 timeZone 参数处理
   return d
@@ -42,7 +42,7 @@ export const formatBeijingTime = (
 ): string => {
   try {
     const beijingTime = toBeijingTime(date)
-    
+
     const defaultOptions: Intl.DateTimeFormatOptions = {
       timeZone: 'Asia/Shanghai',
       hour12: false,
@@ -52,9 +52,9 @@ export const formatBeijingTime = (
       hour: '2-digit',
       minute: '2-digit',
       second: '2-digit',
-      ...options
+      ...options,
     }
-    
+
     return beijingTime.toLocaleString('zh-CN', defaultOptions)
   } catch (error) {
     console.error('Error formatting Beijing time:', error)
@@ -74,12 +74,12 @@ export const formatBeijingTime = (
 export const formatBeijingTimeShort = (date: Date | string | number | null | undefined): string => {
   try {
     const beijingTime = toBeijingTime(date)
-    
+
     // 获取当前日期
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const messageDate = new Date(beijingTime.getFullYear(), beijingTime.getMonth(), beijingTime.getDate())
-    
+
     // 判断是否是今天
     if (messageDate.getTime() === today.getTime()) {
       // 今天：只显示时间
@@ -87,20 +87,20 @@ export const formatBeijingTimeShort = (date: Date | string | number | null | und
         timeZone: 'Asia/Shanghai',
         hour12: false,
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
       })
     } else {
       // 不是今天：显示日期和时间
       const dateStr = beijingTime.toLocaleDateString('zh-CN', {
         timeZone: 'Asia/Shanghai',
         month: '2-digit',
-        day: '2-digit'
+        day: '2-digit',
       })
       const timeStr = beijingTime.toLocaleTimeString('zh-CN', {
         timeZone: 'Asia/Shanghai',
         hour12: false,
         hour: '2-digit',
-        minute: '2-digit'
+        minute: '2-digit',
       })
       return `${dateStr} ${timeStr}`
     }
@@ -122,12 +122,12 @@ export const formatBeijingTimeShort = (date: Date | string | number | null | und
 export const formatBeijingDate = (date: Date | string | number | null | undefined): string => {
   try {
     const beijingTime = toBeijingTime(date)
-    
+
     // 获取当前日期
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
     const messageDate = new Date(beijingTime.getFullYear(), beijingTime.getMonth(), beijingTime.getDate())
-    
+
     // 判断是否是今天
     if (messageDate.getTime() === today.getTime()) {
       // 今天：显示"今天"
@@ -137,7 +137,7 @@ export const formatBeijingDate = (date: Date | string | number | null | undefine
       return beijingTime.toLocaleDateString('zh-CN', {
         timeZone: 'Asia/Shanghai',
         month: '2-digit',
-        day: '2-digit'
+        day: '2-digit',
       })
     }
   } catch (error) {

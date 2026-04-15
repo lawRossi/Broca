@@ -122,9 +122,7 @@ onMounted(async () => {
     <div class="w-full max-w-lg">
       <div class="card hover-lift">
         <div class="card-header">
-          <h2 class="text-3xl font-bold text-center text-gray-900">
-            欢迎使用我们的平台
-          </h2>
+          <h2 class="text-3xl font-bold text-center text-gray-900">欢迎使用我们的平台</h2>
           <p class="text-center text-gray-600 mt-2">
             {{ isRegisterMode ? '创建新账户' : '登录到您的账户' }}
           </p>
@@ -179,12 +177,8 @@ onMounted(async () => {
             <!-- 重置密码UI - 默认隐藏，点击忘记密码后显示在下方，位置在右边 -->
             <div v-if="!isRegisterMode && showResetPassword" class="bg-gray-50 p-4 rounded-lg border border-gray-200">
               <div class="text-center mb-4">
-                <h4 class="text-sm font-medium text-gray-700">
-                  重置密码
-                </h4>
-                <p class="text-xs text-gray-500 mt-1">
-                  请输入您的邮箱地址，我们将发送重置链接给您
-                </p>
+                <h4 class="text-sm font-medium text-gray-700">重置密码</h4>
+                <p class="text-xs text-gray-500 mt-1">请输入您的邮箱地址，我们将发送重置链接给您</p>
               </div>
 
               <div class="flex flex-col sm:flex-row gap-3">
@@ -195,9 +189,7 @@ onMounted(async () => {
               </div>
 
               <div class="text-center mt-3">
-                <button class="text-xs text-gray-500 hover:text-gray-700" @click="cancelResetPassword">
-                  取消
-                </button>
+                <button class="text-xs text-gray-500 hover:text-gray-700" @click="cancelResetPassword">取消</button>
               </div>
             </div>
           </div>
@@ -220,9 +212,7 @@ onMounted(async () => {
               </svg>
 
               <div class="flex-1">
-                <h4 class="text-sm font-semibold text-primary-800 mb-2">
-                  需要确认邮箱
-                </h4>
+                <h4 class="text-sm font-semibold text-primary-800 mb-2">需要确认邮箱</h4>
                 <p class="text-sm text-primary-700 mb-2">
                   我们已向 <strong>{{ confirmationEmail }}</strong> 发送了一封确认邮件。
                 </p>
@@ -239,9 +229,7 @@ onMounted(async () => {
                     {{ resendConfirmationLoading ? '发送中...' : '重新发送确认邮件' }}
                   </button>
 
-                  <button class="btn btn-secondary btn-sm" @click="handleBackToLogin">
-                    返回登录
-                  </button>
+                  <button class="btn btn-secondary btn-sm" @click="handleBackToLogin">返回登录</button>
                 </div>
               </div>
             </div>

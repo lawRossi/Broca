@@ -97,11 +97,9 @@ const priorityOptions = computed(() => [
   { value: TaskPriorityEnum.HIGH, label: '高', type: 'danger' },
 ])
 
-
-
 const handleUpdateStatus = async (status: TaskStatus) => {
   if (!task.value) return
-  
+
   try {
     await taskStore.updateTask(task.value.task_id, { status })
     ElMessage.success('状态更新成功')
@@ -112,7 +110,7 @@ const handleUpdateStatus = async (status: TaskStatus) => {
 
 const handleUpdatePriority = async (priority: TaskPriority) => {
   if (!task.value) return
-  
+
   try {
     await taskStore.updateTask(task.value.task_id, { priority })
     ElMessage.success('优先级更新成功')
@@ -123,7 +121,7 @@ const handleUpdatePriority = async (priority: TaskPriority) => {
 
 const handleUpdateAssignee = async (assignee: string) => {
   if (!task.value) return
-  
+
   try {
     await taskStore.updateTask(task.value.task_id, { assignee })
     ElMessage.success('分配对象更新成功')
@@ -134,7 +132,7 @@ const handleUpdateAssignee = async (assignee: string) => {
 
 const handleSubmitComment = async () => {
   if (!newComment.value.trim() || !task.value || !userStore.userInfo) return
-  
+
   submittingComment.value = true
   try {
     await taskStore.addComment(task.value.task_id, userStore.userInfo.name || '匿名用户', newComment.value)
@@ -150,7 +148,7 @@ const handleSubmitComment = async () => {
 
 const handleEdit = () => {
   if (!task.value) return
-  
+
   editing.value = true
   editForm.value = {
     name: task.value.name,
@@ -166,7 +164,7 @@ const handleEdit = () => {
 
 const handleSaveEdit = async () => {
   if (!task.value) return
-  
+
   try {
     await taskStore.updateTask(task.value.task_id, editForm.value)
     editing.value = false
@@ -199,12 +197,12 @@ const formatDate = (dateString: string): string => {
 
 const getStatusInfo = (status?: TaskStatus) => {
   if (!status) return statusOptions.value[0]
-  return statusOptions.value.find(option => option.value === status) || statusOptions.value[0]
+  return statusOptions.value.find((option) => option.value === status) || statusOptions.value[0]
 }
 
 const getPriorityInfo = (priority?: TaskPriority) => {
   if (!priority) return priorityOptions.value[1]
-  return priorityOptions.value.find(option => option.value === priority) || priorityOptions.value[1]
+  return priorityOptions.value.find((option) => option.value === priority) || priorityOptions.value[1]
 }
 
 const handleShowAllChildren = () => {
@@ -223,22 +221,28 @@ const handleClose = () => {
 }
 
 // 监听任务ID变化
-watch(() => props.taskId, (newTaskId) => {
-  if (newTaskId && props.visible) {
-    taskStore.fetchTaskDetail(newTaskId)
+watch(
+  () => props.taskId,
+  (newTaskId) => {
+    if (newTaskId && props.visible) {
+      taskStore.fetchTaskDetail(newTaskId)
+    }
   }
-})
+)
 
 // 监听抽屉可见性变化
-watch(() => props.visible, (visible) => {
-  if (visible && props.taskId) {
-    taskStore.fetchTaskDetail(props.taskId)
-  } else {
-    editing.value = false
-    showAllChildren.value = false
-    showAllComments.value = false
+watch(
+  () => props.visible,
+  (visible) => {
+    if (visible && props.taskId) {
+      taskStore.fetchTaskDetail(props.taskId)
+    } else {
+      editing.value = false
+      showAllChildren.value = false
+      showAllComments.value = false
+    }
   }
-})
+)
 </script>
 
 <template>
@@ -355,12 +359,8 @@ watch(() => props.visible, (visible) => {
               <span>创建时间: {{ formatDate(task.created_at) }}</span>
               <span>更新时间: {{ formatDate(task.updated_at) }}</span>
             </div>
-            <div v-if="task.session_id" class="break-all">
-              会话ID: {{ task.session_id }}
-            </div>
-            <div v-if="task.parent_id" class="break-all">
-              父任务ID: {{ task.parent_id }}
-            </div>
+            <div v-if="task.session_id" class="break-all">会话ID: {{ task.session_id }}</div>
+            <div v-if="task.parent_id" class="break-all">父任务ID: {{ task.parent_id }}</div>
           </div>
         </div>
       </div>
@@ -380,7 +380,11 @@ watch(() => props.visible, (visible) => {
         <div v-if="task.acceptance_criteria && task.acceptance_criteria.length > 0" class="border rounded-lg p-4">
           <h3 class="text-sm font-semibold mb-2">验收标准</h3>
           <ul class="space-y-2">
-            <li v-for="(criterion, index) in task.acceptance_criteria" :key="index" class="flex items-start gap-2 text-sm">
+            <li
+              v-for="(criterion, index) in task.acceptance_criteria"
+              :key="index"
+              class="flex items-start gap-2 text-sm"
+            >
               <el-icon class="text-green-500 mt-0.5 flex-shrink-0"><Check /></el-icon>
               <span class="text-gray-700 break-words">{{ criterion }}</span>
             </li>
@@ -394,7 +398,12 @@ watch(() => props.visible, (visible) => {
             关联文件
           </h3>
           <div class="space-y-1">
-            <div v-for="(file, index) in task.context_files" :key="index" class="text-blue-600 hover:underline cursor-pointer text-sm truncate" :title="file">
+            <div
+              v-for="(file, index) in task.context_files"
+              :key="index"
+              class="text-blue-600 hover:underline cursor-pointer text-sm truncate"
+              :title="file"
+            >
               {{ file }}
             </div>
           </div>
@@ -445,9 +454,7 @@ watch(() => props.visible, (visible) => {
         <!-- 子任务 -->
         <div v-if="children.length > 0" class="border rounded-lg p-4">
           <div class="flex items-center justify-between mb-3">
-            <h3 class="text-sm font-semibold text-gray-900">
-              子任务 ({{ children.length }})
-            </h3>
+            <h3 class="text-sm font-semibold text-gray-900">子任务 ({{ children.length }})</h3>
             <el-button
               v-if="hasMoreChildren && !showAllChildren"
               type="primary"
@@ -514,9 +521,7 @@ watch(() => props.visible, (visible) => {
           </div>
 
           <!-- 空状态 -->
-          <div v-else class="text-center py-4 text-gray-500 text-sm">
-            暂无评论
-          </div>
+          <div v-else class="text-center py-4 text-gray-500 text-sm">暂无评论</div>
 
           <!-- 添加评论 -->
           <div class="mt-4">

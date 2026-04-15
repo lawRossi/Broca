@@ -9,9 +9,7 @@ const chatStore = useChatStore()
     <div class="mx-auto max-w-7xl px-1 sm:px-4 py-2 sm:py-1">
       <div class="flex items-center justify-between gap-2">
         <div class="flex items-center gap-2 sm:gap-3">
-          <div class="font-bold text-lg sm:text-lg text-gray-900">
-            Broca
-          </div>
+          <div class="font-bold text-lg sm:text-lg text-gray-900">Broca</div>
           <el-tag
             :type="chatStore.connected ? 'success' : chatStore.connecting ? 'warning' : 'info'"
             size="small"

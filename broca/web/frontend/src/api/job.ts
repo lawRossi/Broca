@@ -5,10 +5,10 @@ import request from '@/utils/request'
  */
 export const JobType = {
   REMINDER: 'reminder',
-  COMMAND: 'command'
+  COMMAND: 'command',
 } as const
 
-export type JobType = typeof JobType[keyof typeof JobType]
+export type JobType = (typeof JobType)[keyof typeof JobType]
 
 /**
  * 任务状态
@@ -17,10 +17,10 @@ export const JobStatus = {
   ACTIVE: 'active',
   PAUSED: 'paused',
   COMPLETED: 'completed',
-  CANCELLED: 'cancelled'
+  CANCELLED: 'cancelled',
 } as const
 
-export type JobStatus = typeof JobStatus[keyof typeof JobStatus]
+export type JobStatus = (typeof JobStatus)[keyof typeof JobStatus]
 
 /**
  * 触发器类型
@@ -28,10 +28,10 @@ export type JobStatus = typeof JobStatus[keyof typeof JobStatus]
 export const TriggerType = {
   CRON: 'cron',
   INTERVAL: 'interval',
-  DATE: 'date'
+  DATE: 'date',
 } as const
 
-export type TriggerType = typeof TriggerType[keyof typeof TriggerType]
+export type TriggerType = (typeof TriggerType)[keyof typeof TriggerType]
 
 /**
  * 触发器配置基类
@@ -164,8 +164,8 @@ export const jobApi = {
         job_type: params.job_type,
         session_id: params.session_id,
         keyword: params.keyword,
-        order_by: params.order_by ?? 'created_at desc'
-      }
+        order_by: params.order_by ?? 'created_at desc',
+      },
     })
   },
 
@@ -174,7 +174,7 @@ export const jobApi = {
    */
   async getJobDetail(jobId: string, executionLimit: number = 10): Promise<JobDetail> {
     return request.get(`/job/${jobId}`, {
-      params: { execution_limit: executionLimit }
+      params: { execution_limit: executionLimit },
     })
   },
 
@@ -188,7 +188,7 @@ export const jobApi = {
     success?: boolean
   ): Promise<JobExecutionsResponse> {
     return request.get(`/job/${jobId}/executions`, {
-      params: { skip, limit, success }
+      params: { skip, limit, success },
     })
   },
 
@@ -225,7 +225,7 @@ export const jobApi = {
    */
   async resumeJob(jobId: string): Promise<void> {
     return request.post(`/job/${jobId}/resume`)
-  }
+  },
 }
 
 export default jobApi

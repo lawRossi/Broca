@@ -4,9 +4,7 @@ import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { BrocaSocketClient, type Message } from '@/api/brocaSocket'
 
-
 const serverUrl = import.meta.env.VITE_BROCA_SOCKET_SERVER_URL
-
 
 export const useSocketStore = defineStore('socket', () => {
   const userStore = useUserStore()
@@ -186,18 +184,14 @@ export const useSocketStore = defineStore('socket', () => {
     }
   }
 
-  const sendUserAnswer = async (params: {
-    answer: string
-    requestId?: string
-    receiverId?: string
-  }) => {
+  const sendUserAnswer = async (params: { answer: string; requestId?: string; receiverId?: string }) => {
     if (!client) return
     console.log(params)
     try {
       await client.sendUserAnswer({
         answer: params.answer,
         requestId: params.requestId,
-        receiverId: params.receiverId
+        receiverId: params.receiverId,
       })
     } catch (e: any) {
       ElMessage.error(e?.message || '发送回答失败')

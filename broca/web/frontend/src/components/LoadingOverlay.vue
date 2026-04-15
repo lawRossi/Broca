@@ -9,9 +9,7 @@ defineProps<{
     <div class="bg-white p-6 rounded-lg shadow-lg">
       <div class="flex items-center space-x-3">
         <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-500" />
-        <div class="text-gray-700">
-          加载中...
-        </div>
+        <div class="text-gray-700">加载中...</div>
       </div>
     </div>
   </div>

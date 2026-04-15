@@ -17,8 +17,6 @@ const router = useRouter()
 const userStore = useUserStore()
 const sessionStore = useSessionStore()
 
-
-
 // 计算属性（从store获取）
 const sessions = computed(() => sessionStore.sessions)
 const loading = computed(() => sessionStore.loading)
@@ -41,8 +39,6 @@ const loadingJobCounts = ref(false)
 
 // 计算属性：是否已登录
 const isLoggedIn = computed(() => userStore.isLoggedIn)
-
-
 
 // 搜索
 const handleSearch = (keyword: string) => {
@@ -84,6 +80,12 @@ const handleCreate = async () => {
 // 删除单个会话
 const handleDelete = async (session: Session) => {
   await sessionStore.deleteSession(session.session_id)
+}
+
+// 更新会话
+const handleUpdate = async (session: Session) => {
+  // 更新已经在store中处理了，这里只需要更新本地状态
+  // 如果需要额外的处理可以在这里添加
 }
 
 // 批量删除会话
@@ -128,7 +130,7 @@ const fetchJobCounts = async () => {
         try {
           const response = await jobApi.getJobs({
             session_id: session.session_id,
-            limit: 0 // 只获取总数，不获取具体数据
+            limit: 0, // 只获取总数，不获取具体数据
           })
           counts[session.session_id] = response.total
         } catch (error) {
@@ -187,21 +189,11 @@ onMounted(async () => {
             <el-icon class="text-blue-600 text-xl">
               <ChatRound />
             </el-icon>
-            <h1 class="text-xl font-bold text-gray-900">
-              会话管理
-            </h1>
+            <h1 class="text-xl font-bold text-gray-900">会话管理</h1>
           </div>
           <div class="flex items-center gap-4">
-            <div class="text-sm text-gray-500">
-              共 {{ total }} 个会话
-            </div>
-            <el-button
-              type="primary"
-              :icon="Plus"
-              @click="showCreateDialog"
-            >
-              创建会话
-            </el-button>
+            <div class="text-sm text-gray-500">共 {{ total }} 个会话</div>
+            <el-button type="primary" :icon="Plus" @click="showCreateDialog"> 创建会话 </el-button>
           </div>
         </div>
       </div>
@@ -236,6 +228,7 @@ onMounted(async () => {
         @select="handleSelect"
         @deselect="handleDeselect"
         @delete="handleDelete"
+        @update="handleUpdate"
         @batch-delete="handleBatchDelete"
       />
     </div>
@@ -271,11 +264,11 @@ onMounted(async () => {
     flex-wrap: wrap;
     gap: 8px;
   }
-  
+
   :deep(.el-pagination .el-pagination__sizes) {
     margin-right: 0;
   }
-  
+
   :deep(.el-pagination .el-pagination__total) {
     display: none;
   }

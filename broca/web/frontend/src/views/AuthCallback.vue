@@ -139,12 +139,8 @@ onMounted(async () => {
             </div>
 
             <div class="space-y-2">
-              <h2 class="text-2xl font-semibold text-gray-900">
-                正在确认您的邮箱
-              </h2>
-              <p class="text-gray-600">
-                请稍候，我们正在处理您的邮箱确认...
-              </p>
+              <h2 class="text-2xl font-semibold text-gray-900">正在确认您的邮箱</h2>
+              <p class="text-gray-600">请稍候，我们正在处理您的邮箱确认...</p>
             </div>
 
             <div class="flex space-x-1">
@@ -163,15 +159,11 @@ onMounted(async () => {
             </div>
 
             <div class="space-y-2">
-              <h2 class="text-2xl font-semibold text-gray-900">
-                确认失败
-              </h2>
+              <h2 class="text-2xl font-semibold text-gray-900">确认失败</h2>
               <p class="text-gray-600">
                 {{ error }}
               </p>
-              <p class="text-sm text-gray-500">
-                3秒后自动跳转到主页...
-              </p>
+              <p class="text-sm text-gray-500">3秒后自动跳转到主页...</p>
             </div>
 
             <div class="flex space-x-2">
@@ -190,15 +182,9 @@ onMounted(async () => {
             </div>
 
             <div class="space-y-2">
-              <h2 class="text-2xl font-semibold text-gray-900">
-                邮箱确认成功！
-              </h2>
-              <p class="text-gray-600">
-                感谢您确认邮箱，欢迎使用我们的平台
-              </p>
-              <p class="text-sm text-gray-500">
-                正在跳转到主页...
-              </p>
+              <h2 class="text-2xl font-semibold text-gray-900">邮箱确认成功！</h2>
+              <p class="text-gray-600">感谢您确认邮箱，欢迎使用我们的平台</p>
+              <p class="text-sm text-gray-500">正在跳转到主页...</p>
             </div>
 
             <div class="animate-pulse">

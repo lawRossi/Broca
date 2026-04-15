@@ -7,10 +7,10 @@ export const TaskStatus = {
   PENDING: 'pending',
   IN_PROGRESS: 'in_progress',
   BLOCKED: 'blocked',
-  COMPLETED: 'completed'
+  COMPLETED: 'completed',
 } as const
 
-export type TaskStatus = typeof TaskStatus[keyof typeof TaskStatus]
+export type TaskStatus = (typeof TaskStatus)[keyof typeof TaskStatus]
 
 /**
  * 任务优先级
@@ -18,10 +18,10 @@ export type TaskStatus = typeof TaskStatus[keyof typeof TaskStatus]
 export const TaskPriority = {
   LOW: 'low',
   MEDIUM: 'medium',
-  HIGH: 'high'
+  HIGH: 'high',
 } as const
 
-export type TaskPriority = typeof TaskPriority[keyof typeof TaskPriority]
+export type TaskPriority = (typeof TaskPriority)[keyof typeof TaskPriority]
 
 /**
  * 任务基础信息
@@ -194,8 +194,8 @@ export const taskApi = {
         session_id: params.session_id,
         parent_id: params.parent_id,
         keyword: params.keyword,
-        order_by: params.order_by ?? 'created_at desc'
-      }
+        order_by: params.order_by ?? 'created_at desc',
+      },
     })
   },
 
@@ -204,7 +204,7 @@ export const taskApi = {
    */
   async getTaskDetail(taskId: string, includeComments: boolean = true): Promise<TaskDetail> {
     return request.get(`/task/${taskId}`, {
-      params: { include_comments: includeComments }
+      params: { include_comments: includeComments },
     })
   },
 
@@ -232,13 +232,9 @@ export const taskApi = {
   /**
    * 获取任务评论
    */
-  async getTaskComments(
-    taskId: string,
-    skip: number = 0,
-    limit: number = 50
-  ): Promise<TaskCommentsResponse> {
+  async getTaskComments(taskId: string, skip: number = 0, limit: number = 50): Promise<TaskCommentsResponse> {
     return request.get(`/task/${taskId}/comments`, {
-      params: { skip, limit }
+      params: { skip, limit },
     })
   },
 
@@ -265,10 +261,10 @@ export const taskApi = {
         query: params.query,
         session_id: params.session_id,
         skip: params.skip ?? 0,
-        limit: params.limit ?? 20
-      }
+        limit: params.limit ?? 20,
+      },
     })
-  }
+  },
 }
 
 export default taskApi

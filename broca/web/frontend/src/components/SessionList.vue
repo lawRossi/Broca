@@ -22,39 +22,38 @@ interface Emits {
   (e: 'select', sessionId: string): void
   (e: 'deselect', sessionId: string): void
   (e: 'delete', session: Session): void
+  (e: 'update', session: Session): void
   (e: 'batch-delete'): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showActions: true,
-  jobCounts: () => ({})
+  jobCounts: () => ({}),
 })
 
 const emit = defineEmits<Emits>()
 
 // 计算属性
 const isAllSelected = computed(() => {
-  return props.sessions.length > 0 && 
-    props.selectedSessions.length === props.sessions.length
+  return props.sessions.length > 0 && props.selectedSessions.length === props.sessions.length
 })
 
 const isIndeterminate = computed(() => {
-  return props.selectedSessions.length > 0 && 
-    props.selectedSessions.length < props.sessions.length
+  return props.selectedSessions.length > 0 && props.selectedSessions.length < props.sessions.length
 })
 
 // 全选/取消全选
 const handleSelectAll = () => {
   if (isAllSelected.value) {
     // 取消全选当前页
-    props.sessions.forEach(session => {
+    props.sessions.forEach((session) => {
       if (props.selectedSessions.includes(session.session_id)) {
         emit('deselect', session.session_id)
       }
     })
   } else {
     // 全选当前页
-    props.sessions.forEach(session => {
+    props.sessions.forEach((session) => {
       if (!props.selectedSessions.includes(session.session_id)) {
         emit('select', session.session_id)
       }
@@ -84,6 +83,10 @@ const handleSessionDelete = (session: Session) => {
   emit('delete', session)
 }
 
+const handleSessionUpdate = (session: Session) => {
+  emit('update', session)
+}
+
 // 批量删除
 const handleBatchDelete = () => {
   emit('batch-delete')
@@ -96,35 +99,21 @@ const handleBatchDelete = () => {
     <div
       v-if="selectedSessions.length > 0"
       class="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 bg-white border border-blue-300 rounded-full shadow-lg px-6 py-3 flex items-center gap-4 transition-all duration-300"
-      style="max-width: 90%;"
+      style="max-width: 90%"
     >
       <div class="flex items-center gap-3">
-        <el-checkbox
-          :model-value="isAllSelected"
-          :indeterminate="isIndeterminate"
-          @change="handleSelectAll"
-        >
+        <el-checkbox :model-value="isAllSelected" :indeterminate="isIndeterminate" @change="handleSelectAll">
           <span class="text-sm font-medium">已选择 {{ selectedSessions.length }} 项</span>
         </el-checkbox>
       </div>
 
       <div class="flex items-center gap-2">
-        <el-button
-          type="danger"
-          size="small"
-          :loading="deleteLoading"
-          @click="handleBatchDelete"
-        >
-          批量删除
-        </el-button>
+        <el-button type="danger" size="small" :loading="deleteLoading" @click="handleBatchDelete"> 批量删除 </el-button>
       </div>
     </div>
 
     <!-- 加载状态 -->
-    <div
-      v-if="loading"
-      class="flex items-center justify-center py-12"
-    >
+    <div v-if="loading" class="flex items-center justify-center py-12">
       <el-icon class="is-loading" size="24">
         <Loading />
       </el-icon>
@@ -132,24 +121,16 @@ const handleBatchDelete = () => {
     </div>
 
     <!-- 空状态 -->
-    <div
-      v-else-if="sessions.length === 0"
-      class="flex flex-col items-center justify-center py-12 text-gray-500"
-    >
+    <div v-else-if="sessions.length === 0" class="flex flex-col items-center justify-center py-12 text-gray-500">
       <el-icon size="48" class="mb-4">
         <FolderOpened />
       </el-icon>
       <p>暂无会话</p>
-      <p class="text-sm mt-1">
-        点击上方"创建会话"按钮开始
-      </p>
+      <p class="text-sm mt-1">点击上方"创建会话"按钮开始</p>
     </div>
 
     <!-- 会话列表 -->
-    <div
-      v-else
-      class="space-y-3"
-    >
+    <div v-else class="space-y-3">
       <SessionCard
         v-for="session in sessions"
         :key="session.session_id"
@@ -160,14 +141,12 @@ const handleBatchDelete = () => {
         @select="handleSessionSelect"
         @deselect="handleSessionDeselect"
         @delete="handleSessionDelete"
+        @update="handleSessionUpdate"
       />
     </div>
 
     <!-- 分页器 -->
-    <div
-      v-if="!loading && total > 0"
-      class="mt-4 bg-white rounded-lg shadow-sm border p-4"
-    >
+    <div v-if="!loading && total > 0" class="mt-4 bg-white rounded-lg shadow-sm border p-4">
       <el-pagination
         :current-page="currentPage"
         :page-size="pageSize"
@@ -200,27 +179,27 @@ const handleBatchDelete = () => {
     padding: 8px 12px;
     max-width: 95% !important;
   }
-  
+
   .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 .text-sm {
     font-size: 0.75rem;
   }
-  
+
   .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 .el-button--small {
     padding: 4px 8px;
     font-size: 0.75rem;
   }
-  
+
   /* 分页器 */
   :deep(.el-pagination) {
     justify-content: center;
     flex-wrap: wrap;
     gap: 8px;
   }
-  
+
   :deep(.el-pagination .el-pagination__sizes) {
     margin-right: 0;
   }
-  
+
   :deep(.el-pagination .el-pagination__total) {
     display: none;
   }

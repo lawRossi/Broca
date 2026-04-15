@@ -278,25 +278,19 @@ const handleClose = () => {
 
         <div class="space-y-3">
           <div>
-            <div class="text-xs font-medium text-gray-500 mb-1">
-              任务ID
-            </div>
+            <div class="text-xs font-medium text-gray-500 mb-1">任务ID</div>
             <code class="block p-2 bg-gray-100 rounded text-xs break-all">{{ jobDetail.job.job_id }}</code>
           </div>
 
           <div>
-            <div class="text-xs font-medium text-gray-500 mb-1">
-              触发器
-            </div>
+            <div class="text-xs font-medium text-gray-500 mb-1">触发器</div>
             <div class="p-2 bg-white rounded border text-xs text-gray-600 break-all">
               {{ formatTriggerConfig(jobDetail.job.trigger_type, jobDetail.job.trigger_config) }}
             </div>
           </div>
 
           <div>
-            <div class="text-xs font-medium text-gray-500 mb-1">
-              执行内容
-            </div>
+            <div class="text-xs font-medium text-gray-500 mb-1">执行内容</div>
             <pre class="p-3 bg-gray-800 text-gray-100 rounded text-xs overflow-auto max-h-48 whitespace-pre-wrap">{{
               jobDetail.job.content || '无内容'
             }}</pre>
@@ -358,17 +352,13 @@ const handleClose = () => {
         >
           恢复
         </el-button>
-        <el-button type="danger" class="flex-1 sm:flex-none" @click="handleDelete">
-          删除
-        </el-button>
+        <el-button type="danger" class="flex-1 sm:flex-none" @click="handleDelete"> 删除 </el-button>
       </div>
 
       <!-- 执行历史 -->
       <div>
         <div class="flex items-center justify-between mb-3">
-          <h3 class="text-base font-semibold text-gray-900">
-            执行历史
-          </h3>
+          <h3 class="text-base font-semibold text-gray-900">执行历史</h3>
           <el-button
             v-if="jobDetail.executions.length > 5 && !showAllExecutions"
             type="primary"
