@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document } from '@element-plus/icons-vue'
-import { ElMessage } from 'element-plus'
+import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close } from '@element-plus/icons-vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatBeijingTime } from '@/utils/time'
 import type { Session } from '@/api/session'
+import { useSessionStore } from '@/stores'
 
 const router = useRouter()
+const sessionStore = useSessionStore()
 
 interface Props {
   session: Session
@@ -18,21 +21,28 @@ interface Emits {
   (e: 'select', sessionId: string): void
   (e: 'deselect', sessionId: string): void
   (e: 'delete', session: Session): void
+  (e: 'update', session: Session): void
 }
 
 const props = withDefaults(defineProps<Props>(), {
   showActions: true,
-  jobCount: 0
+  jobCount: 0,
 })
 
 const emit = defineEmits<Emits>()
+
+// 编辑相关状态
+const isEditing = ref(false)
+const editDescription = ref('')
+const editing = ref(false)
+const descriptionInputRef = ref<HTMLInputElement | null>(null)
 
 // 状态类型映射
 const statusTypeMap: Record<string, string> = {
   active: 'success',
   completed: 'info',
   paused: 'warning',
-  error: 'danger'
+  error: 'danger',
 }
 
 // 状态标签映射
@@ -40,7 +50,7 @@ const statusLabelMap: Record<string, string> = {
   active: '进行中',
   completed: '已完成',
   paused: '已暂停',
-  error: '错误'
+  error: '错误',
 }
 
 // 截断ID显示
@@ -71,6 +81,7 @@ const handleCheckboxChange = (checked: boolean) => {
 
 // 卡片点击 - 跳转到聊天（不触发选中）
 const handleCardClick = () => {
+  if (isEditing.value) return // 编辑状态下不跳转
   router.push(`/chat/${props.session.session_id}`)
 }
 
@@ -78,15 +89,15 @@ const handleCardClick = () => {
 const handleBrowseFiles = (event: Event) => {
   event.stopPropagation()
   emit('deselect', props.session.session_id)
-  
+
   if (!props.session.workspace) {
     ElMessage.warning('该会话没有工作空间')
     return
   }
-  
+
   router.push({
     path: '/files',
-    query: { path: props.session.workspace }
+    query: { path: props.session.workspace },
   })
 }
 
@@ -102,7 +113,7 @@ const handleViewJobs = (event: Event) => {
   event.stopPropagation()
   router.push({
     path: '/jobs',
-    query: { session_id: props.session.session_id }
+    query: { session_id: props.session.session_id },
   })
 }
 
@@ -111,8 +122,68 @@ const handleManageTasks = (event: Event) => {
   event.stopPropagation()
   router.push({
     path: '/tasks',
-    query: { session_id: props.session.session_id }
+    query: { session_id: props.session.session_id },
   })
+}
+
+// 开始编辑描述
+const startEdit = (event: Event) => {
+  event.stopPropagation()
+  isEditing.value = true
+  editDescription.value = props.session.description || ''
+  
+  // 聚焦到输入框
+  nextTick(() => {
+    descriptionInputRef.value?.focus()
+    descriptionInputRef.value?.select()
+  })
+}
+
+// 保存编辑
+const saveEdit = async () => {
+  if (!editDescription.value.trim()) {
+    ElMessage.warning('描述不能为空')
+    return
+  }
+
+  if (editDescription.value === props.session.description) {
+    isEditing.value = false
+    return
+  }
+
+  editing.value = true
+  try {
+    await sessionStore.updateSession(props.session.session_id, {
+      description: editDescription.value.trim(),
+    })
+
+    // 更新本地会话对象
+    const updatedSession = { ...props.session, description: editDescription.value.trim() }
+    emit('update', updatedSession)
+
+    isEditing.value = false
+  } catch (error) {
+    console.error('更新会话描述失败:', error)
+  } finally {
+    editing.value = false
+  }
+}
+
+// 取消编辑
+const cancelEdit = () => {
+  isEditing.value = false
+  editDescription.value = ''
+}
+
+// 处理键盘事件
+const handleKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Enter') {
+    event.preventDefault()
+    saveEdit()
+  } else if (event.key === 'Escape') {
+    event.preventDefault()
+    cancelEdit()
+  }
 }
 </script>
 
@@ -126,19 +197,63 @@ const handleManageTasks = (event: Event) => {
     <div class="flex items-start justify-between mb-3">
       <div class="flex items-start gap-3 flex-1 min-w-0">
         <!-- 选择复选框 -->
-        <el-checkbox
-          :model-value="isSelected"
-          @change="handleCheckboxChange"
-          @click.stop
-        />
-        
+        <el-checkbox :model-value="isSelected" @change="handleCheckboxChange" @click.stop />
+
         <!-- ID 和描述 -->
         <div class="flex-1 min-w-0">
           <div class="font-mono text-xs text-gray-500 mb-1">
             {{ truncateId(session.session_id, 10) }}
           </div>
-          <div class="text-gray-900 font-medium truncate">
-            {{ session.description || '无描述' }}
+          
+          <!-- 描述显示/编辑区域 -->
+          <div class="flex items-center gap-2">
+            <!-- 显示模式 -->
+            <div v-if="!isEditing" class="flex items-center gap-2 flex-1">
+              <div class="text-gray-900 font-medium truncate cursor-text" @dblclick="startEdit">
+                {{ session.description || '无描述' }}
+              </div>
+              <!-- 编辑小图标 -->
+              <el-icon
+                class="text-gray-400 hover:text-blue-500 cursor-pointer transition-colors"
+                size="14"
+                @click.stop="startEdit"
+                title="编辑描述"
+              >
+                <Edit />
+              </el-icon>
+            </div>
+            
+            <!-- 编辑模式 -->
+            <div v-else class="flex items-center gap-2 flex-1 flex-col">
+              <el-input
+                ref="descriptionInputRef"
+                v-model="editDescription"
+                size="small"
+                placeholder="请输入会话描述"
+                maxlength="200"
+                show-word-limit
+                @keydown="handleKeydown"
+                @blur="saveEdit"
+                class="flex-1 w-full"
+              />
+              <div class="flex items-center gap-1">
+                <el-button
+                  type="success"
+                  size="small"
+                  :loading="editing"
+                  :icon="Check"
+                  @click.stop="saveEdit"
+                  title="保存"
+                />
+                <el-button
+                  type="info"
+                  size="small"
+                  :icon="Close"
+                  @click.stop="cancelEdit"
+                  title="取消"
+                />
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -162,11 +277,13 @@ const handleManageTasks = (event: Event) => {
 
       <!-- 操作按钮组 -->
       <div v-if="showActions" class="flex items-center gap-2">
+        <!-- 文件浏览按钮 -->
         <el-button
           v-if="session.workspace"
           type="primary"
           size="small"
           plain
+          :disabled="isEditing"
           :title="`浏览工作空间: ${session.workspace}`"
           @click.stop="handleBrowseFiles"
         >
@@ -175,10 +292,13 @@ const handleManageTasks = (event: Event) => {
           </el-icon>
           文件
         </el-button>
+        
+        <!-- 定时任务按钮 -->
         <el-button
           type="info"
           size="small"
           plain
+          :disabled="isEditing"
           :title="`查看定时任务${jobCount ? ` (${jobCount})` : ''}`"
           @click.stop="handleViewJobs"
         >
@@ -186,18 +306,15 @@ const handleManageTasks = (event: Event) => {
             <Bell />
           </el-icon>
           定时任务
-          <el-badge
-            v-if="jobCount && jobCount > 0"
-            :value="jobCount"
-            class="ml-1"
-            type="info"
-            is-dot
-          />
+          <el-badge v-if="jobCount && jobCount > 0" :value="jobCount" class="ml-1" type="info" is-dot />
         </el-button>
+        
+        <!-- 任务管理按钮 -->
         <el-button
           type="success"
           size="small"
           plain
+          :disabled="isEditing"
           title="管理任务"
           @click.stop="handleManageTasks"
         >
@@ -206,10 +323,13 @@ const handleManageTasks = (event: Event) => {
           </el-icon>
           管理任务
         </el-button>
+        
+        <!-- 删除按钮 -->
         <el-button
           type="danger"
           size="small"
           plain
+          :disabled="isEditing"
           @click.stop="handleDelete"
         >
           <el-icon class="mr-1">
@@ -260,44 +380,92 @@ const handleManageTasks = (event: Event) => {
   .session-card {
     padding: 0.75rem 1rem;
   }
-  
+
   .session-card .flex.items-start.gap-3 {
     gap: 0.75rem;
   }
-  
-  /* 描述截断 */
-  .session-card .text-gray-900 {
-    max-width: 180px;
-    font-size: 0.875rem;
+
+  /* 描述区域优化 - 确保靠左对齐 */
+  .session-card .flex-1.min-w-0 {
+    min-width: 0;
+    width: 100%;
   }
-  
+
+  /* 描述显示区域 */
+  .session-card .flex.items-center.gap-2 {
+    align-items: flex-start;
+    width: 100%;
+  }
+
+  /* 显示模式 - 确保描述和图标在同一行且靠左 */
+  .session-card .flex.items-center.gap-2.flex-1:not(.flex-col) {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    width: 100%;
+  }
+
+  .session-card .text-gray-900 {
+    max-width: calc(100% - 24px); /* 为编辑图标留出空间 */
+    font-size: 0.875rem;
+    text-align: left;
+    flex: 1;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  /* 编辑图标 */
+  .session-card .el-icon.text-gray-400 {
+    flex-shrink: 0;
+    margin-left: 4px;
+  }
+
+  /* 编辑模式 - 垂直布局 */
+  .session-card .flex.items-center.gap-2.flex-1.flex-col {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+  }
+
+  .session-card .el-input {
+    width: 100%;
+  }
+
+  .session-card .flex.items-center.gap-1 {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
   /* ID 字体更小 */
   .session-card .font-mono.text-xs {
     font-size: 0.7rem;
+    text-align: left;
   }
-  
+
   /* 操作按钮垂直排列或缩小 */
   .session-card .flex.items-center.gap-2 {
     gap: 0.25rem;
     flex-wrap: wrap;
     justify-content: flex-end;
   }
-  
+
   .session-card .el-button--small {
     padding: 4px 8px;
     font-size: 0.75rem;
     min-height: auto;
   }
-  
+
   .session-card .el-button .el-icon {
     font-size: 12px;
   }
-  
+
   /* 徽章缩小 */
   .session-card .el-badge {
     font-size: 0.7rem;
   }
-  
+
   /* 状态标签缩小 */
   .session-card .el-tag--small {
     height: 18px;
@@ -305,7 +473,7 @@ const handleManageTasks = (event: Event) => {
     font-size: 10px;
     line-height: 16px;
   }
-  
+
   /* 时间显示 */
   .session-card .text-sm.text-gray-500 {
     font-size: 0.75rem;
