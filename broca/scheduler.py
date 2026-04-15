@@ -230,8 +230,8 @@ class Scheduler:
     async def remove_job(self, job_id: str) -> bool:
         """删除任务"""
         try:
-            # 从APScheduler移除
-            self.apscheduler.remove_job(job_id)
+            if job_id in self.apscheduler.get_jobs():
+                self.apscheduler.remove_job(job_id)
 
             # 从数据库删除
             success = await self.job_service.delete(job_id)
