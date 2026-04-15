@@ -36,13 +36,13 @@ const statusOptions = computed(() => [
   { label: '活跃', value: 'active' },
   { label: '暂停', value: 'paused' },
   { label: '完成', value: 'completed' },
-  { label: '取消', value: 'cancelled' }
+  { label: '取消', value: 'cancelled' },
 ])
 
 const typeOptions = computed(() => [
   { label: '全部类型', value: '' },
   { label: '提醒任务', value: 'reminder' },
-  { label: '命令任务', value: 'command' }
+  { label: '命令任务', value: 'command' },
 ])
 
 // 计算属性：是否已登录
@@ -96,15 +96,11 @@ const handleView = (job: Job) => {
 // 立即执行
 const handleExecute = async (job: Job) => {
   try {
-    await ElMessageBox.confirm(
-      `确定要立即执行任务"${job.name}"吗？`,
-      '确认执行',
-      {
-        confirmButtonText: '确定',
-        cancelButtonText: '取消',
-        type: 'info',
-      }
-    )
+    await ElMessageBox.confirm(`确定要立即执行任务"${job.name}"吗？`, '确认执行', {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'info',
+    })
     await jobStore.executeJob(job.job_id)
   } catch (error: any) {
     if (error !== 'cancel') {
@@ -154,7 +150,7 @@ watch(
 watch(
   () => route.query.session_id,
   (newSessionId) => {
-    jobStore.setSessionFilter(newSessionId as string || '')
+    jobStore.setSessionFilter((newSessionId as string) || '')
   },
   { immediate: true }
 )
@@ -166,13 +162,13 @@ onMounted(async () => {
     router.push('/auth')
     return
   }
-  
+
   // 从路由参数中获取 session_id
   const sessionIdFromRoute = route.query.session_id as string
   if (sessionIdFromRoute) {
     jobStore.setSessionFilter(sessionIdFromRoute)
   }
-  
+
   await jobStore.fetchJobs()
 })
 </script>
@@ -187,21 +183,11 @@ onMounted(async () => {
             <el-icon class="text-blue-600 text-xl">
               <Bell />
             </el-icon>
-            <h1 class="text-xl font-bold text-gray-900">
-              定时任务管理
-            </h1>
+            <h1 class="text-xl font-bold text-gray-900">定时任务管理</h1>
           </div>
           <div class="flex items-center gap-4">
-            <div class="text-sm text-gray-500">
-              共 {{ total }} 个任务
-            </div>
-            <el-button
-              :loading="loading"
-              :icon="Refresh"
-              @click="jobStore.refresh()"
-            >
-              刷新
-            </el-button>
+            <div class="text-sm text-gray-500">共 {{ total }} 个任务</div>
+            <el-button :loading="loading" :icon="Refresh" @click="jobStore.refresh()"> 刷新 </el-button>
           </div>
         </div>
       </div>
@@ -222,7 +208,13 @@ onMounted(async () => {
             @keyup.enter="handleSearch(searchKeyword)"
           >
             <template #prefix>
-              <el-icon><svg viewBox="0 0 24 24" width="16" height="16"><path fill="currentColor" d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z" /></svg></el-icon>
+              <el-icon
+                ><svg viewBox="0 0 24 24" width="16" height="16">
+                  <path
+                    fill="currentColor"
+                    d="M15.5 14h-.79l-.28-.27A6.471 6.471 0 0016 9.5 6.5 6.5 0 109.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"
+                  /></svg
+              ></el-icon>
             </template>
           </el-input>
 
@@ -250,22 +242,11 @@ onMounted(async () => {
             style="width: 140px"
             @change="handleTypeFilterChange"
           >
-            <el-option
-              v-for="option in typeOptions"
-              :key="option.value"
-              :label="option.label"
-              :value="option.value"
-            />
+            <el-option v-for="option in typeOptions" :key="option.value" :label="option.label" :value="option.value" />
           </el-select>
 
           <!-- Session 筛选提示 -->
-          <el-tag
-            v-if="sessionFilter"
-            type="info"
-            closable
-            class="ml-2"
-            @close="clearSessionFilter"
-          >
+          <el-tag v-if="sessionFilter" type="info" closable class="ml-2" @close="clearSessionFilter">
             会话: {{ sessionFilter.slice(0, 8) }}...
           </el-tag>
         </div>
@@ -286,10 +267,7 @@ onMounted(async () => {
       />
 
       <!-- 分页器 -->
-      <div
-        v-if="!loading && total > 0"
-        class="mt-4 bg-white rounded-lg shadow-sm border p-4"
-      >
+      <div v-if="!loading && total > 0" class="mt-4 bg-white rounded-lg shadow-sm border p-4">
         <el-pagination
           :current-page="currentPage"
           :page-size="pageSize"
@@ -304,11 +282,7 @@ onMounted(async () => {
     </div>
 
     <!-- 任务详情抽屉 -->
-    <JobDetail
-      :visible="detailDrawerVisible"
-      :job-id="selectedJobId"
-      @update:visible="jobStore.closeDetail()"
-    />
+    <JobDetail :visible="detailDrawerVisible" :job-id="selectedJobId" @update:visible="jobStore.closeDetail()" />
   </div>
 </template>
 
@@ -340,20 +314,20 @@ onMounted(async () => {
   .el-input {
     width: 100% !important;
   }
-  
+
   /* 筛选区域 */
   .flex.flex-wrap.gap-4.items-center .el-select {
     flex: 1 1 auto;
     min-width: 120px;
   }
-  
+
   /* 批量操作栏 */
   .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 {
     bottom: 20px;
     padding: 8px 12px;
     max-width: 95% !important;
   }
-  
+
   .fixed.bottom-6.left-1\/2.transform.-translate-x-1\/2.z-50 .text-sm {
     font-size: 0.75rem;
   }

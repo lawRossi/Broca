@@ -24,7 +24,7 @@ const props = defineProps<{
 // Emits
 const emit = defineEmits<{
   'update:visible': [value: boolean]
-  'close': []
+  close: []
 }>()
 
 // Reactive state
@@ -41,7 +41,7 @@ const truncated = ref(false)
 // 计算属性：显示对话框
 const dialogVisible = computed({
   get: () => props.visible || false,
-  set: (value) => emit('update:visible', value)
+  set: (value) => emit('update:visible', value),
 })
 
 // 决定使用哪种预览方式
@@ -334,7 +334,7 @@ watch(
 // Expose methods
 defineExpose({
   loadPreview,
-  closePreview
+  closePreview,
 })
 </script>
 
@@ -353,9 +353,7 @@ defineExpose({
         <el-icon class="is-loading text-3xl text-primary-500">
           <Refresh />
         </el-icon>
-        <p class="mt-2 text-gray-600">
-          Loading file preview...
-        </p>
+        <p class="mt-2 text-gray-600">Loading file preview...</p>
       </div>
 
       <!-- 错误状态 -->
@@ -374,18 +372,13 @@ defineExpose({
           :src="previewContent"
           alt="Image preview"
           class="max-w-full max-h-[70vh] mx-auto"
-          style="object-fit: contain;"
+          style="object-fit: contain"
         />
       </div>
 
       <!-- 视频预览 -->
       <div v-else-if="isVideoFile && previewContent" class="video-preview">
-        <video
-          :src="previewContent"
-          controls
-          class="max-w-full max-h-[70vh] mx-auto"
-          style="object-fit: contain;"
-        >
+        <video :src="previewContent" controls class="max-w-full max-h-[70vh] mx-auto" style="object-fit: contain">
           Your browser does not support the video tag.
         </video>
       </div>
@@ -397,11 +390,7 @@ defineExpose({
             <Headset />
           </el-icon>
         </div>
-        <audio
-          :src="previewContent"
-          controls
-          class="w-full max-w-md mx-auto"
-        >
+        <audio :src="previewContent" controls class="w-full max-w-md mx-auto">
           Your browser does not support the audio tag.
         </audio>
       </div>
@@ -414,9 +403,7 @@ defineExpose({
               {{ fileExtension }}
               <span v-if="syntaxHighlightClass !== 'plaintext'" class="ml-1 text-primary-600">●</span>
             </span>
-            <span class="text-xs text-gray-500">
-              {{ (previewContent.length / 1024).toFixed(2) }} KB
-            </span>
+            <span class="text-xs text-gray-500"> {{ (previewContent.length / 1024).toFixed(2) }} KB </span>
             <span v-if="truncated" class="text-yellow-600 text-xs flex items-center gap-1">
               <el-icon><Warning /></el-icon>
               Truncated
@@ -440,12 +427,8 @@ defineExpose({
         <el-icon class="text-3xl text-gray-400">
           <Document />
         </el-icon>
-        <p class="mt-2 text-gray-600">
-          Cannot preview this file type
-        </p>
-        <p class="text-sm text-gray-500 mt-1">
-          Supported: Images, Videos, Audio, Text files, Code files
-        </p>
+        <p class="mt-2 text-gray-600">Cannot preview this file type</p>
+        <p class="text-sm text-gray-500 mt-1">Supported: Images, Videos, Audio, Text files, Code files</p>
       </div>
     </div>
 

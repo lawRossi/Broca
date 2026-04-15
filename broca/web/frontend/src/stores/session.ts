@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { sessionApi, type Session, type CreateSessionParams } from '@/api/session'
+import { sessionApi, type Session, type CreateSessionParams, type UpdateSessionParams } from '@/api/session'
 import { filesApi, type FileItem } from '@/api/files'
 import { useUserStore } from './user'
 
@@ -29,7 +29,7 @@ export const useSessionStore = defineStore('session', () => {
     description: '',
     workspace: '',
     provider: undefined,
-    model: undefined
+    model: undefined,
   })
 
   // Workspace suggestions
@@ -53,12 +53,7 @@ export const useSessionStore = defineStore('session', () => {
   })
 
   // Actions
-  const fetchSessions = async (params?: {
-    skip?: number
-    limit?: number
-    status?: string
-    keyword?: string
-  }) => {
+  const fetchSessions = async (params?: { skip?: number; limit?: number; status?: string; keyword?: string }) => {
     if (!isLoggedIn.value) {
       return
     }
@@ -70,7 +65,7 @@ export const useSessionStore = defineStore('session', () => {
         skip: params?.skip ?? (currentPage.value - 1) * pageSize.value,
         limit: params?.limit ?? pageSize.value,
         status: params?.status ?? (statusFilter.value || undefined),
-        keyword: params?.keyword ?? (searchKeyword.value || undefined)
+        keyword: params?.keyword ?? (searchKeyword.value || undefined),
       })
 
       sessions.value = response.sessions || []
@@ -94,7 +89,7 @@ export const useSessionStore = defineStore('session', () => {
         description: params.description || undefined,
         workspace: params.workspace || undefined,
         provider: params.provider || undefined,
-        model: params.model || undefined
+        model: params.model || undefined,
       })
 
       ElMessage.success('会话创建成功')
@@ -113,15 +108,11 @@ export const useSessionStore = defineStore('session', () => {
 
   const deleteSession = async (sessionId: string) => {
     try {
-      await ElMessageBox.confirm(
-        '确定要删除这个会话吗？此操作不可恢复。',
-        '确认删除',
-        {
-          confirmButtonText: '确定删除',
-          cancelButtonText: '取消',
-          type: 'warning',
-        }
-      )
+      await ElMessageBox.confirm('确定要删除这个会话吗？此操作不可恢复。', '确认删除', {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
 
       await sessionApi.deleteSession(sessionId)
       ElMessage.success('会话已删除')
@@ -154,15 +145,11 @@ export const useSessionStore = defineStore('session', () => {
     if (sessionIds.length === 0) return
 
     try {
-      await ElMessageBox.confirm(
-        `确定要删除选中的 ${sessionIds.length} 个会话吗？此操作不可恢复。`,
-        '确认批量删除',
-        {
-          confirmButtonText: '确定删除',
-          cancelButtonText: '取消',
-          type: 'warning',
-        }
-      )
+      await ElMessageBox.confirm(`确定要删除选中的 ${sessionIds.length} 个会话吗？此操作不可恢复。`, '确认批量删除', {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
 
       await sessionApi.deleteSessions(sessionIds)
       ElMessage.success(`成功删除 ${sessionIds.length} 个会话`)
@@ -190,6 +177,31 @@ export const useSessionStore = defineStore('session', () => {
         ElMessage.error('批量删除失败')
         throw error
       }
+    }
+  }
+
+  const updateSession = async (sessionId: string, params: UpdateSessionParams) => {
+    if (!isLoggedIn.value) {
+      throw new Error('用户未登录')
+    }
+
+    try {
+      await sessionApi.updateSession(sessionId, params)
+      ElMessage.success('会话描述已更新')
+
+      // 更新本地列表中的会话描述
+      const sessionIndex = sessions.value.findIndex((s) => s.session_id === sessionId)
+      if (sessionIndex !== -1) {
+        if (params.description !== undefined) {
+          sessions.value[sessionIndex].description = params.description
+        }
+      }
+
+      return true
+    } catch (error: any) {
+      console.error('更新会话失败:', error)
+      ElMessage.error('更新会话失败: ' + (error.message || '未知错误'))
+      throw error
     }
   }
 
@@ -368,7 +380,7 @@ export const useSessionStore = defineStore('session', () => {
       description: '',
       workspace: '',
       provider: undefined,
-      model: undefined
+      model: undefined,
     }
   }
 
@@ -404,6 +416,7 @@ export const useSessionStore = defineStore('session', () => {
     createSession,
     deleteSession,
     deleteSessions,
+    updateSession,
     selectSession,
     deselectSession,
     toggleSelectSession,

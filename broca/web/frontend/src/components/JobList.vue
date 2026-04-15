@@ -163,9 +163,7 @@ const getContentPreview = (content?: string): string => {
         <Bell />
       </el-icon>
       <p>暂无定时任务</p>
-      <p class="text-sm mt-1">
-        可通过Agent的cron工具创建
-      </p>
+      <p class="text-sm mt-1">可通过Agent的cron工具创建</p>
     </div>
 
     <!-- 任务列表 -->

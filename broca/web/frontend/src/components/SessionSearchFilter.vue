@@ -44,13 +44,7 @@ const handleCreate = () => {
 <template>
   <div class="session-search-filter flex flex-col sm:flex-row gap-3">
     <!-- 搜索框 -->
-    <el-input
-      :model-value="searchKeyword"
-      placeholder="搜索会话..."
-      clearable
-      class="flex-1"
-      @input="handleSearch"
-    >
+    <el-input :model-value="searchKeyword" placeholder="搜索会话..." clearable class="flex-1" @input="handleSearch">
       <template #prefix>
         <el-icon><Search /></el-icon>
       </template>
@@ -64,22 +58,11 @@ const handleCreate = () => {
       class="w-full sm:w-40"
       @change="handleStatusChange"
     >
-      <el-option
-        v-for="option in statusOptions"
-        :key="option.value"
-        :label="option.label"
-        :value="option.value"
-      />
+      <el-option v-for="option in statusOptions" :key="option.value" :label="option.label" :value="option.value" />
     </el-select>
 
     <!-- 创建按钮 -->
-    <el-button
-      type="primary"
-      :icon="Plus"
-      @click="handleCreate"
-    >
-      创建会话
-    </el-button>
+    <el-button type="primary" :icon="Plus" @click="handleCreate"> 创建会话 </el-button>
   </div>
 </template>
 
@@ -88,4 +71,3 @@ const handleCreate = () => {
   width: 100%;
 }
 </style>
-

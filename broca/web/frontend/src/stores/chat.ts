@@ -27,7 +27,6 @@ export const useChatStore = defineStore('chat', () => {
   const showRightSidebar = ref(false)
   const isMobile = ref(false)
 
-
   const urlSessionId = computed(() => {
     return (route.params.session_id as string) || (route.query.session_id as string) || ''
   })
@@ -379,9 +378,9 @@ export const useChatStore = defineStore('chat', () => {
         if (isLoadMore) {
           const newMessages = [...historyMessages, ...messages.value]
           messages.value.splice(0, messages.value.length, ...newMessages)
-          
+
           messageStates.value.clear()
-          newMessages.forEach(msg => {
+          newMessages.forEach((msg) => {
             messageStates.value.set(msg.message_id, {
               showParameters: false,
               showResult: false,
@@ -412,7 +411,6 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const doConnect = async () => {
-
     socketStore.onConnect = () => {
       agentStore.agents = agentStore.agents.map((agent) => ({
         ...agent,
@@ -473,14 +471,18 @@ export const useChatStore = defineStore('chat', () => {
     await socketStore.subscribe(sessionId.value)
   }
 
-  const sendUserMessage = async (content?: string, targetAgentId?: string, files?: Array<{
-    name: string
-    url: string
-    path: string
-    size: number
-    type: string
-    upload_time: string
-  }>) => {
+  const sendUserMessage = async (
+    content?: string,
+    targetAgentId?: string,
+    files?: Array<{
+      name: string
+      url: string
+      path: string
+      size: number
+      type: string
+      upload_time: string
+    }>
+  ) => {
     // 如果传入了参数，使用参数；否则从 input 获取（兼容旧调用）
     let text = content ?? input.value.trim()
     if (!text && (!files || files.length === 0)) return
@@ -558,7 +560,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     await socketStore.sendAbort({
-      receiverId: targetAgentId
+      receiverId: targetAgentId,
     })
   }
 
@@ -576,7 +578,7 @@ export const useChatStore = defineStore('chat', () => {
     await socketStore.sendUserAnswer({
       answer,
       requestId: agentQueryDialog.requestId,
-      receiverId: agentQueryDialog.senderId || ''
+      receiverId: agentQueryDialog.senderId || '',
     })
     agentQueryDialog.visible = false
   }

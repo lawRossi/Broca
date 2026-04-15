@@ -131,7 +131,7 @@ const startEdit = (event: Event) => {
   event.stopPropagation()
   isEditing.value = true
   editDescription.value = props.session.description || ''
-  
+
   // 聚焦到输入框
   nextTick(() => {
     descriptionInputRef.value?.focus()
@@ -204,7 +204,7 @@ const handleKeydown = (event: KeyboardEvent) => {
           <div class="font-mono text-xs text-gray-500 mb-1">
             {{ truncateId(session.session_id, 10) }}
           </div>
-          
+
           <!-- 描述显示/编辑区域 -->
           <div class="flex items-center gap-2">
             <!-- 显示模式 -->
@@ -222,7 +222,7 @@ const handleKeydown = (event: KeyboardEvent) => {
                 <Edit />
               </el-icon>
             </div>
-            
+
             <!-- 编辑模式 -->
             <div v-else class="flex items-center gap-2 flex-1 flex-col">
               <el-input
@@ -245,13 +245,7 @@ const handleKeydown = (event: KeyboardEvent) => {
                   @click.stop="saveEdit"
                   title="保存"
                 />
-                <el-button
-                  type="info"
-                  size="small"
-                  :icon="Close"
-                  @click.stop="cancelEdit"
-                  title="取消"
-                />
+                <el-button type="info" size="small" :icon="Close" @click.stop="cancelEdit" title="取消" />
               </div>
             </div>
           </div>
@@ -292,7 +286,7 @@ const handleKeydown = (event: KeyboardEvent) => {
           </el-icon>
           文件
         </el-button>
-        
+
         <!-- 定时任务按钮 -->
         <el-button
           type="info"
@@ -308,7 +302,7 @@ const handleKeydown = (event: KeyboardEvent) => {
           定时任务
           <el-badge v-if="jobCount && jobCount > 0" :value="jobCount" class="ml-1" type="info" is-dot />
         </el-button>
-        
+
         <!-- 任务管理按钮 -->
         <el-button
           type="success"
@@ -323,15 +317,9 @@ const handleKeydown = (event: KeyboardEvent) => {
           </el-icon>
           管理任务
         </el-button>
-        
+
         <!-- 删除按钮 -->
-        <el-button
-          type="danger"
-          size="small"
-          plain
-          :disabled="isEditing"
-          @click.stop="handleDelete"
-        >
+        <el-button type="danger" size="small" plain :disabled="isEditing" @click.stop="handleDelete">
           <el-icon class="mr-1">
             <Delete />
           </el-icon>

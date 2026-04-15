@@ -12,11 +12,15 @@ import AgentQueryDialog from '@/components/AgentQueryDialog.vue'
 
 const chatStore = useChatStore()
 
-watch(() => chatStore.urlSessionId, (newSessionId) => {
-  if (newSessionId && newSessionId !== chatStore.sessionId) {
-    chatStore.autoConnectAndSubscribe()
-  }
-}, { immediate: true })
+watch(
+  () => chatStore.urlSessionId,
+  (newSessionId) => {
+    if (newSessionId && newSessionId !== chatStore.sessionId) {
+      chatStore.autoConnectAndSubscribe()
+    }
+  },
+  { immediate: true }
+)
 
 onMounted(() => {
   chatStore.init()
@@ -32,21 +36,21 @@ onUnmounted(() => {
   <div class="h-[100dvh] bg-gray-50 flex flex-col overflow-hidden">
     <LoadingOverlay :visible="chatStore.loading" />
     <ChatHeader />
-    
+
     <div class="flex-1 mx-auto max-w-7xl w-full px-2 sm:px-2 py-2 sm:py-2 overflow-hidden">
       <div class="grid grid-cols-12 gap-2 sm:gap-4 h-full relative">
         <AgentSidebar />
-        
-        <div 
+
+        <div
           class="flex flex-col gap-1 sm:gap-2 h-full overflow-hidden"
           :class="{
-            'col-span-12 lg:col-span-6': true
+            'col-span-12 lg:col-span-6': true,
           }"
         >
           <ChatMessageList />
           <ChatInput />
         </div>
-        
+
         <ChatInfoSidebar />
       </div>
     </div>

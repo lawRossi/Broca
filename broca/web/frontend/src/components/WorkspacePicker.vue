@@ -18,7 +18,7 @@ interface Emits {
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  initialPath: '/'
+  initialPath: '/',
 })
 
 const emit = defineEmits<Emits>()
@@ -60,11 +60,7 @@ const handleConfirm = () => {
     @update:model-value="handleClose"
   >
     <div class="workspace-picker-dialog">
-      <FileBrowser
-        ref="fileBrowserRef"
-        :initial-path="initialPath"
-        @file-click="handleFileClick"
-      />
+      <FileBrowser ref="fileBrowserRef" :initial-path="initialPath" @file-click="handleFileClick" />
     </div>
     <template #footer>
       <span class="dialog-footer">
@@ -98,36 +94,36 @@ const handleConfirm = () => {
     max-height: 100vh;
     overflow: hidden;
   }
-  
+
   :deep(.el-dialog__header) {
     padding: 16px 20px;
     margin: 0;
     border-bottom: 1px solid var(--el-border-color-light);
   }
-  
+
   :deep(.el-dialog__title) {
     font-size: 18px;
     font-weight: 600;
   }
-  
+
   :deep(.el-dialog__body) {
     padding: 16px 20px;
     overflow-y: auto;
     flex: 1;
     max-height: calc(100vh - 120px);
   }
-  
+
   :deep(.el-dialog__footer) {
     padding: 12px 20px;
     border-top: 1px solid var(--el-border-color-light);
   }
-  
+
   .workspace-picker-dialog p {
     font-size: 14px;
     margin-bottom: 16px;
     line-height: 1.5;
   }
-  
+
   :deep(.file-browser) {
     min-height: 300px !important;
   }

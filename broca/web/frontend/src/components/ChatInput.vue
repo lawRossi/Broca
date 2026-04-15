@@ -9,20 +9,22 @@ const userStore = useUserStore()
 
 // 文件上传相关状态
 const fileInputRef = ref<HTMLInputElement>()
-const pendingFiles = ref<Array<{
-  file: File
-  id: string
-  status: 'pending' | 'uploading' | 'success' | 'error'
-  progress: number
-  error?: string
-  uploadedData?: {
-    name: string
-    url: string
-    path: string
-    size: number
-    type: string
-  }
-}>>([])
+const pendingFiles = ref<
+  Array<{
+    file: File
+    id: string
+    status: 'pending' | 'uploading' | 'success' | 'error'
+    progress: number
+    error?: string
+    uploadedData?: {
+      name: string
+      url: string
+      path: string
+      size: number
+      type: string
+    }
+  }>
+>([])
 
 const userId = computed(() => userStore.userId)
 const isUploading = ref(false)
@@ -247,7 +249,9 @@ const removePendingFile = (id: string) => {
 }
 
 // 上传单个文件
-const uploadSingleFile = async (fileRecord: typeof pendingFiles.value[0]): Promise<{
+const uploadSingleFile = async (
+  fileRecord: (typeof pendingFiles.value)[0]
+): Promise<{
   name: string
   url: string
   path: string
@@ -381,7 +385,10 @@ const handleSendMessage = async () => {
   const failedFiles = pendingFiles.value.filter((f) => f.status === 'error')
   if (failedFiles.length > 0) {
     // 可以提示用户，但继续发送成功的文件
-    console.warn('部分文件上传失败:', failedFiles.map(f => f.error))
+    console.warn(
+      '部分文件上传失败:',
+      failedFiles.map((f) => f.error)
+    )
   }
 
   // 获取上传成功的文件数据
@@ -430,7 +437,7 @@ const handleSendMessage = async () => {
         :class="{
           'border-red-300 bg-red-50': fileRecord.status === 'error',
           'border-green-300 bg-green-50': fileRecord.status === 'success',
-          'border-blue-300 bg-blue-50': fileRecord.status === 'uploading'
+          'border-blue-300 bg-blue-50': fileRecord.status === 'uploading',
         }"
       >
         <span class="text-lg">{{ getFileIcon(fileRecord.file) }}</span>
@@ -462,13 +469,7 @@ const handleSendMessage = async () => {
     <div class="flex gap-2">
       <div class="flex-1 relative">
         <!-- 隐藏的文件输入 -->
-        <input
-          ref="fileInputRef"
-          type="file"
-          multiple
-          class="hidden"
-          @change="handleFileChange"
-        />
+        <input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileChange" />
 
         <el-input
           v-model="chatStore.input"

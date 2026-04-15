@@ -17,7 +17,7 @@ const previewFileUrl = ref<string>('')
 // 配置 marked 选项
 marked.setOptions({
   breaks: true, // 将换行符转换为 <br>
-  gfm: true // 启用 GitHub 风格 Markdown
+  gfm: true, // 启用 GitHub 风格 Markdown
 })
 
 // 渲染 Markdown 内容
@@ -275,7 +275,6 @@ const getReasoningContent = (message: Message) => {
   return getReasoningContentFromData(message)
 }
 
-
 // 打开文件预览
 const openFilePreview = (file: { url?: string; path?: string; name?: string; type?: string }) => {
   // 优先使用 url（Supabase Storage），否则使用 path（本地文件）
@@ -377,7 +376,8 @@ const formatFileSize = (bytes: number): string => {
         <pre
           class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
           :class="getContentClass(message)"
-        >{{ getContent(message) }}</pre>
+          >{{ getContent(message) }}</pre
+        >
 
         <!-- 文件附件显示 -->
         <div v-if="message.data?.files && message.data.files.length > 0" class="mt-2 space-y-2">
@@ -418,7 +418,8 @@ const formatFileSize = (bytes: number): string => {
         v-else
         class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
         :class="getContentClass(message)"
-      >{{ getContent(message) }}</pre>
+        >{{ getContent(message) }}</pre
+      >
 
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
         <!-- 参数展示 -->
@@ -436,9 +437,7 @@ const formatFileSize = (bytes: number): string => {
 
           <!-- 参数内容：特殊处理todo_management和ask_user -->
           <div v-if="shouldExpandParameters(message)" class="mt-1 p-2 bg-purple-100 rounded border border-purple-200">
-            <div v-if="isAskUser(message)" class="text-xs font-semibold text-purple-700 mb-1">
-              问题:
-            </div>
+            <div v-if="isAskUser(message)" class="text-xs font-semibold text-purple-700 mb-1">问题:</div>
 
             <!-- 特殊处理todo_management的todos列表 -->
             <div v-if="isTodoManagement(message) && getTodos(message)" class="bg-white p-2 rounded border">
@@ -480,7 +479,8 @@ const formatFileSize = (bytes: number): string => {
             <pre
               v-else
               class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
-            >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre>
+              >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre
+            >
           </div>
         </div>
 
@@ -498,9 +498,7 @@ const formatFileSize = (bytes: number): string => {
 
           <!-- ask_user结果默认展开 -->
           <div v-if="shouldExpandResult(message)" class="mt-1 p-2 bg-green-50 rounded border border-green-200">
-            <div v-if="isAskUser(message)" class="text-xs font-semibold text-green-700 mb-1">
-              回答:
-            </div>
+            <div v-if="isAskUser(message)" class="text-xs font-semibold text-green-700 mb-1">回答:</div>
 
             <!-- 特殊处理ask_user结果 -->
             <div v-if="isAskUser(message) && getAskUserResult(message)" class="bg-white p-2 rounded border">
@@ -513,11 +511,12 @@ const formatFileSize = (bytes: number): string => {
             <pre
               v-else
               class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
-            >{{
+              >{{
                 typeof message.data.result === 'string'
                   ? message.data.result
                   : JSON.stringify(message.data.result, null, 2)
-            }}</pre>
+              }}</pre
+            >
           </div>
         </div>
       </div>
@@ -593,7 +592,14 @@ const formatFileSize = (bytes: number): string => {
 }
 
 :deep(.markdown-content code) {
-  font-family: ui-monospace, SFMono-Regular, SF Mono, Menlo, Consolas, Liberation Mono, monospace;
+  font-family:
+    ui-monospace,
+    SFMono-Regular,
+    SF Mono,
+    Menlo,
+    Consolas,
+    Liberation Mono,
+    monospace;
   font-size: 0.875em;
   background-color: rgba(175, 184, 193, 0.2);
   padding: 0.2em 0.4em;

@@ -205,17 +205,13 @@ onUnmounted(() => {
       class="flex justify-between items-center lg:hidden mb-4"
     >
       <span class="text-sm font-semibold text-gray-700">Session Agents</span>
-      <el-button size="small" @click="chatStore.showLeftSidebar = false">
-        ✕
-      </el-button>
+      <el-button size="small" @click="chatStore.showLeftSidebar = false"> ✕ </el-button>
     </div>
 
     <!-- Agent面板标题 -->
     <div class="flex items-center justify-between mb-2">
       <div class="flex items-center gap-2">
-        <h3 class="text-sm font-semibold text-gray-900">
-          Session Agents
-        </h3>
+        <h3 class="text-sm font-semibold text-gray-900">Session Agents</h3>
         <el-tooltip content="点击Agent查看详情，使用 @agent名称 发送消息给指定agent" placement="top">
           <el-icon :size="14" class="text-gray-400 cursor-help">
             <InfoFilled />
@@ -286,12 +282,7 @@ onUnmounted(() => {
               </el-icon>
               {{ getStatusText(agent.status || 'disconnected') }}
             </el-tag>
-            <el-tooltip
-              v-if="agent.status === 'running'"
-              content="中断此Agent"
-              placement="top"
-              :show-after="300"
-            >
+            <el-tooltip v-if="agent.status === 'running'" content="中断此Agent" placement="top" :show-after="300">
               <el-button
                 type="danger"
                 size="small"
@@ -377,9 +368,7 @@ onUnmounted(() => {
           <User />
         </el-icon>
         <p>暂无Agent</p>
-        <p v-if="!chatStore.sessionId" class="text-xs mt-1">
-          请先进入一个会话
-        </p>
+        <p v-if="!chatStore.sessionId" class="text-xs mt-1">请先进入一个会话</p>
       </div>
     </div>
   </div>
@@ -395,12 +384,8 @@ onUnmounted(() => {
   >
     <!-- 刷新配置按钮 -->
     <div v-if="selectedAgent" class="flex items-center gap-2 mb-4">
-      <el-button size="small" :icon="Refresh" :loading="configLoading" @click="refreshConfig">
-        刷新配置
-      </el-button>
-      <el-tag v-if="selectedAgentConfig" size="small" type="success">
-        已加载
-      </el-tag>
+      <el-button size="small" :icon="Refresh" :loading="configLoading" @click="refreshConfig"> 刷新配置 </el-button>
+      <el-tag v-if="selectedAgentConfig" size="small" type="success"> 已加载 </el-tag>
     </div>
 
     <!-- 加载状态 -->
@@ -409,9 +394,7 @@ onUnmounted(() => {
         <Loading />
       </el-icon>
       <p>正在获取配置信息...</p>
-      <p class="text-xs mt-1">
-        请稍候
-      </p>
+      <p class="text-xs mt-1">请稍候</p>
     </div>
 
     <!-- JSON配置信息展示 -->
@@ -476,20 +459,14 @@ onUnmounted(() => {
         <Setting />
       </el-icon>
       <p>暂无配置信息</p>
-      <p class="text-xs mt-1">
-        请选择一个Agent查看配置
-      </p>
+      <p class="text-xs mt-1">请选择一个Agent查看配置</p>
     </div>
 
     <!-- 弹窗底部按钮 -->
     <template #footer>
       <div class="flex justify-end gap-2">
-        <el-button size="small" @click="closeConfigDialog">
-          关闭
-        </el-button>
-        <el-button type="primary" size="small" @click="sendMessageToAgent">
-          发送消息给此Agent
-        </el-button>
+        <el-button size="small" @click="closeConfigDialog"> 关闭 </el-button>
+        <el-button type="primary" size="small" @click="sendMessageToAgent"> 发送消息给此Agent </el-button>
       </div>
     </template>
   </el-dialog>
@@ -551,30 +528,30 @@ onUnmounted(() => {
     max-height: 100vh;
     overflow: hidden;
   }
-  
+
   :deep(.agent-config-dialog .el-dialog__header) {
     padding: 16px 20px;
     margin: 0;
     border-bottom: 1px solid var(--el-border-color-light);
   }
-  
+
   :deep(.agent-config-dialog .el-dialog__title) {
     font-size: 18px;
     font-weight: 600;
   }
-  
+
   :deep(.agent-config-dialog .el-dialog__body) {
     padding: 16px 20px !important;
     overflow-y: auto;
     flex: 1;
     max-height: calc(100vh - 120px);
   }
-  
+
   :deep(.agent-config-dialog .el-dialog__footer) {
     padding: 12px 20px;
     border-top: 1px solid var(--el-border-color-light);
   }
-  
+
   :deep(.agent-config-dialog pre) {
     font-size: 12px;
     line-height: 1.4;

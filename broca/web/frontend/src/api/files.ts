@@ -59,7 +59,7 @@ export const filesApi = {
    */
   async listFiles(path: string = '.'): Promise<FileListResponse> {
     return request.get('/files', {
-      params: { path }
+      params: { path },
     })
   },
 
@@ -68,7 +68,7 @@ export const filesApi = {
    */
   async getFileInfo(path: string): Promise<FileInfo> {
     return request.get('/files/info', {
-      params: { path }
+      params: { path },
     })
   },
 
@@ -77,7 +77,7 @@ export const filesApi = {
    */
   async previewFile(path: string): Promise<FilePreview> {
     return request.get('/files/preview', {
-      params: { path }
+      params: { path },
     })
   },
 
@@ -85,9 +85,13 @@ export const filesApi = {
    * 编辑文件
    */
   async editFile(path: string, content: string): Promise<FileEditResponse> {
-    return request.put('/files/edit', { content }, {
-      params: { path }
-    })
+    return request.put(
+      '/files/edit',
+      { content },
+      {
+        params: { path },
+      }
+    )
   },
 
   /**
@@ -95,7 +99,7 @@ export const filesApi = {
    */
   async getHomeDirectory(): Promise<{ home_dir: string }> {
     return request.get('/files/home')
-  }
+  },
 }
 
 export default filesApi

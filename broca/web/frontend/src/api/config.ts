@@ -10,9 +10,7 @@ export interface LLMModel {
   name: string
 }
 
-
 export const configApi = {
-
   /**
    * 获取可用的LLM提供商列表
    */
@@ -25,7 +23,7 @@ export const configApi = {
    */
   async getLLMModels(provider: string): Promise<LLMModel[]> {
     return await request.get(`/config/llm/models/${provider}`)
-  }
+  },
 }
 
 export default configApi

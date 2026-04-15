@@ -2,7 +2,19 @@
 import { computed } from 'vue'
 import type { Task } from '@/api/task'
 import { TaskStatus, TaskPriority } from '@/api/task'
-import { Loading, Document, Edit, Delete, Check, Clock, Warning, User, Link, MoreFilled, StarFilled } from '@element-plus/icons-vue'
+import {
+  Loading,
+  Document,
+  Edit,
+  Delete,
+  Check,
+  Clock,
+  Warning,
+  User,
+  Link,
+  MoreFilled,
+  StarFilled,
+} from '@element-plus/icons-vue'
 
 interface Props {
   tasks: Task[]
@@ -200,7 +212,9 @@ const isTaskStarred = (task: Task): boolean => {
     <!-- 加载状态 -->
     <div v-if="loading" class="flex flex-col items-center justify-center py-16">
       <div class="relative">
-        <div class="w-16 h-16 rounded-full bg-gradient-to-r from-primary-100 to-primary-200 flex items-center justify-center animate-pulse">
+        <div
+          class="w-16 h-16 rounded-full bg-gradient-to-r from-primary-100 to-primary-200 flex items-center justify-center animate-pulse"
+        >
           <el-icon class="is-loading text-primary-600" size="28">
             <Loading />
           </el-icon>
@@ -212,16 +226,16 @@ const isTaskStarred = (task: Task): boolean => {
 
     <!-- 空状态 -->
     <div v-else-if="tasks.length === 0" class="flex flex-col items-center justify-center py-16">
-      <div class="w-24 h-24 mb-6 rounded-full bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center shadow-inner">
+      <div
+        class="w-24 h-24 mb-6 rounded-full bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center shadow-inner"
+      >
         <el-icon size="40" class="text-gray-400">
           <Document />
         </el-icon>
       </div>
-      <p class="text-gray-700 font-semibold text-lg mb-2">
-        暂无任务
-      </p>
+      <p class="text-gray-700 font-semibold text-lg mb-2">暂无任务</p>
       <p class="text-gray-500 text-sm text-center max-w-xs">
-        通过Agent的task工具创建任务<br>或点击右上角的"新建任务"按钮
+        通过Agent的task工具创建任务<br />或点击右上角的"新建任务"按钮
       </p>
       <div class="mt-6 flex gap-3">
         <el-button type="primary" size="small" class="rounded-full px-4">
@@ -230,9 +244,7 @@ const isTaskStarred = (task: Task): boolean => {
           </el-icon>
           创建任务
         </el-button>
-        <el-button type="default" size="small" class="rounded-full px-4">
-          查看教程
-        </el-button>
+        <el-button type="default" size="small" class="rounded-full px-4"> 查看教程 </el-button>
       </div>
     </div>
 
@@ -243,7 +255,8 @@ const isTaskStarred = (task: Task): boolean => {
         :key="task.task_id"
         class="task-card group bg-white rounded-2xl border border-gray-100 p-5 cursor-pointer transition-all duration-300 hover:shadow-lg hover-lift"
         :class="{
-          'ring-2 ring-primary-500 border-primary-500 bg-gradient-to-r from-primary-50/50 to-primary-50/20': selectedTasks.includes(task.task_id),
+          'ring-2 ring-primary-500 border-primary-500 bg-gradient-to-r from-primary-50/50 to-primary-50/20':
+            selectedTasks.includes(task.task_id),
           'hover:border-primary-200': !selectedTasks.includes(task.task_id),
         }"
         @click="handleView(task)"
@@ -256,7 +269,7 @@ const isTaskStarred = (task: Task): boolean => {
               class="task-checkbox"
               @change="(val: boolean) => (val ? handleTaskSelect(task.task_id) : handleTaskDeselect(task.task_id))"
             />
-            
+
             <!-- 重要标记 -->
             <el-button
               v-if="isTaskStarred(task)"
@@ -279,7 +292,8 @@ const isTaskStarred = (task: Task): boolean => {
                 <!-- 状态指示器 -->
                 <div class="flex-shrink-0 mt-1">
                   <div
-                    class="w-3 h-3 rounded-full" :class="{
+                    class="w-3 h-3 rounded-full"
+                    :class="{
                       'bg-blue-500': task.status === TaskStatus.PENDING,
                       'bg-primary-500': task.status === TaskStatus.IN_PROGRESS,
                       'bg-amber-500': task.status === TaskStatus.BLOCKED,
@@ -287,19 +301,19 @@ const isTaskStarred = (task: Task): boolean => {
                     }"
                   />
                 </div>
-                
+
                 <div class="min-w-0 flex-1">
                   <h3 class="text-lg font-semibold text-gray-900 truncate mb-1">
                     {{ task.name }}
                   </h3>
-                  
+
                   <!-- 标签行 -->
                   <div class="flex items-center gap-2 mb-3 flex-wrap">
-                    <el-tag 
-                      :type="getStatusType(task.status)" 
-                      size="small" 
-                      effect="plain" 
-                      round 
+                    <el-tag
+                      :type="getStatusType(task.status)"
+                      size="small"
+                      effect="plain"
+                      round
                       class="task-tag border-0 font-medium"
                     >
                       <el-icon class="mr-1" size="12">
@@ -307,19 +321,19 @@ const isTaskStarred = (task: Task): boolean => {
                       </el-icon>
                       {{ getStatusText(task.status) }}
                     </el-tag>
-                    <el-tag 
-                      :type="getPriorityType(task.priority)" 
-                      size="small" 
-                      effect="plain" 
-                      round 
+                    <el-tag
+                      :type="getPriorityType(task.priority)"
+                      size="small"
+                      effect="plain"
+                      round
                       class="task-tag border-0 font-medium"
                     >
                       {{ getPriorityText(task.priority) }}
                     </el-tag>
-                    
+
                     <!-- 紧急标记 -->
-                    <span 
-                      v-if="task.priority === TaskPriority.HIGH" 
+                    <span
+                      v-if="task.priority === TaskPriority.HIGH"
                       class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800"
                     >
                       <el-icon size="10" class="mr-1"><Warning /></el-icon>
@@ -418,12 +432,7 @@ const isTaskStarred = (task: Task): boolean => {
           <div class="hidden md:flex flex-col items-center gap-3 ml-2" @click.stop>
             <!-- 状态切换 -->
             <el-dropdown @command="(status: TaskStatus) => handleUpdateStatus(task, status)">
-              <el-button 
-                size="small" 
-                type="primary" 
-                circle 
-                class="task-action-btn hover-scale !w-10 !h-10 !shadow-md"
-              >
+              <el-button size="small" type="primary" circle class="task-action-btn hover-scale !w-10 !h-10 !shadow-md">
                 <el-icon size="16">
                   <component :is="getStatusIcon(task.status)" />
                 </el-icon>
@@ -446,10 +455,10 @@ const isTaskStarred = (task: Task): boolean => {
             </el-dropdown>
 
             <!-- 编辑按钮 -->
-            <el-button 
-              size="small" 
-              type="default" 
-              circle 
+            <el-button
+              size="small"
+              type="default"
+              circle
               class="task-action-btn hover-scale !w-10 !h-10 !shadow-sm hover:!border-primary-300"
               @click="handleEdit(task)"
             >
@@ -615,13 +624,13 @@ const isTaskStarred = (task: Task): boolean => {
   .task-card {
     -webkit-tap-highlight-color: transparent;
   }
-  
+
   .task-action-btn {
     opacity: 1;
     min-height: 44px;
     min-width: 44px;
   }
-  
+
   .task-checkbox :deep(.el-checkbox__inner) {
     width: 20px;
     height: 20px;
@@ -634,19 +643,19 @@ const isTaskStarred = (task: Task): boolean => {
     background-color: #1f2937;
     border-color: #374151;
   }
-  
+
   .task-card:hover {
     border-color: #4b5563;
   }
-  
+
   .task-card h3 {
     color: #f9fafb;
   }
-  
+
   .task-card .text-gray-600 {
     color: #d1d5db;
   }
-  
+
   .task-card .border-gray-100 {
     border-color: #374151;
   }

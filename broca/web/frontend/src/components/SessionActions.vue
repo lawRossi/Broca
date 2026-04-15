@@ -38,23 +38,13 @@ const handleBatchDelete = () => {
     class="session-actions bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-center justify-between"
   >
     <div class="flex items-center gap-3">
-      <el-checkbox
-        :model-value="isAllSelected"
-        :indeterminate="isIndeterminate"
-        @change="handleSelectAll"
-      >
+      <el-checkbox :model-value="isAllSelected" :indeterminate="isIndeterminate" @change="handleSelectAll">
         已选择 {{ selectedCount }} 项
       </el-checkbox>
     </div>
 
     <div class="flex items-center gap-2">
-      <el-button
-        type="danger"
-        size="small"
-        :loading="deleteLoading"
-        :icon="Delete"
-        @click="handleBatchDelete"
-      >
+      <el-button type="danger" size="small" :loading="deleteLoading" :icon="Delete" @click="handleBatchDelete">
         批量删除 ({{ selectedCount }})
       </el-button>
     </div>

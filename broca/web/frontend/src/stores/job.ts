@@ -83,7 +83,9 @@ export const useJobStore = defineStore('job', () => {
 
       jobs.value = response.jobs
       total.value = response.total
-      currentPage.value = params?.skip ? Math.floor(params.skip / (params.limit || pageSize.value)) + 1 : currentPage.value
+      currentPage.value = params?.skip
+        ? Math.floor(params.skip / (params.limit || pageSize.value)) + 1
+        : currentPage.value
     } catch (error: any) {
       console.error('获取任务列表失败:', error)
       ElMessage.error('加载任务列表失败')
@@ -162,15 +164,11 @@ export const useJobStore = defineStore('job', () => {
 
   const deleteJob = async (jobId: string) => {
     try {
-      await ElMessageBox.confirm(
-        '确定要删除这个定时任务吗？此操作不可恢复。',
-        '确认删除',
-        {
-          confirmButtonText: '确定删除',
-          cancelButtonText: '取消',
-          type: 'warning',
-        }
-      )
+      await ElMessageBox.confirm('确定要删除这个定时任务吗？此操作不可恢复。', '确认删除', {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
 
       await jobApi.deleteJob(jobId)
       ElMessage.success('任务已删除')
