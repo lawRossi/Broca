@@ -15,6 +15,11 @@ class CreateSessionRequest(BaseModel):
     model: Optional[str] = None  # LLM model，如 stepfun、nemotron 等
 
 
+class UpdateSessionRequest(BaseModel):
+    """更新 Session 的请求模型"""
+    description: Optional[str] = None
+
+
 class ApiResponse(BaseModel):
     code: int = 200
     msg: str | None = ""

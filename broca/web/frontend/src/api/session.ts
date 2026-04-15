@@ -24,7 +24,6 @@ export interface Agent {
 
 export type { Message, MessageType, MessageRole }
 
-
 export interface LatestAgentResponse {
   agent_id: string
   agent_name: string
@@ -37,7 +36,6 @@ export interface MessagesResponse {
   skip: number
   limit: number
 }
-
 
 export interface SessionsResponse {
   sessions: Session[]
@@ -58,6 +56,10 @@ export interface CreateSessionParams {
   workspace?: string
   provider?: string
   model?: string
+}
+
+export interface UpdateSessionParams {
+  description?: string
 }
 
 export interface CreateSessionResponse {
@@ -85,8 +87,8 @@ export const sessionApi = {
         skip: params.skip ?? 0,
         limit: params.limit ?? 20,
         status: params.status,
-        keyword: params.keyword
-      }
+        keyword: params.keyword,
+      },
     })
   },
 
@@ -100,13 +102,9 @@ export const sessionApi = {
   /**
    * 获取会话的消息历史
    */
-  async getSessionMessages(
-    sessionId: string,
-    skip: number = 0,
-    limit: number = 50
-  ): Promise<MessagesResponse> {
+  async getSessionMessages(sessionId: string, skip: number = 0, limit: number = 50): Promise<MessagesResponse> {
     return request.get(`/session/${sessionId}/messages`, {
-      params: { skip, limit }
+      params: { skip, limit },
     })
   },
 
@@ -115,6 +113,13 @@ export const sessionApi = {
    */
   async createSession(params: CreateSessionParams = {}): Promise<CreateSessionResponse> {
     return request.post('/session/sessions', params)
+  },
+
+  /**
+   * 更新会话信息（如描述）
+   */
+  async updateSession(sessionId: string, params: UpdateSessionParams): Promise<void> {
+    return request.put(`/session/${sessionId}`, params)
   },
 
   /**
@@ -128,9 +133,7 @@ export const sessionApi = {
    * 批量删除会话
    */
   async deleteSessions(sessionIds: string[]): Promise<void> {
-    return request.delete('/session/sessions', {
-      data: { session_ids: sessionIds }
-    })
+    return request.delete('/session/sessions', { data: { session_ids: sessionIds } })
   },
 
   /**
@@ -138,7 +141,7 @@ export const sessionApi = {
    */
   async getSessionStats(sessionId: string): Promise<SessionStats> {
     return request.get(`/session/${sessionId}/stats`)
-  }
+  },
 }
 
 export default sessionApi
