@@ -20,6 +20,7 @@ class GrepTool(Tool):
     def description(self) -> str:
         return """- Fast content search tool that searches file contents using regular expressions
 - Supports full regex syntax (eg. "log.*Error", "function\\s+\\w+", etc.)
+- Can search in directories or specific files
 - Filter files by pattern with the include parameter (eg. "*.js", "*.{ts,tsx}")
 - Returns file paths and line numbers with at least one match sorted by modification time
 - Use this tool when you need to find files containing specific patterns"""
@@ -35,7 +36,7 @@ class GrepTool(Tool):
                 },
                 "path": {
                     "type": "string",
-                    "description": "The directory to search in. Defaults to the current working directory.",
+                    "description": "The directory or file to search in. Defaults to the current working directory.",
                 },
                 "include": {
                     "type": "string",
@@ -71,18 +72,12 @@ class GrepTool(Tool):
             else:
                 search_dir = (base_path / search_path).resolve()
 
-            search_dir = search_dir.resolve()
+            search_path_resolved = search_dir.resolve()
 
-            if not search_dir.exists():
+            if not search_path_resolved.exists():
                 return ToolResult(
                     status=ToolStatus.ERROR,
-                    content=f"Error: Directory not found: {search_dir}",
-                )
-
-            if not search_dir.is_dir():
-                return ToolResult(
-                    status=ToolStatus.ERROR,
-                    content=f"Error: Not a directory: {search_dir}",
+                    content=f"Error: Path not found: {search_path_resolved}",
                 )
 
             # Build ripgrep command
@@ -92,7 +87,7 @@ class GrepTool(Tool):
             if include_pattern:
                 cmd.extend(["--glob", include_pattern])
 
-            cmd.append(str(search_dir))
+            cmd.append(str(search_path_resolved))
 
             try:
                 process = await asyncio.create_subprocess_exec(
