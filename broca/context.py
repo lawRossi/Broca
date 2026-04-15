@@ -74,7 +74,10 @@ class Context:
                 if content is None:
                     continue
                 message_content = json.loads(content)
-                await self.add_message(Message.parse_obj(message_content))
+                if message_content["role"] != "user":
+                    await self.add_message(Message.parse_obj(message_content))
+                else:
+                    await self.add_message(message_content)
 
     def get_latest_assistant_message(self) -> str | None:
         if not self._history:
