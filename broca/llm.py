@@ -132,6 +132,13 @@ class LLMClient:
     async def get_stream_response(
         self, provider, model, messages, tools=None, first_chunk_timeout=60
     ) -> AsyncGenerator[dict, None]:
+        if provider not in self.config:
+            raise ValueError(f"Unknown provider: {provider}")
+        if model not in self.config[provider]:
+            raise ValueError(f"Unknown model: {model}")
+        args = copy.deepcopy(self.config[provider][model])
+        del args["modality"]
+
         response = await acompletion(
             base_url=self.config[provider]["base_url"],
             api_key=self.config[provider]["api_key"],
@@ -139,7 +146,7 @@ class LLMClient:
             tools=tools,
             stream=True,
             stream_options={"include_usage": True},
-            **self.config[provider][model],
+            **args,
         )
 
         iterator = response.__aiter__()
