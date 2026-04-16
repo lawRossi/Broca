@@ -34,24 +34,11 @@ sub-agent: A helpful agent that can aid you with general tasks.
 {{skills}}
 {%- endif %}
 
-## Workflow Examples
+## Tool Usage Guide
 
-### simple tasks
-
-user: hey
-assistant: Hello, how can I assistant you to day
-
-user: 2 + 2 = ?
-assistant: 2 + 2 = 4
-
-### complex task
-
-user: I want to implement a blog web app
-assistant: 
-- load appropriate skills when available
-- plan the solution and breaking down subtasks
-- execute subtasks one by one and review and update your plan accordingly
-- continue until the task is completed
+- use glob and grep for efficient file searching and content searching
+- use tree_dir for efficient directory exploration
+- when using cron, you MUST distinguish between one-time and recycled execution , and notice that only trigger type 'date' is for one-time execution
 
 {% if bootstrap_content -%}
 {{bootstrap_content}}
