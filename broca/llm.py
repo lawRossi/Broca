@@ -1,4 +1,3 @@
-import asyncio
 import copy
 import json
 import warnings
@@ -102,30 +101,8 @@ class LLMClient:
             content.append({"type": "text", "text": text_content})
         return {"role": "user", "content": content}
 
-    async def get_response(self, provider, model, messages, tools=None) -> LLMMessage:
-        if provider not in self.config:
-            raise ValueError(f"Unknown provider: {provider}")
-        if model not in self.config[provider]:
-            raise ValueError(f"Unknown model: {model}")
-        args = copy.deepcopy(self.config[provider][model])
-        del args["modality"]
-        response = await acompletion(
-            base_url=self.config[provider]["base_url"],
-            api_key=self.config[provider]["api_key"],
-            messages=messages,
-            tools=tools,
-            **args,
-        )
-        logger.debug(
-            f"LLM call - input tokens: {response.usage.prompt_tokens}, output tokens: {response.usage.completion_tokens}"
-        )
-        self.input_tokens_used = response.usage.prompt_tokens
-        self.output_tokens_used = response.usage.completion_tokens
-
-        return response.choices[0].message
-
     async def get_stream_response(
-        self, provider, model, messages, tools=None, first_chunk_timeout=60
+        self, provider, model, messages, tools=None, first_chunk_timeout=30
     ) -> AsyncGenerator[dict, None]:
         if provider not in self.config:
             raise ValueError(f"Unknown provider: {provider}")
@@ -141,27 +118,11 @@ class LLMClient:
             tools=tools,
             stream=True,
             stream_options={"include_usage": True},
+            stream_timeout=first_chunk_timeout,
             **args,
         )
 
-        iterator = response.__aiter__()
-        first_chunk_task = asyncio.create_task(iterator.__anext__())
-
-        try:
-            first_chunk = await asyncio.wait_for(
-                first_chunk_task, timeout=first_chunk_timeout
-            )
-            async for result in self._process_chunk(first_chunk):
-                yield result
-        except asyncio.TimeoutError:
-            first_chunk_task.cancel()
-            try:
-                await first_chunk_task
-            except asyncio.CancelledError:
-                pass
-            raise asyncio.TimeoutError("First chunk timed out")
-
-        async for chunk in iterator:
+        async for chunk in response:
             async for result in self._process_chunk(chunk):
                 yield result
 
