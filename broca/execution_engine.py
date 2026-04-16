@@ -454,12 +454,14 @@ class ExecutionEngine:
 
     async def process_turn_end(self, result: ExecutionResult) -> bool:
         try:
+            logger.info("turn ended with result: " + str(result))
             await self.communicator.send_turn_end(
                 turn_id=self.turn_id, subscription=self.session_id
             )
             if result.status == ExecutionStatus.COMPLETED:
                 message = "Turn completed successfully"
             elif result.status == ExecutionStatus.ABORTED:
+                await self._truncate_last_assistant_message_with_tool_calls()
                 message = "Turn aborted by user"
             elif result.status == ExecutionStatus.LIMIT_EXCEEDED:
                 message = "Turn step limit exceeded"
@@ -468,14 +470,15 @@ class ExecutionEngine:
                 )
             elif result.status == ExecutionStatus.ERROR:
                 message = "Turn failed"
-                error_message = result.message
-                await self.communicator.send_error(
-                    error_message, subscription=self.session_id
-                )
             elif result.status == ExecutionStatus.SKIPPED:
                 message = "Turn skipped"
             else:
                 message = "Turn failed"
+
+            if result.status != ExecutionStatus.COMPLETED:
+                await self.communicator.send_error(
+                    message, subscription=self.session_id
+                )
 
             return await self.session_manager.save_turn_end(
                 turn_id=self.turn_id, agent_id=self.agent_id, message=message
@@ -565,3 +568,14 @@ class ExecutionEngine:
         self.turn_id = None
         self.agent_id = None
         self.session_id = None
+
+    async def _truncate_last_assistant_message_with_tool_calls(self):
+        """
+        Truncate the last assistant message with tool_calls from context and database.
+        """
+        if self.context:
+            await self.context.truncate_last_assistant_message_with_tool_calls(
+                session_manager=self.session_manager,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+            )
