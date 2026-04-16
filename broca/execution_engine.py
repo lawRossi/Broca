@@ -149,7 +149,8 @@ class ExecutionEngine:
                     response = await asyncio.wait_for(
                         self._call_llm_streaming(), timeout=300
                     )
-                    break
+                    if not response:
+                        raise AgentError(ErrorType.LLM_ERROR, "LLM call failed")
             except AgentError as e:
                 errors += 1
                 logger.error(f"LLM call failed with error: {e}")
