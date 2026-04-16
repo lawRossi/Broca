@@ -99,17 +99,13 @@ class SocketIOClient:
         self._reconnect_task: Optional[asyncio.Task] = None
         self._should_reconnect = False
 
-        logger.info(
-            f"Socket.io client initialized (ID: {self.client_id}, Type: {client_type})"
-        )
-
     def _setup_event_handlers(self):
         """Setup Socket.io event handlers"""
 
         @self.sio.event
         async def connect():
             """Handle connection to server"""
-            logger.info(f"Connected to server at {self.server_url}")
+            logger.debug(f"Connected to server at {self.server_url}")
             self.connection_info.connected = True
 
             # Signal that connection is complete
@@ -134,12 +130,12 @@ class SocketIOClient:
 
             await self.send_message(connect_msg)
 
-            logger.info(f"Client {self.client_id} connected successfully")
+            logger.debug(f"Client {self.client_id} connected successfully")
 
         @self.sio.event
         async def disconnect():
             """Handle disconnection from server"""
-            logger.info(f"Disconnected from server at {self.server_url}")
+            logger.debug(f"Disconnected from server at {self.server_url}")
             self.connection_info.connected = False
 
             # Clear the connect event
@@ -350,7 +346,7 @@ class SocketIOClient:
                 raise RuntimeError(f"Connection timeout after {timeout}s")
                 return False
 
-            logger.info(f"Connected to server at {self.server_url}")
+            logger.debug(f"Connected to server at {self.server_url}")
 
         except Exception as e:
             logger.error(f"Failed to connect to server: {e}")
@@ -371,7 +367,7 @@ class SocketIOClient:
 
         if self.connection_info.connected:
             await self.sio.disconnect()
-            logger.info(f"Disconnected from server at {self.server_url}")
+            logger.debug(f"Disconnected from server at {self.server_url}")
 
     async def _reconnect(self):
         """Attempt to reconnect to server"""
@@ -379,12 +375,14 @@ class SocketIOClient:
 
         while attempt < self.max_reconnect_attempts and self._should_reconnect:
             attempt += 1
-            logger.info(f"Reconnection attempt {attempt}/{self.max_reconnect_attempts}")
+            logger.debug(
+                f"Reconnection attempt {attempt}/{self.max_reconnect_attempts}"
+            )
 
             try:
                 await asyncio.sleep(self.reconnect_delay * attempt)
                 await self.connect()
-                logger.info("Reconnected successfully")
+                logger.debug("Reconnected successfully")
                 return
             except Exception as e:
                 logger.error(f"Reconnection attempt {attempt} failed: {e}")
@@ -726,7 +724,7 @@ class SocketIOClient:
 
         try:
             await self.sio.emit("subscribe", {"subscription": subscription})
-            logger.info(f"Subscribed to {subscription}")
+            logger.debug(f"Subscribed to {subscription}")
             return message.message_id
         except Exception as e:
             logger.error(f"Failed to subscribe: {e}")
@@ -757,7 +755,7 @@ class SocketIOClient:
 
         try:
             await self.sio.emit("unsubscribe", {"subscription": subscription})
-            logger.info(f"Unsubscribed from {subscription}")
+            logger.debug(f"Unsubscribed from {subscription}")
             return message.message_id
         except Exception as e:
             logger.error(f"Failed to unsubscribe: {e}")
