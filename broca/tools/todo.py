@@ -16,7 +16,10 @@ class TodoManagement(Tool):
 
     @property
     def description(self):
-        return "Use this tool to manage todo list. Always use this tool to track progress when executing complex tasks that require multiple steps."
+        return (
+            "Use this tool to manage todo list. "
+            "Always use this tool to track progress when executing complex tasks that require multiple steps."
+        )
 
     @property
     def parameters(self):
