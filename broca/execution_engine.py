@@ -151,6 +151,7 @@ class ExecutionEngine:
                     )
                     if not response:
                         raise AgentError(ErrorType.LLM_ERROR, "LLM call failed")
+                    break
             except AgentError as e:
                 errors += 1
                 logger.error(f"LLM call failed with error: {e}")
@@ -170,6 +171,9 @@ class ExecutionEngine:
             logger.info("Agent execution aborted after tool calls")
             return ExecutionStatus.ABORTED
 
+        if not response:
+            return ExecutionStatus.ERROR
+
         if not await self.session_manager.save_agent_response(
             response, self.turn_id, self.agent_id
         ):
@@ -184,7 +188,7 @@ class ExecutionEngine:
             await self._process_tool_calls(response.tool_calls)
             return ExecutionStatus.RUNNING
 
-    async def _call_llm_streaming(self) -> LLMMessage:
+    async def _call_llm_streaming(self) -> LLMMessage | None:
         """
         Call LLM with current context
 
@@ -466,9 +470,6 @@ class ExecutionEngine:
                 message = "Turn aborted by user"
             elif result.status == ExecutionStatus.LIMIT_EXCEEDED:
                 message = "Turn step limit exceeded"
-                await self.communicator.send_error(
-                    message, subscription=self.session_id
-                )
             elif result.status == ExecutionStatus.ERROR:
                 message = "Turn failed"
             elif result.status == ExecutionStatus.SKIPPED:
