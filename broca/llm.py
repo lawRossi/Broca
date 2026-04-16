@@ -13,11 +13,6 @@ from broca.session.models import Message, MessageType
 
 logger = get_logger(__name__)
 
-
-class FirstChunkTimeoutError(Exception):
-    pass
-
-
 warnings.filterwarnings("ignore")
 
 
@@ -164,9 +159,7 @@ class LLMClient:
                 await first_chunk_task
             except asyncio.CancelledError:
                 pass
-            raise FirstChunkTimeoutError(
-                f"First chunk timeout after {first_chunk_timeout} seconds"
-            )
+            raise asyncio.TimeoutError("First chunk timed out")
 
         async for chunk in iterator:
             async for result in self._process_chunk(chunk):
@@ -194,9 +187,15 @@ class LLMClient:
             if hasattr(choice, "finish_reason") and choice.finish_reason:
                 yield {"type": "finish", "data": choice.finish_reason}
 
-    def aggregate_message(self, content_chunks, tool_call_chunks) -> LLMMessage:
+    def aggregate_message(self, content_chunks, tool_call_chunks) -> LLMMessage | None:
         content = self.aggregate_content(content_chunks)
+        text_content = content.get("content")
+        reasoning_content = content.get("reasoning_content")
         tool_calls = self.aggregate_tool_calls(tool_call_chunks)
+        if (not text_content or not text_content.strip()) and (not reasoning_content or not reasoning_content.strip()) \
+                and not tool_calls:
+            return None
+
         return LLMMessage.parse_obj(
             {
                 "role": "assistant",
