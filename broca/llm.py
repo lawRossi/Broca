@@ -190,13 +190,8 @@ class LLMClient:
     def aggregate_message(self, content_chunks, tool_call_chunks) -> LLMMessage | None:
         content = self.aggregate_content(content_chunks)
         text_content = content.get("content")
-        reasoning_content = content.get("reasoning_content")
         tool_calls = self.aggregate_tool_calls(tool_call_chunks)
-        if (
-            (not text_content or not text_content.strip())
-            and (not reasoning_content or not reasoning_content.strip())
-            and not tool_calls
-        ):
+        if (not text_content or not text_content.strip()) and not tool_calls:
             return None
 
         return LLMMessage.model_validate(
