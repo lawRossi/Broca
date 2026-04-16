@@ -346,6 +346,7 @@ class Agent:
         This method sets the abort flag and cancels the current execution task.
         """
         logger.info("Aborting agent execution")
+
         self.execution_engine.abort()
         if self._abort_task and not self._abort_task.done():
             logger.info("Cancelling execution task...")
