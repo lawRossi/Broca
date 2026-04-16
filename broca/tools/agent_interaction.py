@@ -84,9 +84,7 @@ class AssignTask(Tool):
         execution_type = arguments.get("execution_type", "blocking")
         if execution_type == "blocking":
             trigger_message = MessageProtocol.create_user_message(content=task)
-            execution_result = await target_agent.run(
-                trigger_message, from_agent=True
-            )
+            execution_result = await target_agent.run(trigger_message, from_agent=True)
             message = target_agent.context.get_latest_assistant_message()
             if message:
                 content = "Message from agent: " + message
@@ -119,7 +117,10 @@ class AskUser(Tool):
 
     @property
     def description(self):
-        return "Use this tool to ask the user a question."
+        return (
+            "Use this tool to ask the user a question. Always use this tool to clearify user's intent, "
+            "collect user's feedback, provide proposals or suggestions."
+        )
 
     @property
     def parameters(self):

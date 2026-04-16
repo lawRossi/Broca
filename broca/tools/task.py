@@ -16,7 +16,7 @@ class TaskManagement(Tool):
 
     @property
     def description(self):
-        return "Use this tool to manage tasks with CRUD operations. Load skill plan-with-tasks before using this tool."
+        return "Use this tool to manage tasks with CRUD operations. "
 
     @property
     def parameters(self):
