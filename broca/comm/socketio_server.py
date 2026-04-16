@@ -96,7 +96,7 @@ class SocketIOServer:
                 "message", MessageProtocol.to_dict(connect_msg), room=sid
             )
             await self._trigger_event("connect", client_info)
-            logger.info(f"Client {client_id} ({client_type}) connected successfully")
+            logger.debug(f"Client {client_id} ({client_type}) connected successfully")
 
         @self.sio.event
         async def disconnect(sid):
@@ -125,7 +125,7 @@ class SocketIOServer:
 
             if client_info:
                 await self._trigger_event("disconnect", client_info)
-                logger.info(f"Client {client_id} disconnected successfully")
+                logger.debug(f"Client {client_id} disconnected successfully")
 
         @self.sio.event
         async def message(sid, data):
@@ -185,7 +185,7 @@ class SocketIOServer:
                 self.subscriptions.setdefault(subscription, set()).add(client_id)
                 content = f"Subscribed to {subscription}"
                 msg_type = MessageType.SUBSCRIBE
-                logger.info(f"Client {client_id} subscribed to {subscription}")
+                logger.debug(f"Client {client_id} subscribed to {subscription}")
             else:
                 client_info.subscriptions.discard(subscription)
                 if subscription in self.subscriptions:
@@ -194,7 +194,7 @@ class SocketIOServer:
                         del self.subscriptions[subscription]
                 content = f"Unsubscribed from {subscription}"
                 msg_type = MessageType.UNSUBSCRIBE
-                logger.info(f"Client {client_id} unsubscribed from {subscription}")
+                logger.debug(f"Client {client_id} unsubscribed from {subscription}")
 
             ack_msg = Message(
                 message_type=msg_type,
@@ -296,7 +296,7 @@ class SocketIOServer:
         """
         try:
             await self.sio.emit("message", MessageProtocol.to_dict(message), room=room)
-            logger.info(f"Sent message to room {room}")
+            logger.debug(f"Sent message to room {room}")
             return True
         except Exception as e:
             logger.error(f"Failed to send message to room {room}: {e}")
