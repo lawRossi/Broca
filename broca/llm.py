@@ -102,7 +102,7 @@ class LLMClient:
         return {"role": "user", "content": content}
 
     async def get_stream_response(
-        self, provider, model, messages, tools=None, first_chunk_timeout=30
+        self, provider, model, messages, tools=None, first_chunk_timeout=30, timeout=300
     ) -> AsyncGenerator[dict, None]:
         if provider not in self.config:
             raise ValueError(f"Unknown provider: {provider}")
@@ -119,6 +119,7 @@ class LLMClient:
             stream=True,
             stream_options={"include_usage": True},
             stream_timeout=first_chunk_timeout,
+            timeout=timeout,
             **args,
         )
 
