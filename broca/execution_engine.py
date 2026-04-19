@@ -12,6 +12,7 @@ This module handles the execution logic for agents, including:
 
 import asyncio
 import json
+import uuid
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -23,11 +24,14 @@ from broca.llm import LLMClient
 from broca.logging_config import get_logger
 from broca.session import (
     Message,
+    MessageProtocol,
     MessageRole,
     MessageType,
     SessionManager,
     generate_message_id,
 )
+from broca.snapshot.track import SnapshotTracker
+from broca.snapshot.patch import PatchCalculator
 from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
 
 logger = get_logger(__name__)
@@ -124,11 +128,122 @@ class ExecutionEngine:
         self.agent_id = agent.agent_id
         self.session_id = session_manager.session_id
         self.turn_id: str | None = None
+        self.step_id: str | None = None
 
         self.step_max_errors = step_max_errors
         self.llm_retry_delay = llm_retry_delay
         self.tool_call_timeout = tool_call_timeout
         self.assign_task_timeout = assign_task_timeout
+
+        # 快照跟踪
+        self.snapshot_tracker: Optional[SnapshotTracker] = None
+        self.patch_calculator: Optional[PatchCalculator] = None
+        self.current_snapshot_hash: Optional[str] = None
+        
+        # Step跟踪
+        self._step_has_write_operations: bool = False
+        self._step_snapshot_skipped: bool = False
+        
+        # 只读tool列表
+        self._readonly_tools = {
+            'read_file', 'glob', 'grep', 'list_dir', 'tree_dir',
+            'web_fetch', 'web_search', 'ask_user', 'task_management',
+            'todo_management', 'cron'
+        }
+
+    def _initialize_snapshot_tracking(self):
+        """初始化快照跟踪"""
+        if self.config and hasattr(self.config, 'workspace') and self.config.workspace:
+            self.snapshot_tracker = SnapshotTracker(self.config.workspace)
+            self.patch_calculator = PatchCalculator(self.config.workspace)
+
+    def _generate_step_id(self) -> str:
+        """生成Step ID"""
+        return f"step-{uuid.uuid4().hex[:8]}"
+
+    async def _capture_step_start(self) -> bool:
+        """捕获Step开始快照"""
+        if not self.snapshot_tracker or not self.step_id:
+            return False
+
+        try:
+            # 检查是否需要快照（如果所有tool都是只读的，可以跳过）
+            self._step_has_write_operations = False
+            self._step_snapshot_skipped = False
+            
+            # 捕获快照
+            snapshot_hash = self.snapshot_tracker.track()
+            self.current_snapshot_hash = snapshot_hash
+
+            # 创建STEP_START消息
+            step_start_msg = MessageProtocol.create_step_start(
+                step_id=self.step_id,
+                snapshot_hash=snapshot_hash
+            )
+            step_start_msg.session_id = self.session_id
+            step_start_msg.turn_id = self.turn_id
+            step_start_msg.agent_id = self.agent_id
+
+            # 保存消息
+            return await self.session_manager.save_message(
+                role=step_start_msg.role,
+                content=None,
+                message_type=step_start_msg.message_type,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+                data=step_start_msg.data,
+            )
+        except Exception as e:
+            logger.error(f"Error capturing step start: {e}")
+            return False
+
+    async def _capture_step_end(self) -> bool:
+        """捕获Step结束快照和patch"""
+        if not self.snapshot_tracker or not self.patch_calculator or not self.step_id:
+            return False
+
+        if not self.current_snapshot_hash:
+            # 如果没有起始快照，跳过
+            return False
+
+        # 检查是否需要快照（如果没有写操作，跳过）
+        if not self._step_has_write_operations:
+            self._step_snapshot_skipped = True
+            logger.debug(f"Step {self.step_id} has no write operations, skipping snapshot")
+            return False
+
+        try:
+            # 捕获结束快照
+            end_snapshot_hash = self.snapshot_tracker.track()
+
+            # 计算patch
+            patch = self.patch_calculator.calculate_patch(
+                self.current_snapshot_hash,
+                end_snapshot_hash
+            )
+
+            # 创建STEP_END消息
+            step_end_msg = MessageProtocol.create_step_end(
+                step_id=self.step_id,
+                snapshot_hash=end_snapshot_hash,
+                patch=patch
+            )
+            step_end_msg.session_id = self.session_id
+            step_end_msg.turn_id = self.turn_id
+            step_end_msg.agent_id = self.agent_id
+
+            # 保存消息
+            return await self.session_manager.save_message(
+                role=step_end_msg.role,
+                content=None,
+                message_type=step_end_msg.message_type,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+                data=step_end_msg.data,
+            )
+        except Exception as e:
+            logger.error(f"Error capturing step end: {e}")
+            return False
 
     async def execute_step(self) -> ExecutionStatus:
         """
@@ -137,6 +252,17 @@ class ExecutionEngine:
         Returns:
             True if more steps are needed, False otherwise
         """
+        # 初始化快照跟踪
+        if not self.snapshot_tracker:
+            self._initialize_snapshot_tracking()
+
+        # 生成Step ID
+        self.step_id = self._generate_step_id()
+
+        # 捕获Step开始快照
+        if self.snapshot_tracker:
+            await self._capture_step_start()
+
         errors = 0
 
         while errors < self.step_max_errors:
@@ -182,10 +308,23 @@ class ExecutionEngine:
 
         await self.context.add_message(response)
 
+        # 在TOOL_CALL消息中添加step_id
+        if response.tool_calls:
+            for tool_call in response.tool_calls:
+                # 这里我们需要在保存TOOL_CALL消息时添加step_id
+                # 这需要在session_manager.save_tool_call中处理
+                pass
+
         if not response.tool_calls:
+            # 捕获Step结束快照
+            if self.snapshot_tracker:
+                await self._capture_step_end()
             return ExecutionStatus.COMPLETED
         else:
             await self._process_tool_calls(response.tool_calls)
+            # 捕获Step结束快照
+            if self.snapshot_tracker:
+                await self._capture_step_end()
             return ExecutionStatus.RUNNING
 
     async def _call_llm_streaming(self) -> LLMMessage | None:
@@ -348,6 +487,19 @@ class ExecutionEngine:
             status=tool_result.status,
             subscription=self.session_id,
         )
+
+        # 添加step_id到tool_result的data中
+        if hasattr(tool_result, 'data'):
+            tool_result.data = tool_result.data or {}
+            tool_result.data['step_id'] = self.step_id
+        else:
+            # 如果tool_result没有data属性，创建一个
+            tool_result.data = {'step_id': self.step_id}
+        
+        # 检查tool是否是只读的
+        tool_name = tool_call.function.name
+        if tool_name not in self._readonly_tools:
+            self._step_has_write_operations = True
 
         return await self.session_manager.save_tool_call(
             turn_id=self.turn_id,

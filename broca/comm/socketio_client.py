@@ -575,6 +575,30 @@ class SocketIOClient:
         )
         return await self.send_message(message, callback)
 
+    async def send_command_result(
+        self,
+        command: str,
+        result: str,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
+        """Send command result"""
+        message = Message(
+            message_type=MessageType.COMMAND_RESULT,
+            role=MessageRole.SYSTEM,
+            sender_id=self.client_id,
+            receiver_id=receiver_id,
+            room=room,
+            subscription=subscription,
+            data={
+                "command": command,
+                "result": result,
+            },
+        )
+        return await self.send_message(message, callback)
+
     async def send_permission_request(
         self,
         message: str,
