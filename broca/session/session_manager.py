@@ -307,6 +307,23 @@ class SessionManager:
             logger.error(f"Failed to end turn: {e}")
             return False
 
+    async def get_session(self, session_id: str):
+        """
+        获取会话
+
+        Args:
+            session_id: 会话ID
+
+        Returns:
+            会话对象或None
+        """
+        try:
+            await self._ensure_initialized()
+            return await self.session_service.get(session_id)
+        except Exception as e:
+            logger.error(f"Failed to get session: {e}")
+            return None
+
     async def load_session(self, session_id: str) -> bool:
         """
         加载指定的session
@@ -494,17 +511,26 @@ class SessionManager:
             "content": tool_result.content,
         }
 
+        # 构建data字典
+        data = {
+            "content": json.dumps(tool_call_result, ensure_ascii=False),
+            "tool_name": tool_call.function.name,
+            "arguments": tool_call.function.arguments,
+            "result": tool_result.content,
+            "status": tool_result.status,
+        }
+
+        # 添加step_id（如果存在）
+        if hasattr(tool_result, 'data') and tool_result.data:
+            step_id = tool_result.data.get('step_id')
+            if step_id:
+                data['step_id'] = step_id
+
         return await self.save_message(
             role=MessageRole.TOOL,
             content=None,
             message_type=MessageType.TOOL_CALL,
             turn_id=turn_id,
             agent_id=agent_id,
-            data={
-                "content": json.dumps(tool_call_result, ensure_ascii=False),
-                "tool_name": tool_call.function.name,
-                "arguments": tool_call.function.arguments,
-                "result": tool_result.content,
-                "status": tool_result.status,
-            },
+            data=data,
         )

@@ -310,20 +310,26 @@ class MessageService(BaseService[Message]):
         )
 
     async def get_messages_by_session(
-        self, session_id: str, order_by="sequence_number", skip=None, limit=None
+        self, session_id: str, order_by="sequence_number", skip=None, limit=None, ignore_reverted=True
     ) -> List[Message]:
         """根据会话ID获取消息"""
+        filters = {"session_id": session_id}
+        if ignore_reverted:
+            filters["reverted"] = False
         return await self.get_batch(
-            filters={"session_id": session_id},
+            filters=filters,
             order_by=order_by,
             skip=skip,
             limit=limit,
         )
 
-    async def get_messages_by_agent(self, agent_id: str) -> List[Message]:
+    async def get_messages_by_agent(self, agent_id: str, ignore_reverted=True) -> List[Message]:
         """根据Agent ID获取消息"""
+        filters = {"agent_id": agent_id}
+        if ignore_reverted:
+            filters["reverted"] = False
         return await self.get_batch(
-            filters={"agent_id": agent_id}, order_by="sequence_number"
+            filters=filters, order_by="sequence_number"
         )
 
     async def get_next_sequence_number(self, session_id: str) -> int:
@@ -387,6 +393,18 @@ class MessageService(BaseService[Message]):
                 "messages_by_type": messages_by_type,
                 "tool_call_errors": tool_call_errors,
             }
+
+    async def update_message(self, message_id: str, updates: Dict[str, Any]) -> Optional[Message]:
+        """更新消息
+        
+        Args:
+            message_id: 消息ID
+            updates: 更新字段字典
+            
+        Returns:
+            更新后的消息，如果消息不存在则返回None
+        """
+        return await self.update(message_id, **updates)
 
 
 class AgentConfigService(BaseService[AgentConfig]):

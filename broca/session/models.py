@@ -58,6 +58,10 @@ class MessageType(str, Enum):
     TURN_START = "turn_start"
     TURN_END = "turn_end"
 
+    # Step管理（用于undo/redo）
+    STEP_START = "step_start"
+    STEP_END = "step_end"
+
     # 订阅和广播
     SUBSCRIBE = "subscribe"
     UNSUBSCRIBE = "unsubscribe"
@@ -201,6 +205,13 @@ class Message(SQLModel, table=True):
 
     # 序列号（用于排序）
     sequence_number: Optional[int] = Field(default=None, description="消息序列号")
+
+    # 撤销状态（用于undo/redo）
+    reverted: bool = Field(
+        default=False,
+        sa_column=Column(Integer, server_default="0", nullable=False),
+        description="是否已回滚",
+    )
 
     # 关联关系
     session: Optional["Session"] = Relationship(back_populates="messages")
@@ -578,6 +589,42 @@ class MessageProtocol:
             message_type=MessageType.TASK_ERROR,
             role=MessageRole.AGENT,
             data={"task_id": task_id, "error_code": error_code},
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_step_start(
+        step_id: str, snapshot_hash: str, **kwargs
+    ) -> Message:
+        """创建Step开始消息（用于undo/redo）"""
+        return Message(
+            message_type=MessageType.STEP_START,
+            role=MessageRole.AGENT,
+            data={
+                "step_id": step_id,
+                "snapshot_hash": snapshot_hash,
+            },
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_step_end(
+        step_id: str,
+        snapshot_hash: str,
+        patch: Optional[Dict[str, Any]] = None,
+        **kwargs,
+    ) -> Message:
+        """创建Step结束消息（用于undo/redo）"""
+        data = {
+            "step_id": step_id,
+            "snapshot_hash": snapshot_hash,
+        }
+        if patch:
+            data["patch"] = patch
+        return Message(
+            message_type=MessageType.STEP_END,
+            role=MessageRole.AGENT,
+            data=data,
             **kwargs,
         )
 
