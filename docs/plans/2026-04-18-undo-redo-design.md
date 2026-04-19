@@ -5,10 +5,8 @@
 2. [设计目标](#设计目标)
 3. [技术架构](#技术架构)
 4. [核心组件设计](#核心组件设计)
-5. [撤销/重做流程](#撤销重做流程)
-6. [数据模型](#数据模型)
-7. [API 设计](#api-设计)
-8. [实现计划](#实现计划)
+5. [数据模型](#数据模型)
+6. [实现计划](#实现计划)
 
 ---
 
@@ -179,15 +177,19 @@ git checkout-index -a -f
 
 **执行流程**：
 1. 验证会话状态（确保非忙碌）
-2. 获取所有消息（按 sequence_number 排序）
-3. 收集 Patch（从锚点 step 开始向后）
+2. 获取agent所有消息（按 sequence_number 排序）
+3. 收集 Patch（从锚点 step 开始向后收集 STEP_END 消息中的 patch）
 4. 捕获当前快照（用于重做）
 5. 恢复到撤销目标前的快照（`snapshot.restore`）
 6. 应用反向 Patch（从各起始快照恢复文件）
+   - 遍历收集的所有 patch
+   - 对每个 patch，从其 `snapshot_hash` 恢复文件到工作区
+   - 使用 `git checkout <snapshot_hash> -- <file>` 恢复单个文件
+   - 如果文件在快照中不存在，则删除文件
 7. 计算差异（unified diff 格式）
-8. 标记消息为已撤销（reverted=true）
-9. **保存撤销记录**：插入 COMMAND 消息（command=undo），包含 diff 数据
-10. **重建 Context**：重新调用 `build_history_from_session()`
+8. **保存撤销记录**：插入 COMMAND 消息（command=undo），包含 diff 数据
+9. 标记相关消息为已撤销（reverted=true）
+10. **重建 Context**：重新调用 `build_history_from_session()`, rebuild=True
 
 #### 2.2 重做 (redo)
 
@@ -200,49 +202,6 @@ git checkout-index -a -f
 6. **重建 Context**：重新调用 `build_history_from_session()`
 
 ---
-
-## 撤销/重做流程
-
-### Turn 级别撤销
-
-```
-Turn 1: 用户请求 → LLM调用1 → tool_call_1 → tool_call_2
-                    LLM调用2 → tool_call_3 → tool_call_4
-Turn 2: undo 命令
-       ↓
-1. 捕获当前快照（Turn 2 开始前的状态）
-2. 从 Turn 1 的所有 patch 中恢复文件
-3. 计算差异
-4. 插入 COMMAND 消息（command=undo，包含 diff 数据）
-5. 调用 build_history_from_session()
-```
-
-### Step 级别撤销
-
-```
-Turn 1: LLM调用1 → tool_call_1 → tool_call_2
-        LLM调用2 → tool_call_3 → tool_call_4
-                              ↓
-undo(level=step)
-       ↓
-1. 找到 LLM调用2 的 STEP_END 消息
-2. 从快照中恢复该次调用的所有文件
-3. 计算差异
-4. 插入 COMMAND 消息（command=undo）
-5. 调用 build_history_from_session()
-```
-
-### 重做流程
-
-```
-Turn 1: undo 命令 → 恢复到 Turn 1 开始前的状态
-Turn 2: redo 命令
-       ↓
-1. 读取最新撤销记录（COMMAND 消息，command=undo）的 snapshot hash
-2. 恢复到撤销时的快照状态
-3. 插入 COMMAND 消息（command=redo）
-4. 调用 build_history_from_session()
-```
 
 ### Context 消息处理
 
@@ -361,42 +320,26 @@ git diff --cached --no-ext-diff --unified=3 <起始哈希> -- .
 
 ---
 
-## API 设计
-
-### Command 消息处理
-
-在 `Agent._on_command()` 中添加 undo/redo 命令处理：
-
-```python
-async def _on_command(self, message: Message):
-    command = message.data.get("command")
-
-    if command == "undo":
-        await self._handle_undo(message)
-    elif command == "redo":
-        await self._handle_redo(message)
-```
-
----
 
 ## 实现计划
 
 ### 阶段 1：基础架构
 
-1. 创建 `broca/snapshot/` 模块
+1. 扩展数据模型
+
+2. 创建 `broca/snapshot/` 模块
    - `snapshot/git_manager.py` - Git 仓库管理, 使用GitPython
    - `snapshot/track.py` - 快照捕获
    - `snapshot/patch.py` - Patch 计算
    - `snapshot/restore.py` - 快照恢复
+   - `snapshot/revert.py` - 反向应用patch逻辑
 
-2. 创建 `broca/session/revert_service.py` - 撤销/重做服务
+3. 创建 `broca/session/revert_service.py` - 撤销/重做服务
 
 ### 阶段 2：集成
 
-1. 在 `ExecutionEngine` 中集成快照捕获（STEP_START / STEP_END）
-2. 在 `SessionManager` 中保存 patch 信息（STEP_END）
-3. 添加 command 消息处理（undo/redo）
-4. 添加 `STEP_START` / `STEP_END` 消息类型
+1. 在 `ExecutionEngine` 中集成快照捕获和保存（STEP_START / STEP_END）
+2. 添加 `Agent` 添加command 消息处理（undo/redo）
 
 
 ### 阶段 3：优化
