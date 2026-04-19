@@ -28,7 +28,7 @@ class ToolCallContext:
 
 
 class Tool:
-    def __init__(self, max_content_length: int = 15000):
+    def __init__(self, max_content_length: int = 20000):
         self.max_content_length = max_content_length
 
     @property
