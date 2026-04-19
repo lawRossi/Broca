@@ -6,6 +6,9 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 class ReadFile(Tool):
     """Tool to read file contents."""
 
+    def __init__(self):
+        super().__init__(30000)
+
     @property
     def name(self) -> str:
         return "read_file"
