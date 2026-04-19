@@ -569,3 +569,6 @@ tramp
 .agents
 
 alembic/versions
+
+# Worktrees
+.worktrees/
