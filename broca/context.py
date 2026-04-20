@@ -17,16 +17,13 @@ class Context:
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", ".agents/AGENTS.md", ".agents/SOUL.md"]
 
     def __init__(self, agent_config: AgentConfig, **kwargs):
-        self.initialize(agent_config, **kwargs)
+        self.system_prompt = self._build_system_prompt(agent_config, **kwargs)
+        self._history: list = []
+        self._history.append({"role": "system", "content": self.system_prompt})
 
     @property
     def history(self):
         return self._history
-
-    def initialize(self, agent_config: AgentConfig, **kwargs):
-        self._history: list = []
-        self.system_prompt = self._build_system_prompt(agent_config, **kwargs)
-        self._history.append({"role": "system", "content": self.system_prompt})
 
     def _build_system_prompt(self, config: AgentConfig, **kwargs) -> str:
         prompt_template = config.system_prompt_template
@@ -63,8 +60,10 @@ class Context:
         self._history.append(message)
 
     async def build_history_from_session(
-        self, session_manager: SessionManager, agent_id: str
+        self, session_manager: SessionManager, agent_id: str, rebuild=False
     ) -> None:
+        self._history: list = []
+        self._history.append({"role": "system", "content": self.system_prompt})
         messages = await session_manager.get_messages(agent_id)
         for message in messages:
             if message.message_type in [

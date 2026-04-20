@@ -9,7 +9,10 @@ from pathlib import Path
 
 import git
 
+from broca.logging_config import get_logger
 from .git_manager import GitManager
+
+logger = get_logger(__name__)
 
 
 class SnapshotRestorer:
@@ -52,55 +55,23 @@ class SnapshotRestorer:
 
         try:
             self.git_manager._run_git_command("checkout", tree_hash, "--", file_path)
-        except git.GitCommandError as e:
-            # 如果文件在快照中不存在，删除它
-            if "did not match any file(s) known to git" in str(e):
-                full_path = self.workspace_path / file_path
-                if full_path.exists():
-                    if full_path.is_file():
-                        full_path.unlink()
-                    elif full_path.is_dir():
-                        shutil.rmtree(full_path)
-            else:
-                raise
-
-    # def _cleanup_untracked_files(self, tree_hash: str) -> None:
-    #     """清理未跟踪的文件"""
-    #     # 获取快照中的所有文件
-    #     try:
-    #         tree_files_result = self.git_manager._run_git_command(
-    #             "ls-tree", "-r", "--name-only", tree_hash
-    #         )
-    #         tree_files = set(tree_files_result.splitlines())
-    #     except git.GitCommandError:
-    #         # 如果树哈希无效，使用空集合
-    #         tree_files = set()
-
-    #     # 获取当前工作区的所有文件
-    #     workspace_files = set()
-    #     for root, dirs, files in os.walk(self.workspace_path):
-    #         # 跳过 .git 目录
-    #         if ".git" in dirs:
-    #             dirs.remove(".git")
-
-    #         for file in files:
-    #             rel_path = Path(root).relative_to(self.workspace_path) / file
-    #             workspace_files.add(str(rel_path))
-
-    #     # 删除在快照中不存在的文件
-    #     files_to_delete = workspace_files - tree_files
-
-    #     for file_path in files_to_delete:
-    #         full_path = self.workspace_path / file_path
-    #         if full_path.exists():
-    #             try:
-    #                 if full_path.is_file():
-    #                     full_path.unlink()
-    #                 elif full_path.is_dir():
-    #                     shutil.rmtree(full_path)
-    #             except (OSError, PermissionError):
-    #                 # 忽略删除失败的文件
-    #                 pass
+        except git.GitCommandError:
+            logger.info(f"文件检出失败：{file_path}")
+            # 判断文件是否存在，使用ls-tree命令
+            try:
+                result = self.git_manager._run_git_command(
+                    "ls-tree", "-r", "--name-only", tree_hash, file_path
+                )
+                if result.strip() == "":
+                    logger.info(f"文件不存在：{file_path}")
+                    full_path = self.workspace_path / file_path
+                    if full_path.exists():
+                        if full_path.is_file():
+                            full_path.unlink()
+                        elif full_path.is_dir():
+                            shutil.rmtree(full_path)
+            except git.GitCommandError as e:
+                logger.error(f"文件检出失败{file_path}：{e}")
 
     def get_tree_files(self, tree_hash: str) -> list[str]:
         """

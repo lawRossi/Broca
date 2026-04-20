@@ -7,11 +7,14 @@ SessionRevert 服务
 from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
+from broca.logging_config import get_logger
 from broca.session.session_manager import SessionManager
 
 from ..snapshot import PatchCalculator, PatchReverter, SnapshotTracker
 from .models import Message, MessageProtocol, MessageType
 from .service import MessageService
+
+logger = get_logger(__name__)
 
 
 class SessionRevertService:
@@ -35,7 +38,7 @@ class SessionRevertService:
         self,
         session_id: str,
         agent_id: str,
-        target_message_id: Optional[str] = None,
+        target_message_id: str,
         level: str = "step",
     ) -> Dict[str, any]:
         """
@@ -50,6 +53,8 @@ class SessionRevertService:
         Returns:
             撤销结果
         """
+        logger.info(f"Undo: {session_id}, {agent_id}, {target_message_id}, {level}")
+
         # 验证会话状态
         session = await self.session_manager.get_session(session_id)
         if not session:
@@ -58,19 +63,19 @@ class SessionRevertService:
         # 获取agent所有消息
         messages = await self.session_manager.get_messages(agent_id)
 
-        if target_message_id:
-            # 撤销到指定消息
-            (
-                patches_to_revert,
-                pivot_message_id,
-            ) = await self._collect_patches_to_message(
-                messages, target_message_id, level
-            )
-        else:
-            # 撤销最近的操作
-            patches_to_revert, pivot_message_id = await self._collect_recent_patches(
-                messages, level
-            )
+        patches_to_revert, pivot_message_id = await self._collect_patches_to_message(
+            messages, target_message_id, level
+        )
+
+        logger.info(f"pivot_message_id: {pivot_message_id}")
+        logger.info(f"patches_to_revert: {patches_to_revert}")
+
+        if not pivot_message_id:
+            return {
+                "success": False,
+                "error": "No pivot message found",
+                "patches_reverted": 0,
+            }
 
         # 捕获当前快照（用于重做）
         current_snapshot_hash = self.snapshot_tracker.track()
@@ -165,6 +170,7 @@ class SessionRevertService:
                 break
 
         if not target_message:
+            logger.info(f"找不到目标消息: {target_message_id}")
             return [], None
 
         # 根据level确定pivot message
@@ -174,8 +180,8 @@ class SessionRevertService:
             turn_id = target_message.turn_id
             for msg in reversed(messages):
                 if (
-                    msg.message_type == MessageType.TURN_END
-                    and msg.data.get("turn_id") == turn_id
+                    msg.message_type == MessageType.TURN_START
+                    and msg.turn_id == turn_id
                 ):
                     pivot_message = msg
                     pivot_message_id = pivot_message.message_id
@@ -185,7 +191,7 @@ class SessionRevertService:
             if step_id:
                 for msg in reversed(messages):
                     if (
-                        msg.message_type == MessageType.STEP_END
+                        msg.message_type == MessageType.STEP_START
                         and msg.data.get("step_id") == step_id
                     ):
                         pivot_message = msg
@@ -209,65 +215,6 @@ class SessionRevertService:
                         patches.append(patch)
 
         return patches, pivot_message_id
-
-    async def _collect_recent_patches(
-        self, messages: List[Message], level: str
-    ) -> Tuple[List[Dict[str, any]], Optional[str]]:
-        """收集最近的patch"""
-        patches = []
-        target_step_id = None
-
-        # 从后向前遍历消息，找到最近的未撤销的消息
-        recent_message = None
-        for msg in reversed(messages):
-            if not msg.reverted:
-                recent_message = msg
-                break
-
-        if not recent_message:
-            return [], None
-
-        # 根据level确定pivot message
-        pivot_message = None
-        if level == "turn":
-            # 找到对应的TURN_START消息作为pivot
-            turn_id = recent_message.turn_id
-            for msg in messages:
-                if (
-                    msg.message_type == MessageType.TURN_START
-                    and msg.data.get("turn_id") == turn_id
-                ):
-                    pivot_message = msg
-                    break
-        else:  # step级别
-            # 找到最近的STEP_END消息作为pivot
-            for msg in reversed(messages):
-                if msg.message_type == MessageType.STEP_END and not msg.reverted:
-                    pivot_message = msg
-                    target_step_id = msg.data.get("step_id")
-                    break
-
-        if not pivot_message:
-            return [], target_step_id
-
-        # 收集pivot message往后的所有patch
-        collecting = False
-        for msg in messages:
-            if msg.message_id == pivot_message.message_id:
-                collecting = True
-                continue
-
-            if collecting:
-                if msg.message_type == MessageType.STEP_END:
-                    patch = msg.data.get("patch")
-                    if patch:
-                        patches.append(patch)
-
-                # 如果是turn级别，遇到TURN_END就停止
-                if level == "turn" and msg.message_type == MessageType.TURN_END:
-                    break
-
-        return patches, target_step_id
 
     def _calculate_diff_for_patches(self, from_hash: str) -> str:
         """计算patch的差异"""
@@ -353,7 +300,7 @@ class SessionRevertService:
         for msg in reversed(messages):
             if (
                 msg.message_type == MessageType.COMMAND
-                and msg.data.get("command") == "undo"
+                and msg.data.get("content") == "undo"
                 and not msg.reverted
             ):
                 return msg
@@ -364,7 +311,6 @@ class SessionRevertService:
         self, messages: List[Message], pivot_message_id: str | None
     ) -> None:
         """标记消息为已撤销"""
-        message_service = MessageService()
 
         # 收集需要标记的消息ID
         message_ids_to_revert = set()
@@ -374,13 +320,16 @@ class SessionRevertService:
             if msg.message_id == pivot_message_id:
                 collecting = True
                 continue
-            # 排除UNDO消息
-            if msg.message_type == MessageType.COMMAND:
-                if msg.data.get("command") == "undo":
-                    continue
             if collecting:
+                # 排除UNDO消息
+                if msg.message_type == MessageType.COMMAND:
+                    if msg.data.get("content") == "undo":
+                        continue
                 message_ids_to_revert.add(msg.message_id)
 
+        logger.info(f"标记消息为已撤销: {message_ids_to_revert}")
+
+        message_service = MessageService()
         # 更新消息状态
         for message_id in message_ids_to_revert:
             await message_service.update_message(

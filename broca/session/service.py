@@ -13,7 +13,6 @@ from sqlalchemy import desc, func, select
 from sqlmodel import SQLModel, and_
 
 from broca.logging_config import get_logger
-
 from broca.session.database import db_manager
 from broca.session.models import (
     Agent,
@@ -310,7 +309,12 @@ class MessageService(BaseService[Message]):
         )
 
     async def get_messages_by_session(
-        self, session_id: str, order_by="sequence_number", skip=None, limit=None, ignore_reverted=True
+        self,
+        session_id: str,
+        order_by="sequence_number",
+        skip=None,
+        limit=None,
+        ignore_reverted=True,
     ) -> List[Message]:
         """根据会话ID获取消息"""
         filters = {"session_id": session_id}
@@ -323,14 +327,14 @@ class MessageService(BaseService[Message]):
             limit=limit,
         )
 
-    async def get_messages_by_agent(self, agent_id: str, ignore_reverted=True) -> List[Message]:
+    async def get_messages_by_agent(
+        self, agent_id: str, ignore_reverted=True
+    ) -> List[Message]:
         """根据Agent ID获取消息"""
         filters = {"agent_id": agent_id}
         if ignore_reverted:
             filters["reverted"] = False
-        return await self.get_batch(
-            filters=filters, order_by="sequence_number"
-        )
+        return await self.get_batch(filters=filters, order_by="sequence_number")
 
     async def get_next_sequence_number(self, session_id: str) -> int:
         """获取下一个消息序列号"""
@@ -394,13 +398,15 @@ class MessageService(BaseService[Message]):
                 "tool_call_errors": tool_call_errors,
             }
 
-    async def update_message(self, message_id: str, updates: Dict[str, Any]) -> Optional[Message]:
+    async def update_message(
+        self, message_id: str, updates: Dict[str, Any]
+    ) -> Optional[Message]:
         """更新消息
-        
+
         Args:
             message_id: 消息ID
             updates: 更新字段字典
-            
+
         Returns:
             更新后的消息，如果消息不存在则返回None
         """
