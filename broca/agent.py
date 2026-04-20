@@ -225,95 +225,92 @@ class Agent:
         """
         command = message.data.get("command")
         session_id = self.session_id
-        
+
         if not session_id:
             logger.error("No session ID available for undo/redo")
             await self.communicator.send_error(
-                "No active session for undo/redo operation",
-                subscription=session_id
+                "No active session for undo/redo operation", subscription=session_id
             )
             return
 
         # 获取工作空间路径
         workspace = None
-        if self.config and hasattr(self.config, 'workspace'):
+        if self.config and hasattr(self.config, "workspace"):
             workspace = self.config.workspace
-        
+
         if not workspace:
             logger.error("No workspace configured for undo/redo")
             await self.communicator.send_error(
                 "No workspace configured for undo/redo operation",
-                subscription=session_id
+                subscription=session_id,
             )
             return
 
         try:
             # 初始化SessionRevertService
             revert_service = SessionRevertService(self.session_manager, workspace)
-            
+
             if command == "undo":
                 # 获取撤销参数
                 target_message_id = message.data.get("target_message_id")
                 level = message.data.get("level", "step")  # 默认step级别
-                
+
                 # 执行撤销
                 result = await revert_service.undo(
                     session_id=session_id,
+                    agent_id=self.agent_id,
                     target_message_id=target_message_id,
-                    level=level
+                    level=level,
                 )
-                
+
                 if result.get("success"):
                     # 发送成功消息
                     diff_summary = result.get("diff_summary", {})
                     files_changed = diff_summary.get("total_files", 0)
-                    
+
                     await self.communicator.send_command_result(
                         command="undo",
                         result=f"Undo successful. Changed {files_changed} file(s).",
-                        subscription=session_id
+                        subscription=session_id,
                     )
-                    
+
                     # 重建context
                     await self.context.build_history_from_session(
-                        self.session_manager,
-                        self.agent_id,
-                        rebuild=True
+                        self.session_manager, self.agent_id, rebuild=True
                     )
                 else:
                     await self.communicator.send_error(
                         f"Undo failed: {result.get('message', 'Unknown error')}",
-                        subscription=session_id
+                        subscription=session_id,
                     )
-                    
+
             elif command == "redo":
                 # 执行重做
-                result = await revert_service.redo(session_id=session_id)
-                
+                result = await revert_service.redo(
+                    session_id=session_id, agent_id=self.agent_id
+                )
+
                 if result.get("success"):
                     await self.communicator.send_command_result(
                         command="redo",
                         result="Redo successful.",
-                        subscription=session_id
+                        subscription=session_id,
                     )
-                    
+
                     # 重建context
                     await self.context.build_history_from_session(
-                        self.session_manager,
-                        self.agent_id,
-                        rebuild=True
+                        self.session_manager, self.agent_id, rebuild=True
                     )
                 else:
                     await self.communicator.send_error(
                         f"Redo failed: {result.get('message', 'Unknown error')}",
-                        subscription=session_id
+                        subscription=session_id,
                     )
-                    
+
         except Exception as e:
             logger.error(f"Error handling {command} command: {e}")
             await self.communicator.send_error(
-                f"Error executing {command}: {str(e)}",
-                subscription=session_id
+                f"Error executing {command}: {str(e)}", subscription=session_id
             )
 
     def stop(self):

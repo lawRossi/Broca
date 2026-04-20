@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 from litellm import Message as LLMMessage
 
 from broca.logging_config import get_logger
-from broca.tools.tool import ToolResult
 from broca.session.models import Message, MessageRole, MessageType
 from broca.session.service import (
     AgentConfigService,
@@ -27,6 +26,7 @@ from broca.session.service import (
     get_session_service,
     get_turn_service,
 )
+from broca.tools.tool import ToolResult
 
 logger = get_logger(__name__)
 
@@ -198,8 +198,7 @@ class SessionManager:
             return False
 
     async def get_messages(
-        self,
-        agent_id: str | None = None,
+        self, agent_id: str | None = None, ignore_reverted: bool = True
     ) -> List[Message]:
         """
         获取session中的消息历史
@@ -217,11 +216,13 @@ class SessionManager:
                         "No session ID provided. Call create_session() first."
                     )
                 messages = await self.message_service.get_messages_by_session(
-                    self.session_id
+                    self.session_id, ignore_reverted=ignore_reverted
                 )
             else:
                 await self._ensure_initialized()
-                messages = await self.message_service.get_messages_by_agent(agent_id)
+                messages = await self.message_service.get_messages_by_agent(
+                    agent_id, ignore_reverted=ignore_reverted
+                )
 
             return messages
         except Exception as e:
@@ -467,7 +468,11 @@ class SessionManager:
             return None
 
     async def save_agent_response(
-        self, response: LLMMessage, turn_id: str | None, agent_id: str | None, step_id: str | None
+        self,
+        response: LLMMessage,
+        turn_id: str | None,
+        agent_id: str | None,
+        step_id: str | None,
     ) -> bool:
         if not turn_id or not agent_id:
             return False
@@ -480,7 +485,7 @@ class SessionManager:
             message_type=MessageType.AGENT_RESPONSE,
             turn_id=turn_id,
             agent_id=agent_id,
-            data=data
+            data=data,
         )
 
     async def save_turn_end(
@@ -503,7 +508,7 @@ class SessionManager:
         agent_id: str | None,
         tool_call: Any,
         tool_result: ToolResult,
-        step_id: str | None
+        step_id: str | None,
     ) -> bool:
         if not turn_id or not agent_id:
             return False
@@ -521,14 +526,14 @@ class SessionManager:
             "arguments": tool_call.function.arguments,
             "result": tool_result.content,
             "status": tool_result.status,
-            "step_id": step_id
+            "step_id": step_id,
         }
 
         # 添加step_id（如果存在）
-        if hasattr(tool_result, 'data') and tool_result.data:
-            step_id = tool_result.data.get('step_id')
+        if hasattr(tool_result, "data") and tool_result.data:
+            step_id = tool_result.data.get("step_id")
             if step_id:
-                data['step_id'] = step_id
+                data["step_id"] = step_id
 
         return await self.save_message(
             role=MessageRole.TOOL,
