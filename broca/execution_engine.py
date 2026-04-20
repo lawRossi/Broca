@@ -177,16 +177,12 @@ class ExecutionEngine:
         if not self.snapshot_tracker or not self.step_id:
             return False
 
-        if not self._step_has_write_operations:
-            logger.debug(
-                f"Step {self.step_id} has no write operations, skipping snapshot"
-            )
-            return False
-
         try:
-            # 捕获快照
-            snapshot_hash = self.snapshot_tracker.track()
-            self.current_snapshot_hash = snapshot_hash
+            if self._step_has_write_operations:
+                snapshot_hash = self.snapshot_tracker.track()
+                self.current_snapshot_hash = snapshot_hash
+            else:
+                snapshot_hash = ""
 
             # 创建STEP_START消息
             step_start_msg = MessageProtocol.create_step_start(
@@ -480,6 +476,8 @@ class ExecutionEngine:
         Returns:
             None
         """
+        if not tool_calls:
+            return
         for tool_call in tool_calls:
             tool_name = tool_call.function.name
             if tool_name not in self._readonly_tools:

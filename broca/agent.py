@@ -252,8 +252,9 @@ class Agent:
 
             if command == "undo":
                 # 获取撤销参数
-                target_message_id = message.data.get("target_message_id")
-                level = message.data.get("level", "step")  # 默认step级别
+                arguments = message.data.get("arguments", {})
+                target_message_id = arguments.get("target_message_id")
+                level = arguments.get("level", "step")
 
                 # 执行撤销
                 result = await revert_service.undo(
@@ -276,7 +277,7 @@ class Agent:
 
                     # 重建context
                     await self.context.build_history_from_session(
-                        self.session_manager, self.agent_id, rebuild=True
+                        self.session_manager, self.agent_id
                     )
                 else:
                     await self.communicator.send_error(
@@ -299,7 +300,7 @@ class Agent:
 
                     # 重建context
                     await self.context.build_history_from_session(
-                        self.session_manager, self.agent_id, rebuild=True
+                        self.session_manager, self.agent_id
                     )
                 else:
                     await self.communicator.send_error(

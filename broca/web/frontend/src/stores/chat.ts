@@ -434,13 +434,6 @@ export const useChatStore = defineStore('chat', () => {
     socketStore.onMessage = (m: Message) => {
       // 如果是撤销命令的结果，显示提示并重新加载消息
       if (m.message_type === 'command' && m.data?.command === 'undo') {
-        const diffSummary = m.data?.diff_summary
-        if (diffSummary) {
-          import('element-plus').then(({ ElMessage }) => {
-            ElMessage.success(`撤销成功，修改了 ${diffSummary.total_files} 个文件`)
-          })
-        }
-        
         // 撤销操作后，需要重新加载消息列表
         // 因为已撤销的消息会被过滤掉
         if (sessionId.value) {

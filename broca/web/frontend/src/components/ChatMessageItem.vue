@@ -487,7 +487,7 @@ const handleUndoToHere = async () => {
         <!-- 悬停撤销按钮 -->
         <div class="hover-actions" v-if="showActions && canUndoThisMessage">
           <el-button 
-            size="mini" 
+            size="small" 
             type="text" 
             @click.stop="confirmUndo"
             title="撤销此操作"
