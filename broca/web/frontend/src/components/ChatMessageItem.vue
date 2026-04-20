@@ -1,18 +1,23 @@
 <script setup lang="ts">
-import { useChatStore, useAgentStore } from '@/stores'
+import { useChatStore, useAgentStore, useSocketStore } from '@/stores'
 import type { Message } from '@/api/brocaSocket'
 import { formatBeijingTimeShort } from '@/utils/time'
 import { marked } from 'marked'
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+import { ElMessageBox } from 'element-plus'
 import FilePreview from './FilePreview.vue'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
+const socketStore = useSocketStore()
 
 // 文件预览状态
 const showFilePreview = ref(false)
 const previewFilePath = ref<string>('')
 const previewFileUrl = ref<string>('')
+
+// 显示/隐藏撤销按钮
+const showActions = ref(false)
 
 // 配置 marked 选项
 marked.setOptions({
@@ -31,7 +36,7 @@ const renderMarkdown = (content: string): string => {
   }
 }
 
-defineProps<{
+const props = defineProps<{
   message: Message
 }>()
 
@@ -327,10 +332,142 @@ const formatFileSize = (bytes: number): string => {
   if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   return (bytes / (1024 * 1024 * 1024)).toFixed(1) + ' GB'
 }
+
+// ==================== 撤销功能相关 ====================
+
+// 判断消息是否可撤销
+const canUndoThisMessage = computed(() => {
+  // 基本条件检查
+  if (!chatStore.connected || !chatStore.sessionId) {
+    return false
+  }
+  
+  // 支持撤销的消息类型
+  const undoableTypes = ['user_message', 'tool_call', 'agent_response']
+  if (!undoableTypes.includes(props.message.message_type)) {
+    return false
+  }
+  
+  // 检查消息是否有有效内容
+  if (props.message.message_type === 'user_message') {
+    const content = getContent(props.message)
+    if (!content || content.trim() === '') {
+      return false
+    }
+  }
+  
+  // 检查消息是否有有效内容或结果
+  if (props.message.message_type === 'tool_call') {
+    // 工具调用必须有结果才能撤销
+    if (props.message.data?.result === undefined) {
+      return false
+    }
+    
+    // 某些只读工具不应该有撤销选项
+    const readOnlyTools = ['ask_user', 'todo_management', 'glob', 'grep', 'list_dir', 'tree_dir', 'web_fetch', 'web_search']
+    const toolName = props.message.data?.tool_name
+    if (toolName && readOnlyTools.includes(toolName)) {
+      return false
+    }
+  }
+  
+  // agent_response必须有内容
+  if (props.message.message_type === 'agent_response') {
+    const content = getContent(props.message)
+    if (!content || content.trim() === '') {
+      return false
+    }
+  }
+  
+  return true
+})
+
+// 获取撤销级别
+const getUndoLevel = computed(() => {
+  if (props.message.message_type === 'user_message') {
+    return 'turn'
+  } else {
+    return 'step'
+  }
+})
+
+// 获取工具显示名称
+const getToolDisplayName = (message: Message) => {
+  if (message.message_type !== 'tool_call') return ''
+  
+  const toolName = message.data?.tool_name
+  if (!toolName) return '工具调用'
+  
+  const toolNames: Record<string, string> = {
+    'edit_file': '编辑文件',
+    'write_file': '写入文件',
+    'execute_code': '执行代码',
+    'read_file': '读取文件',
+    'task_management': '任务管理',
+    'cron': '定时任务',
+    'assign_task': '分配任务',
+    'load_skill': '加载技能',
+  }
+  
+  return toolNames[toolName] || toolName
+}
+
+// 确认撤销
+const confirmUndo = () => {
+  let messageText = '确定要撤销此操作吗？'
+  let levelText = ''
+  
+  if (props.message.message_type === 'user_message') {
+    const content = getContent(props.message)
+    const preview = content.length > 50 ? content.substring(0, 50) + '...' : content
+    messageText = `确定要撤销此消息吗？（将撤销整个对话轮次）\n"${preview}"`
+    levelText = '（turn级别撤销）'
+  } else if (props.message.message_type === 'tool_call') {
+    const toolName = getToolDisplayName(props.message)
+    messageText = `确定要撤销 "${toolName}" 操作吗？`
+    levelText = '（step级别撤销）'
+  } else if (props.message.message_type === 'agent_response') {
+    const content = getContent(props.message)
+    const preview = content.length > 50 ? content.substring(0, 50) + '...' : content
+    messageText = `确定要撤销此回复吗？\n"${preview}"`
+    levelText = '（step级别撤销）'
+  }
+  
+  ElMessageBox.confirm(`${messageText}${levelText}`, '确认撤销', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning',
+  }).then(() => {
+    handleUndoToHere()
+  }).catch(() => {
+    // 用户取消
+  })
+}
+
+// 执行撤销
+const handleUndoToHere = async () => {
+  if (!canUndoThisMessage.value) return
+  
+  try {
+    await socketStore.sendUndo({
+      targetMessageId: props.message.message_id,
+      level: getUndoLevel.value,
+      subscription: chatStore.sessionId,
+      receiverId: props.message.agent_id || agentStore.currentAgentId
+    })
+  } catch (error) {
+    console.error('撤销失败:', error)
+  }
+}
 </script>
 
 <template>
-  <div class="rounded-lg p-2 sm:p-3 transition-all duration-200" :class="getBgClass(message)">
+  <div 
+    class="rounded-lg p-2 sm:p-3 transition-all duration-200 message-container"
+    :class="getBgClass(message)"
+    @mouseenter="showActions = true"
+    @mouseleave="showActions = false"
+  >
     <div
       v-if="message.message_type !== 'system_message' && message.role !== 'system'"
       class="flex items-center justify-between gap-2 mb-2"
@@ -341,8 +478,24 @@ const formatFileSize = (bytes: number): string => {
           {{ getSenderName(message, agentStore.currentAgentName) }}
         </span>
       </div>
-      <div class="text-xs text-gray-500 opacity-70">
-        {{ formatBeijingTimeShort(message.timestamp) }}
+      
+      <div class="flex items-center gap-2">
+        <div class="text-xs text-gray-500 opacity-70">
+          {{ formatBeijingTimeShort(message.timestamp) }}
+        </div>
+        
+        <!-- 悬停撤销按钮 -->
+        <div class="hover-actions" v-if="showActions && canUndoThisMessage">
+          <el-button 
+            size="mini" 
+            type="text" 
+            @click.stop="confirmUndo"
+            title="撤销此操作"
+            class="!p-1 !min-h-0 !h-auto undo-button"
+          >
+            <span class="text-xs">↩️ 撤销</span>
+          </el-button>
+        </div>
       </div>
     </div>
 
@@ -532,6 +685,91 @@ const formatFileSize = (bytes: number): string => {
   />
 </template>
 <style scoped>
+/* 消息容器样式 */
+.message-container {
+  position: relative;
+  transition: all 0.2s ease;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 8px;
+}
+
+.message-container:hover {
+  background-color: rgba(0, 0, 0, 0.02);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+}
+
+/* 悬停操作按钮 */
+.hover-actions {
+  opacity: 0;
+  transition: opacity 0.2s ease;
+  margin-left: 8px;
+}
+
+.message-container:hover .hover-actions {
+  opacity: 1;
+}
+
+/* 撤销按钮样式 */
+.hover-actions .el-button.undo-button {
+  color: #f56c6c;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(245, 108, 108, 0.1);
+  border: 1px solid rgba(245, 108, 108, 0.2);
+}
+
+.hover-actions .el-button.undo-button:hover {
+  background: rgba(245, 108, 108, 0.2);
+  color: #f56c6c;
+  border-color: rgba(245, 108, 108, 0.3);
+}
+
+.hover-actions .el-button.undo-button:disabled {
+  color: #c0c4cc;
+  background: rgba(192, 196, 204, 0.1);
+  border-color: rgba(192, 196, 204, 0.2);
+  cursor: not-allowed;
+}
+
+/* 不同类型的消息撤销按钮颜色不同 */
+.message-container.bg-blue-50 .hover-actions .el-button.undo-button {
+  color: #409eff;
+  background: rgba(64, 158, 255, 0.1);
+  border-color: rgba(64, 158, 255, 0.2);
+}
+
+.message-container.bg-blue-50 .hover-actions .el-button.undo-button:hover {
+  background: rgba(64, 158, 255, 0.2);
+  color: #409eff;
+  border-color: rgba(64, 158, 255, 0.3);
+}
+
+.message-container.bg-green-50 .hover-actions .el-button.undo-button {
+  color: #67c23a;
+  background: rgba(103, 194, 58, 0.1);
+  border-color: rgba(103, 194, 58, 0.2);
+}
+
+.message-container.bg-green-50 .hover-actions .el-button.undo-button:hover {
+  background: rgba(103, 194, 58, 0.2);
+  color: #67c23a;
+  border-color: rgba(103, 194, 58, 0.3);
+}
+
+.message-container.bg-purple-50 .hover-actions .el-button.undo-button {
+  color: #8a2be2;
+  background: rgba(138, 43, 226, 0.1);
+  border-color: rgba(138, 43, 226, 0.2);
+}
+
+.message-container.bg-purple-50 .hover-actions .el-button.undo-button:hover {
+  background: rgba(138, 43, 226, 0.2);
+  color: #8a2be2;
+  border-color: rgba(138, 43, 226, 0.3);
+}
+
 /* Markdown 内容样式 */
 :deep(.markdown-content) {
   word-wrap: break-word;

@@ -64,7 +64,7 @@ class GitManager:
         # 设置工作树（通过环境变量）
         custom_env = {
             "GIT_WORK_TREE": str(self.workspace_path),
-            "GIT_DIR": str(self.repo_path),
+            "GIT_DIR": str(self.repo.git_dir),
         }
         self.repo.git.custom_environment(**custom_env)
 
@@ -216,7 +216,7 @@ class GitManager:
         self.ensure_initialized()
 
         try:
-            result = self.repo.git.check_ignore(file_path)
+            result = self._run_git_command("check-ignore", file_path)
             return result.strip() != ""
         except git.GitCommandError:
             # 如果命令失败，说明文件不被忽略
