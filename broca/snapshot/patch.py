@@ -24,7 +24,9 @@ class PatchCalculator:
         self.workspace_path = workspace_path
         self.git_manager = GitManager(workspace_path)
 
-    def calculate_patch(self, from_hash: str, to_hash: Optional[str] = None) -> Dict[str, any]:
+    def calculate_patch(
+        self, from_hash: str, to_hash: Optional[str] = None
+    ) -> Dict[str, any]:
         """
         计算两个快照之间的 patch
 
@@ -46,13 +48,20 @@ class PatchCalculator:
             "files": changed_files,
         }
 
-    def _get_changed_files(self, repo: git.Repo, from_hash: str, to_hash: Optional[str] = None) -> List[str]:
+    def _get_changed_files(
+        self, repo: git.Repo, from_hash: str, to_hash: Optional[str] = None
+    ) -> List[str]:
         """获取变更文件列表"""
         try:
             if to_hash:
                 # 比较两个树对象，使用树对象语法
                 result = self.git_manager._run_git_command(
-                    "diff-tree", "--no-commit-id", "--name-only", "-r", from_hash, to_hash
+                    "diff-tree",
+                    "--no-commit-id",
+                    "--name-only",
+                    "-r",
+                    from_hash,
+                    to_hash,
                 ).strip()
             else:
                 # 比较树对象和当前工作区
@@ -64,7 +73,7 @@ class PatchCalculator:
                 ).strip()
                 # 重置索引
                 self.git_manager._run_git_command("reset", "--mixed")
-            
+
             if result:
                 return [f.strip() for f in result.split("\n") if f.strip()]
             return []
@@ -165,17 +174,16 @@ class PatchCalculator:
                     if file_a == "/dev/null":
                         # 新文件
                         current_file = file_b
-                        file_mode = 'A'
+                        file_mode = "A"
                         files_added.append(current_file)
                     elif file_b == "/dev/null":
                         # 删除文件
                         current_file = file_a
-                        file_mode = 'D'
+                        file_mode = "D"
                         files_deleted.append(current_file)
                     else:
                         # 修改文件
                         current_file = file_a
-                        file_mode = 'M'
                         if current_file not in files_modified:
                             files_modified.append(current_file)
 

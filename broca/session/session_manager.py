@@ -467,18 +467,20 @@ class SessionManager:
             return None
 
     async def save_agent_response(
-        self, response: LLMMessage, turn_id: str | None, agent_id: str | None
+        self, response: LLMMessage, turn_id: str | None, agent_id: str | None, step_id: str | None
     ) -> bool:
         if not turn_id or not agent_id:
             return False
 
         msg_content = json.dumps(response.json(), ensure_ascii=False)
+        data = {"step_id": step_id}
         return await self.save_message(
             role=MessageRole.ASSISTANT,
             content=msg_content,
             message_type=MessageType.AGENT_RESPONSE,
             turn_id=turn_id,
             agent_id=agent_id,
+            data=data
         )
 
     async def save_turn_end(
@@ -501,6 +503,7 @@ class SessionManager:
         agent_id: str | None,
         tool_call: Any,
         tool_result: ToolResult,
+        step_id: str | None
     ) -> bool:
         if not turn_id or not agent_id:
             return False
@@ -518,6 +521,7 @@ class SessionManager:
             "arguments": tool_call.function.arguments,
             "result": tool_result.content,
             "status": tool_result.status,
+            "step_id": step_id
         }
 
         # 添加step_id（如果存在）

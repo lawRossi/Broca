@@ -30,8 +30,8 @@ from broca.session import (
     SessionManager,
     generate_message_id,
 )
-from broca.snapshot.track import SnapshotTracker
 from broca.snapshot.patch import PatchCalculator
+from broca.snapshot.track import SnapshotTracker
 from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
 
 logger = get_logger(__name__)
@@ -139,21 +139,28 @@ class ExecutionEngine:
         self.snapshot_tracker: Optional[SnapshotTracker] = None
         self.patch_calculator: Optional[PatchCalculator] = None
         self.current_snapshot_hash: Optional[str] = None
-        
+
         # Step跟踪
         self._step_has_write_operations: bool = False
-        self._step_snapshot_skipped: bool = False
-        
+
         # 只读tool列表
         self._readonly_tools = {
-            'read_file', 'glob', 'grep', 'list_dir', 'tree_dir',
-            'web_fetch', 'web_search', 'ask_user', 'task_management',
-            'todo_management', 'cron'
+            "read_file",
+            "glob",
+            "grep",
+            "list_dir",
+            "tree_dir",
+            "web_fetch",
+            "web_search",
+            "ask_user",
+            "task_management",
+            "todo_management",
+            "cron",
         }
 
     def _initialize_snapshot_tracking(self):
         """初始化快照跟踪"""
-        if self.config and hasattr(self.config, 'workspace') and self.config.workspace:
+        if self.config and hasattr(self.config, "workspace") and self.config.workspace:
             self.snapshot_tracker = SnapshotTracker(self.config.workspace)
             self.patch_calculator = PatchCalculator(self.config.workspace)
 
@@ -161,24 +168,29 @@ class ExecutionEngine:
         """生成Step ID"""
         return f"step-{uuid.uuid4().hex[:8]}"
 
+    async def _capture_step_init(self):
+        # 检查是否需要快照（如果所有tool都是只读的，可以跳过）
+        self._step_has_write_operations = False
+
     async def _capture_step_start(self) -> bool:
         """捕获Step开始快照"""
         if not self.snapshot_tracker or not self.step_id:
             return False
 
+        if not self._step_has_write_operations:
+            logger.debug(
+                f"Step {self.step_id} has no write operations, skipping snapshot"
+            )
+            return False
+
         try:
-            # 检查是否需要快照（如果所有tool都是只读的，可以跳过）
-            self._step_has_write_operations = False
-            self._step_snapshot_skipped = False
-            
             # 捕获快照
             snapshot_hash = self.snapshot_tracker.track()
             self.current_snapshot_hash = snapshot_hash
 
             # 创建STEP_START消息
             step_start_msg = MessageProtocol.create_step_start(
-                step_id=self.step_id,
-                snapshot_hash=snapshot_hash
+                step_id=self.step_id, snapshot_hash=snapshot_hash
             )
             step_start_msg.session_id = self.session_id
             step_start_msg.turn_id = self.turn_id
@@ -208,8 +220,9 @@ class ExecutionEngine:
 
         # 检查是否需要快照（如果没有写操作，跳过）
         if not self._step_has_write_operations:
-            self._step_snapshot_skipped = True
-            logger.debug(f"Step {self.step_id} has no write operations, skipping snapshot")
+            logger.debug(
+                f"Step {self.step_id} has no write operations, skipping snapshot"
+            )
             return False
 
         try:
@@ -218,15 +231,12 @@ class ExecutionEngine:
 
             # 计算patch
             patch = self.patch_calculator.calculate_patch(
-                self.current_snapshot_hash,
-                end_snapshot_hash
+                self.current_snapshot_hash, end_snapshot_hash
             )
 
             # 创建STEP_END消息
             step_end_msg = MessageProtocol.create_step_end(
-                step_id=self.step_id,
-                snapshot_hash=end_snapshot_hash,
-                patch=patch
+                step_id=self.step_id, snapshot_hash=end_snapshot_hash, patch=patch
             )
             step_end_msg.session_id = self.session_id
             step_end_msg.turn_id = self.turn_id
@@ -259,9 +269,7 @@ class ExecutionEngine:
         # 生成Step ID
         self.step_id = self._generate_step_id()
 
-        # 捕获Step开始快照
-        if self.snapshot_tracker:
-            await self._capture_step_start()
+        self._capture_step_init()
 
         errors = 0
 
@@ -300,31 +308,24 @@ class ExecutionEngine:
         if not response:
             return ExecutionStatus.ERROR
 
+        self.check_step_has_write_operations(response.tool_calls)
+
+        await self._capture_step_start()
+
         if not await self.session_manager.save_agent_response(
-            response, self.turn_id, self.agent_id
+            response, self.turn_id, self.agent_id, self.step_id
         ):
             logger.error("Failed to save agent response")
             return ExecutionStatus.ERROR
 
         await self.context.add_message(response)
 
-        # 在TOOL_CALL消息中添加step_id
-        if response.tool_calls:
-            for tool_call in response.tool_calls:
-                # 这里我们需要在保存TOOL_CALL消息时添加step_id
-                # 这需要在session_manager.save_tool_call中处理
-                pass
-
         if not response.tool_calls:
-            # 捕获Step结束快照
-            if self.snapshot_tracker:
-                await self._capture_step_end()
+            await self._capture_step_end()
             return ExecutionStatus.COMPLETED
         else:
             await self._process_tool_calls(response.tool_calls)
-            # 捕获Step结束快照
-            if self.snapshot_tracker:
-                await self._capture_step_end()
+            await self._capture_step_end()
             return ExecutionStatus.RUNNING
 
     async def _call_llm_streaming(self) -> LLMMessage | None:
@@ -466,6 +467,25 @@ class ExecutionEngine:
             }
             await self.context.add_message(tool_call_result)
 
+    def check_step_has_write_operations(self, tool_calls: List[Any]):
+        """
+        Check if a step has write operations.
+
+        This function checks if any of the tool calls in the step have write operations.
+        If any tool call has write operations, the function sets `_step_has_write_operations` to `True`.
+
+        Args:
+            tool_calls (List[Any]): List of tool calls in the step
+
+        Returns:
+            None
+        """
+        for tool_call in tool_calls:
+            tool_name = tool_call.function.name
+            if tool_name not in self._readonly_tools:
+                self._step_has_write_operations = True
+                break
+
     async def process_tool_call_result(
         self, tool_call: Any, tool_result: ToolResult
     ) -> bool:
@@ -488,24 +508,12 @@ class ExecutionEngine:
             subscription=self.session_id,
         )
 
-        # 添加step_id到tool_result的data中
-        if hasattr(tool_result, 'data'):
-            tool_result.data = tool_result.data or {}
-            tool_result.data['step_id'] = self.step_id
-        else:
-            # 如果tool_result没有data属性，创建一个
-            tool_result.data = {'step_id': self.step_id}
-        
-        # 检查tool是否是只读的
-        tool_name = tool_call.function.name
-        if tool_name not in self._readonly_tools:
-            self._step_has_write_operations = True
-
         return await self.session_manager.save_tool_call(
             turn_id=self.turn_id,
             agent_id=self.agent_id,
             tool_call=tool_call,
             tool_result=tool_result,
+            step_id=self.step_id,
         )
 
     async def execute_round(self, max_steps: Optional[int] = None) -> ExecutionResult:

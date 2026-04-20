@@ -180,9 +180,16 @@ export const useChatStore = defineStore('chat', () => {
       'task_start',
       'task_complete',
       'task_error',
+      'step_start',        // Step管理消息不显示
+      'step_end',          // Step管理消息不显示
     ]
 
     if (filteredTypes.includes(message.message_type)) {
+      return null
+    }
+
+    // 已撤销的消息不显示
+    if (message.reverted) {
       return null
     }
 
@@ -425,6 +432,27 @@ export const useChatStore = defineStore('chat', () => {
       console.log('Disconnected from server')
     }
     socketStore.onMessage = (m: Message) => {
+      // 如果是撤销命令的结果，显示提示并重新加载消息
+      if (m.message_type === 'command' && m.data?.command === 'undo') {
+        const diffSummary = m.data?.diff_summary
+        if (diffSummary) {
+          import('element-plus').then(({ ElMessage }) => {
+            ElMessage.success(`撤销成功，修改了 ${diffSummary.total_files} 个文件`)
+          })
+        }
+        
+        // 撤销操作后，需要重新加载消息列表
+        // 因为已撤销的消息会被过滤掉
+        if (sessionId.value) {
+          // 延迟一点时间，确保后端已经处理完撤销
+          setTimeout(() => {
+            loadHistory(sessionId.value, false)
+          }, 500)
+        }
+        return
+      }
+      
+      // 正常处理其他消息
       addMessage(m)
     }
     socketStore.onTurnStart = (m: Message) => {

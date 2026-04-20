@@ -12,7 +12,10 @@ from typing import List, Optional
 
 import git
 
-from .git_manager import GitManager
+from broca.logging_config import get_logger
+from broca.snapshot.git_manager import GitManager
+
+logger = get_logger(__name__)
 
 
 class SnapshotTracker:
@@ -54,10 +57,11 @@ class SnapshotTracker:
 
         # 发现变更文件
         changed_files = self._discover_changed_files(repo)
-        print("变更文件:", changed_files)
 
         # 过滤大文件和忽略文件
         filtered_files = self._filter_files(changed_files)
+
+        logger.info("变更文件:" + ",".join(filtered_files))
 
         if not filtered_files:
             # 如果没有变更文件，返回当前 HEAD 的树哈希
@@ -66,8 +70,6 @@ class SnapshotTracker:
             except ValueError:
                 # 如果还没有提交，创建一个空的树
                 return self._create_empty_tree(repo)
-
-        print("变更文件:", filtered_files)
 
         # 暂存变更文件
         self._stage_files(repo, filtered_files)
@@ -78,18 +80,37 @@ class SnapshotTracker:
         # 创建提交来引用树对象
         if tree_hash:
             try:
-                # 尝试创建提交
-                commit_message = f"Snapshot at {datetime.now().isoformat()}"
-                commit_hash = self.git_manager._run_git_command(
-                    "commit-tree", tree_hash, "-m", commit_message
+                parent_commit = self.git_manager._run_git_command(
+                    "rev-parse", "refs/heads/snapshot"
                 ).strip()
+            except git.GitCommandError:
+                parent_commit = None
+
+            try:
+                commit_message = f"Snapshot at {datetime.now().isoformat()}"
+                if parent_commit:
+                    commit_hash = self.git_manager._run_git_command(
+                        "commit-tree", tree_hash, "-p", parent_commit, "-m", commit_message
+                    ).strip()
+                else:
+                    commit_hash = self.git_manager._run_git_command(
+                        "commit-tree", tree_hash, "-m", commit_message
+                    ).strip()
 
                 # 更新引用
                 self.git_manager._run_git_command(
                     "update-ref", "refs/heads/snapshot", commit_hash
                 )
-            except git.GitCommandError:
+
+                # 更新 HEAD 指向 snapshot 分支
+                self.git_manager._run_git_command(
+                    "symbolic-ref", "HEAD", "refs/heads/snapshot"
+                )
+
+                logger.info("提交成功")
+            except git.GitCommandError as e:
                 # 如果创建提交失败，仍然返回树哈希
+                logger.error(f"创建提交失败: {e}")
                 pass
 
         # 重置暂存区
@@ -168,6 +189,10 @@ class SnapshotTracker:
                 self.git_manager._run_git_command(
                     "add", "--all", "--sparse", f"--pathspec-from-file={temp_file}"
                 )
+            else:
+                logger.info("临时文件为空，跳过稀疏添加")
+        except git.GitCommandError as e:
+            logger.error(f"稀疏添加失败: {e}")
         finally:
             # 清理临时文件
             os.unlink(temp_file)

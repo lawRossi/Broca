@@ -198,6 +198,53 @@ export const useSocketStore = defineStore('socket', () => {
     }
   }
 
+  const sendUndo = async (params: {
+    targetMessageId?: string
+    level?: 'turn' | 'step'
+    subscription?: string
+    receiverId?: string
+  }) => {
+    if (!client) {
+      ElMessage.warning('请先连接')
+      return
+    }
+    try {
+      await client.sendCommand({
+        command: 'undo',
+        arguments: {
+          target_message_id: params.targetMessageId,
+          level: params.level || 'step'
+        },
+        subscription: params.subscription,
+        receiverId: params.receiverId,
+      })
+      ElMessage.success('撤销命令已发送')
+    } catch (e: any) {
+      ElMessage.error(e?.message || '发送撤销命令失败')
+    }
+  }
+
+  const sendRedo = async (params: {
+    subscription?: string
+    receiverId?: string
+  }) => {
+    if (!client) {
+      ElMessage.warning('请先连接')
+      return
+    }
+    try {
+      await client.sendCommand({
+        command: 'redo',
+        arguments: {},
+        subscription: params.subscription,
+        receiverId: params.receiverId,
+      })
+      ElMessage.success('重做命令已发送')
+    } catch (e: any) {
+      ElMessage.error(e?.message || '发送重做命令失败')
+    }
+  }
+
   const cleanup = () => {
     disconnect()
     socketConfig.clientId = `browser_${Math.random().toString(16).slice(2)}`
@@ -224,6 +271,8 @@ export const useSocketStore = defineStore('socket', () => {
     sendAbort,
     respondPermission,
     sendUserAnswer,
+    sendUndo,
+    sendRedo,
     cleanup,
   }
 })

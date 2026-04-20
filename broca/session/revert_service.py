@@ -72,12 +72,8 @@ class SessionRevertService:
         if not patches_to_revert:
             return {"success": False, "message": "没有可撤销的操作"}
 
-        print(patches_to_revert)
-
         # 捕获当前快照（用于重做）
         current_snapshot_hash = self.snapshot_tracker.track()
-
-        print("快照哈希:", current_snapshot_hash)
 
         # 反向应用patch
         self.patch_reverter.revert_patches(patches_to_revert)
@@ -128,7 +124,6 @@ class SessionRevertService:
 
         # 从撤销记录中恢复快照
         snapshot_hash = undo_message.data.get("arguments").get("snapshot_hash")
-        print(snapshot_hash)
         if not snapshot_hash:
             return {"success": False, "message": "撤销记录中没有快照信息"}
 
@@ -425,8 +420,6 @@ class SessionRevertService:
                     step_id = msg.data.get("step_id")
                     if step_id == target_step_id:
                         message_ids_to_redo.add(msg.message_id)
-
-        print(message_ids_to_redo)
 
         # 更新消息状态
         for message_id in message_ids_to_redo:
