@@ -4,7 +4,7 @@ Patch 反向应用模块
 反向应用 patch，用于撤销操作。
 """
 
-from typing import Dict, List
+from typing import Dict, List, Any
 
 from .restore import SnapshotRestorer
 
@@ -44,7 +44,7 @@ class PatchReverter:
         for file_path in files:
             self.restorer.restore_file(snapshot_hash, file_path)
 
-    def revert_patches(self, patches: List[Dict[str, any]]) -> None:
+    def revert_patches(self, patches: List[Dict[str, Any]]) -> None:
         """
         反向应用多个 patch
 
@@ -62,9 +62,6 @@ class PatchReverter:
         Args:
             patch: patch 信息字典
         """
-        # 正向应用 patch 实际上就是反向应用反向 patch
-        # 这里我们假设 patch 是从旧状态到新状态的变更
-        # 在实际使用中，重做操作会使用保存的撤销记录中的 snapshot 来恢复
         snapshot_hash = patch.get("snapshot_hash")
         if snapshot_hash:
             # 如果提供了快照哈希，直接恢复到该快照
