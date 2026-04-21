@@ -56,7 +56,7 @@ class SnapshotTracker:
         repo = self.git_manager.get_repo()
 
         # 发现变更文件
-        changed_files = self._discover_changed_files(repo)
+        changed_files = self._discover_changed_files()
 
         # 过滤大文件和忽略文件
         filtered_files = self._filter_files(changed_files)
@@ -69,10 +69,10 @@ class SnapshotTracker:
                 return repo.head.commit.tree.hexsha
             except ValueError:
                 # 如果还没有提交，创建一个空的树
-                return self._create_empty_tree(repo)
+                return self._create_empty_tree()
 
         # 暂存变更文件
-        self._stage_files(repo, filtered_files)
+        self._stage_files(filtered_files)
 
         # 写入 Git 树
         tree_hash = self.git_manager._run_git_command("write-tree").strip()
@@ -90,7 +90,12 @@ class SnapshotTracker:
                 commit_message = f"Snapshot at {datetime.now().isoformat()}"
                 if parent_commit:
                     commit_hash = self.git_manager._run_git_command(
-                        "commit-tree", tree_hash, "-p", parent_commit, "-m", commit_message
+                        "commit-tree",
+                        tree_hash,
+                        "-p",
+                        parent_commit,
+                        "-m",
+                        commit_message,
                     ).strip()
                 else:
                     commit_hash = self.git_manager._run_git_command(
@@ -118,7 +123,7 @@ class SnapshotTracker:
 
         return tree_hash
 
-    def _discover_changed_files(self, repo) -> List[str]:
+    def _discover_changed_files(self) -> List[str]:
         """发现变更文件"""
         changed_files = []
 
@@ -168,7 +173,7 @@ class SnapshotTracker:
 
         return filtered_files
 
-    def _stage_files(self, repo, file_paths: List[str]) -> None:
+    def _stage_files(self, file_paths: List[str]) -> None:
         """暂存文件"""
         if not file_paths:
             return
@@ -197,6 +202,6 @@ class SnapshotTracker:
             # 清理临时文件
             os.unlink(temp_file)
 
-    def _create_empty_tree(self, repo) -> str:
+    def _create_empty_tree(self) -> str:
         """创建空的 Git 树"""
         return "4b825dc642cb6eb9a060e54bf8d69288fbee4904"

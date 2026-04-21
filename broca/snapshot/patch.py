@@ -38,10 +38,9 @@ class PatchCalculator:
             patch 信息字典
         """
         self.git_manager.ensure_initialized()
-        repo = self.git_manager.get_repo()
 
         # 获取变更文件列表
-        changed_files = self._get_changed_files(repo, from_hash, to_hash)
+        changed_files = self._get_changed_files(from_hash, to_hash)
 
         return {
             "snapshot_hash": from_hash,
@@ -49,7 +48,7 @@ class PatchCalculator:
         }
 
     def _get_changed_files(
-        self, repo: git.Repo, from_hash: str, to_hash: Optional[str] = None
+        self, from_hash: str, to_hash: Optional[str] = None
     ) -> List[str]:
         """获取变更文件列表"""
         try:
@@ -174,12 +173,10 @@ class PatchCalculator:
                     if file_a == "/dev/null":
                         # 新文件
                         current_file = file_b
-                        file_mode = "A"
                         files_added.append(current_file)
                     elif file_b == "/dev/null":
                         # 删除文件
                         current_file = file_a
-                        file_mode = "D"
                         files_deleted.append(current_file)
                     else:
                         # 修改文件
