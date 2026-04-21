@@ -71,6 +71,11 @@ class SnapshotTracker:
                 # 如果还没有提交，创建一个空的树
                 return self._create_empty_tree()
 
+        # 移除忽略文件
+        ignored_files = set(changed_files) - set(filtered_files)
+        logger.info("忽略文件:" + ",".join(ignored_files))
+        self.git_manager.remove_cached_files(list(ignored_files))
+
         # 暂存变更文件
         self._stage_files(filtered_files)
 
