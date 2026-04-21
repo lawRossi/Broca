@@ -432,19 +432,15 @@ export const useChatStore = defineStore('chat', () => {
       console.log('Disconnected from server')
     }
     socketStore.onMessage = (m: Message) => {
-      // 如果是撤销命令的结果，显示提示并重新加载消息
-      if (m.message_type === 'command' && m.data?.command === 'undo') {
-        // 撤销操作后，需要重新加载消息列表
-        // 因为已撤销的消息会被过滤掉
-        if (sessionId.value) {
-          // 延迟一点时间，确保后端已经处理完撤销
-          setTimeout(() => {
-            loadHistory(sessionId.value, false)
-          }, 500)
+      // 如果是撤销或重做的结果，显示提示并重新加载消息
+      if (m.message_type === 'command_result' && (m.data?.command === 'undo' || m.data?.command === 'redo')) {
+        const result = m.data?.result
+        if (result.code == 0) {
+          loadHistory(sessionId.value)
         }
         return
       }
-      
+
       // 正常处理其他消息
       addMessage(m)
     }
