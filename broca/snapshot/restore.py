@@ -4,6 +4,7 @@
 将工作空间恢复到指定的快照状态。
 """
 
+import asyncio
 import shutil
 from pathlib import Path
 from typing import Any
@@ -30,7 +31,7 @@ class SnapshotRestorer:
         self.workspace_path = Path(workspace_path).resolve()
         self.git_manager = GitManager(str(self.workspace_path))
 
-    def restore(self, tree_hash: str) -> None:
+    async def restore(self, tree_hash: str) -> None:
         """
         恢复到指定的快照
 
@@ -41,15 +42,15 @@ class SnapshotRestorer:
 
         try:
             # 使用 --reset 选项先重置索引，再读取树对象
-            self.git_manager._run_git_command("read-tree", "--reset", tree_hash)
+            await self.git_manager._run_git_command("read-tree", "--reset", tree_hash)
 
             # 检出索引到工作区
-            self.git_manager._run_git_command("checkout-index", "-a", "-f")
+            await self.git_manager._run_git_command("checkout-index", "-a", "-f")
         except git.GitCommandError as e:
             logger.error(f"恢复快照失败: {e}")
             raise
 
-    def revert_patches(self, patches: list[dict[str, Any]]) -> None:
+    async def revert_patches(self, patches: list[dict[str, Any]]) -> None:
         """
         反向应用多个 patch
 
@@ -69,9 +70,9 @@ class SnapshotRestorer:
                         file_snapshot_mapping[file_path] = snapshot_hash
 
         for file, snapshot_hash in file_snapshot_mapping.items():
-            self.restore_file(snapshot_hash, file)
+            await self.restore_file(snapshot_hash, file)
 
-    def restore_file(self, tree_hash: str, file_path: str) -> None:
+    async def restore_file(self, tree_hash: str, file_path: str) -> None:
         """
         恢复单个文件到指定的快照状态
 
@@ -82,12 +83,12 @@ class SnapshotRestorer:
         self.git_manager.ensure_initialized()
 
         try:
-            self.git_manager._run_git_command("checkout", tree_hash, "--", file_path)
+            await self.git_manager._run_git_command("checkout", tree_hash, "--", file_path)
         except git.GitCommandError:
             logger.info(f"文件检出失败：{file_path}")
             # 判断文件是否存在，使用ls-tree命令
             try:
-                result = self.git_manager._run_git_command(
+                result = await self.git_manager._run_git_command(
                     "ls-tree", "-r", "--name-only", tree_hash, file_path
                 )
                 if result.strip() == "":

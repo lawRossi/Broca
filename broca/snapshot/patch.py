@@ -4,6 +4,7 @@ Patch 计算模块
 计算两个快照之间的差异，生成 patch 信息。
 """
 
+import asyncio
 from typing import Dict, List, Optional
 
 import git
@@ -24,7 +25,7 @@ class PatchCalculator:
         self.workspace_path = workspace_path
         self.git_manager = GitManager(workspace_path)
 
-    def calculate_patch(
+    async def calculate_patch(
         self, from_hash: str, to_hash: Optional[str] = None
     ) -> Dict[str, any]:
         """
@@ -40,38 +41,38 @@ class PatchCalculator:
         self.git_manager.ensure_initialized()
 
         # 获取变更文件列表
-        changed_files = self._get_changed_files(from_hash, to_hash)
+        changed_files = await self._get_changed_files(from_hash, to_hash)
 
         return {
             "snapshot_hash": from_hash,
             "files": changed_files,
         }
 
-    def _get_changed_files(
+    async def _get_changed_files(
         self, from_hash: str, to_hash: Optional[str] = None
     ) -> List[str]:
         """获取变更文件列表"""
         try:
             if to_hash:
                 # 比较两个树对象，使用树对象语法
-                result = self.git_manager._run_git_command(
+                result = (await self.git_manager._run_git_command(
                     "diff-tree",
                     "--no-commit-id",
                     "--name-only",
                     "-r",
                     from_hash,
                     to_hash,
-                ).strip()
+                )).strip()
             else:
                 # 比较树对象和当前工作区
                 # 首先将树对象写入索引
-                self.git_manager._run_git_command("read-tree", from_hash)
+                await self.git_manager._run_git_command("read-tree", from_hash)
                 # 然后比较索引和工作区
-                result = self.git_manager._run_git_command(
+                result = (await self.git_manager._run_git_command(
                     "diff", "--name-only", "HEAD", "--", "."
-                ).strip()
+                )).strip()
                 # 重置索引
-                self.git_manager._run_git_command("reset", "--mixed")
+                await self.git_manager._run_git_command("reset", "--mixed")
 
             if result:
                 return [f.strip() for f in result.split("\n") if f.strip()]
@@ -81,7 +82,7 @@ class PatchCalculator:
             if "bad object" in str(e) and from_hash:
                 # 尝试检查 from_hash 是否为空树
                 try:
-                    self.git_manager._run_git_command("cat-file", "-t", from_hash)
+                    await self.git_manager._run_git_command("cat-file", "-t", from_hash)
                     # 如果成功，说明对象存在但不是树
                     return []
                 except git.GitCommandError:
@@ -89,7 +90,7 @@ class PatchCalculator:
                     return []
             raise
 
-    def calculate_diff(self, from_hash: str, to_hash: Optional[str] = None) -> str:
+    async def calculate_diff(self, from_hash: str, to_hash: Optional[str] = None) -> str:
         """
         计算两个快照之间的差异（unified diff 格式）
 
@@ -105,25 +106,25 @@ class PatchCalculator:
         try:
             if to_hash:
                 # 比较两个树对象
-                return self.git_manager._run_git_command(
+                return await self.git_manager._run_git_command(
                     "diff-tree", "--no-commit-id", "-p", "-U3", from_hash, to_hash
                 )
             else:
                 # 比较树对象和当前工作区
                 # 首先将树对象写入索引
-                self.git_manager._run_git_command("read-tree", from_hash)
+                await self.git_manager._run_git_command("read-tree", from_hash)
                 # 然后比较索引和工作区
-                diff = self.git_manager._run_git_command(
+                diff = await self.git_manager._run_git_command(
                     "diff", "-U3", "HEAD", "--", "."
                 )
                 # 重置索引
-                self.git_manager._run_git_command("reset", "--mixed")
+                await self.git_manager._run_git_command("reset", "--mixed")
                 return diff
         except git.GitCommandError as e:
             # 如果 from_hash 不存在，返回空差异
             if "bad object" in str(e) and from_hash:
                 try:
-                    self.git_manager._run_git_command("cat-file", "-t", from_hash)
+                    await self.git_manager._run_git_command("cat-file", "-t", from_hash)
                     # 对象存在但不是树
                     return ""
                 except git.GitCommandError:

@@ -32,7 +32,7 @@ class SnapshotTracker:
         self.git_manager = GitManager(str(self.workspace_path))
         self.lock = threading.Semaphore(1)  # 并发控制锁
 
-    def track(self, ignore_patterns: Optional[list[str]] = None) -> str:
+    async def track(self, ignore_patterns: Optional[list[str]] = None) -> str:
         """
         捕获快照
 
@@ -43,9 +43,9 @@ class SnapshotTracker:
             Git 树哈希
         """
         with self.lock:
-            return self._track_snapshot(ignore_patterns)
+            return await self._track_snapshot(ignore_patterns)
 
-    def _track_snapshot(self, ignore_patterns: Optional[list[str]] = None) -> str:
+    async def _track_snapshot(self, ignore_patterns: Optional[list[str]] = None) -> str:
         """实际执行快照捕获"""
         # 确保 Git 仓库已初始化
         self.git_manager.ensure_initialized()
@@ -56,10 +56,10 @@ class SnapshotTracker:
         repo = self.git_manager.get_repo()
 
         # 发现变更文件
-        changed_files = self._discover_changed_files()
+        changed_files = await self._discover_changed_files()
 
         # 过滤大文件和忽略文件
-        filtered_files = self._filter_files(changed_files)
+        filtered_files = await self._filter_files(changed_files)
 
         logger.info("变更文件:" + ",".join(filtered_files))
 
@@ -74,46 +74,46 @@ class SnapshotTracker:
         # 移除忽略文件
         ignored_files = set(changed_files) - set(filtered_files)
         logger.info("忽略文件:" + ",".join(ignored_files))
-        self.git_manager.remove_cached_files(list(ignored_files))
+        await self.git_manager.remove_cached_files(list(ignored_files))
 
         # 暂存变更文件
-        self._stage_files(filtered_files)
+        await self._stage_files(filtered_files)
 
         # 写入 Git 树
-        tree_hash = self.git_manager._run_git_command("write-tree").strip()
+        tree_hash = (await self.git_manager._run_git_command("write-tree")).strip()
 
         # 创建提交来引用树对象
         if tree_hash:
             try:
-                parent_commit = self.git_manager._run_git_command(
+                parent_commit = (await self.git_manager._run_git_command(
                     "rev-parse", "refs/heads/snapshot"
-                ).strip()
+                )).strip()
             except git.GitCommandError:
                 parent_commit = None
 
             try:
                 commit_message = f"Snapshot at {datetime.now().isoformat()}"
                 if parent_commit:
-                    commit_hash = self.git_manager._run_git_command(
+                    commit_hash = (await self.git_manager._run_git_command(
                         "commit-tree",
                         tree_hash,
                         "-p",
                         parent_commit,
                         "-m",
                         commit_message,
-                    ).strip()
+                    )).strip()
                 else:
-                    commit_hash = self.git_manager._run_git_command(
+                    commit_hash = (await self.git_manager._run_git_command(
                         "commit-tree", tree_hash, "-m", commit_message
-                    ).strip()
+                    )).strip()
 
                 # 更新引用
-                self.git_manager._run_git_command(
+                await self.git_manager._run_git_command(
                     "update-ref", "refs/heads/snapshot", commit_hash
                 )
 
                 # 更新 HEAD 指向 snapshot 分支
-                self.git_manager._run_git_command(
+                await self.git_manager._run_git_command(
                     "symbolic-ref", "HEAD", "refs/heads/snapshot"
                 )
 
@@ -124,19 +124,19 @@ class SnapshotTracker:
                 pass
 
         # 重置暂存区
-        self.git_manager._run_git_command("reset", "--mixed")
+        await self.git_manager._run_git_command("reset", "--mixed")
 
         return tree_hash
 
-    def _discover_changed_files(self) -> List[str]:
+    async def _discover_changed_files(self) -> List[str]:
         """发现变更文件"""
         changed_files = []
 
         # 获取已跟踪文件的变更
         try:
-            diff_files = self.git_manager._run_git_command(
+            diff_files = (await self.git_manager._run_git_command(
                 "diff-files", "--name-only", "-z", "--", "."
-            ).strip()
+            )).strip()
             if diff_files:
                 changed_files.extend(diff_files.split("\x00"))
         except git.GitCommandError:
@@ -144,9 +144,9 @@ class SnapshotTracker:
 
         # 获取未跟踪文件
         try:
-            untracked_files = self.git_manager._run_git_command(
+            untracked_files = (await self.git_manager._run_git_command(
                 "ls-files", "--others", "--exclude-standard", "-z", "--", "."
-            ).strip()
+            )).strip()
             if untracked_files:
                 changed_files.extend(untracked_files.split("\x00"))
         except git.GitCommandError:
@@ -154,13 +154,13 @@ class SnapshotTracker:
 
         return changed_files
 
-    def _filter_files(self, file_paths: List[str]) -> List[str]:
+    async def _filter_files(self, file_paths: List[str]) -> List[str]:
         """过滤文件"""
         filtered_files = []
 
         for file_path in file_paths:
             # 检查是否被忽略
-            if self.git_manager.is_ignored(file_path):
+            if await self.git_manager.is_ignored(file_path):
                 continue
 
             # 检查文件大小
@@ -178,7 +178,7 @@ class SnapshotTracker:
 
         return filtered_files
 
-    def _stage_files(self, file_paths: List[str]) -> None:
+    async def _stage_files(self, file_paths: List[str]) -> None:
         """暂存文件"""
         if not file_paths:
             return
@@ -196,7 +196,7 @@ class SnapshotTracker:
             # 检查临时文件是否为空
             if os.path.getsize(temp_file) > 0:
                 # 使用临时文件进行稀疏添加
-                self.git_manager._run_git_command(
+                await self.git_manager._run_git_command(
                     "add", "--all", "--sparse", f"--pathspec-from-file={temp_file}"
                 )
             else:
