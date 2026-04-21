@@ -223,6 +223,15 @@ class Agent:
         Args:
             message: Command message with undo/redo details
         """
+        if self.running:
+            logger.error("Agent is already running")
+            await self.communicator.send_command_result(
+                command=message.data.get("command"),
+                result={"code": 1, "message": "Agent is already running"},
+                subscription=self.session_id,
+            )
+            return
+
         command = message.data.get("command")
         session_id = self.session_id
 
@@ -269,19 +278,26 @@ class Agent:
                     diff_summary = result.get("diff_summary", {})
                     files_changed = diff_summary.get("total_files", 0)
 
-                    await self.communicator.send_command_result(
-                        command="undo",
-                        result=f"Undo successful. Changed {files_changed} file(s).",
-                        subscription=session_id,
-                    )
-
                     # 重建context
                     await self.context.build_history_from_session(
                         self.session_manager, self.agent_id
                     )
+
+                    await self.communicator.send_command_result(
+                        command="undo",
+                        result={
+                            "code": 0,
+                            "message": f"Undo successful, {files_changed} files changed",
+                        },
+                        subscription=session_id,
+                    )
                 else:
-                    await self.communicator.send_error(
-                        f"Undo failed: {result.get('message', 'Unknown error')}",
+                    await self.communicator.send_command_result(
+                        command="undo",
+                        result={
+                            "code": 1,
+                            "message": f"Undo failed: {result.get('message', 'Unknown error')}",
+                        },
                         subscription=session_id,
                     )
 
@@ -292,26 +308,31 @@ class Agent:
                 )
 
                 if result.get("success"):
+                    # 重建context
+                    await self.context.build_history_from_session(
+                        self.session_manager, self.agent_id
+                    )
                     await self.communicator.send_command_result(
                         command="redo",
                         result="Redo successful.",
                         subscription=session_id,
                     )
-
-                    # 重建context
-                    await self.context.build_history_from_session(
-                        self.session_manager, self.agent_id
-                    )
                 else:
-                    await self.communicator.send_error(
-                        f"Redo failed: {result.get('message', 'Unknown error')}",
+                    await self.communicator.send_command_result(
+                        command="redo",
+                        result={
+                            "code": 1,
+                            "message": f"Redo failed: {result.get('message', 'Unknown error')}",
+                        },
                         subscription=session_id,
                     )
 
         except Exception as e:
             logger.error(f"Error handling {command} command: {e}")
-            await self.communicator.send_error(
-                f"Error executing {command}: {str(e)}", subscription=session_id
+            await self.communicator.send_command_result(
+                command=command,
+                result={"code": 1, "message": f"Error handling {command} command: {e}"},
+                subscription=session_id,
             )
 
     def stop(self):

@@ -4,11 +4,11 @@ SessionRevert 服务
 提供撤销/重做功能，管理会话级别的操作回滚。
 """
 
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Dict, List, Optional, Tuple
 
 from broca.logging_config import get_logger
-from broca.session.models import Message, MessageProtocol, MessageType
+from broca.session.models import Message, MessageType
 from broca.session.service import MessageService
 from broca.session.session_manager import SessionManager
 from broca.snapshot import PatchCalculator, SnapshotRestorer, SnapshotTracker
@@ -19,6 +19,13 @@ logger = get_logger(__name__)
 class SessionRevertService:
     """会话撤销服务"""
 
+    _instance = None
+
+    def __new__(cls):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+        return cls._instance
+
     def __init__(self, session_manager: SessionManager, workspace_path: str):
         """
         初始化会话撤销服务
@@ -27,11 +34,14 @@ class SessionRevertService:
             session_manager: 会话管理器
             workspace_path: 工作空间路径
         """
-        self.session_manager = session_manager
-        self.workspace_path = workspace_path
-        self.snapshot_tracker = SnapshotTracker(workspace_path)
-        self.patch_calculator = PatchCalculator(workspace_path)
-        self.snapshot_restorer = SnapshotRestorer(workspace_path)
+        if not hasattr(self, "_initialized"):
+            self._initialized = True
+            self.session_manager = session_manager
+            self.workspace_path = workspace_path
+            self.snapshot_tracker = SnapshotTracker(workspace_path)
+            self.patch_calculator = PatchCalculator(workspace_path)
+            self.snapshot_restorer = SnapshotRestorer(workspace_path)
+            self.undo_meta_infos: dict[str, dict] = {}
 
     async def undo(
         self,
@@ -76,6 +86,11 @@ class SessionRevertService:
                 "patches_reverted": 0,
             }
 
+        # 如果有上一次撤销记录，先重做（合并撤销）
+        prev_undo_meta_info = self.undo_meta_infos.get(agent_id)
+        if prev_undo_meta_info:
+            await self.redo(session_id, agent_id)
+
         # 捕获当前快照（用于重做）
         current_snapshot_hash = await self.snapshot_tracker.track()
 
@@ -91,21 +106,22 @@ class SessionRevertService:
             diff_summary = self.patch_calculator.get_diff_summary(diff_content)
 
         # 保存撤销记录
-        undo_message = await self._create_undo_message(
-            session_id=session_id,
-            level=level,
-            pivot_message_id=pivot_message_id,
-            snapshot_hash=current_snapshot_hash,
-            diff_content=diff_content,
-            diff_summary=diff_summary,
+        undo_meta_info = self._create_undo_meta_info(
+            session_id,
+            agent_id,
+            level,
+            pivot_message_id,
+            current_snapshot_hash,
+            diff_content,
+            diff_summary,
         )
+        self.undo_meta_infos[agent_id] = undo_meta_info
 
         # 标记相关消息为已撤销
         await self._mark_messages_as_reverted(messages, pivot_message_id)
 
         return {
             "success": True,
-            "undo_message_id": undo_message.message_id,
             "diff_summary": diff_summary,
             "patches_reverted": len(patches_to_revert),
         }
@@ -116,6 +132,7 @@ class SessionRevertService:
 
         Args:
             session_id: 会话ID
+            agent_id: Agent ID
 
         Returns:
             重做结果
@@ -126,12 +143,12 @@ class SessionRevertService:
             raise ValueError(f"会话不存在: {session_id}")
 
         # 获取最新的撤销记录
-        undo_message = await self._get_latest_undo_message(agent_id)
-        if not undo_message:
+        undo_meta_info = self.undo_meta_infos.get(agent_id)
+        if not undo_meta_info:
             return {"success": False, "message": "没有可重做的操作"}
 
         # 从撤销记录中恢复快照
-        snapshot_hash = undo_message.data.get("arguments", {}).get("snapshot_hash")
+        snapshot_hash = undo_meta_info.get("snapshot_hash")
         if not snapshot_hash:
             return {"success": False, "message": "撤销记录中没有快照信息"}
 
@@ -139,19 +156,13 @@ class SessionRevertService:
         await self.snapshot_restorer.restore(snapshot_hash)
 
         # 标记相关消息为已重做
-        await self._mark_messages_as_redone(agent_id, undo_message)
+        await self._mark_messages_as_redone(agent_id, undo_meta_info)
 
-        # 保存重做记录
-        redo_message = await self._create_redo_message(
-            session_id=session_id,
-            undo_message_id=undo_message.message_id,
-            snapshot_hash=snapshot_hash,
-        )
+        # 删除撤销记录
+        del self.undo_meta_infos[agent_id]
 
         return {
-            "success": True,
-            "redo_message_id": redo_message.message_id,
-            "undo_message_id": undo_message.message_id,
+            "success": True
         }
 
     async def _collect_patches_to_message(
@@ -221,90 +232,29 @@ class SessionRevertService:
 
         return await self.patch_calculator.calculate_diff(from_hash, current_hash)
 
-    async def _create_undo_message(
+    def _create_undo_meta_info(
         self,
         session_id: str,
+        agent_id: str,
         level: str,
         pivot_message_id: Optional[str],
         snapshot_hash: str,
         diff_content: str,
         diff_summary: Dict[str, any],
-    ) -> Message:
+    ) -> dict:
         """创建撤销消息"""
-        data = {
+        message = {
             "command": "undo",
             "level": level,
+            "session_id": session_id,
+            "agent_id": agent_id,
             "snapshot_hash": snapshot_hash,
             "diff": diff_content,
             "diff_summary": diff_summary,
+            "pivot_message_id": pivot_message_id,
+            "timestamp": datetime.now().isoformat(),
         }
-        if pivot_message_id:
-            data["pivot_message_id"] = pivot_message_id
-
-        message = MessageProtocol.create_command("undo", data)
-        message.session_id = session_id
-        message.timestamp = datetime.now(timezone.utc)
-
-        message_service = MessageService()
-        # 使用create方法创建消息
-        await message_service.create(
-            message_id=message.message_id,
-            session_id=message.session_id,
-            turn_id=message.turn_id,
-            agent_id=message.agent_id,
-            role=message.role,
-            message_type=message.message_type,
-            sequence_number=message.sequence_number or 1,
-            data=message.data,
-        )
-
         return message
-
-    async def _create_redo_message(
-        self,
-        session_id: str,
-        undo_message_id: str,
-        snapshot_hash: str,
-    ) -> Message:
-        """创建重做消息"""
-        data = {
-            "command": "redo",
-            "undo_message_id": undo_message_id,
-            "snapshot_hash": snapshot_hash,
-        }
-
-        message = MessageProtocol.create_command("redo", data)
-        message.session_id = session_id
-        message.timestamp = datetime.now(timezone.utc)
-
-        message_service = MessageService()
-        # 使用create方法创建消息
-        await message_service.create(
-            message_id=message.message_id,
-            session_id=message.session_id,
-            turn_id=message.turn_id,
-            agent_id=message.agent_id,
-            role=message.role,
-            message_type=message.message_type,
-            sequence_number=message.sequence_number or 1,
-            data=message.data,
-        )
-
-        return message
-
-    async def _get_latest_undo_message(self, agent_id: str) -> Optional[Message]:
-        """获取最新的撤销消息"""
-        messages = await self.session_manager.get_messages(agent_id)
-
-        for msg in reversed(messages):
-            if (
-                msg.message_type == MessageType.COMMAND
-                and msg.data.get("content") == "undo"
-                and not msg.reverted
-            ):
-                return msg
-
-        return None
 
     async def _mark_messages_as_reverted(
         self, messages: List[Message], pivot_message_id: str | None
@@ -320,10 +270,6 @@ class SessionRevertService:
                 collecting = True
                 continue
             if collecting:
-                # 排除UNDO消息
-                if msg.message_type == MessageType.COMMAND:
-                    if msg.data.get("content") == "undo":
-                        continue
                 message_ids_to_revert.add(msg.message_id)
 
         logger.info(f"标记消息为已撤销: {message_ids_to_revert}")
@@ -337,11 +283,11 @@ class SessionRevertService:
             )
 
     async def _mark_messages_as_redone(
-        self, agent_id: str, undo_message: Message
+        self, agent_id: str, undo_meta_info: dict
     ) -> None:
         """标记消息为已重做"""
         message_service = MessageService()
-        pivot_message_id = undo_message.data.get("pivot_message_id")
+        pivot_message_id = undo_meta_info.get("pivot_message_id")
         messages = await self.session_manager.get_messages(
             agent_id, ignore_reverted=False
         )
