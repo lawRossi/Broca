@@ -161,9 +161,7 @@ class SessionRevertService:
         # 删除撤销记录
         del self.undo_meta_infos[agent_id]
 
-        return {
-            "success": True
-        }
+        return {"success": True}
 
     async def _collect_patches_to_message(
         self, messages: List[Message], target_message_id: str, level: str
@@ -267,6 +265,7 @@ class SessionRevertService:
         collecting = False
         for msg in messages:
             if msg.message_id == pivot_message_id:
+                message_ids_to_revert.add(msg.message_id)
                 collecting = True
                 continue
             if collecting:
@@ -296,6 +295,7 @@ class SessionRevertService:
         collecting = False
         for msg in messages:
             if msg.message_id == pivot_message_id:
+                messages_to_mark.append(msg)
                 collecting = True
                 continue
 
