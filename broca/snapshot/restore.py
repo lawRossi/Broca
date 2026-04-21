@@ -6,10 +6,12 @@
 
 import shutil
 from pathlib import Path
+from typing import Any
 
 import git
 
 from broca.logging_config import get_logger
+
 from .git_manager import GitManager
 
 logger = get_logger(__name__)
@@ -37,11 +39,37 @@ class SnapshotRestorer:
         """
         self.git_manager.ensure_initialized()
 
-        # 读取树对象到索引
-        self.git_manager._run_git_command("read-tree", tree_hash)
+        try:
+            # 使用 --reset 选项先重置索引，再读取树对象
+            self.git_manager._run_git_command("read-tree", "--reset", tree_hash)
 
-        # 检出索引到工作区
-        self.git_manager._run_git_command("checkout-index", "-a", "-f")
+            # 检出索引到工作区
+            self.git_manager._run_git_command("checkout-index", "-a", "-f")
+        except git.GitCommandError as e:
+            logger.error(f"恢复快照失败: {e}")
+            raise
+
+    def revert_patches(self, patches: list[dict[str, Any]]) -> None:
+        """
+        反向应用多个 patch
+
+        Args:
+            patches: patch 信息字典列表
+        """
+        if not patches:
+            return
+
+        file_snapshot_mapping = {}
+        for patch in patches:
+            snapshot_hash = patch.get("snapshot_hash")
+            files = patch.get("files", [])
+            if snapshot_hash and files:
+                for file_path in files:
+                    if file_path not in file_snapshot_mapping:
+                        file_snapshot_mapping[file_path] = snapshot_hash
+
+        for file, snapshot_hash in file_snapshot_mapping.items():
+            self.restore_file(snapshot_hash, file)
 
     def restore_file(self, tree_hash: str, file_path: str) -> None:
         """
@@ -72,26 +100,3 @@ class SnapshotRestorer:
                             shutil.rmtree(full_path)
             except git.GitCommandError as e:
                 logger.error(f"文件检出失败{file_path}：{e}")
-
-    def get_tree_files(self, tree_hash: str) -> list[str]:
-        """
-        获取快照中的所有文件列表
-
-        Args:
-            tree_hash: Git 树哈希
-
-        Returns:
-            文件路径列表
-        """
-        self.git_manager.ensure_initialized()
-
-        try:
-            result = self.git_manager._run_git_command(
-                "ls-tree", "-r", "--name-only", tree_hash
-            )
-            if result:
-                return [f.strip() for f in result.splitlines() if f.strip()]
-            return []
-        except git.GitCommandError:
-            # 如果树哈希无效，返回空列表
-            return []

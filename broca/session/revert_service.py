@@ -8,11 +8,10 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from broca.logging_config import get_logger
+from broca.session.models import Message, MessageProtocol, MessageType
+from broca.session.service import MessageService
 from broca.session.session_manager import SessionManager
-
-from ..snapshot import PatchCalculator, PatchReverter, SnapshotTracker
-from .models import Message, MessageProtocol, MessageType
-from .service import MessageService
+from broca.snapshot import PatchCalculator, SnapshotRestorer, SnapshotTracker
 
 logger = get_logger(__name__)
 
@@ -32,7 +31,7 @@ class SessionRevertService:
         self.workspace_path = workspace_path
         self.snapshot_tracker = SnapshotTracker(workspace_path)
         self.patch_calculator = PatchCalculator(workspace_path)
-        self.patch_reverter = PatchReverter(workspace_path)
+        self.snapshot_restorer = SnapshotRestorer(workspace_path)
 
     async def undo(
         self,
@@ -85,7 +84,7 @@ class SessionRevertService:
         diff_summary = {}
         if patches_to_revert:
             # 反向应用patch
-            self.patch_reverter.revert_patches(patches_to_revert)
+            self.snapshot_restorer.revert_patches(patches_to_revert)
 
             # 计算差异
             diff_content = self._calculate_diff_for_patches(current_snapshot_hash)
@@ -132,12 +131,12 @@ class SessionRevertService:
             return {"success": False, "message": "没有可重做的操作"}
 
         # 从撤销记录中恢复快照
-        snapshot_hash = undo_message.data.get("arguments").get("snapshot_hash")
+        snapshot_hash = undo_message.data.get("arguments", {}).get("snapshot_hash")
         if not snapshot_hash:
             return {"success": False, "message": "撤销记录中没有快照信息"}
 
         # 恢复到撤销前的状态
-        self.patch_reverter.apply_patch({"snapshot_hash": snapshot_hash})
+        self.snapshot_restorer.restore(snapshot_hash)
 
         # 标记相关消息为已重做
         await self._mark_messages_as_redone(agent_id, undo_message)

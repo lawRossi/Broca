@@ -13,6 +13,10 @@ from typing import Optional
 
 import git
 
+from broca.logging_config import get_logger
+
+logger = get_logger(__name__)
+
 
 class GitManager:
     """Git 仓库管理器"""
@@ -221,3 +225,47 @@ class GitManager:
         except git.GitCommandError:
             # 如果命令失败，说明文件不被忽略
             return False
+
+    def get_tree_files(self, tree_hash: str) -> list[str]:
+        """
+        获取快照中的所有文件列表
+
+        Args:
+            tree_hash: Git 树哈希
+
+        Returns:
+            文件路径列表
+        """
+        self.ensure_initialized()
+
+        try:
+            result = self._run_git_command("ls-tree", "-r", "--name-only", tree_hash)
+            if result:
+                return [f.strip() for f in result.splitlines() if f.strip()]
+            return []
+        except git.GitCommandError:
+            # 如果树哈希无效，返回空列表
+            return []
+
+    def remove_cached_files(self, files: list[str]) -> None:
+        """
+        移除缓存文件
+
+        Args:
+            files: 文件路径列表
+        """
+        self.ensure_initialized()
+
+        # git rm --cached -f --ignore-unmatch --pathspec-from-file=- --pathspec-file-nul
+        try:
+            self._run_git_command(
+                "rm",
+                "--cached",
+                "-f",
+                "--ignore-unmatch",
+                "--pathspec-from-file=-",
+                "--pathspec-file-nul",
+                *files,
+            )
+        except git.GitCommandError as e:
+            logger.error(f"Failed to remove cached files: {e}")
