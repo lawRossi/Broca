@@ -9,12 +9,10 @@ from .git_manager import GitManager
 from .track import SnapshotTracker
 from .patch import PatchCalculator
 from .restore import SnapshotRestorer
-from .revert import PatchReverter
 
 __all__ = [
     "GitManager",
     "SnapshotTracker",
     "PatchCalculator",
     "SnapshotRestorer",
-    "PatchReverter",
 ]
