@@ -179,7 +179,7 @@ class ExecutionEngine:
 
         try:
             if self._step_has_write_operations:
-                snapshot_hash = self.snapshot_tracker.track()
+                snapshot_hash = await self.snapshot_tracker.track()
                 self.current_snapshot_hash = snapshot_hash
             else:
                 snapshot_hash = ""
@@ -223,10 +223,10 @@ class ExecutionEngine:
 
         try:
             # 捕获结束快照
-            end_snapshot_hash = self.snapshot_tracker.track()
+            end_snapshot_hash = await self.snapshot_tracker.track()
 
             # 计算patch
-            patch = self.patch_calculator.calculate_patch(
+            patch = await self.patch_calculator.calculate_patch(
                 self.current_snapshot_hash, end_snapshot_hash
             )
 

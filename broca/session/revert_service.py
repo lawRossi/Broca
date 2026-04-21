@@ -77,17 +77,17 @@ class SessionRevertService:
             }
 
         # 捕获当前快照（用于重做）
-        current_snapshot_hash = self.snapshot_tracker.track()
+        current_snapshot_hash = await self.snapshot_tracker.track()
 
         # 如果有patch，反向应用patch
         diff_content = ""
         diff_summary = {}
         if patches_to_revert:
             # 反向应用patch
-            self.snapshot_restorer.revert_patches(patches_to_revert)
+            await self.snapshot_restorer.revert_patches(patches_to_revert)
 
             # 计算差异
-            diff_content = self._calculate_diff_for_patches(current_snapshot_hash)
+            diff_content = await self._calculate_diff_for_patches(current_snapshot_hash)
             diff_summary = self.patch_calculator.get_diff_summary(diff_content)
 
         # 保存撤销记录
@@ -136,7 +136,7 @@ class SessionRevertService:
             return {"success": False, "message": "撤销记录中没有快照信息"}
 
         # 恢复到撤销前的状态
-        self.snapshot_restorer.restore(snapshot_hash)
+        await self.snapshot_restorer.restore(snapshot_hash)
 
         # 标记相关消息为已重做
         await self._mark_messages_as_redone(agent_id, undo_message)
@@ -215,11 +215,11 @@ class SessionRevertService:
 
         return patches, pivot_message_id
 
-    def _calculate_diff_for_patches(self, from_hash: str) -> str:
+    async def _calculate_diff_for_patches(self, from_hash: str) -> str:
         """计算patch的差异"""
-        current_hash = self.snapshot_tracker.track()
+        current_hash = await self.snapshot_tracker.track()
 
-        return self.patch_calculator.calculate_diff(from_hash, current_hash)
+        return await self.patch_calculator.calculate_diff(from_hash, current_hash)
 
     async def _create_undo_message(
         self,

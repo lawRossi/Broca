@@ -5,6 +5,7 @@ Git 仓库管理模块
 与用户项目 git 完全隔离，位于 ~/.local/share/broca/snapshot/ 目录下。
 """
 
+import asyncio
 import hashlib
 import os
 import shutil
@@ -171,7 +172,7 @@ class GitManager:
         with open(exclude_file, "w", encoding="utf-8") as f:
             f.write("\n".join(ignore_content))
 
-    def _run_git_command(self, *args, **kwargs) -> str:
+    async def _run_git_command(self, *args, **kwargs) -> str:
         """
         执行Git命令，设置正确的环境变量
 
@@ -182,32 +183,32 @@ class GitManager:
         Returns:
             命令输出
         """
-        import subprocess
-
         # 设置环境变量
         env = os.environ.copy()
         env["GIT_DIR"] = str(self.repo_path / ".git")
         env["GIT_WORK_TREE"] = str(self.workspace_path)
 
-        # 构建命令
-        cmd = ["git"] + list(args)
+        # 构建命令字符串
+        cmd_str = "git " + " ".join(args)
 
         # 执行命令
-        result = subprocess.run(
-            cmd,
+        process = await asyncio.create_subprocess_shell(
+            cmd_str,
             cwd=str(self.workspace_path),
             env=env,
-            capture_output=True,
-            text=True,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
             **kwargs,
         )
 
-        if result.returncode != 0:
-            raise git.GitCommandError(cmd, result.returncode, result.stderr)
+        stdout, stderr = await process.communicate()
 
-        return result.stdout
+        if process.returncode != 0:
+            raise git.GitCommandError(cmd_str, process.returncode, stderr.decode())
 
-    def is_ignored(self, file_path: str) -> bool:
+        return stdout.decode()
+
+    async def is_ignored(self, file_path: str) -> bool:
         """
         检查文件是否被忽略
 
@@ -220,13 +221,13 @@ class GitManager:
         self.ensure_initialized()
 
         try:
-            result = self._run_git_command("check-ignore", file_path)
+            result = await self._run_git_command("check-ignore", file_path)
             return result.strip() != ""
         except git.GitCommandError:
             # 如果命令失败，说明文件不被忽略
             return False
 
-    def get_tree_files(self, tree_hash: str) -> list[str]:
+    async def get_tree_files(self, tree_hash: str) -> list[str]:
         """
         获取快照中的所有文件列表
 
@@ -239,7 +240,7 @@ class GitManager:
         self.ensure_initialized()
 
         try:
-            result = self._run_git_command("ls-tree", "-r", "--name-only", tree_hash)
+            result = await self._run_git_command("ls-tree", "-r", "--name-only", tree_hash)
             if result:
                 return [f.strip() for f in result.splitlines() if f.strip()]
             return []
@@ -247,7 +248,7 @@ class GitManager:
             # 如果树哈希无效，返回空列表
             return []
 
-    def remove_cached_files(self, files: list[str]) -> None:
+    async def remove_cached_files(self, files: list[str]) -> None:
         """
         移除缓存文件
 
@@ -258,7 +259,7 @@ class GitManager:
 
         # git rm --cached -f --ignore-unmatch --pathspec-from-file=- --pathspec-file-nul
         try:
-            self._run_git_command(
+            await self._run_git_command(
                 "rm",
                 "--cached",
                 "-f",
