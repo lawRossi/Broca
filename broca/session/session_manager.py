@@ -473,6 +473,7 @@ class SessionManager:
         turn_id: str | None,
         agent_id: str | None,
         step_id: str | None,
+        message_id: str | None,
     ) -> bool:
         if not turn_id or not agent_id:
             return False
@@ -486,6 +487,7 @@ class SessionManager:
             turn_id=turn_id,
             agent_id=agent_id,
             data=data,
+            message_id=message_id,
         )
 
     async def save_turn_end(
@@ -509,6 +511,7 @@ class SessionManager:
         tool_call: Any,
         tool_result: ToolResult,
         step_id: str | None,
+        message_id: str | None,
     ) -> bool:
         if not turn_id or not agent_id:
             return False
@@ -542,4 +545,5 @@ class SessionManager:
             turn_id=turn_id,
             agent_id=agent_id,
             data=data,
+            message_id=message_id
         )

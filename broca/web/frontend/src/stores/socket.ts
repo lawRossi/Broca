@@ -115,6 +115,7 @@ export const useSocketStore = defineStore('socket', () => {
   }
 
   const sendUserMessage = async (params: {
+    messageId: string
     content: string
     receiverId?: string
     subscription?: string
@@ -136,6 +137,7 @@ export const useSocketStore = defineStore('socket', () => {
 
     try {
       await client.sendUserMessage({
+        messageId: params.messageId,
         content: text,
         receiverId: params.receiverId,
         subscription: params.subscription,
@@ -225,7 +227,6 @@ export const useSocketStore = defineStore('socket', () => {
   }
 
   const sendRedo = async (params: {
-    subscription?: string
     receiverId?: string
   }) => {
     if (!client) {
@@ -236,7 +237,6 @@ export const useSocketStore = defineStore('socket', () => {
       await client.sendCommand({
         command: 'redo',
         arguments: {},
-        subscription: params.subscription,
         receiverId: params.receiverId,
       })
       ElMessage.success('重做命令已发送')

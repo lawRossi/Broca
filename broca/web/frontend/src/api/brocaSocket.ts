@@ -161,6 +161,7 @@ export class BrocaSocketClient {
   }
 
   async sendUserMessage(params: {
+    messageId: string
     content: string
     receiverId?: string
     room?: string
@@ -179,7 +180,7 @@ export class BrocaSocketClient {
     }
 
     const message: Message = {
-      message_id: this.generateMessageId(),
+      message_id: params.messageId,
       message_type: 'user_message',
       timestamp: new Date().toISOString(),
       role: 'user',

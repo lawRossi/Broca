@@ -249,6 +249,9 @@ export const useChatStore = defineStore('chat', () => {
           existingMessage.timestamp = message.timestamp
         }
 
+        // 更新message_id
+        existingMessage.message_id = message.message_id
+
         return existingMessage
       } else {
         // 没有相同tool_call_id的消息，直接添加
@@ -543,8 +546,9 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // 乐观更新：添加本地消息
+    const messageId = `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
     addMessage({
-      message_id: `user_${Date.now()}`,
+      message_id: messageId,
       timestamp: new Date().toISOString(),
       message_type: 'user_message',
       role: 'user',
@@ -556,6 +560,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // 通过 WebSocket 发送
     await socketStore.sendUserMessage({
+      messageId: messageId,
       content: cleanText,
       receiverId: targetAgent,
       subscription: sessionId.value ? String(sessionId.value) : undefined,

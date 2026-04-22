@@ -73,11 +73,14 @@ class SnapshotTracker:
 
         # 移除忽略文件
         ignored_files = set(changed_files) - set(filtered_files)
-        logger.info("忽略文件:" + ",".join(ignored_files))
-        await self.git_manager.remove_cached_files(list(ignored_files))
+        if ignored_files:
+            logger.info("忽略文件:" + ",".join(ignored_files))
+            await self.git_manager.remove_cached_files(list(ignored_files))
 
         # 暂存变更文件
-        await self._stage_files(filtered_files)
+        if not await self._stage_files(filtered_files):
+            logger.info("无法稀疏添加变更文件，跳过提交")
+            return repo.head.commit.tree.hexsha
 
         # 写入 Git 树
         tree_hash = (await self.git_manager._run_git_command("write-tree")).strip()
@@ -85,27 +88,12 @@ class SnapshotTracker:
         # 创建提交来引用树对象
         if tree_hash:
             try:
-                parent_commit = (await self.git_manager._run_git_command(
-                    "rev-parse", "refs/heads/snapshot"
-                )).strip()
-            except git.GitCommandError:
-                parent_commit = None
-
-            try:
-                commit_message = f"Snapshot at {datetime.now().isoformat()}"
-                if parent_commit:
-                    commit_hash = (await self.git_manager._run_git_command(
-                        "commit-tree",
-                        tree_hash,
-                        "-p",
-                        parent_commit,
-                        "-m",
-                        commit_message,
-                    )).strip()
-                else:
-                    commit_hash = (await self.git_manager._run_git_command(
+                commit_message = f"Snapshot-at-{datetime.now().isoformat()}"
+                commit_hash = (
+                    await self.git_manager._run_git_command(
                         "commit-tree", tree_hash, "-m", commit_message
-                    )).strip()
+                    )
+                ).strip()
 
                 # 更新引用
                 await self.git_manager._run_git_command(
@@ -134,9 +122,11 @@ class SnapshotTracker:
 
         # 获取已跟踪文件的变更
         try:
-            diff_files = (await self.git_manager._run_git_command(
-                "diff-files", "--name-only", "-z", "--", "."
-            )).strip()
+            diff_files = (
+                await self.git_manager._run_git_command(
+                    "diff-files", "--name-only", "-z", "--", "."
+                )
+            ).strip()
             if diff_files:
                 changed_files.extend(diff_files.split("\x00"))
         except git.GitCommandError:
@@ -144,9 +134,11 @@ class SnapshotTracker:
 
         # 获取未跟踪文件
         try:
-            untracked_files = (await self.git_manager._run_git_command(
-                "ls-files", "--others", "--exclude-standard", "-z", "--", "."
-            )).strip()
+            untracked_files = (
+                await self.git_manager._run_git_command(
+                    "ls-files", "--others", "--exclude-standard", "-z", "--", "."
+                )
+            ).strip()
             if untracked_files:
                 changed_files.extend(untracked_files.split("\x00"))
         except git.GitCommandError:
@@ -178,10 +170,10 @@ class SnapshotTracker:
 
         return filtered_files
 
-    async def _stage_files(self, file_paths: List[str]) -> None:
+    async def _stage_files(self, file_paths: List[str]) -> bool:
         """暂存文件"""
         if not file_paths:
-            return
+            return False
 
         # 创建临时文件列表
         import tempfile
@@ -199,10 +191,13 @@ class SnapshotTracker:
                 await self.git_manager._run_git_command(
                     "add", "--all", "--sparse", f"--pathspec-from-file={temp_file}"
                 )
+                return True
             else:
                 logger.info("临时文件为空，跳过稀疏添加")
+                return False
         except git.GitCommandError as e:
             logger.error(f"稀疏添加失败: {e}")
+            return False
         finally:
             # 清理临时文件
             os.unlink(temp_file)

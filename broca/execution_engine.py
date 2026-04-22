@@ -309,7 +309,11 @@ class ExecutionEngine:
         await self._capture_step_start()
 
         if not await self.session_manager.save_agent_response(
-            response, self.turn_id, self.agent_id, self.step_id
+            response,
+            self.turn_id,
+            self.agent_id,
+            self.step_id,
+            message_id=response.message_id,
         ):
             logger.error("Failed to save agent response")
             return ExecutionStatus.ERROR
@@ -384,7 +388,10 @@ class ExecutionEngine:
         output_tokens = self.llm_client.output_tokens_used
         await self.agent.on_llm_call_completed(input_tokens, output_tokens)
 
-        return self.llm_client.aggregate_message(content_chunks, tool_call_chunks)
+        message = self.llm_client.aggregate_message(content_chunks, tool_call_chunks)
+        if message is not None:
+            message.message_id = message_id
+        return message
 
     def _get_tools_list(self) -> List[Dict[str, Any]]:
         """
@@ -497,6 +504,7 @@ class ExecutionEngine:
             tool_result: Tool execution result
             tool_call_result: Formatted tool call result
         """
+        message_id = generate_message_id()
         await self.communicator.send_tool_call(
             tool_name=tool_call.function.name,
             arguments=tool_call.function.arguments,
@@ -504,6 +512,7 @@ class ExecutionEngine:
             result=tool_result.content,
             status=tool_result.status,
             subscription=self.session_id,
+            message_id=message_id,
         )
 
         return await self.session_manager.save_tool_call(
@@ -512,6 +521,7 @@ class ExecutionEngine:
             tool_call=tool_call,
             tool_result=tool_result,
             step_id=self.step_id,
+            message_id=message_id,
         )
 
     async def execute_round(self, max_steps: Optional[int] = None) -> ExecutionResult:
@@ -686,6 +696,7 @@ class ExecutionEngine:
             )
 
             message.data["from_agent"] = from_agent
+            message_id = message.message_id if not from_agent else None
             if not await self.session_manager.save_message(
                 role=MessageRole.USER,
                 content=json.dumps(user_message, ensure_ascii=False),
@@ -693,6 +704,7 @@ class ExecutionEngine:
                 turn_id=turn_id,
                 agent_id=self.agent_id,
                 data=message.data,
+                message_id=message_id,
             ):
                 return False
 

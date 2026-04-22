@@ -5,7 +5,7 @@ SessionRevert 服务
 """
 
 from datetime import datetime
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from broca.logging_config import get_logger
 from broca.session.models import Message, MessageType
@@ -19,13 +19,6 @@ logger = get_logger(__name__)
 class SessionRevertService:
     """会话撤销服务"""
 
-    _instance = None
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super().__new__(cls)
-        return cls._instance
-
     def __init__(self, session_manager: SessionManager, workspace_path: str):
         """
         初始化会话撤销服务
@@ -34,14 +27,12 @@ class SessionRevertService:
             session_manager: 会话管理器
             workspace_path: 工作空间路径
         """
-        if not hasattr(self, "_initialized"):
-            self._initialized = True
-            self.session_manager = session_manager
-            self.workspace_path = workspace_path
-            self.snapshot_tracker = SnapshotTracker(workspace_path)
-            self.patch_calculator = PatchCalculator(workspace_path)
-            self.snapshot_restorer = SnapshotRestorer(workspace_path)
-            self.undo_meta_infos: dict[str, dict] = {}
+        self.session_manager = session_manager
+        self.workspace_path = workspace_path
+        self.snapshot_tracker = SnapshotTracker(self.workspace_path)
+        self.patch_calculator = PatchCalculator(self.workspace_path)
+        self.snapshot_restorer = SnapshotRestorer(self.workspace_path)
+        self.undo_meta_info: dict = {}
 
     async def undo(
         self,
@@ -49,7 +40,7 @@ class SessionRevertService:
         agent_id: str,
         target_message_id: str,
         level: str = "step",
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         执行撤销操作
 
@@ -86,11 +77,6 @@ class SessionRevertService:
                 "patches_reverted": 0,
             }
 
-        # 如果有上一次撤销记录，先重做（合并撤销）
-        prev_undo_meta_info = self.undo_meta_infos.get(agent_id)
-        if prev_undo_meta_info:
-            await self.redo(session_id, agent_id)
-
         # 捕获当前快照（用于重做）
         current_snapshot_hash = await self.snapshot_tracker.track()
 
@@ -115,7 +101,7 @@ class SessionRevertService:
             diff_content,
             diff_summary,
         )
-        self.undo_meta_infos[agent_id] = undo_meta_info
+        self.undo_meta_info = undo_meta_info
 
         # 标记相关消息为已撤销
         await self._mark_messages_as_reverted(messages, pivot_message_id)
@@ -126,7 +112,7 @@ class SessionRevertService:
             "patches_reverted": len(patches_to_revert),
         }
 
-    async def redo(self, session_id: str, agent_id: str) -> Dict[str, any]:
+    async def redo(self, session_id: str, agent_id: str) -> Dict[str, Any]:
         """
         执行重做操作
 
@@ -143,7 +129,7 @@ class SessionRevertService:
             raise ValueError(f"会话不存在: {session_id}")
 
         # 获取最新的撤销记录
-        undo_meta_info = self.undo_meta_infos.get(agent_id)
+        undo_meta_info = self.undo_meta_info
         if not undo_meta_info:
             return {"success": False, "message": "没有可重做的操作"}
 
@@ -159,13 +145,14 @@ class SessionRevertService:
         await self._mark_messages_as_redone(agent_id, undo_meta_info)
 
         # 删除撤销记录
-        del self.undo_meta_infos[agent_id]
+        self.undo_meta_info = {}
+        logger.info("redo成功")
 
         return {"success": True}
 
     async def _collect_patches_to_message(
         self, messages: List[Message], target_message_id: str, level: str
-    ) -> Tuple[List[Dict[str, any]], Optional[str]]:
+    ) -> Tuple[list[dict[str, Any]], Optional[str]]:
         """收集到指定消息的所有patch"""
         patches = []
         pivot_message_id = None
@@ -238,7 +225,7 @@ class SessionRevertService:
         pivot_message_id: Optional[str],
         snapshot_hash: str,
         diff_content: str,
-        diff_summary: Dict[str, any],
+        diff_summary: Dict[str, Any],
     ) -> dict:
         """创建撤销消息"""
         message = {
