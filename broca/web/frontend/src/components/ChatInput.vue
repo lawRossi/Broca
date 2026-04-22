@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useChatStore, useAgentStore, useUserStore } from '@/stores'
+import { useChatStore, useAgentStore, useUserStore, useSocketStore } from '@/stores'
 import { SupabaseStorage } from '@/utils/supabase'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
 const userStore = useUserStore()
+const socketStore = useSocketStore()
 
 // 文件上传相关状态
 const fileInputRef = ref<HTMLInputElement>()
@@ -372,6 +373,15 @@ const handleSendMessage = async () => {
   const { targetAgentId, cleanText } = chatStore.parseMention(text)
 
   if (!cleanText.trim() && pendingFiles.value.length === 0) {
+    return
+  }
+
+  // 检查是否为 /redo 命令
+  if (cleanText.trim() === '/redo') {
+    chatStore.input = ''
+    await socketStore.sendRedo({
+      receiverId: targetAgentId || agentStore.currentAgentId,
+    })
     return
   }
 

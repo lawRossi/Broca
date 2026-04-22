@@ -498,6 +498,7 @@ class SocketIOClient:
         room: Optional[str] = None,
         subscription: Optional[str] = None,
         callback: Optional[Callable] = None,
+        message_id: Optional[str] = None,
     ) -> str:
         """Send tool call"""
         message = MessageProtocol.create_tool_call(
@@ -510,6 +511,7 @@ class SocketIOClient:
             receiver_id=receiver_id,
             room=room,
             subscription=subscription,
+            message_id=message_id,
         )
         return await self.send_message(message, callback)
 

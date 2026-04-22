@@ -44,6 +44,9 @@ class Agent:
         self.name = config.name
         self.role = config.role
         self.status = self.STATUS_DISCONNECTED
+        self.revert_service = SessionRevertService(
+            self.session_manager, self.config.workspace
+        )
 
         self.session_id: Optional[str] = session_manager.session_id
         self.turn_id: Optional[str] = None
@@ -223,7 +226,7 @@ class Agent:
         Args:
             message: Command message with undo/redo details
         """
-        if self.running:
+        if self.status == self.STATUS_RUNNING:
             logger.error("Agent is already running")
             await self.communicator.send_command_result(
                 command=message.data.get("command"),
@@ -242,23 +245,7 @@ class Agent:
             )
             return
 
-        # 获取工作空间路径
-        workspace = None
-        if self.config and hasattr(self.config, "workspace"):
-            workspace = self.config.workspace
-
-        if not workspace:
-            logger.error("No workspace configured for undo/redo")
-            await self.communicator.send_error(
-                "No workspace configured for undo/redo operation",
-                subscription=session_id,
-            )
-            return
-
         try:
-            # 初始化SessionRevertService
-            revert_service = SessionRevertService(self.session_manager, workspace)
-
             if command == "undo":
                 # 获取撤销参数
                 arguments = message.data.get("arguments", {})
@@ -266,7 +253,7 @@ class Agent:
                 level = arguments.get("level", "step")
 
                 # 执行撤销
-                result = await revert_service.undo(
+                result = await self.revert_service.undo(
                     session_id=session_id,
                     agent_id=self.agent_id,
                     target_message_id=target_message_id,
@@ -303,7 +290,7 @@ class Agent:
 
             elif command == "redo":
                 # 执行重做
-                result = await revert_service.redo(
+                result = await self.revert_service.redo(
                     session_id=session_id, agent_id=self.agent_id
                 )
 
@@ -314,7 +301,7 @@ class Agent:
                     )
                     await self.communicator.send_command_result(
                         command="redo",
-                        result="Redo successful.",
+                        result={"code": 0, "message": "Redo successful"},
                         subscription=session_id,
                     )
                 else:
@@ -378,6 +365,10 @@ class Agent:
         # Store the current execution task for potential cancellation
         self._abort_task = asyncio.current_task()
         self.status = self.STATUS_RUNNING
+
+        # Clear undo meta info
+        self.revert_service.undo_meta_info = {}
+
         try:
             return await self.execution_engine.execute(message, max_steps, from_agent)
         except Exception as e:

@@ -255,6 +255,9 @@ class GitManager:
         Args:
             files: 文件路径列表
         """
+        if not files:
+            return
+
         self.ensure_initialized()
 
         # git rm --cached -f --ignore-unmatch --pathspec-from-file=- --pathspec-file-nul
