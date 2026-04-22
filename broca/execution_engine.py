@@ -229,6 +229,8 @@ class ExecutionEngine:
             patch = await self.patch_calculator.calculate_patch(
                 self.current_snapshot_hash, end_snapshot_hash
             )
+            if not patch.get("files"):
+                patch = {}
 
             # 创建STEP_END消息
             step_end_msg = MessageProtocol.create_step_end(

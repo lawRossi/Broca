@@ -100,6 +100,7 @@ class SessionRevertService:
             current_snapshot_hash,
             diff_content,
             diff_summary,
+            patches_to_revert,
         )
         self.undo_meta_info = undo_meta_info
 
@@ -138,8 +139,8 @@ class SessionRevertService:
         if not snapshot_hash:
             return {"success": False, "message": "撤销记录中没有快照信息"}
 
-        # 恢复到撤销前的状态
-        await self.snapshot_restorer.restore(snapshot_hash)
+        if undo_meta_info["patches"]:
+            await self.snapshot_restorer.restore(snapshot_hash)
 
         # 标记相关消息为已重做
         await self._mark_messages_as_redone(agent_id, undo_meta_info)
@@ -226,6 +227,7 @@ class SessionRevertService:
         snapshot_hash: str,
         diff_content: str,
         diff_summary: Dict[str, Any],
+        patches: List[dict[str, Any]] = [],
     ) -> dict:
         """创建撤销消息"""
         message = {
@@ -238,6 +240,7 @@ class SessionRevertService:
             "diff_summary": diff_summary,
             "pivot_message_id": pivot_message_id,
             "timestamp": datetime.now().isoformat(),
+            "patches": patches,
         }
         return message
 

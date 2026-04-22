@@ -4,8 +4,7 @@ Patch 计算模块
 计算两个快照之间的差异，生成 patch 信息。
 """
 
-import asyncio
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 import git
 
@@ -27,7 +26,7 @@ class PatchCalculator:
 
     async def calculate_patch(
         self, from_hash: str, to_hash: Optional[str] = None
-    ) -> Dict[str, any]:
+    ) -> Dict[str, Any]:
         """
         计算两个快照之间的 patch
 
@@ -55,22 +54,26 @@ class PatchCalculator:
         try:
             if to_hash:
                 # 比较两个树对象，使用树对象语法
-                result = (await self.git_manager._run_git_command(
-                    "diff-tree",
-                    "--no-commit-id",
-                    "--name-only",
-                    "-r",
-                    from_hash,
-                    to_hash,
-                )).strip()
+                result = (
+                    await self.git_manager._run_git_command(
+                        "diff-tree",
+                        "--no-commit-id",
+                        "--name-only",
+                        "-r",
+                        from_hash,
+                        to_hash,
+                    )
+                ).strip()
             else:
                 # 比较树对象和当前工作区
                 # 首先将树对象写入索引
                 await self.git_manager._run_git_command("read-tree", from_hash)
                 # 然后比较索引和工作区
-                result = (await self.git_manager._run_git_command(
-                    "diff", "--name-only", "HEAD", "--", "."
-                )).strip()
+                result = (
+                    await self.git_manager._run_git_command(
+                        "diff", "--name-only", "HEAD", "--", "."
+                    )
+                ).strip()
                 # 重置索引
                 await self.git_manager._run_git_command("reset", "--mixed")
 
@@ -90,7 +93,9 @@ class PatchCalculator:
                     return []
             raise
 
-    async def calculate_diff(self, from_hash: str, to_hash: Optional[str] = None) -> str:
+    async def calculate_diff(
+        self, from_hash: str, to_hash: Optional[str] = None
+    ) -> str:
         """
         计算两个快照之间的差异（unified diff 格式）
 
@@ -160,7 +165,6 @@ class PatchCalculator:
         total_deletions = 0
 
         current_file = None
-        file_mode = None  # 'A', 'D', 'M'
 
         for line in lines:
             if line.startswith("diff --git"):
