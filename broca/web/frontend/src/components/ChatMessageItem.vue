@@ -6,6 +6,7 @@ import { marked } from 'marked'
 import { ref, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import FilePreview from './FilePreview.vue'
+import { diffLines } from 'diff'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -190,6 +191,71 @@ const getContent = (message: Message) => {
   return content
 }
 
+// 检查是否为edit_file工具调用
+const isEditFile = (message: Message) => {
+  return message.message_type === 'tool_call' && message.data?.tool_name === 'edit_file'
+}
+
+// 计算两个文本之间的 diff
+interface DiffLine {
+  type: 'added' | 'removed' | 'unchanged'
+  content: string
+}
+
+const computeDiff = (oldText: string, newText: string): DiffLine[] => {
+  const result: DiffLine[] = []
+  
+  // 使用 diff 库计算差异
+  const diffResult = diffLines(oldText || '', newText || '')
+  
+  diffResult.forEach((part) => {
+    const lines = part.value.split('\n')
+    // 移除最后一个空行（split会在末尾产生空字符串）
+    if (lines.length > 0 && lines[lines.length - 1] === '') {
+      lines.pop()
+    }
+    
+    lines.forEach((line) => {
+      if (part.added) {
+        result.push({ 
+          type: 'added', 
+          content: line
+        })
+      } else if (part.removed) {
+        result.push({ 
+          type: 'removed', 
+          content: line
+        })
+      } else {
+        result.push({ 
+          type: 'unchanged', 
+          content: line
+        })
+      }
+    })
+  })
+  
+  return result
+}
+
+// 获取 edit_file 的参数
+const getEditFileParams = (message: Message) => {
+  if (!isEditFile(message)) return null
+  
+  const args = message.data?.arguments || message.data?.parameters
+  if (!args) return null
+  
+  const params = typeof args === 'string' ? JSON.parse(args) : args
+  
+  return {
+    path: params.path || '',
+    oldText: params.old_text || '',
+    newText: params.new_text || '',
+    encoding: params.encoding || 'utf-8',
+    newFile: params.new_file || false
+  }
+}
+
 // 检查是否为todo_management工具调用
 const isTodoManagement = (message: Message) => {
   return message.message_type === 'tool_call' && message.data?.tool_name === 'todo_management'
@@ -247,6 +313,11 @@ const shouldExpandResult = (message: Message) => {
   return getShowResult(message.message_id)
 }
 
+const shouldShowResult = (message: Message) => {
+  const exceptions = ['todo_management', 'edit_file', 'write_file']
+  return message.message_type === 'tool_call' && !exceptions.includes(message.data?.tool_name)
+}
+
 const getShowParameters = (messageId: string) => {
   return chatStore.messageStates.get(messageId)?.showParameters || false
 }
@@ -278,6 +349,59 @@ const hasReasoningContent = (message: Message) => {
 
 const getReasoningContent = (message: Message) => {
   return getReasoningContentFromData(message)
+}
+
+// 获取格式化的JSON字符串
+const getFormattedJson = (data: any): string => {
+  if (data === null || data === undefined) {
+    return 'null'
+  }
+  
+  try {
+    // 如果已经是字符串，尝试解析为JSON再格式化
+    if (typeof data === 'string') {
+      try {
+        const parsed = JSON.parse(data)
+        return JSON.stringify(parsed, null, 2)
+      } catch {
+        // 如果不是有效的JSON，返回原始字符串
+        return data
+      }
+    }
+    
+    // 如果是对象或数组，直接格式化
+    if (typeof data === 'object' || Array.isArray(data)) {
+      return JSON.stringify(data, null, 2)
+    }
+    
+    // 其他类型（数字、布尔值等）直接转换为字符串
+    return String(data)
+  } catch (e) {
+    // 如果解析失败，返回原始字符串
+    return String(data)
+  }
+}
+
+// 为JSON字符串添加语法高亮
+const highlightJson = (jsonStr: string): string => {
+  if (!jsonStr) return ''
+  
+  try {
+    // 简单的JSON语法高亮
+    return jsonStr
+      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)/g, (match) => {
+        let cls = 'string'
+        if (/:$/.test(match)) {
+          cls = 'key'
+        }
+        return `<span class="${cls}">${match}</span>`
+      })
+      .replace(/\b(true|false|null)\b/g, '<span class="boolean">$1</span>')
+      .replace(/\b-?\d+(\.\d+)?([eE][+-]?\d+)?\b/g, '<span class="number">$&</span>')
+  } catch (e) {
+    // 如果高亮处理失败，返回原始字符串
+    return jsonStr
+  }
 }
 
 // 打开文件预览
@@ -347,38 +471,7 @@ const canUndoThisMessage = computed(() => {
   if (!undoableTypes.includes(props.message.message_type)) {
     return false
   }
-  
-  // 检查消息是否有有效内容
-  if (props.message.message_type === 'user_message') {
-    const content = getContent(props.message)
-    if (!content || content.trim() === '') {
-      return false
-    }
-  }
-  
-  // 检查消息是否有有效内容或结果
-  if (props.message.message_type === 'tool_call') {
-    // 工具调用必须有结果才能撤销
-    if (props.message.data?.result === undefined) {
-      return false
-    }
-    
-    // 某些只读工具不应该有撤销选项
-    const readOnlyTools = ['ask_user', 'todo_management', 'glob', 'grep', 'list_dir', 'tree_dir', 'web_fetch', 'web_search']
-    const toolName = props.message.data?.tool_name
-    if (toolName && readOnlyTools.includes(toolName)) {
-      return false
-    }
-  }
-  
-  // agent_response必须有内容
-  if (props.message.message_type === 'agent_response') {
-    const content = getContent(props.message)
-    if (!content || content.trim() === '') {
-      return false
-    }
-  }
-  
+
   return true
 })
 
@@ -391,49 +484,11 @@ const getUndoLevel = computed(() => {
   }
 })
 
-// 获取工具显示名称
-const getToolDisplayName = (message: Message) => {
-  if (message.message_type !== 'tool_call') return ''
-  
-  const toolName = message.data?.tool_name
-  if (!toolName) return '工具调用'
-  
-  const toolNames: Record<string, string> = {
-    'edit_file': '编辑文件',
-    'write_file': '写入文件',
-    'execute_code': '执行代码',
-    'read_file': '读取文件',
-    'task_management': '任务管理',
-    'cron': '定时任务',
-    'assign_task': '分配任务',
-    'load_skill': '加载技能',
-  }
-  
-  return toolNames[toolName] || toolName
-}
-
 // 确认撤销
 const confirmUndo = () => {
   let messageText = '确定要撤销此操作吗？'
-  let levelText = ''
   
-  if (props.message.message_type === 'user_message') {
-    const content = getContent(props.message)
-    const preview = content.length > 50 ? content.substring(0, 50) + '...' : content
-    messageText = `确定要撤销此消息吗？（将撤销整个对话轮次）\n"${preview}"`
-    levelText = '（turn级别撤销）'
-  } else if (props.message.message_type === 'tool_call') {
-    const toolName = getToolDisplayName(props.message)
-    messageText = `确定要撤销 "${toolName}" 操作吗？`
-    levelText = '（step级别撤销）'
-  } else if (props.message.message_type === 'agent_response') {
-    const content = getContent(props.message)
-    const preview = content.length > 50 ? content.substring(0, 50) + '...' : content
-    messageText = `确定要撤销此回复吗？\n"${preview}"`
-    levelText = '（step级别撤销）'
-  }
-  
-  ElMessageBox.confirm(`${messageText}${levelText}`, '确认撤销', {
+  ElMessageBox.confirm(messageText, '确认撤销', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning',
@@ -488,7 +543,7 @@ const handleUndoToHere = async () => {
         <div class="hover-actions" v-if="showActions && canUndoThisMessage">
           <el-button 
             size="small" 
-            type="text" 
+            link
             @click.stop="confirmUndo"
             title="撤销此操作"
             class="!p-1 !min-h-0 !h-auto undo-button"
@@ -577,7 +632,7 @@ const handleUndoToHere = async () => {
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
         <!-- 参数展示 -->
         <div v-if="message.data?.arguments || message.data?.parameters" class="mb-2">
-          <!-- 只有非todo_management且非ask_user工具才显示切换按钮 -->
+          <!-- 只有非todo_management且非ask_user且非edit_file工具才显示切换按钮 -->
           <el-button
             v-if="!isTodoManagement(message) && !isAskUser(message)"
             size="small"
@@ -628,17 +683,58 @@ const handleUndoToHere = async () => {
               </div>
             </div>
 
-            <!-- 其他工具显示原始JSON -->
+            <!-- 特殊处理edit_file的diff展示 -->
+            <div v-else-if="isEditFile(message) && getEditFileParams(message)" class="bg-white rounded border overflow-hidden">
+              <!-- 文件路径信息 -->
+              <div class="bg-purple-50 px-3 py-2 border-b border-purple-200">
+                <div class="flex items-center gap-2">
+                  <span class="text-purple-600 font-medium text-sm">📝 {{ getEditFileParams(message).path }}</span>
+                </div>
+              </div>
+              
+              <!-- Diff 展示 -->
+              <div v-if="getEditFileParams(message).oldText || getEditFileParams(message).newText" class="diff-container font-mono text-xs">
+                <div 
+                  v-for="(line, index) in computeDiff(getEditFileParams(message).oldText, getEditFileParams(message).newText)" 
+                  :key="index"
+                  class="diff-line flex"
+                  :class="{
+                    'diff-added': line.type === 'added',
+                    'diff-removed': line.type === 'removed',
+                    'diff-unchanged': line.type === 'unchanged'
+                  }"
+                >
+                  <!-- Diff 标记 -->
+                  <div class="diff-marker w-6 text-center flex-shrink-0">
+                    <span v-if="line.type === 'added'" class="text-green-600 font-bold">+</span>
+                    <span v-else-if="line.type === 'removed'" class="text-red-600 font-bold">-</span>
+                    <span v-else class="text-gray-300"> </span>
+                  </div>
+                  <!-- 行内容 -->
+                  <div class="diff-content flex-1 px-2 py-0.5 whitespace-pre nowrap min-w-0">
+                    {{ line.content }}
+                  </div>
+                </div>
+              </div>
+              
+              <!-- 如果没有old_text和new_text，显示格式化的JSON -->
+              <div v-else class="p-3">
+                <pre class="json-display text-xs font-mono text-purple-800 whitespace-pre-wrap break-words overflow-auto max-h-96" v-html="highlightJson(getFormattedJson(message.data.arguments || message.data.parameters))"></pre>
+              </div>
+            </div>
+
+            <!-- 其他工具显示参数 -->
             <pre
               v-else
-              class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
-              >{{ JSON.stringify(message.data.arguments || message.data.parameters, null, 2) }}</pre
+              class="json-display text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96"
+              v-html="highlightJson(getFormattedJson(message.data.arguments || message.data.parameters))"
+            ></pre
             >
           </div>
         </div>
 
-        <!-- 结果展示：todo_management不显示，ask_user默认展开 -->
-        <div v-if="message.data?.result !== undefined && !isTodoManagement(message)" class="mb-2">
+        <!--结果展示-->
+        <div v-if="message.data?.result !== undefined && shouldShowResult(message)" class="mb-2">
           <el-button
             v-if="!isAskUser(message)"
             size="small"
@@ -660,15 +756,12 @@ const handleUndoToHere = async () => {
               </div>
             </div>
 
-            <!-- 其他工具显示原始JSON -->
+            <!-- 其他工具显示结果 -->
             <pre
               v-else
-              class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border"
-              >{{
-                typeof message.data.result === 'string'
-                  ? message.data.result
-                  : JSON.stringify(message.data.result, null, 2)
-              }}</pre
+              class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96"
+              v-html="highlightJson(getFormattedJson(message.data.result))"
+            ></pre
             >
           </div>
         </div>
@@ -913,4 +1006,53 @@ const handleUndoToHere = async () => {
 :deep(.markdown-content del) {
   text-decoration: line-through;
 }
+
+/* Diff 展示样式 */
+.diff-container {
+  max-height: 400px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.diff-line {
+  min-height: 22px;
+  line-height: 22px;
+  flex-wrap: nowrap;
+}
+
+.diff-added {
+  background-color: #e6ffec;
+}
+
+.diff-removed {
+  background-color: #ffebe9;
+}
+
+.diff-unchanged {
+  background-color: transparent;
+}
+
+.diff-line:hover {
+  filter: brightness(0.95);
+}
+
+.diff-added:hover {
+  background-color: #d4edda;
+}
+
+.diff-removed:hover {
+  background-color: #f8d7da;
+}
+
+/* JSON 显示样式 */
+.json-display {
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  line-height: 1.4;
+}
+
+.json-display .string { color: #690; }
+.json-display .number { color: #905; }
+.json-display .boolean { color: #07a; }
+.json-display .null { color: #999; }
+.json-display .key { color: #07a; }
 </style>
