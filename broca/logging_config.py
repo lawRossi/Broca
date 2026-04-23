@@ -5,7 +5,6 @@
 支持不同模块的日志级别配置和日志文件分离。
 """
 
-import sys
 from pathlib import Path
 from typing import Optional
 
@@ -48,15 +47,7 @@ class LoggingConfig:
         
         # 移除所有现有的处理器
         logger.remove()
-        
-        # 添加控制台输出
-        logger.add(
-            sys.stderr,
-            format="<green>{time:YYYY-MM-DD HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
-            level=log_level,
-            colorize=True,
-        )
-        
+
         # 添加文件输出
         logger.add(
             log_file,
