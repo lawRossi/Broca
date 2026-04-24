@@ -61,6 +61,7 @@ class Agent:
         self._setup_context(**kwargs)
         self._setup_tools()
         self._setup_communicator()
+        self._setup_session_memory()
         self._setup_execution_engine()
         self._setup_permission_manager()
 
@@ -160,6 +161,18 @@ class Agent:
             "user_answer", AskUserToolManager.handle_user_answer
         )
 
+    def _setup_session_memory(self):
+        """Set up session memory manager"""
+        from broca.session_memory import SessionMemoryManager
+
+        logger.info("Initializing session memory manager")
+
+        self.session_memory_manager = SessionMemoryManager(
+            workspace=self.config.workspace, agent=self
+        )
+
+        logger.debug("Session memory manager initialized")
+
     def _setup_execution_engine(self):
         """Set up execution engine"""
         self.execution_engine = ExecutionEngine(
@@ -170,6 +183,7 @@ class Agent:
             config=self.config,
             communicator=self.communicator,
             session_manager=self.session_manager,
+            session_memory_manager=self.session_memory_manager,
         )
 
     def _setup_permission_manager(self):

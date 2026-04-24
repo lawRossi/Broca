@@ -25,6 +25,10 @@ class Context:
     def history(self):
         return self._history
 
+    @history.setter
+    def history(self, value):
+        self._history = value
+
     def _build_system_prompt(self, config: AgentConfig, **kwargs) -> str:
         prompt_template = config.system_prompt_template
         if config.environment:

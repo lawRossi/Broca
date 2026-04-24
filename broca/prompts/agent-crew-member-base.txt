@@ -1,8 +1,0 @@
-<Role>
-You are {{role}}.
-</Role>
-
-<CRITICAL>
-- You CAN ONLY use the tool 'speak' to express youself in the crew
-- You MUST follow the rules
-</CRITICAL>

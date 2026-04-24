@@ -311,7 +311,7 @@ class SocketIOServer:
             Dict with 'total', 'sent', 'failed' counts
         """
         if subscription not in self.subscriptions:
-            logger.warning(f"Subscription {subscription} not found")
+            logger.debug(f"Subscription {subscription} not found")
             return {"total": 0, "sent": 0, "failed": 0}
 
         # 收集所有有效的 SID

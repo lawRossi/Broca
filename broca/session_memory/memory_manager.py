@@ -1,0 +1,222 @@
+"""
+Session Memory 管理器
+
+负责会话笔记的自动维护，在后台使用子代理提取关键信息并更新笔记文件。
+"""
+
+import asyncio
+import copy
+import logging
+from pathlib import Path
+from typing import Optional
+
+from broca.agent_manager import AgentFactory
+from broca.session_memory.memory_prompts import (
+    build_extraction_user_prompt,
+)
+from broca.session_memory.memory_utils import (
+    DEFAULT_CONFIG,
+    SessionMemoryConfig,
+    SessionMemoryState,
+)
+
+logger = logging.getLogger(__name__)
+
+# 默认模板（启动时写入文件）
+DEFAULT_MEMORY_TEMPLATE = """# Session Title
+_A short and distinctive 5-10 word descriptive title for the session._
+
+# Current State
+_What is actively being worked on right now? Pending tasks not yet completed._
+
+# Task Specification
+_What did the user ask to do? Design decisions and context._
+
+# Files and Functions
+_Important files and their purposes._
+
+# Workflow
+_Commands and their execution order._
+
+# Errors & Corrections
+_Errors encountered and how they were fixed, what did the user correct/feedback?._
+
+# Project Documentation
+_Important project components/modules and their purposes._
+
+# Learnings
+_What has worked well? What has not?_
+
+# Key Results
+_Specific outputs requested by the user._
+
+# Worklog
+_Step by step actions taken. Very terse summary for each step_
+"""
+
+
+class SessionMemoryManager:
+    """Session Memory 管理器"""
+
+    MEMORY_FILENAME = "session-memory.md"
+    AGENT_ID_POSTFIX = "#session-memory-agent"
+
+    def __init__(
+        self,
+        workspace: str,
+        agent,
+        config: Optional[SessionMemoryConfig] = None,
+    ):
+        self.workspace = workspace
+        self.agent = agent
+        self.config = config or DEFAULT_CONFIG
+        self.state = SessionMemoryState()
+        self._lock = asyncio.Lock()
+
+        # 初始化时确保模板文件存在
+        self._ensure_template_exists()
+
+    @property
+    def memory_path(self) -> str:
+        """获取 memory 文件路径"""
+        return str(Path(self.workspace) / ".broca" / self.MEMORY_FILENAME)
+
+    def _ensure_template_exists(self):
+        """确保模板文件存在（启动时创建）"""
+        memory_file = Path(self.memory_path)
+        if not memory_file.exists():
+            memory_file.parent.mkdir(parents=True, exist_ok=True)
+            memory_file.write_text(DEFAULT_MEMORY_TEMPLATE.strip(), encoding="utf-8")
+            logger.info(f"Created session memory template at {self.memory_path}")
+
+    async def check_and_extract(self, context):
+        """检查并触发 session memory 提取"""
+        logger.info("check and extract session memory")
+        if self.state.extraction_in_progress:
+            return
+
+        if not self._should_extract(context):
+            return
+
+        # 异步执行提取，不阻塞主流程
+        logger.info("start to extract session memory")
+        asyncio.create_task(self._extract(context))
+
+    def _should_extract(self, context) -> bool:
+        """判断是否应该提取"""
+        messages = context.history
+        current_msg_count = len(messages)
+
+        # 初始化阈值检查
+        if not self.state.initialized:
+            if current_msg_count >= self.config.minimum_messages_to_init:
+                self.state.initialized = True
+                return True
+            else:
+                return False
+
+        # 检查消息增长
+        msg_growth = current_msg_count - self.state.last_message_index
+        has_met_msg_threshold = (
+            msg_growth >= self.config.minimum_messages_between_update
+        )
+
+        # 检查 step 增长
+        step_growth = self.state.step_count - self.state.last_step_count
+        has_met_step_threshold = step_growth >= self.config.steps_between_updates
+
+        # 检查最后一条 assistant 消息是否有 tool_calls
+        last_msg = messages[-1] if messages else None
+        has_tool_calls = (
+            last_msg
+            and last_msg.get("role") == "assistant"
+            and last_msg.get("tool_calls")
+        )
+
+        should_extract = (has_met_msg_threshold and has_met_step_threshold) or (
+            has_met_msg_threshold and not has_tool_calls
+        )
+
+        if should_extract:
+            self.state.last_message_index = current_msg_count
+            self.state.last_step_count = self.state.step_count
+
+        return should_extract
+
+    async def _extract(self, context):
+        """执行提取（通过子代理）"""
+        async with self._lock:
+            if self.state.extraction_in_progress:
+                return
+
+            self.state.extraction_in_progress = True
+            try:
+                await self._do_extract(context)
+            except Exception as e:
+                logger.error(f"Session memory extraction failed: {e}")
+            finally:
+                self.state.extraction_in_progress = False
+
+    async def _do_extract(self, context):
+        """实际提取逻辑——创建子代理执行"""
+        user_prompt = build_extraction_user_prompt(
+            memory_path=self.memory_path,
+        )
+
+        await self._run_extraction_subagent(
+            user_prompt=user_prompt,
+            context=context,
+        )
+
+    async def _run_extraction_subagent(self, user_prompt, context):
+        """
+        创建并运行提取子代理
+
+        子代理拥有独立的 LLM 调用，可用的工具仅限于文件操作。
+        """
+
+        from broca.execution_engine import ExecutionStatus
+        from broca.session import MessageProtocol
+
+        # 创建子代理配置
+        agent_factory = AgentFactory()
+        session_manager = self.agent.session_manager
+        agent_id = session_manager.session_id + self.AGENT_ID_POSTFIX
+        agent_config = session_manager.get_agent_config(agent_id)
+        if agent_config is None:
+            agent_config = self.agent.config.to_json()
+            agent_config["name"] = "session-memory-agent"
+            agent_config["role"] = "session_memory_manager"
+            agent_config["tools"] = ["read_file", "edit_file"]
+            agent_config["save_history"] = False
+            agent_config["interactive"] = True
+
+            sub_agent = agent_factory.create_agent(
+                agent_config=agent_config, session_manager=session_manager
+            )
+            sub_agent.start()
+        else:
+            sub_agent = agent_factory.get_agent(
+                session_manager.session_id, agent_config.agent_name
+            )
+            if sub_agent is None:
+                sub_agent = await agent_factory.restore_agent(agent_id, session_manager)
+        if not sub_agent.running:
+            task = asyncio.create_task(sub_agent.start())
+            task.add_done_callback(lambda t, a=sub_agent: a.stop())
+        sub_agent.context.history = copy.copy(context.history)
+        trigger_message = MessageProtocol.create_user_message(content=user_prompt)
+        result = await sub_agent.run(trigger_message, from_agent=True)
+
+        if result.status != ExecutionStatus.COMPLETED:
+            logger.warning(
+                f"Session memory sub-agent execution failed: {result.status}"
+            )
+        else:
+            logger.info("Session memory updated successfully via sub-agent")
+            self.state.last_message = context.history[-1]
+            self.state.last_message_index = len(context.history)
+
+    def increment_step(self):
+        """增加 step 计数"""
+        self.state.step_count += 1

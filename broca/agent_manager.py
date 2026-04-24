@@ -51,7 +51,7 @@ class AgentFactory:
             await session_manager.create_session(workspace=workspace)
             agents = []
             for config in agent_configs:
-                agent = await self._create_agent(
+                agent = await self.create_agent(
                     config, session_manager, workspace, provider, model
                 )
                 agents.append(agent)
@@ -60,7 +60,7 @@ class AgentFactory:
 
         return agents
 
-    async def _create_agent(
+    async def create_agent(
         self, agent_config, session_manager, workspace=None, provider=None, model=None
     ) -> Agent:
         """
@@ -91,6 +91,7 @@ class AgentFactory:
         llm_client = LLMClient()
         agent = Agent(config, llm_client, session_manager)
         await session_manager.save_agent(agent)
+        self._session_agents[session_manager.session_id][agent.name] = agent
         return agent
 
     async def restore_agents_from_session(self, session_id) -> list[Agent]:

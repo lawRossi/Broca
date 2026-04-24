@@ -94,8 +94,9 @@ class ExecutionEngine:
         config: Any,
         communicator: Any,
         session_manager: SessionManager,
+        session_memory_manager: Any = None,
         step_max_errors=3,
-        llm_retry_delay=3,
+        llm_retry_delay=10,
         tool_call_timeout=600,
         assign_task_timeout=1800,
     ):
@@ -118,6 +119,7 @@ class ExecutionEngine:
         self.config = config
         self.communicator = communicator
         self.session_manager = session_manager
+        self.session_memory_manager = session_memory_manager
 
         self.error_handler = ErrorHandler(
             session_manager=session_manager, turn_id=None, agent_id=None
@@ -292,9 +294,10 @@ class ExecutionEngine:
                     return ExecutionStatus.ERROR
                 if e.error_type == ErrorType.LLM_RATE_LIMIT_ERROR:
                     await asyncio.sleep(self.llm_retry_delay)
-                await self.communicator.send_error(
-                    "calling LLM failed, retrying...", subscription=self.session_id
-                )
+                if self.config.interactive:
+                    await self.communicator.send_error(
+                        "calling LLM failed, retrying...", subscription=self.session_id
+                    )
             except asyncio.CancelledError:
                 logger.info("Agent execution cancelled by user during LLM call")
                 return ExecutionStatus.ABORTED
@@ -324,11 +327,23 @@ class ExecutionEngine:
 
         if not response.tool_calls:
             await self._capture_step_end()
-            return ExecutionStatus.COMPLETED
+            status = ExecutionStatus.COMPLETED
         else:
             await self._process_tool_calls(response.tool_calls)
             await self._capture_step_end()
-            return ExecutionStatus.RUNNING
+            status = ExecutionStatus.RUNNING
+
+        logger.info("session memory manager", self.session_memory_manager)
+        if self.session_memory_manager is not None:
+            logger.info("check memeory")
+            self.session_memory_manager.increment_step()
+            asyncio.create_task(
+                self.session_memory_manager.check_and_extract(
+                    context=self.context,
+                )
+            )
+
+        return status
 
     async def _call_llm_streaming(self) -> LLMMessage | None:
         """
@@ -358,13 +373,14 @@ class ExecutionEngine:
                 reasoning_content = (
                     chunk["data"] if chunk["type"] == "reasoning_content" else ""
                 )
-                await self.communicator.send_agent_response(
-                    content=content,
-                    reasoning_content=reasoning_content,
-                    index=index,
-                    message_id=message_id,
-                    subscription=self.session_id,
-                )
+                if self.config.interactive:
+                    await self.communicator.send_agent_response(
+                        content=content,
+                        reasoning_content=reasoning_content,
+                        index=index,
+                        message_id=message_id,
+                        subscription=self.session_id,
+                    )
                 index += 1
 
             elif chunk["type"] == "tool_call":
@@ -378,12 +394,13 @@ class ExecutionEngine:
                     tool_call_id = tool_call.id
                     if hasattr(tool_call, "function") and tool_call.function:
                         tool_name = tool_call.function.name
-                        await self.communicator.send_tool_call(
-                            tool_name=tool_name,
-                            arguments=None,
-                            tool_call_id=tool_call_id,
-                            subscription=self.session_id,
-                        )
+                        if self.config.interactive:
+                            await self.communicator.send_tool_call(
+                                tool_name=tool_name,
+                                arguments=None,
+                                tool_call_id=tool_call_id,
+                                subscription=self.session_id,
+                            )
                         sent.add(tool_call_id)
 
         input_tokens = self.llm_client.input_tokens_used
@@ -423,13 +440,13 @@ class ExecutionEngine:
 
             tool_name = tool_call.function.name
             arguments = tool_call.function.arguments
-
-            await self.communicator.send_tool_call(
-                tool_name=tool_name,
-                arguments=arguments,
-                tool_call_id=tool_call.id,
-                subscription=self.session_id,
-            )
+            if self.config.interactive:
+                await self.communicator.send_tool_call(
+                    tool_name=tool_name,
+                    arguments=arguments,
+                    tool_call_id=tool_call.id,
+                    subscription=self.session_id,
+                )
 
             if tool_name not in self.tool_mapping:
                 logger.error(f"Tool '{tool_name}' not found.")
@@ -507,15 +524,16 @@ class ExecutionEngine:
             tool_call_result: Formatted tool call result
         """
         message_id = generate_message_id()
-        await self.communicator.send_tool_call(
-            tool_name=tool_call.function.name,
-            arguments=tool_call.function.arguments,
-            tool_call_id=tool_call.id,
-            result=tool_result.content,
-            status=tool_result.status,
-            subscription=self.session_id,
-            message_id=message_id,
-        )
+        if self.config.interactive:
+            await self.communicator.send_tool_call(
+                tool_name=tool_call.function.name,
+                arguments=tool_call.function.arguments,
+                tool_call_id=tool_call.id,
+                result=tool_result.content,
+                status=tool_result.status,
+                subscription=self.session_id,
+                message_id=message_id,
+            )
 
         return await self.session_manager.save_tool_call(
             turn_id=self.turn_id,
@@ -630,9 +648,10 @@ class ExecutionEngine:
     async def process_turn_end(self, result: ExecutionResult) -> bool:
         try:
             logger.info("turn ended with result: " + str(result))
-            await self.communicator.send_turn_end(
-                turn_id=self.turn_id, subscription=self.session_id
-            )
+            if self.config.interactive:
+                await self.communicator.send_turn_end(
+                    turn_id=self.turn_id, subscription=self.session_id
+                )
             if result.status == ExecutionStatus.COMPLETED:
                 message = "Turn completed successfully"
             elif result.status == ExecutionStatus.ABORTED:
@@ -648,9 +667,10 @@ class ExecutionEngine:
                 message = "Turn failed"
 
             if result.status != ExecutionStatus.COMPLETED:
-                await self.communicator.send_error(
-                    message, subscription=self.session_id
-                )
+                if self.config.interactive:
+                    await self.communicator.send_error(
+                        message, subscription=self.session_id
+                    )
 
             return await self.session_manager.save_turn_end(
                 turn_id=self.turn_id, agent_id=self.agent_id, message=message
@@ -690,12 +710,12 @@ class ExecutionEngine:
             )
 
             message_content = user_message.get("content")
-
-            await self.communicator.send_turn_start(
-                turn_id=turn_id,
-                turn_description=f"Processing user message: {message_content}",
-                subscription=self.session_id,
-            )
+            if self.config.interactive:
+                await self.communicator.send_turn_start(
+                    turn_id=turn_id,
+                    turn_description=f"Processing user message: {message_content}",
+                    subscription=self.session_id,
+                )
 
             message.data["from_agent"] = from_agent
             message_id = message.message_id if not from_agent else None
