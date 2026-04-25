@@ -135,7 +135,6 @@ class SessionMemoryManager:
         if not self.state.initialized:
             if current_msg_count >= self.config.minimum_messages_to_init:
                 self.state.initialized = True
-                return True
             else:
                 return False
 
