@@ -55,13 +55,17 @@ class AgentFactory:
                     config, session_manager, workspace, provider, model
                 )
                 agents.append(agent)
-            session_agents = {agent.name: agent for agent in agents}
-            self._session_agents[session_manager.session_id] = session_agents
 
         return agents
 
     async def create_agent(
-        self, agent_config, session_manager, workspace=None, provider=None, model=None
+        self,
+        agent_config,
+        session_manager,
+        workspace=None,
+        provider=None,
+        model=None,
+        agent_id: str = None,
     ) -> Agent:
         """
         创建 Agent 实例
@@ -89,8 +93,10 @@ class AgentFactory:
             config.environment = self._init_environment(config)
         # Each agent gets its own LLMClient instance
         llm_client = LLMClient()
-        agent = Agent(config, llm_client, session_manager)
+        agent = Agent(config, llm_client, session_manager, agent_id=agent_id)
         await session_manager.save_agent(agent)
+        if session_manager.session_id not in self._session_agents:
+            self._session_agents[session_manager.session_id] = {}
         self._session_agents[session_manager.session_id][agent.name] = agent
         return agent
 

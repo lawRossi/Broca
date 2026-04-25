@@ -725,6 +725,13 @@ class SocketIOClient:
 
         return await self.send_message(message)
 
+    async def send_agent_system_message(self, content: str, subscription: str) -> str:
+        """Send system message"""
+        message = MessageProtocol.create_agent_system_message(
+            content=content, subscription=subscription
+        )
+        return await self.send_message(message)
+
     async def subscribe(
         self, subscription: str, callback: Optional[Callable] = None
     ) -> str:

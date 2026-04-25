@@ -69,6 +69,7 @@ class Agent:
         self.error_handler = ErrorHandler()
 
         self._abort_task: Optional[asyncio.Task] = None
+        self.running = False
 
         asyncio.create_task(self.load_stats(session_manager))
 
@@ -163,15 +164,17 @@ class Agent:
 
     def _setup_session_memory(self):
         """Set up session memory manager"""
-        from broca.session_memory import SessionMemoryManager
+        if not self.config.track_session_momory:
+            self.session_memory_manager = None
+            return
 
-        logger.info("Initializing session memory manager")
+        logger.debug("Initializing session memory manager")
+
+        from broca.session_memory import SessionMemoryManager
 
         self.session_memory_manager = SessionMemoryManager(
             workspace=self.config.workspace, agent=self
         )
-
-        logger.debug("Session memory manager initialized")
 
     def _setup_execution_engine(self):
         """Set up execution engine"""

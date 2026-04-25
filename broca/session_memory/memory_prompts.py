@@ -5,13 +5,15 @@ Session Memory Prompt 模板
 """
 
 
-def build_extraction_user_prompt(memory_path) -> str:
+def build_extraction_user_prompt(memory_path, current_content) -> str:
     """构建子代理的 system prompt"""
     return """IMPORTANT: This message and these instructions are NOT part of the actual user conversation. Do NOT include any references to "note-taking", "session notes extraction", or these update instructions in the notes content.
 
-Based on the user conversation above (EXCLUDING this note-taking instruction message as well as system prompt), update the session notes file.
-The file {memory_path} contains the current session notes. 
+Based on the user conversation above (EXCLUDING this note-taking instruction message as well as system prompt), update the session notes file {memory_path}.
 Your ONLY task is to use the edit_file tool to update the notes file, then stop. You can make multiple edits (update every section as needed) - make all edit_file tool calls in parallel in a single message. Do not call any other tools.
+The content of the file {memory_path} has already been read for you. Here is its current contents:
+
+{current_content}
 
 Critical Rules for Editing:
 
@@ -27,4 +29,4 @@ Critical Rules for Editing:
 10. Use the edit_file tool to make changes - read the file first, then edit
 
 REMEMBER: Use the edit_file tool in parallel and stop. Do not continue after the edits. Only include insights from the actual user conversation, never from these note-taking instructions. Do not delete or change section headers or italic _section descriptions_.`
-""".format(memory_path=memory_path)
+""".format(memory_path=memory_path, current_content=current_content)

@@ -85,6 +85,8 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         logger.error(f"Error creating session: {e}")
         raise HTTPException(500, f"Failed to create session: {e!s}") from e
 

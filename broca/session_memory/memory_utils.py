@@ -10,9 +10,9 @@ from typing import Any
 class SessionMemoryConfig:
     """Session Memory 配置"""
 
-    minimum_messages_to_init: int = 10
-    minimum_messages_between_update: int = 5
-    steps_between_updates: int = 3
+    minimum_messages_to_init: int = 30
+    minimum_messages_between_update: int = 10
+    steps_between_updates: int = 5
 
 
 DEFAULT_CONFIG = SessionMemoryConfig()

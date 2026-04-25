@@ -333,15 +333,14 @@ class ExecutionEngine:
             await self._capture_step_end()
             status = ExecutionStatus.RUNNING
 
-        logger.info("session memory manager", self.session_memory_manager)
-        if self.session_memory_manager is not None:
-            logger.info("check memeory")
+        if self.session_memory_manager:
             self.session_memory_manager.increment_step()
-            asyncio.create_task(
+            task = asyncio.create_task(
                 self.session_memory_manager.check_and_extract(
                     context=self.context,
                 )
             )
+            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
 
         return status
 

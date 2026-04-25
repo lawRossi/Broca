@@ -16,6 +16,7 @@ class AgentConfig:
         self.interactive = True
         self.save_history = True
         self.environment = None
+        self.track_session_momory = False
         self.workspace = ""
 
     @classmethod
@@ -29,3 +30,6 @@ class AgentConfig:
 
     def to_json(self) -> str:
         return json.dumps(self.__dict__, ensure_ascii=False)
+
+    def to_dict(self) -> dict:
+        return dict(self.__dict__)

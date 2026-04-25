@@ -6,11 +6,11 @@ Session Memory 管理器
 
 import asyncio
 import copy
-import logging
 from pathlib import Path
 from typing import Optional
 
 from broca.agent_manager import AgentFactory
+from broca.logging_config import get_logger
 from broca.session_memory.memory_prompts import (
     build_extraction_user_prompt,
 )
@@ -20,7 +20,7 @@ from broca.session_memory.memory_utils import (
     SessionMemoryState,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 默认模板（启动时写入文件）
 DEFAULT_MEMORY_TEMPLATE = """# Session Title
@@ -66,11 +66,13 @@ class SessionMemoryManager:
         workspace: str,
         agent,
         config: Optional[SessionMemoryConfig] = None,
+        task_timeout: int = 60,
     ):
         self.workspace = workspace
         self.agent = agent
         self.config = config or DEFAULT_CONFIG
         self.state = SessionMemoryState()
+        self.task_timeout = task_timeout
         self._lock = asyncio.Lock()
 
         # 初始化时确保模板文件存在
@@ -79,7 +81,19 @@ class SessionMemoryManager:
     @property
     def memory_path(self) -> str:
         """获取 memory 文件路径"""
-        return str(Path(self.workspace) / ".broca" / self.MEMORY_FILENAME)
+        return str(
+            Path(self.workspace)
+            / ".broca"
+            / self.agent.session_id
+            / self.MEMORY_FILENAME
+        )
+
+    def read_session_memory_content(self) -> str:
+        return Path(self.memory_path).read_text(encoding="utf-8").strip()
+
+    def is_session_memory_empty(self) -> bool:
+        content = self.read_session_memory_content()
+        return content == "" or content == DEFAULT_MEMORY_TEMPLATE.strip()
 
     def _ensure_template_exists(self):
         """确保模板文件存在（启动时创建）"""
@@ -91,7 +105,6 @@ class SessionMemoryManager:
 
     async def check_and_extract(self, context):
         """检查并触发 session memory 提取"""
-        logger.info("check and extract session memory")
         if self.state.extraction_in_progress:
             return
 
@@ -100,7 +113,18 @@ class SessionMemoryManager:
 
         # 异步执行提取，不阻塞主流程
         logger.info("start to extract session memory")
-        asyncio.create_task(self._extract(context))
+        await self.agent.communicator.send_agent_system_message(
+            content="Extracting session memory", subscription=self.agent.session_id
+        )
+        original_content = self.read_session_memory_content()
+        task = asyncio.create_task(self._extract(context))
+        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+        try:
+            await asyncio.wait_for(task, timeout=self.task_timeout)
+        except Exception as e:
+            logger.error(f"Session memory extraction failed: {e}")
+            with open(self.memory_path, "w", encoding="utf-8") as f:
+                f.write(original_content)
 
     def _should_extract(self, context) -> bool:
         """判断是否应该提取"""
@@ -161,6 +185,7 @@ class SessionMemoryManager:
         """实际提取逻辑——创建子代理执行"""
         user_prompt = build_extraction_user_prompt(
             memory_path=self.memory_path,
+            current_content=self.read_session_memory_content(),
         )
 
         await self._run_extraction_subagent(
@@ -182,22 +207,23 @@ class SessionMemoryManager:
         agent_factory = AgentFactory()
         session_manager = self.agent.session_manager
         agent_id = session_manager.session_id + self.AGENT_ID_POSTFIX
-        agent_config = session_manager.get_agent_config(agent_id)
+        agent_config = await session_manager.get_agent_config(agent_id)
         if agent_config is None:
-            agent_config = self.agent.config.to_json()
+            agent_config = self.agent.config.to_dict()
             agent_config["name"] = "session-memory-agent"
             agent_config["role"] = "session_memory_manager"
-            agent_config["tools"] = ["read_file", "edit_file"]
+            agent_config["tools"] = ["edit_file"]
+            agent_config["track_session_momory"] = False
             agent_config["save_history"] = False
             agent_config["interactive"] = True
 
-            sub_agent = agent_factory.create_agent(
+            sub_agent = await agent_factory.create_agent(
                 agent_config=agent_config, session_manager=session_manager
             )
             sub_agent.start()
         else:
             sub_agent = agent_factory.get_agent(
-                session_manager.session_id, agent_config.agent_name
+                session_manager.session_id, agent_config["name"]
             )
             if sub_agent is None:
                 sub_agent = await agent_factory.restore_agent(agent_id, session_manager)
@@ -205,7 +231,9 @@ class SessionMemoryManager:
             task = asyncio.create_task(sub_agent.start())
             task.add_done_callback(lambda t, a=sub_agent: a.stop())
         sub_agent.context.history = copy.copy(context.history)
-        trigger_message = MessageProtocol.create_user_message(content=user_prompt)
+        trigger_message = MessageProtocol.create_user_message(
+            content=user_prompt,
+        )
         result = await sub_agent.run(trigger_message, from_agent=True)
 
         if result.status != ExecutionStatus.COMPLETED:
