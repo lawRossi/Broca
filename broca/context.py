@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import Union
+from typing import List, Optional, Union
 
 from jinja2 import Template
 from litellm import Message
@@ -19,7 +19,9 @@ class Context:
     def __init__(self, agent_config: AgentConfig, **kwargs):
         self.system_prompt = self._build_system_prompt(agent_config, **kwargs)
         self._history: list = []
+        self._message_db_ids: list = []  # 与 _history 一一对应，存储数据库 message_id
         self._history.append({"role": "system", "content": self.system_prompt})
+        self._message_db_ids.append(None)  # system prompt 没有数据库记录
 
     @property
     def history(self):
@@ -28,6 +30,50 @@ class Context:
     @history.setter
     def history(self, value):
         self._history = value
+
+    def get_message_db_id(self, index: int) -> Optional[str]:
+        """获取指定索引消息的数据库 message_id"""
+        if 0 <= index < len(self._message_db_ids):
+            return self._message_db_ids[index]
+        return None
+
+    def set_message_db_id(self, index: int, db_id: str):
+        """设置指定索引消息的数据库 message_id"""
+        if 0 <= index < len(self._message_db_ids):
+            self._message_db_ids[index] = db_id
+
+    def mark_message_as_expired(self, index: int) -> Optional[str]:
+        """
+        标记 context 中指定索引的消息为过期。
+
+        Returns:
+            对应的数据库 message_id，可用于更新数据库
+        """
+        db_id = self.get_message_db_id(index)
+        if db_id:
+            # 替换 context 中的 content 为占位符
+            if index < len(self._history):
+                msg = self._history[index]
+                if msg.get("role") == "tool":
+                    msg["content"] = "[Expired tool result has been cleared]"
+            return db_id
+        return None
+
+    def get_truncated_message_ids(self, truncate_index: int) -> List[str]:
+        """
+        获取需要标记为截断的消息的数据库 ID 列表。
+
+        Args:
+            truncate_index: 截断边界，index < truncate_index 的消息被截断
+
+        Returns:
+            需要标记为 is_truncated=True 的数据库 message_id 列表
+        """
+        # 跳过 system prompt（index=0）
+        return [
+            db_id for db_id in self._message_db_ids[1:truncate_index]
+            if db_id is not None
+        ]
 
     def _build_system_prompt(self, config: AgentConfig, **kwargs) -> str:
         prompt_template = config.system_prompt_template
@@ -60,14 +106,25 @@ class Context:
 
         return boostrap_content.strip()
 
-    async def add_message(self, message: Union[dict, Message]):
+    async def add_message(self, message: Union[dict, Message], db_message_id: Optional[str] = None):
+        """
+        添加消息到 context
+
+        Args:
+            message: 消息内容
+            db_message_id: 对应的数据库 message_id（可选）
+        """
         self._history.append(message)
+        self._message_db_ids.append(db_message_id)
 
     async def build_history_from_session(
         self, session_manager: SessionManager, agent_id: str, rebuild=False
     ) -> None:
         self._history: list = []
+        self._message_db_ids: list = []
         self._history.append({"role": "system", "content": self.system_prompt})
+        self._message_db_ids.append(None)  # system prompt 没有数据库记录
+
         messages = await session_manager.get_messages(agent_id)
         for message in messages:
             if message.message_type in [
@@ -75,15 +132,48 @@ class Context:
                 MessageType.AGENT_RESPONSE,
                 MessageType.TOOL_CALL,
             ]:
+                # 策略B：被 session memory 截断的消息 → 跳过
+                if message.is_truncated:
+                    continue
+
                 # 获取content，现在content在data字段中
                 content = message.data.get("content")
                 if content is None:
                     continue
+
+                # 策略A：过期的工具调用结果 → 替换为占位符
+                if message.is_expired:
+                    if message.message_type == MessageType.TOOL_CALL:
+                        content = json.dumps({
+                            "role": "tool",
+                            "content": "[Expired tool result has been cleared]",
+                            "tool_call_id": message.data.get("tool_call_id", ""),
+                        })
+                    else:
+                        continue
+
                 message_content = json.loads(content)
+
+                # 为 TOOL_CALL 消息附加 _meta 信息（用于上下文压缩的时间因素检测）
+                if message.message_type == MessageType.TOOL_CALL and message_content.get("role") == "tool":
+                    # 从数据库消息中提取时间戳和序列号作为元数据
+                    msg_timestamp = message.timestamp.timestamp() if message.timestamp else None
+                    msg_seq = message.sequence_number or 0
+                    message_content["_meta"] = {
+                        "step": msg_seq,       # 用 sequence_number 近似表示 step
+                        "timestamp": msg_timestamp,
+                    }
+
                 if message_content["role"] != "user":
-                    await self.add_message(Message.parse_obj(message_content))
+                    await self.add_message(
+                        Message.parse_obj(message_content),
+                        db_message_id=message.message_id,
+                    )
                 else:
-                    await self.add_message(message_content)
+                    await self.add_message(
+                        message_content,
+                        db_message_id=message.message_id,
+                    )
 
     def get_latest_assistant_message(self) -> str | None:
         if not self._history:

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 from litellm import Message as LLMMessage
 
 from broca.context import Context
+from broca.context_compressor import ContextCompressor
 from broca.error_handler import AgentError, ErrorHandler, ErrorType
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
@@ -144,6 +145,10 @@ class ExecutionEngine:
 
         # Step跟踪
         self._step_has_write_operations: bool = False
+        self._step_write_file_paths: List[str] = []  # 当前 step 写操作涉及的文件路径
+
+        # 上下文压缩器
+        self.context_compressor: Optional[ContextCompressor] = None
 
         # 只读tool列表
         self._readonly_tools = {
@@ -173,6 +178,7 @@ class ExecutionEngine:
     async def _capture_step_init(self):
         # 检查是否需要快照（如果所有tool都是只读的，可以跳过）
         self._step_has_write_operations = False
+        self._step_write_file_paths = []
 
     async def _capture_step_start(self) -> bool:
         """捕获Step开始快照"""
@@ -332,6 +338,9 @@ class ExecutionEngine:
             await self._process_tool_calls(response.tool_calls)
             await self._capture_step_end()
             status = ExecutionStatus.RUNNING
+        
+        if self.config.enable_context_compression:
+            await self._check_context_compression()
 
         if self.session_memory_manager:
             self.session_memory_manager.increment_step()
@@ -481,10 +490,17 @@ class ExecutionEngine:
             if not await self.process_tool_call_result(tool_call, tool_result):
                 raise Exception("Tool call result processing failed")
 
+            # 构建工具结果消息，附加元数据以便上下文压缩检测过期
+            import time as _time
             tool_call_result = {
                 "role": "tool",
                 "tool_call_id": tool_call.id,
                 "content": tool_result.content,
+                "tool_name": tool_call.function.name,
+                "_meta": {
+                    "step": self.session_memory_manager.state.step_count if self.session_memory_manager else 0,
+                    "timestamp": _time.time(),
+                },
             }
             await self.context.add_message(tool_call_result)
 
@@ -507,7 +523,17 @@ class ExecutionEngine:
             tool_name = tool_call.function.name
             if tool_name not in self._readonly_tools:
                 self._step_has_write_operations = True
-                break
+                # 提取写操作涉及的文件路径
+                try:
+                    arguments = tool_call.function.arguments
+                    if isinstance(arguments, str):
+                        arguments = json.loads(arguments)
+                    if isinstance(arguments, dict):
+                        path = arguments.get("path") or arguments.get("file_path")
+                        if path:
+                            self._step_write_file_paths.append(path)
+                except (json.JSONDecodeError, AttributeError):
+                    pass
 
     async def process_tool_call_result(
         self, tool_call: Any, tool_result: ToolResult
@@ -772,3 +798,23 @@ class ExecutionEngine:
                 turn_id=self.turn_id,
                 agent_id=self.agent_id,
             )
+
+    async def _check_context_compression(self):
+        """
+        检查 context 是否需要进行压缩。
+
+        在 execute_step 完成后调用，触发策略A（过期工具结果清理）
+        和策略B（Session Memory 截断）。
+        """
+        if not self.context_compressor:
+            from broca.session.service import get_message_service
+            self.context_compressor = ContextCompressor(
+                message_service=get_message_service(),
+            )
+
+        await self.context_compressor.check_and_compress(
+            context=self.context,
+            execution_engine=self,
+            session_memory_manager=self.session_memory_manager,
+            agent_config=self.config,
+        )

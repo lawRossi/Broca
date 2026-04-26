@@ -213,6 +213,20 @@ class Message(SQLModel, table=True):
         description="是否已回滚",
     )
 
+    # 压缩状态（策略A：工具结果已过期）
+    is_expired: bool = Field(
+        default=False,
+        sa_column=Column(Integer, server_default="0", nullable=False),
+        description="工具调用结果是否已过期（策略A）",
+    )
+
+    # 压缩状态（策略B：被 session memory 截断）
+    is_truncated: bool = Field(
+        default=False,
+        sa_column=Column(Integer, server_default="0", nullable=False),
+        description="消息是否已被 session memory 截断（策略B）",
+    )
+
     # 关联关系
     session: Optional["Session"] = Relationship(back_populates="messages")
     turn: Optional["Turn"] = Relationship(back_populates="messages")

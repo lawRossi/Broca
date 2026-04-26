@@ -10,7 +10,9 @@ from pathlib import Path
 from typing import Optional
 
 from broca.agent_manager import AgentFactory
+from broca.execution_engine import ExecutionStatus
 from broca.logging_config import get_logger
+from broca.session import MessageProtocol
 from broca.session_memory.memory_prompts import (
     build_extraction_user_prompt,
 )
@@ -24,34 +26,34 @@ logger = get_logger(__name__)
 
 # 默认模板（启动时写入文件）
 DEFAULT_MEMORY_TEMPLATE = """# Session Title
-_A short and distinctive 5-10 word descriptive title for the session._
+_A short and distinctive 5-10 word descriptive title for the session._ (KEEP THIS LINE)
 
 # Current State
-_What is actively being worked on right now? Pending tasks not yet completed._
+_What is actively being worked on right now? Pending tasks not yet completed._ (KEEP THIS LINE)
 
 # Task Specification
-_What did the user ask to do? Design decisions and context._
+_What did the user ask to do? Design decisions and context._ (KEEP THIS LINE)
 
 # Files and Functions
-_Important files and their purposes._
+_Important files and their purposes._ (KEEP THIS LINE)
 
 # Workflow
-_Commands and their execution order._
+_Commands and their execution order._ (KEEP THIS LINE)
 
 # Errors & Corrections
-_Errors encountered and how they were fixed, what did the user correct/feedback?._
+_Errors encountered and how they were fixed, what did the user correct/feedback?._ (KEEP THIS LINE)
 
 # Project Documentation
-_Important project components/modules and their purposes._
+_Important project components/modules and their purposes._ (KEEP THIS LINE)
 
 # Learnings
-_What has worked well? What has not?_
+_What has worked well? What has not?_ (KEEP THIS LINE)
 
 # Key Results
-_Specific outputs requested by the user._
+_Specific outputs requested by the user._ (KEEP THIS LINE)
 
 # Worklog
-_Step by step actions taken. Very terse summary for each step_
+_Step by step actions taken. Very terse summary for each step_ (KEEP THIS LINE)
 """
 
 
@@ -94,6 +96,26 @@ class SessionMemoryManager:
     def is_session_memory_empty(self) -> bool:
         content = self.read_session_memory_content()
         return content == "" or content == DEFAULT_MEMORY_TEMPLATE.strip()
+
+    @property
+    def last_message_index(self) -> int:
+        """获取最后处理的消息索引"""
+        return self.state.last_message_index
+
+    @property
+    def has_content(self) -> bool:
+        """检查 session memory 是否有实际内容（非空模板）"""
+        content = self.read_session_memory_content()
+        return content != "" and content != DEFAULT_MEMORY_TEMPLATE.strip()
+
+    def get_session_memory_content(self) -> str:
+        """获取 session memory 内容"""
+        return self.read_session_memory_content()
+
+    def reset_last_message_index(self):
+        """重置 last_message_index（索引校验不通过或截断成功后调用）"""
+        self.state.last_message_index = 0
+        self.state.initialized = False
 
     def _ensure_template_exists(self):
         """确保模板文件存在（启动时创建）"""
@@ -150,14 +172,12 @@ class SessionMemoryManager:
 
         # 检查最后一条 assistant 消息是否有 tool_calls
         last_msg = messages[-1] if messages else None
-        has_tool_calls = (
-            last_msg
-            and last_msg.get("role") == "assistant"
-            and last_msg.get("tool_calls")
+        has_tool_calls = last_msg and (
+            last_msg.get("role") == "tool" or last_msg.get("tool_calls")
         )
 
-        should_extract = (has_met_msg_threshold and has_met_step_threshold) or (
-            has_met_msg_threshold and not has_tool_calls
+        should_extract = (
+            has_met_msg_threshold and has_met_step_threshold and not has_tool_calls
         )
 
         if should_extract:
@@ -198,10 +218,6 @@ class SessionMemoryManager:
 
         子代理拥有独立的 LLM 调用，可用的工具仅限于文件操作。
         """
-
-        from broca.execution_engine import ExecutionStatus
-        from broca.session import MessageProtocol
-
         # 创建子代理配置
         agent_factory = AgentFactory()
         session_manager = self.agent.session_manager
@@ -214,12 +230,13 @@ class SessionMemoryManager:
             agent_config["tools"] = ["edit_file"]
             agent_config["track_session_momory"] = False
             agent_config["save_history"] = False
-            agent_config["interactive"] = True
+            agent_config["interactive"] = False
 
             sub_agent = await agent_factory.create_agent(
-                agent_config=agent_config, session_manager=session_manager
+                agent_config=agent_config,
+                session_manager=session_manager,
+                agent_id=agent_id,
             )
-            sub_agent.start()
         else:
             sub_agent = agent_factory.get_agent(
                 session_manager.session_id, agent_config["name"]
@@ -239,11 +256,22 @@ class SessionMemoryManager:
             logger.warning(
                 f"Session memory sub-agent execution failed: {result.status}"
             )
+            await self.agent.communicator.send_agent_system_message(
+                content="Fail to extract session memory",
+                subscription=self.agent.session_id,
+            )
         else:
             logger.info("Session memory updated successfully via sub-agent")
+            await self.agent.communicator.send_agent_system_message(
+                content="Session memory updated successfully",
+                subscription=self.agent.session_id,
+            )
             self.state.last_message = context.history[-1]
             self.state.last_message_index = len(context.history)
 
     def increment_step(self):
         """增加 step 计数"""
         self.state.step_count += 1
+
+    def reset(self):
+        self.state.reset()

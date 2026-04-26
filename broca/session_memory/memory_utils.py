@@ -11,8 +11,8 @@ class SessionMemoryConfig:
     """Session Memory 配置"""
 
     minimum_messages_to_init: int = 30
-    minimum_messages_between_update: int = 10
-    steps_between_updates: int = 5
+    minimum_messages_between_update: int = 20
+    steps_between_updates: int = 10
 
 
 DEFAULT_CONFIG = SessionMemoryConfig()
