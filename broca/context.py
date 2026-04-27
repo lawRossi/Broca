@@ -15,9 +15,18 @@ logger = get_logger(__name__)
 
 class Context:
     BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", ".agents/AGENTS.md", ".agents/SOUL.md"]
+    STALE_TOOL_RESULT_PLACEHOLDER = "[Expired tool result has been cleared]"
 
-    def __init__(self, agent_config: AgentConfig, **kwargs):
-        self.system_prompt = self._build_system_prompt(agent_config, **kwargs)
+    def __init__(
+        self, agent_config: AgentConfig, session_manager: SessionManager, **kwargs
+    ):
+        self.agent_config = agent_config
+        self.session_manager = session_manager
+        self.system_prompt_kwargs = kwargs
+        self.system_prompt = self._build_system_prompt()
+        self._init_history()
+
+    def _init_history(self) -> None:
         self._history: list = []
         self._message_db_ids: list = []  # 与 _history 一一对应，存储数据库 message_id
         self._history.append({"role": "system", "content": self.system_prompt})
@@ -55,7 +64,7 @@ class Context:
             if index < len(self._history):
                 msg = self._history[index]
                 if msg.get("role") == "tool":
-                    msg["content"] = "[Expired tool result has been cleared]"
+                    msg["content"] = self.STALE_TOOL_RESULT_PLACEHOLDER
             return db_id
         return None
 
@@ -71,11 +80,14 @@ class Context:
         """
         # 跳过 system prompt（index=0）
         return [
-            db_id for db_id in self._message_db_ids[1:truncate_index]
+            db_id
+            for db_id in self._message_db_ids[1:truncate_index]
             if db_id is not None
         ]
 
-    def _build_system_prompt(self, config: AgentConfig, **kwargs) -> str:
+    def _build_system_prompt(self) -> str:
+        config = self.agent_config
+        kwargs = self.system_prompt_kwargs
         prompt_template = config.system_prompt_template
         if config.environment:
             kwargs["environment"] = config.environment
@@ -87,6 +99,9 @@ class Context:
         boostrap_content = self._load_bootstrap_files(config.workspace)
         if boostrap_content:
             kwargs["bootstrap_content"] = boostrap_content
+        session_memory = self._load_session_memory()
+        if session_memory:
+            kwargs["session_memory"] = session_memory
         return Template(prompt_template).render(**kwargs).strip()
 
     def _format_skills(self, skills: dict[str, dict]) -> str:
@@ -94,6 +109,16 @@ class Context:
         for name, skill in skills.items():
             skills_str += f"{name}: {skill['description']}\n"
         return skills_str.strip()
+
+    def _load_session_memory(self) -> str:
+        workspace = self.agent_config.workspace
+        session_id = self.session_manager.session_id
+        session_memeory_path = (
+            Path(workspace) / ".broca" / session_id / "session_memory.md"
+        )
+        if session_memeory_path.exists():
+            return session_memeory_path.read_text(encoding="utf-8").strip()
+        return ""
 
     def _load_bootstrap_files(self, workspace: str) -> str | None:
         boostrap_content = ""
@@ -106,7 +131,9 @@ class Context:
 
         return boostrap_content.strip()
 
-    async def add_message(self, message: Union[dict, Message], db_message_id: Optional[str] = None):
+    async def add_message(
+        self, message: Union[dict, Message], db_message_id: Optional[str] = None
+    ):
         """
         添加消息到 context
 
@@ -118,14 +145,12 @@ class Context:
         self._message_db_ids.append(db_message_id)
 
     async def build_history_from_session(
-        self, session_manager: SessionManager, agent_id: str, rebuild=False
+        self, agent_id: str, rebuild_system_prompt: bool = False
     ) -> None:
-        self._history: list = []
-        self._message_db_ids: list = []
-        self._history.append({"role": "system", "content": self.system_prompt})
-        self._message_db_ids.append(None)  # system prompt 没有数据库记录
+        if rebuild_system_prompt:
+            self.system_prompt = self._build_system_prompt()
 
-        messages = await session_manager.get_messages(agent_id)
+        messages = await self.session_manager.get_messages(agent_id)
         for message in messages:
             if message.message_type in [
                 MessageType.USER_MESSAGE,
@@ -140,29 +165,10 @@ class Context:
                 content = message.data.get("content")
                 if content is None:
                     continue
-
-                # 策略A：过期的工具调用结果 → 替换为占位符
-                if message.is_expired:
-                    if message.message_type == MessageType.TOOL_CALL:
-                        content = json.dumps({
-                            "role": "tool",
-                            "content": "[Expired tool result has been cleared]",
-                            "tool_call_id": message.data.get("tool_call_id", ""),
-                        })
-                    else:
-                        continue
-
-                message_content = json.loads(content)
-
-                # 为 TOOL_CALL 消息附加 _meta 信息（用于上下文压缩的时间因素检测）
-                if message.message_type == MessageType.TOOL_CALL and message_content.get("role") == "tool":
-                    # 从数据库消息中提取时间戳和序列号作为元数据
-                    msg_timestamp = message.timestamp.timestamp() if message.timestamp else None
-                    msg_seq = message.sequence_number or 0
-                    message_content["_meta"] = {
-                        "step": msg_seq,       # 用 sequence_number 近似表示 step
-                        "timestamp": msg_timestamp,
-                    }
+                if message.message_type == MessageType.TOOL_CALL:
+                    message_content = self.format_tool_call_result(message)
+                else:
+                    message_content = json.loads(content)
 
                 if message_content["role"] != "user":
                     await self.add_message(
@@ -175,6 +181,17 @@ class Context:
                         db_message_id=message.message_id,
                     )
 
+    def format_tool_call_result(self, message) -> dict:
+        message_content = json.loads(message.data.get("content"))
+        if message.is_expired:
+            message_content["content"] = self.STALE_TOOL_RESULT_PLACEHOLDER
+        message_content["meta"] = {
+            "tool_name": message.data.get("tool_name", ""),
+            "arguments": message.data.get("arguments", {}),
+            "status": message.data.get("status", ""),
+        }
+        return message_content
+
     def get_latest_assistant_message(self) -> str | None:
         if not self._history:
             return None
@@ -185,7 +202,7 @@ class Context:
         return None
 
     async def truncate_last_assistant_message_with_tool_calls(
-        self, session_manager=None, turn_id=None, agent_id=None
+        self, turn_id=None, agent_id=None
     ):
         """
         Truncate the last assistant message with tool_calls from context and database.
@@ -193,11 +210,10 @@ class Context:
         This method checks if the last message in context is an assistant message
         with tool_calls, and if so:
         1. Removes it from context
-        2. Checks if it was persisted to database (if session_manager provided)
+        2. Checks if it was persisted to database
         3. If persisted, removes it from database
 
         Args:
-            session_manager: Optional session manager for database operations
             turn_id: Optional turn ID for database lookup
             agent_id: Optional agent ID for database lookup
         """
@@ -237,10 +253,8 @@ class Context:
             logger.debug("Removed message from context")
 
             # Check if the message was persisted to database
-            if session_manager and turn_id and agent_id:
-                await self._delete_last_persisted_assistant_message(
-                    session_manager, turn_id, agent_id
-                )
+            if turn_id and agent_id:
+                await self._delete_last_persisted_assistant_message(turn_id, agent_id)
             else:
                 logger.debug(
                     "No session_manager, turn_id or agent_id, skipping database cleanup"
@@ -249,9 +263,7 @@ class Context:
         except Exception as e:
             logger.error(f"Error truncating last assistant message: {e}")
 
-    async def _delete_last_persisted_assistant_message(
-        self, session_manager, turn_id, agent_id
-    ):
+    async def _delete_last_persisted_assistant_message(self, turn_id, agent_id):
         """
         Delete the last persisted assistant message from database.
 
@@ -264,7 +276,7 @@ class Context:
 
         try:
             # Get message service
-            message_service = session_manager.message_service
+            message_service = self.session_manager.message_service
 
             # Get messages for the current turn and agent
             messages = await message_service.get_batch(

@@ -2,7 +2,6 @@ import asyncio
 import uuid
 from typing import Dict, Optional
 
-from broca.execution_engine import ExecutionStatus
 from broca.logging_config import get_logger
 from broca.session import Message, MessageProtocol, MessageRole, MessageType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
@@ -68,6 +67,7 @@ class AssignTask(Tool):
 
     async def _execute(self, arguments, context: ToolCallContext) -> ToolResult:
         from broca.agent_manager import AgentFactory
+        from broca.execution_engine import ExecutionStatus
 
         agent = context.agent
         factory = AgentFactory()

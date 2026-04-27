@@ -6,6 +6,7 @@ Session Memory 管理器
 
 import asyncio
 import copy
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -60,7 +61,8 @@ _Step by step actions taken. Very terse summary for each step_ (KEEP THIS LINE)
 class SessionMemoryManager:
     """Session Memory 管理器"""
 
-    MEMORY_FILENAME = "session-memory.md"
+    FROSEN_MEMORY_FILENAME = "session-memory.md"
+    SNAPSHOT_MEMORY_FILENAME = "session-memory_latest.md."
     AGENT_ID_POSTFIX = "#session-memory-agent"
 
     def __init__(
@@ -81,32 +83,41 @@ class SessionMemoryManager:
         self._ensure_template_exists()
 
     @property
+    def snapshot_memory_path(self) -> str:
+        """获取 memory 文件路径"""
+        return str(
+            Path(self.workspace)
+            / ".broca"
+            / self.agent.session_id
+            / self.SNAPSHOT_MEMORY_FILENAME
+        )
+
+    @property
     def memory_path(self) -> str:
         """获取 memory 文件路径"""
         return str(
             Path(self.workspace)
             / ".broca"
             / self.agent.session_id
-            / self.MEMORY_FILENAME
+            / self.FROSEN_MEMORY_FILENAME
         )
 
-    def read_session_memory_content(self) -> str:
-        return Path(self.memory_path).read_text(encoding="utf-8").strip()
-
     def is_session_memory_empty(self) -> bool:
-        content = self.read_session_memory_content()
+        content = Path(self.snapshot_memory_path).read_text(encoding="utf-8").strip()
         return content == "" or content == DEFAULT_MEMORY_TEMPLATE.strip()
+
+    def frosen_session_memory(self):
+        shutil.copyfile(self.snapshot_memory_path, self.memory_path)
+
+    @property
+    def last_message_id(self) -> str:
+        """获取最后处理的消息 ID"""
+        return self.state.last_message_id
 
     @property
     def last_message_index(self) -> int:
         """获取最后处理的消息索引"""
         return self.state.last_message_index
-
-    @property
-    def has_content(self) -> bool:
-        """检查 session memory 是否有实际内容（非空模板）"""
-        content = self.read_session_memory_content()
-        return content != "" and content != DEFAULT_MEMORY_TEMPLATE.strip()
 
     def get_session_memory_content(self) -> str:
         """获取 session memory 内容"""
@@ -119,11 +130,11 @@ class SessionMemoryManager:
 
     def _ensure_template_exists(self):
         """确保模板文件存在（启动时创建）"""
-        memory_file = Path(self.memory_path)
+        memory_file = Path(self.snapshot_memory_path)
         if not memory_file.exists():
             memory_file.parent.mkdir(parents=True, exist_ok=True)
             memory_file.write_text(DEFAULT_MEMORY_TEMPLATE.strip(), encoding="utf-8")
-            logger.info(f"Created session memory template at {self.memory_path}")
+            logger.info(f"Created session memory template at {memory_file}")
 
     async def check_and_extract(self, context):
         """检查并触发 session memory 提取"""
@@ -181,7 +192,6 @@ class SessionMemoryManager:
         )
 
         if should_extract:
-            self.state.last_message_index = current_msg_count
             self.state.last_step_count = self.state.step_count
 
         return should_extract
@@ -266,8 +276,10 @@ class SessionMemoryManager:
                 content="Session memory updated successfully",
                 subscription=self.agent.session_id,
             )
-            self.state.last_message = context.history[-1]
-            self.state.last_message_index = len(context.history)
+            self.state.last_message_index = len(context.history) - 1
+            self.state.last_message_id = context.get_message_db_id(
+                self.state.last_message_index
+            )
 
     def increment_step(self):
         """增加 step 计数"""

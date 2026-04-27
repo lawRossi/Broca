@@ -34,6 +34,7 @@ from broca.session import (
 from broca.snapshot.patch import PatchCalculator
 from broca.snapshot.track import SnapshotTracker
 from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
+from broca.tools.tool_manager import ToolManager
 
 logger = get_logger(__name__)
 
@@ -145,25 +146,9 @@ class ExecutionEngine:
 
         # Step跟踪
         self._step_has_write_operations: bool = False
-        self._step_write_file_paths: List[str] = []  # 当前 step 写操作涉及的文件路径
 
         # 上下文压缩器
         self.context_compressor: Optional[ContextCompressor] = None
-
-        # 只读tool列表
-        self._readonly_tools = {
-            "read_file",
-            "glob",
-            "grep",
-            "list_dir",
-            "tree_dir",
-            "web_fetch",
-            "web_search",
-            "ask_user",
-            "task_management",
-            "todo_management",
-            "cron",
-        }
 
     def _initialize_snapshot_tracking(self):
         """初始化快照跟踪"""
@@ -178,7 +163,6 @@ class ExecutionEngine:
     async def _capture_step_init(self):
         # 检查是否需要快照（如果所有tool都是只读的，可以跳过）
         self._step_has_write_operations = False
-        self._step_write_file_paths = []
 
     async def _capture_step_start(self) -> bool:
         """捕获Step开始快照"""
@@ -338,7 +322,7 @@ class ExecutionEngine:
             await self._process_tool_calls(response.tool_calls)
             await self._capture_step_end()
             status = ExecutionStatus.RUNNING
-        
+
         if self.config.enable_context_compression:
             await self._check_context_compression()
 
@@ -349,7 +333,9 @@ class ExecutionEngine:
                     context=self.context,
                 )
             )
-            task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
+            task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
 
         return status
 
@@ -490,26 +476,9 @@ class ExecutionEngine:
             if not await self.process_tool_call_result(tool_call, tool_result):
                 raise Exception("Tool call result processing failed")
 
-            # 构建工具结果消息，附加元数据以便上下文压缩检测过期
-            import time as _time
-            tool_call_result = {
-                "role": "tool",
-                "tool_call_id": tool_call.id,
-                "content": tool_result.content,
-                "tool_name": tool_call.function.name,
-                "_meta": {
-                    "step": self.session_memory_manager.state.step_count if self.session_memory_manager else 0,
-                    "timestamp": _time.time(),
-                },
-            }
-            await self.context.add_message(tool_call_result)
-
     def check_step_has_write_operations(self, tool_calls: List[Any]):
         """
         Check if a step has write operations.
-
-        This function checks if any of the tool calls in the step have write operations.
-        If any tool call has write operations, the function sets `_step_has_write_operations` to `True`.
 
         Args:
             tool_calls (List[Any]): List of tool calls in the step
@@ -521,19 +490,9 @@ class ExecutionEngine:
             return
         for tool_call in tool_calls:
             tool_name = tool_call.function.name
-            if tool_name not in self._readonly_tools:
+            if tool_name not in ToolManager.READONLY_TOOLS:
                 self._step_has_write_operations = True
-                # 提取写操作涉及的文件路径
-                try:
-                    arguments = tool_call.function.arguments
-                    if isinstance(arguments, str):
-                        arguments = json.loads(arguments)
-                    if isinstance(arguments, dict):
-                        path = arguments.get("path") or arguments.get("file_path")
-                        if path:
-                            self._step_write_file_paths.append(path)
-                except (json.JSONDecodeError, AttributeError):
-                    pass
+                return
 
     async def process_tool_call_result(
         self, tool_call: Any, tool_result: ToolResult
@@ -560,14 +519,20 @@ class ExecutionEngine:
                 message_id=message_id,
             )
 
-        return await self.session_manager.save_tool_call(
+        if not await self.session_manager.save_tool_call(
             turn_id=self.turn_id,
             agent_id=self.agent_id,
             tool_call=tool_call,
             tool_result=tool_result,
             step_id=self.step_id,
             message_id=message_id,
-        )
+        ):
+            return False
+        message = await self.session_manager.message_service.get(message_id)
+        if not message:
+            return False
+        await self.context.add_message(self.context.format_tool_call_result(message))
+        return True
 
     async def execute_round(self, max_steps: Optional[int] = None) -> ExecutionResult:
         """
@@ -794,7 +759,6 @@ class ExecutionEngine:
         """
         if self.context:
             await self.context.truncate_last_assistant_message_with_tool_calls(
-                session_manager=self.session_manager,
                 turn_id=self.turn_id,
                 agent_id=self.agent_id,
             )
@@ -808,6 +772,7 @@ class ExecutionEngine:
         """
         if not self.context_compressor:
             from broca.session.service import get_message_service
+
             self.context_compressor = ContextCompressor(
                 message_service=get_message_service(),
             )
@@ -816,5 +781,5 @@ class ExecutionEngine:
             context=self.context,
             execution_engine=self,
             session_memory_manager=self.session_memory_manager,
-            agent_config=self.config,
+            agent=self.agent,
         )

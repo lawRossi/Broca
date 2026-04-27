@@ -128,7 +128,7 @@ class Agent:
 
     def _setup_context(self, **kwargs) -> None:
         """Set up agent context"""
-        self.context = Context(self.config, **kwargs)
+        self.context = Context(self.config, self.session_manager, **kwargs)
 
     def _setup_tools(self):
         """Set up tools for the agent"""
@@ -283,9 +283,7 @@ class Agent:
                     files_changed = diff_summary.get("total_files", 0)
 
                     # 重建context
-                    await self.context.build_history_from_session(
-                        self.session_manager, self.agent_id
-                    )
+                    await self.context.build_history_from_session(self.agent_id)
 
                     await self.communicator.send_command_result(
                         command="undo",
@@ -313,9 +311,7 @@ class Agent:
 
                 if result.get("success"):
                     # 重建context
-                    await self.context.build_history_from_session(
-                        self.session_manager, self.agent_id
-                    )
+                    await self.context.build_history_from_session(self.agent_id)
                     await self.communicator.send_command_result(
                         command="redo",
                         result={"code": 0, "message": "Redo successful"},
@@ -516,4 +512,4 @@ class Agent:
 
     async def restore_from_session(self, agent_id):
         """Restore agent state from session"""
-        await self.context.build_history_from_session(self.session_manager, agent_id)
+        await self.context.build_history_from_session(agent_id)

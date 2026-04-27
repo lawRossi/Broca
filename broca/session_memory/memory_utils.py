@@ -23,7 +23,7 @@ class SessionMemoryState:
     """Session Memory 状态"""
 
     initialized: bool = False
-    last_message: Any = None
+    last_message_id: str = ""
     last_message_index: int = 0
     last_step_count: int = 0
     step_count: int = 0
@@ -32,6 +32,7 @@ class SessionMemoryState:
     def reset(self):
         """重置状态"""
         self.initialized = False
+        self.last_message_id = ""
         self.last_message_index = 0
         self.last_step_count = 0
         self.step_count = 0

@@ -18,6 +18,24 @@ from broca.tools.web import WebFetch, WebSearch
 class ToolManager:
     _instance = None
 
+    READONLY_TOOLS = {
+        "read_file",
+        "glob",
+        "grep",
+        "list_dir",
+        "tree_dir",
+        "web_fetch",
+        "web_search",
+        "ask_user",
+        "task_management",
+        "todo_management",
+        "cron",
+    }
+
+    MODIFY_TOOLS = {"edit_file", "write_file"}
+
+    READ_SEARCH_FILE_CONTENT_TOOLS = {"read_file", "grep"}
+
     def __new__(cls):
         if cls._instance is None:
             cls._instance = super(ToolManager, cls).__new__(cls)
