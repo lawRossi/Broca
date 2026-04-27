@@ -27,34 +27,34 @@ logger = get_logger(__name__)
 
 # 默认模板（启动时写入文件）
 DEFAULT_MEMORY_TEMPLATE = """# Session Title
-_A short and distinctive 5-10 word descriptive title for the session._ (KEEP THIS LINE)
+_A short and distinctive 5-10 word descriptive title for the session._ (DO NOT DELETE THIS LINE)
 
 # Current State
-_What is actively being worked on right now? Pending tasks not yet completed._ (KEEP THIS LINE)
+_What is actively being worked on right now? Pending tasks not yet completed._ (DO NOT DELETE THIS LINE)
 
 # Task Specification
-_What did the user ask to do? Design decisions and context._ (KEEP THIS LINE)
+_What did the user ask to do? Design decisions and context._ (DO NOT DELETE THIS LINE)
 
 # Files and Functions
-_Important files and their purposes._ (KEEP THIS LINE)
+_Important files and their purposes._ (DO NOT DELETE THIS LINE)
 
 # Workflow
-_Commands and their execution order._ (KEEP THIS LINE)
+_Commands and their execution order._ (DO NOT DELETE THIS LINE)
 
 # Errors & Corrections
-_Errors encountered and how they were fixed, what did the user correct/feedback?._ (KEEP THIS LINE)
+_Errors encountered and how they were fixed, what did the user correct/feedback?._ (DO NOT DELETE THIS LINE)
 
 # Project Documentation
-_Important project components/modules and their purposes._ (KEEP THIS LINE)
+_Important project components/modules and their purposes._ (DO NOT DELETE THIS LINE)
 
 # Learnings
-_What has worked well? What has not?_ (KEEP THIS LINE)
+_What has worked well? What has not?_ (DO NOT DELETE THIS LINE)
 
 # Key Results
-_Specific outputs requested by the user._ (KEEP THIS LINE)
+_Specific outputs requested by the user._ (DO NOT DELETE THIS LINE)
 
 # Worklog
-_Step by step actions taken. Very terse summary for each step_ (KEEP THIS LINE)
+_Step by step actions taken. Very terse summary for each step_ (DO NOT DELETE THIS LINE)
 """
 
 
@@ -62,7 +62,7 @@ class SessionMemoryManager:
     """Session Memory 管理器"""
 
     FROSEN_MEMORY_FILENAME = "session-memory.md"
-    SNAPSHOT_MEMORY_FILENAME = "session-memory_latest.md."
+    SNAPSHOT_MEMORY_FILENAME = "session-memory_latest.md"
     AGENT_ID_POSTFIX = "#session-memory-agent"
 
     def __init__(
@@ -109,6 +109,9 @@ class SessionMemoryManager:
     def frosen_session_memory(self):
         shutil.copyfile(self.snapshot_memory_path, self.memory_path)
 
+    def _read_session_memory_content(self):
+        return Path(self.snapshot_memory_path).read_text(encoding="utf-8").strip()
+
     @property
     def last_message_id(self) -> str:
         """获取最后处理的消息 ID"""
@@ -118,10 +121,6 @@ class SessionMemoryManager:
     def last_message_index(self) -> int:
         """获取最后处理的消息索引"""
         return self.state.last_message_index
-
-    def get_session_memory_content(self) -> str:
-        """获取 session memory 内容"""
-        return self.read_session_memory_content()
 
     def reset_last_message_index(self):
         """重置 last_message_index（索引校验不通过或截断成功后调用）"""
@@ -146,17 +145,19 @@ class SessionMemoryManager:
 
         # 异步执行提取，不阻塞主流程
         logger.info("start to extract session memory")
-        await self.agent.communicator.send_agent_system_message(
-            content="Extracting session memory", subscription=self.agent.session_id
-        )
-        original_content = self.read_session_memory_content()
-        task = asyncio.create_task(self._extract(context))
-        task.add_done_callback(lambda t: t.exception() if not t.cancelled() else None)
         try:
+            await self.agent.communicator.send_agent_system_message(
+                content="Extracting session memory", subscription=self.agent.session_id
+            )
+            original_content = self._read_session_memory_content()
+            task = asyncio.create_task(self._extract(context))
+            task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
             await asyncio.wait_for(task, timeout=self.task_timeout)
         except Exception as e:
             logger.error(f"Session memory extraction failed: {e}")
-            with open(self.memory_path, "w", encoding="utf-8") as f:
+            with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
                 f.write(original_content)
 
     def _should_extract(self, context) -> bool:
@@ -212,17 +213,19 @@ class SessionMemoryManager:
 
     async def _do_extract(self, context):
         """实际提取逻辑——创建子代理执行"""
+        current_content = self._read_session_memory_content()
         user_prompt = build_extraction_user_prompt(
-            memory_path=self.memory_path,
-            current_content=self.read_session_memory_content(),
+            memory_path=self.snapshot_memory_path,
+            current_content=current_content,
         )
 
         await self._run_extraction_subagent(
             user_prompt=user_prompt,
             context=context,
+            current_content=current_content,
         )
 
-    async def _run_extraction_subagent(self, user_prompt, context):
+    async def _run_extraction_subagent(self, user_prompt, context, current_content):
         """
         创建并运行提取子代理
 
@@ -270,6 +273,8 @@ class SessionMemoryManager:
                 content="Fail to extract session memory",
                 subscription=self.agent.session_id,
             )
+            with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
+                f.write(current_content)
         else:
             logger.info("Session memory updated successfully via sub-agent")
             await self.agent.communicator.send_agent_system_message(

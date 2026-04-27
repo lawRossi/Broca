@@ -14,7 +14,7 @@ The content of the file {memory_path} has already been read for you. Here is its
 
 Critical Rules for Editing:
 
-1. Preserve the exact file structure - do NOT modify or delete section headers or italic description lines
+1. Preserve the exact file structure - *MUST NOT* modify or delete section headers or italic description lines
 2. Do NOT add new sections or remove existing ones
 3. Skip sections with no substantial new insights
 4. Write DETAILED, INFO-DENSE content with specific file paths, function names, error messages, etc.

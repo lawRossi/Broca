@@ -3,16 +3,15 @@ Session Memory 工具函数和状态管理
 """
 
 from dataclasses import dataclass
-from typing import Any
 
 
 @dataclass
 class SessionMemoryConfig:
     """Session Memory 配置"""
 
-    minimum_messages_to_init: int = 30
-    minimum_messages_between_update: int = 20
-    steps_between_updates: int = 10
+    minimum_messages_to_init: int = 100
+    minimum_messages_between_update: int = 40
+    steps_between_updates: int = 40
 
 
 DEFAULT_CONFIG = SessionMemoryConfig()
