@@ -5,7 +5,7 @@ import { useChatStore } from '@/stores'
 import { sessionApi, type SessionStats, type RunnerInfo } from '@/api/session'
 import { jobApi } from '@/api/job'
 import { taskApi } from '@/api/task'
-import { Loading, Refresh, WarningFilled, CircleCheck, CircleClose } from '@element-plus/icons-vue'
+import { Loading, Refresh } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const chatStore = useChatStore()
@@ -88,6 +88,25 @@ const stopStatsPolling = () => {
   }
 }
 
+// Runner 状态
+const runnerInfo = ref<RunnerInfo | null>(null)
+const runnerLoading = ref(false)
+const restarting = ref(false)
+
+// 获取 Runner 状态
+const fetchRunnerStatus = async () => {
+  if (!chatStore.sessionId) return
+  try {
+    runnerLoading.value = true
+    const data = await sessionApi.getRunnerStatus(chatStore.sessionId)
+    runnerInfo.value = data
+  } catch (error) {
+    console.error('Failed to fetch runner status:', error)
+  } finally {
+    runnerLoading.value = false
+  }
+}
+
 // 监听sessionId变化，重新获取统计数据
 watch(
   () => chatStore.sessionId,
@@ -167,10 +186,6 @@ const totalMessagesFromApi = computed(() => {
 
 // ==================== Runner 状态面板 ====================
 
-const runnerInfo = ref<RunnerInfo | null>(null)
-const runnerLoading = ref(false)
-const restarting = ref(false)
-
 // Runner 状态显示配置
 const runnerStatusConfig: Record<string, { type: string; label: string }> = {
   alive: { type: 'success', label: '运行中' },
@@ -182,20 +197,6 @@ const runnerStatusConfig: Record<string, { type: string; label: string }> = {
 
 const getRunnerConfig = (status: string | undefined) => {
   return runnerStatusConfig[status || 'none'] || runnerStatusConfig.none
-}
-
-// 获取 Runner 状态
-const fetchRunnerStatus = async () => {
-  if (!chatStore.sessionId) return
-  try {
-    runnerLoading.value = true
-    const data = await sessionApi.getRunnerStatus(chatStore.sessionId)
-    runnerInfo.value = data
-  } catch (error) {
-    console.error('Failed to fetch runner status:', error)
-  } finally {
-    runnerLoading.value = false
-  }
 }
 
 // 重启 Runner
@@ -342,10 +343,6 @@ const formatMemory = (mb: number | undefined): string => {
         <div class="flex justify-between">
           <span class="text-gray-700">内存</span>
           <span class="text-gray-800">{{ formatMemory(runnerInfo?.resource_usage?.memory_rss_mb) }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-700">重启次数</span>
-          <span class="text-gray-800">{{ runnerInfo?.restart_count ?? 0 }}</span>
         </div>
         <div v-if="runnerInfo?.status === 'error'" class="pt-2">
           <el-button type="danger" size="small" :loading="restarting" @click="handleRestartRunner">

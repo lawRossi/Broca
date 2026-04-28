@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from broca.session_runner.ipc import (
@@ -68,7 +69,7 @@ class RunnerManager:
             # 心跳监控任务
             self._heartbeat_monitor_task: Optional[asyncio.Task] = None
             # 日志目录
-            self._log_dir = os.getenv("RUNNER_LOG_DIR", "logs/runners")
+            self._log_dir = Path.home() / ".broca/logs/runners"
             # 恢复管理器
             self._recovery_manager = SessionRecoveryManager()
             self._recovery_manager.set_restart_handler(self._auto_restart_session)
@@ -270,6 +271,7 @@ class RunnerManager:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 preexec_fn=os.setsid if sys.platform != "win32" else None,
+                cwd=workspace,
             )
 
             runner_info = RunnerProcessInfo(
@@ -288,7 +290,7 @@ class RunnerManager:
 
             # 等待 Runner 连接（带超时）
             try:
-                ipc_server.accept(timeout=30.0)
+                ipc_server.accept(timeout=10.0)
                 logger.info("Runner for session %s connected via IPC", session_id)
 
                 # 等待 READY 事件
