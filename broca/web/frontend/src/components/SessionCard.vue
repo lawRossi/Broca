@@ -1,10 +1,11 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close } from '@element-plus/icons-vue'
+import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close, WarningFilled } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatBeijingTime } from '@/utils/time'
 import type { Session } from '@/api/session'
+import { sessionApi } from '@/api/session'
 import { useSessionStore } from '@/stores'
 
 const router = useRouter()
@@ -37,7 +38,7 @@ const editDescription = ref('')
 const editing = ref(false)
 const descriptionInputRef = ref<HTMLInputElement | null>(null)
 
-// 状态类型映射
+// 状态类型映射（合并 session.status + runner_status）
 const statusTypeMap: Record<string, string> = {
   active: 'success',
   completed: 'info',
@@ -51,6 +52,39 @@ const statusLabelMap: Record<string, string> = {
   completed: '已完成',
   paused: '已暂停',
   error: '错误',
+}
+
+// Runner 状态映射
+const runnerLabelMap: Record<string, string> = {
+  alive: '运行中',
+  starting: '启动中',
+  error: '进程异常',
+  dead: '已停止',
+  none: '无进程',
+}
+
+const runnerTypeMap: Record<string, string> = {
+  alive: 'success',
+  starting: 'warning',
+  error: 'danger',
+  dead: 'info',
+  none: 'info',
+}
+
+// 获取显示用的状态类型：优先使用 runner_status
+const getDisplayStatusType = (session: Session) => {
+  if (session.runner_status && session.runner_status !== 'none') {
+    return runnerTypeMap[session.runner_status] || 'info'
+  }
+  return statusTypeMap[session.status] || 'info'
+}
+
+// 获取显示用的状态标签
+const getDisplayStatusLabel = (session: Session) => {
+  if (session.runner_status && session.runner_status !== 'none') {
+    return runnerLabelMap[session.runner_status] || session.runner_status
+  }
+  return statusLabelMap[session.status] || session.status
 }
 
 // 截断ID显示
@@ -185,6 +219,25 @@ const handleKeydown = (event: KeyboardEvent) => {
     cancelEdit()
   }
 }
+
+// 重启 Runner 进程
+const handleRestartRunner = async () => {
+  try {
+    await ElMessageBox.confirm('该会话的后台进程异常，是否重启？', '重启确认', {
+      confirmButtonText: '重启',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await sessionApi.restartRunner(props.session.session_id)
+    ElMessage.success('进程已重启')
+    // 刷新列表
+    sessionStore.refresh()
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      ElMessage.error('重启失败: ' + (error.message || '未知错误'))
+    }
+  }
+}
 </script>
 
 <template>
@@ -252,11 +305,25 @@ const handleKeydown = (event: KeyboardEvent) => {
         </div>
       </div>
 
-      <!-- 状态标签 -->
-      <div class="ml-3 flex-shrink-0">
-        <el-tag :type="getStatusType(session.status)" size="small" effect="plain">
-          {{ getStatusLabel(session.status) }}
+      <!-- 状态标签（合并 session.status + runner_status） -->
+      <div class="ml-3 flex-shrink-0 flex items-center gap-1">
+        <el-tag
+          :type="getDisplayStatusType(session)"
+          size="small"
+          effect="plain"
+        >
+          {{ getDisplayStatusLabel(session) }}
         </el-tag>
+        <!-- 心跳异常额外标记 -->
+        <el-tooltip
+          v-if="session.runner_status === 'error'"
+          content="后台进程异常，点击重启"
+          placement="top"
+        >
+          <el-icon class="text-red-500 cursor-pointer" size="14" @click.stop="handleRestartRunner">
+            <WarningFilled />
+          </el-icon>
+        </el-tooltip>
       </div>
     </div>
 

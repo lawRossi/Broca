@@ -228,7 +228,9 @@ const handleCreate = () => {
     <template #footer>
       <span class="dialog-footer">
         <el-button @click="handleClose">取消</el-button>
-        <el-button type="primary" :loading="creating" @click="handleCreate"> 创建 </el-button>
+        <el-button type="primary" :loading="creating" @click="handleCreate">
+          {{ creating ? '正在启动进程...' : '创建' }}
+        </el-button>
       </span>
     </template>
   </el-dialog>

@@ -2,10 +2,10 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores'
-import { sessionApi, type SessionStats } from '@/api/session'
+import { sessionApi, type SessionStats, type RunnerInfo } from '@/api/session'
 import { jobApi } from '@/api/job'
 import { taskApi } from '@/api/task'
-import { Loading, Refresh } from '@element-plus/icons-vue'
+import { Loading, Refresh, WarningFilled, CircleCheck, CircleClose } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const chatStore = useChatStore()
@@ -95,6 +95,7 @@ watch(
     if (newSessionId && newSessionId !== oldSessionId) {
       fetchStats()
       fetchJobAndTaskStats()
+      fetchRunnerStatus()
     }
   },
   { immediate: true }
@@ -105,6 +106,7 @@ onMounted(() => {
   if (chatStore.sessionId) {
     fetchStats()
     fetchJobAndTaskStats()
+    fetchRunnerStatus()
     startStatsPolling()
   }
 })
@@ -162,6 +164,80 @@ const toolCallErrorsFromApi = computed(() => {
 const totalMessagesFromApi = computed(() => {
   return stats.value?.total_messages || 0
 })
+
+// ==================== Runner 状态面板 ====================
+
+const runnerInfo = ref<RunnerInfo | null>(null)
+const runnerLoading = ref(false)
+const restarting = ref(false)
+
+// Runner 状态显示配置
+const runnerStatusConfig: Record<string, { type: string; label: string }> = {
+  alive: { type: 'success', label: '运行中' },
+  starting: { type: 'warning', label: '启动中' },
+  error: { type: 'danger', label: '进程异常' },
+  dead: { type: 'info', label: '已停止' },
+  none: { type: 'info', label: '无进程' },
+}
+
+const getRunnerConfig = (status: string | undefined) => {
+  return runnerStatusConfig[status || 'none'] || runnerStatusConfig.none
+}
+
+// 获取 Runner 状态
+const fetchRunnerStatus = async () => {
+  if (!chatStore.sessionId) return
+  try {
+    runnerLoading.value = true
+    const data = await sessionApi.getRunnerStatus(chatStore.sessionId)
+    runnerInfo.value = data
+  } catch (error) {
+    console.error('Failed to fetch runner status:', error)
+  } finally {
+    runnerLoading.value = false
+  }
+}
+
+// 重启 Runner
+const handleRestartRunner = async () => {
+  if (!chatStore.sessionId) return
+  try {
+    restarting.value = true
+    const { ElMessage, ElMessageBox } = await import('element-plus')
+    await ElMessageBox.confirm('该会话的后台进程将重启，是否继续？', '重启确认', {
+      confirmButtonText: '重启',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+    await sessionApi.restartRunner(chatStore.sessionId)
+    ElMessage.success('进程已重启')
+    // 延迟刷新状态
+    setTimeout(fetchRunnerStatus, 3000)
+  } catch (error: any) {
+    if (error !== 'cancel') {
+      const { ElMessage } = await import('element-plus')
+      ElMessage.error('重启失败: ' + (error.message || '未知错误'))
+    }
+  } finally {
+    restarting.value = false
+  }
+}
+
+// 格式化运行时长
+const formatUptime = (seconds: number | undefined): string => {
+  if (!seconds || seconds <= 0) return '-'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h > 0) return `${h}小时${m}分钟`
+  return `${m}分钟`
+}
+
+// 格式化内存
+const formatMemory = (mb: number | undefined): string => {
+  if (!mb) return '-'
+  if (mb > 1024) return `${(mb / 1024).toFixed(1)}GB`
+  return `${Math.round(mb)}MB`
+}
 </script>
 
 <template>
@@ -229,6 +305,52 @@ const totalMessagesFromApi = computed(() => {
           <el-icon class="is-loading">
             <Loading />
           </el-icon>
+        </div>
+      </div>
+    </div>
+
+    <!-- Runner 状态面板 -->
+    <div class="bg-white rounded-lg border p-3 sm:p-4 shadow-sm">
+      <div class="flex items-center justify-between mb-3">
+        <div class="text-sm font-semibold text-gray-900">Runner Status</div>
+        <el-button size="small" circle :loading="runnerLoading" @click="fetchRunnerStatus">
+          <el-icon><Refresh /></el-icon>
+        </el-button>
+      </div>
+      <div v-if="runnerLoading && !runnerInfo" class="flex justify-center py-4">
+        <el-icon class="is-loading"><Loading /></el-icon>
+      </div>
+      <div v-else class="space-y-2 text-sm">
+        <div class="flex justify-between items-center">
+          <span class="text-gray-700">状态</span>
+          <el-tag :type="getRunnerConfig(runnerInfo?.status).type" size="small">
+            {{ getRunnerConfig(runnerInfo?.status).label }}
+          </el-tag>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-700">PID</span>
+          <span class="font-mono text-gray-800">{{ runnerInfo?.pid || '-' }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-700">运行时长</span>
+          <span class="text-gray-800">{{ formatUptime(runnerInfo?.uptime_seconds) }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-700">CPU</span>
+          <span class="text-gray-800">{{ runnerInfo?.resource_usage?.cpu_percent ?? '-' }}%</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-700">内存</span>
+          <span class="text-gray-800">{{ formatMemory(runnerInfo?.resource_usage?.memory_rss_mb) }}</span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-700">重启次数</span>
+          <span class="text-gray-800">{{ runnerInfo?.restart_count ?? 0 }}</span>
+        </div>
+        <div v-if="runnerInfo?.status === 'error'" class="pt-2">
+          <el-button type="danger" size="small" :loading="restarting" @click="handleRestartRunner">
+            重启进程
+          </el-button>
         </div>
       </div>
     </div>

@@ -8,6 +8,7 @@ export interface Session {
   workspace?: string
   created_at: string
   finished_at?: string
+  runner_status?: string       // 新增：Runner 进程状态
 }
 
 export interface Agent {
@@ -77,6 +78,28 @@ export interface SessionStats {
   tool_call_errors: number
 }
 
+// 新增：Runner 状态接口
+export interface RunnerInfo {
+  session_id: string
+  pid: number | null
+  status: string
+  started_at: string | null
+  ipc_address: string
+  resource_usage: Record<string, any>
+  last_heartbeat: string | null
+  restart_count: number
+  error_message: string | null
+  uptime_seconds: number
+}
+
+export interface RunnerStats {
+  total_runners: number
+  max_concurrent: number
+  available_slots: number
+  by_status: Record<string, number>
+  runners: RunnerInfo[]
+}
+
 export const sessionApi = {
   /**
    * 获取会话列表
@@ -141,6 +164,43 @@ export const sessionApi = {
    */
   async getSessionStats(sessionId: string): Promise<SessionStats> {
     return request.get(`/session/${sessionId}/stats`)
+  },
+
+  // ==================== Runner 管理 API ====================
+
+  /**
+   * 获取所有 Runner 进程列表
+   */
+  async getRunners(): Promise<RunnerStats> {
+    return request.get('/session/runners')
+  },
+
+  /**
+   * 获取 Runner 统计
+   */
+  async getRunnerStats(): Promise<RunnerStats> {
+    return request.get('/session/runners/stats')
+  },
+
+  /**
+   * 获取单个 Session 的 Runner 状态
+   */
+  async getRunnerStatus(sessionId: string): Promise<RunnerInfo> {
+    return request.get(`/session/${sessionId}/runner/status`)
+  },
+
+  /**
+   * 重启 Runner 进程
+   */
+  async restartRunner(sessionId: string): Promise<{ session_id: string; pid: number; status: string }> {
+    return request.post(`/session/${sessionId}/runner/restart`)
+  },
+
+  /**
+   * 停止 Runner 进程
+   */
+  async stopRunner(sessionId: string): Promise<void> {
+    return request.post(`/session/${sessionId}/runner/stop`)
   },
 }
 
