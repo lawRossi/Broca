@@ -130,7 +130,15 @@ class Session(SQLModel, table=True):
     # Runner 关联（独立进程模式）
     runner_id: Optional[str] = Field(
         default=None,
-        sa_column=Column(String, SA_ForeignKey("session_runner.runner_id", ondelete="SET NULL"), nullable=True),
+        sa_column=Column(
+            String,
+            SA_ForeignKey(
+                "session_runner.runner_id",
+                ondelete="SET NULL",
+                name="fk_session_runner_id",
+            ),
+            nullable=True,
+        ),
         description="关联的 Runner ID",
     )
     runner_status: Optional[str] = Field(
@@ -181,7 +189,9 @@ class SessionRunner(SQLModel, table=True):
         description="关联的 Session ID",
     )
     pid: Optional[int] = Field(default=None, description="进程 ID")
-    status: str = Field(default="starting", description="进程状态：starting/alive/error/dead")
+    status: str = Field(
+        default="starting", description="进程状态：starting/alive/error/dead"
+    )
     ipc_address: Optional[str] = Field(default=None, description="IPC 地址")
     started_at: Optional[datetime] = Field(default=None, description="启动时间")
     last_heartbeat: Optional[datetime] = Field(default=None, description="最后心跳时间")
@@ -660,9 +670,7 @@ class MessageProtocol:
         )
 
     @staticmethod
-    def create_step_start(
-        step_id: str, snapshot_hash: str, **kwargs
-    ) -> Message:
+    def create_step_start(step_id: str, snapshot_hash: str, **kwargs) -> Message:
         """创建Step开始消息（用于undo/redo）"""
         return Message(
             message_type=MessageType.STEP_START,

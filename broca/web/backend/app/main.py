@@ -14,10 +14,7 @@ WHITE_LIST = {
     "/api/user/login",
     "/docs",
     "/openapi.json",
-    "/api/health",
-    "/api/files",
-    "/api/files/info",
-    "/api/files/preview",
+    "/api/health"
 }
 security = HTTPBearer(auto_error=False)
 supabase = get_supbase()
