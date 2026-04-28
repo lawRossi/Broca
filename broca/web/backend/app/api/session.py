@@ -162,7 +162,7 @@ async def get_sessions(
 
 @router.get("/{session_id}/agents", response_model=ApiResponse)
 async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
-    """获取会话的Agent列表（从数据库读取）"""
+    """获取会话的Agent列表（从数据库读取真实 agent_status）"""
     try:
         # 获取会话的Agent
         agent_service = get_agent_service()
@@ -170,18 +170,12 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
         if not agents:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # 获取 Runner 状态
-        runner_manager = RunnerManager()
-        runner_status = runner_manager.get_session_status(session_id)
-
         response_agents: list[dict] = []
         for db_agent in agents:
             response_agent = db_agent.model_dump()
-            # 从 Runner 状态中获取 agent 的运行状态
-            if runner_status:
-                response_agent["status"] = runner_status["status"]
-            else:
-                response_agent["status"] = "disconnected"
+            # 直接使用数据库中持久化的 agent_status（由 Runner 心跳同步更新）
+            # 可能的值: idle / running / disconnected
+            response_agent["status"] = response_agent.pop("agent_status", "disconnected")
             response_agents.append(response_agent)
 
         return ApiResponse.success(response_agents)

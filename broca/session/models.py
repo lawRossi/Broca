@@ -376,6 +376,13 @@ class Agent(SQLModel, table=True):
         description="最后一次调用的上下文长度",
     )
 
+    # Agent 运行状态（由 Runner 进程通过心跳同步）
+    agent_status: str = Field(
+        default="disconnected",
+        sa_column=Column(String, server_default="disconnected", nullable=False),
+        description="Agent 运行状态：idle/running/disconnected",
+    )
+
     # 元数据
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 

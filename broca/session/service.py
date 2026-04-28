@@ -465,6 +465,19 @@ class AgentService(BaseService[Agent]):
         """根据会话ID获取Agent"""
         return await self.get_batch(filters={"session_id": session_id})
 
+    async def update_agent_status(self, agent_id: str, status: str) -> bool:
+        """更新 Agent 运行状态到数据库
+
+        Args:
+            agent_id: Agent ID
+            status: 运行状态 (idle/running/disconnected)
+
+        Returns:
+            是否更新成功
+        """
+        agent = await self.update(agent_id, agent_status=status)
+        return agent is not None
+
 
 # 全局Service实例
 session_service = SessionService()
