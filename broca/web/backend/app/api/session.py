@@ -1,3 +1,10 @@
+"""
+Session API
+
+提供 Session 的 CRUD 操作。创建 Session 时会通过 RunnerManager 启动独立子进程，
+不再在 Web 进程内直接运行 Agent。
+"""
+
 import asyncio
 import os
 import tempfile
@@ -9,6 +16,8 @@ from broca.session.service import (
     get_message_service,
     get_session_service,
 )
+from broca.session_runner import RunnerManager
+from broca.session_runner.manager import RunnerManagerError
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
@@ -19,7 +28,7 @@ router = APIRouter()
 
 @router.post("/sessions", response_model=ApiResponse)
 async def create_session(request: CreateSessionRequest) -> ApiResponse:
-    """创建新会话，初始化 Agent 并设置 workspace"""
+    """创建新会话，在独立进程中初始化 Agent"""
     # 输入验证
     if request.workspace is not None:
         if not os.path.isabs(request.workspace):
@@ -28,19 +37,24 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             raise HTTPException(400, "workspace directory does not exist")
 
     workspace = None
-    agents = []
     try:
         workspace = request.workspace
         if workspace is None:
             workspace = tempfile.mkdtemp(prefix="broca_session_")
             logger.info(f"Created temporary workspace: {workspace}")
 
+        # === 阶段1: 在数据库中创建 Session 和 Agent 记录 ===
         factory = AgentFactory()
-        agents = await factory.init_session_agents(workspace=workspace, provider=request.provider, model=request.model)
+        agents = await factory.init_session_agents(
+            workspace=workspace,
+            provider=request.provider,
+            model=request.model,
+        )
 
         if not agents:
             raise HTTPException(500, "No agents were initialized")
 
+        # 获取 session_id
         session_ids = set()
         for agent in agents:
             if not hasattr(agent, "session_manager") or not hasattr(agent.session_manager, "session_id"):
@@ -52,23 +66,35 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
         session_id = session_ids.pop()
 
-        for agent in agents:
-            await agent.connect()
-            task = asyncio.create_task(agent.start())
-            task.add_done_callback(lambda t, a=agent: a.stop())
+        # === 阶段2: 通过 RunnerManager 启动独立子进程 ===
+        runner_manager = RunnerManager()
+        try:
+            await runner_manager.start_session(
+                session_id=session_id,
+                workspace=workspace,
+                provider=request.provider,
+                model=request.model,
+            )
+        except RunnerManagerError as e:
+            logger.error(f"Failed to start runner for session {session_id}: {e}")
+            # 清理数据库记录
+            session_service = get_session_service()
+            await session_service.delete(session_id)
+            raise HTTPException(500, f"Failed to start session runner: {e!s}") from e
 
+        # === 阶段3: 更新 Session 信息 ===
         session_service = get_session_service()
         update_data = {}
         if request.description:
             update_data["description"] = request.description
         if workspace:
             update_data["workspace"] = workspace
-
         if update_data:
             await session_service.update(session_id, **update_data)
 
         logger.info(
-            f"Session created: {session_id}, workspace: {workspace}, provider: {request.provider}, model: {request.model}"
+            f"Session created with runner: {session_id}, workspace: {workspace}, "
+            f"provider: {request.provider}, model: {request.model}"
         )
 
         return ApiResponse.success(
@@ -119,7 +145,16 @@ async def get_sessions(
             ]
             total = len(sessions)
 
-        return ApiResponse.success({"sessions": sessions, "total": total, "skip": skip, "limit": limit})
+        # 附加上 Runner 状态
+        runner_manager = RunnerManager()
+        session_list = []
+        for session in sessions:
+            session_dict = session.model_dump()
+            runner_status = runner_manager.get_session_status(session.session_id)
+            session_dict["runner_status"] = runner_status["status"] if runner_status else "none"
+            session_list.append(session_dict)
+
+        return ApiResponse.success({"sessions": session_list, "total": total, "skip": skip, "limit": limit})
     except Exception as e:
         logger.error(f"Error getting sessions: {e}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
@@ -127,7 +162,7 @@ async def get_sessions(
 
 @router.get("/{session_id}/agents", response_model=ApiResponse)
 async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
-    """获取会话的Agent列表"""
+    """获取会话的Agent列表（从数据库读取）"""
     try:
         # 获取会话的Agent
         agent_service = get_agent_service()
@@ -135,28 +170,20 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
         if not agents:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        runtime = req.app.state.socketio_runtime
-        factory = AgentFactory()
+        # 获取 Runner 状态
+        runner_manager = RunnerManager()
+        runner_status = runner_manager.get_session_status(session_id)
+
         response_agents: list[dict] = []
         for db_agent in agents:
             response_agent = db_agent.model_dump()
-            agent = factory.get_agent(session_id, db_agent.name)
-            if not runtime.is_client_connected(db_agent.agent_id):
-                logger.info(f"Agent {db_agent.name} is not connected")
-                if agent is None:
-                    agent = await factory.restore_agent(db_agent.agent_id, session_id=session_id)
-                    await agent.connect()
-                    task = asyncio.create_task(agent.start())
-                    task.add_done_callback(lambda t, a=agent: a.stop())
-                else:
-                    await agent.connect()
-                response_agent["status"] = agent.status
-                logger.info(f"Agent {db_agent.name} restored")
-            elif agent is not None:
-                response_agent["status"] = agent.status
+            # 从 Runner 状态中获取 agent 的运行状态
+            if runner_status:
+                response_agent["status"] = runner_status["status"]
             else:
-                response_agent["status"] = "idle"
+                response_agent["status"] = "disconnected"
             response_agents.append(response_agent)
+
         return ApiResponse.success(response_agents)
     except Exception as e:
         import traceback
@@ -200,9 +227,14 @@ async def delete_sessions(request: dict) -> ApiResponse:
         if not isinstance(session_ids, list):
             raise HTTPException(status_code=400, detail="session_ids must be a list")
 
+        runner_manager = RunnerManager()
         session_service = get_session_service()
 
-        # 批量删除会话
+        # 先停止所有 Runner 进程
+        for session_id in session_ids:
+            await runner_manager.stop_session(session_id)
+
+        # 再从数据库删除
         deleted_count = await session_service.delete_batch(session_ids)
 
         logger.info(f"Batch delete sessions: {session_ids}, deleted: {deleted_count}")
@@ -245,7 +277,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest) -> ApiR
 
 @router.delete("/{session_id}", response_model=ApiResponse)
 async def delete_session(session_id: str) -> ApiResponse:
-    """删除单个会话"""
+    """删除单个会话（先停止 Runner，再删除数据库记录）"""
     try:
         session_service = get_session_service()
         session = await session_service.get(session_id)
@@ -253,7 +285,11 @@ async def delete_session(session_id: str) -> ApiResponse:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # 删除会话（级联删除关联的turns、messages、agents等）
+        # 先停止 Runner 进程
+        runner_manager = RunnerManager()
+        await runner_manager.stop_session(session_id)
+
+        # 再从数据库删除
         success = await session_service.delete(session_id)
 
         if not success:
@@ -267,7 +303,6 @@ async def delete_session(session_id: str) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error deleting session: {e}")
         import traceback
-
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
@@ -316,7 +351,7 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
             "config_name": agent_config.name,
             "config_content": config_content,
             "created_at": agent_config.created_at.isoformat() if agent_config.created_at else None,
-            "raw_config_content": agent_config.config_content,  # 保留原始内容用于调试
+            "raw_config_content": agent_config.config_content,
         }
 
         return ApiResponse.success(config_data, msg="Agent config retrieved successfully")
@@ -326,30 +361,27 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error getting agent config: {e}")
         import traceback
-
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
 @router.get("/{session_id}/stats", response_model=ApiResponse)
 async def get_session_stats(session_id: str) -> ApiResponse:
-    """获取会话的统计信息
-
-    包括：
-    - 消息总数
-    - 按消息类型分组的统计
-    - 工具调用错误数量
-    """
+    """获取会话的统计信息"""
     try:
-        # 验证会话是否存在
         session_service = get_session_service()
         session = await session_service.get(session_id)
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # 获取消息统计
         message_service = get_message_service()
         stats = await message_service.get_message_stats_by_session(session_id)
+
+        # 附加工 Runner 信息
+        runner_manager = RunnerManager()
+        runner_status = runner_manager.get_session_status(session_id)
+        if runner_status:
+            stats["runner"] = runner_status
 
         return ApiResponse.success(stats, msg="Session stats retrieved successfully")
 
@@ -358,6 +390,5 @@ async def get_session_stats(session_id: str) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error getting session stats: {e}")
         import traceback
-
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e

@@ -4,12 +4,12 @@ from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from loguru import logger
 
 from app.api import api_router
 from app.core.socketio_runtime import SocketIOServerConfig, SocketIOServerRuntime
 from app.utils.supabase_utils import get_supbase
 
-logger = logging.getLogger(__name__)
 WHITE_LIST = {
     "/api/user/login",
     "/docs",
@@ -42,11 +42,12 @@ app = FastAPI(dependencies=[Depends(verify_token)], title="Simple Backend")
 
 @app.on_event("startup")
 async def setup() -> None:
+    """应用启动时初始化"""
     logger.info("Starting up")
     global supabase
     app.state.supabase = supabase
 
-    # Start Broca SocketIO server alongside FastAPI (optional)
+    # === 1. 启动 SocketIO Server ===
     enabled = os.getenv("BROCA_SOCKETIO_ENABLED", "true").lower() == "true"
     host = os.getenv("BROCA_SOCKETIO_HOST", "0.0.0.0")
     port = int(os.getenv("BROCA_SOCKETIO_PORT", "6868"))
@@ -57,17 +58,55 @@ async def setup() -> None:
     )
     await app.state.socketio_runtime.start()
 
+    # === 2. 初始化 Runner Manager 并恢复活跃 Session ===
+    try:
+        from broca.session_runner import RunnerManager
+
+        runner_manager = RunnerManager()
+        app.state.runner_manager = runner_manager
+
+        # 启动心跳监控
+        await runner_manager.start_heartbeat_monitor()
+
+        # 恢复数据库中所有 active 状态的 Session
+        restored = await runner_manager.restore_active_sessions()
+        logger.info(f"Restored {restored} active session runners")
+
+    except Exception as e:
+        logger.error(f"Failed to initialize RunnerManager: {e}")
+
 
 @app.on_event("shutdown")
 async def shutdown() -> None:
+    """应用关闭时清理"""
+    logger.info("Shutting down")
+
+    # === 1. 关闭 SocketIO Server ===
     runtime = getattr(app.state, "socketio_runtime", None)
     if runtime:
         await runtime.stop()
 
+    # === 2. 关闭所有 Runner 进程 ===
+    try:
+        runner_manager = getattr(app.state, "runner_manager", None)
+        if runner_manager:
+            stopped = await runner_manager.shutdown_all()
+            logger.info(f"Stopped {stopped} session runners")
+    except Exception as e:
+        logger.error(f"Failed to shutdown runners: {e}")
+
 
 @app.get("/api/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now().isoformat()}
+    """健康检查"""
+    runner_manager = getattr(app.state, "runner_manager", None)
+    runner_stats = runner_manager.get_stats() if runner_manager else {"total_runners": 0}
+
+    return {
+        "status": "healthy",
+        "timestamp": datetime.now().isoformat(),
+        "runners": runner_stats,
+    }
 
 
 app.include_router(api_router, prefix="/api")

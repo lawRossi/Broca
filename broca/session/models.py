@@ -12,7 +12,8 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict
-from sqlalchemy import JSON, Column, Integer
+from sqlalchemy import JSON, Column, Integer, String
+from sqlalchemy import ForeignKey as SA_ForeignKey
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -126,6 +127,18 @@ class Session(SQLModel, table=True):
     description: Optional[str] = Field(default=None, description="会话描述")
     workspace: Optional[str] = Field(default=None, description="工作空间路径")
 
+    # Runner 关联（独立进程模式）
+    runner_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String, SA_ForeignKey("session_runner.runner_id", ondelete="SET NULL"), nullable=True),
+        description="关联的 Runner ID",
+    )
+    runner_status: Optional[str] = Field(
+        default="none",
+        sa_column=Column(String, server_default="none", nullable=False),
+        description="Runner 进程状态：none/starting/alive/error",
+    )
+
     # 元数据
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
@@ -144,6 +157,46 @@ class Session(SQLModel, table=True):
         back_populates="session", cascade_delete="all"
     )
     tasks: List["Task"] = Relationship(back_populates="session", cascade_delete="all")
+
+
+# ============================================================================
+# Session Runner 相关模型
+# ============================================================================
+
+
+class SessionRunner(SQLModel, table=True):
+    """
+    Runner 进程记录模型
+
+    存储 Session Runner 子进程的持久化信息，用于 Web 重启后恢复。
+    """
+
+    __tablename__ = "session_runner"
+
+    runner_id: str = Field(primary_key=True, description="Runner 唯一标识符")
+    session_id: str = Field(
+        foreign_key="session.session_id",
+        sa_column_kwargs={"unique": True},
+        ondelete="CASCADE",
+        description="关联的 Session ID",
+    )
+    pid: Optional[int] = Field(default=None, description="进程 ID")
+    status: str = Field(default="starting", description="进程状态：starting/alive/error/dead")
+    ipc_address: Optional[str] = Field(default=None, description="IPC 地址")
+    started_at: Optional[datetime] = Field(default=None, description="启动时间")
+    last_heartbeat: Optional[datetime] = Field(default=None, description="最后心跳时间")
+    restart_count: int = Field(
+        default=0,
+        sa_column=Column(Integer, server_default="0", nullable=False),
+        description="重启次数",
+    )
+    resource_info: Optional[Dict[str, Any]] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+        description="资源使用信息（JSON）",
+    )
+    error_message: Optional[str] = Field(default=None, description="错误信息")
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
 
 def generate_message_id() -> str:
