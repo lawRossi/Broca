@@ -750,8 +750,6 @@ class ExecutionEngine:
         """
         self.abort_event.clear()
         self.turn_id = None
-        self.agent_id = None
-        self.session_id = None
 
     async def _truncate_last_assistant_message_with_tool_calls(self):
         """
