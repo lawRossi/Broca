@@ -365,13 +365,15 @@ async def async_main(args: argparse.Namespace, ipc_client: IPCClient) -> None:
             args.session_id,
         )
 
-        # === 3. 连接 Agent 到 SocketIO Server ===
-        for agent in _agents:
-            try:
-                await agent.connect()
-                logger.info("Agent %s connected to SocketIO", agent.agent_id)
-            except Exception as e:
-                logger.error("Agent %s connect failed: %s", agent.agent_id, e)
+        # === 3. 并行连接 Agent 到 SocketIO Server ===
+        connect_results = await asyncio.gather(*[
+            agent.connect() for agent in _agents
+        ], return_exceptions=True)
+        for i, result in enumerate(connect_results):
+            if isinstance(result, Exception):
+                logger.error("Agent %s connect failed: %s", _agents[i].agent_id, result)
+            else:
+                logger.info("Agent %s connected to SocketIO", _agents[i].agent_id)
 
         # === 4. 启动 Agent 消息循环 ===
         agent_tasks = []

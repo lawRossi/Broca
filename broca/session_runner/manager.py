@@ -71,10 +71,10 @@ class RunnerManager:
             # 日志目录
             self._log_dir = Path.home() / ".broca/logs/runners"
             # 恢复管理器
-            self._recovery_manager = SessionRecoveryManager()
-            self._recovery_manager.set_restart_handler(self._auto_restart_session)
+            # self._recovery_manager = SessionRecoveryManager()
+            # self._recovery_manager.set_restart_handler(self._auto_restart_session)
             # 注册崩溃事件处理
-            self.on("session_crashed", self._handle_session_crashed)
+            # self.on("session_crashed", self._handle_session_crashed)
             logger.info(
                 "RunnerManager initialized (max_runners=%d, script=%s)",
                 self._max_concurrent_runners,
@@ -94,14 +94,6 @@ class RunnerManager:
 
     # ==================== 进程生命周期管理 ====================
 
-    @staticmethod
-    def _extract_first(result):
-        """兼容不同 SQLModel 版本，从 exec 结果中提取第一条记录"""
-        try:
-            return result.first()
-        except (AttributeError, TypeError):
-            return result.scalars().first()
-
     async def _save_runner_to_db(self, runner_info: RunnerProcessInfo) -> None:
         """将 Runner 信息持久化到数据库"""
         try:
@@ -116,7 +108,7 @@ class RunnerManager:
                     SessionRunner.session_id == runner_info.session_id
                 )
                 result = await session.exec(stmt)
-                existing = self._extract_first(result)
+                existing = result.first()
 
                 if existing:
                     # 更新
@@ -162,13 +154,46 @@ class RunnerManager:
                     SessionRunner.session_id == session_id
                 )
                 result = await session.exec(stmt)
-                db_runner = self._extract_first(result)
+                db_runner = result.first()
                 if db_runner:
                     await session.delete(db_runner)
 
                 await session.commit()
         except Exception as e:
             logger.warning("Failed to remove runner from DB: %s", e)
+
+    async def _get_runner_from_db(self, session_id: str) -> Optional[RunnerProcessInfo]:
+        """从数据库获取 Runner 记录"""
+        try:
+            from sqlmodel import select
+
+            from broca.session.database import db_manager
+            from broca.session.models import SessionRunner
+
+            async with db_manager.get_session() as session:
+                stmt = select(SessionRunner).where(
+                    SessionRunner.session_id == session_id
+                )
+                result = await session.exec(stmt)
+                db_runner = result.first()
+                if db_runner:
+                    return RunnerProcessInfo(
+                        session_id=db_runner.session_id,
+                        process=None,
+                        pid=db_runner.pid,
+                        status=db_runner.status,
+                        started_at=db_runner.started_at,
+                        ipc_address=db_runner.ipc_address,
+                        ipc_family=db_runner.ipc_family,
+                        last_heartbeat=db_runner.last_heartbeat,
+                        restart_count=db_runner.restart_count,
+                        resource_usage=db_runner.resource_info,
+                        error_message=db_runner.error_message,
+                    )
+                return None
+        except Exception as e:
+            logger.warning("Failed to get runner from DB: %s", e)
+            return None
 
     async def start_session(
         self,
@@ -261,13 +286,16 @@ class RunnerManager:
             self._runners[session_id] = runner_info
             self._ipc_servers[session_id] = ipc_server
 
-            # 等待 Runner 连接（带超时）
+            # 等待 Runner 连接（带超时）— 在线程池中执行以避免阻塞事件循环
             try:
-                ipc_server.accept(timeout=10.0)
+                loop = asyncio.get_event_loop()
+                await loop.run_in_executor(None, ipc_server.accept, 15.0)
                 logger.info("Runner for session %s connected via IPC", session_id)
 
-                # 等待 READY 事件
-                ready_msg = ipc_server.receive_message(timeout=10.0)
+                # 等待 READY 事件（同样在线程池中执行）
+                ready_msg = await loop.run_in_executor(
+                    None, ipc_server.receive_message, 15.0
+                )
                 if ready_msg and ready_msg.type == IPCMessageType.EVT_READY:
                     runner_info.status = RunnerStatus.ALIVE
                     runner_info.last_heartbeat = datetime.now(timezone.utc)
@@ -365,39 +393,6 @@ class RunnerManager:
                     logger.debug("Cleaned up IPC socket: %s", socket_path)
             except Exception as e:
                 logger.warning("Failed to clean IPC socket %s: %s", socket_path, e)
-
-    async def _get_runner_from_db(self, session_id: str) -> Optional[RunnerProcessInfo]:
-        """从数据库获取 Runner 记录"""
-        try:
-            from sqlmodel import select
-
-            from broca.session.database import db_manager
-            from broca.session.models import SessionRunner
-
-            async with db_manager.get_session() as session:
-                stmt = select(SessionRunner).where(
-                    SessionRunner.session_id == session_id
-                )
-                result = await session.exec(stmt)
-                db_runner = self._extract_first(result)
-                if db_runner:
-                    return RunnerProcessInfo(
-                        session_id=db_runner.session_id,
-                        process=None,
-                        pid=db_runner.pid,
-                        status=db_runner.status,
-                        started_at=db_runner.started_at,
-                        ipc_address=db_runner.ipc_address,
-                        ipc_family=db_runner.ipc_family,
-                        last_heartbeat=db_runner.last_heartbeat,
-                        restart_count=db_runner.restart_count,
-                        resource_usage=db_runner.resource_info,
-                        error_message=db_runner.error_message,
-                    )
-                return None
-        except Exception as e:
-            logger.warning("Failed to get runner from DB: %s", e)
-            return None
 
     async def stop_session(self, session_id: str, timeout: float = 5.0) -> bool:
         """

@@ -1,3 +1,4 @@
+import asyncio
 import os
 import platform
 from pathlib import Path
@@ -104,10 +105,11 @@ class AgentFactory:
         session_manager = SessionManager()
         await session_manager.load_session(session_id)
         db_agents = await session_manager.get_agents()
-        agents = []
-        for db_agent in db_agents:
-            agent = await self.restore_agent(db_agent["agent_id"], session_manager)
-            agents.append(agent)
+        # 并行恢复所有 Agent，大幅减少启动时间
+        agents = await asyncio.gather(*[
+            self.restore_agent(db_agent["agent_id"], session_manager)
+            for db_agent in db_agents
+        ])
         return agents
 
     async def restore_agent(
