@@ -15,7 +15,10 @@ class ReadFile(Tool):
 
     @property
     def description(self) -> str:
-        return "Read the contents of a file at the given path."
+        return (
+            "Read the contents of a file at the given path. "
+            "Supports reading specific line ranges with optional line numbers."
+        )
 
     @property
     def parameters(self) -> dict:
@@ -31,6 +34,19 @@ class ReadFile(Tool):
                     "description": "The encoding to use",
                     "default": "utf-8",
                 },
+                "start_line": {
+                    "type": "integer",
+                    "description": "The starting line number (1-indexed, inclusive) to read from. If not specified, reads from the beginning of the file.",
+                },
+                "end_line": {
+                    "type": "integer",
+                    "description": "The ending line number (1-indexed, inclusive) to read until. If not specified, reads to the end of the file.",
+                },
+                "show_line_number": {
+                    "type": "boolean",
+                    "description": "Whether to prefix each line with its line number (e.g., '1: '). Defaults to false.",
+                    "default": False,
+                },
             },
             "required": ["path"],
         }
@@ -40,6 +56,10 @@ class ReadFile(Tool):
             path = parameters["path"]
             file_path = Path(path).expanduser()
             encoding = parameters.get("encoding", "utf-8")
+            start_line = parameters.get("start_line")
+            end_line = parameters.get("end_line")
+            show_line_number = parameters.get("show_line_number", False)
+
             if not file_path.exists():
                 return ToolResult(
                     status=ToolStatus.ERROR, content=f"Error: File not found: {path}"
@@ -50,7 +70,75 @@ class ReadFile(Tool):
                 )
 
             content = file_path.read_text(encoding=encoding)
-            return ToolResult(status=ToolStatus.SUCCESS, content=content)
+
+            # If no line range specified, return full content (with optional line numbers)
+            if start_line is None and end_line is None:
+                if show_line_number:
+                    lines = content.splitlines()
+                    numbered_lines = [
+                        f"{i + 1}: {line}" for i, line in enumerate(lines)
+                    ]
+                    return ToolResult(
+                        status=ToolStatus.SUCCESS,
+                        content="\n".join(numbered_lines),
+                    )
+                return ToolResult(status=ToolStatus.SUCCESS, content=content)
+
+            lines = content.splitlines()
+            total_lines = len(lines)
+
+            # Validate and normalize line numbers
+            if start_line is not None:
+                if start_line < 1:
+                    return ToolResult(
+                        status=ToolStatus.ERROR,
+                        content=f"Error: start_line must be >= 1, got {start_line}",
+                    )
+                if start_line > total_lines:
+                    return ToolResult(
+                        status=ToolStatus.ERROR,
+                        content=f"Error: start_line ({start_line}) exceeds total lines ({total_lines}) in file",
+                    )
+
+            if end_line is not None:
+                if end_line < 1:
+                    return ToolResult(
+                        status=ToolStatus.ERROR,
+                        content=f"Error: end_line must be >= 1, got {end_line}",
+                    )
+                if end_line > total_lines:
+                    return ToolResult(
+                        status=ToolStatus.ERROR,
+                        content=f"Error: end_line ({end_line}) exceeds total lines ({total_lines}) in file",
+                    )
+
+            # Default to full range if only one bound is set
+            start_idx = (start_line - 1) if start_line is not None else 0
+            end_idx = end_line if end_line is not None else total_lines
+
+            # Ensure start <= end
+            if start_idx >= end_idx:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content=f"Error: start_line ({start_line}) must be less than or equal to end_line ({end_line})",
+                )
+
+            selected_lines = lines[start_idx:end_idx]
+
+            if show_line_number:
+                # Offset by start_line so line numbers match the original file
+                numbered_lines = [
+                    f"{start_idx + i + 1}: {line}"
+                    for i, line in enumerate(selected_lines)
+                ]
+                return ToolResult(
+                    status=ToolStatus.SUCCESS,
+                    content="\n".join(numbered_lines),
+                )
+
+            return ToolResult(
+                status=ToolStatus.SUCCESS, content="\n".join(selected_lines)
+            )
         except PermissionError:
             return ToolResult(
                 status=ToolStatus.ERROR, content=f"Error: Permission denied: {path}"
@@ -280,7 +368,7 @@ IGNORE_PATTERNS = [
     ".pnpm",
     ".mypy_cache",
     ".pytest_cache",
-    ".ruff_cache"
+    ".ruff_cache",
 ]
 
 
