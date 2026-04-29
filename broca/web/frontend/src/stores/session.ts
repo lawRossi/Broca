@@ -16,7 +16,6 @@ export const useSessionStore = defineStore('session', () => {
   const currentPage = ref(1)
   const pageSize = ref(20)
   const searchKeyword = ref('')
-  const statusFilter = ref('')
   const selectedSessions = ref<string[]>([])
 
   // Dialog states
@@ -53,7 +52,7 @@ export const useSessionStore = defineStore('session', () => {
   })
 
   // Actions
-  const fetchSessions = async (params?: { skip?: number; limit?: number; status?: string; keyword?: string }) => {
+  const fetchSessions = async (params?: { skip?: number; limit?: number; keyword?: string }) => {
     if (!isLoggedIn.value) {
       return
     }
@@ -64,7 +63,6 @@ export const useSessionStore = defineStore('session', () => {
       const response = await sessionApi.getSessions({
         skip: params?.skip ?? (currentPage.value - 1) * pageSize.value,
         limit: params?.limit ?? pageSize.value,
-        status: params?.status ?? (statusFilter.value || undefined),
         keyword: params?.keyword ?? (searchKeyword.value || undefined),
       })
 
@@ -83,6 +81,8 @@ export const useSessionStore = defineStore('session', () => {
     if (!isLoggedIn.value) {
       throw new Error('用户未登录')
     }
+
+    creating.value = true
 
     try {
       const response = await sessionApi.createSession({
@@ -103,6 +103,8 @@ export const useSessionStore = defineStore('session', () => {
       console.error('创建会话失败:', error)
       ElMessage.error('创建会话失败: ' + (error.message || '未知错误'))
       throw error
+    } finally {
+      creating.value = false
     }
   }
 
@@ -243,11 +245,6 @@ export const useSessionStore = defineStore('session', () => {
   // Setters
   const setSearchKeyword = (keyword: string) => {
     searchKeyword.value = keyword
-    currentPage.value = 1
-  }
-
-  const setStatusFilter = (status: string) => {
-    statusFilter.value = status
     currentPage.value = 1
   }
 
@@ -396,7 +393,6 @@ export const useSessionStore = defineStore('session', () => {
     currentPage,
     pageSize,
     searchKeyword,
-    statusFilter,
     selectedSessions,
     createDialogVisible,
     creating,
@@ -424,7 +420,6 @@ export const useSessionStore = defineStore('session', () => {
     deselectAll,
     clearSelection,
     setSearchKeyword,
-    setStatusFilter,
     setCurrentPage,
     setPageSize,
     setCreateDialogVisible,

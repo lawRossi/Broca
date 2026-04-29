@@ -3,7 +3,7 @@ import { ref, computed, reactive } from 'vue'
 import { useRoute } from 'vue-router'
 import { useUserStore, useAgentStore, useSocketStore } from '@/stores'
 import { type Message } from '@/api/brocaSocket'
-import { sessionApi } from '@/api/session'
+import { sessionApi, type RunnerInfo } from '@/api/session'
 
 export const useChatStore = defineStore('chat', () => {
   const route = useRoute()
@@ -22,6 +22,58 @@ export const useChatStore = defineStore('chat', () => {
   const historySkip = ref(0)
   const historyTotal = ref(0)
   const messagesContainer = ref<HTMLElement>()
+
+  // Runner 状态
+  const runnerInfo = ref<RunnerInfo | null>(null)
+  const runnerLoading = ref(false)
+  const restartingRunner = ref(false)
+  let runnerPollTimer: ReturnType<typeof setInterval> | null = null
+
+  const runnerAlive = computed(() => {
+    return runnerInfo.value?.status === 'alive'
+  })
+
+  const fetchRunnerStatus = async () => {
+    if (!sessionId.value) return
+    try {
+      runnerLoading.value = true
+      const data = await sessionApi.getRunnerStatus(sessionId.value)
+      runnerInfo.value = data
+    } catch (error) {
+      console.error('获取Runner状态失败:', error)
+    } finally {
+      runnerLoading.value = false
+    }
+  }
+
+  const restartRunner = async () => {
+    if (!sessionId.value) return
+    try {
+      restartingRunner.value = true
+      const { ElMessage } = await import('element-plus')
+      await sessionApi.restartRunner(sessionId.value)
+      ElMessage.success('进程重启成功')
+      // 延迟刷新状态
+      setTimeout(fetchRunnerStatus, 3000)
+    } catch (error: any) {
+      const { ElMessage } = await import('element-plus')
+      ElMessage.error('重启失败: ' + (error.message || '未知错误'))
+    } finally {
+      restartingRunner.value = false
+    }
+  }
+
+  const startRunnerPolling = () => {
+    stopRunnerPolling()
+    runnerPollTimer = setInterval(fetchRunnerStatus, 10000)
+  }
+
+  const stopRunnerPolling = () => {
+    if (runnerPollTimer) {
+      clearInterval(runnerPollTimer)
+      runnerPollTimer = null
+    }
+  }
 
   const showLeftSidebar = ref(false)
   const showRightSidebar = ref(false)
@@ -612,6 +664,9 @@ export const useChatStore = defineStore('chat', () => {
     messageStates.value.clear()
     pendingChunks.value.clear()
     agentStore.agents = []
+    // 清理 Runner 状态
+    stopRunnerPolling()
+    runnerInfo.value = null
   }
 
   const autoConnectAndSubscribe = async () => {
@@ -636,6 +691,9 @@ export const useChatStore = defineStore('chat', () => {
       await doConnect()
       await doSubscribe()
       await loadHistory(urlSessionId.value)
+      // 获取 Runner 状态并启动轮询
+      await fetchRunnerStatus()
+      startRunnerPolling()
     } catch (error: any) {
       console.error('自动连接失败:', error)
       sessionId.value = ''
@@ -706,5 +764,12 @@ export const useChatStore = defineStore('chat', () => {
     parseMention,
     autoConnectAndSubscribe,
     cleanupSession,
+    // Runner 状态
+    runnerInfo,
+    runnerLoading,
+    restartingRunner,
+    runnerAlive,
+    fetchRunnerStatus,
+    restartRunner,
   }
 })

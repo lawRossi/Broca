@@ -24,7 +24,6 @@ const total = computed(() => sessionStore.total)
 const currentPage = computed(() => sessionStore.currentPage)
 const pageSize = computed(() => sessionStore.pageSize)
 const searchKeyword = computed(() => sessionStore.searchKeyword)
-const statusFilter = computed(() => sessionStore.statusFilter)
 const selectedSessions = computed(() => sessionStore.selectedSessions)
 const createDialogVisible = computed(() => sessionStore.createDialogVisible)
 const creating = computed(() => sessionStore.creating)
@@ -43,11 +42,6 @@ const isLoggedIn = computed(() => userStore.isLoggedIn)
 // 搜索
 const handleSearch = (keyword: string) => {
   sessionStore.setSearchKeyword(keyword)
-}
-
-// 状态筛选
-const handleStatusFilterChange = (status: string) => {
-  sessionStore.setStatusFilter(status)
 }
 
 // 分页
@@ -147,7 +141,7 @@ const fetchJobCounts = async () => {
 
 // 监听筛选条件变化
 watch(
-  [statusFilter, searchKeyword],
+  searchKeyword,
   () => {
     sessionStore.fetchSessions()
   },
@@ -205,10 +199,8 @@ onMounted(async () => {
       <div class="bg-white rounded-lg shadow-sm border p-4 mb-6">
         <SessionSearchFilter
           :search-keyword="searchKeyword"
-          :status-filter="statusFilter"
           :is-logged-in="isLoggedIn"
           @update:search-keyword="handleSearch"
-          @update:status-filter="handleStatusFilterChange"
           @create="showCreateDialog"
         />
       </div>

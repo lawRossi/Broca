@@ -88,44 +88,37 @@ const stopStatsPolling = () => {
   }
 }
 
-// Runner 状态
-const runnerInfo = ref<RunnerInfo | null>(null)
-const runnerLoading = ref(false)
-const restarting = ref(false)
+// Runner 状态（从 chatStore 获取）
+const runnerInfo = computed(() => chatStore.runnerInfo)
+const runnerLoading = computed(() => chatStore.runnerLoading)
+const restarting = computed(() => chatStore.restartingRunner)
 
-// 获取 Runner 状态
-const fetchRunnerStatus = async () => {
-  if (!chatStore.sessionId) return
-  try {
-    runnerLoading.value = true
-    const data = await sessionApi.getRunnerStatus(chatStore.sessionId)
-    runnerInfo.value = data
-  } catch (error) {
-    console.error('Failed to fetch runner status:', error)
-  } finally {
-    runnerLoading.value = false
-  }
+// 刷新 Runner 状态
+const fetchRunnerStatus = () => {
+  chatStore.fetchRunnerStatus()
 }
 
-// 监听sessionId变化，重新获取统计数据
+// 重启 Runner
+const handleRestartRunner = () => {
+  chatStore.restartRunner()
+}
+
+// 监听 sessionId 变化，重新获取统计数据
 watch(
   () => chatStore.sessionId,
   (newSessionId, oldSessionId) => {
     if (newSessionId && newSessionId !== oldSessionId) {
       fetchStats()
       fetchJobAndTaskStats()
-      fetchRunnerStatus()
     }
   },
   { immediate: true }
 )
 
 onMounted(() => {
-  // 页面加载时获取统计数据
   if (chatStore.sessionId) {
     fetchStats()
     fetchJobAndTaskStats()
-    fetchRunnerStatus()
     startStatsPolling()
   }
 })
@@ -134,16 +127,30 @@ onUnmounted(() => {
   stopStatsPolling()
 })
 
+// 格式化运行时长
+const formatUptime = (seconds: number | undefined): string => {
+  if (!seconds || seconds <= 0) return '-'
+  const h = Math.floor(seconds / 3600)
+  const m = Math.floor((seconds % 3600) / 60)
+  if (h > 0) return `${h}小时${m}分钟`
+  return `${m}分钟`
+}
+
+// 格式化内存
+const formatMemory = (mb: number | undefined): string => {
+  if (!mb) return '-'
+  if (mb > 1024) return `${(mb / 1024).toFixed(1)}GB`
+  return `${Math.round(mb)}MB`
+}
+
 // 从API统计数据中提取各类型消息数
 const userMessagesFromApi = computed(() => {
   if (!stats.value?.messages_by_type) return 0
-  // 查找user_message类型
   return stats.value.messages_by_type['MessageType.USER_MESSAGE'] || stats.value.messages_by_type['USER_MESSAGE'] || 0
 })
 
 const assistantMessagesFromApi = computed(() => {
   if (!stats.value?.messages_by_type) return 0
-  // 查找agent_response类型
   return (
     stats.value.messages_by_type['MessageType.AGENT_RESPONSE'] || stats.value.messages_by_type['AGENT_RESPONSE'] || 0
   )
@@ -151,7 +158,6 @@ const assistantMessagesFromApi = computed(() => {
 
 const systemMessagesFromApi = computed(() => {
   if (!stats.value?.messages_by_type) return 0
-  // 查找系统相关类型：system_message, agent_system_message等
   let count = 0
   const typeMap = stats.value.messages_by_type
   count += typeMap['MessageType.SYSTEM_MESSAGE'] || typeMap['SYSTEM_MESSAGE'] || 0
@@ -170,21 +176,16 @@ const systemMessagesFromApi = computed(() => {
 
 const toolCallsFromApi = computed(() => {
   if (!stats.value?.messages_by_type) return 0
-  // 查找tool_call类型
   return stats.value.messages_by_type['MessageType.TOOL_CALL'] || stats.value.messages_by_type['TOOL_CALL'] || 0
 })
 
-// 从API获取的工具调用错误数量
 const toolCallErrorsFromApi = computed(() => {
   return stats.value?.tool_call_errors || 0
 })
 
-// 消息总数（使用API数据）
 const totalMessagesFromApi = computed(() => {
   return stats.value?.total_messages || 0
 })
-
-// ==================== Runner 状态面板 ====================
 
 // Runner 状态显示配置
 const runnerStatusConfig: Record<string, { type: string; label: string }> = {
@@ -197,47 +198,6 @@ const runnerStatusConfig: Record<string, { type: string; label: string }> = {
 
 const getRunnerConfig = (status: string | undefined) => {
   return runnerStatusConfig[status || 'none'] || runnerStatusConfig.none
-}
-
-// 重启 Runner
-const handleRestartRunner = async () => {
-  if (!chatStore.sessionId) return
-  try {
-    restarting.value = true
-    const { ElMessage, ElMessageBox } = await import('element-plus')
-    await ElMessageBox.confirm('该会话的后台进程将重启，是否继续？', '重启确认', {
-      confirmButtonText: '重启',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-    await sessionApi.restartRunner(chatStore.sessionId)
-    ElMessage.success('进程已重启')
-    // 延迟刷新状态
-    setTimeout(fetchRunnerStatus, 3000)
-  } catch (error: any) {
-    if (error !== 'cancel') {
-      const { ElMessage } = await import('element-plus')
-      ElMessage.error('重启失败: ' + (error.message || '未知错误'))
-    }
-  } finally {
-    restarting.value = false
-  }
-}
-
-// 格式化运行时长
-const formatUptime = (seconds: number | undefined): string => {
-  if (!seconds || seconds <= 0) return '-'
-  const h = Math.floor(seconds / 3600)
-  const m = Math.floor((seconds % 3600) / 60)
-  if (h > 0) return `${h}小时${m}分钟`
-  return `${m}分钟`
-}
-
-// 格式化内存
-const formatMemory = (mb: number | undefined): string => {
-  if (!mb) return '-'
-  if (mb > 1024) return `${(mb / 1024).toFixed(1)}GB`
-  return `${Math.round(mb)}MB`
 }
 </script>
 
@@ -347,6 +307,11 @@ const formatMemory = (mb: number | undefined): string => {
         <div v-if="runnerInfo?.status === 'error'" class="pt-2">
           <el-button type="danger" size="small" :loading="restarting" @click="handleRestartRunner">
             重启进程
+          </el-button>
+        </div>
+        <div v-else-if="runnerInfo && runnerInfo.status !== 'alive'" class="pt-2">
+          <el-button type="warning" size="small" :loading="restarting" @click="handleRestartRunner">
+            启动进程
           </el-button>
         </div>
       </div>

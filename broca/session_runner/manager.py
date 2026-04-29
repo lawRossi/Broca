@@ -145,26 +145,11 @@ class RunnerManager:
                     )
                     session.add(db_runner)
 
-                # 同时更新 Session 表的 runner_status
-                from broca.session.models import Session as SessionModel
-
-                stmt2 = select(SessionModel).where(
-                    SessionModel.session_id == runner_info.session_id
-                )
-                result2 = await session.exec(stmt2)
-                db_session = self._extract_first(result2)
-                if db_session:
-                    from broca.session.models import SessionStatus
-
-                    db_session.runner_status = runner_info.status.value
-                    if runner_info.status == RunnerStatus.ALIVE:
-                        db_session.status = SessionStatus.ACTIVE
-                    session.add(db_session)
-
                 await session.commit()
         except Exception as e:
             logger.warning("Failed to save runner to DB: %s", e)
 
+    
     async def _remove_runner_from_db(self, session_id: str) -> None:
         """从数据库删除 Runner 记录"""
         try:
@@ -182,21 +167,10 @@ class RunnerManager:
                 if db_runner:
                     await session.delete(db_runner)
 
-                # 同时重置 Session 表的 runner_status
-                from broca.session.models import Session as SessionModel
-
-                stmt2 = select(SessionModel).where(
-                    SessionModel.session_id == session_id
-                )
-                result2 = await session.exec(stmt2)
-                db_session = self._extract_first(result2)
-                if db_session:
-                    db_session.runner_status = "none"
-                    session.add(db_session)
-
                 await session.commit()
         except Exception as e:
             logger.warning("Failed to remove runner from DB: %s", e)
+
 
     async def start_session(
         self,
@@ -340,7 +314,94 @@ class RunnerManager:
             await self._cleanup_runner(session_id)
             raise RunnerManagerError(f"Failed to start runner: {e}") from e
 
-    async def stop_session(self, session_id: str, timeout: float = 10.0) -> bool:
+    async def _find_runner_process_by_pid(self, pid: int) -> bool:
+        """检查指定 PID 的进程是否还存在"""
+        try:
+            import psutil
+
+            return psutil.pid_exists(pid)
+        except ImportError:
+            # 没有 psutil 时用 os.kill 方式检查
+            try:
+                os.kill(pid, 0)
+                return True
+            except (OSError, PermissionError):
+                return False
+
+    async def _force_kill_process_by_pid(self, pid: int) -> bool:
+        """根据 PID 强制杀死进程"""
+        try:
+            if sys.platform == "win32":
+                import ctypes
+
+                handle = ctypes.windll.kernel32.OpenProcess(1, False, pid)
+                ctypes.windll.kernel32.TerminateProcess(handle, 1)
+                ctypes.windll.kernel32.CloseHandle(handle)
+            else:
+                os.kill(pid, signal.SIGKILL)
+            logger.info("Force killed process by pid=%d", pid)
+            return True
+        except ProcessLookupError:
+            logger.debug("Process pid=%d already dead", pid)
+            return True
+        except Exception as e:
+            logger.warning("Failed to force kill process pid=%d: %s", pid, e)
+            return False
+
+    async def _cleanup_ipc_resources(self, session_id: str) -> None:
+        """清理 IPC 相关资源（socket 文件等）"""
+        # 关闭 IPC 服务端（如果有）
+        ipc_server = self._ipc_servers.pop(session_id, None)
+        if ipc_server:
+            try:
+                ipc_server.close()
+            except Exception:
+                pass
+
+        # 清理 Unix socket 文件
+        if sys.platform != "win32":
+            socket_path = f"/tmp/broca_runner_{session_id}.sock"
+            try:
+                if os.path.exists(socket_path):
+                    os.unlink(socket_path)
+                    logger.debug("Cleaned up IPC socket: %s", socket_path)
+            except Exception as e:
+                logger.warning("Failed to clean IPC socket %s: %s", socket_path, e)
+
+    async def _get_runner_from_db(self, session_id: str) -> Optional[RunnerProcessInfo]:
+        """从数据库获取 Runner 记录"""
+        try:
+            from sqlmodel import select
+
+            from broca.session.database import db_manager
+            from broca.session.models import SessionRunner
+
+            async with db_manager.get_session() as session:
+                stmt = select(SessionRunner).where(
+                    SessionRunner.session_id == session_id
+                )
+                result = await session.exec(stmt)
+                db_runner = self._extract_first(result)
+                if db_runner:
+                    return RunnerProcessInfo(
+                        session_id=db_runner.session_id,
+                        process=None,
+                        pid=db_runner.pid,
+                        status=db_runner.status,
+                        started_at=db_runner.started_at,
+                        ipc_address=db_runner.ipc_address,
+                        ipc_family=db_runner.ipc_family,
+                        last_heartbeat=db_runner.last_heartbeat,
+                        restart_count=db_runner.restart_count,
+                        resource_usage=db_runner.resource_info,
+                        error_message=db_runner.error_message,
+                    )
+                return None
+        except Exception as e:
+            logger.warning("Failed to get runner from DB: %s", e)
+            return None
+
+    async def stop_session(self, session_id: str, timeout: float = 5.0) -> bool:
         """
         优雅停止 Session Runner 进程
 
@@ -353,8 +414,37 @@ class RunnerManager:
         """
         runner_info = self._runners.get(session_id)
         if not runner_info:
-            logger.warning("Session %s not found, cannot stop", session_id)
-            return False
+            # 内存中无记录，尝试从数据库恢复进程信息并进行清理
+            logger.warning(
+                "Session %s not found in memory, trying DB recovery...", session_id
+            )
+            db_runner = await self._get_runner_from_db(session_id)
+            if db_runner and db_runner.pid:
+                pid = db_runner.pid
+                logger.info(
+                    "Found stale runner for session %s in DB (pid=%d), cleaning up...",
+                    session_id,
+                    pid,
+                )
+                # 检查进程是否还在运行
+                if await self._find_runner_process_by_pid(pid):
+                    await self._force_kill_process_by_pid(pid)
+                # 清理 IPC 资源
+                await self._cleanup_ipc_resources(session_id)
+                # 从数据库删除记录
+                await self._remove_runner_from_db(session_id)
+                logger.info(
+                    "Session %s stale runner cleaned up (pid=%d)", session_id, pid
+                )
+                return True
+            else:
+                # DB 也没记录，至少清理一下残留的 IPC 资源
+                await self._cleanup_ipc_resources(session_id)
+                logger.info(
+                    "Session %s has no runner records, cleaned IPC resources",
+                    session_id,
+                )
+                return False
 
         logger.info(
             "Stopping runner for session %s (pid=%d)", session_id, runner_info.pid
@@ -385,7 +475,9 @@ class RunnerManager:
                             "IPC connection lost during shutdown of %s", session_id
                         )
                 except IPCConnectionError:
-                    logger.warning("Failed to send shutdown via IPC for %s", session_id)
+                    logger.warning(
+                        "Failed to send shutdown via IPC for %s", session_id
+                    )
 
             # 等待进程退出
             try:
@@ -431,34 +523,57 @@ class RunnerManager:
         # 关闭 IPC 服务端
         ipc_server = self._ipc_servers.pop(session_id, None)
         if ipc_server:
-            ipc_server.close()
+            try:
+                ipc_server.close()
+            except Exception:
+                pass
 
-        # 更新状态并移除
+        # 清理进程记录
         runner_info = self._runners.pop(session_id, None)
         if runner_info:
             runner_info.status = RunnerStatus.DEAD
 
-    async def restart_session(self, session_id: str) -> RunnerProcessInfo:
+        # 清理 IPC socket 文件
+        await self._cleanup_ipc_resources(session_id)
+
+
+    async def restart_session(
+        self,
+        session_id: str,
+        workspace: str = None,
+        provider: str = None,
+        model: str = None,
+    ) -> RunnerProcessInfo:
         """
         重启 Session Runner 进程
 
         Args:
             session_id: Session ID
+            workspace: 工作空间路径（未提供时尝试从旧信息恢复）
+            provider: LLM Provider（未提供时尝试从旧信息恢复）
+            model: LLM Model（未提供时尝试从旧信息恢复）
 
         Returns:
             新的 RunnerProcessInfo
         """
-        # 获取旧的 workspace/provider/model 信息
+        # 获取旧的 workspace/provider/model 信息（优先从内存，其次从 DB）
         old_info = self._runners.get(session_id)
-        workspace = None
-        provider = None
-        model = None
-        if old_info:
-            workspace = old_info.resource_usage.get("workspace")
-            provider = old_info.resource_usage.get("provider")
-            model = old_info.resource_usage.get("model")
+        if not old_info:
+            db_runner = await self._get_runner_from_db(session_id)
+            if db_runner:
+                resource_usage = db_runner.resource_usage or {}
+                workspace = resource_usage.get("workspace") or workspace
+                provider = resource_usage.get("provider") or provider
+                model = resource_usage.get("model") or model
+                logger.info(
+                    "Restored old config from DB for session %s", session_id
+                )
+        else:
+            workspace = old_info.resource_usage.get("workspace") or workspace
+            provider = old_info.resource_usage.get("provider") or provider
+            model = old_info.resource_usage.get("model") or model
 
-        # 停止旧的
+        # 停止旧的（兼容内存和 DB 两种场景）
         await self.stop_session(session_id)
 
         # 启动新的
@@ -699,41 +814,76 @@ class RunnerManager:
 
     async def restore_active_sessions(self) -> int:
         """
-        恢复数据库中所有 active 状态的 Session
-
-        在 Web 服务启动时调用。
+        启动时检查数据库中的 SessionRunner 记录：
+        - 如果进程实际还在运行，保持记录
+        - 如果进程已不存在（服务重启后进程消失），标记为 dead
 
         Returns:
-            恢复的 Session 数量
+            检查的总记录数
         """
         try:
-            from broca.session.service import get_session_service
+            from sqlmodel import select
 
-            session_service = get_session_service()
-            active_sessions = await session_service.get_batch(
-                filters={"status": "active"}
-            )
+            from broca.session.database import db_manager
+            from broca.session.models import SessionRunner
 
-            restored = 0
-            for session in active_sessions:
-                try:
-                    await self.start_session(
-                        session_id=session.session_id,
-                        workspace=session.workspace,
+            async with db_manager.get_session() as session:
+                # 查询所有 alive/starting 状态的 runner 记录
+                stmt = select(SessionRunner).where(
+                    SessionRunner.status.in_(["alive", "starting"])
+                )
+                result = await session.exec(stmt)
+                active_runners = result.scalars().all()
+
+            checked = 0
+            marked_dead = 0
+            still_alive = 0
+
+            for runner in active_runners:
+                checked += 1
+                if not runner.pid:
+                    # 没有 PID，直接标记为 dead
+                    runner.status = "dead"
+                    runner.error_message = "No PID recorded, marked dead on startup"
+                    async with db_manager.get_session() as db_sess:
+                        db_sess.add(runner)
+                        await db_sess.commit()
+                    marked_dead += 1
+                    logger.warning(
+                        "Session %s runner has no PID, marked dead",
+                        runner.session_id,
                     )
-                    restored += 1
-                    logger.info("Restored runner for session %s", session.session_id)
-                except RunnerManagerError as e:
-                    logger.error(
-                        "Failed to restore session %s: %s",
-                        session.session_id,
-                        e,
+                    continue
+
+                # 检查进程是否还在运行
+                if await self._find_runner_process_by_pid(runner.pid):
+                    still_alive += 1
+                    logger.info(
+                        "Session %s runner (pid=%d) is still running, keeping alive",
+                        runner.session_id,
+                        runner.pid,
+                    )
+                else:
+                    # 进程已不存在，标记为 dead
+                    runner.status = "dead"
+                    runner.error_message = "Process not found on startup, marked dead"
+                    async with db_manager.get_session() as db_sess:
+                        db_sess.add(runner)
+                        await db_sess.commit()
+                    marked_dead += 1
+                    logger.warning(
+                        "Session %s runner (pid=%d) process not found, marked dead",
+                        runner.session_id,
+                        runner.pid,
                     )
 
             logger.info(
-                "Restored %d/%d active sessions", restored, len(active_sessions)
+                "Restore check complete: %d checked, %d alive, %d marked dead",
+                checked,
+                still_alive,
+                marked_dead,
             )
-            return restored
+            return checked
 
         except Exception as e:
             logger.error("Failed to restore active sessions: %s", e)

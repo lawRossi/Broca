@@ -3,12 +3,11 @@ import type { Message, MessageType, MessageRole } from './types'
 
 export interface Session {
   session_id: string
-  status: string
   description?: string
   workspace?: string
   created_at: string
   finished_at?: string
-  runner_status?: string       // 新增：Runner 进程状态
+  runner_status?: string       // Runner 进程状态（由后端从 SessionRunner 表获取）
 }
 
 export interface Agent {
@@ -48,7 +47,6 @@ export interface SessionsResponse {
 export interface SessionQueryParams {
   skip?: number
   limit?: number
-  status?: string
   keyword?: string
 }
 
@@ -109,7 +107,6 @@ export const sessionApi = {
       params: {
         skip: params.skip ?? 0,
         limit: params.limit ?? 20,
-        status: params.status,
         keyword: params.keyword,
       },
     })

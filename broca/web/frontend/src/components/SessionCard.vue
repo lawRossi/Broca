@@ -38,32 +38,8 @@ const editDescription = ref('')
 const editing = ref(false)
 const descriptionInputRef = ref<HTMLInputElement | null>(null)
 
-// 状态类型映射（合并 session.status + runner_status）
+// 状态类型映射（仅使用 runner_status）
 const statusTypeMap: Record<string, string> = {
-  active: 'success',
-  completed: 'info',
-  paused: 'warning',
-  error: 'danger',
-}
-
-// 状态标签映射
-const statusLabelMap: Record<string, string> = {
-  active: '进行中',
-  completed: '已完成',
-  paused: '已暂停',
-  error: '错误',
-}
-
-// Runner 状态映射
-const runnerLabelMap: Record<string, string> = {
-  alive: '运行中',
-  starting: '启动中',
-  error: '进程异常',
-  dead: '已停止',
-  none: '无进程',
-}
-
-const runnerTypeMap: Record<string, string> = {
   alive: 'success',
   starting: 'warning',
   error: 'danger',
@@ -71,20 +47,25 @@ const runnerTypeMap: Record<string, string> = {
   none: 'info',
 }
 
-// 获取显示用的状态类型：优先使用 runner_status
+// 状态标签映射
+const statusLabelMap: Record<string, string> = {
+  alive: '运行中',
+  starting: '启动中',
+  error: '进程异常',
+  dead: '已停止',
+  none: '无进程',
+}
+
+// 获取显示用的状态类型
 const getDisplayStatusType = (session: Session) => {
-  if (session.runner_status && session.runner_status !== 'none') {
-    return runnerTypeMap[session.runner_status] || 'info'
-  }
-  return statusTypeMap[session.status] || 'info'
+  const status = session.runner_status || 'none'
+  return statusTypeMap[status] || 'info'
 }
 
 // 获取显示用的状态标签
 const getDisplayStatusLabel = (session: Session) => {
-  if (session.runner_status && session.runner_status !== 'none') {
-    return runnerLabelMap[session.runner_status] || session.runner_status
-  }
-  return statusLabelMap[session.status] || session.status
+  const status = session.runner_status || 'none'
+  return statusLabelMap[status] || status
 }
 
 // 截断ID显示
@@ -92,16 +73,6 @@ const truncateId = (id: string, length: number = 8) => {
   if (!id) return ''
   if (id.length <= length * 2 + 3) return id
   return `${id.slice(0, length)}...${id.slice(-length)}`
-}
-
-// 获取状态类型
-const getStatusType = (status: string) => {
-  return statusTypeMap[status] || 'info'
-}
-
-// 获取状态标签
-const getStatusLabel = (status: string) => {
-  return statusLabelMap[status] || status
 }
 
 // 复选框变化
@@ -305,7 +276,7 @@ const handleRestartRunner = async () => {
         </div>
       </div>
 
-      <!-- 状态标签（合并 session.status + runner_status） -->
+      <!-- 状态标签（使用 runner_status） -->
       <div class="ml-3 flex-shrink-0 flex items-center gap-1">
         <el-tag
           :type="getDisplayStatusType(session)"

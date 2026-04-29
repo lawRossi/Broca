@@ -26,6 +26,28 @@ from app.schemas.schemas import ApiResponse, CreateSessionRequest, UpdateSession
 router = APIRouter()
 
 
+async def _start_runner_background(
+    session_id: str,
+    workspace: str,
+    provider: str | None = None,
+    model: str | None = None,
+) -> None:
+    """后台启动 Runner 进程（失败仅记录日志，不影响会话记录）"""
+    try:
+        runner_manager = RunnerManager()
+        await runner_manager.start_session(
+            session_id=session_id,
+            workspace=workspace,
+            provider=provider,
+            model=model,
+        )
+        logger.info(f"Runner started for session {session_id}")
+    except RunnerManagerError as e:
+        logger.error(f"Failed to start runner for session {session_id} in background: {e}")
+    except Exception as e:
+        logger.error(f"Unexpected error starting runner for session {session_id}: {e}")
+
+
 @router.post("/sessions", response_model=ApiResponse)
 async def create_session(request: CreateSessionRequest) -> ApiResponse:
     """创建新会话，在独立进程中初始化 Agent"""
@@ -66,23 +88,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
         session_id = session_ids.pop()
 
-        # === 阶段2: 通过 RunnerManager 启动独立子进程 ===
-        runner_manager = RunnerManager()
-        try:
-            await runner_manager.start_session(
-                session_id=session_id,
-                workspace=workspace,
-                provider=request.provider,
-                model=request.model,
-            )
-        except RunnerManagerError as e:
-            logger.error(f"Failed to start runner for session {session_id}: {e}")
-            # 清理数据库记录
-            session_service = get_session_service()
-            await session_service.delete(session_id)
-            raise HTTPException(500, f"Failed to start session runner: {e!s}") from e
-
-        # === 阶段3: 更新 Session 信息 ===
+        # === 阶段2: 更新 Session 信息 ===
         session_service = get_session_service()
         update_data = {}
         if request.description:
@@ -92,8 +98,18 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
         if update_data:
             await session_service.update(session_id, **update_data)
 
+        # === 阶段3: 后台启动 Runner 进程（不阻塞响应，失败不清理数据库） ===
+        asyncio.create_task(
+            _start_runner_background(
+                session_id=session_id,
+                workspace=workspace,
+                provider=request.provider,
+                model=request.model,
+            )
+        )
+
         logger.info(
-            f"Session created with runner: {session_id}, workspace: {workspace}, "
+            f"Session created (runner starting in background): {session_id}, workspace: {workspace}, "
             f"provider: {request.provider}, model: {request.model}"
         )
 
@@ -119,19 +135,14 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
 @router.get("/sessions", response_model=ApiResponse)
 async def get_sessions(
-    skip: int = 0, limit: int = 20, status: str | None = None, keyword: str | None = None
+    skip: int = 0, limit: int = 20, keyword: str | None = None
 ) -> ApiResponse:
-    """获取会话列表，支持分页、状态筛选和关键词搜索"""
+    """获取会话列表，支持分页和关键词搜索"""
     try:
         session_service = get_session_service()
 
-        # 构建过滤条件
-        filters = {}
-        if status:
-            filters["status"] = status
-
         # 获取分页数据
-        sessions = await session_service.get_batch(filters=filters if filters else None, order_by="created_at desc")
+        sessions = await session_service.get_batch(order_by="created_at desc")
         total = len(sessions)
         sessions = sessions[skip : skip + limit]
 

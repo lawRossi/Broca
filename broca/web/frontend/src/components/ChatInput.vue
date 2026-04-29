@@ -182,6 +182,7 @@ const targetAgentDisplay = computed(() => {
 // 检查是否可以发送消息
 const canSendMessage = computed(() => {
   const text = chatStore.input.trim()
+  //if (!chatStore.runnerAlive) return false
 
   // 解析@mention
   const { cleanText } = chatStore.parseMention(text)
@@ -483,8 +484,8 @@ const handleSendMessage = async () => {
 
         <el-input
           v-model="chatStore.input"
-          placeholder="Type message... 使用 @ 指定agent"
-          :disabled="!chatStore.connected || isUploading"
+          :placeholder="chatStore.runnerAlive ? 'Type message... 使用 @ 指定agent' : '进程未运行，无法发送消息'"
+          :disabled="chatStore.runnerAlive || isUploading"
           size="default"
           clearable
           @keyup.enter="handleSendMessage"
@@ -516,7 +517,7 @@ const handleSendMessage = async () => {
       <!-- 文件上传按钮 -->
       <el-button
         type="default"
-        :disabled="!chatStore.connected || isUploading"
+        :disabled="!chatStore.runnerAlive || isUploading"
         size="default"
         class="!px-3"
         @click="triggerFileSelect"
@@ -527,7 +528,7 @@ const handleSendMessage = async () => {
 
       <el-button
         type="primary"
-        :disabled="!chatStore.connected || !canSendMessage || isUploading"
+        :disabled="!chatStore.runnerAlive || !canSendMessage || isUploading"
         size="default"
         @click="handleSendMessage"
       >

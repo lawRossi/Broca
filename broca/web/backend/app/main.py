@@ -1,4 +1,3 @@
-import logging
 import os
 from datetime import datetime
 
@@ -66,8 +65,8 @@ async def setup() -> None:
         await runner_manager.start_heartbeat_monitor()
 
         # 恢复数据库中所有 active 状态的 Session
-        # restored = await runner_manager.restore_active_sessions()
-        # logger.info(f"Restored {restored} active session runners")
+        checked = await runner_manager.restore_active_sessions()
+        logger.info(f"Startup session check complete: {checked} records verified")
 
     except Exception as e:
         logger.error(f"Failed to initialize RunnerManager: {e}")
@@ -84,13 +83,13 @@ async def shutdown() -> None:
         await runtime.stop()
 
     # === 2. 关闭所有 Runner 进程 ===
-    # try:
-    #     runner_manager = getattr(app.state, "runner_manager", None)
-    #     if runner_manager:
-    #         stopped = await runner_manager.shutdown_all()
-    #         logger.info(f"Stopped {stopped} session runners")
-    # except Exception as e:
-    #     logger.error(f"Failed to shutdown runners: {e}")
+    try:
+        runner_manager = getattr(app.state, "runner_manager", None)
+        if runner_manager:
+            stopped = await runner_manager.shutdown_all()
+            logger.info(f"Stopped {stopped} session runners")
+    except Exception as e:
+        logger.error(f"Failed to shutdown runners: {e}")
 
 
 @app.get("/api/health")

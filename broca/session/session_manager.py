@@ -400,7 +400,6 @@ class SessionManager:
 
             return {
                 "session_id": session.session_id,
-                "status": session.status.value,
                 "description": session.description,
                 "workspace": session.workspace,
                 "created_at": session.created_at.isoformat(),

@@ -25,7 +25,6 @@ from broca.session.models import (
     MessageType,
     ScheduledJob,
     Session,
-    SessionStatus,
     Task,
     TaskComment,
     TaskPriority,
@@ -213,7 +212,6 @@ class SessionService(BaseService[Session]):
         """创建新会话"""
         return await self.create(
             session_id=session_id,
-            status=SessionStatus.ACTIVE,
             description=description,
             workspace=workspace,
             created_at=datetime.utcnow(),
@@ -223,7 +221,6 @@ class SessionService(BaseService[Session]):
         """关闭会话"""
         return await self.update(
             session_id,
-            status=SessionStatus.INACTIVE,
             finished_at=datetime.utcnow(),
         )
 

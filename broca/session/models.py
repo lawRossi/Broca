@@ -77,13 +77,6 @@ class MessageType(str, Enum):
     PERMISSION_RESPONSE = "permission_response"
 
 
-class SessionStatus(str, Enum):
-    """会话状态枚举"""
-
-    ACTIVE = "active"
-    INACTIVE = "inactive"
-
-
 class Turn(SQLModel, table=True):
     """
     对话轮次模型
@@ -123,29 +116,8 @@ class Session(SQLModel, table=True):
     __tablename__ = "session"
 
     session_id: str = Field(index=True, primary_key=True, description="会话唯一标识符")
-    status: SessionStatus = Field(default=SessionStatus.ACTIVE, description="会话状态")
     description: Optional[str] = Field(default=None, description="会话描述")
     workspace: Optional[str] = Field(default=None, description="工作空间路径")
-
-    # Runner 关联（独立进程模式）
-    runner_id: Optional[str] = Field(
-        default=None,
-        sa_column=Column(
-            String,
-            SA_ForeignKey(
-                "session_runner.runner_id",
-                ondelete="SET NULL",
-                name="fk_session_runner_id",
-            ),
-            nullable=True,
-        ),
-        description="关联的 Runner ID",
-    )
-    runner_status: Optional[str] = Field(
-        default="none",
-        sa_column=Column(String, server_default="none", nullable=False),
-        description="Runner 进程状态：none/starting/alive/error",
-    )
 
     # 元数据
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
