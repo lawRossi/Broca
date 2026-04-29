@@ -193,6 +193,7 @@ class SessionRunner(SQLModel, table=True):
         default="starting", description="进程状态：starting/alive/error/dead"
     )
     ipc_address: Optional[str] = Field(default=None, description="IPC 地址")
+    ipc_family: Optional[str] = Field(default=None, description="IPC 协议族")
     started_at: Optional[datetime] = Field(default=None, description="启动时间")
     last_heartbeat: Optional[datetime] = Field(default=None, description="最后心跳时间")
     restart_count: int = Field(

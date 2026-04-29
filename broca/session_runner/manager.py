@@ -136,6 +136,7 @@ class RunnerManager:
                         pid=runner_info.pid,
                         status=runner_info.status.value,
                         ipc_address=runner_info.ipc_address,
+                        ipc_family=runner_info.ipc_family,
                         started_at=runner_info.started_at,
                         last_heartbeat=runner_info.last_heartbeat,
                         restart_count=runner_info.restart_count,
