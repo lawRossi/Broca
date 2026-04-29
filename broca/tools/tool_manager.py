@@ -5,6 +5,7 @@ from broca.tools.agent_interaction import AskUser, AssignTask
 from broca.tools.bash import ExecuteCode
 from broca.tools.cron import CronTool
 from broca.tools.filesystem import EditFile, ListDir, ReadFile, TreeDir, WriteFile
+from broca.tools.memory import MemoryTool
 from broca.tools.glob import GlobTool
 from broca.tools.grep import GrepTool
 from broca.tools.mcp import connect_mcp_servers
@@ -61,6 +62,7 @@ class ToolManager:
         self._add_tool(GrepTool())
         self._add_tool(TodoManagement())
         self._add_tool(TaskManagement())
+        self._add_tool(MemoryTool())
         self._add_tool(CronTool())
         load_skill = LoadSkill(SkillManager())
         self._add_tool(load_skill)
