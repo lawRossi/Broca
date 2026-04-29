@@ -14,9 +14,9 @@ from multiprocessing.connection import Client, Listener
 from typing import Any, Callable, Dict, Optional
 
 from broca.session_runner.models import (
-    IPCStatusCode,
     IPCMessage,
     IPCMessageType,
+    IPCStatusCode,
     get_ipc_address,
     get_ipc_family,
 )
@@ -26,11 +26,13 @@ logger = logging.getLogger(__name__)
 
 class IPCConnectionError(Exception):
     """IPC 连接异常"""
+
     pass
 
 
 class IPCTimeoutError(Exception):
     """IPC 超时异常"""
+
     pass
 
 
@@ -60,7 +62,9 @@ class IPCServer:
         try:
             logger.info(
                 "IPC server starting for session %s at %s (family=%s)",
-                self.session_id, self.address, self.family,
+                self.session_id,
+                self.address,
+                self.family,
             )
             self._listener = Listener(
                 address=self.address,
@@ -68,9 +72,7 @@ class IPCServer:
                 backlog=1,
             )
             self._running = True
-            logger.info(
-                "IPC server started for session %s", self.session_id
-            )
+            logger.info("IPC server started for session %s", self.session_id)
         except Exception as e:
             raise IPCConnectionError(
                 f"Failed to start IPC server for {self.session_id}: {e}"
@@ -90,7 +92,6 @@ class IPCServer:
             raise IPCConnectionError("IPC server not started")
 
         import select
-        import socket
 
         # 获取底层 socket 进行超时控制
         sock = self._listener._listener._socket
@@ -104,14 +105,10 @@ class IPCServer:
 
         try:
             self._connection = self._listener.accept()
-            logger.info(
-                "IPC connection accepted for session %s", self.session_id
-            )
+            logger.info("IPC connection accepted for session %s", self.session_id)
             return True
         except Exception as e:
-            raise IPCConnectionError(
-                f"Failed to accept IPC connection: {e}"
-            ) from e
+            raise IPCConnectionError(f"Failed to accept IPC connection: {e}") from e
 
     def send_message(self, msg: IPCMessage) -> None:
         """
@@ -128,9 +125,7 @@ class IPCServer:
             self._connection.send(data)
             logger.debug("IPC sent: %s -> %s", msg.type.value, self.session_id)
         except (BrokenPipeError, ConnectionError, EOFError) as e:
-            raise IPCConnectionError(
-                f"IPC send failed (connection broken): {e}"
-            ) from e
+            raise IPCConnectionError(f"IPC send failed (connection broken): {e}") from e
 
     def receive_message(self, timeout: float = 10.0) -> Optional[IPCMessage]:
         """
@@ -178,6 +173,7 @@ class IPCServer:
         # 清理 Unix Domain Socket 文件
         if self.family == "AF_UNIX":
             import os
+
             try:
                 if os.path.exists(self.address):
                     os.unlink(self.address)
@@ -201,12 +197,9 @@ class IPCClient:
         self._connection: Any = None
         self._connected = False
 
-    def connect(self, timeout: float = 30.0) -> bool:
+    def connect(self) -> bool:
         """
         连接到 Web 进程的 IPC 服务端
-
-        Args:
-            timeout: 连接超时时间（秒）
 
         Returns:
             是否连接成功
@@ -244,9 +237,7 @@ class IPCClient:
             self._connection.send(data)
             logger.debug("IPC sent: %s -> server", msg.type.value)
         except (BrokenPipeError, ConnectionError, EOFError) as e:
-            raise IPCConnectionError(
-                f"IPC send failed (connection broken): {e}"
-            ) from e
+            raise IPCConnectionError(f"IPC send failed (connection broken): {e}") from e
 
     def receive_message(self, timeout: float = 10.0) -> Optional[IPCMessage]:
         """
@@ -286,6 +277,7 @@ class IPCClient:
 
 
 # 消息创建辅助函数
+
 
 def create_ipc_message(
     msg_type: IPCMessageType,

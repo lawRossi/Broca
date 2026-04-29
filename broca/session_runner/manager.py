@@ -149,7 +149,6 @@ class RunnerManager:
         except Exception as e:
             logger.warning("Failed to save runner to DB: %s", e)
 
-    
     async def _remove_runner_from_db(self, session_id: str) -> None:
         """从数据库删除 Runner 记录"""
         try:
@@ -170,7 +169,6 @@ class RunnerManager:
                 await session.commit()
         except Exception as e:
             logger.warning("Failed to remove runner from DB: %s", e)
-
 
     async def start_session(
         self,
@@ -269,7 +267,7 @@ class RunnerManager:
                 logger.info("Runner for session %s connected via IPC", session_id)
 
                 # 等待 READY 事件
-                ready_msg = ipc_server.receive_message(timeout=30.0)
+                ready_msg = ipc_server.receive_message(timeout=10.0)
                 if ready_msg and ready_msg.type == IPCMessageType.EVT_READY:
                     runner_info.status = RunnerStatus.ALIVE
                     runner_info.last_heartbeat = datetime.now(timezone.utc)
@@ -475,9 +473,7 @@ class RunnerManager:
                             "IPC connection lost during shutdown of %s", session_id
                         )
                 except IPCConnectionError:
-                    logger.warning(
-                        "Failed to send shutdown via IPC for %s", session_id
-                    )
+                    logger.warning("Failed to send shutdown via IPC for %s", session_id)
 
             # 等待进程退出
             try:
@@ -536,7 +532,6 @@ class RunnerManager:
         # 清理 IPC socket 文件
         await self._cleanup_ipc_resources(session_id)
 
-
     async def restart_session(
         self,
         session_id: str,
@@ -565,9 +560,7 @@ class RunnerManager:
                 workspace = resource_usage.get("workspace") or workspace
                 provider = resource_usage.get("provider") or provider
                 model = resource_usage.get("model") or model
-                logger.info(
-                    "Restored old config from DB for session %s", session_id
-                )
+                logger.info("Restored old config from DB for session %s", session_id)
         else:
             workspace = old_info.resource_usage.get("workspace") or workspace
             provider = old_info.resource_usage.get("provider") or provider
@@ -833,7 +826,7 @@ class RunnerManager:
                     SessionRunner.status.in_(["alive", "starting"])
                 )
                 result = await session.exec(stmt)
-                active_runners = result.scalars().all()
+                active_runners = result.all()
 
             checked = 0
             marked_dead = 0

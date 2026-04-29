@@ -182,7 +182,7 @@ const targetAgentDisplay = computed(() => {
 // 检查是否可以发送消息
 const canSendMessage = computed(() => {
   const text = chatStore.input.trim()
-  //if (!chatStore.runnerAlive) return false
+  if (!chatStore.runnerAlive) return false
 
   // 解析@mention
   const { cleanText } = chatStore.parseMention(text)
@@ -485,7 +485,7 @@ const handleSendMessage = async () => {
         <el-input
           v-model="chatStore.input"
           :placeholder="chatStore.runnerAlive ? 'Type message... 使用 @ 指定agent' : '进程未运行，无法发送消息'"
-          :disabled="chatStore.runnerAlive || isUploading"
+          :disabled="!chatStore.runnerAlive || isUploading"
           size="default"
           clearable
           @keyup.enter="handleSendMessage"

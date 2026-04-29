@@ -464,7 +464,7 @@ def main() -> None:
     # 初始化 IPC 客户端
     ipc_client = IPCClient(args.session_id)
     try:
-        ipc_client.connect(timeout=30.0)
+        ipc_client.connect()
         logger.info("IPC client connected")
     except IPCConnectionError as e:
         logger.error("Failed to connect IPC: %s", e)
