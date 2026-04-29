@@ -53,7 +53,7 @@ const statusLabelMap: Record<string, string> = {
   starting: '启动中',
   error: '进程异常',
   dead: '已停止',
-  none: '无进程',
+  none: '未运行',
 }
 
 // 获取显示用的状态类型

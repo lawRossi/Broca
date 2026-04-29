@@ -193,7 +193,7 @@ const runnerStatusConfig: Record<string, { type: string; label: string }> = {
   starting: { type: 'warning', label: '启动中' },
   error: { type: 'danger', label: '进程异常' },
   dead: { type: 'info', label: '已停止' },
-  none: { type: 'info', label: '无进程' },
+  none: { type: 'info', label: '未运行' },
 }
 
 const getRunnerConfig = (status: string | undefined) => {

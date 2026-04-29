@@ -1,5 +1,4 @@
-"""
-Session API
+"""Session API
 
 提供 Session 的 CRUD 操作。创建 Session 时会通过 RunnerManager 启动独立子进程，
 不再在 Web 进程内直接运行 Agent。
@@ -99,7 +98,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             await session_service.update(session_id, **update_data)
 
         # === 阶段3: 后台启动 Runner 进程（不阻塞响应，失败不清理数据库） ===
-        asyncio.create_task(
+        start_runner_task = asyncio.create_task(
             _start_runner_background(
                 session_id=session_id,
                 workspace=workspace,
@@ -107,6 +106,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
                 model=request.model,
             )
         )
+        start_runner_task.add_done_callback(lambda task: logger.info(f"Runner started for session {session_id}"))
 
         logger.info(
             f"Session created (runner starting in background): {session_id}, workspace: {workspace}, "
@@ -128,15 +128,14 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
         raise
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         logger.error(f"Error creating session: {e}")
         raise HTTPException(500, f"Failed to create session: {e!s}") from e
 
 
 @router.get("/sessions", response_model=ApiResponse)
-async def get_sessions(
-    skip: int = 0, limit: int = 20, keyword: str | None = None
-) -> ApiResponse:
+async def get_sessions(skip: int = 0, limit: int = 20, keyword: str | None = None) -> ApiResponse:
     """获取会话列表，支持分页和关键词搜索"""
     try:
         session_service = get_session_service()
@@ -192,6 +191,7 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
         return ApiResponse.success(response_agents)
     except Exception as e:
         import traceback
+
         traceback.print_exc()
         logger.error(f"Error getting session agents: {e}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
@@ -308,6 +308,7 @@ async def delete_session(session_id: str) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error deleting session: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
@@ -366,6 +367,7 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error getting agent config: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
@@ -395,5 +397,6 @@ async def get_session_stats(session_id: str) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error getting session stats: {e}")
         import traceback
+
         logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e

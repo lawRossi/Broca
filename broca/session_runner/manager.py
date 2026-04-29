@@ -71,10 +71,10 @@ class RunnerManager:
             # 日志目录
             self._log_dir = Path.home() / ".broca/logs/runners"
             # 恢复管理器
-            # self._recovery_manager = SessionRecoveryManager()
-            # self._recovery_manager.set_restart_handler(self._auto_restart_session)
+            self._recovery_manager = SessionRecoveryManager()
+            self._recovery_manager.set_restart_handler(self._auto_restart_session)
             # 注册崩溃事件处理
-            # self.on("session_crashed", self._handle_session_crashed)
+            self.on("session_crashed", self._handle_session_crashed)
             logger.info(
                 "RunnerManager initialized (max_runners=%d, script=%s)",
                 self._max_concurrent_runners,
@@ -330,6 +330,9 @@ class RunnerManager:
 
             # 持久化到数据库
             await self._save_runner_to_db(runner_info)
+
+            # 启动 IPC 消息监听循环（接收 heartbeat 等）
+            asyncio.create_task(self._ipc_listener_loop(session_id))
 
             return runner_info
 
@@ -797,6 +800,33 @@ class RunnerManager:
             runner_info = self._runners.get(session_id)
             if runner_info:
                 await self._trigger_event("session_crashed", runner_info)
+
+    async def _ipc_listener_loop(self, session_id: str) -> None:
+        """
+        IPC 消息监听循环，持续接收 Runner 发来的消息（heartbeat 等）
+
+        Args:
+            session_id: Session ID
+        """
+        ipc_server = self._ipc_servers.get(session_id)
+        if not ipc_server:
+            logger.warning("IPC server not found for session %s", session_id)
+            return
+
+        loop = asyncio.get_event_loop()
+        while session_id in self._runners:
+            try:
+                msg = await loop.run_in_executor(None, ipc_server.receive_message, 5.0)
+                if msg:
+                    self._handle_runner_event(session_id, msg)
+            except IPCTimeoutError:
+                pass
+            except IPCConnectionError:
+                logger.warning("IPC connection lost for session %s", session_id)
+                break
+            except Exception as e:
+                logger.error("IPC listener error for %s: %s", session_id, e)
+                await asyncio.sleep(1)
 
     # ==================== 生命周期管理（Web 服务启停） ====================
 

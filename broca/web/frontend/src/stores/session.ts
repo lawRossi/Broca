@@ -77,7 +77,7 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  const createSession = async (params: CreateSessionParams) => {
+  const createSession = async (params: CreateSessionParams, autoCloseDialog = true) => {
     if (!isLoggedIn.value) {
       throw new Error('用户未登录')
     }
@@ -94,9 +94,11 @@ export const useSessionStore = defineStore('session', () => {
 
       ElMessage.success('会话创建成功')
 
-      // 重置表单和关闭对话框
+      // 重置表单（不自动关闭对话框，由调用方决定何时关闭）
       resetCreateForm()
-      createDialogVisible.value = false
+      if (autoCloseDialog) {
+        createDialogVisible.value = false
+      }
 
       return response
     } catch (error: any) {

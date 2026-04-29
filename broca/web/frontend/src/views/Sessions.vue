@@ -27,6 +27,8 @@ const searchKeyword = computed(() => sessionStore.searchKeyword)
 const selectedSessions = computed(() => sessionStore.selectedSessions)
 const createDialogVisible = computed(() => sessionStore.createDialogVisible)
 const creating = computed(() => sessionStore.creating)
+const navigatingToChat = ref(false)
+const navigateCountdown = ref(0)
 const deleteLoading = computed(() => sessionStore.deleteLoading)
 const createForm = computed(() => sessionStore.createForm)
 const workspaceAllSuggestions = computed(() => sessionStore.workspaceAllSuggestions)
@@ -67,7 +69,17 @@ const handleDeselect = (sessionId: string) => {
 const handleCreate = async () => {
   const response = await sessionStore.createSession(createForm.value)
   if (response?.session_id) {
-    router.push(`/chat/${response.session_id}`)
+    navigatingToChat.value = true
+    navigateCountdown.value = 5
+    
+    const countdown = setInterval(() => {
+      navigateCountdown.value--
+      if (navigateCountdown.value <= 0) {
+        clearInterval(countdown)
+        navigatingToChat.value = false
+        router.push(`/chat/${response.session_id}`)
+      }
+    }, 1000)
   }
 }
 
@@ -232,6 +244,8 @@ onMounted(async () => {
     :form-data="createForm"
     :workspace-suggestions="workspaceAllSuggestions"
     :creating="creating"
+    :navigating-to-chat="navigatingToChat"
+    :navigate-countdown="navigateCountdown"
     @update:visible="sessionStore.setCreateDialogVisible($event)"
     @update:form-data="sessionStore.setCreateForm($event)"
     @create="handleCreate"
