@@ -107,10 +107,7 @@ class ReadFile(Tool):
                         content=f"Error: end_line must be >= 1, got {end_line}",
                     )
                 if end_line > total_lines:
-                    return ToolResult(
-                        status=ToolStatus.ERROR,
-                        content=f"Error: end_line ({end_line}) exceeds total lines ({total_lines}) in file",
-                    )
+                    end_line = total_lines
 
             # Default to full range if only one bound is set
             start_idx = (start_line - 1) if start_line is not None else 0

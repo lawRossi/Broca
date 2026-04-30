@@ -25,7 +25,7 @@ DEFAULT_MEMORY_CHAR_LIMIT = 2200
 DEFAULT_USER_CHAR_LIMIT = 1375
 
 # 默认存储路径
-DEFAULT_MEMORY_DIR = Path.home() / ".broca" / "memories"
+DEFAULT_MEMORY_DIR = Path(".broca") / "memories"
 
 
 class MemoryStore:

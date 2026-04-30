@@ -12,7 +12,7 @@ from broca.skill_manager import SkillManager
 from broca.utils import scan_content_security
 
 # 记忆存储路径和分隔符（与 broca/tools/memory.py 保持一致）
-MEMORY_DIR = Path.home() / ".broca" / "memories"
+MEMORY_DIR = Path(".broca") / "memories"
 MEMORY_ENTRY_DELIMITER = "\n§\n"
 MEMORY_CHAR_LIMIT = 2200
 USER_CHAR_LIMIT = 1375

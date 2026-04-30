@@ -1,5 +1,7 @@
 import json
+import uuid
 from enum import Enum
+from pathlib import Path
 
 from broca.logging_config import get_logger
 
@@ -28,6 +30,8 @@ class ToolCallContext:
 
 
 class Tool:
+    TOOL_RESULT_CACHE_DIR = Path(".broca/tool_result_cache")
+
     def __init__(self, max_content_length: int = 20000):
         self.max_content_length = max_content_length
 
@@ -56,9 +60,18 @@ class Tool:
     def _post_process_result(self, result: ToolResult) -> ToolResult:
         if len(result.content) > self.max_content_length:
             content = result.content
+            if self.name != "read_file":
+                cache_file = self.TOOL_RESULT_CACHE_DIR / (uuid.uuid4().hex + ".txt")
+                with open(self.TOOL_RESULT_CACHE_DIR / "tool_result.txt", "w") as f:
+                    f.write(content)
             half_length = self.max_content_length // 2
             content = content[:half_length] + "..." + content[-half_length:]
-            content += "\n**Notice**: The output is too long and has been truncated in the middle."
+            content += (
+                "\n**Notice**: The output is too long and has been truncated in the middle."
+                f" The full output is saved to {cache_file}."
+                if self.name != "read_file"
+                else ""
+            )
             result.content = content
 
         return result
