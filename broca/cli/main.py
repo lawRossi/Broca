@@ -217,7 +217,7 @@ def run_all_services(
             print(f"Stopping {name}...")
             proc.terminate()
             try:
-                proc.wait(timeout=10)
+                proc.wait(timeout=15)
                 print(f"{name} stopped")
             except subprocess.TimeoutExpired:
                 print(f"{name} did not stop, forcing...")

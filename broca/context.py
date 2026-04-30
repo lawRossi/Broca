@@ -150,9 +150,7 @@ class Context:
         memory_block = Context._format_memory_block(
             "memory", memory_entries, MEMORY_CHAR_LIMIT
         )
-        user_block = Context._format_memory_block(
-            "user", user_entries, USER_CHAR_LIMIT
-        )
+        user_block = Context._format_memory_block("user", user_entries, USER_CHAR_LIMIT)
         return memory_block, user_block
 
     @staticmethod
@@ -202,9 +200,7 @@ class Context:
                     # 安全扫描：防止提示注入
                     scan_error = scan_content_security(text)
                     if scan_error:
-                        logger.warning(
-                            f"安全阻断：文件 {file} 被跳过，{scan_error}"
-                        )
+                        logger.warning(f"安全阻断：文件 {file} 被跳过，{scan_error}")
                         continue
                     boostrap_content += f"## Instrunction from {file}\n\n{text}\n\n"
 
@@ -240,7 +236,6 @@ class Context:
                 if message.is_truncated:
                     continue
 
-                # 获取content，现在content在data字段中
                 content = message.data.get("content")
                 if content is None:
                     continue

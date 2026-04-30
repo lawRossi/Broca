@@ -357,6 +357,8 @@ class Agent:
 
         while self.running:
             try:
+                if not self.is_connected():
+                    await self.connect()
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
                 if message.message_type == MessageType.USER_MESSAGE:
                     await self.run(message)

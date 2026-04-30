@@ -10,6 +10,7 @@ Memory Tool Module - 持久化记忆管理工具
 
 简化设计：无文件锁、无注入检测、始终反映最新状态。
 """
+
 import json
 from pathlib import Path
 
@@ -140,9 +141,7 @@ class MemoryStore:
         if len(matches) > 1:
             unique_texts = set(e for _, e in matches)
             if len(unique_texts) > 1:
-                previews = [
-                    e[:80] + ("..." if len(e) > 80 else "") for _, e in matches
-                ]
+                previews = [e[:80] + ("..." if len(e) > 80 else "") for _, e in matches]
                 return {
                     "success": False,
                     "error": f"多个条目匹配 '{old_text}'，请提供更精确的匹配文本。",
@@ -183,9 +182,7 @@ class MemoryStore:
         if len(matches) > 1:
             unique_texts = set(e for _, e in matches)
             if len(unique_texts) > 1:
-                previews = [
-                    e[:80] + ("..." if len(e) > 80 else "") for _, e in matches
-                ]
+                previews = [e[:80] + ("..." if len(e) > 80 else "") for _, e in matches]
                 return {
                     "success": False,
                     "error": f"多个条目匹配 '{old_text}'，请提供更精确的匹配文本。",
@@ -295,7 +292,7 @@ class MemoryTool(Tool):
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["add", "replace", "remove", "read"],
+                    "enum": ["add", "replace", "remove"],
                     "description": "the action to perform",
                 },
                 "target": {
@@ -356,8 +353,6 @@ class MemoryTool(Tool):
                         content="content is required for 'remove' action.",
                     )
                 result = store.remove(target, content)
-            elif action == "read":
-                result = store.read(target)
             else:
                 return ToolResult(
                     status=ToolStatus.ERROR,
