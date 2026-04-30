@@ -45,14 +45,6 @@ sub-agent: A helpful agent that can aid you with general tasks.
 {{bootstrap_content}}
 {%- endif -%}
 
-{% if session_memory -%}
-## Session Memory
-
-Some history messages have been truncated to save context space. You can find the full history in the following session memory:
-
-{{session_memory}}
-{%- endif %}
-
 {% if memory_content -%}
 ## Persistent Memory
 
@@ -63,4 +55,12 @@ Some history messages have been truncated to save context space. You can find th
 ## User Profile
 
 {{user_content}}
+{%- endif %}
+
+{% if session_memory -%}
+## Session Memory
+
+Some history messages have been truncated to save context space. You can find the full history in the following session memory:
+
+{{session_memory}}
 {%- endif %}

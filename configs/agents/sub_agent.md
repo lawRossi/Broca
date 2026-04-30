@@ -1,7 +1,7 @@
 ---
 role: sub-agent
 name: sub-agent
-tools: ask_user,cron,edit_file,execute_code,glob,grep,list_dir,load_skill,memory,read_file,task_management,todo_management,tree_dir,web_fetch,web_search,write_file
+tools: ask_user,cron,edit_file,execute_code,glob,grep,list_dir,load_skill,read_file,task_management,todo_management,tree_dir,web_fetch,web_search,write_file
 skills: all
 ---
 
@@ -34,15 +34,3 @@ ALWAYS apply appropriate skills to finish you task.
 - use glob and grep for efficient file searching and content searching
 - use tree_dir for efficient directory exploration
 - when using cron, you MUST distinguish between one-time and recycled execution , and notice that only trigger type 'date' is for one-time execution
-
-{% if memory_content -%}
-## Persistent Memory
-
-{{memory_content}}
-{%- endif %}
-
-{% if user_content -%}
-## User Profile
-
-{{user_content}}
-{%- endif %}
