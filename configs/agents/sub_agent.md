@@ -34,3 +34,15 @@ ALWAYS apply appropriate skills to finish you task.
 - use glob and grep for efficient file searching and content searching
 - use tree_dir for efficient directory exploration
 - when using cron, you MUST distinguish between one-time and recycled execution , and notice that only trigger type 'date' is for one-time execution
+
+{% if memory_content -%}
+## Persistent Memory
+
+{{memory_content}}
+{%- endif %}
+
+{% if user_content -%}
+## User Profile
+
+{{user_content}}
+{%- endif %}

@@ -11,6 +11,12 @@ from broca.session import MessageType, SessionManager
 from broca.skill_manager import SkillManager
 from broca.utils import scan_content_security
 
+# 记忆存储路径和分隔符（与 broca/tools/memory.py 保持一致）
+MEMORY_DIR = Path.home() / ".broca" / "memories"
+MEMORY_ENTRY_DELIMITER = "\n§\n"
+MEMORY_CHAR_LIMIT = 2200
+USER_CHAR_LIMIT = 1375
+
 logger = get_logger(__name__)
 
 
@@ -103,6 +109,11 @@ class Context:
         session_memory = self._load_session_memory()
         if session_memory:
             kwargs["session_memory"] = session_memory
+        memory_content, user_content = self._load_memory_store()
+        if memory_content:
+            kwargs["memory_content"] = memory_content
+        if user_content:
+            kwargs["user_content"] = user_content
         return Template(prompt_template).render(**kwargs).strip()
 
     def _format_skills(self, skills: dict[str, dict]) -> str:
@@ -120,6 +131,66 @@ class Context:
         if session_memeory_path.exists():
             return session_memeory_path.read_text(encoding="utf-8").strip()
         return ""
+
+    def _load_memory_store(self) -> tuple[str, str]:
+        """
+        加载持久化记忆存储（MEMORY.md 和 USER.md），
+        格式化为 system prompt 可注入的文本块。
+
+        Returns:
+            (memory_block, user_block): 格式化后的记忆文本块，无内容时返回空字符串
+        """
+        mem_dir = MEMORY_DIR
+        if not mem_dir.exists():
+            return "", ""
+
+        memory_entries = Context._read_memory_file(mem_dir / "MEMORY.md")
+        user_entries = Context._read_memory_file(mem_dir / "USER.md")
+
+        memory_block = Context._format_memory_block(
+            "memory", memory_entries, MEMORY_CHAR_LIMIT
+        )
+        user_block = Context._format_memory_block(
+            "user", user_entries, USER_CHAR_LIMIT
+        )
+        return memory_block, user_block
+
+    @staticmethod
+    def _read_memory_file(path: Path) -> list[str]:
+        """读取记忆文件并拆分为条目列表"""
+        if not path.exists():
+            return []
+        try:
+            raw = path.read_text(encoding="utf-8")
+        except (OSError, IOError):
+            return []
+        if not raw.strip():
+            return []
+        entries = [e.strip() for e in raw.split(MEMORY_ENTRY_DELIMITER)]
+        return [e for e in entries if e]
+
+    @staticmethod
+    def _format_memory_block(target: str, entries: list[str], char_limit: int) -> str:
+        """将记忆条目格式化为 system prompt 文本块"""
+        if not entries:
+            return ""
+
+        content = MEMORY_ENTRY_DELIMITER.join(entries)
+        current = len(content)
+        pct = min(100, int((current / char_limit) * 100)) if char_limit > 0 else 0
+
+        if target == "user":
+            header = (
+                f"USER PROFILE (who the user is) "
+                f"[{pct}% — {current:,}/{char_limit:,} chars]"
+            )
+        else:
+            header = (
+                f"MEMORY (your personal notes) "
+                f"[{pct}% — {current:,}/{char_limit:,} chars]"
+            )
+        separator = "═" * 46
+        return f"{separator}\n{header}\n{separator}\n{content}"
 
     def _load_bootstrap_files(self, workspace: str) -> str | None:
         boostrap_content = ""

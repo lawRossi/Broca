@@ -52,3 +52,15 @@ Some history messages have been truncated to save context space. You can find th
 
 {{session_memory}}
 {%- endif %}
+
+{% if memory_content -%}
+## Persistent Memory
+
+{{memory_content}}
+{%- endif %}
+
+{% if user_content -%}
+## User Profile
+
+{{user_content}}
+{%- endif %}
