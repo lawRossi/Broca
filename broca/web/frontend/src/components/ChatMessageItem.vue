@@ -655,11 +655,11 @@ const handleUndoToHere = async () => {
           </el-button>
 
           <!-- 参数内容：特殊处理todo_management和ask_user -->
-          <div v-if="shouldExpandParameters(message)" class="mt-1 p-2 bg-purple-100 rounded border border-purple-200">
-            <div v-if="isAskUser(message)" class="text-xs font-semibold text-purple-700 mb-1">问题:</div>
+          <div v-if="shouldExpandParameters(message)" class="params-container mt-1 p-2 rounded border">
+            <div v-if="isAskUser(message)" class="params-label text-xs font-semibold mb-1">问题:</div>
 
             <!-- 特殊处理todo_management的todos列表 -->
-            <div v-if="isTodoManagement(message) && getTodos(message)" class="bg-white p-2 rounded border">
+            <div v-if="isTodoManagement(message) && getTodos(message)" class="params-inner p-2 rounded border">
               <div v-for="(todo, index) in getTodos(message)" :key="index" class="mb-2 last:mb-0">
                 <div class="flex items-start gap-2">
                   <span class="mt-1 text-sm">
@@ -668,7 +668,7 @@ const handleUndoToHere = async () => {
                     <span v-else>⬜️</span>
                   </span>
                   <div class="flex-1">
-                    <div class="text-sm font-medium text-gray-800">
+                    <div class="params-todo-name text-sm font-medium">
                       {{ todo.name }}
                     </div>
                   </div>
@@ -677,30 +677,28 @@ const handleUndoToHere = async () => {
             </div>
 
             <!-- 特殊处理ask_user的参数 -->
-            <div v-else-if="isAskUser(message) && getAskUserParams(message)" class="bg-white p-3 rounded border">
-              <div class="text-sm font-medium text-gray-800 mb-2">
+            <div v-else-if="isAskUser(message) && getAskUserParams(message)" class="params-inner p-3 rounded border">
+              <div class="params-question text-sm font-medium mb-2">
                 {{ getAskUserParams(message).question }}
               </div>
               <div v-if="getAskUserParams(message).options?.length" class="space-y-1 ml-2">
                 <div
                   v-for="(opt, optIndex) in getAskUserParams(message).options"
                   :key="optIndex"
-                  class="text-xs text-gray-600 flex items-start gap-1"
+                  class="params-option text-xs flex items-start gap-1"
                 >
-                  <span class="text-purple-600">•</span>
+                  <span class="params-bullet">•</span>
                   <span>{{ opt.name }}</span>
-                  <span v-if="opt.description" class="text-gray-400">- {{ opt.description }}</span>
+                  <span v-if="opt.description" class="params-desc">- {{ opt.description }}</span>
                 </div>
               </div>
             </div>
 
             <!-- 特殊处理edit_file的diff展示 -->
-            <div v-else-if="isEditFile(message) && getEditFileParams(message)" class="bg-white rounded border overflow-hidden">
+            <div v-else-if="isEditFile(message) && getEditFileParams(message)" class="diff-wrapper rounded border overflow-hidden">
               <!-- 文件路径信息 -->
-              <div class="bg-purple-50 px-3 py-2 border-b border-purple-200">
-                <div class="flex items-center gap-2">
-                  <span class="text-purple-600 font-medium text-sm">📝 {{ getEditFileParams(message).path }}</span>
-                </div>
+              <div class="diff-header px-3 py-2 border-b flex items-center gap-2">
+                <span class="diff-path font-medium text-sm">📝 {{ getEditFileParams(message).path }}</span>
               </div>
               
               <!-- Diff 展示 -->
@@ -708,41 +706,32 @@ const handleUndoToHere = async () => {
                 <div 
                   v-for="(line, index) in computeDiff(getEditFileParams(message).oldText, getEditFileParams(message).newText)" 
                   :key="index"
-                  class="diff-line flex"
+                  class="diff-line"
                   :class="{
                     'diff-added': line.type === 'added',
                     'diff-removed': line.type === 'removed',
                     'diff-unchanged': line.type === 'unchanged'
                   }"
                 >
-                  <!-- Diff 标记 -->
-                  <div class="diff-marker w-6 text-center flex-shrink-0">
-                    <span v-if="line.type === 'added'" class="text-green-600 font-bold">+</span>
-                    <span v-else-if="line.type === 'removed'" class="text-red-600 font-bold">-</span>
-                    <span v-else class="text-gray-300"> </span>
-                  </div>
-                  <!-- 行内容 -->
-                  <div class="diff-content flex-1 px-2 py-0.5 whitespace-pre nowrap min-w-0">
-                    {{ line.content }}
-                  </div>
+                  {{ line.content }}
                 </div>
               </div>
               
               <!-- 如果没有old_text和new_text，显示格式化的JSON -->
               <div v-else class="p-3">
-                <pre class="json-display text-xs font-mono text-purple-800 whitespace-pre-wrap break-words overflow-auto max-h-96" v-html="getFormattedJson(message.data.arguments || message.data.parameters)"></pre>
+                <pre class="json-display text-xs font-mono whitespace-pre-wrap break-words overflow-auto max-h-96" v-html="getFormattedJson(message.data.arguments || message.data.parameters)"></pre>
               </div>
             </div>
 
             <!--file_write-->
-            <pre v-else-if="isWriteFile(message)" class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96">
+            <pre v-else-if="isWriteFile(message)" class="file-content text-xs font-mono whitespace-pre-wrap break-words p-2 rounded border overflow-auto max-h-96">
               {{ getWriteFileContent(message) }}
             </pre>
 
             <!-- 其他工具显示参数 -->
             <pre
               v-else
-              class="json-display text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96"
+              class="json-display text-xs font-mono text-purple-800 dark:text-purple-300 whitespace-pre-wrap break-words bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700 overflow-auto max-h-96"
               v-html="getFormattedJson(message.data.arguments || message.data.parameters)"
             ></pre
             >
@@ -762,12 +751,12 @@ const handleUndoToHere = async () => {
           </el-button>
 
           <!-- ask_user结果默认展开 -->
-          <div v-if="shouldExpandResult(message)" class="mt-1 p-2 bg-green-50 rounded border border-green-200">
-            <div v-if="isAskUser(message)" class="text-xs font-semibold text-green-700 mb-1">回答:</div>
+          <div v-if="shouldExpandResult(message)" class="result-container mt-1 p-2 rounded border">
+            <div v-if="isAskUser(message)" class="result-label text-xs font-semibold mb-1">回答:</div>
 
             <!-- 特殊处理ask_user结果 -->
-            <div v-if="isAskUser(message) && getAskUserResult(message)" class="bg-white p-2 rounded border">
-              <div class="text-sm text-gray-800">
+            <div v-if="isAskUser(message) && getAskUserResult(message)" class="result-inner p-2 rounded border">
+              <div class="result-text text-sm">
                 {{ getAskUserResult(message) }}
               </div>
             </div>
@@ -775,7 +764,7 @@ const handleUndoToHere = async () => {
             <!-- 其他工具显示结果 -->
             <pre
               v-else
-              class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96"
+              class="result-pre text-xs font-mono whitespace-pre-wrap break-words p-2 rounded border overflow-auto max-h-96"
             >{{message.data.result}}</pre>
           </div>
         </div>
@@ -1021,29 +1010,78 @@ const handleUndoToHere = async () => {
   text-decoration: line-through;
 }
 
-/* Diff 展示样式 */
+/* ========== Diff 展示样式 ========== */
+
+/* --- 外层容器 --- */
+.diff-wrapper {
+  background-color: #fff;
+  border-color: #e2e8f0;
+}
+
+.diff-header {
+  background-color: #faf5ff;
+  border-color: #e9d5ff;
+}
+
+.diff-path {
+  color: #9333ea;
+}
+
+/* --- Diff 容器（可滚动） --- */
 .diff-container {
   max-height: 400px;
   overflow-y: auto;
   overflow-x: auto;
 }
 
+/* --- Diff 行 --- */
 .diff-line {
+  display: block;
+  white-space: pre;
+  padding: 1px 0 1px 28px;
+  position: relative;
   min-height: 22px;
   line-height: 22px;
-  flex-wrap: nowrap;
+  width: fit-content;
+  min-width: 100%;
+}
+
+.diff-line::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 24px;
+  text-align: center;
+  font-weight: 700;
+  line-height: 22px;
 }
 
 .diff-added {
   background-color: #e6ffec;
 }
 
+.diff-added::before {
+  content: '+';
+  color: #16a34a;
+}
+
 .diff-removed {
   background-color: #ffebe9;
 }
 
+.diff-removed::before {
+  content: '-';
+  color: #dc2626;
+}
+
 .diff-unchanged {
   background-color: transparent;
+}
+
+.diff-unchanged::before {
+  content: '';
 }
 
 .diff-line:hover {
@@ -1058,15 +1096,210 @@ const handleUndoToHere = async () => {
   background-color: #f8d7da;
 }
 
-/* JSON 显示样式 */
+/* ========== 工具参数展示 ========== */
+.params-container {
+  background-color: #faf5ff;
+  border-color: #e9d5ff;
+}
+
+.params-label {
+  color: #9333ea;
+}
+
+.params-inner {
+  background-color: #fff;
+  border-color: #e2e8f0;
+}
+
+.params-todo-name {
+  color: #1e293b;
+}
+
+.params-question {
+  color: #1e293b;
+}
+
+.params-option {
+  color: #475569;
+}
+
+.params-bullet {
+  color: #9333ea;
+}
+
+.params-desc {
+  color: #94a3b8;
+}
+
+/* ========== 结果展示 ========== */
+.result-container {
+  background-color: #f0fdf4;
+  border-color: #bbf7d0;
+}
+
+.result-label {
+  color: #15803d;
+}
+
+.result-inner {
+  background-color: #fff;
+  border-color: #e2e8f0;
+}
+
+.result-text {
+  color: #1e293b;
+}
+
+.result-pre {
+  background-color: #fff;
+  color: #15803d;
+  border-color: #e2e8f0;
+}
+
+/* ========== 文件内容展示（write_file） ========== */
+.file-content {
+  background-color: #fff;
+  color: #6b21a8;
+  border-color: #e2e8f0;
+}
+
+/* ========== JSON 显示样式 ========== */
 .json-display {
   font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
   line-height: 1.4;
 }
 
-.json-display .string { color: #690; }
-.json-display .number { color: #905; }
-.json-display .boolean { color: #07a; }
+.json-display .string { color: #4c7a1f; }
+.json-display .number { color: #7b1fa2; }
+.json-display .boolean { color: #0369a1; }
 .json-display .null { color: #999; }
-.json-display .key { color: #07a; }
+.json-display .key { color: #0369a1; }
+
+/* ========== 暗色模式 ========== */
+@media (prefers-color-scheme: dark) {
+  /* 工具参数 */
+  .params-container {
+    background-color: rgba(88, 28, 135, 0.2);
+    border-color: #6b21a8;
+  }
+
+  .params-label {
+    color: #c084fc;
+  }
+
+  .params-inner {
+    background-color: #1e293b;
+    border-color: #475569;
+  }
+
+  .params-todo-name {
+    color: #e2e8f0;
+  }
+
+  .params-question {
+    color: #e2e8f0;
+  }
+
+  .params-option {
+    color: #94a3b8;
+  }
+
+  .params-bullet {
+    color: #c084fc;
+  }
+
+  .params-desc {
+    color: #64748b;
+  }
+
+  /* 结果展示 */
+  .result-container {
+    background-color: rgba(6, 78, 59, 0.2);
+    border-color: #166534;
+  }
+
+  .result-label {
+    color: #4ade80;
+  }
+
+  .result-inner {
+    background-color: #1e293b;
+    border-color: #475569;
+  }
+
+  .result-text {
+    color: #e2e8f0;
+  }
+
+  .result-pre {
+    background-color: #1e293b;
+    color: #4ade80;
+    border-color: #475569;
+  }
+
+  /* Diff */
+  .diff-wrapper {
+    background-color: #1e293b;
+    border-color: #475569;
+  }
+
+  .diff-header {
+    background-color: rgba(88, 28, 135, 0.25);
+    border-color: #6b21a8;
+  }
+
+  .diff-path {
+    color: #c084fc;
+  }
+
+  .diff-line {
+    color: #e2e8f0;
+  }
+
+  .diff-added {
+    background-color: #064e3b;
+  }
+
+  .diff-added::before {
+    color: #4ade80;
+  }
+
+  .diff-removed {
+    background-color: #7f1d1d;
+  }
+
+  .diff-removed::before {
+    color: #f87171;
+  }
+
+  .diff-unchanged {
+    background-color: transparent;
+  }
+
+  .diff-line:hover {
+    filter: brightness(1.35);
+  }
+
+  .diff-added:hover {
+    background-color: #065f46;
+  }
+
+  .diff-removed:hover {
+    background-color: #991b1b;
+  }
+
+  /* 文件内容 */
+  .file-content {
+    background-color: #1e293b;
+    color: #c084fc;
+    border-color: #475569;
+  }
+
+  /* JSON */
+  .json-display .string { color: #8bc34a; }
+  .json-display .number { color: #ce93d8; }
+  .json-display .boolean { color: #4fc3f7; }
+  .json-display .null { color: #888; }
+  .json-display .key { color: #4fc3f7; }
+}
 </style>

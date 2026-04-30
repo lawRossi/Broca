@@ -23,10 +23,15 @@ export const useChatStore = defineStore('chat', () => {
   const historyTotal = ref(0)
   const messagesContainer = ref<HTMLElement>()
 
+  // 撤销/重做相关状态
+  const showRedoButton = ref(false)
+  const redoReceiverId = ref<string | undefined>()
+
   // Runner 状态
   const runnerInfo = ref<RunnerInfo | null>(null)
   const runnerLoading = ref(false)
   const restartingRunner = ref(false)
+  const stoppingRunner = ref(false)
   let runnerPollTimer: ReturnType<typeof setInterval> | null = null
 
   const runnerAlive = computed(() => {
@@ -60,6 +65,24 @@ export const useChatStore = defineStore('chat', () => {
       ElMessage.error('重启失败: ' + (error.message || '未知错误'))
     } finally {
       restartingRunner.value = false
+    }
+  }
+
+  const stopRunner = async () => {
+    if (!sessionId.value) return
+    try {
+      stoppingRunner.value = true
+      const { ElMessage } = await import('element-plus')
+      await sessionApi.stopRunner(sessionId.value)
+      ElMessage.success('进程已停止')
+      runnerInfo.value = { ...runnerInfo.value!, status: 'dead' } as RunnerInfo
+    } catch (error: any) {
+      const { ElMessage } = await import('element-plus')
+      ElMessage.error('停止失败: ' + (error.message || '未知错误'))
+    } finally {
+      stoppingRunner.value = false
+      // 延迟刷新状态
+      setTimeout(fetchRunnerStatus, 3000)
     }
   }
 
@@ -491,9 +514,24 @@ export const useChatStore = defineStore('chat', () => {
       if (m.message_type === 'command_result' && (m.data?.command === 'undo' || m.data?.command === 'redo')) {
         const result = m.data?.result
         if (result.code == 0) {
+          if (m.data?.command === 'undo') {
+            // 撤销成功后，显示重做按钮
+            showRedoButton.value = true
+            redoReceiverId.value = m.sender_id
+          } else {
+            // 重做成功后，隐藏重做按钮
+            showRedoButton.value = false
+            redoReceiverId.value = undefined
+          }
           loadHistory(sessionId.value)
         }
         return
+      }
+
+      // 如果是新消息（非命令结果），清除重做状态
+      if (m.message_type !== 'command_result') {
+        showRedoButton.value = false
+        redoReceiverId.value = undefined
       }
 
       // 正常处理其他消息
@@ -734,6 +772,8 @@ export const useChatStore = defineStore('chat', () => {
     loading,
     loadingMore,
     hasMoreHistory,
+    showRedoButton,
+    redoReceiverId,
     messagesContainer,
     showLeftSidebar,
     showRightSidebar,
@@ -771,5 +811,8 @@ export const useChatStore = defineStore('chat', () => {
     runnerAlive,
     fetchRunnerStatus,
     restartRunner,
+    // 停止 Runner
+    stoppingRunner,
+    stopRunner,
   }
 })

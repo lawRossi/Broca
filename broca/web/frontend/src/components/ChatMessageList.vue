@@ -1,9 +1,10 @@
 <script setup lang="ts">
 import { ref, watch, nextTick, onUnmounted } from 'vue'
-import { useChatStore } from '@/stores'
+import { useChatStore, useSocketStore } from '@/stores'
 import ChatMessageItem from './ChatMessageItem.vue'
 
 const chatStore = useChatStore()
+const socketStore = useSocketStore()
 const containerRef = ref<HTMLElement>()
 const isRestoringScroll = ref(false)
 const scrollTimeout = ref<number | null>(null)
@@ -84,6 +85,15 @@ onUnmounted(() => {
     clearTimeout(scrollTimeout.value)
   }
 })
+
+// 发送重做命令
+const handleRedo = () => {
+  socketStore.sendRedo({
+    receiverId: chatStore.redoReceiverId,
+  })
+  chatStore.showRedoButton = false
+  chatStore.redoReceiverId = undefined
+}
 </script>
 
 <template>
@@ -110,5 +120,23 @@ onUnmounted(() => {
     </div>
 
     <ChatMessageItem v-for="m in chatStore.messages" :key="m.message_id" :message="m" />
+
+    <!-- 重做按钮 - 撤销成功后显示 -->
+    <div
+      v-if="chatStore.showRedoButton"
+      class="flex justify-center py-2"
+    >
+      <el-button
+        type="warning"
+        size="small"
+        @click="handleRedo"
+        class="!rounded-full !px-4"
+      >
+        <span class="flex items-center gap-1">
+          <span>↪️</span>
+          <span>重做</span>
+        </span>
+      </el-button>
+    </div>
   </div>
 </template>

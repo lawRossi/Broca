@@ -92,6 +92,7 @@ const stopStatsPolling = () => {
 const runnerInfo = computed(() => chatStore.runnerInfo)
 const runnerLoading = computed(() => chatStore.runnerLoading)
 const restarting = computed(() => chatStore.restartingRunner)
+const stopping = computed(() => chatStore.stoppingRunner)
 
 // 刷新 Runner 状态
 const fetchRunnerStatus = () => {
@@ -101,6 +102,11 @@ const fetchRunnerStatus = () => {
 // 重启 Runner
 const handleRestartRunner = () => {
   chatStore.restartRunner()
+}
+
+// 停止 Runner
+const handleStopRunner = () => {
+  chatStore.stopRunner()
 }
 
 // 监听 sessionId 变化，重新获取统计数据
@@ -304,12 +310,20 @@ const getRunnerConfig = (status: string | undefined) => {
           <span class="text-gray-700">内存</span>
           <span class="text-gray-800">{{ formatMemory(runnerInfo?.resource_usage?.memory_rss_mb) }}</span>
         </div>
-        <div v-if="runnerInfo?.status === 'error'" class="pt-2">
+        <div v-if="runnerInfo?.status === 'alive'" class="pt-2 flex gap-2">
+          <el-button type="danger" size="small" :loading="stopping" @click="handleStopRunner">
+            停止进程
+          </el-button>
+          <el-button type="warning" size="small" :loading="restarting" @click="handleRestartRunner">
+            重启进程
+          </el-button>
+        </div>
+        <div v-else-if="runnerInfo?.status === 'error'" class="pt-2">
           <el-button type="danger" size="small" :loading="restarting" @click="handleRestartRunner">
             重启进程
           </el-button>
         </div>
-        <div v-else-if="runnerInfo && runnerInfo.status !== 'alive' && runnerInfo.status !== 'starting'" class="pt-2">
+        <div v-else-if="runnerInfo && runnerInfo.status !== 'starting'" class="pt-2">
           <el-button type="warning" size="small" :loading="restarting" @click="handleRestartRunner">
             启动进程
           </el-button>
