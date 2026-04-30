@@ -106,7 +106,6 @@ class MemoryStore:
                     f"添加此条目 ({len(content)} 字符) 将超出限制。"
                     f"请先替换或删除已有条目。"
                 ),
-                "current_entries": entries,
                 "usage": f"{current:,}/{limit:,}",
             }
 
@@ -208,7 +207,6 @@ class MemoryStore:
         resp = {
             "success": True,
             "target": target,
-            "entries": entries,
             "usage": f"{pct}% — {current:,}/{limit:,} chars",
             "entry_count": len(entries),
         }

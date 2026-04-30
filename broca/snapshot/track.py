@@ -74,7 +74,7 @@ class SnapshotTracker:
         # 移除忽略文件
         ignored_files = set(changed_files) - set(filtered_files)
         if ignored_files:
-            logger.info("忽略文件:" + ",".join(ignored_files))
+            logger.debug("忽略文件:" + ",".join(ignored_files))
             await self.git_manager.remove_cached_files(list(ignored_files))
 
         # 暂存变更文件

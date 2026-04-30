@@ -309,7 +309,7 @@ const getRunnerConfig = (status: string | undefined) => {
             重启进程
           </el-button>
         </div>
-        <div v-else-if="runnerInfo && runnerInfo.status !== 'alive'" class="pt-2">
+        <div v-else-if="runnerInfo && runnerInfo.status !== 'alive' && runnerInfo.status !== 'starting'" class="pt-2">
           <el-button type="warning" size="small" :loading="restarting" @click="handleRestartRunner">
             启动进程
           </el-button>
