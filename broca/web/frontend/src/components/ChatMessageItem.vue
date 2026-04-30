@@ -242,7 +242,7 @@ const computeDiff = (oldText: string, newText: string): DiffLine[] => {
 const getEditFileParams = (message: Message) => {
   if (!isEditFile(message)) return null
   
-  const args = message.data?.arguments || message.data?.parameters
+  const args = message.data?.arguments
   if (!args) return null
   
   const params = typeof args === 'string' ? JSON.parse(args) : args
@@ -256,6 +256,11 @@ const getEditFileParams = (message: Message) => {
   }
 }
 
+const getWriteFileContent = (message: Message) => {
+  const params = JSON.parse(message.data.arguments)
+  return params.content?.trim()
+}
+
 // 检查是否为todo_management工具调用
 const isTodoManagement = (message: Message) => {
   return message.message_type === 'tool_call' && message.data?.tool_name === 'todo_management'
@@ -264,6 +269,14 @@ const isTodoManagement = (message: Message) => {
 // 检查是否为ask_user工具调用
 const isAskUser = (message: Message) => {
   return message.message_type === 'tool_call' && message.data?.tool_name === 'ask_user'
+}
+
+const isReadFile = (message: Message) =>{
+  return message.message_type === 'tool_call' && message.data?.tool_name === 'read_file'
+}
+
+const isWriteFile = (message: Message) => {
+  return message.message_type === 'tool_call' && message.data?.tool_name === 'write_file'
 }
 
 // 获取todos列表
@@ -305,12 +318,32 @@ const shouldExpandParameters = (message: Message) => {
   return getShowParameters(message.message_id)
 }
 
+const getParametersTitle = (message: Message) => {
+  if (isEditFile(message)) {
+    return '编辑内容'
+  }
+  else if (isWriteFile(message)) {
+    return '文件内容'
+  }
+  return '参数'
+}
+
 // 判断结果是否应该展开（默认展开）
 const shouldExpandResult = (message: Message) => {
   if (isAskUser(message)) {
     return true
   }
   return getShowResult(message.message_id)
+}
+
+const getResultTitle = (message: Message) => {
+  if (isAskUser(message)) {
+    return '回答'
+  }
+  else if (isReadFile(message)) {
+    return '文件内容'
+  }
+  return '结果'
 }
 
 const shouldShowResult = (message: Message) => {
@@ -368,12 +401,11 @@ const getFormattedJson = (data: any): string => {
         return data
       }
     }
-    
+
     // 如果是对象或数组，直接格式化
     if (typeof data === 'object' || Array.isArray(data)) {
       return JSON.stringify(data, null, 2)
     }
-    
     // 其他类型（数字、布尔值等）直接转换为字符串
     return String(data)
   } catch (e) {
@@ -382,27 +414,6 @@ const getFormattedJson = (data: any): string => {
   }
 }
 
-// 为JSON字符串添加语法高亮
-const highlightJson = (jsonStr: string): string => {
-  if (!jsonStr) return ''
-  
-  try {
-    // 简单的JSON语法高亮
-    return jsonStr
-      .replace(/("(\\u[a-zA-Z0-9]{4}|\\[^u]|[^\\"])*"(\s*:)?)/g, (match) => {
-        let cls = 'string'
-        if (/:$/.test(match)) {
-          cls = 'key'
-        }
-        return `<span class="${cls}">${match}</span>`
-      })
-      .replace(/\b(true|false|null)\b/g, '<span class="boolean">$1</span>')
-      .replace(/\b-?\d+(\.\d+)?([eE][+-]?\d+)?\b/g, '<span class="number">$&</span>')
-  } catch (e) {
-    // 如果高亮处理失败，返回原始字符串
-    return jsonStr
-  }
-}
 
 // 打开文件预览
 const openFilePreview = (file: { url?: string; path?: string; name?: string; type?: string }) => {
@@ -640,7 +651,7 @@ const handleUndoToHere = async () => {
             class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
             @click="chatStore.toggleToolParameters(message.message_id)"
           >
-            {{ getShowParameters(message.message_id) ? '隐藏参数' : '查看参数' }}
+            {{ getParametersTitle(message) }}
           </el-button>
 
           <!-- 参数内容：特殊处理todo_management和ask_user -->
@@ -719,15 +730,20 @@ const handleUndoToHere = async () => {
               
               <!-- 如果没有old_text和new_text，显示格式化的JSON -->
               <div v-else class="p-3">
-                <pre class="json-display text-xs font-mono text-purple-800 whitespace-pre-wrap break-words overflow-auto max-h-96" v-html="highlightJson(getFormattedJson(message.data.arguments || message.data.parameters))"></pre>
+                <pre class="json-display text-xs font-mono text-purple-800 whitespace-pre-wrap break-words overflow-auto max-h-96" v-html="getFormattedJson(message.data.arguments || message.data.parameters)"></pre>
               </div>
             </div>
+
+            <!--file_write-->
+            <pre v-else-if="isWriteFile(message)" class="text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96">
+              {{ getWriteFileContent(message) }}
+            </pre>
 
             <!-- 其他工具显示参数 -->
             <pre
               v-else
               class="json-display text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96"
-              v-html="highlightJson(getFormattedJson(message.data.arguments || message.data.parameters))"
+              v-html="getFormattedJson(message.data.arguments || message.data.parameters)"
             ></pre
             >
           </div>
@@ -742,7 +758,7 @@ const handleUndoToHere = async () => {
             class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
             @click="chatStore.toggleToolResult(message.message_id)"
           >
-            {{ getShowResult(message.message_id) ? '隐藏结果' : '查看结果' }}
+            {{ getResultTitle(message) }}
           </el-button>
 
           <!-- ask_user结果默认展开 -->
@@ -760,9 +776,7 @@ const handleUndoToHere = async () => {
             <pre
               v-else
               class="text-xs font-mono text-green-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96"
-              v-html="highlightJson(getFormattedJson(message.data.result))"
-            ></pre
-            >
+            >{{message.data.result}}</pre>
           </div>
         </div>
       </div>

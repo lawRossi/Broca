@@ -222,7 +222,6 @@ class Context:
     async def build_history_from_session(
         self, agent_id: str, rebuild_system_prompt: bool = False
     ) -> None:
-        # 清空旧历史，避免与重建的新数据叠加（如 undo 后重建时仍包含被撤销消息）
         if rebuild_system_prompt:
             self.system_prompt = self._build_system_prompt()
 
