@@ -9,6 +9,7 @@ from broca.agent_configs import AgentConfig
 from broca.logging_config import get_logger
 from broca.session import MessageType, SessionManager
 from broca.skill_manager import SkillManager
+from broca.utils import scan_content_security
 
 logger = get_logger(__name__)
 
@@ -127,6 +128,13 @@ class Context:
             if file_path.exists() and file_path.is_file():
                 text = file_path.read_text()
                 if text.strip():
+                    # 安全扫描：防止提示注入
+                    scan_error = scan_content_security(text)
+                    if scan_error:
+                        logger.warning(
+                            f"安全阻断：文件 {file} 被跳过，{scan_error}"
+                        )
+                        continue
                     boostrap_content += f"## Instrunction from {file}\n\n{text}\n\n"
 
         return boostrap_content.strip()

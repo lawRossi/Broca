@@ -10,10 +10,11 @@ Memory Tool Module - 持久化记忆管理工具
 
 简化设计：无文件锁、无注入检测、始终反映最新状态。
 """
-
+import json
 from pathlib import Path
 
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+from broca.utils import scan_content_security
 
 # 条目分隔符
 ENTRY_DELIMITER = "\n§\n"
@@ -80,6 +81,11 @@ class MemoryStore:
         if not content:
             return {"success": False, "error": "内容不能为空。"}
 
+        # 安全扫描
+        scan_error = scan_content_security(content)
+        if scan_error:
+            return {"success": False, "error": scan_error}
+
         entries = self._entries_for(target)
         limit = self._char_limit(target)
 
@@ -119,6 +125,11 @@ class MemoryStore:
                 "success": False,
                 "error": "new_content 不能为空。如需删除请使用 remove 操作。",
             }
+
+        # 安全扫描替换内容
+        scan_error = scan_content_security(new_content)
+        if scan_error:
+            return {"success": False, "error": scan_error}
 
         entries = self._entries_for(target)
         matches = [(i, e) for i, e in enumerate(entries) if old_text in e]
@@ -263,24 +274,18 @@ class MemoryTool(Tool):
     @property
     def description(self) -> str:
         return (
-            "持久化记忆管理工具。将重要信息保存到跨会话持久化的记忆中。\n\n"
-            "何时保存（主动保存，无需等待用户要求）：\n"
-            "- 用户纠正你或说'记住这个'/'别再这样做了'\n"
-            "- 用户分享偏好、习惯或个人细节（名字、角色、时区、编程风格）\n"
-            "- 你发现关于环境的信息（OS、已安装工具、项目结构）\n"
-            "- 你学到了特定于该用户设置的约定、API特点或工作流程\n"
-            "- 你识别出在未来会话中会再次有用的稳定事实\n\n"
-            "优先级：用户偏好和纠正 > 环境事实 > 流程知识。\n"
-            "最有价值的记忆能防止用户重复说明。\n\n"
-            "两个存储目标：\n"
-            "- 'user'：用户是谁——名字、角色、偏好、沟通风格、习惯\n"
-            "- 'memory'：你的笔记——环境事实、项目约定、工具特性、学到的经验\n\n"
-            "操作：\n"
-            "- add：添加新条目\n"
-            "- replace：更新已有条目（通过 old_text 子串匹配定位）\n"
-            "- remove：删除条目（通过 old_text 子串匹配定位）\n"
-            "- read：读取当前所有条目\n\n"
-            "不要保存任务进度、会话结果、已完成的工作日志或临时 TODO 状态到记忆中。"
+            "Save durable information to persistent memory that survives across sessions. "
+            "Memory is injected into future turns, so keep it compact and focused on facts "
+            "that will still matter later.\n\n"
+            "WHEN TO SAVE:\n"
+            "- User corrects you or says 'remember this' / 'don't do that again'\n"
+            "- User shares a preference, habit, or personal detail (name, role, timezone, coding style)\n"
+            "- You discover something about the environment (OS, installed tools, project structure)\n"
+            "- You learn a convention, API quirk, or workflow specific to this user's setup\n"
+            "- You identify a stable fact that will be useful again in future sessions\n\n"
+            "PRIORITY: User preferences and corrections > environment facts > procedural knowledge. "
+            "The most valuable memory prevents the user from having to repeat themselves.\n\n"
+            "SKIP: trivial/obvious info, things easily re-discovered, raw data dumps, and temporary task state."
         )
 
     @property
@@ -291,23 +296,23 @@ class MemoryTool(Tool):
                 "action": {
                     "type": "string",
                     "enum": ["add", "replace", "remove", "read"],
-                    "description": "要执行的操作：add（添加）、replace（替换）、remove（删除）、read（读取）",
+                    "description": "the action to perform",
                 },
                 "target": {
                     "type": "string",
                     "enum": ["memory", "user"],
-                    "description": "目标存储：'memory' 为个人笔记，'user' 为用户档案",
+                    "description": "memory for personal notes, user for user profile",
                 },
                 "content": {
                     "type": "string",
-                    "description": "条目内容。add 和 replace 操作必需。",
+                    "description": "the content to add or remove",
                 },
                 "old_text": {
                     "type": "string",
-                    "description": "用于定位要替换或删除的条目的短唯一子串。replace 和 remove 操作必需。",
+                    "description": "the text to find and replace, required for replace action",
                 },
             },
-            "required": ["action", "target"],
+            "required": ["action", "target", "content"],
         }
 
     async def _execute(self, parameters: dict, context: ToolCallContext) -> ToolResult:
@@ -320,7 +325,7 @@ class MemoryTool(Tool):
             if target not in ("memory", "user"):
                 return ToolResult(
                     status=ToolStatus.ERROR,
-                    content=f"无效的 target '{target}'，请使用 'memory' 或 'user'。",
+                    content=f"invalid target '{target}', should be 'memory' or 'user'",
                 )
 
             store = _get_store()
@@ -329,37 +334,35 @@ class MemoryTool(Tool):
                 if not content:
                     return ToolResult(
                         status=ToolStatus.ERROR,
-                        content="add 操作需要提供 content 参数。",
+                        content="content is required for 'add' action.",
                     )
                 result = store.add(target, content)
             elif action == "replace":
                 if not old_text:
                     return ToolResult(
                         status=ToolStatus.ERROR,
-                        content="replace 操作需要提供 old_text 参数。",
+                        content="old_text is required for 'replace' action.",
                     )
                 if not content:
                     return ToolResult(
                         status=ToolStatus.ERROR,
-                        content="replace 操作需要提供 content 参数。",
+                        content="content is required for 'replace' action.",
                     )
                 result = store.replace(target, old_text, content)
             elif action == "remove":
-                if not old_text:
+                if not content:
                     return ToolResult(
                         status=ToolStatus.ERROR,
-                        content="remove 操作需要提供 old_text 参数。",
+                        content="content is required for 'remove' action.",
                     )
-                result = store.remove(target, old_text)
+                result = store.remove(target, content)
             elif action == "read":
                 result = store.read(target)
             else:
                 return ToolResult(
                     status=ToolStatus.ERROR,
-                    content=f"未知操作 '{action}'，请使用：add, replace, remove, read。",
+                    content=f"unknown action: {action}",
                 )
-
-            import json
 
             return ToolResult(
                 status=ToolStatus.SUCCESS,
