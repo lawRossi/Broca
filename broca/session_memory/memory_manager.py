@@ -7,55 +7,41 @@ Session Memory 管理器
 import asyncio
 import copy
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Optional
 
+from broca.agent_configs import SessionMemoryConfig
 from broca.agent_manager import AgentFactory
 from broca.execution_engine import ExecutionStatus
 from broca.logging_config import get_logger
 from broca.session import MessageProtocol
 from broca.session_memory.memory_prompts import (
+    DEFAULT_MEMORY_TEMPLATE,
     build_extraction_user_prompt,
-)
-from broca.session_memory.memory_utils import (
-    DEFAULT_CONFIG,
-    SessionMemoryConfig,
-    SessionMemoryState,
 )
 
 logger = get_logger(__name__)
 
-# 默认模板（启动时写入文件）
-DEFAULT_MEMORY_TEMPLATE = """# Session Title
-_A short and distinctive 5-10 word descriptive title for the session._ (DO NOT DELETE THIS LINE)
 
-# Current State
-_What is actively being worked on right now? Pending tasks not yet completed._ (DO NOT DELETE THIS LINE)
+@dataclass
+class SessionMemoryState:
+    """Session Memory 状态"""
 
-# Task Specification
-_What did the user ask to do? Design decisions and context._ (DO NOT DELETE THIS LINE)
+    initialized: bool = False
+    last_message_id: str = ""
+    last_message_index: int = 0
+    last_step_count: int = 0
+    step_count: int = 0
+    extraction_in_progress: bool = False
 
-# Files and Functions
-_Important files and their purposes._ (DO NOT DELETE THIS LINE)
-
-# Workflow
-_Commands and their execution order._ (DO NOT DELETE THIS LINE)
-
-# Errors & Corrections
-_Errors encountered and how they were fixed, what did the user correct/feedback?._ (DO NOT DELETE THIS LINE)
-
-# Project Documentation
-_Important project components/modules and their purposes._ (DO NOT DELETE THIS LINE)
-
-# Learnings
-_What has worked well? What has not?_ (DO NOT DELETE THIS LINE)
-
-# Key Results
-_Specific outputs requested by the user._ (DO NOT DELETE THIS LINE)
-
-# Worklog
-_Step by step actions taken. Very terse summary for each step_ (DO NOT DELETE THIS LINE)
-"""
+    def reset(self):
+        """重置状态"""
+        self.initialized = False
+        self.last_message_id = ""
+        self.last_message_index = 0
+        self.last_step_count = 0
+        self.step_count = 0
+        self.extraction_in_progress = False
 
 
 class SessionMemoryManager:
@@ -69,12 +55,12 @@ class SessionMemoryManager:
         self,
         workspace: str,
         agent,
-        config: Optional[SessionMemoryConfig] = None,
-        task_timeout: int = 60,
+        config: SessionMemoryConfig,
+        task_timeout: int = 120,
     ):
         self.workspace = workspace
         self.agent = agent
-        self.config = config or DEFAULT_CONFIG
+        self.config = config
         self.state = SessionMemoryState()
         self.task_timeout = task_timeout
         self._lock = asyncio.Lock()
@@ -242,6 +228,7 @@ class SessionMemoryManager:
             agent_config["role"] = "session_memory_manager"
             agent_config["tools"] = ["edit_file"]
             agent_config["track_session_momory"] = False
+            agent_config["enable_context_compression"] = False
             agent_config["save_history"] = False
             agent_config["interactive"] = False
 

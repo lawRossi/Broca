@@ -187,7 +187,7 @@ class Agent:
         from broca.session_memory import SessionMemoryManager
 
         self.session_memory_manager = SessionMemoryManager(
-            workspace=self.config.workspace, agent=self
+            workspace=self.config.workspace, agent=self, config=self.config.session_memory_config
         )
 
     def _setup_execution_engine(self):

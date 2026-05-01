@@ -12,7 +12,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from broca.agent_configs import DEFAULT_COMPACT_CONFIG, ContextCompactConfig
+from broca.agent_configs import ContextCompactConfig
 from broca.context import Context
 from broca.logging_config import get_logger
 from broca.session import MessageService
@@ -51,23 +51,8 @@ class ContextCompressor:
         config: Optional[ContextCompactConfig] = None,
         message_service: Optional[MessageService] = None,
     ):
-        self.config = config or DEFAULT_COMPACT_CONFIG
         self.message_service = message_service
         self.stats = CompressionStats()
-
-    def get_effective_config(self, agent_config) -> ContextCompactConfig:
-        """获取有效的压缩配置（支持 agent 级别覆盖）"""
-        if not agent_config.enable_context_compression:
-            return ContextCompactConfig(
-                enable_stale_tool_cleanup=False,
-                enable_session_memory_truncation=False,
-            )
-
-        if agent_config.compact_config:
-            merged = {**self.config.__dict__, **agent_config.compact_config}
-            return ContextCompactConfig(**merged)
-
-        return self.config
 
     async def check_and_compress(
         self, context, execution_engine, agent: "Agent"
@@ -87,7 +72,7 @@ class ContextCompressor:
         """
         self.stats.reset()
 
-        compact_config = self.get_effective_config(agent.config)
+        compact_config: ContextCompactConfig = agent.config.compact_config
 
         # 估算 context 总 token 数
         total_tokens = self._estimate_context_tokens(context)
@@ -327,13 +312,13 @@ class ContextCompressor:
         await self._do_session_memory_truncation(
             context=context,
             execution_engine=execution_engine,
-            agent=agnet,
+            agent=agent,
             config=config,
         )
 
     def _validate_index_alignment(self, context, session_memory_manager) -> bool:
         """验证 last_message_index 与当前 context 对齐"""
-        last_index = session_memory_manager.last_message_index
+        last_index = session_memory_manager.state.last_message_index
         history = context.history
 
         # 索引越界检查
@@ -343,7 +328,6 @@ class ContextCompressor:
         # 通过 context 的 message_id 映射获取该消息的数据库 ID
         msg_db_id = context.get_message_db_id(last_index)
 
-        # 如果没有对应的数据库 ID，说明该消息不是从数据库加载的 → 无效
         if not msg_db_id:
             return False
 

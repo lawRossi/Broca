@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from broca.session.session_manager import SessionManager
 from broca.session_runner.ipc import (
     IPCConnectionError,
     IPCServer,
@@ -530,13 +531,7 @@ class RunnerManager:
         # 清理 IPC socket 文件
         await self._cleanup_ipc_resources(session_id)
 
-    async def restart_session(
-        self,
-        session_id: str,
-        workspace: str = None,
-        provider: str = None,
-        model: str = None,
-    ) -> RunnerProcessInfo:
+    async def restart_session(self, session_id: str) -> RunnerProcessInfo:
         """
         重启 Session Runner 进程
 
@@ -549,31 +544,17 @@ class RunnerManager:
         Returns:
             新的 RunnerProcessInfo
         """
-        # 获取旧的 workspace/provider/model 信息（优先从内存，其次从 DB）
-        old_info = self._runners.get(session_id)
-        if not old_info:
-            db_runner = await self._get_runner_from_db(session_id)
-            if db_runner:
-                resource_usage = db_runner.resource_usage or {}
-                workspace = resource_usage.get("workspace") or workspace
-                provider = resource_usage.get("provider") or provider
-                model = resource_usage.get("model") or model
-                logger.info("Restored old config from DB for session %s", session_id)
-        else:
-            workspace = old_info.resource_usage.get("workspace") or workspace
-            provider = old_info.resource_usage.get("provider") or provider
-            model = old_info.resource_usage.get("model") or model
+        session_manager = SessionManager()
+        session = await session_manager.get_session(session_id)
+        if not session:
+            raise ValueError(f"Session {session_id} not found")
+        workspace = session.workspace
 
         # 停止旧的（兼容内存和 DB 两种场景）
         await self.stop_session(session_id)
 
         # 启动新的
-        return await self.start_session(
-            session_id=session_id,
-            workspace=workspace,
-            provider=provider,
-            model=model,
-        )
+        return await self.start_session(session_id=session_id, workspace=workspace)
 
     def get_session_status(self, session_id: str) -> Optional[Dict[str, Any]]:
         """

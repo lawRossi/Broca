@@ -303,6 +303,7 @@ class ExecutionEngine:
 
         await self._capture_step_start()
 
+        message_id = response.message_id
         if not await self.session_manager.save_agent_response(
             response,
             self.turn_id,
@@ -313,7 +314,7 @@ class ExecutionEngine:
             logger.error("Failed to save agent response")
             return ExecutionStatus.ERROR
 
-        await self.context.add_message(response)
+        await self.context.add_message(response, message_id)
 
         if not response.tool_calls:
             await self._capture_step_end()
@@ -778,6 +779,5 @@ class ExecutionEngine:
         await self.context_compressor.check_and_compress(
             context=self.context,
             execution_engine=self,
-            session_memory_manager=self.session_memory_manager,
             agent=self.agent,
         )

@@ -1,4 +1,5 @@
 import asyncio
+import json
 import os
 import platform
 from pathlib import Path
@@ -99,17 +100,37 @@ class AgentFactory:
         if session_manager.session_id not in self._session_agents:
             self._session_agents[session_manager.session_id] = {}
         self._session_agents[session_manager.session_id][agent.name] = agent
+        self.dump_agent_config_cache(config)
+
         return agent
+
+    def dump_agent_config_cache(self, agent_config):
+        cache_dir = Path(agent_config.workspace) / ".broca/agents"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_path = cache_dir / f"{agent_config.name}.json"
+        with open(cache_path, "w") as f:
+            f.write(agent_config.to_json())
+
+    def load_cached_agent_config(self, workspace, agent_name):
+        cache_dir = Path(workspace) / ".broca/agents"
+        cache_path = cache_dir / f"{agent_name}.json"
+        if cache_path.exists():
+            with open(cache_path, "r") as f:
+                return json.load(f)
+        return None
 
     async def restore_agents_from_session(self, session_id) -> list[Agent]:
         session_manager = SessionManager()
         await session_manager.load_session(session_id)
         db_agents = await session_manager.get_agents()
-        # 并行恢复所有 Agent，大幅减少启动时间
-        agents = await asyncio.gather(*[
-            self.restore_agent(db_agent["agent_id"], session_manager)
-            for db_agent in db_agents
-        ])
+
+        agents = await asyncio.gather(
+            *[
+                self.restore_agent(db_agent["agent_id"], session_manager)
+                for db_agent in db_agents
+            ]
+        )
+
         return agents
 
     async def restore_agent(
@@ -118,16 +139,26 @@ class AgentFactory:
         if session_manager is None:
             session_manager = SessionManager()
             await session_manager.load_session(session_id)
+
         config = await session_manager.get_agent_config(agent_id)
         logger.info(f"Restoring agent from config: {config}, agent_id: {agent_id}")
+        cached_config = self.load_cached_agent_config(
+            config["workspace"], config["name"]
+        )
+        if cached_config:
+            un_modifiable_fields = ["name", "workspace", "environment"]
+            for field in un_modifiable_fields:
+                del cached_config[field]
+            config.update(cached_config)
         agent_config = AgentConfig.from_config(config)
-        # Each agent gets its own LLMClient instance
+
         llm_client = LLMClient()
         agent = Agent(agent_config, llm_client, session_manager, agent_id=agent_id)
         await agent.restore_from_session(agent_id)
         if session_manager.session_id not in self._session_agents:
             self._session_agents[session_manager.session_id] = {}
         self._session_agents[session_manager.session_id][agent.name] = agent
+
         return agent
 
     def _init_environment(self, config: AgentConfig) -> str:

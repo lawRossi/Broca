@@ -61,8 +61,9 @@ class Tool:
         if len(result.content) > self.max_content_length:
             content = result.content
             if self.name != "read_file":
+                self.TOOL_RESULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
                 cache_file = self.TOOL_RESULT_CACHE_DIR / (uuid.uuid4().hex + ".txt")
-                with open(self.TOOL_RESULT_CACHE_DIR / "tool_result.txt", "w") as f:
+                with open(cache_file, "w") as f:
                     f.write(content)
             half_length = self.max_content_length // 2
             content = content[:half_length] + "..." + content[-half_length:]

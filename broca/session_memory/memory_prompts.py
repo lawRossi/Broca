@@ -3,6 +3,38 @@ Session Memory Prompt 模板
 
 """
 
+# 默认模板（启动时写入文件）
+DEFAULT_MEMORY_TEMPLATE = """# Session Title
+_A short and distinctive 5-10 word descriptive title for the session._ (DO NOT DELETE THIS LINE)
+
+# Current State
+_What is actively being worked on right now? Pending tasks not yet completed._ (DO NOT DELETE THIS LINE)
+
+# Task Specification
+_What did the user ask to do? Design decisions and context._ (DO NOT DELETE THIS LINE)
+
+# Files and Functions
+_Important files and their purposes._ (DO NOT DELETE THIS LINE)
+
+# Workflow
+_Commands and their execution order._ (DO NOT DELETE THIS LINE)
+
+# Errors & Corrections
+_Errors encountered and how they were fixed, what did the user correct/feedback?._ (DO NOT DELETE THIS LINE)
+
+# Project Documentation
+_Important project components/modules and their purposes._ (DO NOT DELETE THIS LINE)
+
+# Learnings
+_What has worked well? What has not?_ (DO NOT DELETE THIS LINE)
+
+# Key Results
+_Specific outputs requested by the user._ (DO NOT DELETE THIS LINE)
+
+# Worklog
+_Step by step actions taken. Very terse summary for each step_ (DO NOT DELETE THIS LINE)
+"""
+
 
 def build_extraction_user_prompt(memory_path, current_content) -> str:
     """构建子代理的 user prompt"""

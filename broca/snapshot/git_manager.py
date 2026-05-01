@@ -160,6 +160,7 @@ class GitManager:
             "*.sqlite",
             "*.db",
             "*.sqlite3",
+            ".broca/"
         ]
 
         ignore_content.extend(default_ignores)
