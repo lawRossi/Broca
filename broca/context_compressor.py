@@ -350,7 +350,7 @@ class ContextCompressor:
         5. 重置 SessionMemoryManager
         """
         session_memory_manager = agent.session_memory_manager
-        last_index = session_memory_manager.last_message_index
+        last_index = session_memory_manager.state.last_message_index
 
         # 获取需要标记为截断的消息 ID 列表
         truncated_ids = context.get_truncated_message_ids(last_index)

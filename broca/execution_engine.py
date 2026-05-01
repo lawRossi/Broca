@@ -532,7 +532,9 @@ class ExecutionEngine:
         message = await self.session_manager.message_service.get(message_id)
         if not message:
             return False
-        await self.context.add_message(self.context.format_tool_call_result(message))
+        await self.context.add_message(
+            self.context.format_tool_call_result(message), message_id
+        )
         return True
 
     async def execute_round(self, max_steps: Optional[int] = None) -> ExecutionResult:
@@ -721,7 +723,7 @@ class ExecutionEngine:
             ):
                 return False
 
-            await self.context.add_message(user_message)
+            await self.context.add_message(user_message, message_id)
             return True
         except Exception as e:
             logger.error(f"Error in _setup_execution_context: {e}")
