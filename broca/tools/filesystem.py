@@ -202,10 +202,7 @@ class EditFile(Tool):
 
     @property
     def description(self) -> str:
-        return (
-            "Edit a file by replacing old_text with new_text. "
-            "To save tokens, the old_text must be short without extraneous context"
-        )
+        return "Edit a file by replacing old_text with new_text. "
 
     @property
     def parameters(self) -> dict:
