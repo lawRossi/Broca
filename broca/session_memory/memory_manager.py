@@ -12,6 +12,7 @@ from pathlib import Path
 
 from broca.agent_configs import SessionMemoryConfig
 from broca.agent_manager import AgentFactory
+from broca.context import Context
 from broca.execution_engine import ExecutionStatus
 from broca.logging_config import get_logger
 from broca.session import MessageProtocol
@@ -206,12 +207,12 @@ class SessionMemoryManager:
         )
 
         await self._run_extraction_subagent(
-            user_prompt=user_prompt,
-            context=context,
-            current_content=current_content,
+            user_prompt=user_prompt, context=context, current_content=current_content
         )
 
-    async def _run_extraction_subagent(self, user_prompt, context, current_content):
+    async def _run_extraction_subagent(
+        self, user_prompt: str, context: Context, current_content: str
+    ):
         """
         创建并运行提取子代理
 

@@ -430,8 +430,11 @@ class Agent:
             elif execution_result.status == ExecutionStatus.ABORTED:
                 result = f"The agent {self.agent_id} execution was aborted by user"
                 logger.warning(result)
-            elif execution_result.status == ExecutionStatus.ERROR:
-                result = f"The agent {self.agent_id} failed to finish the task: {execution_result.error}"
+            elif execution_result.status in (
+                ExecutionStatus.ERROR,
+                ExecutionStatus.DEAD_LOOP,
+            ):
+                result = f"The agent {self.agent_id} failed to finish the task: {execution_result.message or execution_result.error}"
                 logger.error(result)
                 await self.communicator.send_task_error(
                     task_id, result, receiver_id=assigner

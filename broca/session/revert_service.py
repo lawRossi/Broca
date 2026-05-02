@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from broca.logging_config import get_logger
 from broca.session.models import Message, MessageType
-from broca.session.service import MessageService
 from broca.session.session_manager import SessionManager
 from broca.snapshot import PatchCalculator, SnapshotRestorer, SnapshotTracker
 
@@ -263,37 +262,31 @@ class SessionRevertService:
 
         logger.info(f"标记消息为已撤销: {message_ids_to_revert}")
 
-        message_service = MessageService()
         # 更新消息状态
         for message_id in message_ids_to_revert:
-            await message_service.update_message(
-                message_id,
-                updates={"reverted": True},
-            )
+            await self.session_manager.batch_update_messages(
+                message_ids_to_revert, reverted=True)
 
     async def _mark_messages_as_redone(
         self, agent_id: str, undo_meta_info: dict
     ) -> None:
         """标记消息为已重做"""
-        message_service = MessageService()
         pivot_message_id = undo_meta_info.get("pivot_message_id")
         messages = await self.session_manager.get_messages(
             agent_id, ignore_reverted=False
         )
 
-        messages_to_mark = []
+        message_ids_to_mark = []
         collecting = False
         for msg in messages:
             if msg.message_id == pivot_message_id:
-                messages_to_mark.append(msg)
+                message_ids_to_mark.append(msg.message_id)
                 collecting = True
                 continue
 
             if collecting:
-                messages_to_mark.append(msg)
+                message_ids_to_mark.append(msg.message_id)
 
-        for msg in messages_to_mark:
-            await message_service.update_message(
-                msg.message_id,
-                updates={"reverted": False},
-            )
+        await self.session_manager.batch_update_messages(
+            message_ids_to_mark, reverted=False
+        )

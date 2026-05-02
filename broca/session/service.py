@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
 
 from sqlalchemy import desc, func, select
+from sqlalchemy import update as sql_update
 from sqlmodel import SQLModel, and_
 
 from broca.logging_config import get_logger
@@ -143,6 +144,21 @@ class BaseService(Generic[T]):
             await session.commit()
             await session.refresh(instance)
             return instance
+
+    async def update_batch(self, ids: List[str], **kwargs) -> int:
+        """批量更新记录，返回更新数量"""
+        if not ids:
+            return 0
+
+        async with db_manager.get_session() as session:
+            statement = sql_update(self.model_class).where(
+                getattr(self.model_class, self.id_field).in_(ids)
+            ).values(**kwargs)
+
+            result = await session.exec(statement)
+            count = result.rowcount
+            await session.commit()
+            return count
 
     async def delete(self, id: str) -> bool:
         """删除记录"""

@@ -13,7 +13,7 @@ export default defineConfig({
     },
   },
   server: {
-    allowedHosts: ["web.mynotebook.dpdns.org"],
+    allowedHosts: ["app.mynotebook.dpdns.org"],
     headers: {
       'Service-Worker-Allowed': '/',
     },

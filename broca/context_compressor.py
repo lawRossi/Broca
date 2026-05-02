@@ -15,7 +15,7 @@ from typing import List, Optional
 from broca.agent_configs import ContextCompactConfig
 from broca.context import Context
 from broca.logging_config import get_logger
-from broca.session import MessageService
+from broca.session import SessionManager
 from broca.tools.tool_manager import ToolManager
 
 logger = get_logger(__name__)
@@ -46,12 +46,7 @@ class ContextCompressor:
 
     EXCLUSIVE_TOOLS = ["load_skill"]
 
-    def __init__(
-        self,
-        config: Optional[ContextCompactConfig] = None,
-        message_service: Optional[MessageService] = None,
-    ):
-        self.message_service = message_service
+    def __init__(self):
         self.stats = CompressionStats()
 
     async def check_and_compress(
@@ -157,8 +152,8 @@ class ContextCompressor:
                 self.stats.expired_count += 1
 
         # 更新数据库
-        if self.message_service and self.stats.expired_message_ids:
-            await self._update_expired_in_db()
+        if self.stats.expired_message_ids:
+            await self._update_expired_in_db(execution_engine.session_manager)
 
         if self.stats.expired_count > 0:
             logger.info(f"策略A：标记了 {self.stats.expired_count} 条工具结果为过期")
@@ -251,16 +246,14 @@ class ContextCompressor:
                 return float(ts)
         return None
 
-    async def _update_expired_in_db(self):
+    async def _update_expired_in_db(self, session_manager: SessionManager):
         """批量更新数据库中的 is_expired 字段"""
-        if not self.message_service or not self.stats.expired_message_ids:
+        if not self.stats.expired_message_ids:
             return
 
-        for msg_id in self.stats.expired_message_ids:
-            try:
-                await self.message_service.update_message(msg_id, {"is_expired": True})
-            except Exception as e:
-                logger.error(f"Failed to update message {msg_id} as expired: {e}")
+        await session_manager.batch_update_messages(
+            self.stats.expired_message_ids, is_expired=True
+        )
 
     # ========================================================================
     # 策略B：Session Memory 截断
@@ -350,24 +343,14 @@ class ContextCompressor:
         5. 重置 SessionMemoryManager
         """
         session_memory_manager = agent.session_memory_manager
-        last_index = session_memory_manager.state.last_message_index
-
-        # 获取需要标记为截断的消息 ID 列表
-        truncated_ids = context.get_truncated_message_ids(last_index)
+        pivot_message_id = session_memory_manager.last_message_id
 
         # 标记被截断的消息到数据库
-        if self.message_service and truncated_ids:
-            for msg_id in truncated_ids:
-                try:
-                    await self.message_service.update_message(
-                        msg_id, {"is_truncated": True}
-                    )
-                except Exception as e:
-                    logger.error(f"Failed to update message {msg_id} as truncated: {e}")
-
-            self.stats.truncated_message_ids = truncated_ids
-            self.stats.truncated_count = len(truncated_ids)
-
+        session_manager = execution_engine.session_manager
+        count = await session_manager.mark_messages_as_truncated(
+            agent.agent_id, pivot_message_id
+        )
+        self.stats.truncated_count = count
         session_memory_manager.frosen_session_memory()
         session_memory_manager.reset()
         context.build_history_from_session(agent.agent_id, rebuild_system_prompt=True)

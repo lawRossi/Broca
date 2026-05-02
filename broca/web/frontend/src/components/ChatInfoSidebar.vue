@@ -314,9 +314,6 @@ const getRunnerConfig = (status: string | undefined) => {
           <el-button type="danger" size="small" :loading="stopping" @click="handleStopRunner">
             停止进程
           </el-button>
-          <el-button type="warning" size="small" :loading="restarting" @click="handleRestartRunner">
-            重启进程
-          </el-button>
         </div>
         <div v-else-if="runnerInfo?.status === 'error'" class="pt-2">
           <el-button type="danger" size="small" :loading="restarting" @click="handleRestartRunner">

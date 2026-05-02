@@ -49,6 +49,7 @@ class ExecutionStatus(str, Enum):
     ABORTED = "aborted"
     SKIPPED = "skipped"
     LIMIT_EXCEEDED = "limit_exceeded"
+    DEAD_LOOP = "dead_loop"
 
 
 class ExecutionResult:
@@ -149,6 +150,9 @@ class ExecutionEngine:
 
         # 上下文压缩器
         self.context_compressor: Optional[ContextCompressor] = None
+
+        # 死循环检测
+        self._recent_tool_call_signatures: List[List[str]] = []
 
     def _initialize_snapshot_tracking(self):
         """初始化快照跟踪"""
@@ -322,7 +326,27 @@ class ExecutionEngine:
         else:
             await self._process_tool_calls(response.tool_calls)
             await self._capture_step_end()
-            status = ExecutionStatus.RUNNING
+
+            # 死循环检测：如果最近三个工具调用完全一样，判定为死循环
+            tool_call_signatures = self._extract_tool_call_signatures(
+                response.tool_calls
+            )
+            self._recent_tool_call_signatures.extend(tool_call_signatures)
+            if len(self._recent_tool_call_signatures) >= 3:
+                if (
+                    self._recent_tool_call_signatures[-1]
+                    == self._recent_tool_call_signatures[-2]
+                    == self._recent_tool_call_signatures[-3]
+                ):
+                    logger.warning(
+                        f"Dead loop detected: last 3 tool calls are identical "
+                        f"({self._recent_tool_call_signatures[-1]})"
+                    )
+                    status = ExecutionStatus.DEAD_LOOP
+                else:
+                    status = ExecutionStatus.RUNNING
+            else:
+                status = ExecutionStatus.RUNNING
 
         if self.config.enable_context_compression:
             await self._check_context_compression()
@@ -495,6 +519,58 @@ class ExecutionEngine:
                 self._step_has_write_operations = True
                 return
 
+    @staticmethod
+    def _extract_tool_call_signatures(tool_calls: List[Any]) -> List[str]:
+        """
+        Extract tool call signatures for dead loop detection.
+
+        Each signature is a string combining tool name and normalized arguments.
+        Arguments are normalized by parsing JSON and sorting keys to eliminate
+        order differences.
+
+        Args:
+            tool_calls: List of tool calls from LLM response
+
+        Returns:
+            List of signature strings, one per tool call
+        """
+        signatures = []
+        for tc in tool_calls:
+            name = tc.function.name
+            args = tc.function.arguments
+            normalized_args = ExecutionEngine._normalize_arguments(args)
+            signatures.append(f"{name}({normalized_args})")
+        return signatures
+
+    @staticmethod
+    def _normalize_arguments(args_str: Optional[str]) -> str:
+        """
+        Normalize tool call arguments by parsing JSON and sorting keys.
+
+        This ensures that arguments with the same data but different key order
+        (e.g. {"a":1,"b":2} vs {"b":2,"a":1}) are treated as identical.
+
+        Args:
+            args_str: Raw arguments string from tool call
+
+        Returns:
+            Normalized arguments string
+        """
+        if not args_str:
+            return ""
+        stripped = args_str.strip()
+        if not stripped:
+            return ""
+        try:
+            parsed = json.loads(stripped)
+            if isinstance(parsed, dict):
+                return json.dumps(parsed, sort_keys=True, ensure_ascii=False)
+            elif isinstance(parsed, list):
+                return json.dumps(parsed, ensure_ascii=False)
+            return str(parsed)
+        except (json.JSONDecodeError, ValueError):
+            return stripped
+
     async def process_tool_call_result(
         self, tool_call: Any, tool_result: ToolResult
     ) -> bool:
@@ -570,6 +646,11 @@ class ExecutionEngine:
                         return ExecutionResult(
                             status=ExecutionStatus.ERROR,
                             message=f"Round failed after {steps} steps",
+                        )
+                    elif status == ExecutionStatus.DEAD_LOOP:
+                        return ExecutionResult(
+                            status=ExecutionStatus.DEAD_LOOP,
+                            message=f"Dead loop detected after {steps} steps: last 3 tool calls are identical",
                         )
                     if max_steps is not None and steps >= max_steps:
                         return ExecutionResult(
@@ -652,6 +733,8 @@ class ExecutionEngine:
                 message = "Turn aborted by user"
             elif result.status == ExecutionStatus.LIMIT_EXCEEDED:
                 message = "Turn step limit exceeded"
+            elif result.status == ExecutionStatus.DEAD_LOOP:
+                message = "Turn dead loop detected"
             elif result.status == ExecutionStatus.ERROR:
                 message = "Turn failed"
             elif result.status == ExecutionStatus.SKIPPED:
@@ -772,11 +855,7 @@ class ExecutionEngine:
         和策略B（Session Memory 截断）。
         """
         if not self.context_compressor:
-            from broca.session.service import get_message_service
-
-            self.context_compressor = ContextCompressor(
-                message_service=get_message_service(),
-            )
+            self.context_compressor = ContextCompressor()
 
         await self.context_compressor.check_and_compress(
             context=self.context,

@@ -1,6 +1,6 @@
 import json
 from pathlib import Path
-from typing import List, Optional, Union
+from typing import Optional, Union
 
 from jinja2 import Template
 from litellm import Message
@@ -75,23 +75,6 @@ class Context:
             return db_id
         return None
 
-    def get_truncated_message_ids(self, truncate_index: int) -> List[str]:
-        """
-        获取需要标记为截断的消息的数据库 ID 列表。
-
-        Args:
-            truncate_index: 截断边界，index < truncate_index 的消息被截断
-
-        Returns:
-            需要标记为 is_truncated=True 的数据库 message_id 列表
-        """
-        # 跳过 system prompt（index=0）
-        return [
-            db_id
-            for db_id in self._message_db_ids[1:truncate_index]
-            if db_id is not None
-        ]
-
     def _build_system_prompt(self) -> str:
         config = self.agent_config
         kwargs = self.system_prompt_kwargs
@@ -126,7 +109,7 @@ class Context:
         workspace = self.agent_config.workspace
         session_id = self.session_manager.session_id
         session_memeory_path = (
-            Path(workspace) / ".broca" / session_id / "session_memory.md"
+            Path(workspace) / ".broca" / session_id / "session-memory.md"
         )
         if session_memeory_path.exists():
             return session_memeory_path.read_text(encoding="utf-8").strip()

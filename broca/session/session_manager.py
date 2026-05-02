@@ -544,5 +544,29 @@ class SessionManager:
             turn_id=turn_id,
             agent_id=agent_id,
             data=data,
-            message_id=message_id
+            message_id=message_id,
         )
+
+    async def batch_update_messages(self, message_ids, **kwargs) -> bool:
+        service = self.message_service
+        return await service.update_batch(message_ids, **kwargs) == len(message_ids)
+
+    async def mark_messages_as_truncated(
+        self, agent_id: str, pivot_message_id: str
+    ) -> int:
+        messages = await self.get_messages(agent_id=agent_id)
+        message_ids_to_mark = []
+        turn_id = None
+        for message in messages:
+            if message.message_id == pivot_message_id:
+                turn_id = message.turn_id
+            if turn_id is None:
+                message_ids_to_mark.append(message.message_id)
+            else:
+                if message.turn_id == turn_id:
+                    message_ids_to_mark.append(message.message_id)
+                else:
+                    break
+
+        count = await self.message_service.update_batch(message_ids_to_mark, is_truncated=True)
+        return count
