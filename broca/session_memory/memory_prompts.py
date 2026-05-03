@@ -53,7 +53,7 @@ Critical Rules for Editing:
 5. Keep each section under ~2000 tokens - condense older info if needed
 6. Total file under ~12000 tokens
 7. Always update "Current State" to reflect the most recent work
-8. You ONLY have access to edit_file tool -
+8. You ONLY have access to edit_file tool
 
 REMEMBER: Make all edits in one step and stop. Do not continue after the edits. 
 """.format(memory_path=memory_path, current_content=current_content)

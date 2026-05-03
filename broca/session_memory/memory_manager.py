@@ -9,6 +9,7 @@ import copy
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
+import time
 
 from broca.agent_configs import SessionMemoryConfig
 from broca.agent_manager import AgentFactory
@@ -219,6 +220,7 @@ class SessionMemoryManager:
         子代理拥有独立的 LLM 调用，可用的工具仅限于文件操作。
         """
         # 创建子代理配置
+        start = time.time()
         agent_factory = AgentFactory()
         session_manager = self.agent.session_manager
         agent_id = session_manager.session_id + self.AGENT_ID_POSTFIX
@@ -264,9 +266,10 @@ class SessionMemoryManager:
             with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
                 f.write(current_content)
         else:
+            end = time.time()
             logger.info("Session memory updated successfully via sub-agent")
             await self.agent.communicator.send_agent_system_message(
-                content="Session memory updated successfully",
+                content=f"Session memory updated successfully in {end - start} seconds",
                 subscription=self.agent.session_id,
             )
             self.state.last_message_index = len(context.history) - 1

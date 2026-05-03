@@ -202,7 +202,11 @@ class EditFile(Tool):
 
     @property
     def description(self) -> str:
-        return "Edit a file by replacing old_text with new_text. "
+        return (
+            "Edit a file by replacing old_text with new_text. "
+            "Use the smallest old_text that's clearly unique — usually 2-4 adjacent lines is sufficient. "
+            "Avoid including 10+ lines of context when less identifies the target."
+        )
 
     @property
     def parameters(self) -> dict:

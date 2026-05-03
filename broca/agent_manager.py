@@ -141,7 +141,6 @@ class AgentFactory:
             await session_manager.load_session(session_id)
 
         config = await session_manager.get_agent_config(agent_id)
-        logger.info(f"Restoring agent from config: {config}, agent_id: {agent_id}")
         cached_config = self.load_cached_agent_config(
             config["workspace"], config["name"]
         )
@@ -150,6 +149,7 @@ class AgentFactory:
             for field in un_modifiable_fields:
                 del cached_config[field]
             config.update(cached_config)
+        logger.info(f"Restoring agent from config: {config}, agent_id: {agent_id}")
         agent_config = AgentConfig.from_config(config)
 
         llm_client = LLMClient()
