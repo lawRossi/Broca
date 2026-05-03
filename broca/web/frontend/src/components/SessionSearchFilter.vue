@@ -34,7 +34,5 @@ const handleCreate = () => {
       </template>
     </el-input>
 
-    <!-- 创建按钮 -->
-    <el-button type="primary" :icon="Plus" @click="handleCreate"> 创建会话 </el-button>
   </div>
 </template>

@@ -8,6 +8,7 @@ Windows → AF_PIPE (Named Pipe)
 
 import json
 import logging
+import threading
 import uuid
 from datetime import datetime, timezone
 from multiprocessing.connection import Client, Listener
@@ -52,6 +53,8 @@ class IPCServer:
         self._connection: Any = None
         self._running = False
         self._handlers: Dict[IPCMessageType, Callable] = {}
+        # 保护连接读写的锁，防止 stop_session 与 _ipc_listener_loop 竞态
+        self._lock = threading.Lock()
 
     def register_handler(self, msg_type: IPCMessageType, handler: Callable) -> None:
         """注册消息处理器"""
@@ -120,12 +123,15 @@ class IPCServer:
         if not self._connection:
             raise IPCConnectionError("No IPC connection established")
 
-        try:
-            data = json.dumps(msg.to_dict())
-            self._connection.send(data)
-            logger.debug("IPC sent: %s -> %s", msg.type.value, self.session_id)
-        except (BrokenPipeError, ConnectionError, EOFError) as e:
-            raise IPCConnectionError(f"IPC send failed (connection broken): {e}") from e
+        with self._lock:
+            try:
+                data = json.dumps(msg.to_dict())
+                self._connection.send(data)
+                logger.debug("IPC sent: %s -> %s", msg.type.value, self.session_id)
+            except (BrokenPipeError, ConnectionError, EOFError) as e:
+                raise IPCConnectionError(
+                    f"IPC send failed (connection broken): {e}"
+                ) from e
 
     def receive_message(self, timeout: float = 10.0) -> Optional[IPCMessage]:
         """
@@ -140,23 +146,25 @@ class IPCServer:
         if not self._connection:
             raise IPCConnectionError("No IPC connection established")
 
-        try:
-            if not self._connection.poll(timeout):
-                return None
+        with self._lock:
+            try:
+                if not self._connection.poll(timeout):
+                    return None
 
-            raw_data = self._connection.recv()
-            data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
-            msg = IPCMessage.from_dict(data)
-            logger.debug("IPC received: %s <- %s", msg.type.value, self.session_id)
-            return msg
-        except (BrokenPipeError, ConnectionError, EOFError) as e:
-            raise IPCConnectionError(
-                f"IPC receive failed (connection broken): {e}"
-            ) from e
+                raw_data = self._connection.recv()
+                data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
+                msg = IPCMessage.from_dict(data)
+                logger.debug("IPC received: %s <- %s", msg.type.value, self.session_id)
+                return msg
+            except (BrokenPipeError, ConnectionError, EOFError) as e:
+                raise IPCConnectionError(
+                    f"IPC receive failed (connection broken): {e}"
+                ) from e
 
     def close(self) -> None:
         """关闭 IPC 连接和服务端"""
-        self._running = False
+        # 第1步：先关闭底层连接/socket（无需持锁），这会使 poll() 立即返回/报错，
+        # 从而让监听线程快速从 receive_message 中退出
         try:
             if self._connection:
                 self._connection.close()
@@ -167,10 +175,14 @@ class IPCServer:
                 self._listener.close()
         except Exception:
             pass
-        self._connection = None
-        self._listener = None
 
-        # 清理 Unix Domain Socket 文件
+        # 第2步：持锁清理内部状态
+        with self._lock:
+            self._connection = None
+            self._listener = None
+            self._running = False
+
+        # 第3步：清理 Unix Domain Socket 文件（锁外执行）
         if self.family == "AF_UNIX":
             import os
 

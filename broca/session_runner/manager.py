@@ -448,7 +448,12 @@ class RunnerManager:
         )
 
         try:
-            # 通过 IPC 发送关闭命令
+            # 1) 先标记为正在关闭，让 _ipc_listener_loop 退出
+            runner_info.status = RunnerStatus.SHUTTING_DOWN
+            # 从 _runners 中移除，使监听循环退出 while 条件
+            self._runners.pop(session_id, None)
+
+            # 2) 通过 IPC 发送关闭命令
             ipc_server = self._ipc_servers.get(session_id)
             if ipc_server:
                 try:
@@ -458,33 +463,28 @@ class RunnerManager:
                         payload={"reason": "user_request"},
                     )
                     ipc_server.send_message(shutdown_msg)
-
-                    # 等待关闭完成事件
-                    try:
-                        resp = ipc_server.receive_message(timeout=timeout)
-                        logger.info(
-                            "Session %s shutdown response: %s",
-                            session_id,
-                            resp.type.value if resp else "timeout",
-                        )
-                    except IPCConnectionError:
-                        logger.warning(
-                            "IPC connection lost during shutdown of %s", session_id
-                        )
+                    logger.info(
+                        "Sent shutdown command to session %s runner", session_id
+                    )
                 except IPCConnectionError:
-                    logger.warning("Failed to send shutdown via IPC for %s", session_id)
+                    logger.warning(
+                        "Failed to send shutdown via IPC for %s (connection may already be closed)",
+                        session_id,
+                    )
 
-            # 等待进程退出
+            # 3) 等待进程退出（不要通过 IPC 读响应——_ipc_listener_loop 已退出，且
+            #    连接上可能有旧消息残留导致竞争；直接等进程退出更可靠）
             try:
                 runner_info.process.wait(timeout=timeout)
+                logger.info("Runner %s process exited gracefully", session_id)
             except subprocess.TimeoutExpired:
                 logger.warning(
                     "Runner %s did not exit in time, force killing", session_id
                 )
                 await self._kill_runner(session_id)
 
+            # 4) 清理资源
             await self._cleanup_runner(session_id)
-            # 从数据库删除
             await self._remove_runner_from_db(session_id)
             logger.info("Session %s runner stopped", session_id)
 
