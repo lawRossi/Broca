@@ -200,6 +200,21 @@ export class ChatWebViewManager {
       await socketClient.connect()
       await socketClient.subscribe(sessionId)
 
+      // Fetch session agents and send default agent ID to WebView
+      try {
+        const agents = await this.apiClient.getSessionAgents(sessionId)
+        const defaultAgentId = agents.find(a => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id
+                              || agents[0]?.agent_id
+        if (defaultAgentId) {
+          panel.webview.postMessage({
+            type: 'agents',
+            payload: { agents, defaultAgentId }
+          } as ExtensionToWebView)
+        }
+      } catch (e) {
+        console.error('[ChatWebView] Failed to fetch agents:', e)
+      }
+
       // Load initial history
       await this.handleLoadHistory(sessionId, panel, { skip: 0, limit: 50 })
 

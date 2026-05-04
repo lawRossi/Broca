@@ -117,7 +117,7 @@ export interface WebViewMessage {
 
 // Extension → WebView messages
 export interface ExtensionToWebView {
-  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'error' | 'config' | 'providers' | 'models' | 'saved'
+  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents'
   payload: any
 }
 

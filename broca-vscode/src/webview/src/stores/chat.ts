@@ -14,6 +14,7 @@ export const useChatStore = defineStore('chat', () => {
   const historyTotal = ref(0)
   const runnerInfo = ref<RunnerInfo | null>(null)
   const inputText = ref('')
+  const defaultAgentId = ref<string | undefined>(undefined)
 
   // Permission dialog state
   const permissionDialog = ref({
@@ -44,6 +45,10 @@ export const useChatStore = defineStore('chat', () => {
       switch (data.type) {
         case 'connected':
           connected.value = data.payload.connected
+          break
+
+        case 'agents':
+          defaultAgentId.value = data.payload.defaultAgentId
           break
 
         case 'message':
@@ -200,6 +205,9 @@ export const useChatStore = defineStore('chat', () => {
     // Generate messageId for optimistic update AND to share with extension
     const messageId = `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
     
+    // Use default agent if no specific receiver
+    const targetReceiver = receiverId || defaultAgentId.value
+    
     // Optimistic update - add user message locally
     addMessage({
       message_id: messageId,
@@ -207,7 +215,7 @@ export const useChatStore = defineStore('chat', () => {
       timestamp: new Date().toISOString(),
       role: 'user',
       sender_id: 'user',
-      receiver_id: receiverId,
+      receiver_id: targetReceiver,
       subscription: sessionId.value,
       data: { content, ...(files && { files }) },
     })
@@ -215,7 +223,7 @@ export const useChatStore = defineStore('chat', () => {
     // Send to extension host (include messageId so echo can be deduplicated)
     postMessage({
       type: 'sendMessage',
-      payload: { content, receiverId, files, messageId },
+      payload: { content, receiverId: targetReceiver, files, messageId },
     })
   }
 
