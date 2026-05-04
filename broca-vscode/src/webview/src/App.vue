@@ -9,8 +9,20 @@ import RunnerStatusBar from './components/RunnerStatusBar.vue'
 
 const chatStore = useChatStore()
 
+// Direct test: listen for ALL extension messages at window level
+window.addEventListener('message', (event) => {
+  const data = event.data
+  if (data && data.type === 'message' && data.payload?.message_type) {
+    console.log('[App-test] GOT MSG:', data.payload.message_type, data.payload.message_id)
+  } else if (data && data.type) {
+    console.log('[App-test] GOT EVENT:', data.type)
+  }
+})
+
 onMounted(() => {
+  console.log('[App-test] mounted, calling chatStore.init()')
   chatStore.init()
+  console.log('[App-test] chatStore.init() done')
 })
 
 onUnmounted(() => {
