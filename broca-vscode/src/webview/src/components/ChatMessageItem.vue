@@ -154,7 +154,7 @@ const toolResult = computed(() => {
       </div>
 
       <!-- Content -->
-      <div class="message-content markdown-body" v-html="renderedContent"></div>
+      <div class="message-content">{{ agentResponseContent }}</div>
     </template>
   </div>
 </template>
