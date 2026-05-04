@@ -433,36 +433,31 @@ export class ChatWebViewManager {
 
   private getWebviewContent(webview: vscode.Webview, sessionId: string): string {
     const webviewDist = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
-    const htmlPath = vscode.Uri.joinPath(webviewDist, 'index.html')
 
-    // Read the built HTML file
-    let html: string
-    try {
-      html = require('fs').readFileSync(htmlPath.fsPath, 'utf-8')
-    } catch {
-      return this.getFallbackHtml('Chat', 'Failed to load chat UI')
-    }
+    // Build URIs for the built assets
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewDist, 'assets', 'index.js'))
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewDist, 'assets', 'style.css'))
 
-    // Transform resource paths to webview URIs
-    html = this.transformResourcePaths(webview, webviewDist, html)
-
-    // Inject initial data as a JSON script tag (CSP-safe, no inline JS)
     const supabaseUrl = this.configManager.supabaseUrl
     const supabaseKey = this.configManager.supabaseKey
     const token = this.authManager.token
 
-    const initData = {
-      sessionId,
-      token: token || '',
-      supabaseUrl,
-      supabaseKey,
-    }
-    const initTag = `<script type="application/json" id="init-data">${JSON.stringify(initData)}</script>`
-
-    html = html.replace('</head>', initTag + '</head>')
-    html = this.addCSP(webview, html)
-
-    return html
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval'; img-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https: http://localhost:* ws://localhost:*;">
+  <link rel="stylesheet" href="${styleUri}">
+  <title>Broca Chat</title>
+</head>
+<body>
+  <div id="test-mark" style="display:none;">loaded</div>
+  <div id="app"></div>
+  <script type="application/json" id="init-data">${JSON.stringify({ sessionId, token: token || '', supabaseUrl, supabaseKey })}</script>
+  <script src="${scriptUri}"></script>
+</body>
+</html>`
   }
 
   private getConfigWebviewContent(webview: vscode.Webview): string {

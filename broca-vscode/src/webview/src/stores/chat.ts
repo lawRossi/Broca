@@ -84,28 +84,12 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleIncomingMessage(message: Message) {
-    // Debug: log agent_response content
-    if (message.message_type === 'agent_response') {
-      console.log('[ChatStore] agent_response received:', {
-        message_id: message.message_id,
-        contentType: typeof message.data?.content,
-        contentRaw: message.data?.content?.substring?.(0, 100),
-        dataKeys: Object.keys(message.data || {}),
-      })
-    }
+    // TEMP: push everything except internal types
+    const skip = ['turn_start', 'turn_end', 'command', 'subscribe', 'unsubscribe', 'connect', 'disconnect', 'ping', 'pong']
+    if (skip.includes(message.message_type)) return
 
-    // Process/filter message (same logic as web version's processMessage)
-    const processed = processMessage(message)
-    if (!processed) {
-      if (message.message_type === 'agent_response') {
-        console.log('[ChatStore] agent_response FILTERED OUT')
-      }
-      return
-    }
-
-    if (message.message_type === 'agent_response') {
-      console.log('[ChatStore] agent_response PASSED filter, adding to list')
-    }
+    // Debug: log ALL incoming messages  
+    console.log('[ChatStore] GOT MESSAGE:', message.message_type, message.message_id, message.data?.content?.substring?.(0, 60))
 
     // Handle undo/redo results
     if (message.message_type === 'command_result') {
@@ -121,37 +105,27 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    // Clear redo state for new messages
+    // Clear redo state
     if (message.message_type !== 'command_result') {
       showRedoButton.value = false
       redoReceiverId.value = undefined
     }
 
-    // Check if it's a permission request
+    // Permission dialog
     if (message.message_type === 'permission_request') {
-      permissionDialog.value = {
-        visible: true,
-        requestId: message.data?.request_id,
-        senderId: message.sender_id,
-        message: message.data?.message || 'Permission required',
-      }
+      permissionDialog.value = { visible: true, requestId: message.data?.request_id, senderId: message.sender_id, message: message.data?.message || 'Permission required' }
       return
     }
 
-    // Check if it's an agent query
+    // Agent query dialog
     if (message.message_type === 'agent_query') {
-      agentQueryDialog.value = {
-        visible: true,
-        requestId: message.data?.request_id,
-        senderId: message.sender_id,
-        question: message.data?.question || message.data?.content || '',
-        options: message.data?.options || [],
-      }
+      agentQueryDialog.value = { visible: true, requestId: message.data?.request_id, senderId: message.sender_id, question: message.data?.question || message.data?.content || '', options: message.data?.options || [] }
       return
     }
 
-    // Add message to list
-    addMessage(message)
+    // Add message directly (NO filtering, NO merging)
+    messages.value.push(message)
+    console.log('[ChatStore] Messages count now:', messages.value.length)
   }
 
   /**
