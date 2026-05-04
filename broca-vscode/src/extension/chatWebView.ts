@@ -380,23 +380,20 @@ export class ChatWebViewManager {
     // Transform resource paths to webview URIs
     html = this.transformResourcePaths(webview, webviewDist, html)
 
-    // Inject initial data
+    // Inject initial data as a JSON script tag (CSP-safe, no inline JS)
     const supabaseUrl = this.configManager.supabaseUrl
     const supabaseKey = this.configManager.supabaseKey
     const token = this.authManager.token
 
-    const initScript = `
-<script>
-  window.__INITIAL_DATA__ = {
-    sessionId: '${sessionId}',
-    token: '${token || ''}',
-    supabaseUrl: '${supabaseUrl}',
-    supabaseKey: '${supabaseKey}',
-    vscode: acquireVsCodeApi()
-  }
-</script>`
+    const initData = {
+      sessionId,
+      token: token || '',
+      supabaseUrl,
+      supabaseKey,
+    }
+    const initTag = `<script type="application/json" id="init-data">${JSON.stringify(initData)}</script>`
 
-    html = html.replace('</head>', initScript + '</head>')
+    html = html.replace('</head>', initTag + '</head>')
     html = this.addCSP(webview, html)
 
     return html
@@ -417,15 +414,9 @@ export class ChatWebViewManager {
     // Transform resource paths to webview URIs
     html = this.transformResourcePaths(webview, webviewDist, html)
 
-    // Inject initial data
-    const initScript = `
-<script>
-  window.__INITIAL_DATA__ = {
-    vscode: acquireVsCodeApi()
-  }
-</script>`
-
-    html = html.replace('</head>', initScript + '</head>')
+    // Inject empty data for config page (no session-specific data needed)
+    const initTag = `<script type="application/json" id="init-data">{}</script>`
+    html = html.replace('</head>', initTag + '</head>')
     html = this.addCSP(webview, html)
 
     return html

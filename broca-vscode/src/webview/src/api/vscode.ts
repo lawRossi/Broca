@@ -46,9 +46,23 @@ export interface InitialData {
   token: string
   supabaseUrl: string
   supabaseKey: string
-  vscode: VSCodeAPI
 }
 
-export function getInitialData(): InitialData {
-  return (window as any).__INITIAL_DATA__
+/**
+ * Read initial data injected by the extension host as a JSON script tag.
+ * CSP-safe: uses <script type="application/json" id="init-data">...</script>
+ */
+export function getInitialData(): InitialData | null {
+  try {
+    const el = document.getElementById('init-data')
+    if (!el) {
+      // Fallback: try window.__INITIAL_DATA__ (for compatibility)
+      const fallback = (window as any).__INITIAL_DATA__
+      if (fallback) return fallback
+      return null
+    }
+    return JSON.parse(el.textContent || '{}')
+  } catch {
+    return null
+  }
 }

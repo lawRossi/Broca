@@ -10,7 +10,7 @@ const fileInputRef = ref<HTMLInputElement>()
 
 // Supabase for file upload
 const initData = getInitialData()
-const supabase = (initData.supabaseUrl && initData.supabaseKey)
+const supabase = (initData?.supabaseUrl && initData?.supabaseKey)
   ? createClient(initData.supabaseUrl, initData.supabaseKey)
   : null
 
