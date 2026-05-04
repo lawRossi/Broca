@@ -36,12 +36,22 @@ export class ApiClient {
       return config
     })
 
-    // Response interceptor for error handling
+    // Response interceptor: unwrap ApiResponse { code, data, msg } → data
     this.client.interceptors.response.use(
-      (response) => response,
+      (response) => {
+        const body = response.data
+        // If the backend wraps in { code: 200, data: { ... }, msg: "..." }
+        if (body && typeof body === 'object' && 'code' in body) {
+          if (body.code === 200) {
+            return body.data  // return the inner data directly
+          } else {
+            return Promise.reject(new Error(body.msg || 'Request failed'))
+          }
+        }
+        return body // fallback: return as-is
+      },
       (error) => {
         if (error.response?.status === 401) {
-          // Token expired or invalid
           console.error('Authentication failed: token may be expired')
         }
         return Promise.reject(error)
