@@ -1,0 +1,433 @@
+import * as vscode from 'vscode'
+import { AuthManager } from './auth'
+import { ConfigManager } from './config'
+import { ApiClient } from './api'
+import { SocketClient } from './socket'
+import type { Session, WebViewMessage, ExtensionToWebView } from './types'
+
+export class ChatWebViewManager {
+  private panels = new Map<string, vscode.WebviewPanel>()
+  private socketClients = new Map<string, SocketClient>()
+  private runnerPollTimers = new Map<string, NodeJS.Timeout>()
+  private apiClient: ApiClient
+
+  constructor(
+    private context: vscode.ExtensionContext,
+    private authManager: AuthManager,
+    private configManager: ConfigManager
+  ) {
+    this.apiClient = new ApiClient(configManager, () => authManager.token)
+  }
+
+  async openChat(sessionId: string) {
+    // Check if panel already exists
+    const existingPanel = this.panels.get(sessionId)
+    if (existingPanel) {
+      existingPanel.reveal()
+      return
+    }
+
+    // Get session info for title
+    const session = await this.apiClient.getSessions({ limit: 1, keyword: sessionId })
+    const sessionInfo = session.sessions?.[0]
+    const title = sessionInfo?.description || sessionId.slice(0, 8) + '...'
+
+    // Create new WebView panel
+    const panel = vscode.window.createWebviewPanel(
+      'broca.chat',
+      `Broca: ${title}`,
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
+        ],
+      }
+    )
+
+    // Set HTML content
+    panel.webview.html = this.getWebviewContent(panel.webview, sessionId)
+
+    // Store panel reference
+    this.panels.set(sessionId, panel)
+
+    // Handle panel disposal
+    panel.onDidDispose(() => {
+      this.disposeSession(sessionId)
+      this.panels.delete(sessionId)
+    })
+
+    // Handle messages from WebView
+    panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
+      await this.handleWebViewMessage(sessionId, panel, message)
+    })
+
+    // Handle view state changes (pause/resume polling)
+    panel.onDidChangeViewState((e) => {
+      if (e.webviewPanel.visible) {
+        this.startRunnerPolling(sessionId, panel)
+      } else {
+        this.stopRunnerPolling(sessionId)
+      }
+    })
+  }
+
+  async openConfigPage() {
+    const panel = vscode.window.createWebviewPanel(
+      'broca.config',
+      'Broca Settings',
+      vscode.ViewColumn.One,
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
+        ],
+      }
+    )
+
+    panel.webview.html = this.getConfigWebviewContent(panel.webview)
+
+    panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
+      if (message.type === 'getConfig') {
+        panel.webview.postMessage({
+          type: 'config',
+          payload: this.configManager.getAll(),
+        } as ExtensionToWebView)
+      } else if (message.type === 'saveConfig') {
+        this.configManager.setAll(message.payload)
+        vscode.window.showInformationMessage('Configuration saved')
+      } else if (message.type === 'getProviders') {
+        try {
+          const providers = await this.apiClient.getLLMProviders()
+          panel.webview.postMessage({
+            type: 'providers',
+            payload: providers,
+          } as ExtensionToWebView)
+        } catch (error: any) {
+          panel.webview.postMessage({
+            type: 'error',
+            payload: { message: error.message },
+          } as ExtensionToWebView)
+        }
+      } else if (message.type === 'getModels') {
+        try {
+          const models = await this.apiClient.getLLMModels(message.payload.provider)
+          panel.webview.postMessage({
+            type: 'models',
+            payload: models,
+          } as ExtensionToWebView)
+        } catch (error: any) {
+          panel.webview.postMessage({
+            type: 'error',
+            payload: { message: error.message },
+          } as ExtensionToWebView)
+        }
+      }
+    })
+  }
+
+  private async handleWebViewMessage(
+    sessionId: string,
+    panel: vscode.WebviewPanel,
+    message: WebViewMessage
+  ) {
+    switch (message.type) {
+      case 'ready':
+        await this.initializeSession(sessionId, panel)
+        break
+
+      case 'sendMessage':
+        await this.handleSendMessage(sessionId, panel, message.payload)
+        break
+
+      case 'loadHistory':
+        await this.handleLoadHistory(sessionId, panel, message.payload)
+        break
+
+      case 'respondPermission':
+        await this.handlePermissionResponse(sessionId, message.payload)
+        break
+
+      case 'respondAgentQuery':
+        await this.handleAgentQueryResponse(sessionId, message.payload)
+        break
+
+      case 'redo':
+        await this.sendCommand(sessionId, 'redo', message.payload)
+        break
+
+      case 'undo':
+        await this.sendCommand(sessionId, 'undo', message.payload)
+        break
+
+      case 'abort':
+        await this.sendCommand(sessionId, 'abort', message.payload)
+        break
+    }
+  }
+
+  private async initializeSession(sessionId: string, panel: vscode.WebviewPanel) {
+    try {
+      // Create socket client
+      const socketClient = new SocketClient(this.configManager, () => this.authManager.token)
+      this.socketClients.set(sessionId, socketClient)
+
+      // Set up socket event handlers
+      socketClient.setEventHandlers({
+        onConnect: () => {
+          panel.webview.postMessage({ type: 'connected', payload: { connected: true } } as ExtensionToWebView)
+        },
+        onDisconnect: () => {
+          panel.webview.postMessage({ type: 'connected', payload: { connected: false } } as ExtensionToWebView)
+        },
+        onMessage: (msg) => {
+          panel.webview.postMessage({ type: 'message', payload: msg } as ExtensionToWebView)
+        },
+        onError: (error) => {
+          panel.webview.postMessage({ type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+        },
+      })
+
+      // Connect and subscribe
+      await socketClient.connect()
+      await socketClient.subscribe(sessionId)
+
+      // Load initial history
+      await this.handleLoadHistory(sessionId, panel, { skip: 0, limit: 50 })
+
+      // Start runner polling
+      this.startRunnerPolling(sessionId, panel)
+
+    } catch (error: any) {
+      panel.webview.postMessage({
+        type: 'error',
+        payload: { message: `Failed to initialize: ${error.message}` },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleSendMessage(
+    sessionId: string,
+    panel: vscode.WebviewPanel,
+    payload: { content: string; receiverId?: string; files?: any[] }
+  ) {
+    const socketClient = this.socketClients.get(sessionId)
+    if (!socketClient) {
+      panel.webview.postMessage({ type: 'error', payload: { message: 'Not connected' } } as ExtensionToWebView)
+      return
+    }
+
+    const messageId = `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
+
+    try {
+      await socketClient.sendUserMessage({
+        messageId,
+        content: payload.content,
+        receiverId: payload.receiverId,
+        subscription: sessionId,
+        files: payload.files,
+      })
+    } catch (error: any) {
+      panel.webview.postMessage({
+        type: 'error',
+        payload: { message: `Send failed: ${error.message}` },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleLoadHistory(
+    sessionId: string,
+    panel: vscode.WebviewPanel,
+    payload: { skip: number; limit: number }
+  ) {
+    try {
+      const response = await this.apiClient.getSessionMessages(sessionId, payload.skip, payload.limit)
+      panel.webview.postMessage({
+        type: 'historyLoaded',
+        payload: {
+          messages: response.messages,
+          total: response.total,
+          skip: payload.skip,
+          limit: payload.limit,
+        },
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      panel.webview.postMessage({
+        type: 'error',
+        payload: { message: `Failed to load history: ${error.message}` },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handlePermissionResponse(
+    sessionId: string,
+    payload: { granted: boolean; requestId?: string; receiverId?: string }
+  ) {
+    const socketClient = this.socketClients.get(sessionId)
+    if (!socketClient) return
+
+    try {
+      await socketClient.sendPermissionResponse({
+        granted: payload.granted,
+        requestId: payload.requestId,
+        receiverId: payload.receiverId,
+        subscription: sessionId,
+      })
+    } catch (error: any) {
+      console.error('Failed to send permission response:', error)
+    }
+  }
+
+  private async handleAgentQueryResponse(
+    sessionId: string,
+    payload: { answer: string; requestId?: string; receiverId?: string }
+  ) {
+    const socketClient = this.socketClients.get(sessionId)
+    if (!socketClient) return
+
+    try {
+      await socketClient.sendUserAnswer({
+        answer: payload.answer,
+        requestId: payload.requestId,
+        receiverId: payload.receiverId,
+      })
+    } catch (error: any) {
+      console.error('Failed to send agent query response:', error)
+    }
+  }
+
+  private async sendCommand(
+    sessionId: string,
+    command: string,
+    payload?: { receiverId?: string; targetMessageId?: string; level?: string }
+  ) {
+    const socketClient = this.socketClients.get(sessionId)
+    if (!socketClient) return
+
+    try {
+      await socketClient.sendCommand({
+        command,
+        arguments: payload ? { target_message_id: payload.targetMessageId, level: payload.level } : undefined,
+        receiverId: payload?.receiverId,
+        subscription: sessionId,
+      })
+    } catch (error: any) {
+      console.error(`Failed to send ${command} command:`, error)
+    }
+  }
+
+  private async startRunnerPolling(sessionId: string, panel: vscode.WebviewPanel) {
+    this.stopRunnerPolling(sessionId)
+
+    const poll = async () => {
+      try {
+        const status = await this.apiClient.getRunnerStatus(sessionId)
+        panel.webview.postMessage({
+          type: 'runnerStatus',
+          payload: status,
+        } as ExtensionToWebView)
+      } catch {
+        // Ignore polling errors
+      }
+    }
+
+    // Initial fetch
+    await poll()
+
+    // Poll every 10 seconds
+    const timer = setInterval(poll, 10000)
+    this.runnerPollTimers.set(sessionId, timer)
+  }
+
+  private stopRunnerPolling(sessionId: string) {
+    const timer = this.runnerPollTimers.get(sessionId)
+    if (timer) {
+      clearInterval(timer)
+      this.runnerPollTimers.delete(sessionId)
+    }
+  }
+
+  private disposeSession(sessionId: string) {
+    this.stopRunnerPolling(sessionId)
+
+    const socketClient = this.socketClients.get(sessionId)
+    if (socketClient) {
+      socketClient.disconnect()
+      this.socketClients.delete(sessionId)
+    }
+  }
+
+  private getWebviewContent(webview: vscode.Webview, sessionId: string): string {
+    // Get the local path to the webview build output
+    const webviewPath = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
+
+    // Get URIs for the resources
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewPath, 'assets', 'index.js'))
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewPath, 'assets', 'index.css'))
+
+    // Get Supabase config
+    const supabaseUrl = this.configManager.supabaseUrl
+    const supabaseKey = this.configManager.supabaseKey
+    const token = this.authManager.token
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval'; img-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https: http://localhost:* ws://localhost:*;">
+  <link rel="stylesheet" href="${styleUri}">
+  <title>Broca Chat</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    window.__INITIAL_DATA__ = {
+      sessionId: '${sessionId}',
+      token: '${token || ''}',
+      supabaseUrl: '${supabaseUrl}',
+      supabaseKey: '${supabaseKey}',
+      vscode: acquireVsCodeApi()
+    }
+  </script>
+  <script src="${scriptUri}"></script>
+</body>
+</html>`
+  }
+
+  private getConfigWebviewContent(webview: vscode.Webview): string {
+    const webviewPath = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
+    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewPath, 'assets', 'config.js'))
+    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewPath, 'assets', 'config.css'))
+
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval'; img-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https: http://localhost:* ws://localhost:*;">
+  <link rel="stylesheet" href="${styleUri}">
+  <title>Broca Settings</title>
+</head>
+<body>
+  <div id="app"></div>
+  <script>
+    window.__INITIAL_DATA__ = {
+      vscode: acquireVsCodeApi()
+    }
+  </script>
+  <script src="${scriptUri}"></script>
+</body>
+</html>`
+  }
+
+  dispose() {
+    // Dispose all panels and resources
+    for (const [sessionId] of this.panels) {
+      this.disposeSession(sessionId)
+    }
+    this.panels.clear()
+  }
+}

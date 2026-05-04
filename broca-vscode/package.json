@@ -1,0 +1,234 @@
+{
+  "name": "broca-chat",
+  "displayName": "Broca Chat",
+  "description": "Broca AI Assistant for VSCode - Session management and chat interaction",
+  "version": "0.1.0",
+  "publisher": "broca",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Chat",
+    "Other"
+  ],
+  "activationEvents": [
+    "onView:broca.sessionManager",
+    "onCommand:broca.openChat",
+    "onCommand:broca.createSession",
+    "onCommand:broca.login",
+    "onCommand:broca.logout",
+    "onCommand:broca.configure"
+  ],
+  "main": "./dist/extension/activation.js",
+  "contributes": {
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "broca",
+          "title": "Broca",
+          "icon": "$(comment-discussion)"
+        }
+      ]
+    },
+    "views": {
+      "broca": [
+        {
+          "type": "tree",
+          "id": "broca.sessionManager",
+          "name": "Sessions"
+        }
+      ]
+    },
+    "commands": [
+      {
+        "command": "broca.openChat",
+        "title": "Open Broca Chat"
+      },
+      {
+        "command": "broca.createSession",
+        "title": "Create Session",
+        "icon": "$(plus)"
+      },
+      {
+        "command": "broca.login",
+        "title": "Login to Broca"
+      },
+      {
+        "command": "broca.logout",
+        "title": "Logout from Broca"
+      },
+      {
+        "command": "broca.configure",
+        "title": "Configure Broca Settings"
+      },
+      {
+        "command": "broca.refreshSessions",
+        "title": "Refresh Sessions",
+        "icon": "$(refresh)"
+      },
+      {
+        "command": "broca.signUp",
+        "title": "Create Broca Account"
+      },
+      {
+        "command": "broca.copySessionId",
+        "title": "Copy Session ID"
+      },
+      {
+        "command": "broca.copySessionWorkspace",
+        "title": "Copy Workspace Path"
+      },
+      {
+        "command": "broca.restartRunner",
+        "title": "Restart Runner"
+      },
+      {
+        "command": "broca.stopRunner",
+        "title": "Stop Runner"
+      },
+      {
+        "command": "broca.deleteSession",
+        "title": "Delete Session"
+      }
+    ],
+    "submenus": [
+      {
+        "id": "broca.sessionActions",
+        "label": "More Actions..."
+      }
+    ],
+    "menus": {
+      "view/title": [
+        {
+          "command": "broca.createSession",
+          "when": "view == broca.sessionManager",
+          "group": "navigation"
+        },
+        {
+          "command": "broca.refreshSessions",
+          "when": "view == broca.sessionManager",
+          "group": "navigation"
+        }
+      ],
+      "view/item/context": [
+        {
+          "command": "broca.openChat",
+          "when": "view == broca.sessionManager && viewItem == session",
+          "group": "inline"
+        },
+        {
+          "command": "broca.copySessionId",
+          "when": "view == broca.sessionManager && viewItem == session",
+          "group": "inline"
+        },
+        {
+          "submenu": "broca.sessionActions",
+          "when": "view == broca.sessionManager && viewItem == session",
+          "group": "inline"
+        }
+      ],
+      "broca.sessionActions": [
+        {
+          "command": "broca.restartRunner",
+          "when": "view == broca.sessionManager && viewItem == session"
+        },
+        {
+          "command": "broca.stopRunner",
+          "when": "view == broca.sessionManager && viewItem == session"
+        },
+        {
+          "command": "broca.copySessionWorkspace",
+          "when": "view == broca.sessionManager && viewItem == session"
+        },
+        {
+          "command": "broca.deleteSession",
+          "when": "view == broca.sessionManager && viewItem == session"
+        }
+      ],
+      "commandPalette": [
+        {
+          "command": "broca.copySessionId",
+          "when": "false"
+        },
+        {
+          "command": "broca.copySessionWorkspace",
+          "when": "false"
+        },
+        {
+          "command": "broca.restartRunner",
+          "when": "false"
+        },
+        {
+          "command": "broca.stopRunner",
+          "when": "false"
+        },
+        {
+          "command": "broca.deleteSession",
+          "when": "false"
+        }
+      ]
+    },
+    "configuration": {
+      "title": "Broca",
+      "properties": {
+        "broca.serverUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Broca backend server URL"
+        },
+        "broca.wsUrl": {
+          "type": "string",
+          "default": "http://localhost:8000",
+          "description": "Broca WebSocket server URL"
+        },
+        "broca.defaultProvider": {
+          "type": "string",
+          "default": "",
+          "description": "Default LLM provider for new sessions"
+        },
+        "broca.defaultModel": {
+          "type": "string",
+          "default": "",
+          "description": "Default LLM model for new sessions"
+        },
+        "broca.supabaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Supabase project URL"
+        },
+        "broca.supabaseKey": {
+          "type": "string",
+          "default": "",
+          "description": "Supabase anon/public key"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "dev:extension": "tsc -p tsconfig.extension.json --watch",
+    "dev:webview": "vite build --config vite.config.ts --watch",
+    "dev": "concurrently \"npm run dev:extension\" \"npm run dev:webview\"",
+    "build:extension": "tsc -p tsconfig.extension.json",
+    "build:webview": "vite build --config vite.config.ts",
+    "build": "npm run build:extension && npm run build:webview",
+    "package": "npm run build && vsce package",
+    "lint": "eslint src --ext ts,vue"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.97.0",
+    "axios": "^1.13.5",
+    "socket.io-client": "^4.8.3"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "concurrently": "^9.1.2",
+    "typescript": "^5.9.3",
+    "vite": "^6.3.5",
+    "vsce": "^2.15.0",
+    "vue": "^3.5.28",
+    "pinia": "^3.0.4",
+    "marked": "^17.0.5",
+    "diff": "^9.0.0"
+  }
+}
