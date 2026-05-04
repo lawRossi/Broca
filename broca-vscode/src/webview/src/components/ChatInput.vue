@@ -96,6 +96,8 @@ async function uploadPendingFiles() {
 
 function handleSend() {
   const text = chatStore.inputText.trim()
+  console.log('[ChatInput] handleSend called, text:', JSON.stringify(text), 'runnerAlive:', chatStore.runnerAlive)
+
   const uploadedFiles = pendingFiles.value
     .filter(f => f.status === 'success' && f.uploadedData)
     .map(f => ({
@@ -119,6 +121,7 @@ function handleSend() {
     cleanText = text.replace(/@\w+\s*/, '').trim()
   }
 
+  console.log('[ChatInput] Sending:', { cleanText, targetAgentId, uploadedFiles: uploadedFiles.length })
   chatStore.sendMessage(cleanText, targetAgentId, uploadedFiles)
   chatStore.inputText = ''
 

@@ -60,6 +60,7 @@ export class ChatWebViewManager {
 
     // Handle messages from WebView
     panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
+      console.log('[ChatWebView] received from WebView:', message.type, message.payload ? Object.keys(message.payload) : '')
       await this.handleWebViewMessage(sessionId, panel, message)
     })
 
@@ -197,14 +198,20 @@ export class ChatWebViewManager {
       })
 
       // Connect and subscribe
+      console.log('[ChatWebView] Connecting socket...')
       await socketClient.connect()
+      console.log('[ChatWebView] Socket connected, subscribing...')
       await socketClient.subscribe(sessionId)
+      console.log('[ChatWebView] Subscribed to', sessionId)
 
       // Fetch session agents and send default agent ID to WebView
       try {
+        console.log('[ChatWebView] Fetching agents for', sessionId)
         const agents = await this.apiClient.getSessionAgents(sessionId)
-        const defaultAgentId = agents.find(a => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id
+        console.log('[ChatWebView] Agents:', JSON.stringify(agents.map((a: any) => ({ id: a.agent_id, role: a.role, name: a.name }))))
+        const defaultAgentId = agents.find((a: any) => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id
                               || agents[0]?.agent_id
+        console.log('[ChatWebView] defaultAgentId:', defaultAgentId)
         if (defaultAgentId) {
           panel.webview.postMessage({
             type: 'agents',
@@ -235,7 +242,10 @@ export class ChatWebViewManager {
     payload: { content: string; receiverId?: string; files?: any[]; messageId?: string }
   ) {
     const socketClient = this.socketClients.get(sessionId)
+    console.log('[ChatWebView] handleSendMessage:', { sessionId, hasSocket: !!socketClient, receiverId: payload.receiverId, content: payload.content?.substring(0, 50) })
+
     if (!socketClient) {
+      console.log('[ChatWebView] No socket client for session:', sessionId)
       panel.webview.postMessage({ type: 'error', payload: { message: 'Not connected' } } as ExtensionToWebView)
       return
     }
@@ -244,6 +254,7 @@ export class ChatWebViewManager {
     const messageId = payload.messageId || `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
 
     try {
+      console.log('[ChatWebView] Calling socket.sendUserMessage...')
       await socketClient.sendUserMessage({
         messageId,
         content: payload.content,
@@ -251,7 +262,9 @@ export class ChatWebViewManager {
         subscription: sessionId,
         files: payload.files,
       })
+      console.log('[ChatWebView] socket.sendUserMessage completed successfully')
     } catch (error: any) {
+      console.log('[ChatWebView] socket.sendUserMessage FAILED:', error.message)
       panel.webview.postMessage({
         type: 'error',
         payload: { message: `Send failed: ${error.message}` },

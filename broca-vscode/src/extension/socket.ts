@@ -112,7 +112,10 @@ export class SocketClient {
       upload_time: string
     }>
   }): Promise<void> {
-    if (!this.socket?.connected) throw new Error('Not connected')
+    if (!this.socket?.connected) {
+      console.log('[Socket] sendUserMessage FAILED: not connected')
+      throw new Error('Not connected')
+    }
 
     const message: Message = {
       message_id: params.messageId,
@@ -128,10 +131,16 @@ export class SocketClient {
       },
     }
 
+    console.log('[Socket] Emitting message:', { messageId: params.messageId, receiverId: params.receiverId, subscription: params.subscription })
+
     return new Promise((resolve, reject) => {
       this.socket!.emit('message', message, (response: any) => {
-        if (response?.error) reject(new Error(response.error))
-        else resolve()
+        console.log('[Socket] Emit response:', response)
+        if (response?.error) {
+          reject(new Error(response.error))
+        } else {
+          resolve()
+        }
       })
     })
   }

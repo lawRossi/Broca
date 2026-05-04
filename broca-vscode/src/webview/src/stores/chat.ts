@@ -41,7 +41,10 @@ export const useChatStore = defineStore('chat', () => {
 
   // Initialize: listen for messages from extension host
   function init() {
+    console.log('[ChatStore] init, sessionId:', sessionId.value, 'connected:', connected.value)
+    
     onMessage((data: any) => {
+      console.log('[ChatStore] received from extension:', data.type)
       switch (data.type) {
         case 'connected':
           connected.value = data.payload.connected
@@ -200,14 +203,18 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function sendMessage(content: string, receiverId?: string, files?: any[]) {
-    if (!content.trim() && (!files || files.length === 0)) return
+    if (!content.trim() && (!files || files.length === 0)) {
+      console.log('[ChatStore] sendMessage skipped: empty content')
+      return
+    }
 
     // Generate messageId for optimistic update AND to share with extension
     const messageId = `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
     
     // Use default agent if no specific receiver
     const targetReceiver = receiverId || defaultAgentId.value
-    
+    console.log('[ChatStore] sendMessage:', { messageId, content, targetReceiver, defaultAgentId: defaultAgentId.value, filesCount: files?.length })
+
     // Optimistic update - add user message locally
     addMessage({
       message_id: messageId,
@@ -221,6 +228,7 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     // Send to extension host (include messageId so echo can be deduplicated)
+    console.log('[ChatStore] posting sendMessage to extension')
     postMessage({
       type: 'sendMessage',
       payload: { content, receiverId: targetReceiver, files, messageId },
