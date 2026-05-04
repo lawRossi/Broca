@@ -206,6 +206,11 @@ export class ChatWebViewManager {
           this.postToPanel(panel, { type: 'connected', payload: { connected: false } } as ExtensionToWebView)
         },
         onMessage: (msg) => {
+          if (msg.message_type === 'agent_response') {
+            console.log('[ChatWebView] FORWARDING agent_response to WebView:', msg.message_id, 'content length:', msg.data?.content?.length)
+          } else if (msg.message_type === 'tool_call') {
+            console.log('[ChatWebView] FORWARDING tool_call to WebView:', msg.message_id)
+          }
           this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
         },
         onError: (error) => {
