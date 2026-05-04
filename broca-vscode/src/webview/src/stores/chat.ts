@@ -205,8 +205,12 @@ export const useChatStore = defineStore('chat', () => {
     const filtered = (payload.messages || []).filter(m => processMessage(m) !== null)
 
     if (payload.skip === 0) {
-      // Initial load - replace all messages
-      messages.value = filtered
+      // Initial load: merge with any messages already received in real-time
+      // (don't replace, otherwise real-time messages arriving before history load complete get lost)
+      const existingIds = new Set(messages.value.map(m => m.message_id))
+      const newFromHistory = filtered.filter(m => !existingIds.has(m.message_id))
+      // Keep existing messages first (they arrived in real-time), append history messages that aren't already there
+      messages.value = [...messages.value, ...newFromHistory]
     } else {
       // Load more - prepend to existing messages
       const newMessages = [...filtered, ...messages.value]
