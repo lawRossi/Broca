@@ -35,6 +35,9 @@ onMounted(() => {
       case 'models':
         models.value = data.payload || []
         break
+      case 'saved':
+        saving.value = false
+        break
       case 'error':
         console.error('Error:', data.payload.message)
         break
@@ -53,7 +56,8 @@ function onProviderChange() {
 function saveConfig() {
   saving.value = true
   postMessage({ type: 'saveConfig', payload: config.value })
-  setTimeout(() => { saving.value = false }, 500)
+  // Fallback: reset saving state after 5s in case response is lost
+  setTimeout(() => { saving.value = false }, 5000)
 }
 </script>
 
