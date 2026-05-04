@@ -19,12 +19,28 @@ export class ChatWebViewManager {
     this.apiClient = new ApiClient(configManager, () => authManager.token)
   }
 
+  /**
+   * Safely post a message to a WebView panel. Silently ignore if panel is disposed.
+   */
+  private postToPanel(panel: vscode.WebviewPanel, message: ExtensionToWebView): void {
+    try {
+      this.postToPanel(panel, message)
+    } catch {
+      // Panel was disposed, ignore
+    }
+  }
+
   async openChat(sessionId: string) {
-    // Check if panel already exists
+    // Check if panel already exists and is not disposed
     const existingPanel = this.panels.get(sessionId)
     if (existingPanel) {
-      existingPanel.reveal()
-      return
+      try {
+        existingPanel.reveal()
+        return
+      } catch {
+        // Panel was disposed, remove it and create a new one
+        this.panels.delete(sessionId)
+      }
     }
 
     // Get session info for title
@@ -92,7 +108,7 @@ export class ChatWebViewManager {
 
     panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
       if (message.type === 'getConfig') {
-        panel.webview.postMessage({
+        this.postToPanel(panel, {
           type: 'config',
           payload: this.configManager.getAll(),
         } as ExtensionToWebView)
@@ -103,17 +119,17 @@ export class ChatWebViewManager {
         this.authManager.reconfigure()
         console.log('[ChatWebView] Auth reconfigured, sending response')
         vscode.window.showInformationMessage('Configuration saved')
-        panel.webview.postMessage({ type: 'saved' } as ExtensionToWebView)
+        this.postToPanel(panel, { type: 'saved' } as ExtensionToWebView)
         console.log('[ChatWebView] saved response sent')
       } else if (message.type === 'getProviders') {
         try {
           const providers = await this.apiClient.getLLMProviders()
-          panel.webview.postMessage({
+          this.postToPanel(panel, {
             type: 'providers',
             payload: providers,
           } as ExtensionToWebView)
         } catch (error: any) {
-          panel.webview.postMessage({
+          this.postToPanel(panel, {
             type: 'error',
             payload: { message: error.message },
           } as ExtensionToWebView)
@@ -121,12 +137,12 @@ export class ChatWebViewManager {
       } else if (message.type === 'getModels') {
         try {
           const models = await this.apiClient.getLLMModels(message.payload.provider)
-          panel.webview.postMessage({
+          this.postToPanel(panel, {
             type: 'models',
             payload: models,
           } as ExtensionToWebView)
         } catch (error: any) {
-          panel.webview.postMessage({
+          this.postToPanel(panel, {
             type: 'error',
             payload: { message: error.message },
           } as ExtensionToWebView)
@@ -184,16 +200,16 @@ export class ChatWebViewManager {
       // Set up socket event handlers
       socketClient.setEventHandlers({
         onConnect: () => {
-          panel.webview.postMessage({ type: 'connected', payload: { connected: true } } as ExtensionToWebView)
+          this.postToPanel(panel, { type: 'connected', payload: { connected: true } } as ExtensionToWebView)
         },
         onDisconnect: () => {
-          panel.webview.postMessage({ type: 'connected', payload: { connected: false } } as ExtensionToWebView)
+          this.postToPanel(panel, { type: 'connected', payload: { connected: false } } as ExtensionToWebView)
         },
         onMessage: (msg) => {
-          panel.webview.postMessage({ type: 'message', payload: msg } as ExtensionToWebView)
+          this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
         },
         onError: (error) => {
-          panel.webview.postMessage({ type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+          this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
         },
       })
 
@@ -213,7 +229,7 @@ export class ChatWebViewManager {
                               || agents[0]?.agent_id
         console.log('[ChatWebView] defaultAgentId:', defaultAgentId)
         if (defaultAgentId) {
-          panel.webview.postMessage({
+          this.postToPanel(panel, {
             type: 'agents',
             payload: { agents, defaultAgentId }
           } as ExtensionToWebView)
@@ -229,7 +245,7 @@ export class ChatWebViewManager {
       this.startRunnerPolling(sessionId, panel)
 
     } catch (error: any) {
-      panel.webview.postMessage({
+      this.postToPanel(panel, {
         type: 'error',
         payload: { message: `Failed to initialize: ${error.message}` },
       } as ExtensionToWebView)
@@ -246,7 +262,7 @@ export class ChatWebViewManager {
 
     if (!socketClient) {
       console.log('[ChatWebView] No socket client for session:', sessionId)
-      panel.webview.postMessage({ type: 'error', payload: { message: 'Not connected' } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: 'Not connected' } } as ExtensionToWebView)
       return
     }
 
@@ -264,7 +280,7 @@ export class ChatWebViewManager {
       console.log('[ChatWebView] socket.sendUserMessage completed successfully')
     } catch (error: any) {
       console.log('[ChatWebView] socket.sendUserMessage FAILED:', error.message)
-      panel.webview.postMessage({
+      this.postToPanel(panel, {
         type: 'error',
         payload: { message: `Send failed: ${error.message}` },
       } as ExtensionToWebView)
@@ -278,7 +294,7 @@ export class ChatWebViewManager {
   ) {
     try {
       const response = await this.apiClient.getSessionMessages(sessionId, payload.skip, payload.limit)
-      panel.webview.postMessage({
+      this.postToPanel(panel, {
         type: 'historyLoaded',
         payload: {
           messages: response.messages,
@@ -288,7 +304,7 @@ export class ChatWebViewManager {
         },
       } as ExtensionToWebView)
     } catch (error: any) {
-      panel.webview.postMessage({
+      this.postToPanel(panel, {
         type: 'error',
         payload: { message: `Failed to load history: ${error.message}` },
       } as ExtensionToWebView)
@@ -358,7 +374,7 @@ export class ChatWebViewManager {
     const poll = async () => {
       try {
         const status = await this.apiClient.getRunnerStatus(sessionId)
-        panel.webview.postMessage({
+        this.postToPanel(panel, {
           type: 'runnerStatus',
           payload: status,
         } as ExtensionToWebView)
