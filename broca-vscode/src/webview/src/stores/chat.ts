@@ -84,11 +84,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleIncomingMessage(message: Message) {
-    // Deduplicate: skip if we already have this message_id
-    // Exception: agent_response chunks need merging (same message_id, different data)
-    if (message.message_type !== 'agent_response') {
-      if (messages.value.some(m => m.message_id === message.message_id)) return
-    }
+    // Process/filter message (same logic as web version's processMessage)
+    const processed = processMessage(message)
+    if (!processed) return
 
     // Handle undo/redo results
     if (message.message_type === 'command_result') {
@@ -109,14 +107,6 @@ export const useChatStore = defineStore('chat', () => {
       showRedoButton.value = false
       redoReceiverId.value = undefined
     }
-
-    // Filter out internal messages
-    const filteredTypes = [
-      'turn_start', 'turn_end', 'command',
-      'subscribe', 'unsubscribe', 'connect', 'disconnect',
-      'ping', 'pong',
-    ]
-    if (filteredTypes.includes(message.message_type)) return
 
     // Check if it's a permission request
     if (message.message_type === 'permission_request') {
@@ -145,18 +135,63 @@ export const useChatStore = defineStore('chat', () => {
     addMessage(message)
   }
 
+  /**
+   * Filter messages, returns null for messages that should not be displayed.
+   * Mirrors web version's processMessage() in chat store.
+   */
+  function processMessage(msg: Message): Message | null {
+    // Filter out internal message types
+    const filteredTypes = [
+      'turn_start', 'turn_end', 'command',
+      'subscribe', 'unsubscribe', 'connect', 'disconnect',
+      'ping', 'pong',
+      'task_start', 'task_complete', 'task_error',
+      'step_start', 'step_end',
+    ]
+    if (filteredTypes.includes(msg.message_type)) return null
+
+    // Filter reverted messages
+    if ((msg as any).reverted) return null
+
+    // Filter user messages from agent
+    if (msg.message_type === 'user_message' && msg.data?.from_agent) return null
+
+    // Filter empty agent responses (where content and reasoning_content are both empty)
+    if (msg.message_type === 'agent_response' && typeof msg.data?.content === 'string') {
+      try {
+        const parsed = JSON.parse(msg.data.content)
+        const hasContent = parsed.content && parsed.content.length > 0
+        const hasReasoning = parsed.reasoning_content && parsed.reasoning_content.length > 0
+        if (!hasContent && !hasReasoning) return null
+      } catch {
+        // If parsing fails, show the message as-is
+      }
+    }
+
+    // Filter connection/subscription system messages
+    if (typeof msg.data?.content === 'string') {
+      const lower = msg.data.content.toLowerCase()
+      if (lower.includes('connected to') || lower.includes('subscribed to')) return null
+    }
+
+    return msg
+  }
+
   function handleHistoryLoaded(payload: {
     messages: Message[]
     total: number
     skip: number
     limit: number
   }) {
+    // Filter history messages through processMessage (remove empties, internal, etc.)
+    const filtered = (payload.messages || []).filter(m => processMessage(m) !== null)
+
     if (payload.skip === 0) {
       // Initial load - replace all messages
-      messages.value = payload.messages || []
+      messages.value = filtered
     } else {
       // Load more - prepend to existing messages
-      const newMessages = [...(payload.messages || []), ...messages.value]
+      const newMessages = [...filtered, ...messages.value]
       messages.value = newMessages
     }
 
