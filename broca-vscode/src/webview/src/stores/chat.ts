@@ -15,6 +15,7 @@ export const useChatStore = defineStore('chat', () => {
   const runnerInfo = ref<RunnerInfo | null>(null)
   const inputText = ref('')
   const defaultAgentId = ref<string | undefined>(undefined)
+  const agentNames = ref<Record<string, string>>({})
 
   // Permission dialog state
   const permissionDialog = ref({
@@ -52,6 +53,12 @@ export const useChatStore = defineStore('chat', () => {
 
         case 'agents':
           defaultAgentId.value = data.payload.defaultAgentId
+          // Build agent name map
+          const names: Record<string, string> = {}
+          for (const agent of data.payload.agents || []) {
+            names[agent.agent_id] = agent.name || agent.agent_id
+          }
+          agentNames.value = names
           break
 
         case 'message':
@@ -77,8 +84,11 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleIncomingMessage(message: Message) {
-    // Deduplicate: skip if we already have this message_id (from optimistic update or echo)
-    if (messages.value.some(m => m.message_id === message.message_id)) return
+    // Deduplicate: skip if we already have this message_id
+    // Exception: agent_response chunks need merging (same message_id, different data)
+    if (message.message_type !== 'agent_response') {
+      if (messages.value.some(m => m.message_id === message.message_id)) return
+    }
 
     // Handle undo/redo results
     if (message.message_type === 'command_result') {

@@ -1,10 +1,20 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { marked } from 'marked'
 import type { Message } from '../types'
+import { useChatStore } from '../stores/chat'
 
 const props = defineProps<{
   message: Message
 }>()
+
+const chatStore = useChatStore()
+
+// Configure marked for safety
+marked.setOptions({
+  breaks: true,
+  gfm: true,
+})
 
 const showParameters = ref(false)
 const showResult = ref(false)
@@ -14,6 +24,13 @@ const isUser = computed(() => props.message.role === 'user')
 const isSystem = computed(() => props.message.message_type === 'system_message')
 const isToolCall = computed(() => props.message.message_type === 'tool_call')
 const isAgentResponse = computed(() => props.message.message_type === 'agent_response')
+
+const senderName = computed(() => {
+  if (isUser.value) return 'You'
+  const agentId = props.message.sender_id
+  if (agentId && chatStore.agentNames[agentId]) return chatStore.agentNames[agentId]
+  return agentId || 'Assistant'
+})
 
 const timestamp = computed(() => {
   const date = new Date(props.message.timestamp)
@@ -27,6 +44,16 @@ const agentResponseContent = computed(() => {
     return parsed.content || ''
   } catch {
     return props.message.data.content
+  }
+})
+
+const renderedContent = computed(() => {
+  const content = agentResponseContent.value
+  if (!content) return ''
+  try {
+    return marked.parse(content) as string
+  } catch {
+    return content
   }
 })
 
@@ -111,7 +138,7 @@ const toolResult = computed(() => {
     <!-- Agent response -->
     <template v-else>
       <div class="message-header">
-        <span class="sender-name">{{ message.sender_id || 'Assistant' }}</span>
+        <span class="sender-name">{{ senderName }}</span>
         <span class="message-time">{{ timestamp }}</span>
       </div>
 
@@ -127,9 +154,7 @@ const toolResult = computed(() => {
       </div>
 
       <!-- Content -->
-      <div class="message-content markdown-body">
-        {{ agentResponseContent }}
-      </div>
+      <div class="message-content markdown-body" v-html="renderedContent"></div>
     </template>
   </div>
 </template>

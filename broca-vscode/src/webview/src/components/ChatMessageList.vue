@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useChatStore } from '../stores/chat'
 import ChatMessageItem from './ChatMessageItem.vue'
 
 const chatStore = useChatStore()
 const containerRef = ref<HTMLElement>()
 const scrollTimeout = ref<number | null>(null)
+const isAutoScrolling = ref(false)
 
 const scrollToBottom = () => {
   nextTick(() => {
@@ -28,25 +29,29 @@ const handleScroll = () => {
   }, 200)
 }
 
-// Auto-scroll on new messages
-const unwatch = ref<(() => void) | null>(null)
+// Watch messages for auto-scroll
+watch(
+  () => chatStore.messages.length,
+  () => {
+    scrollToBottom()
+  }
+)
+
+// Also watch for agent_response content changes (streaming updates)
+watch(
+  () => chatStore.messages.map(m => m.data?.content).join(''),
+  () => {
+    scrollToBottom()
+  }
+)
 
 onMounted(() => {
   scrollToBottom()
-  // Watch for message changes to auto-scroll
-  unwatch.value = watchMessages()
 })
 
 onUnmounted(() => {
   if (scrollTimeout.value) clearTimeout(scrollTimeout.value)
-  unwatch.value?.()
 })
-
-function watchMessages() {
-  // Simple watcher via store
-  const originalAddMessage = (chatStore as any).constructor?.name
-  // We'll just handle scroll in the template's nextTick
-}
 </script>
 
 <template>
