@@ -36,7 +36,6 @@ export class SocketClient {
       auth: {
         client_type: 'vscode',
         client_id: this.clientId,
-        user_id: token ? undefined : undefined,
         token: token,
       },
       reconnection: true,

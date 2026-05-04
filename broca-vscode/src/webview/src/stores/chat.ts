@@ -69,6 +69,9 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleIncomingMessage(message: Message) {
+    // Deduplicate: skip if we already have this message_id (from optimistic update or echo)
+    if (messages.value.some(m => m.message_id === message.message_id)) return
+
     // Handle undo/redo results
     if (message.message_type === 'command_result') {
       if (message.data?.command === 'undo') {
@@ -194,8 +197,10 @@ export const useChatStore = defineStore('chat', () => {
   function sendMessage(content: string, receiverId?: string, files?: any[]) {
     if (!content.trim() && (!files || files.length === 0)) return
 
-    // Optimistic update - add user message locally
+    // Generate messageId for optimistic update AND to share with extension
     const messageId = `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
+    
+    // Optimistic update - add user message locally
     addMessage({
       message_id: messageId,
       message_type: 'user_message',
@@ -207,10 +212,10 @@ export const useChatStore = defineStore('chat', () => {
       data: { content, ...(files && { files }) },
     })
 
-    // Send to extension host
+    // Send to extension host (include messageId so echo can be deduplicated)
     postMessage({
       type: 'sendMessage',
-      payload: { content, receiverId, files },
+      payload: { content, receiverId, files, messageId },
     })
   }
 

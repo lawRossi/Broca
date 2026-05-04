@@ -217,7 +217,7 @@ export class ChatWebViewManager {
   private async handleSendMessage(
     sessionId: string,
     panel: vscode.WebviewPanel,
-    payload: { content: string; receiverId?: string; files?: any[] }
+    payload: { content: string; receiverId?: string; files?: any[]; messageId?: string }
   ) {
     const socketClient = this.socketClients.get(sessionId)
     if (!socketClient) {
@@ -225,7 +225,8 @@ export class ChatWebViewManager {
       return
     }
 
-    const messageId = `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
+    // Use the messageId from the WebView so echoes can be deduplicated
+    const messageId = payload.messageId || `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
 
     try {
       await socketClient.sendUserMessage({

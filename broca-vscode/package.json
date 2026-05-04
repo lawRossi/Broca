@@ -178,8 +178,8 @@
         },
         "broca.wsUrl": {
           "type": "string",
-          "default": "http://localhost:8000",
-          "description": "Broca WebSocket server URL"
+          "default": "http://localhost:6868",
+          "description": "Broca WebSocket server URL (default: port 6868)"
         },
         "broca.defaultProvider": {
           "type": "string",
