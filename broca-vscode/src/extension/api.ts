@@ -36,19 +36,20 @@ export class ApiClient {
       return config
     })
 
-    // Response interceptor: unwrap ApiResponse { code, data, msg } → data
+    // Response interceptor: unwrap ApiResponse { code, data, msg } → modify response.data in place
     this.client.interceptors.response.use(
       (response) => {
         const body = response.data
         // If the backend wraps in { code: 200, data: { ... }, msg: "..." }
         if (body && typeof body === 'object' && 'code' in body) {
           if (body.code === 200) {
-            return body.data  // return the inner data directly
+            response.data = body.data  // replace response.data with inner data
+            return response
           } else {
             return Promise.reject(new Error(body.msg || 'Request failed'))
           }
         }
-        return body // fallback: return as-is
+        return response // fallback: return as-is
       },
       (error) => {
         if (error.response?.status === 401) {
