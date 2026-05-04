@@ -143,6 +143,8 @@ export const useChatStore = defineStore('chat', () => {
     // Filter out internal message types
     const filteredTypes = [
       'turn_start', 'turn_end', 'command',
+      'permission_request', 'permission_response',
+      'agent_query', 'user_answer',
       'subscribe', 'unsubscribe', 'connect', 'disconnect',
       'ping', 'pong',
       'task_start', 'task_complete', 'task_error',
@@ -157,21 +159,44 @@ export const useChatStore = defineStore('chat', () => {
     if (msg.message_type === 'user_message' && msg.data?.from_agent) return null
 
     // Filter empty agent responses (where content and reasoning_content are both empty)
-    if (msg.message_type === 'agent_response' && typeof msg.data?.content === 'string') {
-      try {
-        const parsed = JSON.parse(msg.data.content)
-        const hasContent = parsed.content && parsed.content.length > 0
-        const hasReasoning = parsed.reasoning_content && parsed.reasoning_content.length > 0
-        if (!hasContent && !hasReasoning) return null
-      } catch {
-        // If parsing fails, show the message as-is
+    if (msg.message_type === 'agent_response') {
+      const contentStr = msg.data?.content ?? ''
+      if (typeof contentStr === 'string') {
+        try {
+          const parsed = JSON.parse(contentStr)
+          const empty = (
+            (parsed.content === null || parsed.content === undefined || parsed.content === '') &&
+            (parsed.reasoning_content === null || parsed.reasoning_content === undefined || parsed.reasoning_content === '')
+          )
+          if (empty) return null
+          // Fix: if content is a nested JSON string, unwrap it
+          if (typeof parsed.content === 'string' && parsed.content.startsWith('{')) {
+            try {
+              const inner = JSON.parse(parsed.content)
+              if (inner.content) parsed.content = inner.content
+            } catch {}
+          }
+        } catch {
+          // If parsing fails, show the message as-is
+        }
       }
     }
 
     // Filter connection/subscription system messages
-    if (typeof msg.data?.content === 'string') {
-      const lower = msg.data.content.toLowerCase()
+    const contentStr = msg.data?.content ?? ''
+    if (typeof contentStr === 'string') {
+      const lower = contentStr.toLowerCase()
       if (lower.includes('connected to') || lower.includes('subscribed to')) return null
+    }
+
+    // For user messages: if content looks like JSON with a nested content field, unwrap it
+    if (msg.message_type === 'user_message' && typeof contentStr === 'string' && contentStr.startsWith('{')) {
+      try {
+        const parsed = JSON.parse(contentStr)
+        if (parsed.content) {
+          msg.data.content = parsed.content
+        }
+      } catch {}
     }
 
     return msg
