@@ -215,7 +215,8 @@ function getFileIcon(file: File): string {
 
     <!-- Disabled overlay when runner is not alive -->
     <div v-if="!chatStore.runnerAlive" class="disabled-overlay">
-      Runner is not running. Start the runner to send messages.
+      <template v-if="chatStore.runnerInfo === null">Connecting to runner...</template>
+      <template v-else>Runner is not running. Start the runner to send messages.</template>
     </div>
   </div>
 </template>

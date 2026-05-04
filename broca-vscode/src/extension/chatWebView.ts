@@ -24,7 +24,7 @@ export class ChatWebViewManager {
    */
   private postToPanel(panel: vscode.WebviewPanel, message: ExtensionToWebView): void {
     try {
-      this.postToPanel(panel, message)
+      panel.webview.postMessage(message)
     } catch {
       // Panel was disposed, ignore
     }
@@ -384,10 +384,27 @@ export class ChatWebViewManager {
     }
 
     // Initial fetch
-    await poll()
+    try {
+      const status = await this.apiClient.getRunnerStatus(sessionId)
+      console.log('[ChatWebView] Initial runner status:', status?.status)
+      if (status) {
+        this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
+      }
+    } catch (e: any) {
+      console.log('[ChatWebView] Initial runner poll failed:', e.message)
+    }
 
     // Poll every 10 seconds
-    const timer = setInterval(poll, 10000)
+    const timer = setInterval(async () => {
+      try {
+        const status = await this.apiClient.getRunnerStatus(sessionId)
+        if (status) {
+          this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
+        }
+      } catch (e: any) {
+        console.log('[ChatWebView] Runner poll failed:', e.message)
+      }
+    }, 10000)
     this.runnerPollTimers.set(sessionId, timer)
   }
 

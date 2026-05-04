@@ -6,11 +6,11 @@ const chatStore = useChatStore()
 
 const statusText = computed(() => {
   const info = chatStore.runnerInfo
-  if (!info) return 'Unknown'
+  if (!info) return 'Checking...'
   switch (info.status) {
     case 'alive': return 'Running'
     case 'starting': return 'Starting...'
-    case 'error': return `Error: ${info.error_message || 'Unknown error'}`
+    case 'error': return `Error`
     case 'dead': return 'Stopped'
     default: return info.status
   }
@@ -18,7 +18,7 @@ const statusText = computed(() => {
 
 const statusColor = computed(() => {
   const info = chatStore.runnerInfo
-  if (!info) return 'var(--text-secondary)'
+  if (!info) return 'var(--warning-fg)'
   switch (info.status) {
     case 'alive': return 'var(--success-fg)'
     case 'starting': return 'var(--warning-fg)'
