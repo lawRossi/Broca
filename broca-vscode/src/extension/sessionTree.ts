@@ -109,11 +109,13 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
       const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath
       if (workspacePath) {
         sessions = sessions.filter((s) => {
-          if (!s.workspace) return false
+          // Include sessions that match the current workspace, OR have no workspace
+          if (!s.workspace) return true
           return s.workspace.startsWith(workspacePath)
         })
       }
 
+      console.log(`[SessionTree] Fetched ${response.sessions?.length || 0} sessions, showing ${sessions.length} after filter`)
       this.sessions = sessions
     } catch (error: any) {
       console.error('Failed to fetch sessions:', error)

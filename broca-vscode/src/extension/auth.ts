@@ -25,41 +25,62 @@ export class AuthManager {
     const supabaseUrl = this.configManager.supabaseUrl
     const supabaseKey = this.configManager.supabaseKey
 
-    if (supabaseUrl && supabaseKey) {
-      this.supabase = createClient(supabaseUrl, supabaseKey, {
-        auth: {
-          persistSession: true,
-          autoRefreshToken: true,
-          storage: {
-            getItem: (key: string) => {
-              return this.context.globalState.get<string>(key) || null
-            },
-            setItem: (key: string, value: string) => {
-              this.context.globalState.update(key, value)
-            },
-            removeItem: (key: string) => {
-              this.context.globalState.update(key, undefined)
-            },
+    if (!supabaseUrl || !supabaseKey) {
+      console.warn('Supabase not configured. Please set broca.supabaseUrl and broca.supabaseKey in settings.')
+      this.supabase = null
+      return
+    }
+
+    this.supabase = createClient(supabaseUrl, supabaseKey, {
+      auth: {
+        persistSession: true,
+        autoRefreshToken: true,
+        storage: {
+          getItem: (key: string) => {
+            return this.context.globalState.get<string>(key) || null
+          },
+          setItem: (key: string, value: string) => {
+            this.context.globalState.update(key, value)
+          },
+          removeItem: (key: string) => {
+            this.context.globalState.update(key, undefined)
           },
         },
-      })
+      },
+    })
 
-      // Listen for auth state changes
-      this.supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
-        if (session) {
-          this._isLoggedIn = true
-          this._userId = session.user.id
-          this._token = session.access_token
-        } else {
-          this._isLoggedIn = false
-          this._userId = null
-          this._token = null
-        }
-        this.onDidChangeEvent.fire()
-      })
-    } else {
-      console.warn('Supabase not configured. Please set broca.supabaseUrl and broca.supabaseKey in settings.')
+    // Listen for auth state changes
+    this.supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
+      if (session) {
+        this._isLoggedIn = true
+        this._userId = session.user.id
+        this._token = session.access_token
+      } else {
+        this._isLoggedIn = false
+        this._userId = null
+        this._token = null
+      }
+      this.onDidChangeEvent.fire()
+    })
+  }
+
+  /**
+   * Re-initialize Supabase client after config changes (e.g. user sets URL/key via settings page)
+   */
+  reconfigure(): void {
+    const wasLoggedIn = this._isLoggedIn
+    // Dispose old client
+    this.supabase = null
+    this._isLoggedIn = false
+    this._userId = null
+    this._token = null
+    // Re-init with new config
+    this.initSupabase()
+    // Try to restore session after reconfig
+    if (!wasLoggedIn) {
+      this.tryRestoreSession()
     }
+    this.onDidChangeEvent.fire()
   }
 
   get isLoggedIn(): boolean {

@@ -98,7 +98,9 @@ export class ChatWebViewManager {
       } else if (message.type === 'saveConfig') {
         console.log('[ChatWebView] Received saveConfig:', JSON.stringify(message.payload))
         this.configManager.setAll(message.payload)
-        console.log('[ChatWebView] Config saved, sending response')
+        console.log('[ChatWebView] Config saved, reconfiguring auth')
+        this.authManager.reconfigure()
+        console.log('[ChatWebView] Auth reconfigured, sending response')
         vscode.window.showInformationMessage('Configuration saved')
         panel.webview.postMessage({ type: 'saved' } as ExtensionToWebView)
         console.log('[ChatWebView] saved response sent')
