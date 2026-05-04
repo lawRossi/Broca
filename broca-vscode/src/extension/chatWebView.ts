@@ -360,65 +360,94 @@ export class ChatWebViewManager {
   }
 
   private getWebviewContent(webview: vscode.Webview, sessionId: string): string {
-    // Get the local path to the webview build output
-    const webviewPath = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
+    const webviewDist = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
+    const htmlPath = vscode.Uri.joinPath(webviewDist, 'index.html')
 
-    // Get URIs for the resources
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewPath, 'assets', 'index.js'))
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewPath, 'assets', 'index.css'))
+    // Read the built HTML file
+    let html: string
+    try {
+      html = require('fs').readFileSync(htmlPath.fsPath, 'utf-8')
+    } catch {
+      return this.getFallbackHtml('Chat', 'Failed to load chat UI')
+    }
 
-    // Get Supabase config
+    // Transform resource paths to webview URIs
+    html = this.transformResourcePaths(webview, webviewDist, html)
+
+    // Inject initial data
     const supabaseUrl = this.configManager.supabaseUrl
     const supabaseKey = this.configManager.supabaseKey
     const token = this.authManager.token
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval'; img-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https: http://localhost:* ws://localhost:*;">
-  <link rel="stylesheet" href="${styleUri}">
-  <title>Broca Chat</title>
-</head>
-<body>
-  <div id="app"></div>
-  <script>
-    window.__INITIAL_DATA__ = {
-      sessionId: '${sessionId}',
-      token: '${token || ''}',
-      supabaseUrl: '${supabaseUrl}',
-      supabaseKey: '${supabaseKey}',
-      vscode: acquireVsCodeApi()
-    }
-  </script>
-  <script src="${scriptUri}"></script>
-</body>
-</html>`
+    const initScript = `
+<script>
+  window.__INITIAL_DATA__ = {
+    sessionId: '${sessionId}',
+    token: '${token || ''}',
+    supabaseUrl: '${supabaseUrl}',
+    supabaseKey: '${supabaseKey}',
+    vscode: acquireVsCodeApi()
+  }
+</script>`
+
+    html = html.replace('</head>', initScript + '</head>')
+    html = this.addCSP(webview, html)
+
+    return html
   }
 
   private getConfigWebviewContent(webview: vscode.Webview): string {
-    const webviewPath = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewPath, 'assets', 'config.js'))
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewPath, 'assets', 'config.css'))
+    const webviewDist = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
+    const htmlPath = vscode.Uri.joinPath(webviewDist, 'config.html')
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval'; img-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https: http://localhost:* ws://localhost:*;">
-  <link rel="stylesheet" href="${styleUri}">
-  <title>Broca Settings</title>
-</head>
-<body>
-  <div id="app"></div>
-  <script>
-    window.__INITIAL_DATA__ = {
-      vscode: acquireVsCodeApi()
+    // Read the built HTML file
+    let html: string
+    try {
+      html = require('fs').readFileSync(htmlPath.fsPath, 'utf-8')
+    } catch {
+      return this.getFallbackHtml('Broca Settings', 'Failed to load settings UI')
     }
-  </script>
-  <script src="${scriptUri}"></script>
+
+    // Transform resource paths to webview URIs
+    html = this.transformResourcePaths(webview, webviewDist, html)
+
+    // Inject initial data
+    const initScript = `
+<script>
+  window.__INITIAL_DATA__ = {
+    vscode: acquireVsCodeApi()
+  }
+</script>`
+
+    html = html.replace('</head>', initScript + '</head>')
+    html = this.addCSP(webview, html)
+
+    return html
+  }
+
+  private transformResourcePaths(webview: vscode.Webview, distPath: vscode.Uri, html: string): string {
+    // Replace relative asset paths with webview URIs
+    // Match: src="./assets/..." or href="./assets/..."
+    return html.replace(
+      /(src|href)=(["'])(\.\/assets\/[^"']+)\2/g,
+      (_, attr, quote, relativePath) => {
+        const uri = webview.asWebviewUri(vscode.Uri.joinPath(distPath, relativePath.replace(/^\.\//, '')))
+        return `${attr}=${quote}${uri}${quote}`
+      }
+    )
+  }
+
+  private addCSP(webview: vscode.Webview, html: string): string {
+    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval'; img-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https: http://localhost:* ws://localhost:*;">`
+    return html.replace('<head>', `<head>${csp}`)
+  }
+
+  private getFallbackHtml(title: string, message: string): string {
+    return `<!DOCTYPE html>
+<html>
+<head><title>${title}</title></head>
+<body style="display:flex;align-items:center;justify-content:center;height:100vh;font-family:sans-serif;color:#888;">
+  <p>${message}</p>
 </body>
 </html>`
   }
