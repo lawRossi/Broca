@@ -25,6 +25,7 @@ onMounted(() => {
 
   // Listen for responses
   onMessage((data: any) => {
+    console.log('[Config] Received message:', data.type, data)
     switch (data.type) {
       case 'config':
         config.value = { ...config.value, ...data.payload }
@@ -55,9 +56,19 @@ function onProviderChange() {
 
 function saveConfig() {
   saving.value = true
-  postMessage({ type: 'saveConfig', payload: config.value })
-  // Fallback: reset saving state after 5s in case response is lost
-  setTimeout(() => { saving.value = false }, 5000)
+  console.log('[Config] Saving config:', JSON.stringify(config.value))
+  try {
+    postMessage({ type: 'saveConfig', payload: { ...config.value } })
+    console.log('[Config] saveConfig message posted')
+  } catch (e) {
+    console.error('[Config] Failed to post saveConfig message:', e)
+  }
+  setTimeout(() => {
+    if (saving.value) {
+      console.log('[Config] Save timeout - forcing saving=false')
+      saving.value = false
+    }
+  }, 2000)
 }
 </script>
 

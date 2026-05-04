@@ -96,9 +96,12 @@ export class ChatWebViewManager {
           payload: this.configManager.getAll(),
         } as ExtensionToWebView)
       } else if (message.type === 'saveConfig') {
+        console.log('[ChatWebView] Received saveConfig:', JSON.stringify(message.payload))
         this.configManager.setAll(message.payload)
+        console.log('[ChatWebView] Config saved, sending response')
         vscode.window.showInformationMessage('Configuration saved')
         panel.webview.postMessage({ type: 'saved' } as ExtensionToWebView)
+        console.log('[ChatWebView] saved response sent')
       } else if (message.type === 'getProviders') {
         try {
           const providers = await this.apiClient.getLLMProviders()
