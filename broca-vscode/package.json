@@ -26,7 +26,7 @@
         {
           "id": "broca",
           "title": "Broca",
-          "icon": "$(comment-discussion)"
+          "icon": "media/icon.svg"
         }
       ]
     },
