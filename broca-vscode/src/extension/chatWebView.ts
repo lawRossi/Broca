@@ -259,7 +259,6 @@ export class ChatWebViewManager {
         messageId,
         content: payload.content,
         receiverId: payload.receiverId,
-        subscription: sessionId,
         files: payload.files,
       })
       console.log('[ChatWebView] socket.sendUserMessage completed successfully')

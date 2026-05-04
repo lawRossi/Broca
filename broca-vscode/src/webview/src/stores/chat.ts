@@ -211,9 +211,8 @@ export const useChatStore = defineStore('chat', () => {
     // Generate messageId for optimistic update AND to share with extension
     const messageId = `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
     
-    // Use default agent if no specific receiver
     const targetReceiver = receiverId || defaultAgentId.value
-    console.log('[ChatStore] sendMessage:', { messageId, content, targetReceiver, defaultAgentId: defaultAgentId.value, filesCount: files?.length })
+    console.log('[ChatStore] sendMessage:', { messageId, content, targetReceiver, filesCount: files?.length })
 
     // Optimistic update - add user message locally
     addMessage({
@@ -223,11 +222,10 @@ export const useChatStore = defineStore('chat', () => {
       role: 'user',
       sender_id: 'user',
       receiver_id: targetReceiver,
-      subscription: sessionId.value,
       data: { content, ...(files && { files }) },
     })
 
-    // Send to extension host (include messageId so echo can be deduplicated)
+    // Send to extension host
     console.log('[ChatStore] posting sendMessage to extension')
     postMessage({
       type: 'sendMessage',

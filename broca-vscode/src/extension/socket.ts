@@ -102,7 +102,6 @@ export class SocketClient {
     messageId: string
     content: string
     receiverId?: string
-    subscription?: string
     files?: Array<{
       name: string
       url: string
@@ -124,14 +123,13 @@ export class SocketClient {
       role: 'user',
       sender_id: this.clientId,
       receiver_id: params.receiverId,
-      subscription: params.subscription,
       data: {
         content: params.content,
         ...(params.files && { files: params.files }),
       },
     }
 
-    console.log('[Socket] Emitting message:', { messageId: params.messageId, receiverId: params.receiverId, subscription: params.subscription })
+    console.log('[Socket] Emitting message to receiver:', { messageId: params.messageId, receiverId: params.receiverId })
 
     return new Promise((resolve, reject) => {
       this.socket!.emit('message', message, (response: any) => {
