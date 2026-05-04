@@ -84,9 +84,28 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleIncomingMessage(message: Message) {
+    // Debug: log agent_response content
+    if (message.message_type === 'agent_response') {
+      console.log('[ChatStore] agent_response received:', {
+        message_id: message.message_id,
+        contentType: typeof message.data?.content,
+        contentRaw: message.data?.content?.substring?.(0, 100),
+        dataKeys: Object.keys(message.data || {}),
+      })
+    }
+
     // Process/filter message (same logic as web version's processMessage)
     const processed = processMessage(message)
-    if (!processed) return
+    if (!processed) {
+      if (message.message_type === 'agent_response') {
+        console.log('[ChatStore] agent_response FILTERED OUT')
+      }
+      return
+    }
+
+    if (message.message_type === 'agent_response') {
+      console.log('[ChatStore] agent_response PASSED filter, adding to list')
+    }
 
     // Handle undo/redo results
     if (message.message_type === 'command_result') {
@@ -250,6 +269,7 @@ export const useChatStore = defineStore('chat', () => {
       )
       if (existingIndex !== -1) {
         // Merge chunks
+        console.log('[ChatStore] Merging agent_response chunk, existing index:', existingIndex)
         const existing = messages.value[existingIndex]
         const existingContent = existing.data?.content ? JSON.parse(existing.data.content) : {}
         const newContent = message.data?.content ? JSON.parse(message.data.content) : {}
@@ -265,7 +285,10 @@ export const useChatStore = defineStore('chat', () => {
           },
           timestamp: message.timestamp,
         }
+        console.log('[ChatStore] Merged content length:', (existingContent.content || '').length + (newContent.content || '').length)
         return
+      } else {
+        console.log('[ChatStore] First agent_response chunk, pushing new message')
       }
     }
 
