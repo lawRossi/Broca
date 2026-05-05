@@ -13,6 +13,7 @@ interface PendingRequest {
 }
 
 const pendingMap = new Map<string, PendingRequest>()
+let requestCounter = 0
 
 // Response types that contain task/job data
 const RESPONSE_TYPES = new Set([
@@ -28,16 +29,6 @@ function initListener() {
 
   onMessage((data: any) => {
     if (!data || !data.type) return
-
-    // Handle error responses
-    if (data.type === 'error') {
-      // Reject all pending requests
-      for (const [id, pending] of pendingMap) {
-        pending.reject(new Error(data.payload?.message || 'Unknown error'))
-        pendingMap.delete(id)
-      }
-      return
-    }
 
     // Handle task/job response types
     if (RESPONSE_TYPES.has(data.type)) {
@@ -58,9 +49,9 @@ function sendRequest(requestType: string, responseType: string, payload: any): P
     const timeout = setTimeout(() => {
       if (pendingMap.has(responseType)) {
         pendingMap.delete(responseType)
-        reject(new Error('Request timeout'))
+        reject(new Error(`请求超时 (${requestType})`))
       }
-    }, 30000)
+    }, 15000)
 
     pendingMap.set(responseType, {
       resolve: (data: any) => {

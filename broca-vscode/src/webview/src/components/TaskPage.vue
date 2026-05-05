@@ -52,6 +52,17 @@ const editForm = ref({
   report: '',
 })
 
+// Confirm dialog
+const confirmDialog = ref({
+  visible: false,
+  message: '',
+  onConfirm: null as (() => void) | null,
+})
+
+function showConfirm(message: string, onConfirm: () => void) {
+  confirmDialog.value = { visible: true, message, onConfirm }
+}
+
 // ==================== Status helpers ====================
 const statusLabels: Record<string, string> = {
   pending: '待处理',
@@ -181,16 +192,17 @@ async function handleUpdatePriority(taskId: string, priority: string) {
 }
 
 async function handleDeleteTask(taskId: string) {
-  if (!confirm('确定要删除这个任务吗？此操作不可恢复。')) return
-  try {
-    await taskApi.deleteTask(taskId)
-    if (showDetail.value && selectedTaskId.value === taskId) {
-      closeDetail()
+  showConfirm('确定要删除这个任务吗？此操作不可恢复。', async () => {
+    try {
+      await taskApi.deleteTask(taskId)
+      if (showDetail.value && selectedTaskId.value === taskId) {
+        closeDetail()
+      }
+      await fetchTasks()
+    } catch (e: any) {
+      console.error('Failed to delete task:', e)
     }
-    await fetchTasks()
-  } catch (e: any) {
-    console.error('Failed to delete task:', e)
-  }
+  })
 }
 
 async function handleSaveEdit() {
@@ -442,6 +454,17 @@ onMounted(() => {
               </div>
             </div>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm Dialog -->
+    <div v-if="confirmDialog.visible" class="dialog-overlay" @click.self="confirmDialog.visible = false">
+      <div class="dialog dialog-confirm">
+        <p>{{ confirmDialog.message }}</p>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" @click="confirmDialog.visible = false">取消</button>
+          <button class="btn btn-danger" @click="() => { const cb = confirmDialog.onConfirm; confirmDialog.visible = false; cb?.(); }">确定删除</button>
         </div>
       </div>
     </div>
@@ -936,6 +959,17 @@ onMounted(() => {
   padding: 40px;
   color: var(--error-fg, #ef4444);
   font-size: 13px;
+}
+
+.dialog-confirm {
+  max-width: 360px;
+}
+
+.dialog-confirm p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
 }
 
 .empty-state-sm {

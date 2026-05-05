@@ -15,6 +15,17 @@ const searchKeyword = ref('')
 const statusFilter = ref('')
 const typeFilter = ref('')
 
+// Confirm dialog
+const confirmDialog = ref({
+  visible: false,
+  message: '',
+  onConfirm: null as (() => void) | null,
+})
+
+function showConfirm(message: string, onConfirm: () => void) {
+  confirmDialog.value = { visible: true, message, onConfirm }
+}
+
 const statusOptions = [
   { label: '全部状态', value: '' },
   { label: '活跃', value: 'active' },
@@ -162,19 +173,20 @@ function closeDetail() {
 }
 
 async function handleExecute(jobId: string) {
-  if (!confirm('确定要立即执行此任务吗？')) return
-  executing.value = true
-  try {
-    await jobApi.executeJob(jobId)
-    await fetchJobs()
-    if (selectedJobId.value === jobId) {
-      await openDetail(jobId)
+  showConfirm('确定要立即执行此任务吗？', async () => {
+    executing.value = true
+    try {
+      await jobApi.executeJob(jobId)
+      await fetchJobs()
+      if (selectedJobId.value === jobId) {
+        await openDetail(jobId)
+      }
+    } catch (e: any) {
+      console.error('Failed to execute job:', e)
+    } finally {
+      executing.value = false
     }
-  } catch (e: any) {
-    console.error('Failed to execute job:', e)
-  } finally {
-    executing.value = false
-  }
+  })
 }
 
 async function handlePause(jobId: string) {
@@ -202,16 +214,17 @@ async function handleResume(jobId: string) {
 }
 
 async function handleDelete(jobId: string) {
-  if (!confirm('确定要删除这个定时任务吗？此操作不可恢复。')) return
-  try {
-    await jobApi.deleteJob(jobId)
-    if (showDetail.value && selectedJobId.value === jobId) {
-      closeDetail()
+  showConfirm('确定要删除这个定时任务吗？此操作不可恢复。', async () => {
+    try {
+      await jobApi.deleteJob(jobId)
+      if (showDetail.value && selectedJobId.value === jobId) {
+        closeDetail()
+      }
+      await fetchJobs()
+    } catch (e: any) {
+      console.error('Failed to delete job:', e)
     }
-    await fetchJobs()
-  } catch (e: any) {
-    console.error('Failed to delete job:', e)
-  }
+  })
 }
 
 function onSearch() {
@@ -383,6 +396,17 @@ onMounted(() => {
               </div>
             </div>
           </template>
+        </div>
+      </div>
+    </div>
+
+    <!-- Confirm Dialog -->
+    <div v-if="confirmDialog.visible" class="dialog-overlay" @click.self="confirmDialog.visible = false">
+      <div class="dialog dialog-confirm">
+        <p>{{ confirmDialog.message }}</p>
+        <div class="dialog-actions">
+          <button class="btn btn-secondary" @click="confirmDialog.visible = false">取消</button>
+          <button class="btn btn-danger" @click="() => { const cb = confirmDialog.onConfirm; confirmDialog.visible = false; cb?.(); }">确定</button>
         </div>
       </div>
     </div>
@@ -792,6 +816,17 @@ onMounted(() => {
 .exec-time {
   font-size: 11px;
   color: var(--text-secondary);
+}
+
+.dialog-confirm {
+  max-width: 360px;
+}
+
+.dialog-confirm p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--text-primary);
+  line-height: 1.5;
 }
 
 .exec-result {

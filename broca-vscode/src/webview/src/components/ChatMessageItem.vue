@@ -417,7 +417,7 @@ function toggleToolParams() {
       <div v-if="agentReasoning" class="reasoning-section">
         <div class="reasoning-header" @click="showReasoning = !showReasoning">
           <span>{{ showReasoning ? '▼' : '▶' }}</span>
-          <span>🧠 思考</span>
+          <span>思考</span>
         </div>
         <div v-if="showReasoning" class="reasoning-content">
           {{ agentReasoning }}
