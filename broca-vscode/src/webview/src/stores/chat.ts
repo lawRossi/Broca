@@ -169,7 +169,7 @@ export const useChatStore = defineStore('chat', () => {
         case 'agents':
           defaultAgentId.value = data.payload.defaultAgentId
           // Store full agent data
-          agents.value = (data.payload.agents || []).map((a: any) => ({
+          const agentList = (data.payload.agents || []).map((a: any) => ({
             agent_id: a.agent_id,
             name: a.name || a.agent_id,
             role: a.role,
@@ -182,9 +182,16 @@ export const useChatStore = defineStore('chat', () => {
             total_llm_calls: a.total_llm_calls,
             last_context_length: a.last_context_length,
           }))
+          agents.value = agentList
+          // Initialize agent statuses to 'idle' for all known agents
+          const initialStatuses: Record<string, AgentStatus> = {}
+          for (const agent of agentList) {
+            initialStatuses[agent.agent_id] = agent.status === 'running' ? 'running' : 'idle'
+          }
+          agentStatuses.value = initialStatuses
           // Build agent name map (for backward compatibility)
           const names: Record<string, string> = {}
-          for (const agent of agents.value) {
+          for (const agent of agentList) {
             names[agent.agent_id] = agent.name
           }
           agentNames.value = names
