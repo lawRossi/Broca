@@ -489,7 +489,12 @@ function toggleToolParams() {
 
       <!-- write_file: 文件内容预览（可切换） -->
       <div v-else-if="isWriteFile && showParameters" class="tool-params">
-        <pre class="file-content">{{ writeFileContent }}</pre>
+        <div class="file-wrapper">
+          <div class="file-header">
+            <span class="file-path">📝 {{ toolArgs.path || 'unknown' }}</span>
+          </div>
+          <pre class="file-content">{{ writeFileContent }}</pre>
+        </div>
       </div>
 
       <!-- 其他工具: JSON 参数（可切换） -->
@@ -773,21 +778,24 @@ function toggleToolParams() {
 }
 
 /* ==================== Diff 展示 ==================== */
-.diff-wrapper {
+.diff-wrapper,
+.file-wrapper {
   border: 1px solid var(--border-color);
   border-radius: 4px;
   overflow: hidden;
   background: var(--bg-primary);
 }
 
-.diff-header {
+.diff-header,
+.file-header {
   padding: 6px 10px;
   background: rgba(168, 85, 247, 0.1);
   border-bottom: 1px solid var(--border-color);
   font-size: 12px;
 }
 
-.diff-path {
+.diff-path,
+.file-path {
   color: var(--text-link);
   font-weight: 500;
 }
