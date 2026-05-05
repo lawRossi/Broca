@@ -6,9 +6,40 @@ import ChatMessageItem from './ChatMessageItem.vue'
 const chatStore = useChatStore()
 const containerRef = ref<HTMLElement>()
 const scrollTimeout = ref<number | null>(null)
-const isAutoScrolling = ref(false)
+const isRestoringScroll = ref(false)
+
+// ==================== 滚动位置保持 ====================
+function saveScrollState() {
+  if (!containerRef.value) return null
+  return {
+    scrollTop: containerRef.value.scrollTop,
+    scrollHeight: containerRef.value.scrollHeight,
+    clientHeight: containerRef.value.clientHeight,
+  }
+}
+
+function restoreScrollState(prevState: any) {
+  if (!containerRef.value || !prevState) return
+
+  isRestoringScroll.value = true
+  nextTick(() => {
+    const container = containerRef.value!
+    const newScrollHeight = container.scrollHeight
+    const heightDiff = newScrollHeight - prevState.scrollHeight
+
+    container.scrollTop = prevState.scrollTop + heightDiff
+
+    if (scrollTimeout.value) clearTimeout(scrollTimeout.value)
+    scrollTimeout.value = window.setTimeout(() => {
+      isRestoringScroll.value = false
+      scrollTimeout.value = null
+    }, 150)
+  })
+}
 
 const scrollToBottom = () => {
+  if (isRestoringScroll.value) return
+
   nextTick(() => {
     if (containerRef.value) {
       containerRef.value.scrollTop = containerRef.value.scrollHeight
@@ -16,6 +47,27 @@ const scrollToBottom = () => {
   })
 }
 
+// ==================== 自动滚动 ====================
+watch(
+  () => chatStore.messages.length,
+  () => {
+    if (isRestoringScroll.value) return
+    if (!chatStore.loadingMore) {
+      scrollToBottom()
+    }
+  }
+)
+
+// Also watch for agent_response content changes (streaming updates)
+watch(
+  () => chatStore.messages.map(m => m.data?.content).join(''),
+  () => {
+    if (isRestoringScroll.value) return
+    scrollToBottom()
+  }
+)
+
+// ==================== 滚动加载更多 ====================
 const handleScroll = () => {
   const container = containerRef.value
   if (!container) return
@@ -24,27 +76,18 @@ const handleScroll = () => {
 
   scrollTimeout.value = window.setTimeout(() => {
     if (container.scrollTop < 50 && !chatStore.loadingMore && chatStore.hasMoreHistory) {
+      const scrollState = saveScrollState()
       chatStore.loadMoreHistory()
+
+      // Try to restore scroll position after a short delay
+      setTimeout(() => {
+        restoreScrollState(scrollState)
+      }, 300)
     }
   }, 200)
 }
 
-// Watch messages for auto-scroll
-watch(
-  () => chatStore.messages.length,
-  () => {
-    scrollToBottom()
-  }
-)
-
-// Also watch for agent_response content changes (streaming updates)
-watch(
-  () => chatStore.messages.map(m => m.data?.content).join(''),
-  () => {
-    scrollToBottom()
-  }
-)
-
+// ==================== 生命周期 ====================
 onMounted(() => {
   scrollToBottom()
 })
@@ -62,14 +105,21 @@ onUnmounted(() => {
   >
     <!-- Loading more indicator -->
     <div v-if="chatStore.loadingMore" class="load-more-indicator">
-      Loading more...
+      <span>加载中...</span>
+    </div>
+    <div
+      v-else-if="!chatStore.hasMoreHistory && chatStore.messages.length > 0"
+      class="load-more-indicator"
+    >
+      <span class="end-text">没有更多历史消息了</span>
     </div>
 
     <!-- Empty state -->
     <div v-if="chatStore.messages.length === 0 && !chatStore.loading" class="empty-state">
       <div class="empty-icon">💬</div>
-      <div v-if="!chatStore.connected" class="empty-text">Connecting...</div>
-      <div v-else class="empty-text">Connected. Send a message to get started.</div>
+      <div v-if="chatStore.sessionId && !chatStore.connected" class="empty-text">正在自动连接...</div>
+      <div v-else-if="chatStore.sessionId && chatStore.connected" class="empty-text">已连接，等待消息...</div>
+      <div v-else class="empty-text">未设置 session_id。请通过 URL 参数传入。</div>
     </div>
 
     <!-- Message list -->
@@ -100,6 +150,10 @@ onUnmounted(() => {
   font-size: 12px;
 }
 
+.end-text {
+  opacity: 0.6;
+}
+
 .empty-state {
   display: flex;
   flex-direction: column;
@@ -120,7 +174,7 @@ onUnmounted(() => {
 }
 
 .message-wrapper {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
 }
 
 .redo-container {

@@ -2,7 +2,6 @@
 // Maps VSCode CSS custom properties to WebView styles
 
 export function applyVSCodeTheme() {
-  const body = document.body
   const style = document.createElement('style')
   style.textContent = `
     :root {
@@ -30,6 +29,21 @@ export function applyVSCodeTheme() {
       --font-family: var(--vscode-font-family, -apple-system, BlinkMacSystemFont, sans-serif);
       --font-size: var(--vscode-font-size, 13px);
       --code-font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+
+      /* Message type colors - used by ChatMessageItem */
+      --message-user-bg: rgba(59, 130, 246, 0.08);
+      --message-user-border: #3b82f6;
+      --message-agent-bg: rgba(34, 197, 94, 0.08);
+      --message-agent-border: #22c55e;
+      --message-tool-bg: rgba(168, 85, 247, 0.08);
+      --message-tool-border: #a855f7;
+      --message-system-bg: rgba(255, 255, 255, 0.04);
+      --message-error-bg: rgba(239, 68, 68, 0.08);
+      --message-error-border: #ef4444;
+
+      /* Reasoning */
+      --reasoning-bg: rgba(217, 119, 6, 0.1);
+      --reasoning-text: #fbbf24;
     }
   `
   document.head.appendChild(style)

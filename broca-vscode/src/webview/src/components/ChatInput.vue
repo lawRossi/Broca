@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { createClient } from '@supabase/supabase-js'
 import { getInitialData } from '../api/vscode'
@@ -7,6 +7,7 @@ import { getInitialData } from '../api/vscode'
 const chatStore = useChatStore()
 const inputRef = ref<HTMLTextAreaElement>()
 const fileInputRef = ref<HTMLInputElement>()
+const mentionListRef = ref<HTMLElement>()
 
 // Supabase for file upload
 const initData = getInitialData()
@@ -14,11 +15,114 @@ const supabase = (initData?.supabaseUrl && initData?.supabaseKey)
   ? createClient(initData.supabaseUrl, initData.supabaseKey)
   : null
 
-// Pending files for upload
+// ==================== @mention 智能提示 ====================
+const showMentionSuggestions = ref(false)
+const mentionSuggestions = ref<Array<{ id: string; name: string }>>([])
+const mentionSearch = ref('')
+const selectedMentionIndex = ref(-1)
+const justSelectedMention = ref(false)
+
+// 监听输入变化，检测 @mention
+watch(
+  () => chatStore.inputText,
+  (newValue) => {
+    if (justSelectedMention.value) return
+
+    const lastAt = newValue.lastIndexOf('@')
+    if (lastAt !== -1) {
+      const afterAt = newValue.substring(lastAt + 1)
+      const spaceIndex = afterAt.indexOf(' ')
+
+      if (spaceIndex === -1 || spaceIndex > 0) {
+        const searchTerm = spaceIndex === -1 ? afterAt : afterAt.substring(0, spaceIndex)
+        mentionSearch.value = searchTerm
+
+        // Filter agents
+        const agentEntries = Object.entries(chatStore.agentNames)
+        mentionSuggestions.value = agentEntries
+          .filter(([id, name]) =>
+            name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+            id.toLowerCase().includes(searchTerm.toLowerCase())
+          )
+          .map(([id, name]) => ({ id, name }))
+
+        if (mentionSuggestions.value.length > 0) {
+          showMentionSuggestions.value = true
+          selectedMentionIndex.value = 0
+        } else {
+          showMentionSuggestions.value = false
+        }
+      } else {
+        showMentionSuggestions.value = false
+      }
+    } else {
+      showMentionSuggestions.value = false
+    }
+  }
+)
+
+function selectMention(agentId: string, agentName: string) {
+  const input = chatStore.inputText
+  const lastAt = input.lastIndexOf('@')
+  if (lastAt !== -1) {
+    const beforeAt = input.substring(0, lastAt)
+    const afterAt = input.substring(lastAt)
+    const spaceIndex = afterAt.indexOf(' ')
+
+    let replacement = ''
+    if (spaceIndex === -1) {
+      replacement = `${beforeAt}@${agentName} `
+    } else {
+      replacement = `${beforeAt}@${agentName}${afterAt.substring(spaceIndex)}`
+    }
+
+    justSelectedMention.value = true
+    showMentionSuggestions.value = false
+    mentionSearch.value = ''
+    selectedMentionIndex.value = -1
+    chatStore.inputText = replacement
+
+    setTimeout(() => {
+      justSelectedMention.value = false
+    }, 100)
+  } else {
+    showMentionSuggestions.value = false
+    mentionSearch.value = ''
+    selectedMentionIndex.value = -1
+  }
+}
+
+function handleMentionClick(event: MouseEvent, agentId: string, agentName: string) {
+  event.stopPropagation()
+  selectMention(agentId, agentName)
+}
+
+// 点击外部关闭 mention 列表
+function handleClickOutside(event: MouseEvent) {
+  if (!showMentionSuggestions.value) return
+  const target = event.target as HTMLElement
+  const mentionList = mentionListRef.value
+  if (mentionList && !mentionList.contains(target)) {
+    showMentionSuggestions.value = false
+    mentionSearch.value = ''
+    selectedMentionIndex.value = -1
+  }
+}
+
+onMounted(() => {
+  document.addEventListener('click', handleClickOutside)
+})
+
+onUnmounted(() => {
+  document.removeEventListener('click', handleClickOutside)
+})
+
+// ==================== 文件上传 ====================
 const pendingFiles = ref<Array<{
   file: File
   id: string
   status: 'pending' | 'uploading' | 'success' | 'error'
+  progress: number
   error?: string
   uploadedData?: {
     name: string
@@ -36,7 +140,6 @@ const canSend = computed(() => {
   return text.length > 0 || pendingFiles.value.some(f => f.status === 'success')
 })
 
-// Handle file selection
 function triggerFileSelect() {
   fileInputRef.value?.click()
 }
@@ -48,7 +151,7 @@ async function handleFileChange(event: Event) {
   const files = Array.from(target.files)
   for (const file of files) {
     const id = Math.random().toString(36).substr(2, 9)
-    pendingFiles.value.push({ file, id, status: 'pending' })
+    pendingFiles.value.push({ file, id, status: 'pending', progress: 0 })
   }
 
   target.value = ''
@@ -57,7 +160,12 @@ async function handleFileChange(event: Event) {
 
 function removePendingFile(id: string) {
   const idx = pendingFiles.value.findIndex(f => f.id === id)
-  if (idx !== -1) pendingFiles.value.splice(idx, 1)
+  if (idx !== -1) {
+    const record = pendingFiles.value[idx]
+    if (record && record.status !== 'uploading') {
+      pendingFiles.value.splice(idx, 1)
+    }
+  }
 }
 
 async function uploadPendingFiles() {
@@ -71,6 +179,7 @@ async function uploadPendingFiles() {
     if (record.status !== 'pending') continue
 
     record.status = 'uploading'
+    record.progress = 0
     try {
       const path = `vscode/${Date.now()}_${record.file.name}`
       const { error } = await supabase.storage.from('upload').upload(path, record.file)
@@ -86,6 +195,7 @@ async function uploadPendingFiles() {
         type: record.file.type,
       }
       record.status = 'success'
+      record.progress = 100
     } catch (error: any) {
       record.status = 'error'
       record.error = error.message || 'Upload failed'
@@ -94,9 +204,17 @@ async function uploadPendingFiles() {
   isUploading.value = false
 }
 
+// ==================== 发送消息 ====================
 function handleSend() {
   const text = chatStore.inputText.trim()
   console.log('[ChatInput] handleSend called, text:', JSON.stringify(text), 'runnerAlive:', chatStore.runnerAlive)
+
+  // 检测 /redo 命令
+  if (text === '/redo') {
+    chatStore.inputText = ''
+    chatStore.sendRedo()
+    return
+  }
 
   const uploadedFiles = pendingFiles.value
     .filter(f => f.status === 'success' && f.uploadedData)
@@ -133,12 +251,42 @@ function handleSend() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  // @mention 列表导航
+  if (showMentionSuggestions.value) {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        selectedMentionIndex.value = Math.min(selectedMentionIndex.value + 1, mentionSuggestions.value.length - 1)
+        return
+      case 'ArrowUp':
+        event.preventDefault()
+        selectedMentionIndex.value = Math.max(selectedMentionIndex.value - 1, 0)
+        return
+      case 'Enter':
+        if (selectedMentionIndex.value >= 0 && selectedMentionIndex.value < mentionSuggestions.value.length) {
+          event.preventDefault()
+          const suggestion = mentionSuggestions.value[selectedMentionIndex.value]
+          if (suggestion) {
+            selectMention(suggestion.id, suggestion.name)
+          }
+          return
+        }
+        break
+      case 'Escape':
+        showMentionSuggestions.value = false
+        mentionSearch.value = ''
+        selectedMentionIndex.value = -1
+        return
+    }
+  }
+
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     handleSend()
   }
 }
 
+// ==================== 工具函数 ====================
 function formatFileSize(bytes: number): string {
   if (bytes < 1024) return bytes + ' B'
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
@@ -152,23 +300,49 @@ function getFileIcon(file: File): string {
   if (file.type.includes('text')) return '📃'
   return '📦'
 }
+
+// 当前目标 agent
+const targetAgentDisplay = computed(() => {
+  const text = chatStore.inputText
+  const mentionMatch = text.match(/@(\w+)/)
+  if (mentionMatch) {
+    const agentName = mentionMatch[1]
+    const agentEntry = Object.entries(chatStore.agentNames).find(([id, name]) =>
+      name.toLowerCase() === agentName.toLowerCase() || id.toLowerCase() === agentName.toLowerCase()
+    )
+    return agentEntry ? agentEntry[1] : agentName
+  }
+  return chatStore.defaultAgentId ? chatStore.agentNames[chatStore.defaultAgentId] || chatStore.defaultAgentId : 'Assistant'
+})
 </script>
 
 <template>
   <div class="input-container">
+    <!-- 目标 Agent 提示 -->
+    <div class="target-agent-hint" v-if="chatStore.runnerAlive">
+      发送给: <span class="target-agent-name">@{{ targetAgentDisplay }}</span>
+    </div>
+
     <!-- File preview area -->
     <div v-if="pendingFiles.length > 0" class="file-preview-area">
       <div
         v-for="record in pendingFiles"
         :key="record.id"
         class="file-item"
-        :class="{ 'file-error': record.status === 'error', 'file-success': record.status === 'success' }"
+        :class="{
+          'file-error': record.status === 'error',
+          'file-success': record.status === 'success',
+          'file-uploading': record.status === 'uploading',
+        }"
       >
         <span>{{ getFileIcon(record.file) }}</span>
         <span class="file-name">{{ record.file.name }}</span>
         <span class="file-size">{{ formatFileSize(record.file.size) }}</span>
-        <span v-if="record.status === 'uploading'" class="upload-status">Uploading...</span>
+        <span v-if="record.status === 'uploading'" class="upload-status">上传中...</span>
         <span v-if="record.status === 'error'" class="upload-status error">{{ record.error }}</span>
+        <div v-if="record.status === 'uploading'" class="progress-bar">
+          <div class="progress-fill" :style="{ width: record.progress + '%' }"></div>
+        </div>
         <button
           v-if="record.status !== 'uploading'"
           class="file-remove"
@@ -179,14 +353,34 @@ function getFileIcon(file: File): string {
 
     <!-- Input row -->
     <div class="input-row">
-      <textarea
-        ref="inputRef"
-        v-model="chatStore.inputText"
-        class="chat-input"
-        placeholder="Type a message... (use @ to mention an agent)"
-        rows="1"
-        @keydown="handleKeydown"
-      ></textarea>
+      <div class="input-wrapper">
+        <textarea
+          ref="inputRef"
+          v-model="chatStore.inputText"
+          class="chat-input"
+          placeholder="Type a message... (use @ to mention an agent)"
+          rows="1"
+          @keydown="handleKeydown"
+        ></textarea>
+
+        <!-- @mention 建议列表 -->
+        <div
+          v-if="showMentionSuggestions && mentionSuggestions.length > 0"
+          ref="mentionListRef"
+          class="mention-suggestions"
+        >
+          <div
+            v-for="(suggestion, index) in mentionSuggestions"
+            :key="suggestion.id"
+            class="mention-item"
+            :class="{ 'mention-selected': index === selectedMentionIndex }"
+            @click="handleMentionClick($event, suggestion.id, suggestion.name)"
+          >
+            <span class="mention-prefix">@</span>
+            <span class="mention-name">{{ suggestion.name }}</span>
+          </div>
+        </div>
+      </div>
 
       <button
         class="tool-button"
@@ -229,12 +423,26 @@ function getFileIcon(file: File): string {
   position: relative;
 }
 
+/* ==================== 目标 Agent 提示 ==================== */
+.target-agent-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  padding: 0 2px;
+}
+
+.target-agent-name {
+  font-weight: 600;
+  color: var(--text-link);
+}
+
+/* ==================== 文件预览 ==================== */
 .file-preview-area {
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
   margin-bottom: 8px;
-  max-height: 100px;
+  max-height: 120px;
   overflow-y: auto;
 }
 
@@ -247,6 +455,7 @@ function getFileIcon(file: File): string {
   border-radius: 4px;
   font-size: 11px;
   min-width: 0;
+  position: relative;
 }
 
 .file-item.file-error {
@@ -255,6 +464,10 @@ function getFileIcon(file: File): string {
 
 .file-item.file-success {
   border: 1px solid var(--success-fg);
+}
+
+.file-item.file-uploading {
+  border: 1px solid var(--focus-border);
 }
 
 .file-name {
@@ -277,6 +490,21 @@ function getFileIcon(file: File): string {
   color: var(--error-fg);
 }
 
+.progress-bar {
+  width: 50px;
+  height: 4px;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--button-bg);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
 .file-remove {
   background: none;
   border: none;
@@ -290,14 +518,20 @@ function getFileIcon(file: File): string {
   color: var(--error-fg);
 }
 
+/* ==================== 输入区域 ==================== */
 .input-row {
   display: flex;
   align-items: flex-end;
   gap: 8px;
 }
 
-.chat-input {
+.input-wrapper {
   flex: 1;
+  position: relative;
+}
+
+.chat-input {
+  width: 100%;
   background: var(--input-bg);
   color: var(--input-text);
   border: 1px solid var(--input-border);
@@ -319,6 +553,52 @@ function getFileIcon(file: File): string {
   color: var(--text-secondary);
 }
 
+/* ==================== @mention 建议列表 ==================== */
+.mention-suggestions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.2);
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.mention-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.mention-item:last-child {
+  border-bottom: none;
+}
+
+.mention-item:hover,
+.mention-selected {
+  background: var(--bg-tertiary);
+}
+
+.mention-prefix {
+  color: var(--text-link);
+  font-weight: 600;
+}
+
+.mention-name {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+/* ==================== 按钮 ==================== */
 .tool-button {
   background: var(--bg-tertiary);
   color: var(--text-primary);

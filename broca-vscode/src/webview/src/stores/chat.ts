@@ -17,6 +17,52 @@ export const useChatStore = defineStore('chat', () => {
   const defaultAgentId = ref<string | undefined>(undefined)
   const agentNames = ref<Record<string, string>>({})
 
+  // ==================== 侧栏状态 ====================
+  const showLeftSidebar = ref(true)
+  const showRightSidebar = ref(true)
+  const isMobile = ref(false)
+
+  function toggleLeftSidebar() {
+    showLeftSidebar.value = !showLeftSidebar.value
+    if (showLeftSidebar.value) showRightSidebar.value = false
+  }
+
+  function toggleRightSidebar() {
+    showRightSidebar.value = !showRightSidebar.value
+    if (showRightSidebar.value) showLeftSidebar.value = false
+  }
+
+  // ==================== 消息状态管理 ====================
+  const messageStates = ref<Map<string, {
+    showParameters: boolean
+    showResult: boolean
+    showReasoning: boolean
+  }>>(new Map())
+
+  function getMessageState(messageId: string) {
+    let state = messageStates.value.get(messageId)
+    if (!state) {
+      state = { showParameters: false, showResult: false, showReasoning: false }
+      messageStates.value.set(messageId, state)
+    }
+    return state
+  }
+
+  function toggleToolParameters(messageId: string) {
+    const state = getMessageState(messageId)
+    state.showParameters = !state.showParameters
+  }
+
+  function toggleToolResult(messageId: string) {
+    const state = getMessageState(messageId)
+    state.showResult = !state.showResult
+  }
+
+  function toggleReasoning(messageId: string) {
+    const state = getMessageState(messageId)
+    state.showReasoning = !state.showReasoning
+  }
+
   // Permission dialog state
   const permissionDialog = ref({
     visible: false,
@@ -39,6 +85,39 @@ export const useChatStore = defineStore('chat', () => {
   const redoReceiverId = ref<string | undefined>()
 
   const runnerAlive = computed(() => runnerInfo.value?.status === 'alive')
+
+  // ==================== 消息处理 ====================
+  // 消息合并池：agent_response 的流式 chunk 按 message_id 收集
+  const pendingChunks = ref<Map<string, Message[]>>(new Map())
+
+  function mergeAgentResponseChunks(chunks: Message[]) {
+    const parsedChunks: Array<{ content: string; reasoning_content: string; index: number }> = []
+
+    for (const chunk of chunks) {
+      try {
+        const data = JSON.parse(chunk.data?.content || '{}')
+        if (data.content || data.reasoning_content) {
+          parsedChunks.push({
+            content: data.content || '',
+            reasoning_content: data.reasoning_content || '',
+            index: data.index || 0,
+          })
+        }
+      } catch {}
+    }
+
+    parsedChunks.sort((a, b) => a.index - b.index)
+
+    let mergedContent = ''
+    let mergedReasoning = ''
+
+    for (const chunk of parsedChunks) {
+      mergedContent += chunk.content
+      mergedReasoning += chunk.reasoning_content
+    }
+
+    return { content: mergedContent, reasoning_content: mergedReasoning, index: 0 }
+  }
 
   // Initialize: listen for messages from extension host
   function init() {
@@ -84,12 +163,28 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleIncomingMessage(message: Message) {
-    // TEMP: push everything except internal types
-    const skip = ['turn_start', 'turn_end', 'command', 'subscribe', 'unsubscribe', 'connect', 'disconnect', 'ping', 'pong']
-    if (skip.includes(message.message_type)) return
+    // Debug: log agent_response content
+    if (message.message_type === 'agent_response') {
+      console.log('[ChatStore] agent_response received:', {
+        message_id: message.message_id,
+        contentType: typeof message.data?.content,
+        contentRaw: message.data?.content?.substring?.(0, 100),
+        dataKeys: Object.keys(message.data || {}),
+      })
+    }
 
-    // Debug: log ALL incoming messages  
-    console.log('[ChatStore] GOT MESSAGE:', message.message_type, message.message_id, message.data?.content?.substring?.(0, 60))
+    // Process/filter message
+    const processed = processMessage(message)
+    if (!processed) {
+      if (message.message_type === 'agent_response') {
+        console.log('[ChatStore] agent_response FILTERED OUT')
+      }
+      return
+    }
+
+    if (message.message_type === 'agent_response') {
+      console.log('[ChatStore] agent_response PASSED filter, adding to list')
+    }
 
     // Handle undo/redo results
     if (message.message_type === 'command_result') {
@@ -105,27 +200,37 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    // Clear redo state
+    // Clear redo state for new messages
     if (message.message_type !== 'command_result') {
       showRedoButton.value = false
       redoReceiverId.value = undefined
     }
 
-    // Permission dialog
+    // Check if it's a permission request
     if (message.message_type === 'permission_request') {
-      permissionDialog.value = { visible: true, requestId: message.data?.request_id, senderId: message.sender_id, message: message.data?.message || 'Permission required' }
+      permissionDialog.value = {
+        visible: true,
+        requestId: message.data?.request_id,
+        senderId: message.sender_id,
+        message: message.data?.message || 'Permission required',
+      }
       return
     }
 
-    // Agent query dialog
+    // Check if it's an agent query
     if (message.message_type === 'agent_query') {
-      agentQueryDialog.value = { visible: true, requestId: message.data?.request_id, senderId: message.sender_id, question: message.data?.question || message.data?.content || '', options: message.data?.options || [] }
+      agentQueryDialog.value = {
+        visible: true,
+        requestId: message.data?.request_id,
+        senderId: message.sender_id,
+        question: message.data?.question || message.data?.content || '',
+        options: message.data?.options || [],
+      }
       return
     }
 
-    // Add message directly (NO filtering, NO merging)
-    messages.value.push(message)
-    console.log('[ChatStore] Messages count now:', messages.value.length)
+    // Add message to list
+    addMessage(message)
   }
 
   /**
@@ -201,16 +306,12 @@ export const useChatStore = defineStore('chat', () => {
     skip: number
     limit: number
   }) {
-    // Filter history messages through processMessage (remove empties, internal, etc.)
+    // Filter history messages through processMessage
     const filtered = (payload.messages || []).filter(m => processMessage(m) !== null)
 
     if (payload.skip === 0) {
-      // Initial load: merge with any messages already received in real-time
-      // (don't replace, otherwise real-time messages arriving before history load complete get lost)
-      const existingIds = new Set(messages.value.map(m => m.message_id))
-      const newFromHistory = filtered.filter(m => !existingIds.has(m.message_id))
-      // Keep existing messages first (they arrived in real-time), append history messages that aren't already there
-      messages.value = [...messages.value, ...newFromHistory]
+      // Initial load - replace all messages
+      messages.value = filtered
     } else {
       // Load more - prepend to existing messages
       const newMessages = [...filtered, ...messages.value]
@@ -222,6 +323,11 @@ export const useChatStore = defineStore('chat', () => {
     hasMoreHistory.value = historySkip.value < historyTotal.value
     loading.value = false
     loadingMore.value = false
+
+    // Initialize message states for all messages
+    for (const msg of messages.value) {
+      getMessageState(msg.message_id)
+    }
   }
 
   function addMessage(message: Message) {
@@ -236,41 +342,53 @@ export const useChatStore = defineStore('chat', () => {
           data: { ...messages.value[existingIndex].data, ...message.data },
           timestamp: message.timestamp,
         }
+        getMessageState(message.message_id)
         return
       }
     }
 
-    // Handle agent_response chunk merging
+    // Handle agent_response chunk merging using pendingChunks pool
     if (message.message_type === 'agent_response') {
-      const existingIndex = messages.value.findIndex(
-        (m) => m.message_type === 'agent_response' && m.message_id === message.message_id
-      )
-      if (existingIndex !== -1) {
-        // Merge chunks
-        console.log('[ChatStore] Merging agent_response chunk, existing index:', existingIndex)
-        const existing = messages.value[existingIndex]
-        const existingContent = existing.data?.content ? JSON.parse(existing.data.content) : {}
-        const newContent = message.data?.content ? JSON.parse(message.data.content) : {}
+      const msgId = message.message_id
 
+      // Collect chunks
+      if (!pendingChunks.value.has(msgId)) {
+        pendingChunks.value.set(msgId, [])
+      }
+      pendingChunks.value.get(msgId)!.push(message)
+
+      // Merge content
+      const chunks = pendingChunks.value.get(msgId)!
+      const merged = mergeAgentResponseChunks(chunks)
+
+      // Check if already exists
+      const existingIndex = messages.value.findIndex(
+        (msg) => msg.message_type === 'agent_response' && msg.message_id === msgId
+      )
+
+      if (existingIndex !== -1) {
         messages.value[existingIndex] = {
-          ...existing,
+          ...messages.value[existingIndex],
           data: {
-            ...existing.data,
-            content: JSON.stringify({
-              content: (existingContent.content || '') + (newContent.content || ''),
-              reasoning_content: (existingContent.reasoning_content || '') + (newContent.reasoning_content || ''),
-            }),
+            ...messages.value[existingIndex].data,
+            content: JSON.stringify(merged),
           },
           timestamp: message.timestamp,
         }
-        console.log('[ChatStore] Merged content length:', (existingContent.content || '').length + (newContent.content || '').length)
         return
       } else {
-        console.log('[ChatStore] First agent_response chunk, pushing new message')
+        // First chunk: push a copy
+        const copy = JSON.parse(JSON.stringify(message))
+        copy.data.content = JSON.stringify(merged)
+        messages.value.push(copy)
       }
+
+      getMessageState(message.message_id)
+      return
     }
 
     messages.value.push(message)
+    getMessageState(message.message_id)
   }
 
   function sendMessage(content: string, receiverId?: string, files?: any[]) {
@@ -286,6 +404,11 @@ export const useChatStore = defineStore('chat', () => {
     console.log('[ChatStore] sendMessage:', { messageId, content, targetReceiver, filesCount: files?.length })
 
     // Optimistic update - add user message locally
+    const messageData: any = { content }
+    if (files && files.length > 0) {
+      messageData.files = files
+    }
+
     addMessage({
       message_id: messageId,
       message_type: 'user_message',
@@ -293,7 +416,7 @@ export const useChatStore = defineStore('chat', () => {
       role: 'user',
       sender_id: 'user',
       receiver_id: targetReceiver,
-      data: { content, ...(files && { files }) },
+      data: messageData,
     })
 
     // Send to extension host
@@ -381,7 +504,23 @@ export const useChatStore = defineStore('chat', () => {
     permissionDialog,
     agentQueryDialog,
     showRedoButton,
+    redoReceiverId,
     runnerAlive,
+    defaultAgentId,
+    agentNames,
+    // Sidebar state
+    showLeftSidebar,
+    showRightSidebar,
+    isMobile,
+    toggleLeftSidebar,
+    toggleRightSidebar,
+    // Message state management
+    messageStates,
+    getMessageState,
+    toggleToolParameters,
+    toggleToolResult,
+    toggleReasoning,
+    // Init & actions
     init,
     sendMessage,
     loadHistory,

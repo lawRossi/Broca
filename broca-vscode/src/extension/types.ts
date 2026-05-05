@@ -117,12 +117,12 @@ export interface WebViewMessage {
 
 // Extension → WebView messages
 export interface ExtensionToWebView {
-  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents'
+  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult'
   payload: any
 }
 
 // WebView → Extension messages
 export interface WebViewToExtension {
-  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile'
+  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile' | 'runnerAction' | 'fetchRunnerStatus' | 'openFile'
   payload?: any
 }

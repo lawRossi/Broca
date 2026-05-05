@@ -188,6 +188,18 @@ export class ChatWebViewManager {
       case 'abort':
         await this.sendCommand(sessionId, 'abort', message.payload)
         break
+
+      case 'runnerAction':
+        await this.handleRunnerAction(sessionId, panel, message.payload)
+        break
+
+      case 'fetchRunnerStatus':
+        await this.handleFetchRunnerStatus(sessionId, panel)
+        break
+
+      case 'openFile':
+        this.handleOpenFile(message.payload)
+        break
     }
   }
 
@@ -206,11 +218,6 @@ export class ChatWebViewManager {
           this.postToPanel(panel, { type: 'connected', payload: { connected: false } } as ExtensionToWebView)
         },
         onMessage: (msg) => {
-          if (msg.message_type === 'agent_response') {
-            console.log('[ChatWebView] FORWARDING agent_response to WebView:', msg.message_id, 'content length:', msg.data?.content?.length)
-          } else if (msg.message_type === 'tool_call') {
-            console.log('[ChatWebView] FORWARDING tool_call to WebView:', msg.message_id)
-          }
           this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
         },
         onError: (error) => {
@@ -373,6 +380,52 @@ export class ChatWebViewManager {
     }
   }
 
+  private async handleRunnerAction(
+    sessionId: string,
+    panel: vscode.WebviewPanel,
+    payload: { action: 'start' | 'stop' | 'restart'; sessionId: string }
+  ) {
+    try {
+      if (payload.action === 'stop') {
+        await this.apiClient.stopRunner(sessionId)
+        vscode.window.showInformationMessage('Runner stopped')
+      } else {
+        await this.apiClient.restartRunner(sessionId)
+        vscode.window.showInformationMessage('Runner restarting...')
+      }
+      // Refresh status after a short delay
+      setTimeout(async () => {
+        try {
+          const status = await this.apiClient.getRunnerStatus(sessionId)
+          this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
+        } catch {}
+      }, 2000)
+      this.postToPanel(panel, { type: 'runnerActionResult', payload: { success: true } } as ExtensionToWebView)
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`Runner action failed: ${error.message}`)
+      this.postToPanel(panel, {
+        type: 'runnerActionResult',
+        payload: { success: false, error: error.message },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchRunnerStatus(sessionId: string, panel: vscode.WebviewPanel) {
+    try {
+      const status = await this.apiClient.getRunnerStatus(sessionId)
+      this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
+    } catch (error: any) {
+      console.error('Failed to fetch runner status:', error)
+    }
+  }
+
+  private handleOpenFile(payload: { path: string }) {
+    if (payload.path) {
+      const fileUri = vscode.Uri.file(payload.path)
+      vscode.commands.executeCommand('vscode.open', fileUri)
+    }
+  }
+
   private async startRunnerPolling(sessionId: string, panel: vscode.WebviewPanel) {
     this.stopRunnerPolling(sessionId)
 
@@ -433,31 +486,36 @@ export class ChatWebViewManager {
 
   private getWebviewContent(webview: vscode.Webview, sessionId: string): string {
     const webviewDist = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
+    const htmlPath = vscode.Uri.joinPath(webviewDist, 'index.html')
 
-    // Build URIs for the built assets
-    const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewDist, 'assets', 'index.js'))
-    const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(webviewDist, 'assets', 'style.css'))
+    // Read the built HTML file
+    let html: string
+    try {
+      html = require('fs').readFileSync(htmlPath.fsPath, 'utf-8')
+    } catch {
+      return this.getFallbackHtml('Chat', 'Failed to load chat UI')
+    }
 
+    // Transform resource paths to webview URIs
+    html = this.transformResourcePaths(webview, webviewDist, html)
+
+    // Inject initial data as a JSON script tag (CSP-safe, no inline JS)
     const supabaseUrl = this.configManager.supabaseUrl
     const supabaseKey = this.configManager.supabaseKey
     const token = this.authManager.token
 
-    return `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval'; img-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https: http://localhost:* ws://localhost:*;">
-  <link rel="stylesheet" href="${styleUri}">
-  <title>Broca Chat</title>
-</head>
-<body>
-  <div id="test-mark" style="display:none;">loaded</div>
-  <div id="app"></div>
-  <script type="application/json" id="init-data">${JSON.stringify({ sessionId, token: token || '', supabaseUrl, supabaseKey })}</script>
-  <script src="${scriptUri}"></script>
-</body>
-</html>`
+    const initData = {
+      sessionId,
+      token: token || '',
+      supabaseUrl,
+      supabaseKey,
+    }
+    const initTag = `<script type="application/json" id="init-data">${JSON.stringify(initData)}</script>`
+
+    html = html.replace('</head>', initTag + '</head>')
+    html = this.addCSP(webview, html)
+
+    return html
   }
 
   private getConfigWebviewContent(webview: vscode.Webview): string {

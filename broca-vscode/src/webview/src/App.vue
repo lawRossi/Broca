@@ -1,28 +1,19 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted } from 'vue'
 import { useChatStore } from './stores/chat'
+import AgentSidebar from './components/AgentSidebar.vue'
 import ChatMessageList from './components/ChatMessageList.vue'
 import ChatInput from './components/ChatInput.vue'
+import ChatInfoSidebar from './components/ChatInfoSidebar.vue'
 import PermissionDialog from './components/PermissionDialog.vue'
 import AgentQueryDialog from './components/AgentQueryDialog.vue'
 import RunnerStatusBar from './components/RunnerStatusBar.vue'
+import LoadingOverlay from './components/LoadingOverlay.vue'
 
 const chatStore = useChatStore()
 
-// Direct test: listen for ALL extension messages at window level
-window.addEventListener('message', (event) => {
-  const data = event.data
-  if (data && data.type === 'message' && data.payload?.message_type) {
-    console.log('[App-test] GOT MSG:', data.payload.message_type, data.payload.message_id)
-  } else if (data && data.type) {
-    console.log('[App-test] GOT EVENT:', data.type)
-  }
-})
-
 onMounted(() => {
-  console.log('[App-test] mounted, calling chatStore.init()')
   chatStore.init()
-  console.log('[App-test] chatStore.init() done')
 })
 
 onUnmounted(() => {
@@ -32,16 +23,28 @@ onUnmounted(() => {
 
 <template>
   <div class="chat-container">
+    <!-- Loading Overlay -->
+    <LoadingOverlay :visible="chatStore.loading" />
+
     <!-- Runner Status Bar -->
     <RunnerStatusBar />
 
-    <!-- Main Chat Area -->
-    <div class="chat-main">
-      <ChatMessageList />
-    </div>
+    <!-- Main Content Area: Three-Column Layout -->
+    <div class="chat-body">
+      <!-- Left Sidebar: Agents -->
+      <AgentSidebar v-if="chatStore.showLeftSidebar" />
 
-    <!-- Input Area -->
-    <ChatInput />
+      <!-- Center: Messages + Input -->
+      <div class="chat-center">
+        <div class="chat-messages-area">
+          <ChatMessageList />
+        </div>
+        <ChatInput />
+      </div>
+
+      <!-- Right Sidebar: Info -->
+      <ChatInfoSidebar v-if="chatStore.showRightSidebar" />
+    </div>
 
     <!-- Dialogs -->
     <PermissionDialog />
@@ -76,7 +79,22 @@ html, body {
   overflow: hidden;
 }
 
-.chat-main {
+.chat-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.chat-center {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.chat-messages-area {
   flex: 1;
   overflow-y: auto;
   min-height: 0;
