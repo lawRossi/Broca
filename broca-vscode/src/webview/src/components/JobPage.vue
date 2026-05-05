@@ -9,6 +9,7 @@ const loading = ref(false)
 const total = ref(0)
 const skip = ref(0)
 const limit = ref(50)
+const errorMsg = ref('')
 
 const searchKeyword = ref('')
 const statusFilter = ref('')
@@ -116,6 +117,7 @@ function formatDateTime(dateStr?: string): string {
 // ==================== Actions ====================
 async function fetchJobs() {
   loading.value = true
+  errorMsg.value = ''
   try {
     const response = await jobApi.getJobs({
       skip: skip.value,
@@ -124,10 +126,17 @@ async function fetchJobs() {
       job_type: typeFilter.value || undefined,
       keyword: searchKeyword.value || undefined,
     })
+    console.log('[JobPage] API response:', response)
+    // response is already unwrapped by request()
     jobs.value = response.jobs || response || []
-    total.value = response.total || jobs.value.length
+    total.value = response.total || (Array.isArray(response) ? response.length : jobs.value.length)
+    if (Array.isArray(response)) {
+      // If response is directly an array, no pagination info
+      total.value = response.length
+    }
   } catch (e: any) {
-    console.error('Failed to fetch jobs:', e)
+    console.error('[JobPage] Failed to fetch jobs:', e)
+    errorMsg.value = `加载失败: ${e.message || e}`
   } finally {
     loading.value = false
   }
@@ -247,6 +256,7 @@ onMounted(() => {
     <!-- Job List -->
     <div class="job-list">
       <div v-if="loading" class="loading-state">加载中...</div>
+      <div v-else-if="errorMsg" class="error-state">{{ errorMsg }}</div>
       <div v-else-if="jobs.length === 0" class="empty-state">暂无定时任务</div>
       <div
         v-for="job in jobs"
@@ -746,6 +756,15 @@ onMounted(() => {
   justify-content: center;
   padding: 40px;
   color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.error-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--error-fg, #ef4444);
   font-size: 13px;
 }
 

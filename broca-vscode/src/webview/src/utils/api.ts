@@ -38,13 +38,18 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`
   }
 
-  const response = await fetch(url.toString(), {
+  const fullUrl = url.toString()
+  console.log(`[API] ${method} ${fullUrl}`)
+
+  const response = await fetch(fullUrl, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,
   })
 
   if (!response.ok) {
+    const text = await response.text().catch(() => '')
+    console.error(`[API] HTTP ${response.status} for ${method} ${path}:`, text.substring(0, 200))
     throw new Error(`Request failed with status code ${response.status}`)
   }
 
@@ -55,7 +60,7 @@ async function request<T>(
     if (json.code === 200) {
       return json.data as T
     } else {
-      throw new Error(json.msg || 'Request failed')
+      throw new Error(json.msg || `Request failed with code ${json.code}`)
     }
   }
 

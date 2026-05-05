@@ -9,6 +9,7 @@ const loading = ref(false)
 const total = ref(0)
 const skip = ref(0)
 const limit = ref(50)
+const errorMsg = ref('')
 
 const searchKeyword = ref('')
 const statusFilter = ref('')
@@ -105,6 +106,7 @@ function formatDate(dateStr: string): string {
 // ==================== Actions ====================
 async function fetchTasks() {
   loading.value = true
+  errorMsg.value = ''
   try {
     const response = await taskApi.getTasks({
       skip: skip.value,
@@ -113,10 +115,15 @@ async function fetchTasks() {
       priority: priorityFilter.value || undefined,
       keyword: searchKeyword.value || undefined,
     })
+    console.log('[TaskPage] API response:', response)
     tasks.value = response.tasks || response || []
-    total.value = response.total || tasks.value.length
+    total.value = response.total || (Array.isArray(response) ? response.length : tasks.value.length)
+    if (Array.isArray(response)) {
+      total.value = response.length
+    }
   } catch (e: any) {
-    console.error('Failed to fetch tasks:', e)
+    console.error('[TaskPage] Failed to fetch tasks:', e)
+    errorMsg.value = `加载失败: ${e.message || e}`
   } finally {
     loading.value = false
   }
@@ -274,6 +281,7 @@ onMounted(() => {
     <!-- Task List -->
     <div class="task-list">
       <div v-if="loading" class="loading-state">加载中...</div>
+      <div v-else-if="errorMsg" class="error-state">{{ errorMsg }}</div>
       <div v-else-if="tasks.length === 0" class="empty-state">暂无任务</div>
       <div
         v-for="task in tasks"
@@ -918,6 +926,15 @@ onMounted(() => {
   justify-content: center;
   padding: 40px;
   color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.error-state {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40px;
+  color: var(--error-fg, #ef4444);
   font-size: 13px;
 }
 
