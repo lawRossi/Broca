@@ -80,15 +80,19 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Additional context menu commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('broca.copySessionId', async (sessionId: string) => {
-      await vscode.env.clipboard.writeText(sessionId)
-      vscode.window.showInformationMessage('Session ID copied to clipboard')
+    vscode.commands.registerCommand('broca.copySessionId', async (item: any) => {
+      const sessionId = typeof item === 'string' ? item : item?.id
+      if (sessionId) {
+        await vscode.env.clipboard.writeText(sessionId)
+        vscode.window.showInformationMessage('Session ID copied to clipboard')
+      }
     })
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('broca.copySessionWorkspace', async (sessionId: string) => {
-      const session = await sessionTreeProvider.getSessionById(sessionId)
+    vscode.commands.registerCommand('broca.copySessionWorkspace', async (item: any) => {
+      const sessionId = typeof item === 'string' ? item : item?.id
+      const session = sessionId ? await sessionTreeProvider.getSessionById(sessionId) : undefined
       if (session?.workspace) {
         await vscode.env.clipboard.writeText(session.workspace)
         vscode.window.showInformationMessage('Workspace path copied to clipboard')
@@ -99,7 +103,9 @@ export async function activate(context: vscode.ExtensionContext) {
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('broca.restartRunner', async (sessionId: string) => {
+    vscode.commands.registerCommand('broca.restartRunner', async (item: any) => {
+      const sessionId = typeof item === 'string' ? item : item?.id
+      if (!sessionId) return
       try {
         await apiClient.restartRunner(sessionId)
         vscode.window.showInformationMessage('Runner restarting...')
@@ -110,7 +116,9 @@ export async function activate(context: vscode.ExtensionContext) {
   )
 
   context.subscriptions.push(
-    vscode.commands.registerCommand('broca.stopRunner', async (sessionId: string) => {
+    vscode.commands.registerCommand('broca.stopRunner', async (item: any) => {
+      const sessionId = typeof item === 'string' ? item : item?.id
+      if (!sessionId) return
       try {
         await apiClient.stopRunner(sessionId)
         vscode.window.showInformationMessage('Runner stopped')
@@ -203,7 +211,15 @@ async function handleCreateSession() {
   }
 }
 
-async function handleDeleteSession(sessionId: string) {
+async function handleDeleteSession(item: any) {
+  // When triggered from inline button, VSCode passes the TreeItem object
+  // Extract session ID from TreeItem.id or use directly if it's a string
+  const sessionId = typeof item === 'string' ? item : item?.id || item?.sessionId
+  if (!sessionId) {
+    vscode.window.showErrorMessage('Could not determine session ID')
+    return
+  }
+
   const confirmed = await vscode.window.showWarningMessage(
     'Are you sure you want to delete this session? This action cannot be undone.',
     { modal: true },

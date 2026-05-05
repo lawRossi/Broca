@@ -211,6 +211,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.97.0",
+    "@types/node": "^25.6.0",
     "axios": "^1.13.5",
     "socket.io-client": "^4.8.3"
   },
@@ -218,12 +219,12 @@
     "@types/vscode": "^1.85.0",
     "@vitejs/plugin-vue": "^5.2.4",
     "concurrently": "^9.1.2",
+    "diff": "^9.0.0",
+    "marked": "^17.0.5",
+    "pinia": "^3.0.4",
     "typescript": "^5.9.3",
     "vite": "^6.3.5",
     "vsce": "^2.15.0",
-    "vue": "^3.5.28",
-    "pinia": "^3.0.4",
-    "marked": "^17.0.5",
-    "diff": "^9.0.0"
+    "vue": "^3.5.28"
   }
 }
