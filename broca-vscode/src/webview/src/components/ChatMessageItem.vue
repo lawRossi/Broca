@@ -342,8 +342,12 @@ function handleUndo() {
 
 function confirmUndo() {
   showUndoConfirm.value = false
-  // 撤销需要指定目标 agent：优先使用消息关联的 agent_id，否则用 sender_id，最后用 defaultAgentId
-  const targetAgentId = props.message.agent_id || props.message.sender_id || chatStore.defaultAgentId
+  // 撤销需要指定目标 agent：
+  // - 用户消息 (user_message): receiver_id 是目标 agent（消息发给了谁）
+  // - Agent 消息 (agent_response/tool_call): agent_id 或 sender_id 是目标 agent
+  const targetAgentId = isUser.value
+    ? (props.message.receiver_id || chatStore.defaultAgentId)
+    : (props.message.agent_id || props.message.sender_id || chatStore.defaultAgentId)
   chatStore.sendUndo(props.message.message_id, undoLevel.value, targetAgentId)
 }
 
