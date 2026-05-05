@@ -96,7 +96,6 @@ html, body {
 
 .chat-messages-area {
   flex: 1;
-  overflow-y: auto;
   min-height: 0;
 }
 
