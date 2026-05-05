@@ -288,6 +288,10 @@ export const useChatStore = defineStore('chat', () => {
 
     // Handle undo/redo results
     if (message.message_type === 'command_result') {
+      if (message.data?.result.code !== 0) {
+        alert(message.data?.result.message || 'Error')
+        return
+      }
       if (message.data?.command === 'undo') {
         showRedoButton.value = true
         redoReceiverId.value = message.sender_id
@@ -296,6 +300,7 @@ export const useChatStore = defineStore('chat', () => {
       } else if (message.data?.command === 'redo') {
         showRedoButton.value = false
         redoReceiverId.value = undefined
+        loadHistory(0, 50)
         return
       }
     }
