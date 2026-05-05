@@ -342,7 +342,9 @@ function handleUndo() {
 
 function confirmUndo() {
   showUndoConfirm.value = false
-  chatStore.sendUndo(props.message.message_id, undoLevel.value)
+  // 撤销需要指定目标 agent：优先使用消息关联的 agent_id，否则用 sender_id，最后用 defaultAgentId
+  const targetAgentId = props.message.agent_id || props.message.sender_id || chatStore.defaultAgentId
+  chatStore.sendUndo(props.message.message_id, undoLevel.value, targetAgentId)
 }
 
 function cancelUndo() {

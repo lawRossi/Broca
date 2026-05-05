@@ -513,10 +513,10 @@ export const useChatStore = defineStore('chat', () => {
     redoReceiverId.value = undefined
   }
 
-  function sendUndo(targetMessageId?: string, level: 'turn' | 'step' = 'step') {
+  function sendUndo(targetMessageId?: string, level: 'turn' | 'step' = 'step', receiverId?: string) {
     postMessage({
       type: 'undo',
-      payload: { targetMessageId, level },
+      payload: { targetMessageId, level, receiverId },
     })
   }
 

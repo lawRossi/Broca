@@ -233,10 +233,10 @@ function handleSend() {
   let cleanText = text
   let targetAgentId: string | undefined
 
-  const mentionMatch = text.match(/@(\w+)/)
+  const mentionMatch = text.match(/@([\w-]+)/)
   if (mentionMatch) {
     const mentionName = mentionMatch[1].toLowerCase()
-    cleanText = text.replace(/@\w+\s*/, '').trim()
+    cleanText = text.replace(/@[\w-]+\s*/, '').trim()
 
     // 反向查找：从 agentNames (agent_id → name) 中找到匹配的 agent_id
     const matchedEntry = Object.entries(chatStore.agentNames).find(([id, name]) =>
@@ -315,7 +315,7 @@ function getFileIcon(file: File): string {
 // 当前目标 agent
 const targetAgentDisplay = computed(() => {
   const text = chatStore.inputText
-  const mentionMatch = text.match(/@(\w+)/)
+  const mentionMatch = text.match(/@([\w-]+)/)
   if (mentionMatch) {
     const mentionName = mentionMatch[1].toLowerCase()
     const agentEntry = Object.entries(chatStore.agentNames).find(([id, name]) =>
