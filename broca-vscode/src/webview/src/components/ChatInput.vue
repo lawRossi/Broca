@@ -229,14 +229,25 @@ function handleSend() {
 
   if (!text && uploadedFiles.length === 0) return
 
-  // Parse @mention
+  // Parse @mention — 将 @名称 解析为实际的 agent_id
   let cleanText = text
   let targetAgentId: string | undefined
 
   const mentionMatch = text.match(/@(\w+)/)
   if (mentionMatch) {
-    targetAgentId = mentionMatch[1]
+    const mentionName = mentionMatch[1].toLowerCase()
     cleanText = text.replace(/@\w+\s*/, '').trim()
+
+    // 反向查找：从 agentNames (agent_id → name) 中找到匹配的 agent_id
+    const matchedEntry = Object.entries(chatStore.agentNames).find(([id, name]) =>
+      name.toLowerCase() === mentionName || id.toLowerCase() === mentionName
+    )
+    if (matchedEntry) {
+      targetAgentId = matchedEntry[0]  // 使用真实的 agent_id
+    } else {
+      // 如果没找到匹配的 agent，就用原始文本（兼容直接输入 agent_id 的情况）
+      targetAgentId = mentionMatch[1]
+    }
   }
 
   console.log('[ChatInput] Sending:', { cleanText, targetAgentId, uploadedFiles: uploadedFiles.length })
@@ -306,13 +317,14 @@ const targetAgentDisplay = computed(() => {
   const text = chatStore.inputText
   const mentionMatch = text.match(/@(\w+)/)
   if (mentionMatch) {
-    const agentName = mentionMatch[1]
+    const mentionName = mentionMatch[1].toLowerCase()
     const agentEntry = Object.entries(chatStore.agentNames).find(([id, name]) =>
-      name.toLowerCase() === agentName.toLowerCase() || id.toLowerCase() === agentName.toLowerCase()
+      name.toLowerCase() === mentionName || id.toLowerCase() === mentionName
     )
-    return agentEntry ? agentEntry[1] : agentName
+    return agentEntry ? agentEntry[1] : mentionMatch[1]
   }
-  return chatStore.defaultAgentId ? chatStore.agentNames[chatStore.defaultAgentId] || chatStore.defaultAgentId : 'Assistant'
+  const defaultName = chatStore.defaultAgentId ? chatStore.agentNames[chatStore.defaultAgentId] : undefined
+  return defaultName || chatStore.defaultAgentId || 'Assistant'
 })
 </script>
 
