@@ -59,11 +59,6 @@ export interface Agent {
   type?: string
   status?: string
   description?: string
-  // LLM usage statistics
-  total_input_tokens?: number
-  total_output_tokens?: number
-  total_llm_calls?: number
-  last_context_length?: number
 }
 
 // Message types (matching backend session.models.py)
