@@ -577,7 +577,7 @@ export class ChatWebViewManager {
   }
 
   private addCSP(webview: vscode.Webview, html: string): string {
-    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval'; img-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https: http://localhost:* ws://localhost:*;">`
+    const csp = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-eval'; img-src ${webview.cspSource} https: data:; connect-src ${webview.cspSource} https: http://localhost ws://localhost;">`
     return html.replace('<head>', `<head>${csp}`)
   }
 
