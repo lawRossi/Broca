@@ -17,6 +17,21 @@ export const useChatStore = defineStore('chat', () => {
   const defaultAgentId = ref<string | undefined>(undefined)
   const agentNames = ref<Record<string, string>>({})
 
+  // ==================== Agent 运行时状态追踪 ====================
+  // 根据 turn_start / turn_end / agent_response / tool_call 消息更新
+  type AgentStatus = 'idle' | 'running' | 'connecting' | 'disconnected'
+  const agentStatuses = ref<Record<string, AgentStatus>>({})
+
+  function updateAgentStatus(agentId: string | undefined, status: AgentStatus) {
+    if (!agentId) return
+    agentStatuses.value = { ...agentStatuses.value, [agentId]: status }
+  }
+
+  function getAgentStatus(agentId: string | undefined): AgentStatus {
+    if (!agentId) return 'disconnected'
+    return agentStatuses.value[agentId] || 'disconnected'
+  }
+
   // ==================== 侧栏状态 ====================
   const showLeftSidebar = ref(true)
   const showRightSidebar = ref(true)
@@ -173,6 +188,49 @@ export const useChatStore = defineStore('chat', () => {
       })
     }
 
+    // ===== 弹窗类消息：在 processMessage 之前处理，避免被过滤掉 =====
+    // Check if it's a permission request
+    if (message.message_type === 'permission_request') {
+      permissionDialog.value = {
+        visible: true,
+        requestId: message.data?.request_id,
+        senderId: message.sender_id,
+        message: message.data?.message || 'Permission required',
+      }
+      return
+    }
+
+    // Check if it's an agent query
+    if (message.message_type === 'agent_query') {
+      agentQueryDialog.value = {
+        visible: true,
+        requestId: message.data?.request_id,
+        senderId: message.sender_id,
+        question: message.data?.question || message.data?.content || '',
+        options: message.data?.options || [],
+      }
+      return
+    }
+
+    // ===== Agent 运行状态更新：在 processMessage 之前处理，因为这些消息类型会被过滤掉 =====
+    if (message.message_type === 'turn_start') {
+      const targetAgentId = message.sender_id || message.agent_id || defaultAgentId.value
+      updateAgentStatus(targetAgentId, 'running')
+      return  // turn_start 不需要显示在消息列表中
+    }
+
+    if (message.message_type === 'turn_end') {
+      const targetAgentId = message.sender_id || message.agent_id || defaultAgentId.value
+      updateAgentStatus(targetAgentId, 'idle')
+      return  // turn_end 不需要显示在消息列表中
+    }
+
+    // agent_response 和 tool_call 也更新 Agent 状态为 running
+    if (message.message_type === 'agent_response' || message.message_type === 'tool_call') {
+      const targetAgentId = message.sender_id || message.agent_id || defaultAgentId.value
+      updateAgentStatus(targetAgentId, 'running')
+    }
+
     // Process/filter message
     const processed = processMessage(message)
     if (!processed) {
@@ -204,29 +262,6 @@ export const useChatStore = defineStore('chat', () => {
     if (message.message_type !== 'command_result') {
       showRedoButton.value = false
       redoReceiverId.value = undefined
-    }
-
-    // Check if it's a permission request
-    if (message.message_type === 'permission_request') {
-      permissionDialog.value = {
-        visible: true,
-        requestId: message.data?.request_id,
-        senderId: message.sender_id,
-        message: message.data?.message || 'Permission required',
-      }
-      return
-    }
-
-    // Check if it's an agent query
-    if (message.message_type === 'agent_query') {
-      agentQueryDialog.value = {
-        visible: true,
-        requestId: message.data?.request_id,
-        senderId: message.sender_id,
-        question: message.data?.question || message.data?.content || '',
-        options: message.data?.options || [],
-      }
-      return
     }
 
     // Add message to list
@@ -508,6 +543,9 @@ export const useChatStore = defineStore('chat', () => {
     runnerAlive,
     defaultAgentId,
     agentNames,
+    agentStatuses,
+    updateAgentStatus,
+    getAgentStatus,
     // Sidebar state
     showLeftSidebar,
     showRightSidebar,

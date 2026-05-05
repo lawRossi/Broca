@@ -10,12 +10,12 @@ interface AgentInfo {
   status: 'idle' | 'running' | 'connecting' | 'disconnected'
 }
 
-// Derive agents from the agentNames map and defaultAgentId
+// Derive agents from the agentNames map with real-time status from store
 const agents = computed<AgentInfo[]>(() => {
   return Object.entries(chatStore.agentNames).map(([id, name]) => ({
     agent_id: id,
     name,
-    status: id === chatStore.defaultAgentId ? 'idle' : 'disconnected',
+    status: chatStore.getAgentStatus(id),
   }))
 })
 
@@ -32,6 +32,10 @@ function getStatusDot(status: string): string {
 
 function getStatusLabel(status: string): string {
   return statusConfig[status]?.label || status
+}
+
+function handleAbort(agentId: string) {
+  chatStore.sendAbort(agentId)
 }
 
 const isOpen = computed(() => chatStore.showLeftSidebar)
@@ -57,11 +61,22 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
         <div class="agent-info">
           <span
             class="agent-status-dot"
-            :style="{ background: getStatusDot(agent.status) }"
+            :class="'dot-' + agent.status"
           ></span>
           <span class="agent-name">{{ agent.name }}</span>
         </div>
-        <span class="agent-status-label">{{ getStatusLabel(agent.status) }}</span>
+        <div class="agent-actions">
+          <!-- Abort button: show only when agent is running -->
+          <button
+            v-if="agent.status === 'running'"
+            class="abort-btn"
+            title="中止该 Agent"
+            @click.stop="handleAbort(agent.agent_id)"
+          >
+            ⏹
+          </button>
+          <span class="agent-status-label">{{ getStatusLabel(agent.status) }}</span>
+        </div>
       </div>
     </div>
   </div>
@@ -127,7 +142,6 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   align-items: center;
   padding: 8px 10px;
   border-radius: 6px;
-  cursor: pointer;
   margin-bottom: 2px;
   transition: background 0.15s ease;
 }
@@ -148,11 +162,35 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   min-width: 0;
 }
 
+/* ==================== 状态指示灯 ==================== */
 .agent-status-dot {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
+}
+
+.dot-idle {
+  background: var(--success-fg);
+}
+
+.dot-running {
+  background: var(--focus-border);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.dot-connecting {
+  background: var(--warning-fg);
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.dot-disconnected {
+  background: var(--text-secondary);
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
 }
 
 .agent-name {
@@ -164,10 +202,34 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   white-space: nowrap;
 }
 
+.agent-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
 .agent-status-label {
   font-size: 10px;
   color: var(--text-secondary);
-  flex-shrink: 0;
+}
+
+/* ==================== Abort 按钮 ==================== */
+.abort-btn {
+  background: rgba(239, 68, 68, 0.15);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--error-fg);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+}
+
+.abort-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
 }
 
 /* Mobile responsive */
