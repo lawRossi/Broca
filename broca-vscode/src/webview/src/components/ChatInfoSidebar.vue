@@ -47,15 +47,15 @@ function formatMemory(mb: number | undefined): string {
 }
 
 function handleRunnerAction() {
+  if (chatStore.runnerActionLoading) return
+  chatStore.runnerActionLoading = true
   const status = runnerInfo.value?.status
   if (status === 'alive') {
-    // Stop
     postMessage({
       type: 'runnerAction',
       payload: { action: 'stop', sessionId: chatStore.sessionId },
     })
   } else {
-    // Start / Restart
     postMessage({
       type: 'runnerAction',
       payload: { action: 'restart', sessionId: chatStore.sessionId },
@@ -129,10 +129,12 @@ const isOpen = computed(() => chatStore.showRightSidebar)
           <div v-if="runnerInfo" class="runner-actions">
             <button
               class="action-btn"
-              :class="runnerInfo.status === 'alive' ? 'btn-danger' : 'btn-primary'"
+              :class="[runnerInfo.status === 'alive' ? 'btn-danger' : 'btn-primary', { 'btn-loading': chatStore.runnerActionLoading }]"
+              :disabled="chatStore.runnerActionLoading || runnerInfo.status === 'starting'"
               @click="handleRunnerAction"
             >
-              {{ getRunnerConfig(runnerInfo.status).btnLabel }}
+              <span v-if="chatStore.runnerActionLoading" class="btn-spinner"></span>
+              {{ chatStore.runnerActionLoading ? '处理中...' : getRunnerConfig(runnerInfo.status).btnLabel }}
             </button>
           </div>
         </div>
@@ -351,6 +353,28 @@ const isOpen = computed(() => chatStore.showRightSidebar)
 
 .btn-primary:hover {
   background: var(--button-hover-bg);
+}
+
+.btn-loading {
+  opacity: 0.7;
+  cursor: not-allowed;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.btn-spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid transparent;
+  border-top-color: currentColor;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ==================== Stat Item ==================== */

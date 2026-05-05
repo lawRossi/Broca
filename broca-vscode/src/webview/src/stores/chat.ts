@@ -13,6 +13,7 @@ export const useChatStore = defineStore('chat', () => {
   const historySkip = ref(0)
   const historyTotal = ref(0)
   const runnerInfo = ref<RunnerInfo | null>(null)
+  const runnerActionLoading = ref(false)
   const inputText = ref('')
   const defaultAgentId = ref<string | undefined>(undefined)
   const agentNames = ref<Record<string, string>>({})
@@ -207,6 +208,11 @@ export const useChatStore = defineStore('chat', () => {
 
         case 'runnerStatus':
           runnerInfo.value = data.payload
+          runnerActionLoading.value = false
+          break
+
+        case 'runnerActionResult':
+          runnerActionLoading.value = false
           break
 
         case 'error':
@@ -582,6 +588,7 @@ export const useChatStore = defineStore('chat', () => {
     loadingMore,
     hasMoreHistory,
     runnerInfo,
+    runnerActionLoading,
     inputText,
     permissionDialog,
     agentQueryDialog,
