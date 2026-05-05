@@ -819,6 +819,35 @@ onMounted(() => {
   color: var(--text-secondary);
 }
 
+/* ==================== Dialog ==================== */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.dialog {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 20px;
+  width: 400px;
+  max-width: 90vw;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dialog h3 {
+  margin: 0;
+  font-size: 15px;
+  color: var(--text-primary);
+}
+
 .dialog-confirm {
   max-width: 360px;
 }
