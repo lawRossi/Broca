@@ -459,13 +459,13 @@ onMounted(() => {
     </div>
 
     <!-- Confirm Dialog -->
-    <div v-if="confirmDialog.visible" class="dialog-overlay" @click.self="confirmDialog.visible = false">
-      <div class="dialog dialog-confirm">
-        <p>{{ confirmDialog.message }}</p>
-        <div class="dialog-actions">
-          <button class="btn btn-secondary" @click="confirmDialog.visible = false">取消</button>
-          <button class="btn btn-danger" @click="() => { const cb = confirmDialog.onConfirm; confirmDialog.visible = false; cb?.(); }">确定删除</button>
-        </div>
+  </div>
+  <div v-if="confirmDialog.visible" class="dialog-overlay" @click.self="confirmDialog.visible = false">
+    <div class="dialog dialog-confirm">
+      <p>{{ confirmDialog.message }}</p>
+      <div class="dialog-actions">
+        <button class="btn btn-secondary" @click="confirmDialog.visible = false">取消</button>
+        <button class="btn btn-danger" @click="() => { const cb = confirmDialog.onConfirm; confirmDialog.visible = false; cb?.(); }">确定删除</button>
       </div>
     </div>
   </div>

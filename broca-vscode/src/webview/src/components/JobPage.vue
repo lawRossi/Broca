@@ -400,14 +400,15 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Confirm Dialog -->
-    <div v-if="confirmDialog.visible" class="dialog-overlay" @click.self="confirmDialog.visible = false">
-      <div class="dialog dialog-confirm">
-        <p>{{ confirmDialog.message }}</p>
-        <div class="dialog-actions">
-          <button class="btn btn-secondary" @click="confirmDialog.visible = false">取消</button>
-          <button class="btn btn-danger" @click="() => { const cb = confirmDialog.onConfirm; confirmDialog.visible = false; cb?.(); }">确定</button>
-        </div>
+  </div>
+
+  <!-- Confirm Dialog -->
+  <div v-if="confirmDialog.visible" class="dialog-overlay" @click.self="confirmDialog.visible = false">
+    <div class="dialog dialog-confirm">
+      <p>{{ confirmDialog.message }}</p>
+      <div class="dialog-actions">
+        <button class="btn btn-secondary" @click="confirmDialog.visible = false">取消</button>
+        <button class="btn btn-danger" @click="() => { const cb = confirmDialog.onConfirm; confirmDialog.visible = false; cb?.(); }">确定</button>
       </div>
     </div>
   </div>
