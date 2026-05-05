@@ -46,6 +46,8 @@ export interface InitialData {
   token: string
   supabaseUrl: string
   supabaseKey: string
+  serverUrl: string
+  wsUrl: string
 }
 
 /**

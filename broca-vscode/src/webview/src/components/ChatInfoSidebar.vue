@@ -5,6 +5,11 @@ import { postMessage } from '../api/vscode'
 
 const chatStore = useChatStore()
 
+// ==================== 页面切换 ====================
+const emit = defineEmits<{
+  (e: 'navigate', page: string): void
+}>()
+
 // ==================== Session 统计 ====================
 const stats = computed(() => {
   const msgs = chatStore.messages
@@ -82,6 +87,21 @@ const isOpen = computed(() => chatStore.showRightSidebar)
     </div>
 
     <div class="sidebar-content">
+      <!-- ==================== Management Pages ==================== -->
+      <div class="panel">
+        <div class="panel-title">管理</div>
+        <div class="panel-body">
+          <button class="nav-btn" @click="emit('navigate', 'tasks')">
+            <span>📋</span>
+            <span>任务管理</span>
+          </button>
+          <button class="nav-btn" @click="emit('navigate', 'jobs')">
+            <span>⏰</span>
+            <span>定时任务</span>
+          </button>
+        </div>
+      </div>
+
       <!-- ==================== Session Info ==================== -->
       <div class="panel">
         <div class="panel-title">Session Info</div>
@@ -222,6 +242,32 @@ const isOpen = computed(() => chatStore.showRightSidebar)
   display: flex;
   flex-direction: column;
   gap: 8px;
+}
+
+/* ==================== Navigation Buttons ==================== */
+.nav-btn {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.15s;
+  margin-bottom: 4px;
+}
+
+.nav-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--focus-border);
+}
+
+.nav-btn:last-child {
+  margin-bottom: 0;
 }
 
 /* ==================== Panel ==================== */

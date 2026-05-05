@@ -51,3 +51,85 @@ export interface LLMModel {
   id: string
   name: string
 }
+
+// ==================== Task Types ====================
+
+export type TaskStatus = 'pending' | 'in_progress' | 'blocked' | 'completed'
+export type TaskPriority = 'low' | 'medium' | 'high'
+
+export interface Task {
+  task_id: string
+  name: string
+  description: string
+  status: TaskStatus
+  priority: TaskPriority
+  assignee?: string
+  parent_id?: string
+  session_id?: string
+  details?: string
+  acceptance_criteria?: string[]
+  context_files?: string[]
+  context_links?: string[]
+  context_notes?: string
+  report?: string
+  dependencies?: string[]
+  created_at: string
+  updated_at: string
+}
+
+export interface TaskDetail {
+  task: Task
+  comments: TaskComment[]
+  children: ChildTask[]
+}
+
+export interface TaskComment {
+  comment_id: string
+  author: string
+  content: string
+  created_at: string
+}
+
+export interface ChildTask {
+  task_id: string
+  name: string
+  description: string
+  status: TaskStatus
+  priority: TaskPriority
+  assignee?: string
+  created_at: string
+  updated_at: string
+}
+
+// ==================== Job (Cron) Types ====================
+
+export type JobType = 'reminder' | 'command'
+export type JobStatus = 'active' | 'paused' | 'completed' | 'cancelled'
+export type TriggerType = 'cron' | 'interval' | 'date'
+
+export interface Job {
+  job_id: string
+  name: string
+  job_type: JobType
+  status: JobStatus
+  trigger_type: TriggerType
+  trigger_config: Record<string, any>
+  content: string
+  session_id?: string
+  agent_id?: string
+  created_at: string
+  updated_at: string
+  next_run_time?: string
+}
+
+export interface JobExecution {
+  execution_id: string
+  executed_at: string
+  success: boolean
+  result?: string
+}
+
+export interface JobDetail {
+  job: Job
+  executions: JobExecution[]
+}

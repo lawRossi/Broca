@@ -522,11 +522,16 @@ export class ChatWebViewManager {
     const supabaseKey = this.configManager.supabaseKey
     const token = this.authManager.token
 
+    const serverUrl = this.configManager.get('serverUrl')
+    const wsUrl = this.configManager.get('wsUrl')
+
     const initData = {
       sessionId,
       token: token || '',
       supabaseUrl,
       supabaseKey,
+      serverUrl: serverUrl || 'http://localhost:8000',
+      wsUrl: wsUrl || 'http://localhost:8000',
     }
     const initTag = `<script type="application/json" id="init-data">${JSON.stringify(initData)}</script>`
 

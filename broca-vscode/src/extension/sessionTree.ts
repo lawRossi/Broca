@@ -108,11 +108,10 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
       // Filter by current workspace path if available
       const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath
       if (workspacePath) {
-        sessions = sessions.filter((s) => {
-          // Include sessions that match the current workspace, OR have no workspace
-          if (!s.workspace) return true
-          return s.workspace.startsWith(workspacePath)
-        })
+        sessions = sessions.filter((s) =>
+          // Only include sessions whose workspace matches the current project directory
+          !!s.workspace && s.workspace.startsWith(workspacePath)
+        )
       }
 
       console.log(`[SessionTree] Fetched ${response.sessions?.length || 0} sessions, showing ${sessions.length} after filter`)
