@@ -3,7 +3,7 @@ import { AuthManager } from './auth'
 import { ConfigManager } from './config'
 import { ApiClient } from './api'
 import { SocketClient } from './socket'
-import type { Session, WebViewMessage, ExtensionToWebView } from './types'
+import type { WebViewMessage, ExtensionToWebView } from './types'
 
 export class ChatWebViewManager {
   private panels = new Map<string, vscode.WebviewPanel>()

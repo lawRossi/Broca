@@ -112,12 +112,7 @@
       ],
       "view/item/context": [
         {
-          "command": "broca.openChat",
-          "when": "view == broca.sessionManager && viewItem == session",
-          "group": "inline"
-        },
-        {
-          "command": "broca.copySessionId",
+          "command": "broca.deleteSession",
           "when": "view == broca.sessionManager && viewItem == session",
           "group": "inline"
         },

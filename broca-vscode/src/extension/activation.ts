@@ -80,12 +80,6 @@ export async function activate(context: vscode.ExtensionContext) {
 
   // Additional context menu commands
   context.subscriptions.push(
-    vscode.commands.registerCommand('broca.deleteSession', async (sessionId: string) => {
-      await handleDeleteSession(sessionId)
-    })
-  )
-
-  context.subscriptions.push(
     vscode.commands.registerCommand('broca.copySessionId', async (sessionId: string) => {
       await vscode.env.clipboard.writeText(sessionId)
       vscode.window.showInformationMessage('Session ID copied to clipboard')
