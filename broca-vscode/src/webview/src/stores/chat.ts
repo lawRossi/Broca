@@ -17,6 +17,22 @@ export const useChatStore = defineStore('chat', () => {
   const defaultAgentId = ref<string | undefined>(undefined)
   const agentNames = ref<Record<string, string>>({})
 
+  // ==================== 完整 Agent 数据 ====================
+  interface AgentInfo {
+    agent_id: string
+    name: string
+    role?: string
+    type?: string
+    description?: string
+    status?: string
+    config_id?: string
+    total_input_tokens?: number
+    total_output_tokens?: number
+    total_llm_calls?: number
+    last_context_length?: number
+  }
+  const agents = ref<AgentInfo[]>([])
+
   // ==================== Agent 运行时状态追踪 ====================
   // 根据 turn_start / turn_end / agent_response / tool_call 消息更新
   type AgentStatus = 'idle' | 'running' | 'connecting' | 'disconnected'
@@ -30,6 +46,11 @@ export const useChatStore = defineStore('chat', () => {
   function getAgentStatus(agentId: string | undefined): AgentStatus {
     if (!agentId) return 'disconnected'
     return agentStatuses.value[agentId] || 'disconnected'
+  }
+
+  // 获取 Agent 在 agents 数组中的运行时状态（合并 agentStatuses）
+  function getAgentRuntimeStatus(agentId: string | undefined): AgentStatus {
+    return getAgentStatus(agentId)
   }
 
   // ==================== 侧栏状态 ====================
@@ -147,10 +168,24 @@ export const useChatStore = defineStore('chat', () => {
 
         case 'agents':
           defaultAgentId.value = data.payload.defaultAgentId
-          // Build agent name map
+          // Store full agent data
+          agents.value = (data.payload.agents || []).map((a: any) => ({
+            agent_id: a.agent_id,
+            name: a.name || a.agent_id,
+            role: a.role,
+            type: a.type || 'assistant',
+            description: a.description,
+            status: a.status,
+            config_id: a.config_id,
+            total_input_tokens: a.total_input_tokens,
+            total_output_tokens: a.total_output_tokens,
+            total_llm_calls: a.total_llm_calls,
+            last_context_length: a.last_context_length,
+          }))
+          // Build agent name map (for backward compatibility)
           const names: Record<string, string> = {}
-          for (const agent of data.payload.agents || []) {
-            names[agent.agent_id] = agent.name || agent.agent_id
+          for (const agent of agents.value) {
+            names[agent.agent_id] = agent.name
           }
           agentNames.value = names
           break
@@ -543,9 +578,11 @@ export const useChatStore = defineStore('chat', () => {
     runnerAlive,
     defaultAgentId,
     agentNames,
+    agents,
     agentStatuses,
     updateAgentStatus,
     getAgentStatus,
+    getAgentRuntimeStatus,
     // Sidebar state
     showLeftSidebar,
     showRightSidebar,

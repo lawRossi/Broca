@@ -197,6 +197,10 @@ export class ChatWebViewManager {
         await this.handleFetchRunnerStatus(sessionId, panel)
         break
 
+      case 'fetchAgents':
+        await this.handleFetchAgents(sessionId, panel)
+        break
+
       case 'openFile':
         this.handleOpenFile(message.payload)
         break
@@ -416,6 +420,20 @@ export class ChatWebViewManager {
       this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
     } catch (error: any) {
       console.error('Failed to fetch runner status:', error)
+    }
+  }
+
+  private async handleFetchAgents(sessionId: string, panel: vscode.WebviewPanel) {
+    try {
+      const agents = await this.apiClient.getSessionAgents(sessionId)
+      const defaultAgentId = agents.find((a: any) => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id
+                            || agents[0]?.agent_id
+      this.postToPanel(panel, {
+        type: 'agents',
+        payload: { agents, defaultAgentId },
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      console.error('Failed to fetch agents:', error)
     }
   }
 
