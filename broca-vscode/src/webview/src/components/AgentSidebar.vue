@@ -45,7 +45,6 @@ function handleAbort(agentId: string) {
 }
 
 const isOpen = computed(() => chatStore.showLeftSidebar)
-console.log('[AgentSidebar] isOpen:', isOpen.value, 'agentNames:', chatStore.agentNames, 'agents:', agents.value)
 </script>
 
 <template>
