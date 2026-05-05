@@ -487,13 +487,13 @@ function toggleToolParams() {
         </div>
       </div>
 
-      <!-- write_file: 文件内容预览（可切换） -->
-      <div v-else-if="isWriteFile && showParameters" class="tool-params">
+      <!-- write_file: 文件内容预览（路径始终可见，内容可切换） -->
+      <div v-else-if="isWriteFile" class="tool-params">
         <div class="file-wrapper">
           <div class="file-header">
             <span class="file-path">📝 {{ toolArgs.path || 'unknown' }}</span>
           </div>
-          <pre class="file-content">{{ writeFileContent }}</pre>
+          <pre v-if="showParameters" class="file-content">{{ writeFileContent }}</pre>
         </div>
       </div>
 
