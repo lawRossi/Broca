@@ -17,6 +17,30 @@ export const useChatStore = defineStore('chat', () => {
   const defaultAgentId = ref<string | undefined>(undefined)
   const agentNames = ref<Record<string, string>>({})
 
+  // 完整的 Agent 数据（含 LLM 统计）
+  interface AgentData {
+    agent_id: string
+    name?: string
+    role?: string
+    type?: string
+    description?: string
+    total_input_tokens?: number
+    total_output_tokens?: number
+    total_llm_calls?: number
+    last_context_length?: number
+  }
+  const agentsData = ref<AgentData[]>([])
+  const selectedAgentId = ref<string | undefined>(undefined)
+
+  const selectedAgent = computed(() => {
+    if (!selectedAgentId.value) return null
+    return agentsData.value.find(a => a.agent_id === selectedAgentId.value) || null
+  })
+
+  function selectAgent(agentId: string) {
+    selectedAgentId.value = agentId
+  }
+
   // ==================== Agent 运行时状态追踪 ====================
   // 根据 turn_start / turn_end / agent_response / tool_call 消息更新
   type AgentStatus = 'idle' | 'running' | 'connecting' | 'disconnected'
@@ -153,6 +177,22 @@ export const useChatStore = defineStore('chat', () => {
             names[agent.agent_id] = agent.name || agent.agent_id
           }
           agentNames.value = names
+          // Store full agent data (with LLM stats)
+          agentsData.value = (data.payload.agents || []).map((a: any) => ({
+            agent_id: a.agent_id,
+            name: a.name,
+            role: a.role,
+            type: a.type,
+            description: a.description,
+            total_input_tokens: a.total_input_tokens,
+            total_output_tokens: a.total_output_tokens,
+            total_llm_calls: a.total_llm_calls,
+            last_context_length: a.last_context_length,
+          }))
+          // Auto-select default agent
+          if (defaultAgentId.value) {
+            selectedAgentId.value = defaultAgentId.value
+          }
           break
 
         case 'message':
@@ -546,6 +586,10 @@ export const useChatStore = defineStore('chat', () => {
     agentStatuses,
     updateAgentStatus,
     getAgentStatus,
+    agentsData,
+    selectedAgentId,
+    selectedAgent,
+    selectAgent,
     // Sidebar state
     showLeftSidebar,
     showRightSidebar,

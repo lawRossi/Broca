@@ -42,6 +42,13 @@ export interface RunnerInfo {
   uptime_seconds: number
 }
 
+export interface LLMStats {
+  total_input_tokens?: number
+  total_output_tokens?: number
+  total_llm_calls?: number
+  last_context_length?: number
+}
+
 export interface LLMProvider {
   id: string
   name: string
