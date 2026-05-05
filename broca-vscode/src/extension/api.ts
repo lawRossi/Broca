@@ -14,7 +14,7 @@ import type {
 } from './types'
 
 export class ApiClient {
-  private client: AxiosInstance
+  public client: AxiosInstance
   private getToken: () => string | null
 
   constructor(configManager: ConfigManager, getToken: () => string | null) {

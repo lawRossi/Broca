@@ -1,164 +1,150 @@
 /**
- * Direct API client for task/job management.
- * Uses fetch() to call the backend directly since CSP allows http://localhost:* and https:.
+ * API client for task/job management.
+ * Routes requests through the VSCode extension host via postMessage.
+ * Follows the same pattern as existing chat API calls (loadHistory, fetchRunnerStatus, etc.)
  */
 
-import { getInitialData } from '../api/vscode'
+import { postMessage, onMessage } from '../api/vscode'
 
-function getBaseConfig() {
-  const data = getInitialData()
-  if (!data) throw new Error('No initial data available')
-  return {
-    baseUrl: `${data.serverUrl}/api`,
-    token: data.token,
-  }
+// Generic request-response helper using specific message types
+interface PendingRequest {
+  resolve: (data: any) => void
+  reject: (err: Error) => void
 }
 
-async function request<T>(
-  method: string,
-  path: string,
-  body?: any,
-  params?: Record<string, any>
-): Promise<T> {
-  const { baseUrl, token } = getBaseConfig()
+const pendingMap = new Map<string, PendingRequest>()
 
-  const url = new URL(`${baseUrl}${path}`)
-  if (params) {
-    for (const [key, value] of Object.entries(params)) {
-      if (value !== undefined && value !== null && value !== '') {
-        url.searchParams.set(key, String(value))
+// Response types that contain task/job data
+const RESPONSE_TYPES = new Set([
+  'tasks', 'taskDetail', 'taskCreated', 'taskUpdated', 'taskDeleted', 'taskCommentAdded',
+  'jobs', 'jobDetail', 'jobExecuted', 'jobPaused', 'jobResumed', 'jobDeleted',
+])
+
+let listenerInitialized = false
+
+function initListener() {
+  if (listenerInitialized) return
+  listenerInitialized = true
+
+  onMessage((data: any) => {
+    if (!data || !data.type) return
+
+    // Handle error responses
+    if (data.type === 'error') {
+      // Reject all pending requests
+      for (const [id, pending] of pendingMap) {
+        pending.reject(new Error(data.payload?.message || 'Unknown error'))
+        pendingMap.delete(id)
+      }
+      return
+    }
+
+    // Handle task/job response types
+    if (RESPONSE_TYPES.has(data.type)) {
+      const pending = pendingMap.get(data.type)
+      if (pending) {
+        pendingMap.delete(data.type)
+        pending.resolve(data.payload)
       }
     }
-  }
-
-  const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
-  }
-  if (token) {
-    headers['Authorization'] = `Bearer ${token}`
-  }
-
-  const fullUrl = url.toString()
-  console.log(`[API] ${method} ${fullUrl}`)
-
-  const response = await fetch(fullUrl, {
-    method,
-    headers,
-    body: body ? JSON.stringify(body) : undefined,
   })
+}
 
-  if (!response.ok) {
-    const text = await response.text().catch(() => '')
-    console.error(`[API] HTTP ${response.status} for ${method} ${path}:`, text.substring(0, 200))
-    throw new Error(`Request failed with status code ${response.status}`)
-  }
+function sendRequest(requestType: string, responseType: string, payload: any): Promise<any> {
+  initListener()
 
-  const json = await response.json()
+  return new Promise((resolve, reject) => {
+    // Set timeout
+    const timeout = setTimeout(() => {
+      if (pendingMap.has(responseType)) {
+        pendingMap.delete(responseType)
+        reject(new Error('Request timeout'))
+      }
+    }, 30000)
 
-  // Handle wrapped response { code, data, msg }
-  if (json && typeof json === 'object' && 'code' in json) {
-    if (json.code === 200) {
-      return json.data as T
-    } else {
-      throw new Error(json.msg || `Request failed with code ${json.code}`)
-    }
-  }
+    pendingMap.set(responseType, {
+      resolve: (data: any) => {
+        clearTimeout(timeout)
+        resolve(data)
+      },
+      reject: (err: Error) => {
+        clearTimeout(timeout)
+        reject(err)
+      },
+    })
 
-  return json as T
+    postMessage({ type: requestType, payload })
+  })
 }
 
 // ==================== Task API ====================
 
-export interface TaskQueryParams {
-  skip?: number
-  limit?: number
-  status?: string
-  priority?: string
-  assignee?: string
-  session_id?: string
-  parent_id?: string
-  keyword?: string
-  order_by?: string
-}
-
 export const taskApi = {
-  getTasks(params: TaskQueryParams = {}) {
-    return request<any>('GET', '/task/tasks', undefined, {
+  getTasks(params: {
+    skip?: number; limit?: number; status?: string; priority?: string; keyword?: string
+  } = {}) {
+    return sendRequest('fetchTasks', 'tasks', {
       skip: params.skip ?? 0,
       limit: params.limit ?? 50,
       status: params.status,
       priority: params.priority,
-      assignee: params.assignee,
-      session_id: params.session_id,
-      parent_id: params.parent_id,
       keyword: params.keyword,
-      order_by: params.order_by ?? 'created_at desc',
     })
   },
 
   getTaskDetail(taskId: string) {
-    return request<any>('GET', `/task/${taskId}`, undefined, { include_comments: true })
+    return sendRequest('fetchTaskDetail', 'taskDetail', { taskId })
   },
 
   createTask(data: any) {
-    return request<any>('POST', '/task/', data)
+    return sendRequest('createTask', 'taskCreated', data)
   },
 
   updateTask(taskId: string, data: any) {
-    return request<any>('PUT', `/task/${taskId}`, data)
+    return sendRequest('updateTask', 'taskUpdated', { taskId, data })
   },
 
   deleteTask(taskId: string) {
-    return request<any>('DELETE', `/task/${taskId}`)
+    return sendRequest('deleteTask', 'taskDeleted', { taskId })
   },
 
   addComment(taskId: string, data: { author: string; content: string }) {
-    return request<any>('POST', `/task/${taskId}/comments`, data)
+    return sendRequest('addTaskComment', 'taskCommentAdded', { taskId, ...data })
   },
 }
 
 // ==================== Job API ====================
 
-export interface JobQueryParams {
-  skip?: number
-  limit?: number
-  status?: string
-  job_type?: string
-  session_id?: string
-  keyword?: string
-  order_by?: string
-}
-
 export const jobApi = {
-  getJobs(params: JobQueryParams = {}) {
-    return request<any>('GET', '/job/jobs', undefined, {
+  getJobs(params: {
+    skip?: number; limit?: number; status?: string; job_type?: string; keyword?: string
+  } = {}) {
+    return sendRequest('fetchJobs', 'jobs', {
       skip: params.skip ?? 0,
       limit: params.limit ?? 50,
       status: params.status,
       job_type: params.job_type,
-      session_id: params.session_id,
       keyword: params.keyword,
-      order_by: params.order_by ?? 'created_at desc',
     })
   },
 
   getJobDetail(jobId: string) {
-    return request<any>('GET', `/job/${jobId}`, undefined, { execution_limit: 50 })
+    return sendRequest('fetchJobDetail', 'jobDetail', { jobId })
   },
 
   executeJob(jobId: string) {
-    return request<any>('POST', `/job/${jobId}/execute`)
+    return sendRequest('executeJob', 'jobExecuted', { jobId })
   },
 
   pauseJob(jobId: string) {
-    return request<any>('POST', `/job/${jobId}/pause`)
+    return sendRequest('pauseJob', 'jobPaused', { jobId })
   },
 
   resumeJob(jobId: string) {
-    return request<any>('POST', `/job/${jobId}/resume`)
+    return sendRequest('resumeJob', 'jobResumed', { jobId })
   },
 
   deleteJob(jobId: string) {
-    return request<any>('DELETE', `/job/${jobId}`)
+    return sendRequest('deleteJob', 'jobDeleted', { jobId })
   },
 }

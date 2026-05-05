@@ -204,6 +204,54 @@ export class ChatWebViewManager {
       case 'openFile':
         this.handleOpenFile(message.payload)
         break
+
+      case 'fetchTasks':
+        await this.handleFetchTasks(panel, message.payload)
+        break
+
+      case 'fetchTaskDetail':
+        await this.handleFetchTaskDetail(panel, message.payload)
+        break
+
+      case 'createTask':
+        await this.handleCreateTask(panel, message.payload)
+        break
+
+      case 'updateTask':
+        await this.handleUpdateTask(panel, message.payload)
+        break
+
+      case 'deleteTask':
+        await this.handleDeleteTask(panel, message.payload)
+        break
+
+      case 'addTaskComment':
+        await this.handleAddTaskComment(panel, message.payload)
+        break
+
+      case 'fetchJobs':
+        await this.handleFetchJobs(panel, message.payload)
+        break
+
+      case 'fetchJobDetail':
+        await this.handleFetchJobDetail(panel, message.payload)
+        break
+
+      case 'executeJob':
+        await this.handleExecuteJob(panel, message.payload)
+        break
+
+      case 'pauseJob':
+        await this.handlePauseJob(panel, message.payload)
+        break
+
+      case 'resumeJob':
+        await this.handleResumeJob(panel, message.payload)
+        break
+
+      case 'deleteJob':
+        await this.handleDeleteJob(panel, message.payload)
+        break
     }
   }
 
@@ -441,6 +489,175 @@ export class ChatWebViewManager {
     if (payload.path) {
       const fileUri = vscode.Uri.file(payload.path)
       vscode.commands.executeCommand('vscode.open', fileUri)
+    }
+  }
+
+  private async handleFetchTasks(
+    panel: vscode.WebviewPanel,
+    payload: { skip?: number; limit?: number; status?: string; priority?: string; keyword?: string }
+  ) {
+    try {
+      const response = await this.apiClient.client.get('/task/tasks', {
+        params: {
+          skip: payload.skip ?? 0,
+          limit: payload.limit ?? 50,
+          status: payload.status,
+          priority: payload.priority,
+          keyword: payload.keyword,
+          order_by: 'created_at desc',
+        },
+      })
+      this.postToPanel(panel, { type: 'tasks', payload: response.data } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchTaskDetail(
+    panel: vscode.WebviewPanel,
+    payload: { taskId: string }
+  ) {
+    try {
+      const response = await this.apiClient.client.get(`/task/${payload.taskId}`, {
+        params: { include_comments: true },
+      })
+      this.postToPanel(panel, { type: 'taskDetail', payload: response.data } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleCreateTask(
+    panel: vscode.WebviewPanel,
+    payload: any
+  ) {
+    try {
+      const response = await this.apiClient.client.post('/task/', payload)
+      this.postToPanel(panel, { type: 'taskCreated', payload: response.data } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleUpdateTask(
+    panel: vscode.WebviewPanel,
+    payload: { taskId: string; data: any }
+  ) {
+    try {
+      await this.apiClient.client.put(`/task/${payload.taskId}`, payload.data)
+      this.postToPanel(panel, { type: 'taskUpdated', payload: { taskId: payload.taskId } } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleDeleteTask(
+    panel: vscode.WebviewPanel,
+    payload: { taskId: string }
+  ) {
+    try {
+      await this.apiClient.client.delete(`/task/${payload.taskId}`)
+      this.postToPanel(panel, { type: 'taskDeleted', payload: { taskId: payload.taskId } } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleAddTaskComment(
+    panel: vscode.WebviewPanel,
+    payload: { taskId: string; author: string; content: string }
+  ) {
+    try {
+      const response = await this.apiClient.client.post(`/task/${payload.taskId}/comments`, {
+        author: payload.author,
+        content: payload.content,
+      })
+      this.postToPanel(panel, { type: 'taskCommentAdded', payload: response.data } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchJobs(
+    panel: vscode.WebviewPanel,
+    payload: { skip?: number; limit?: number; status?: string; job_type?: string; keyword?: string }
+  ) {
+    try {
+      const response = await this.apiClient.client.get('/job/jobs', {
+        params: {
+          skip: payload.skip ?? 0,
+          limit: payload.limit ?? 50,
+          status: payload.status,
+          job_type: payload.job_type,
+          keyword: payload.keyword,
+          order_by: 'created_at desc',
+        },
+      })
+      this.postToPanel(panel, { type: 'jobs', payload: response.data } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchJobDetail(
+    panel: vscode.WebviewPanel,
+    payload: { jobId: string }
+  ) {
+    try {
+      const response = await this.apiClient.client.get(`/job/${payload.jobId}`, {
+        params: { execution_limit: 50 },
+      })
+      this.postToPanel(panel, { type: 'jobDetail', payload: response.data } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleExecuteJob(
+    panel: vscode.WebviewPanel,
+    payload: { jobId: string }
+  ) {
+    try {
+      await this.apiClient.client.post(`/job/${payload.jobId}/execute`)
+      this.postToPanel(panel, { type: 'jobExecuted', payload: { jobId: payload.jobId } } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handlePauseJob(
+    panel: vscode.WebviewPanel,
+    payload: { jobId: string }
+  ) {
+    try {
+      await this.apiClient.client.post(`/job/${payload.jobId}/pause`)
+      this.postToPanel(panel, { type: 'jobPaused', payload: { jobId: payload.jobId } } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleResumeJob(
+    panel: vscode.WebviewPanel,
+    payload: { jobId: string }
+  ) {
+    try {
+      await this.apiClient.client.post(`/job/${payload.jobId}/resume`)
+      this.postToPanel(panel, { type: 'jobResumed', payload: { jobId: payload.jobId } } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleDeleteJob(
+    panel: vscode.WebviewPanel,
+    payload: { jobId: string }
+  ) {
+    try {
+      await this.apiClient.client.delete(`/job/${payload.jobId}`)
+      this.postToPanel(panel, { type: 'jobDeleted', payload: { jobId: payload.jobId } } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
     }
   }
 
