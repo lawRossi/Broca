@@ -454,6 +454,7 @@ function toggleToolParams() {
       <!-- ask_user: 始终展开，不依赖 showParameters -->
       <div v-else-if="isAskUser && askUserParams" class="tool-params">
         <div class="ask-user-box">
+          <div class="params-label">问题:</div>
           <div class="ask-question">{{ askUserParams.question }}</div>
           <div v-if="askUserParams.options?.length" class="ask-options">
             <div v-for="(opt, i) in askUserParams.options" :key="i" class="ask-option">
@@ -509,6 +510,7 @@ function toggleToolParams() {
       </div>
       <!-- ask_user 结果：始终展开，无切换按钮 -->
       <div v-else-if="isAskUser && askUserResult !== null" class="tool-result">
+        <div class="result-label">回答:</div>
         <div class="result-content ask-result">
           <pre>{{ askUserResult }}</pre>
         </div>
@@ -822,7 +824,8 @@ function toggleToolParams() {
 }
 
 .diff-added {
-  background-color: #e6ffec;
+  background-color: #dcfce7;
+  color: #166534;
 }
 
 .diff-added::before {
@@ -831,7 +834,8 @@ function toggleToolParams() {
 }
 
 .diff-removed {
-  background-color: #ffebe9;
+  background-color: #fee2e2;
+  color: #991b1b;
 }
 
 .diff-removed::before {
@@ -841,6 +845,7 @@ function toggleToolParams() {
 
 .diff-unchanged {
   background-color: transparent;
+  color: var(--text-primary);
 }
 
 .diff-unchanged::before {
@@ -885,6 +890,20 @@ function toggleToolParams() {
 }
 
 /* ==================== Ask User ==================== */
+.params-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--warning-fg);
+  margin-bottom: 4px;
+}
+
+.result-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--success-fg);
+  margin-bottom: 4px;
+}
+
 .ask-user-box {
   padding: 10px;
   border: 1px solid var(--border-color);
@@ -1188,18 +1207,21 @@ function toggleToolParams() {
   }
   .diff-added {
     background-color: #064e3b;
+    color: #a7f3d0;
   }
   .diff-added::before {
     color: #4ade80;
   }
   .diff-removed {
     background-color: #7f1d1d;
+    color: #fecaca;
   }
   .diff-removed::before {
     color: #f87171;
   }
   .diff-unchanged {
     background-color: transparent;
+    color: var(--text-primary);
   }
   .diff-added:hover {
     background-color: #065f46;
