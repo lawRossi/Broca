@@ -354,6 +354,13 @@ function confirmUndo() {
 function cancelUndo() {
   showUndoConfirm.value = false
 }
+
+function toggleToolParams() {
+  // todo_management 和 ask_user 始终展开，不响应点击切换
+  if (!isTodoManagement.value && !isAskUser.value) {
+    showParameters.value = !showParameters.value
+  }
+}
 </script>
 
 <template>
@@ -422,15 +429,44 @@ function cancelUndo() {
 
     <!-- ==================== 工具调用 ==================== -->
     <template v-else-if="isToolCall">
-      <!-- 工具名标题行 -->
-      <div class="tool-call-header" @click="showParameters = !showParameters">
+      <!-- 工具名标题行：点击可切换参数显示（todo_management 和 ask_user 始终展开，忽略点击） -->
+      <div class="tool-call-header" @click="toggleToolParams()">
         <span class="tool-icon">🔧</span>
         <span class="tool-name">{{ toolName }}</span>
-        <span class="expand-icon">{{ showParameters ? '▼' : '▶' }}</span>
+        <span v-if="!isTodoManagement && !isAskUser" class="expand-icon">{{ showParameters ? '▼' : '▶' }}</span>
       </div>
 
-      <!-- ===== edit_file: Diff 展示 ===== -->
-      <div v-if="isEditFile && editFileParams" class="tool-params">
+      <!-- ===== 参数区域 ===== -->
+      <!-- todo_management: 始终展开，不依赖 showParameters -->
+      <div v-if="isTodoManagement && todos" class="tool-params">
+        <div class="todo-list">
+          <div v-for="(todo, i) in todos" :key="i" class="todo-item">
+            <span class="todo-status">
+              <span v-if="todo.status === 'completed'">✅</span>
+              <span v-else-if="todo.status === 'in_progress'">⏳</span>
+              <span v-else>⬜️</span>
+            </span>
+            <span class="todo-name">{{ todo.name }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- ask_user: 始终展开，不依赖 showParameters -->
+      <div v-else-if="isAskUser && askUserParams" class="tool-params">
+        <div class="ask-user-box">
+          <div class="ask-question">{{ askUserParams.question }}</div>
+          <div v-if="askUserParams.options?.length" class="ask-options">
+            <div v-for="(opt, i) in askUserParams.options" :key="i" class="ask-option">
+              <span class="opt-bullet">•</span>
+              <span class="opt-name">{{ opt.name }}</span>
+              <span v-if="opt.description" class="opt-desc">- {{ opt.description }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- edit_file: Diff 展示（可切换） -->
+      <div v-else-if="isEditFile && editFileParams" class="tool-params">
         <div class="diff-wrapper">
           <div class="diff-header">
             <span class="diff-path">📝 {{ editFileParams.path }}</span>
@@ -450,47 +486,19 @@ function cancelUndo() {
         </div>
       </div>
 
-      <!-- ===== write_file: 文件内容预览 ===== -->
+      <!-- write_file: 文件内容预览（可切换） -->
       <div v-else-if="isWriteFile && showParameters" class="tool-params">
         <pre class="file-content">{{ writeFileContent }}</pre>
       </div>
 
-      <!-- ===== todo_management: 待办列表 ===== -->
-      <div v-else-if="isTodoManagement && todos && showParameters" class="tool-params">
-        <div class="todo-list">
-          <div v-for="(todo, i) in todos" :key="i" class="todo-item">
-            <span class="todo-status">
-              <span v-if="todo.status === 'completed'">✅</span>
-              <span v-else-if="todo.status === 'in_progress'">⏳</span>
-              <span v-else>⬜️</span>
-            </span>
-            <span class="todo-name">{{ todo.name }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- ===== ask_user: 问题展示 ===== -->
-      <div v-else-if="isAskUser && askUserParams && showParameters" class="tool-params">
-        <div class="ask-user-box">
-          <div class="ask-question">{{ askUserParams.question }}</div>
-          <div v-if="askUserParams.options?.length" class="ask-options">
-            <div v-for="(opt, i) in askUserParams.options" :key="i" class="ask-option">
-              <span class="opt-bullet">•</span>
-              <span class="opt-name">{{ opt.name }}</span>
-              <span v-if="opt.description" class="opt-desc">- {{ opt.description }}</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- ===== 其他工具: JSON 参数 ===== -->
+      <!-- 其他工具: JSON 参数（可切换） -->
       <div v-else-if="showParameters && Object.keys(toolArgs).length > 0" class="tool-params">
         <pre class="json-display">{{ JSON.stringify(toolArgs, null, 2) }}</pre>
       </div>
 
       <!-- ===== 结果展示 ===== -->
-      <!-- read_file 结果直接展示 -->
-      <div v-if="isReadFile && showResult && readFileResult" class="tool-result">
+      <!-- read_file: 可切换，标题为 "📊 文件内容" -->
+      <div v-if="isReadFile && readFileResult" class="tool-result">
         <div class="result-header" @click="showResult = !showResult">
           <span>📊 文件内容</span>
           <span class="expand-icon">{{ showResult ? '▼' : '▶' }}</span>
@@ -499,17 +507,13 @@ function cancelUndo() {
           <pre>{{ readFileResult }}</pre>
         </div>
       </div>
-      <!-- ask_user 结果 -->
+      <!-- ask_user 结果：始终展开，无切换按钮 -->
       <div v-else-if="isAskUser && askUserResult !== null" class="tool-result">
-        <div class="result-header" @click="showResult = !showResult">
-          <span>💬 回答</span>
-          <span class="expand-icon">{{ showResult ? '▼' : '▶' }}</span>
-        </div>
-        <div v-if="showResult" class="result-content">
+        <div class="result-content ask-result">
           <pre>{{ askUserResult }}</pre>
         </div>
       </div>
-      <!-- 其他工具结果 -->
+      <!-- 其他工具结果：可切换，排除 edit_file、write_file、todo_manage（它们的结果内联展示） -->
       <div v-else-if="toolResult && !isEditFile && !isWriteFile && !isTodoManagement" class="tool-result">
         <div class="result-header" @click="showResult = !showResult">
           <span>📊 结果</span>
