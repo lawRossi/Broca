@@ -13,6 +13,8 @@ import LoadingOverlay from './components/LoadingOverlay.vue'
 const chatStore = useChatStore()
 
 onMounted(() => {
+  console.log('[App] showLeftSidebar:', chatStore.showLeftSidebar)
+  console.log('[App] agentNames:', chatStore.agentNames)
   chatStore.init()
 })
 
