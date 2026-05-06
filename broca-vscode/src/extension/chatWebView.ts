@@ -205,6 +205,10 @@ export class ChatWebViewManager {
         this.handleOpenFile(message.payload)
         break
 
+      case 'uploadFile':
+        await this.handleUploadFile(panel, message.payload)
+        break
+
       case 'fetchTasks':
         await this.handleFetchTasks(panel, message.payload)
         break
@@ -490,6 +494,76 @@ export class ChatWebViewManager {
     if (payload.path) {
       const fileUri = vscode.Uri.file(payload.path)
       vscode.commands.executeCommand('vscode.open', fileUri)
+    }
+  }
+
+  private async handleUploadFile(
+    panel: vscode.WebviewPanel,
+    payload: { fileName: string; fileType: string; base64Data: string; fileSize: number }
+  ) {
+    try {
+      const supabase = this.authManager.supabaseClient
+      if (!supabase) {
+        throw new Error('Supabase is not configured')
+      }
+
+      // 从 JWT token 中解码 userId
+      const token = this.authManager.token
+      let userId = 'unknown'
+      if (token) {
+        try {
+          const payload_ = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString())
+          userId = payload_.sub || 'unknown'
+        } catch {
+          console.warn('[UploadFile] Failed to decode userId from token')
+        }
+      }
+
+      // 生成唯一文件名和路径（与 web 版一致）
+      const parts = payload.fileName.split('.')
+      const extension = parts.length > 1 ? parts.pop() : ''
+      const nameWithoutExt = parts.join('.')
+      const uniqueId = Math.random().toString(36).substring(6)
+      const safeFilename = extension
+        ? `${nameWithoutExt}_${uniqueId}.${extension}`
+        : `${nameWithoutExt}_${uniqueId}`
+
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = String(now.getMonth() + 1).padStart(2, '0')
+      const day = String(now.getDate()).padStart(2, '0')
+      const path = `${userId}/${year}${month}${day}/${safeFilename}`
+
+      // 将 base64 转为 Buffer
+      const buffer = Buffer.from(payload.base64Data, 'base64')
+
+      // 上传到 Supabase Storage
+      const { error: uploadError } = await supabase.storage.from('upload').upload(path, buffer, {
+        contentType: payload.fileType,
+        upsert: false,
+      })
+
+      if (uploadError) throw uploadError
+
+      // 获取公网 URL
+      const { data: urlData } = supabase.storage.from('upload').getPublicUrl(path)
+
+      this.postToPanel(panel, {
+        type: 'fileUploaded',
+        payload: {
+          name: payload.fileName,
+          url: urlData.publicUrl,
+          path,
+          size: payload.fileSize,
+          type: payload.fileType,
+        },
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      console.error('[UploadFile] Failed:', error.message)
+      this.postToPanel(panel, {
+        type: 'error',
+        payload: { message: `Upload failed: ${error.message}` },
+      } as ExtensionToWebView)
     }
   }
 

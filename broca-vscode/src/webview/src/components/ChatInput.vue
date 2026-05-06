@@ -1,19 +1,12 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chat'
-import { createClient } from '@supabase/supabase-js'
-import { getInitialData } from '../api/vscode'
+import { postMessage, onMessage } from '../api/vscode'
 
 const chatStore = useChatStore()
 const inputRef = ref<HTMLTextAreaElement>()
 const fileInputRef = ref<HTMLInputElement>()
 const mentionListRef = ref<HTMLElement>()
-
-// Supabase for file upload
-const initData = getInitialData()
-const supabase = (initData?.supabaseUrl && initData?.supabaseKey)
-  ? createClient(initData.supabaseUrl, initData.supabaseKey)
-  : null
 
 // ==================== @mention 智能提示 ====================
 const showMentionSuggestions = ref(false)
@@ -111,13 +104,43 @@ function handleClickOutside(event: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+
+  // 监听文件上传结果
+  onMessage((data: any) => {
+    if (data.type === 'fileUploaded') {
+      const { name, url, path: filePath, size, type } = data.payload
+      // 找到匹配的 pending file record（通过文件名匹配）
+      const record = pendingFiles.value.find(
+        f => f.status === 'uploading' && f.file.name === name && f.file.size === size
+      )
+      if (record) {
+        record.uploadedData = { name, url, path: filePath, size, type }
+        record.status = 'success'
+        record.progress = 100
+        uploadingFileIds.value.delete(record.id)
+        // 检查是否所有文件都已上传完成
+        if (uploadingFileIds.value.size === 0) {
+          isUploading.value = false
+        }
+      }
+    } else if (data.type === 'error') {
+      // 将所有上传中的文件标记为失败
+      for (const record of pendingFiles.value) {
+        if (record.status === 'uploading') {
+          record.status = 'error'
+          record.error = data.payload?.message || 'Upload failed'
+          uploadingFileIds.value.delete(record.id)
+        }
+      }
+      isUploading.value = false
+    }
+  })
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-// ==================== 文件上传 ====================
 const pendingFiles = ref<Array<{
   file: File
   id: string
@@ -135,26 +158,8 @@ const pendingFiles = ref<Array<{
 
 const isUploading = ref(false)
 
-// 从 JWT token 中解码 userId（sub 字段）
-function getUserId(): string | null {
-  const token = initData?.token
-  if (!token) return null
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return payload.sub || null
-  } catch {
-    return null
-  }
-}
-
-// 生成唯一文件名（与 web 版一致）
-function generateUniqueFilename(originalName: string): string {
-  const parts = originalName.split('.')
-  const extension = parts.length > 1 ? parts.pop() : ''
-  const nameWithoutExt = parts.join('.')
-  const uniqueId = Math.random().toString(36).substr(6)
-  return extension ? `${nameWithoutExt}_${uniqueId}.${extension}` : `${nameWithoutExt}_${uniqueId}`
-}
+// 用于追踪正在上传的文件记录
+const uploadingFileIds = ref<Set<string>>(new Set())
 
 const canSend = computed(() => {
   const text = chatStore.inputText.trim()
@@ -190,52 +195,51 @@ function removePendingFile(id: string) {
 }
 
 async function uploadPendingFiles() {
-  if (!supabase) {
-    console.warn('Supabase not configured, cannot upload files')
-    return
-  }
-
-  const userId = getUserId()
-  if (!userId) {
-    console.warn('Cannot get userId from token, files will be uploaded without user folder')
-  }
-
   isUploading.value = true
   for (const record of pendingFiles.value) {
     if (record.status !== 'pending') continue
 
     record.status = 'uploading'
     record.progress = 0
+    uploadingFileIds.value.add(record.id)
+
     try {
-      // 构建路径: {userId}/{YYYYMMDD}/{unique_filename}（与 web 版一致）
-      const now = new Date()
-      const year = now.getFullYear()
-      const month = String(now.getMonth() + 1).padStart(2, '0')
-      const day = String(now.getDate()).padStart(2, '0')
-      const safeFilename = generateUniqueFilename(record.file.name)
-      const userPart = userId || 'unknown'
-      const path = `${userPart}/${year}${month}${day}/${safeFilename}`
+      // 读取文件为 base64
+      const base64 = await fileToBase64(record.file)
 
-      const { error } = await supabase.storage.from('upload').upload(path, record.file)
-      if (error) throw error
-
-      const { data: { publicUrl } } = supabase.storage.from('upload').getPublicUrl(path)
-
-      record.uploadedData = {
-        name: record.file.name,
-        url: publicUrl,
-        path,
-        size: record.file.size,
-        type: record.file.type,
-      }
-      record.status = 'success'
-      record.progress = 100
+      // 通过扩展代理上传（扩展有 Supabase 客户端和 userId）
+      postMessage({
+        type: 'uploadFile',
+        payload: {
+          fileName: record.file.name,
+          fileType: record.file.type,
+          base64Data: base64,
+          fileSize: record.file.size,
+        },
+      })
     } catch (error: any) {
       record.status = 'error'
-      record.error = error.message || 'Upload failed'
+      record.error = error.message || '读取文件失败'
+      uploadingFileIds.value.delete(record.id)
     }
   }
-  isUploading.value = false
+  // 注意：不能在这里设 isUploading = false，因为上传是异步的
+  // 需要在收到 fileUploaded 或 error 响应后设置
+}
+
+// 将 File 读取为 base64 字符串
+function fileToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      // 去掉 data:xxx;base64, 前缀
+      const result = reader.result as string
+      const base64 = result.split(',')[1] || result
+      resolve(base64)
+    }
+    reader.onerror = () => reject(new Error('Failed to read file'))
+    reader.readAsDataURL(file)
+  })
 }
 
 // ==================== 发送消息 ====================
