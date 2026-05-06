@@ -12,8 +12,48 @@ const mentionListRef = ref<HTMLElement>()
 // Supabase for file upload
 const initData = getInitialData()
 const supabase = (initData?.supabaseUrl && initData?.supabaseKey)
-  ? createClient(initData.supabaseUrl, initData.supabaseKey)
+  ? createClient(initData.supabaseUrl, initData.supabaseKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+        detectSessionInUrl: false,
+      },
+    })
   : null
+
+// 通过 Supabase 获取 userId
+let cachedUserId: string | null | undefined = undefined // undefined = not yet resolved
+async function getUserId(): Promise<string | null> {
+  if (cachedUserId !== undefined) return cachedUserId
+
+  if (!supabase) {
+    cachedUserId = null
+    return null
+  }
+
+  // 先给 Supabase 客户端设置 token（如果有）
+  if (initData?.token) {
+    try {
+      await supabase.auth.setSession({
+        access_token: initData.token,
+        refresh_token: '',
+      })
+    } catch (e) {
+      console.warn('[ChatInput] Failed to set Supabase session:', e)
+    }
+  }
+
+  // 通过 getUser 获取用户信息
+  try {
+    const { data: { user } } = await supabase.auth.getUser()
+    cachedUserId = user?.id || null
+    return cachedUserId
+  } catch (e) {
+    console.warn('[ChatInput] Failed to get user from Supabase:', e)
+    cachedUserId = null
+    return null
+  }
+}
 
 // ==================== @mention 智能提示 ====================
 const showMentionSuggestions = ref(false)
@@ -135,18 +175,6 @@ const pendingFiles = ref<Array<{
 
 const isUploading = ref(false)
 
-// 从 JWT token 中解码 userId（sub 字段）
-function getUserId(): string | null {
-  const token = initData?.token
-  if (!token) return null
-  try {
-    const payload = JSON.parse(atob(token.split('.')[1]))
-    return payload.sub || null
-  } catch {
-    return null
-  }
-}
-
 // 生成唯一文件名（与 web 版一致）
 function generateUniqueFilename(originalName: string): string {
   const parts = originalName.split('.')
@@ -195,9 +223,9 @@ async function uploadPendingFiles() {
     return
   }
 
-  const userId = getUserId()
+  const userId = await getUserId()
   if (!userId) {
-    console.warn('Cannot get userId from token, files will be uploaded without user folder')
+    console.warn('Cannot get userId, files will be uploaded without user folder')
   }
 
   isUploading.value = true

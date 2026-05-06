@@ -392,13 +392,6 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       return message
-    } else if (message.message_type === 'user_message') {
-      const existingIndex = messages.value.findIndex(
-        (msg) => msg.message_type === 'user_message' && msg.message_id === msgId
-      )
-      if (existingIndex !== -1) {
-        return
-      }
     } else {
       messages.value.push(message)
       // 初始化消息状态
@@ -653,14 +646,6 @@ export const useChatStore = defineStore('chat', () => {
       sender_id: 'user',
       receiver_id: targetAgent,
       data: messageData,
-    })
-
-    // 发给其他客户端
-    await socketStore.sendUserMessage({
-      messageId: messageId,
-      content: cleanText,
-      subscription: sessionId.value ? String(sessionId.value) : undefined,
-      files: files
     })
 
     // 发给agent

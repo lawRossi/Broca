@@ -476,15 +476,6 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
-    if (message.message_type === 'user_message') {
-      const existingIndex = messages.value.findIndex(
-        (msg) => msg.message_type === 'user_message' && msg.message_id === message.message_id
-      )
-      if (existingIndex !== -1) {
-        return
-      }
-    }
-
     messages.value.push(message)
     getMessageState(message.message_id)
   }
@@ -519,12 +510,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // Send to extension host
     console.log('[ChatStore] posting sendMessage to extension')
-    // 第一条：广播给该 session 的所有订阅者（其他客户端也会收到）
-    postMessage({
-      type: 'sendMessage',
-      payload: { content, subscription: sessionId.value, files, messageId },
-    })
-    // 第二条：发送给指定的 agent
+    
     postMessage({
       type: 'sendMessage',
       payload: { content, receiverId: targetReceiver, files, messageId },
