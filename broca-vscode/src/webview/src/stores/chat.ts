@@ -476,6 +476,15 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
+    if (message.message_type === 'user_message') {
+      const existingIndex = messages.value.findIndex(
+        (msg) => msg.message_type === 'user_message' && msg.message_id === message.message_id
+      )
+      if (existingIndex !== -1) {
+        return
+      }
+    }
+
     messages.value.push(message)
     getMessageState(message.message_id)
   }
