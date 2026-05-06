@@ -435,7 +435,6 @@ const targetAgentDisplay = computed(() => {
       <button
         class="tool-button"
         title="Attach file"
-        :disabled="!supabase"
         @click="triggerFileSelect"
       >
         📎
