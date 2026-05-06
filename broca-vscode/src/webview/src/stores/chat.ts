@@ -498,14 +498,24 @@ export const useChatStore = defineStore('chat', () => {
       messageData.files = files
     }
 
+    addMessage({
+      message_id: messageId,
+      message_type: 'user_message',
+      timestamp: new Date().toISOString(),
+      role: 'user',
+      sender_id: 'user',
+      receiver_id: targetReceiver,
+      data: messageData,
+    })
+
     // Send to extension host
     console.log('[ChatStore] posting sendMessage to extension')
-    // sent to other clients
+    // 第一条：广播给该 session 的所有订阅者（其他客户端也会收到）
     postMessage({
       type: 'sendMessage',
       payload: { content, subscription: sessionId.value, files, messageId },
     })
-    // sent to the agent
+    // 第二条：发送给指定的 agent
     postMessage({
       type: 'sendMessage',
       payload: { content, receiverId: targetReceiver, files, messageId },

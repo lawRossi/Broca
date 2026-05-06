@@ -319,10 +319,10 @@ export class ChatWebViewManager {
   private async handleSendMessage(
     sessionId: string,
     panel: vscode.WebviewPanel,
-    payload: { content: string; receiverId?: string; files?: any[]; messageId?: string }
+    payload: { content: string; receiverId?: string; subscription?: string; files?: any[]; messageId?: string }
   ) {
     const socketClient = this.socketClients.get(sessionId)
-    console.log('[ChatWebView] handleSendMessage:', { sessionId, hasSocket: !!socketClient, receiverId: payload.receiverId, content: payload.content?.substring(0, 50) })
+    console.log('[ChatWebView] handleSendMessage:', { sessionId, hasSocket: !!socketClient, receiverId: payload.receiverId, subscription: payload.subscription, content: payload.content?.substring(0, 50) })
 
     if (!socketClient) {
       console.log('[ChatWebView] No socket client for session:', sessionId)
@@ -339,6 +339,7 @@ export class ChatWebViewManager {
         messageId,
         content: payload.content,
         receiverId: payload.receiverId,
+        subscription: payload.subscription,
         files: payload.files,
       })
       console.log('[ChatWebView] socket.sendUserMessage completed successfully')
