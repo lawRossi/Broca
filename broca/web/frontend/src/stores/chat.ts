@@ -635,26 +635,22 @@ export const useChatStore = defineStore('chat', () => {
       messageData.files = files
     }
 
-    // 乐观更新：添加本地消息
     const messageId = `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
-    addMessage({
-      message_id: messageId,
-      timestamp: new Date().toISOString(),
-      message_type: 'user_message',
-      role: 'user',
-      sender_id: 'user',
-      receiver_id: targetAgent,
-      subscription: sessionId.value ? String(sessionId.value) : undefined,
-      data: messageData,
-    } as Message)
 
-    // 通过 WebSocket 发送
+    // 发给其他客户端
+    await socketStore.sendUserMessage({
+      messageId: messageId,
+      content: cleanText,
+      subscription: sessionId.value ? String(sessionId.value) : undefined,
+      files: files
+    })
+
+    // 发给agent
     await socketStore.sendUserMessage({
       messageId: messageId,
       content: cleanText,
       receiverId: targetAgent,
-      subscription: sessionId.value ? String(sessionId.value) : undefined,
-      files: files, // 传递文件数组
+      files: files,
     })
   }
 

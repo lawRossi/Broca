@@ -327,7 +327,7 @@ onUnmounted(() => {
               </div>
               <div class="flex flex-col">
                 <span class="text-gray-500 text-[10px]">上下文</span>
-                <span class="font-semibold text-purple-700">{{ agent.last_context_length?.toLocaleString() }}</span>
+                <span class="font-semibold text-purple-700">{{ agent.last_context_length || 0 }}</span>
               </div>
             </div>
 

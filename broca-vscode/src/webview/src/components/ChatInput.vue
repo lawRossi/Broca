@@ -135,6 +135,27 @@ const pendingFiles = ref<Array<{
 
 const isUploading = ref(false)
 
+// 从 JWT token 中解码 userId（sub 字段）
+function getUserId(): string | null {
+  const token = initData?.token
+  if (!token) return null
+  try {
+    const payload = JSON.parse(atob(token.split('.')[1]))
+    return payload.sub || null
+  } catch {
+    return null
+  }
+}
+
+// 生成唯一文件名（与 web 版一致）
+function generateUniqueFilename(originalName: string): string {
+  const parts = originalName.split('.')
+  const extension = parts.length > 1 ? parts.pop() : ''
+  const nameWithoutExt = parts.join('.')
+  const uniqueId = Math.random().toString(36).substr(6)
+  return extension ? `${nameWithoutExt}_${uniqueId}.${extension}` : `${nameWithoutExt}_${uniqueId}`
+}
+
 const canSend = computed(() => {
   const text = chatStore.inputText.trim()
   return text.length > 0 || pendingFiles.value.some(f => f.status === 'success')
@@ -174,6 +195,11 @@ async function uploadPendingFiles() {
     return
   }
 
+  const userId = getUserId()
+  if (!userId) {
+    console.warn('Cannot get userId from token, files will be uploaded without user folder')
+  }
+
   isUploading.value = true
   for (const record of pendingFiles.value) {
     if (record.status !== 'pending') continue
@@ -181,7 +207,15 @@ async function uploadPendingFiles() {
     record.status = 'uploading'
     record.progress = 0
     try {
-      const path = `vscode/${Date.now()}_${record.file.name}`
+      // 构建路径: {userId}/{YYYYMMDD}/{unique_filename}（与 web 版一致）
+      const now = new Date()
+      const year = now.getFullYear()
+      const month = String(now.getMonth() + 1).padStart(2, '0')
+      const day = String(now.getDate()).padStart(2, '0')
+      const safeFilename = generateUniqueFilename(record.file.name)
+      const userPart = userId || 'unknown'
+      const path = `${userPart}/${year}${month}${day}/${safeFilename}`
+
       const { error } = await supabase.storage.from('upload').upload(path, record.file)
       if (error) throw error
 

@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { postMessage, onMessage, getInitialData } from '../api/vscode'
 import type { Message, RunnerInfo } from '../types'
+import { subscribe } from 'diagnostics_channel'
 
 export const useChatStore = defineStore('chat', () => {
   const sessionId = ref(getInitialData()?.sessionId || '')
@@ -497,18 +498,14 @@ export const useChatStore = defineStore('chat', () => {
       messageData.files = files
     }
 
-    addMessage({
-      message_id: messageId,
-      message_type: 'user_message',
-      timestamp: new Date().toISOString(),
-      role: 'user',
-      sender_id: 'user',
-      receiver_id: targetReceiver,
-      data: messageData,
-    })
-
     // Send to extension host
     console.log('[ChatStore] posting sendMessage to extension')
+    // sent to other clients
+    postMessage({
+      type: 'sendMessage',
+      payload: { content, subscription: sessionId.value, files, messageId },
+    })
+    // sent to the agent
     postMessage({
       type: 'sendMessage',
       payload: { content, receiverId: targetReceiver, files, messageId },

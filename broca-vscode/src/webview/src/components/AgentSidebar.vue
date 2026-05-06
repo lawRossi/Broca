@@ -195,7 +195,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
             <span class="stat-icon" style="background:rgba(168,85,247,0.12)">📄</span>
             <div class="stat-text">
               <span class="stat-label">上下文</span>
-              <span class="stat-value" style="color:#a855f7">{{ agent.last_context_length?.toLocaleString() }}</span>
+              <span class="stat-value" style="color:#a855f7">{{ agent.last_context_length || 0 }}</span>
             </div>
           </div>
           <div class="stat-item">

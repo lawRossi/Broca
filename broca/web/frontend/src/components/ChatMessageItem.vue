@@ -191,6 +191,15 @@ const getContent = (message: Message) => {
   return content
 }
 
+const isFileManagementTool = (message: Message) => {
+  return message.message_type === 'tool_call' && (message.data?.tool_name === 'read_file' || message.data?.tool_name === 'write_file' || message.data?.tool_name === 'edit_file')
+}
+
+const getFilePath = (message: Message) => {
+  const params = JSON.parse(message.data?.arguments || '{}')
+  return params.path
+}
+
 // 检查是否为edit_file工具调用
 const isEditFile = (message: Message) => {
   return message.message_type === 'tool_call' && message.data?.tool_name === 'edit_file'
@@ -348,6 +357,11 @@ const getResultTitle = (message: Message) => {
 
 const shouldShowResult = (message: Message) => {
   const exceptions = ['todo_management', 'edit_file', 'write_file']
+  return message.message_type === 'tool_call' && !exceptions.includes(message.data?.tool_name)
+}
+
+const shouldShowParameters = (message: Message) => {
+  const exceptions = ['read_file']
   return message.message_type === 'tool_call' && !exceptions.includes(message.data?.tool_name)
 }
 
@@ -641,8 +655,12 @@ const handleUndoToHere = async () => {
       >
 
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
+        <div v-if="isFileManagementTool(message)" class="diff-header px-3 py-2 border-b flex items-center gap-2">
+          <span class="diff-path font-medium text-sm"> 📃 {{ getFilePath(message)}} </span>
+        </div>
+
         <!-- 参数展示 -->
-        <div v-if="message.data?.arguments || message.data?.parameters" class="mb-2">
+        <div v-if="shouldShowParameters(message)" class="mb-2">
           <!-- 只有非todo_management且非ask_user且非edit_file工具才显示切换按钮 -->
           <el-button
             v-if="!isTodoManagement(message) && !isAskUser(message)"
@@ -696,11 +714,6 @@ const handleUndoToHere = async () => {
 
             <!-- 特殊处理edit_file的diff展示 -->
             <div v-else-if="isEditFile(message) && getEditFileParams(message)" class="diff-wrapper rounded border overflow-hidden">
-              <!-- 文件路径信息 -->
-              <div class="diff-header px-3 py-2 border-b flex items-center gap-2">
-                <span class="diff-path font-medium text-sm">📝 {{ getEditFileParams(message).path }}</span>
-              </div>
-              
               <!-- Diff 展示 -->
               <div v-if="getEditFileParams(message).oldText || getEditFileParams(message).newText" class="diff-container font-mono text-xs">
                 <div 

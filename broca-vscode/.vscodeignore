@@ -1,0 +1,9 @@
+.git/**
+.gitignore
+.vscode/**
+src/**
+plan-chat-optimization.md
+pnpm-lock.yaml
+tsconfig*.json
+vite.config.ts
+*.bak

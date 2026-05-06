@@ -28,7 +28,6 @@ from broca.session_runner.models import (
     RunnerProcessInfo,
     RunnerStatus,
 )
-from broca.session_runner.recovery import SessionRecoveryManager
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +70,7 @@ class RunnerManager:
             self._heartbeat_monitor_task: Optional[asyncio.Task] = None
             # 日志目录
             self._log_dir = Path.home() / ".broca/logs/runners"
-            # 恢复管理器
-            self._recovery_manager = SessionRecoveryManager()
-            self._recovery_manager.set_restart_handler(self._auto_restart_session)
-            # 注册崩溃事件处理
-            self.on("session_crashed", self._handle_session_crashed)
+
             logger.info(
                 "RunnerManager initialized (max_runners=%d, script=%s)",
                 self._max_concurrent_runners,
@@ -935,46 +930,6 @@ class RunnerManager:
                     handler(runner_info)
             except Exception as e:
                 logger.error("Event handler error for %s: %s", event, e)
-
-    # ==================== 崩溃自动恢复 ====================
-
-    async def _handle_session_crashed(self, runner_info: RunnerProcessInfo) -> None:
-        """
-        处理 Session 崩溃事件，触发自动恢复
-
-        Args:
-            runner_info: 崩溃的 Runner 信息
-        """
-        logger.warning(
-            "Session %s crashed (pid=%d), initiating recovery...",
-            runner_info.session_id,
-            runner_info.pid,
-        )
-        await self._recovery_manager.handle_crash(runner_info.session_id)
-
-    async def _auto_restart_session(self, session_id: str) -> None:
-        """
-        自动重启 Session（由 RecoveryManager 调用）
-
-        Args:
-            session_id: 要重启的 Session ID
-        """
-        logger.info("Auto-restarting session %s...", session_id)
-        try:
-            await self.restart_session(session_id)
-            logger.info("Auto-restart successful for session %s", session_id)
-        except RunnerManagerError as e:
-            logger.error("Auto-restart failed for session %s: %s", session_id, e)
-            raise
-
-    def get_recovery_states(self) -> Dict[str, Dict]:
-        """
-        获取所有 Session 的恢复状态
-
-        Returns:
-            恢复状态字典
-        """
-        return self._recovery_manager.get_all_states()
 
     # ==================== 资源查询 ====================
 
