@@ -30,6 +30,19 @@ watch(
         const searchTerm = spaceIndex === -1 ? afterAt : afterAt.substring(0, spaceIndex)
         mentionSearch.value = searchTerm
 
+        // 如果@后面有空格且搜索词已精确匹配某个agent，说明mention已完成，不再显示建议
+        if (spaceIndex !== -1) {
+          const isExactMatch = Object.entries(chatStore.agentNames).some(
+            ([id, name]) =>
+              name.toLowerCase() === searchTerm.toLowerCase() ||
+              id.toLowerCase() === searchTerm.toLowerCase()
+          )
+          if (isExactMatch) {
+            showMentionSuggestions.value = false
+            return
+          }
+        }
+
         // Filter agents
         const agentEntries = Object.entries(chatStore.agentNames)
         mentionSuggestions.value = agentEntries
