@@ -34,7 +34,7 @@ const previewFileUrl = ref('')
 
 // ==================== 消息类型判断 ====================
 const isUser = computed(() => props.message.message_type === 'user_message' || props.message.role === 'user')
-const isSystem = computed(() => props.message.message_type === 'system_message' || props.message.role === 'system')
+const isSystem = computed(() => props.message.message_type === 'system_message' || props.message.role === 'agent_system')
 const isToolCall = computed(() => props.message.message_type === 'tool_call')
 const isAgentResponse = computed(() => props.message.message_type === 'agent_response' || props.message.role === 'assistant')
 const isError = computed(() => props.message.message_type === 'error' || props.message.message_type === 'agent_error')
@@ -426,9 +426,9 @@ function toggleToolParams() {
     <!-- ==================== 工具调用 ==================== -->
     <template v-else-if="isToolCall">
       <!-- 工具名标题行：点击可切换参数显示（todo_management 和 ask_user 始终展开，忽略点击） -->
+      <span class="tool-name">{{ toolName }}</span>
       <div class="tool-call-header" @click="toggleToolParams()">
-        <span class="tool-icon">🔧</span>
-        <span class="tool-name">{{ toolName }}</span>
+        <span>参数</span>
         <span v-if="!isTodoManagement && !isAskUser" class="expand-icon">{{ showParameters ? '▼' : '▶' }}</span>
       </div>
 
