@@ -502,7 +502,7 @@ function toggleToolParams() {
       <!-- read_file: 可切换，标题为 "📊 文件内容" -->
       <div v-if="isReadFile && readFileResult" class="tool-result">
         <div class="result-header" @click="showResult = !showResult">
-          <span>📊 文件内容</span>
+          <span>文件内容</span>
           <span class="expand-icon">{{ showResult ? '▼' : '▶' }}</span>
         </div>
         <div v-if="showResult" class="result-content">
@@ -519,7 +519,7 @@ function toggleToolParams() {
       <!-- 其他工具结果：可切换，排除 edit_file、write_file、todo_manage（它们的结果内联展示） -->
       <div v-else-if="toolResult && !isEditFile && !isWriteFile && !isTodoManagement" class="tool-result">
         <div class="result-header" @click="showResult = !showResult">
-          <span>📊 结果</span>
+          <span>结果</span>
           <span class="expand-icon">{{ showResult ? '▼' : '▶' }}</span>
         </div>
         <div v-if="showResult" class="result-content">
