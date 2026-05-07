@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { postMessage } from '../api/vscode'
+import { taskApi, jobApi } from '../utils/api'
 
 const chatStore = useChatStore()
 
@@ -9,6 +10,35 @@ const chatStore = useChatStore()
 const emit = defineEmits<{
   (e: 'navigate', page: string): void
 }>()
+
+// ==================== 任务/Job 计数 ====================
+const taskCount = ref<number | null>(null)
+const jobCount = ref<number | null>(null)
+const countLoading = ref(false)
+
+async function fetchCounts() {
+  const sessionId = chatStore.sessionId
+  if (!sessionId) return
+
+  countLoading.value = true
+  try {
+    const [taskRes, jobRes] = await Promise.all([
+      taskApi.getTasks({ session_id: sessionId, limit: 1 }),
+      jobApi.getJobs({ session_id: sessionId, limit: 1 }),
+    ])
+    taskCount.value = taskRes.total ?? taskRes.tasks?.length ?? 0
+    jobCount.value = jobRes.total ?? jobRes.jobs?.length ?? 0
+  } catch (e) {
+    // 静默失败，不阻塞侧栏
+    console.warn('[ChatInfoSidebar] Failed to fetch counts:', e)
+  } finally {
+    countLoading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchCounts()
+})
 
 // ==================== Session 统计 ====================
 const stats = computed(() => {
@@ -87,21 +117,6 @@ const isOpen = computed(() => chatStore.showRightSidebar)
     </div>
 
     <div class="sidebar-content">
-      <!-- ==================== Management Pages ==================== -->
-      <div class="panel">
-        <div class="panel-title">管理</div>
-        <div class="panel-body">
-          <button class="nav-btn" @click="emit('navigate', 'tasks')">
-            <span>📋</span>
-            <span>任务管理</span>
-          </button>
-          <button class="nav-btn" @click="emit('navigate', 'jobs')">
-            <span>⏰</span>
-            <span>定时任务</span>
-          </button>
-        </div>
-      </div>
-
       <!-- ==================== Session Info ==================== -->
       <div class="panel">
         <div class="panel-title">Session Info</div>
@@ -114,6 +129,16 @@ const isOpen = computed(() => chatStore.showRightSidebar)
             <span class="info-label">Total Messages</span>
             <span class="info-value">{{ stats.total }}</span>
           </div>
+          <button class="nav-btn" @click="emit('navigate', 'tasks')">
+            <span>📋</span>
+            <span>任务</span>
+            <span v-if="taskCount !== null" class="nav-badge">{{ taskCount }}</span>
+          </button>
+          <button class="nav-btn" @click="emit('navigate', 'jobs')">
+            <span>⏰</span>
+            <span>定时Job</span>
+            <span v-if="jobCount !== null" class="nav-badge">{{ jobCount }}</span>
+          </button>
         </div>
       </div>
 
@@ -268,6 +293,22 @@ const isOpen = computed(() => chatStore.showRightSidebar)
 
 .nav-btn:last-child {
   margin-bottom: 0;
+}
+
+.nav-badge {
+  margin-left: auto;
+  background: var(--button-bg);
+  color: var(--button-text);
+  font-size: 10px;
+  font-weight: 600;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 /* ==================== Panel ==================== */

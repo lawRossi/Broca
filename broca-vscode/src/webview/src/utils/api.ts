@@ -72,7 +72,7 @@ function sendRequest(requestType: string, responseType: string, payload: any): P
 
 export const taskApi = {
   getTasks(params: {
-    skip?: number; limit?: number; status?: string; priority?: string; keyword?: string
+    skip?: number; limit?: number; status?: string; priority?: string; keyword?: string; session_id?: string
   } = {}) {
     return sendRequest('fetchTasks', 'tasks', {
       skip: params.skip ?? 0,
@@ -80,6 +80,7 @@ export const taskApi = {
       status: params.status,
       priority: params.priority,
       keyword: params.keyword,
+      session_id: params.session_id,
     })
   },
 
@@ -108,7 +109,7 @@ export const taskApi = {
 
 export const jobApi = {
   getJobs(params: {
-    skip?: number; limit?: number; status?: string; job_type?: string; keyword?: string
+    skip?: number; limit?: number; status?: string; job_type?: string; keyword?: string; session_id?: string
   } = {}) {
     return sendRequest('fetchJobs', 'jobs', {
       skip: params.skip ?? 0,
@@ -116,6 +117,7 @@ export const jobApi = {
       status: params.status,
       job_type: params.job_type,
       keyword: params.keyword,
+      session_id: params.session_id,
     })
   },
 

@@ -569,7 +569,7 @@ export class ChatWebViewManager {
 
   private async handleFetchTasks(
     panel: vscode.WebviewPanel,
-    payload: { skip?: number; limit?: number; status?: string; priority?: string; keyword?: string }
+    payload: { skip?: number; limit?: number; status?: string; priority?: string; keyword?: string; session_id?: string }
   ) {
     try {
       const response = await this.apiClient.client.get('/task/tasks', {
@@ -579,6 +579,7 @@ export class ChatWebViewManager {
           status: payload.status,
           priority: payload.priority,
           keyword: payload.keyword,
+          session_id: payload.session_id,
           order_by: 'created_at desc',
         },
       })
@@ -655,7 +656,7 @@ export class ChatWebViewManager {
 
   private async handleFetchJobs(
     panel: vscode.WebviewPanel,
-    payload: { skip?: number; limit?: number; status?: string; job_type?: string; keyword?: string }
+    payload: { skip?: number; limit?: number; status?: string; job_type?: string; keyword?: string; session_id?: string }
   ) {
     try {
       const response = await this.apiClient.client.get('/job/jobs', {
@@ -665,6 +666,7 @@ export class ChatWebViewManager {
           status: payload.status,
           job_type: payload.job_type,
           keyword: payload.keyword,
+          session_id: payload.session_id,
           order_by: 'created_at desc',
         },
       })
