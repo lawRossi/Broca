@@ -424,6 +424,7 @@ const targetAgentDisplay = computed(() => {
           placeholder="Type a message... (use @ to mention an agent)"
           rows="1"
           @keydown="handleKeydown"
+          :disabled="!chatStore.runnerAlive"
         ></textarea>
 
         <!-- @mention 建议列表 -->
@@ -469,11 +470,6 @@ const targetAgentDisplay = computed(() => {
       </button>
     </div>
 
-    <!-- Disabled overlay when runner is not alive -->
-    <div v-if="!chatStore.runnerAlive" class="disabled-overlay">
-      <template v-if="chatStore.runnerInfo === null">Connecting to runner...</template>
-      <template v-else>Runner is not running. Start the runner to send messages.</template>
-    </div>
   </div>
 </template>
 

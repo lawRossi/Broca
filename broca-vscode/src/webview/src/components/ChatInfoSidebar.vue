@@ -122,12 +122,8 @@ const isOpen = computed(() => chatStore.showRightSidebar)
         <div class="panel-title">Session Info</div>
         <div class="panel-body">
           <div class="info-row">
-            <span class="info-label">Session ID</span>
-            <span class="info-value mono" :title="chatStore.sessionId">{{ chatStore.sessionId || '未设置' }}</span>
-          </div>
-          <div class="info-row">
-            <span class="info-label">Total Messages</span>
-            <span class="info-value">{{ stats.total }}</span>
+            <span>Total Messages</span>
+            <span class="nav-badge">{{ stats.total }}</span>
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">
             <span>📋</span>

@@ -1,7 +1,11 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { jobApi } from '../utils/api'
 import type { Job, JobDetail, JobExecution } from '../types'
+
+const props = defineProps<{
+  sessionId?: string
+}>()
 
 // ==================== State ====================
 const jobs = ref<Job[]>([])
@@ -136,6 +140,7 @@ async function fetchJobs() {
       status: statusFilter.value || undefined,
       job_type: typeFilter.value || undefined,
       keyword: searchKeyword.value || undefined,
+      session_id: props.sessionId || undefined,
     })
     console.log('[JobPage] API response:', response)
     // response is already unwrapped by request()
@@ -235,6 +240,11 @@ function onSearch() {
 onMounted(() => {
   fetchJobs()
 })
+
+// 当 sessionId 变化时重新加载
+watch(() => props.sessionId, () => {
+  fetchJobs()
+})
 </script>
 
 <template>
@@ -264,6 +274,7 @@ onMounted(() => {
       <select v-model="typeFilter" class="filter-select" @change="onSearch">
         <option v-for="opt in typeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
       </select>
+      <span v-if="props.sessionId" class="filter-tag">会话: {{ props.sessionId.slice(0, 8) }}...</span>
     </div>
 
     <!-- Job List -->
@@ -541,6 +552,17 @@ onMounted(() => {
 
 .filter-select:focus {
   border-color: var(--focus-border);
+}
+
+.filter-tag {
+  font-size: 11px;
+  padding: 4px 10px;
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+  border-radius: 4px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
 }
 
 /* ==================== Job List ==================== */

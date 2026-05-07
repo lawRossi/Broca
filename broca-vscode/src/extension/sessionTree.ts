@@ -15,10 +15,10 @@ class SessionTreeItem extends vscode.TreeItem {
     this.contextValue = 'session'
     this.tooltip = this.buildTooltip(session)
 
-    // Description shows truncated session ID
-    this.description = session.session_id.length > 16
-      ? `${session.session_id.slice(0, 8)}...${session.session_id.slice(-8)}`
-      : session.session_id
+    // // Description shows truncated session ID
+    // this.description = session.session_id.length > 16
+    //   ? `${session.session_id.slice(0, 8)}...${session.session_id.slice(-8)}`
+    //   : session.session_id
 
     // Set icon based on runner status
     this.iconPath = this.getStatusIcon(session.runner_status)

@@ -71,7 +71,7 @@ onUnmounted(() => {
       <div class="sub-page-bar">
         <button class="back-btn" @click="goBack">← 返回聊天</button>
       </div>
-      <TaskPage />
+      <TaskPage :session-id="chatStore.sessionId" />
     </div>
 
     <!-- Job Management Page -->
@@ -79,7 +79,7 @@ onUnmounted(() => {
       <div class="sub-page-bar">
         <button class="back-btn" @click="goBack">← 返回聊天</button>
       </div>
-      <JobPage />
+      <JobPage :session-id="chatStore.sessionId" />
     </div>
   </div>
 </template>

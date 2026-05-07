@@ -1,6 +1,7 @@
 {
   "name": "broca-chat",
   "displayName": "Broca Chat",
+  "repository": {},
   "description": "Broca AI Assistant for VSCode - Session management and chat interaction",
   "version": "0.1.0",
   "publisher": "broca",
