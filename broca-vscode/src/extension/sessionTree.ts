@@ -9,16 +9,11 @@ class SessionTreeItem extends vscode.TreeItem {
     public readonly session: Session,
     public readonly collapsibleState: vscode.TreeItemCollapsibleState
   ) {
-    super(session.description || session.session_id.slice(0, 8), collapsibleState)
+    super(session.description || session.session_id, collapsibleState)
 
     this.id = session.session_id
     this.contextValue = 'session'
     this.tooltip = this.buildTooltip(session)
-
-    // // Description shows truncated session ID
-    // this.description = session.session_id.length > 16
-    //   ? `${session.session_id.slice(0, 8)}...${session.session_id.slice(-8)}`
-    //   : session.session_id
 
     // Set icon based on runner status
     this.iconPath = this.getStatusIcon(session.runner_status)
