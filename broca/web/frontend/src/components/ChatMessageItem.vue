@@ -528,12 +528,16 @@ const confirmUndo = () => {
 const handleUndoToHere = async () => {
   if (!canUndoThisMessage.value) return
   
+  // 撤销需要指定目标 agent：
+  
+  const targetAgentId = props.message.receiver_id || props.message.agent_id
+  
   try {
     await socketStore.sendUndo({
       targetMessageId: props.message.message_id,
       level: getUndoLevel.value,
       subscription: chatStore.sessionId,
-      receiverId: props.message.agent_id || agentStore.currentAgentId
+      receiverId: targetAgentId
     })
   } catch (error) {
     console.error('撤销失败:', error)
@@ -656,7 +660,7 @@ const handleUndoToHere = async () => {
 
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
         <div v-if="isFileManagementTool(message)" class="diff-header px-3 py-2 border-b flex items-center gap-2">
-          <span class="diff-path font-medium text-sm"> 📃 {{ getFilePath(message)}} </span>
+          <span class="diff-path font-medium text-sm" :title="getFilePath(message)"> 📃 {{ getFilePath(message)}} </span>
         </div>
 
         <!-- 参数展示 -->
@@ -1038,6 +1042,11 @@ const handleUndoToHere = async () => {
 
 .diff-path {
   color: #9333ea;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  min-width: 0;
 }
 
 /* --- Diff 容器（可滚动） --- */

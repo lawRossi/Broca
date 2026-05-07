@@ -342,12 +342,8 @@ function handleUndo() {
 
 function confirmUndo() {
   showUndoConfirm.value = false
-  // 撤销需要指定目标 agent：
-  // - 用户消息 (user_message): receiver_id 是目标 agent（消息发给了谁）
-  // - Agent 消息 (agent_response/tool_call): agent_id 或 sender_id 是目标 agent
-  const targetAgentId = isUser.value
-    ? (props.message.receiver_id || chatStore.defaultAgentId)
-    : (props.message.agent_id || props.message.sender_id || chatStore.defaultAgentId)
+  
+  const targetAgentId = props.message.receiver_id || props.message.agent_id
   chatStore.sendUndo(props.message.message_id, undoLevel.value, targetAgentId)
 }
 
@@ -470,7 +466,7 @@ function toggleToolParams() {
       <div v-else-if="isEditFile && editFileParams" class="tool-params">
         <div class="diff-wrapper">
           <div class="diff-header">
-            <span class="diff-path">📝 {{ editFileParams.path }}</span>
+            <span class="diff-path" :title="editFileParams.path">📝 {{ editFileParams.path }}</span>
           </div>
           <div v-if="showParameters" class="diff-container">
             <div
@@ -798,6 +794,11 @@ function toggleToolParams() {
 .file-path {
   color: var(--text-link);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+  min-width: 0;
 }
 
 .diff-container {
