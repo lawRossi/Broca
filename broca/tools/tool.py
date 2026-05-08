@@ -67,12 +67,10 @@ class Tool:
                     f.write(content)
             half_length = self.max_content_length // 2
             content = content[:half_length] + "..." + content[-half_length:]
-            content += (
-                "\n**Notice**: The output is too long and has been truncated in the middle."
-                f" The full output is saved to {cache_file}."
-                if self.name != "read_file"
-                else ""
-            )
+            content += "\n**Notice**: The output is too long and has been truncated in the middle."
+            if self.name != "read_file":
+                content += f" The full output is saved to {cache_file}."
+
             result.content = content
 
         return result

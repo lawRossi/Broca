@@ -230,8 +230,11 @@ class Scheduler:
     async def remove_job(self, job_id: str) -> bool:
         """删除任务"""
         try:
-            if job_id in self.apscheduler.get_jobs():
+            # 从APScheduler删除，APScheduler的remove_job本身会处理不存在的情况
+            try:
                 self.apscheduler.remove_job(job_id)
+            except Exception as e:
+                logger.warning(f"Job not found in scheduler or remove failed: {job_id}, {e}")
 
             # 从数据库删除
             success = await self.job_service.delete(job_id)
