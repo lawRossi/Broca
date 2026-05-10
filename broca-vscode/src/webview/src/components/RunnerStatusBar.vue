@@ -1,8 +1,11 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { useChatStore } from '../stores/chat'
+import { postMessage } from '../api/vscode'
 
 const chatStore = useChatStore()
+
+const refreshing = ref(false)
 
 const statusText = computed(() => {
   const info = chatStore.runnerInfo
@@ -26,6 +29,14 @@ const statusColor = computed(() => {
     default: return 'var(--text-secondary)'
   }
 })
+
+function handleRefresh() {
+  if (refreshing.value) return
+  refreshing.value = true
+  postMessage({ type: 'refreshChat' })
+  // Reset refresh spinner after a timeout
+  setTimeout(() => { refreshing.value = false }, 3000)
+}
 </script>
 
 <template>
@@ -47,6 +58,14 @@ const statusColor = computed(() => {
         :style="{ background: statusColor }"
       ></span>
       <span class="status-label">{{ statusText }}</span>
+      <!-- Refresh button -->
+      <button
+        class="refresh-btn"
+        :class="{ refreshing: refreshing }"
+        :disabled="refreshing"
+        title="Refresh chat"
+        @click="handleRefresh"
+      >🔄</button>
     </div>
   </div>
 </template>
@@ -80,5 +99,36 @@ const statusColor = computed(() => {
 
 .status-label {
   color: var(--text-secondary);
+}
+
+.refresh-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 2px 4px;
+  border-radius: 3px;
+  line-height: 1;
+  margin-left: 8px;
+  transition: transform 0.2s;
+}
+
+.refresh-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.refresh-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.refresh-btn.refreshing {
+  animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 </style>

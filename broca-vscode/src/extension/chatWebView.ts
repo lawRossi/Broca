@@ -31,63 +31,68 @@ export class ChatWebViewManager {
   }
 
   async openChat(sessionId: string) {
-    // Check if panel already exists and is not disposed
-    const existingPanel = this.panels.get(sessionId)
-    if (existingPanel) {
-      try {
-        existingPanel.reveal()
-        return
-      } catch {
-        // Panel was disposed, remove it and create a new one
+    try {
+      // Check if panel already exists and is not disposed
+      const existingPanel = this.panels.get(sessionId)
+      if (existingPanel) {
+        try {
+          existingPanel.reveal()
+          return
+        } catch {
+          // Panel was disposed, remove it and create a new one
+          this.panels.delete(sessionId)
+        }
+      }
+
+      // Get session info for title
+      const session = await this.apiClient.getSessions({ limit: 1, keyword: sessionId })
+      const sessionInfo = session.sessions?.[0]
+      const title = sessionInfo?.description || sessionId.slice(0, 8) + '...'
+
+      // Create new WebView panel
+      const panel = vscode.window.createWebviewPanel(
+        'broca.chat',
+        `Broca: ${title}`,
+        vscode.ViewColumn.One,
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true,
+          localResourceRoots: [
+            vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
+          ],
+        }
+      )
+
+      // Set HTML content
+      panel.webview.html = this.getWebviewContent(panel.webview, sessionId)
+
+      // Store panel reference
+      this.panels.set(sessionId, panel)
+
+      // Handle panel disposal
+      panel.onDidDispose(() => {
+        this.disposeSession(sessionId)
         this.panels.delete(sessionId)
-      }
+      })
+
+      // Handle messages from WebView
+      panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
+        console.log('[ChatWebView] received from WebView:', message.type, message.payload ? Object.keys(message.payload) : '')
+        await this.handleWebViewMessage(sessionId, panel, message)
+      })
+
+      // Handle view state changes (pause/resume polling)
+      panel.onDidChangeViewState((e) => {
+        if (e.webviewPanel.visible) {
+          this.startRunnerPolling(sessionId, panel)
+        } else {
+          this.stopRunnerPolling(sessionId)
+        }
+      })
+    } catch (error: any) {
+      const message = error?.response?.data?.msg || error.message || 'Unknown error'
+      vscode.window.showErrorMessage(`Failed to open chat: ${message}`)
     }
-
-    // Get session info for title
-    const session = await this.apiClient.getSessions({ limit: 1, keyword: sessionId })
-    const sessionInfo = session.sessions?.[0]
-    const title = sessionInfo?.description || sessionId.slice(0, 8) + '...'
-
-    // Create new WebView panel
-    const panel = vscode.window.createWebviewPanel(
-      'broca.chat',
-      `Broca: ${title}`,
-      vscode.ViewColumn.One,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
-        ],
-      }
-    )
-
-    // Set HTML content
-    panel.webview.html = this.getWebviewContent(panel.webview, sessionId)
-
-    // Store panel reference
-    this.panels.set(sessionId, panel)
-
-    // Handle panel disposal
-    panel.onDidDispose(() => {
-      this.disposeSession(sessionId)
-      this.panels.delete(sessionId)
-    })
-
-    // Handle messages from WebView
-    panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
-      console.log('[ChatWebView] received from WebView:', message.type, message.payload ? Object.keys(message.payload) : '')
-      await this.handleWebViewMessage(sessionId, panel, message)
-    })
-
-    // Handle view state changes (pause/resume polling)
-    panel.onDidChangeViewState((e) => {
-      if (e.webviewPanel.visible) {
-        this.startRunnerPolling(sessionId, panel)
-      } else {
-        this.stopRunnerPolling(sessionId)
-      }
-    })
   }
 
   async openConfigPage() {
@@ -207,6 +212,10 @@ export class ChatWebViewManager {
 
       case 'uploadFile':
         await this.handleUploadFile(panel, message.payload)
+        break
+
+      case 'refreshChat':
+        await this.handleRefreshChat(sessionId, panel)
         break
 
       case 'fetchTasks':
@@ -563,6 +572,23 @@ export class ChatWebViewManager {
       this.postToPanel(panel, {
         type: 'error',
         payload: { message: `Upload failed: ${error.message}` },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleRefreshChat(sessionId: string, panel: vscode.WebviewPanel) {
+    try {
+      console.log('[ChatWebView] Refreshing chat session:', sessionId)
+      // Dispose current session resources (socket + poll timers)
+      this.disposeSession(sessionId)
+      // Re-initialize from scratch (reconnect socket, reload history, re-fetch agents/runner status)
+      await this.initializeSession(sessionId, panel)
+      console.log('[ChatWebView] Chat session refreshed:', sessionId)
+    } catch (error: any) {
+      console.error('[ChatWebView] Failed to refresh chat:', error)
+      this.postToPanel(panel, {
+        type: 'error',
+        payload: { message: `Failed to refresh: ${error.message}` },
       } as ExtensionToWebView)
     }
   }

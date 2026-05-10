@@ -27,7 +27,7 @@
         {
           "id": "broca",
           "title": "Broca",
-          "icon": "media/icon.svg"
+          "icon": "./media/icon.png"
         }
       ]
     },

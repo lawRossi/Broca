@@ -261,15 +261,13 @@ class GitManager:
 
         self.ensure_initialized()
 
-        # git rm --cached -f --ignore-unmatch --pathspec-from-file=- --pathspec-file-nul
+        # git rm --cached -f --ignore-unmatch
         try:
             await self._run_git_command(
                 "rm",
                 "--cached",
                 "-f",
                 "--ignore-unmatch",
-                "--pathspec-from-file=-",
-                "--pathspec-file-nul",
                 *files,
             )
         except git.GitCommandError as e:

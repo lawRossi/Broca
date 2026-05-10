@@ -45,7 +45,7 @@ const isWriteFile = computed(() => isToolCall.value && props.message.data?.tool_
 const isReadFile = computed(() => isToolCall.value && props.message.data?.tool_name === 'read_file')
 const isTodoManagement = computed(() => isToolCall.value && props.message.data?.tool_name === 'todo_management')
 const isAskUser = computed(() => isToolCall.value && props.message.data?.tool_name === 'ask_user')
-
+const isFileManagementTool = computed(() => isReadFile.value || isWriteFile.value || isEditFile.value)
 // ==================== 发送者信息 ====================
 const senderName = computed(() => {
   if (isUser.value) {
@@ -185,6 +185,15 @@ const toolResult = computed(() => {
   if (typeof result === 'string') return result
   return JSON.stringify(result, null, 2)
 })
+
+const getParameterTitle = (message: Message): string => {
+  if (message.data.tool_name === 'write_file') {
+    return '文件内容'
+  } else if (message.data.tool_name === 'edit_file') {
+    return '编辑内容'
+  }
+  return '参数'
+}
 
 // ==================== edit_file Diff ====================
 interface DiffLine {
@@ -427,8 +436,11 @@ function toggleToolParams() {
     <template v-else-if="isToolCall">
       <!-- 工具名标题行：点击可切换参数显示（todo_management 和 ask_user 始终展开，忽略点击） -->
       <span class="tool-name">{{ toolName }}</span>
+      <div v-if="isFileManagementTool" class="file-header">
+        <span class="file-path">📃 {{ toolArgs.path || '' }}</span>
+      </div>
       <div class="tool-call-header" @click="toggleToolParams()">
-        <span>参数</span>
+        <span>{{ getParameterTitle(props.message) }}</span>
         <span v-if="!isTodoManagement && !isAskUser" class="expand-icon">{{ showParameters ? '▼' : '▶' }}</span>
       </div>
 
@@ -465,9 +477,6 @@ function toggleToolParams() {
       <!-- edit_file: Diff 展示（可切换） -->
       <div v-else-if="isEditFile && editFileParams" class="tool-params">
         <div class="diff-wrapper">
-          <div class="diff-header">
-            <span class="diff-path" :title="editFileParams.path">📝 {{ editFileParams.path }}</span>
-          </div>
           <div v-if="showParameters" class="diff-container">
             <div
               v-for="(line, i) in computeDiff(editFileParams.oldText, editFileParams.newText)"
@@ -486,9 +495,6 @@ function toggleToolParams() {
       <!-- write_file: 文件内容预览（路径始终可见，内容可切换） -->
       <div v-else-if="isWriteFile" class="tool-params">
         <div class="file-wrapper">
-          <div class="file-header">
-            <span class="file-path">📝 {{ toolArgs.path || 'unknown' }}</span>
-          </div>
           <pre v-if="showParameters" class="file-content">{{ writeFileContent }}</pre>
         </div>
       </div>
