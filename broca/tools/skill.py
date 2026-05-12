@@ -4,7 +4,7 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 class LoadSkill(Tool):
     def __init__(self, skill_manager: SkillManager):
-        super().__init__()
+        super().__init__(max_content_length=45000)
         self.skill_manager = skill_manager
 
     @property

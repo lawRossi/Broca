@@ -7,7 +7,7 @@ class ReadFile(Tool):
     """Tool to read file contents."""
 
     def __init__(self):
-        super().__init__(30000)
+        super().__init__(max_content_length=30000)
 
     @property
     def name(self) -> str:

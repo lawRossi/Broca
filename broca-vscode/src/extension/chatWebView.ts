@@ -577,20 +577,11 @@ export class ChatWebViewManager {
   }
 
   private async handleRefreshChat(sessionId: string, panel: vscode.WebviewPanel) {
-    try {
-      console.log('[ChatWebView] Refreshing chat session:', sessionId)
-      // Dispose current session resources (socket + poll timers)
-      this.disposeSession(sessionId)
-      // Re-initialize from scratch (reconnect socket, reload history, re-fetch agents/runner status)
-      await this.initializeSession(sessionId, panel)
-      console.log('[ChatWebView] Chat session refreshed:', sessionId)
-    } catch (error: any) {
-      console.error('[ChatWebView] Failed to refresh chat:', error)
-      this.postToPanel(panel, {
-        type: 'error',
-        payload: { message: `Failed to refresh: ${error.message}` },
-      } as ExtensionToWebView)
-    }
+    console.log('[ChatWebView] Refreshing chat session:', sessionId)
+    // Close current panel — onDidDispose cleans up socket + poll timers
+    panel.dispose()
+    // Open a brand new chat panel from scratch
+    await this.openChat(sessionId)
   }
 
   private async handleFetchTasks(

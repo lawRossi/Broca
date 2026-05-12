@@ -351,9 +351,14 @@ function handleUndo() {
 
 function confirmUndo() {
   showUndoConfirm.value = false
-  
-  const targetAgentId = props.message.receiver_id || props.message.agent_id
-  chatStore.sendUndo(props.message.message_id, undoLevel.value, targetAgentId)
+  const message = props.message
+  let targetAgentId = null
+  if (message.message_type === 'user_message') {
+    targetAgentId = message.receiver_id || message.agent_id
+  } else {
+    targetAgentId = message.agent_id || message.sender_id
+  }
+  chatStore.sendUndo(message.message_id, undoLevel.value, targetAgentId)
 }
 
 function cancelUndo() {

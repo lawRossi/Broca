@@ -527,11 +527,15 @@ const confirmUndo = () => {
 // 执行撤销
 const handleUndoToHere = async () => {
   if (!canUndoThisMessage.value) return
-  
-  // 撤销需要指定目标 agent：
-  
-  const targetAgentId = props.message.receiver_id || props.message.agent_id
-  
+    
+  let targetAgentId = null
+  const message = props.message
+  if (message.message_type === 'user_message') {
+    targetAgentId = message.receiver_id || message.agent_id
+  } else {
+    targetAgentId = message.agent_id || message.sender_id
+  }
+
   try {
     await socketStore.sendUndo({
       targetMessageId: props.message.message_id,
