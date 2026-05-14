@@ -114,7 +114,14 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
     } catch (error: any) {
       console.error('Failed to fetch sessions:', error)
       // Show error notification to user
-      const message = error?.response?.data?.msg || error.message || 'Unknown error'
+      let message: string
+      if (!error?.response) {
+        // No HTTP response received — server unreachable or network issue
+        message = error.code === 'ECONNABORTED' ? 'Request timed out' : 'Cannot connect to server, please check if the service is running'
+      } else {
+        const respData = error?.response?.data
+        message = respData?.detail || respData?.msg || respData?.message || (typeof respData === 'string' ? respData : null) || error.message || 'Unknown error'
+      }
       vscode.window.showErrorMessage(`Failed to fetch sessions: ${message}`)
       // Don't clear existing sessions on error to avoid flickering
     }

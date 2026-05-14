@@ -90,7 +90,13 @@ export class ChatWebViewManager {
         }
       })
     } catch (error: any) {
-      const message = error?.response?.data?.msg || error.message || 'Unknown error'
+      let message: string
+      if (!error?.response) {
+        message = error.code === 'ECONNABORTED' ? 'Request timed out' : 'Cannot connect to server, please check if the service is running'
+      } else {
+        const respData = error?.response?.data
+        message = respData?.detail || respData?.msg || respData?.message || (typeof respData === 'string' ? respData : null) || error.message || 'Unknown error'
+      }
       vscode.window.showErrorMessage(`Failed to open chat: ${message}`)
     }
   }
