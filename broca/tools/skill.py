@@ -1,11 +1,11 @@
-from broca.skill_manager import SkillManager
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class LoadSkill(Tool):
-    def __init__(self, skill_manager: SkillManager):
+    def __init__(self):
         super().__init__(max_content_length=45000)
-        self.skill_manager = skill_manager
+        from broca.skill_manager import SkillManager
+        self.skill_manager = SkillManager()
 
     @property
     def name(self) -> str:

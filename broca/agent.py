@@ -6,7 +6,7 @@ This module defines the core Agent class, which encapsulates the agent's behavio
 
 import asyncio
 import uuid
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from broca.agent_configs import AgentConfig
 from broca.comm.agent_communicator import AgentCommunicator
@@ -145,8 +145,10 @@ class Agent:
         self.context = Context(self.config, self.session_manager, **kwargs)
 
     def _setup_tools(self):
-        """Set up tools for the agent"""
+        """Set up tools for the agent, including auto-discovered built-in tools
+        and custom tools from {workspace}/.broca/tool.py."""
         tool_manager = ToolManager()
+        tool_manager.load_custom_tools(self.config.workspace)
         tools = tool_manager.get_tools(tool_names=self.config.tools)
         self.tools = [tool.format() for tool in tools]
         self.tool_mapping = {tool.name: tool for tool in tools}
@@ -377,6 +379,7 @@ class Agent:
         message: Message,
         max_steps: Optional[int] = None,
         from_agent: Optional[bool] = False,
+        allowed_tools: Optional[List[str]] = None,
     ) -> ExecutionResult:
         """
         Run agent in async mode (replaces command-line interaction)
@@ -385,8 +388,12 @@ class Agent:
         handling high-level execution control and cleanup.
 
         Args:
-            user_message: Optional user message
+            message: The message to process
             max_steps: Maximum number of steps
+            from_agent: Whether the message is from another agent
+            allowed_tools: Optional list of tool names that are allowed to be called.
+                           If provided, any tool not in this list will be skipped
+                           with a "this tool is currently not allowed" result.
 
         Returns:
             ExecutionResult: Result of the execution with status and details
@@ -398,6 +405,9 @@ class Agent:
         # Clear undo meta info
         self.revert_service.undo_meta_info = {}
 
+        # Set allowed_tools on execution engine before execution
+        self.execution_engine.allowed_tools = allowed_tools
+
         try:
             return await self.execution_engine.execute(message, max_steps, from_agent)
         except Exception as e:
@@ -408,6 +418,8 @@ class Agent:
                 error=str(e),
             )
         finally:
+            # Reset allowed_tools to avoid affecting subsequent runs
+            self.execution_engine.allowed_tools = None
             # Clean up
             if not self.config.save_history:
                 await self.reset()

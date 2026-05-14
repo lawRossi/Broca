@@ -154,6 +154,9 @@ class ExecutionEngine:
         # 死循环检测
         self._recent_tool_call_signatures: List[List[str]] = []
 
+        # 允许调用的工具列表 (None 表示不限制)
+        self.allowed_tools: Optional[List[str]] = None
+
     def _initialize_snapshot_tracking(self):
         """初始化快照跟踪"""
         if self.config and hasattr(self.config, "workspace") and self.config.workspace:
@@ -471,6 +474,14 @@ class ExecutionEngine:
                 logger.error(f"Tool '{tool_name}' not found.")
                 tool_result = ToolResult(
                     status=ToolStatus.ERROR, content=f"Tool {tool_name} not found"
+                )
+            elif self.allowed_tools is not None and tool_name not in self.allowed_tools:
+                logger.warning(
+                    f"Tool '{tool_name}' is not in allowed_tools list, skipping."
+                )
+                tool_result = ToolResult(
+                    status=ToolStatus.ERROR,
+                    content="this tool is currently not allowed",
                 )
             else:
                 try:

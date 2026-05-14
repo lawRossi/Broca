@@ -1,6 +1,324 @@
+import re
 from pathlib import Path
+from typing import Generator, List, Optional
 
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+
+
+def _levenshtein(a: str, b: str) -> int:
+    """Levenshtein distance between two strings."""
+    if not a or not b:
+        return max(len(a), len(b))
+    matrix = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
+    for i in range(len(a) + 1):
+        matrix[i][0] = i
+    for j in range(len(b) + 1):
+        matrix[0][j] = j
+    for i in range(1, len(a) + 1):
+        for j in range(1, len(b) + 1):
+            cost = 0 if a[i - 1] == b[j - 1] else 1
+            matrix[i][j] = min(
+                matrix[i - 1][j] + 1,
+                matrix[i][j - 1] + 1,
+                matrix[i - 1][j - 1] + cost,
+            )
+    return matrix[len(a)][len(b)]
+
+
+# ---------- Replacers ----------
+
+Replacer = Generator[str, None, None]
+
+
+def _simple_replacer(content: str, find: str) -> Replacer:
+    """Exact match."""
+    yield find
+
+
+def _line_trimmed_replacer(content: str, find: str) -> Replacer:
+    """Line-by-line trimmed comparison."""
+    original_lines = content.split("\n")
+    search_lines = find.split("\n")
+    if search_lines and search_lines[-1] == "":
+        search_lines.pop()
+
+    for i in range(len(original_lines) - len(search_lines) + 1):
+        match = True
+        for j in range(len(search_lines)):
+            if original_lines[i + j].strip() != search_lines[j].strip():
+                match = False
+                break
+        if match:
+            start = sum(len(original_lines[k]) + 1 for k in range(i))
+            end = start + sum(
+                len(original_lines[i + k]) + (1 if k < len(search_lines) - 1 else 0)
+                for k in range(len(search_lines))
+            )
+            yield content[start:end]
+
+
+def _block_anchor_replacer(content: str, find: str) -> Replacer:
+    """First/last line anchors + levenshtein similarity for middle lines."""
+    original_lines = content.split("\n")
+    search_lines = find.split("\n")
+    if search_lines and search_lines[-1] == "":
+        search_lines.pop()
+    if len(search_lines) < 3:
+        return
+
+    first_line_search = search_lines[0].strip()
+    last_line_search = search_lines[-1].strip()
+
+    # Collect all candidate positions
+    candidates: List[tuple[int, int]] = []
+    for i in range(len(original_lines)):
+        if original_lines[i].strip() != first_line_search:
+            continue
+        for j in range(i + 2, len(original_lines)):
+            if original_lines[j].strip() == last_line_search:
+                candidates.append((i, j))
+                break
+
+    if not candidates:
+        return
+
+    single_threshold = 0.0
+    multi_threshold = 0.3
+
+    if len(candidates) == 1:
+        start_line, end_line = candidates[0]
+        actual_size = end_line - start_line + 1
+        lines_to_check = min(len(search_lines) - 2, actual_size - 2)
+        if lines_to_check > 0:
+            similarity = 0.0
+            for j in range(1, min(len(search_lines) - 1, actual_size - 1)):
+                ol = original_lines[start_line + j].strip()
+                sl = search_lines[j].strip()
+                max_len = max(len(ol), len(sl))
+                if max_len == 0:
+                    continue
+                similarity += (1 - _levenshtein(ol, sl) / max_len) / lines_to_check
+                if similarity >= single_threshold:
+                    break
+            if similarity < single_threshold:
+                return
+        start = sum(len(original_lines[k]) + 1 for k in range(start_line))
+        end = start + sum(
+            len(original_lines[k]) + (1 if k < end_line else 0)
+            for k in range(start_line, end_line + 1)
+        )
+        yield content[start:end]
+        return
+
+    # Multiple candidates - pick best
+    best_match: Optional[tuple[int, int]] = None
+    max_similarity = -1.0
+
+    for start_line, end_line in candidates:
+        actual_size = end_line - start_line + 1
+        lines_to_check = min(len(search_lines) - 2, actual_size - 2)
+        if lines_to_check > 0:
+            similarity = 0.0
+            for j in range(1, min(len(search_lines) - 1, actual_size - 1)):
+                ol = original_lines[start_line + j].strip()
+                sl = search_lines[j].strip()
+                max_len = max(len(ol), len(sl))
+                if max_len == 0:
+                    continue
+                similarity += 1 - _levenshtein(ol, sl) / max_len
+            similarity /= lines_to_check
+        else:
+            similarity = 1.0
+
+        if similarity > max_similarity:
+            max_similarity = similarity
+            best_match = (start_line, end_line)
+
+    if max_similarity >= multi_threshold and best_match:
+        start_line, end_line = best_match
+        start = sum(len(original_lines[k]) + 1 for k in range(start_line))
+        end = start + sum(
+            len(original_lines[k]) + (1 if k < end_line else 0)
+            for k in range(start_line, end_line + 1)
+        )
+        yield content[start:end]
+
+
+def _whitespace_normalized_replacer(content: str, find: str) -> Replacer:
+    """Normalize all whitespace (collapse to single space)."""
+
+    def normalize_ws(t: str) -> str:
+        return re.sub(r"\s+", " ", t).strip()
+
+    normalized_find = normalize_ws(find)
+
+    # Single line matches
+    for line in content.split("\n"):
+        if normalize_ws(line) == normalized_find:
+            yield line
+        else:
+            normalized_line = normalize_ws(line)
+            if normalized_find in normalized_line:
+                words = find.strip().split()
+                if words:
+                    pattern_str = r"\s+".join(re.escape(w) for w in words)
+                    m = re.search(pattern_str, line)
+                    if m:
+                        yield m.group(0)
+
+    # Multi-line matches
+    find_lines = find.split("\n")
+    if len(find_lines) > 1:
+        lines = content.split("\n")
+        for i in range(len(lines) - len(find_lines) + 1):
+            block = "\n".join(lines[i : i + len(find_lines)])
+            if normalize_ws(block) == normalized_find:
+                yield block
+
+
+def _indentation_flexible_replacer(content: str, find: str) -> Replacer:
+    """Remove common leading indentation before comparing."""
+
+    def remove_indent(text: str) -> str:
+        lines = text.split("\n")
+        non_empty = [l for l in lines if l.strip()]
+        if not non_empty:
+            return text
+        min_indent = min(
+            len(m.group(1))
+            for l in non_empty
+            if (m := re.match(r"^(\s*)", l))
+        )
+        return "\n".join(
+            l[min_indent:] if l.strip() else l for l in lines
+        )
+
+    normalized_find = remove_indent(find)
+    content_lines = content.split("\n")
+    find_lines = find.split("\n")
+
+    for i in range(len(content_lines) - len(find_lines) + 1):
+        block = "\n".join(content_lines[i : i + len(find_lines)])
+        if remove_indent(block) == normalized_find:
+            yield block
+
+
+def _escape_normalized_replacer(content: str, find: str) -> Replacer:
+    """Handle escape sequences in find string."""
+
+    def unescape(s: str) -> str:
+        return (
+            s.replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\r", "\r")
+            .replace("\\'", "'")
+            .replace('\\"', '"')
+            .replace("\\\\", "\\")
+        )
+
+    unescaped_find = unescape(find)
+
+    if unescaped_find in content:
+        yield unescaped_find
+
+    lines = content.split("\n")
+    find_lines = unescaped_find.split("\n")
+
+    for i in range(len(lines) - len(find_lines) + 1):
+        block = "\n".join(lines[i : i + len(find_lines)])
+        if unescape(block) == unescaped_find:
+            yield block
+
+
+def _trimmed_boundary_replacer(content: str, find: str) -> Replacer:
+    """Trim boundaries of search string."""
+    trimmed_find = find.strip()
+    if trimmed_find == find:
+        return
+    if trimmed_find in content:
+        yield trimmed_find
+
+    lines = content.split("\n")
+    find_lines = find.split("\n")
+    for i in range(len(lines) - len(find_lines) + 1):
+        block = "\n".join(lines[i : i + len(find_lines)])
+        if block.strip() == trimmed_find:
+            yield block
+
+
+def _context_aware_replacer(content: str, find: str) -> Replacer:
+    """Use first/last line as context anchors."""
+    find_lines = find.split("\n")
+    if find_lines and find_lines[-1] == "":
+        find_lines.pop()
+    if len(find_lines) < 3:
+        return
+
+    content_lines = content.split("\n")
+    first_line = find_lines[0].strip()
+    last_line = find_lines[-1].strip()
+
+    for i in range(len(content_lines)):
+        if content_lines[i].strip() != first_line:
+            continue
+        for j in range(i + 2, len(content_lines)):
+            if content_lines[j].strip() == last_line:
+                block_lines = content_lines[i : j + 1]
+                if len(block_lines) == len(find_lines):
+                    matching = 0
+                    total = 0
+                    for k in range(1, len(block_lines) - 1):
+                        bl = block_lines[k].strip()
+                        fl = find_lines[k].strip()
+                        if bl or fl:
+                            total += 1
+                            if bl == fl:
+                                matching += 1
+                    if total == 0 or matching / total >= 0.5:
+                        yield "\n".join(block_lines)
+                break
+
+
+def _multi_occurrence_replacer(content: str, find: str) -> Replacer:
+    """Yield all exact matches of find in content."""
+    start = 0
+    while True:
+        idx = content.find(find, start)
+        if idx == -1:
+            break
+        yield find
+        start = idx + len(find)
+
+
+def _find_old_text(content: str, old_text: str, replace_all: bool) -> Optional[str]:
+    """
+    Try all replacer strategies to find old_text in content.
+    Returns the actual matched string if found, None otherwise.
+    """
+    for replacer in [
+        _simple_replacer,
+        _line_trimmed_replacer,
+        _block_anchor_replacer,
+        _whitespace_normalized_replacer,
+        _indentation_flexible_replacer,
+        _escape_normalized_replacer,
+        _trimmed_boundary_replacer,
+        _context_aware_replacer,
+        _multi_occurrence_replacer,
+    ]:
+        for match in replacer(content, old_text):
+            idx = content.find(match)
+            if idx == -1:
+                continue
+            if replace_all:
+                return match
+            # For single replacement, ensure it's the last occurrence
+            last_idx = content.rfind(match)
+            if idx == last_idx:
+                return match
+            # Multiple occurrences of this match; try next replacer
+            break
+    return None
 
 
 class ReadFile(Tool):
@@ -255,21 +573,23 @@ class EditFile(Tool):
 
             content = file_path.read_text(encoding=encoding)
 
-            if old_text not in content:
+            # Use multi-strategy search to find old_text
+            actual_old = _find_old_text(content, old_text, replace_all)
+            if actual_old is None:
                 return ToolResult(
                     status=ToolStatus.ERROR,
-                    content="Error: old_text not found in file. Make sure it matches exactly.",
+                    content="Error: old_text not found in file. Make sure it matches exactly, including whitespace, indentation, and line endings.",
                 )
 
-            # Count occurrences
-            count = content.count(old_text)
+            # Count occurrences of the actual match
+            count = content.count(actual_old)
             if count > 1 and not replace_all:
                 return ToolResult(
                     status=ToolStatus.ERROR,
                     content=f"Error: old_text appears {count} times. Please provide more context to make it unique or set replace_all to true.",
                 )
 
-            new_content = content.replace(old_text, new_text)
+            new_content = content.replace(actual_old, new_text)
             file_path.write_text(new_content, encoding=encoding)
 
             return ToolResult(

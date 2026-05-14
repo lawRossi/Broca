@@ -7,9 +7,9 @@ Session Memory 管理器
 import asyncio
 import copy
 import shutil
+import time
 from dataclasses import dataclass
 from pathlib import Path
-import time
 
 from broca.agent_configs import SessionMemoryConfig
 from broca.agent_manager import AgentFactory
@@ -229,7 +229,6 @@ class SessionMemoryManager:
             agent_config = self.agent.config.to_dict()
             agent_config["name"] = "session-memory-agent"
             agent_config["role"] = "session_memory_manager"
-            agent_config["tools"] = ["edit_file"]
             agent_config["track_session_momory"] = False
             agent_config["enable_context_compression"] = False
             agent_config["save_history"] = False
@@ -253,7 +252,7 @@ class SessionMemoryManager:
         trigger_message = MessageProtocol.create_user_message(
             content=user_prompt,
         )
-        result = await sub_agent.run(trigger_message, from_agent=True)
+        result = await sub_agent.run(trigger_message, from_agent=True, allowed_tools=["edit_file"])
 
         if result.status != ExecutionStatus.COMPLETED:
             logger.warning(
