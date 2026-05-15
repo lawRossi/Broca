@@ -4,9 +4,14 @@
 
 **一个可扩展的智能体框架，支持多UI实时交互**
 
-![Web端界面](resource/web_snapshot.png)
-![VS Code插件界面](resource/vscode_snapshot.png)
 </div>
+
+### web端界面
+![Web端界面](resource/web_snapshot.png)
+
+### VS Code插件界面
+
+![VS Code插件界面](resource/vscode_snapshot.png)
 
 ---
 
