@@ -42,6 +42,12 @@ export interface RunnerInfo {
   uptime_seconds: number
 }
 
+export interface SessionStats {
+  total_messages: number
+  messages_by_type: Record<string, number>
+  tool_call_errors: number
+}
+
 export interface LLMProvider {
   id: string
   name: string

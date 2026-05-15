@@ -49,6 +49,12 @@ export interface RunnerInfo {
   uptime_seconds: number
 }
 
+export interface SessionStats {
+  total_messages: number
+  messages_by_type: Record<string, number>
+  tool_call_errors: number
+}
+
 export interface Agent {
   agent_id: string
   config_id: string
@@ -117,12 +123,12 @@ export interface WebViewMessage {
 
 // Extension → WebView messages
 export interface ExtensionToWebView {
-  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted'
+  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'sessionStats' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted'
   payload: any
 }
 
 // WebView → Extension messages
 export interface WebViewToExtension {
-  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile' | 'runnerAction' | 'fetchRunnerStatus' | 'fetchAgents' | 'openFile' | 'fetchTasks' | 'fetchTaskDetail' | 'createTask' | 'updateTask' | 'deleteTask' | 'addTaskComment' | 'fetchJobs' | 'fetchJobDetail' | 'executeJob' | 'pauseJob' | 'resumeJob' | 'deleteJob'
+  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile' | 'runnerAction' | 'fetchRunnerStatus' | 'fetchSessionStats' | 'fetchAgents' | 'openFile' | 'fetchTasks' | 'fetchTaskDetail' | 'createTask' | 'updateTask' | 'deleteTask' | 'addTaskComment' | 'fetchJobs' | 'fetchJobDetail' | 'executeJob' | 'pauseJob' | 'resumeJob' | 'deleteJob'
   payload?: any
 }

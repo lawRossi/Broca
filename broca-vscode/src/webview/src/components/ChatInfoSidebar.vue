@@ -1,8 +1,9 @@
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chat'
-import { postMessage } from '../api/vscode'
+import { postMessage, onMessage } from '../api/vscode'
 import { taskApi, jobApi } from '../utils/api'
+import type { SessionStats } from '../types'
 
 const chatStore = useChatStore()
 
@@ -36,21 +37,79 @@ async function fetchCounts() {
   }
 }
 
-onMounted(() => {
-  fetchCounts()
+// ==================== Session 统计（通过 API 获取，与 Web 版一致） ====================
+const stats = ref<SessionStats | null>(null)
+const statsLoading = ref(false)
+let statsPollingTimer: ReturnType<typeof setInterval> | null = null
+let removeMessageListener: (() => void) | null = null
+
+async function fetchStats() {
+  const sessionId = chatStore.sessionId
+  if (!sessionId) return
+
+  statsLoading.value = true
+  postMessage({
+    type: 'fetchSessionStats',
+    payload: { sessionId },
+  })
+  // 不在这里设置 statsLoading=false，等待响应消息
+}
+
+function startStatsPolling() {
+  stopStatsPolling()
+  // 每 30 秒轮询一次
+  statsPollingTimer = setInterval(() => {
+    fetchStats()
+  }, 30000)
+}
+
+function stopStatsPolling() {
+  if (statsPollingTimer) {
+    clearInterval(statsPollingTimer)
+    statsPollingTimer = null
+  }
+}
+
+// 计算型统计（与 Web 版保持一致）
+const totalMessagesFromApi = computed(() => stats.value?.total_messages || 0)
+
+const userMessagesFromApi = computed(() => {
+  if (!stats.value?.messages_by_type) return 0
+  return stats.value.messages_by_type['MessageType.USER_MESSAGE'] || stats.value.messages_by_type['USER_MESSAGE'] || 0
 })
 
-// ==================== Session 统计 ====================
-const stats = computed(() => {
-  const msgs = chatStore.messages
-  return {
-    total: msgs.length,
-    userMessages: msgs.filter(m => m.message_type === 'user_message' || m.role === 'user').length,
-    agentResponses: msgs.filter(m => m.message_type === 'agent_response' || m.role === 'assistant').length,
-    systemMessages: msgs.filter(m => m.message_type === 'system_message' || m.role === 'system').length,
-    toolCalls: msgs.filter(m => m.message_type === 'tool_call').length,
-    toolCallErrors: msgs.filter(m => m.message_type === 'tool_call' && (m.data?.status === false || m.data?.status === 'error')).length,
-  }
+const assistantMessagesFromApi = computed(() => {
+  if (!stats.value?.messages_by_type) return 0
+  return (
+    stats.value.messages_by_type['MessageType.AGENT_RESPONSE'] || stats.value.messages_by_type['AGENT_RESPONSE'] || 0
+  )
+})
+
+const systemMessagesFromApi = computed(() => {
+  if (!stats.value?.messages_by_type) return 0
+  let count = 0
+  const typeMap = stats.value.messages_by_type
+  count += typeMap['MessageType.SYSTEM_MESSAGE'] || typeMap['SYSTEM_MESSAGE'] || 0
+  count += typeMap['MessageType.AGENT_SYSTEM_MESSAGE'] || typeMap['AGENT_SYSTEM_MESSAGE'] || 0
+  count += typeMap['MessageType.COMMAND'] || typeMap['COMMAND'] || 0
+  count += typeMap['MessageType.COMMAND_RESULT'] || typeMap['COMMAND_RESULT'] || 0
+  count += typeMap['MessageType.PERMISSION_REQUEST'] || typeMap['PERMISSION_REQUEST'] || 0
+  count += typeMap['MessageType.PERMISSION_RESPONSE'] || typeMap['PERMISSION_RESPONSE'] || 0
+  count += typeMap['MessageType.SUBSCRIBE'] || typeMap['SUBSCRIBE'] || 0
+  count += typeMap['MessageType.UNSUBSCRIBE'] || typeMap['UNSUBSCRIBE'] || 0
+  count += typeMap['MessageType.BROADCAST'] || typeMap['BROADCAST'] || 0
+  count += typeMap['MessageType.TURN_START'] || typeMap['TURN_START'] || 0
+  count += typeMap['MessageType.TURN_END'] || typeMap['TURN_END'] || 0
+  return count
+})
+
+const toolCallsFromApi = computed(() => {
+  if (!stats.value?.messages_by_type) return 0
+  return stats.value.messages_by_type['MessageType.TOOL_CALL'] || stats.value.messages_by_type['TOOL_CALL'] || 0
+})
+
+const toolCallErrorsFromApi = computed(() => {
+  return stats.value?.tool_call_errors || 0
 })
 
 // ==================== Runner 状态 ====================
@@ -105,8 +164,38 @@ function handleRefreshRunner() {
   })
 }
 
+function handleRefreshStats() {
+  fetchStats()
+}
+
 // ==================== 侧栏状态 ====================
 const isOpen = computed(() => chatStore.showRightSidebar)
+
+onMounted(() => {
+  fetchCounts()
+
+  // 监听 sessionStats 响应
+  removeMessageListener = onMessage((data: any) => {
+    if (data.type === 'sessionStats') {
+      stats.value = data.payload
+      statsLoading.value = false
+    }
+  })
+
+  // 初始获取统计
+  if (chatStore.sessionId) {
+    fetchStats()
+    startStatsPolling()
+  }
+})
+
+onUnmounted(() => {
+  stopStatsPolling()
+  if (removeMessageListener) {
+    removeMessageListener()
+    removeMessageListener = null
+  }
+})
 </script>
 
 <template>
@@ -123,7 +212,7 @@ const isOpen = computed(() => chatStore.showRightSidebar)
         <div class="panel-body">
           <div class="info-row">
             <span>Total Messages</span>
-            <span class="nav-badge">{{ stats.total }}</span>
+            <span class="nav-badge">{{ totalMessagesFromApi }}</span>
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">
             <span>📋</span>
@@ -183,32 +272,39 @@ const isOpen = computed(() => chatStore.showRightSidebar)
 
       <!-- ==================== Message Statistics ==================== -->
       <div class="panel">
-        <div class="panel-title">Message Statistics</div>
+        <div class="panel-title">
+          <span>Message Statistics</span>
+          <button class="refresh-btn" @click="handleRefreshStats" title="刷新">🔄</button>
+        </div>
         <div class="panel-body">
           <div class="stat-item">
             <span class="stat-dot dot-blue"></span>
             <span class="stat-label">User Messages</span>
-            <span class="stat-value">{{ stats.userMessages }}</span>
+            <span class="stat-value">{{ userMessagesFromApi }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-dot dot-green"></span>
             <span class="stat-label">Assistant Responses</span>
-            <span class="stat-value">{{ stats.agentResponses }}</span>
+            <span class="stat-value">{{ assistantMessagesFromApi }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-dot dot-gray"></span>
             <span class="stat-label">System Messages</span>
-            <span class="stat-value">{{ stats.systemMessages }}</span>
+            <span class="stat-value">{{ systemMessagesFromApi }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-dot dot-purple"></span>
             <span class="stat-label">Tool Calls</span>
-            <span class="stat-value">{{ stats.toolCalls }}</span>
+            <span class="stat-value">{{ toolCallsFromApi }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-dot dot-red"></span>
             <span class="stat-label">Tool Call Errors</span>
-            <span class="stat-value" :class="{ 'error-value': stats.toolCallErrors > 0 }">{{ stats.toolCallErrors }}</span>
+            <span class="stat-value" :class="{ 'error-value': toolCallErrorsFromApi > 0 }">{{ toolCallErrorsFromApi }}</span>
+          </div>
+          <div v-if="statsLoading" class="stat-loading">
+            <span class="loading-spinner"></span>
+            <span class="loading-text">刷新中...</span>
           </div>
         </div>
       </div>
@@ -496,6 +592,29 @@ const isOpen = computed(() => chatStore.showRightSidebar)
 .stat-value.error-value {
   color: var(--error-fg);
   font-weight: 700;
+}
+
+/* ==================== Stat Loading ==================== */
+.stat-loading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 0;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+
+.loading-spinner {
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--border-color);
+  border-top-color: var(--text-secondary);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+.loading-text {
+  color: var(--text-secondary);
 }
 
 /* Mobile responsive */

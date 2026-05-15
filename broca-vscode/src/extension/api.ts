@@ -8,6 +8,7 @@ import type {
   UpdateSessionParams,
   RunnerInfo,
   Agent,
+  SessionStats,
   MessagesResponse,
   LLMProvider,
   LLMModel,
@@ -110,6 +111,13 @@ export class ApiClient {
 
   async getSessionAgents(sessionId: string): Promise<Agent[]> {
     const response = await this.client.get(`/session/${sessionId}/agents`)
+    return response.data
+  }
+
+  // ==================== Stats API ====================
+
+  async getSessionStats(sessionId: string): Promise<SessionStats> {
+    const response = await this.client.get(`/session/${sessionId}/stats`)
     return response.data
   }
 

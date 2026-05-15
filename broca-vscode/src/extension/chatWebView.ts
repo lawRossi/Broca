@@ -208,6 +208,10 @@ export class ChatWebViewManager {
         await this.handleFetchRunnerStatus(sessionId, panel)
         break
 
+      case 'fetchSessionStats':
+        await this.handleFetchSessionStats(sessionId, panel)
+        break
+
       case 'fetchAgents':
         await this.handleFetchAgents(sessionId, panel)
         break
@@ -488,6 +492,15 @@ export class ChatWebViewManager {
       this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
     } catch (error: any) {
       console.error('Failed to fetch runner status:', error)
+    }
+  }
+
+  private async handleFetchSessionStats(sessionId: string, panel: vscode.WebviewPanel) {
+    try {
+      const stats = await this.apiClient.getSessionStats(sessionId)
+      this.postToPanel(panel, { type: 'sessionStats', payload: stats } as ExtensionToWebView)
+    } catch (error: any) {
+      console.error('Failed to fetch session stats:', error)
     }
   }
 
