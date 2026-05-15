@@ -74,6 +74,11 @@ export class ApiClient {
     return response.data
   }
 
+  async getSession(sessionId: string): Promise<Session> {
+    const response = await this.client.get(`/session/${sessionId}`)
+    return response.data
+  }
+
   async createSession(params: CreateSessionParams = {}): Promise<CreateSessionResponse> {
     const response = await this.client.post('/session/sessions', params)
     return response.data

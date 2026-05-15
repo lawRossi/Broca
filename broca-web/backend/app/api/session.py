@@ -140,20 +140,21 @@ async def get_sessions(skip: int = 0, limit: int = 20, keyword: str | None = Non
     try:
         session_service = get_session_service()
 
-        # 获取分页数据
+        # 获取所有会话
         sessions = await session_service.get_batch(order_by="created_at desc")
-        total = len(sessions)
-        sessions = sessions[skip : skip + limit]
 
-        # 关键词过滤（在内存中过滤）
-        if keyword and sessions:
+        # 关键词过滤（在分页之前，确保搜索能查到所有匹配的记录）
+        if keyword:
             keyword_lower = keyword.lower()
             sessions = [
                 s
                 for s in sessions
                 if (s.description and keyword_lower in s.description.lower()) or keyword_lower in s.session_id.lower()
             ]
-            total = len(sessions)
+
+        # 分页
+        total = len(sessions)
+        sessions = sessions[skip : skip + limit]
 
         # 附加上 Runner 状态
         runner_manager = RunnerManager()
@@ -167,6 +168,28 @@ async def get_sessions(skip: int = 0, limit: int = 20, keyword: str | None = Non
         return ApiResponse.success({"sessions": session_list, "total": total, "skip": skip, "limit": limit})
     except Exception as e:
         logger.error(f"Error getting sessions: {e}")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.get("/{session_id}", response_model=ApiResponse)
+async def get_session(session_id: str) -> ApiResponse:
+    """直接根据 session_id 获取单个会话详情"""
+    try:
+        session_service = get_session_service()
+        session = await session_service.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        session_dict = session.model_dump()
+        runner_manager = RunnerManager()
+        runner_status = runner_manager.get_session_status(session_id)
+        session_dict["runner_status"] = runner_status["status"] if runner_status else "none"
+
+        return ApiResponse.success(session_dict, msg="Session retrieved successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error getting session: {e}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 

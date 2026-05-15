@@ -45,9 +45,8 @@ export class ChatWebViewManager {
       }
 
       // Get session info for title
-      const session = await this.apiClient.getSessions({ limit: 1, keyword: sessionId })
-      const sessionInfo = session.sessions?.[0]
-      const title = sessionInfo?.description || sessionId.slice(0, 8) + '...'
+      const sessionInfo = await this.apiClient.getSession(sessionId)
+      const title = sessionInfo?.description || sessionId
 
       // Create new WebView panel
       const panel = vscode.window.createWebviewPanel(
