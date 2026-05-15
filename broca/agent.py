@@ -189,7 +189,9 @@ class Agent:
         from broca.session_memory import SessionMemoryManager
 
         self.session_memory_manager = SessionMemoryManager(
-            workspace=self.config.workspace, agent=self, config=self.config.session_memory_config
+            workspace=self.config.workspace,
+            agent=self,
+            config=self.config.session_memory_config,
         )
 
     def _setup_execution_engine(self):
@@ -360,7 +362,10 @@ class Agent:
         while self.running:
             try:
                 if not self.is_connected():
-                    await self.connect()
+                    if not await self.connect():
+                        logger.error("Failed to connect to server")
+                        self.running = False
+                        break
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
                 if message.message_type == MessageType.USER_MESSAGE:
                     await self.run(message)
@@ -477,11 +482,15 @@ class Agent:
         """Check if connected to server"""
         return self.communicator.is_connected()
 
-    async def connect(self):
+    async def connect(self) -> bool:
         """Connect to server"""
         connected = await self.communicator.connect()
         if connected:
             await self._set_status(self.STATUS_IDEL)
+            return True
+        else:
+            await self._set_status(self.STATUS_DISCONNECTED)
+            return False
 
     async def on_llm_call_completed(self, input_tokens: int, output_tokens: int):
         """
