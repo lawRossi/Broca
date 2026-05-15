@@ -2,8 +2,10 @@
 
 <div align="center">
 
-**一个可扩展的多智能体框架，支持 LLM 驱动的自动化任务执行**
+**一个可扩展的智能体框架，支持多UI实时交互**
 
+![Web端界面](resource/web_snapshot.png)
+![VS Code插件界面](resource/vscode_snapshot.png)
 </div>
 
 ---
@@ -104,7 +106,7 @@ Broca 是一个用 Python 构建的轻量级 AI Agent 框架，核心设计理�
 ### 后端核心
 
 | 技术 | 用途 |
-|------|------|------|
+|------|------|
 | Python | 主语言 |
 | [litellm](https://github.com/BerriAI/litellm) | 统一 LLM API 接入 |
 | [SQLModel](https://sqlmodel.tiangolo.com/) | ORM + 数据建模 |
