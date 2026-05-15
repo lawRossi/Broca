@@ -3,7 +3,6 @@ Broca CLI - Command Line Interface Entry Point
 """
 
 import argparse
-import asyncio
 import subprocess
 import sys
 from pathlib import Path
@@ -28,29 +27,12 @@ def get_version():
 
 def get_web_backend_path():
     """Get the web backend directory path"""
-    return Path(__file__).parent.parent / "web" / "backend"
+    return Path(__file__).parent.parent.parent / "broca-web" / "backend"
 
 
 def get_web_frontend_path():
     """Get the web frontend directory path"""
-    return Path(__file__).parent.parent / "web" / "frontend"
-
-
-def run_tui():
-    """Launch the Text User Interface"""
-    try:
-        logger.debug("Starting TUI")
-        from broca.cli.tui import main as tui_main
-
-        asyncio.run(tui_main())
-    except ImportError as e:
-        logger.error(f"Error: Could not import TUI module: {e}")
-        sys.exit(1)
-    except KeyboardInterrupt:
-        print("\nGoodbye!")
-    except Exception as e:
-        logger.error(f"Error launching TUI: {e}")
-        sys.exit(1)
+    return Path(__file__).parent.parent.parent / "broca-web" / "frontend"
 
 
 def check_pnpm():
@@ -434,11 +416,6 @@ def main():
     """Main entry point"""
     parser = create_parser()
     args = parser.parse_args()
-
-    # Handle no command (run TUI)
-    if args.command is None:
-        run_tui()
-        return
 
     # Route to appropriate handler
     if args.command == "web":
