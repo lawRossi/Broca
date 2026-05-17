@@ -10,7 +10,10 @@
 ![PC端Web界面](resource/web_snapshot.png)
 
 ### 移动端web界面
-![移动端Web界面](resource/phone_snapshot.jpeg)
+
+<div align="center">
+  <img src="resource/phone_snapshot.jpeg" alt="移动端Web界面" width="50%"/>
+<div>
 
 ### VS Code插件界面
 
