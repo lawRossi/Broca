@@ -10,6 +10,7 @@ export class ChatWebViewManager {
   private socketClients = new Map<string, SocketClient>()
   private runnerPollTimers = new Map<string, NodeJS.Timeout>()
   private apiClient: ApiClient
+  private createSessionPanel: vscode.WebviewPanel | null = null
 
   constructor(
     private context: vscode.ExtensionContext,
@@ -159,6 +160,292 @@ export class ChatWebViewManager {
         }
       }
     })
+  }
+
+  async openCreateSessionDialog(onSessionCreated?: () => void) {
+    // Close existing panel if any
+    if (this.createSessionPanel) {
+      try { this.createSessionPanel.dispose() } catch {}
+      this.createSessionPanel = null
+    }
+
+    const panel = vscode.window.createWebviewPanel(
+      'broca.createSession',
+      'Create Session',
+      { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
+      {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [
+          vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
+        ],
+      }
+    )
+
+    this.createSessionPanel = panel
+    panel.onDidDispose(() => { this.createSessionPanel = null })
+
+    // Get workspace path for pre-fill
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || ''
+
+    // Get defaults from config
+    const defaultProvider = this.configManager.get('defaultProvider') || ''
+    const defaultModel = this.configManager.get('defaultModel') || ''
+
+    panel.webview.html = this.getCreateSessionHtml(workspacePath, defaultProvider, defaultModel)
+
+    panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
+      switch (message.type) {
+        case 'getProviders':
+          try {
+            const providers = await this.apiClient.getLLMProviders()
+            this.postToPanel(panel, { type: 'providers', payload: providers } as ExtensionToWebView)
+          } catch (error: any) {
+            this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+          }
+          break
+
+        case 'getModels':
+          try {
+            const models = await this.apiClient.getLLMModels(message.payload.provider)
+            this.postToPanel(panel, { type: 'models', payload: models } as ExtensionToWebView)
+          } catch (error: any) {
+            this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+          }
+          break
+
+        case 'createSession':
+          try {
+            const result = await this.apiClient.createSession(message.payload)
+            this.postToPanel(panel, { type: 'sessionCreated', payload: result } as ExtensionToWebView)
+            vscode.window.showInformationMessage('Session created successfully')
+            panel.dispose()
+            if (onSessionCreated) onSessionCreated()
+          } catch (error: any) {
+            this.postToPanel(panel, {
+              type: 'error',
+              payload: { message: error.message || 'Failed to create session' },
+            } as ExtensionToWebView)
+          }
+          break
+
+        case 'cancel':
+          panel.dispose()
+          break
+      }
+    })
+  }
+
+  private getCreateSessionHtml(workspacePath: string, defaultProvider: string, defaultModel: string): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Create Session</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      background: var(--vscode-editor-background, #1e1e1e);
+      color: var(--vscode-editor-foreground, #cccccc);
+      padding: 20px;
+    }
+    .container { max-width: 480px; margin: 0 auto; }
+    h1 { font-size: 18px; font-weight: 600; margin-bottom: 20px; }
+    .field { margin-bottom: 16px; }
+    label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      margin-bottom: 4px;
+      color: var(--vscode-descriptionForeground, #888);
+    }
+    input, select {
+      width: 100%;
+      padding: 8px 10px;
+      background: var(--vscode-input-background, #3c3c3c);
+      color: var(--vscode-input-foreground, #cccccc);
+      border: 1px solid var(--vscode-input-border, #555);
+      border-radius: 4px;
+      font-size: 13px;
+      outline: none;
+    }
+    input:focus, select:focus {
+      border-color: var(--vscode-focusBorder, #007fd4);
+    }
+    input::placeholder { color: var(--vscode-input-placeholderForeground, #888); }
+    .hint { font-size: 11px; color: var(--vscode-descriptionForeground, #888); margin-top: 3px; }
+    .buttons {
+      display: flex;
+      gap: 8px;
+      margin-top: 24px;
+      justify-content: flex-end;
+    }
+    button {
+      padding: 8px 20px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      cursor: pointer;
+      font-weight: 500;
+    }
+    .btn-primary {
+      background: var(--vscode-button-background, #007acc);
+      color: var(--vscode-button-foreground, #fff);
+    }
+    .btn-primary:hover { background: var(--vscode-button-hoverBackground, #005a9e); }
+    .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+    .btn-secondary {
+      background: var(--vscode-button-secondaryBackground, #3a3d41);
+      color: var(--vscode-button-secondaryForeground, #ccc);
+    }
+    .btn-secondary:hover { background: var(--vscode-button-secondaryHoverBackground, #45494e); }
+    .error {
+      color: var(--vscode-errorForeground, #f48771);
+      font-size: 12px;
+      margin-top: 8px;
+      display: none;
+    }
+    .loading { opacity: 0.6; pointer-events: none; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Create Session</h1>
+
+    <div class="field">
+      <label for="description">Description</label>
+      <input id="description" type="text" placeholder="e.g., Debug the login issue (optional)" />
+      <div class="hint">Optional. Leave empty to skip.</div>
+    </div>
+
+    <div class="field">
+      <label for="provider">LLM Provider</label>
+      <select id="provider">
+        <option value="">-- Use default${defaultProvider ? ' (' + defaultProvider + ')' : ''} --</option>
+      </select>
+      <div class="hint">Select a provider or leave empty to use default.</div>
+    </div>
+
+    <div class="field">
+      <label for="model">LLM Model</label>
+      <select id="model" disabled>
+        <option value="">-- Select provider first --</option>
+      </select>
+      <div class="hint">Select a model or leave empty to use default.</div>
+    </div>
+
+    <div class="error" id="errorMsg"></div>
+
+    <div class="buttons">
+      <button class="btn-secondary" id="cancelBtn">Cancel</button>
+      <button class="btn-primary" id="createBtn">Create Session</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const vscode = acquireVsCodeApi();
+      const providerSelect = document.getElementById('provider');
+      const modelSelect = document.getElementById('model');
+      const createBtn = document.getElementById('createBtn');
+      const cancelBtn = document.getElementById('cancelBtn');
+      const errorMsg = document.getElementById('errorMsg');
+      const descriptionInput = document.getElementById('description');
+
+      let providers = [];
+      let models = [];
+
+      const defaultProviderVal = ${JSON.stringify(defaultProvider)};
+      const defaultModelVal = ${JSON.stringify(defaultModel)};
+
+      // Request providers on load
+      vscode.postMessage({ type: 'getProviders' });
+
+      // Listen for messages
+      window.addEventListener('message', (event) => {
+        const msg = event.data;
+        switch (msg.type) {
+          case 'providers':
+            providers = msg.payload || [];
+            renderProviders();
+            break;
+          case 'models':
+            models = msg.payload || [];
+            renderModels();
+            break;
+          case 'sessionCreated':
+            createBtn.disabled = false;
+            createBtn.textContent = 'Create Session';
+            break;
+          case 'error':
+            createBtn.disabled = false;
+            createBtn.textContent = 'Create Session';
+            errorMsg.textContent = msg.payload?.message || 'Unknown error';
+            errorMsg.style.display = 'block';
+            break;
+        }
+      });
+
+      function renderProviders() {
+        providerSelect.innerHTML = '<option value="">-- Use default' + (defaultProviderVal ? ' (' + defaultProviderVal + ')' : '') + ' --</option>';
+        providers.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.textContent = p.name || p.id;
+          providerSelect.appendChild(opt);
+        });
+      }
+
+      function renderModels() {
+        modelSelect.innerHTML = '<option value="">-- Use default' + (defaultModelVal ? ' (' + defaultModelVal + ')' : '') + ' --</option>';
+        models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.name || m.id;
+          modelSelect.appendChild(opt);
+        });
+        modelSelect.disabled = false;
+      }
+
+      // When provider changes, fetch models
+      providerSelect.addEventListener('change', () => {
+        const provider = providerSelect.value;
+        modelSelect.disabled = true;
+        modelSelect.innerHTML = '<option value="">Loading...</option>';
+        models = [];
+        if (provider) {
+          vscode.postMessage({ type: 'getModels', payload: { provider } });
+        } else {
+          modelSelect.innerHTML = '<option value="">-- Select provider first --</option>';
+        }
+      });
+
+      createBtn.addEventListener('click', () => {
+        createBtn.disabled = true;
+        createBtn.textContent = 'Creating...';
+        errorMsg.style.display = 'none';
+
+        const description = descriptionInput.value.trim() || undefined;
+        const provider = providerSelect.value || defaultProviderVal || undefined;
+        const model = modelSelect.value || defaultModelVal || undefined;
+        const workspace = ${JSON.stringify(workspacePath)} || undefined;
+
+        vscode.postMessage({
+          type: 'createSession',
+          payload: { description, workspace, provider, model }
+        });
+      });
+
+      cancelBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'cancel' });
+      });
+    })();
+  </script>
+</body>
+</html>`
   }
 
   private async handleWebViewMessage(

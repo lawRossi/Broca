@@ -5,7 +5,6 @@ import { AuthManager } from './auth'
 import { ConfigManager } from './config'
 
 import { ApiClient } from './api'
-import type { CreateSessionParams } from './types'
 
 let authManager: AuthManager
 let configManager: ConfigManager
@@ -48,7 +47,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('broca.createSession', async () => {
-      await handleCreateSession()
+      if (!authManager.isLoggedIn) {
+        vscode.window.showErrorMessage('Please login first')
+        return
+      }
+      chatWebViewManager.openCreateSessionDialog(() => {
+        sessionTreeProvider.refresh()
+      })
     })
   )
 
@@ -163,52 +168,6 @@ export async function activate(context: vscode.ExtensionContext) {
   sessionTreeProvider.refresh()
 
   console.log('Broca extension activated')
-}
-
-async function handleCreateSession() {
-  if (!authManager.isLoggedIn) {
-    vscode.window.showErrorMessage('Please login first')
-    return
-  }
-
-  // Get current workspace path
-  const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || ''
-
-  // Ask for description
-  const description = await vscode.window.showInputBox({
-    prompt: 'Session description (optional)',
-    placeHolder: 'e.g., Debug the login issue',
-    ignoreFocusOut: true,
-  })
-
-  if (description === undefined) return // User cancelled
-
-  // Get default config
-  const defaultProvider = configManager.get('defaultProvider')
-  const defaultModel = configManager.get('defaultModel')
-
-  try {
-    await vscode.window.withProgress(
-      {
-        location: vscode.ProgressLocation.Notification,
-        title: 'Creating session...',
-        cancellable: false,
-      },
-      async () => {
-        await apiClient.createSession({
-          description: description || undefined,
-          workspace: workspacePath || undefined,
-          provider: defaultProvider || undefined,
-          model: defaultModel || undefined,
-        })
-      }
-    )
-
-    vscode.window.showInformationMessage('Session created successfully')
-    sessionTreeProvider.refresh()
-  } catch (error: any) {
-    vscode.window.showErrorMessage(`Failed to create session: ${error.message || 'Unknown error'}`)
-  }
 }
 
 async function handleDeleteSession(item: any) {
