@@ -6,8 +6,11 @@
 
 </div>
 
-### web端界面
-![Web端界面](resource/web_snapshot.png)
+### PC端web界面
+![PC端Web界面](resource/web_snapshot.png)
+
+### 移动端web界面
+![移动端Web界面](resource/phone_snapshot.jpeg)
 
 ### VS Code插件界面
 
