@@ -11,9 +11,7 @@
 
 ### 移动端web界面
 
-<div align="center">
-  <img src="resource/phone_snapshot.jpeg" alt="移动端Web界面" width="50%"/>
-<div>
+<img src="resource/phone_snapshot.jpeg" alt="移动端Web界面" width="50%"/>
 
 ### VS Code插件界面
 
