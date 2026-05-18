@@ -816,24 +816,7 @@ export class ChatWebViewManager {
     payload: { fileName: string; fileType: string; base64Data: string; fileSize: number }
   ) {
     try {
-      const supabase = this.authManager.supabaseClient
-      if (!supabase) {
-        throw new Error('Supabase is not configured')
-      }
-
-      // 从 JWT token 中解码 userId
-      const token = this.authManager.token
-      let userId = 'unknown'
-      if (token) {
-        try {
-          const payload_ = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString())
-          userId = payload_.sub || 'unknown'
-        } catch {
-          console.warn('[UploadFile] Failed to decode userId from token')
-        }
-      }
-
-      // 生成唯一文件名和路径（与 web 版一致）
+      // 生成唯一文件名和路径（不依赖 userId，使用 uploads/日期 路径）
       const parts = payload.fileName.split('.')
       const extension = parts.length > 1 ? parts.pop() : ''
       const nameWithoutExt = parts.join('.')
@@ -846,27 +829,67 @@ export class ChatWebViewManager {
       const year = now.getFullYear()
       const month = String(now.getMonth() + 1).padStart(2, '0')
       const day = String(now.getDate()).padStart(2, '0')
-      const path = `${userId}/${year}${month}${day}/${safeFilename}`
+      const path = `uploads/${year}${month}${day}/${safeFilename}`
 
       // 将 base64 转为 Buffer
       const buffer = Buffer.from(payload.base64Data, 'base64')
 
-      // 上传到 Supabase Storage
-      const { error: uploadError } = await supabase.storage.from('upload').upload(path, buffer, {
-        contentType: payload.fileType,
-        upsert: false,
+      const storageType = this.configManager.storageType
+      let s3Endpoint: string
+      let s3Bucket: string
+      let s3Credentials: { accessKeyId: string; secretAccessKey: string }
+      let publicUrlBase: string
+
+      if (storageType === 'cloudflare') {
+        // Cloudflare R2
+        s3Endpoint = `https://${this.configManager.cloudflareAccountId}.r2.cloudflarestorage.com`
+        s3Bucket = this.configManager.cloudflareBucket || 'upload'
+        s3Credentials = {
+          accessKeyId: this.configManager.cloudflareAccessKeyId,
+          secretAccessKey: this.configManager.cloudflareSecretAccessKey,
+        }
+        const cfPublicUrl = this.configManager.cloudflarePublicUrl
+        publicUrlBase = cfPublicUrl
+          ? cfPublicUrl
+          : `https://${s3Bucket}.${this.configManager.cloudflareAccountId}.r2.dev`
+      } else if (storageType === 'supabase') {
+        // Supabase Storage (S3 兼容端点)
+        const supabaseUrl = this.configManager.supabaseUrl
+        const supabaseKey = this.configManager.supabaseKey
+        // S3 凭证：优先使用独立配置，否则回退到 anon key
+        const s3AccessKey = this.configManager.supabaseS3AccessKeyId || supabaseKey
+        const s3SecretKey = this.configManager.supabaseS3SecretAccessKey || supabaseKey
+        s3Endpoint = `${supabaseUrl}/storage/v1/s3`
+        s3Bucket = 'upload'
+        s3Credentials = { accessKeyId: s3AccessKey, secretAccessKey: s3SecretKey }
+        publicUrlBase = `${supabaseUrl}/storage/v1/object/public/${s3Bucket}`
+      } else {
+        throw new Error('No storage backend configured. Please set Supabase or Cloudflare R2 settings.')
+      }
+
+      // 统一使用 S3 兼容 API 上传
+      const { S3Client, PutObjectCommand } = await import('@aws-sdk/client-s3')
+      const s3Client = new S3Client({
+        region: 'auto',
+        endpoint: s3Endpoint,
+        credentials: s3Credentials,
+        forcePathStyle: true,
       })
 
-      if (uploadError) throw uploadError
+      await s3Client.send(new PutObjectCommand({
+        Bucket: s3Bucket,
+        Key: path,
+        Body: buffer,
+        ContentType: payload.fileType,
+      }))
 
-      // 获取公网 URL
-      const { data: urlData } = supabase.storage.from('upload').getPublicUrl(path)
+      const url = `${publicUrlBase}/${path}`
 
       this.postToPanel(panel, {
         type: 'fileUploaded',
         payload: {
           name: payload.fileName,
-          url: urlData.publicUrl,
+          url,
           path,
           size: payload.fileSize,
           type: payload.fileType,
@@ -876,7 +899,7 @@ export class ChatWebViewManager {
       console.error('[UploadFile] Failed:', error.message)
       this.postToPanel(panel, {
         type: 'error',
-        payload: { message: `Upload failed: ${error.message}` },
+        payload: { message: `Upload failed: ${error.message}`, fileName: payload.fileName },
       } as ExtensionToWebView)
     }
   }

@@ -8,6 +8,13 @@ const config = ref({
   wsUrl: 'http://localhost:8000',
   supabaseUrl: '',
   supabaseKey: '',
+  supabaseS3AccessKeyId: '',
+  supabaseS3SecretAccessKey: '',
+  cloudflareAccountId: '',
+  cloudflareAccessKeyId: '',
+  cloudflareSecretAccessKey: '',
+  cloudflareBucket: '',
+  cloudflarePublicUrl: '',
   defaultProvider: '',
   defaultModel: '',
 })
@@ -91,18 +98,58 @@ function saveConfig() {
       </div>
     </section>
 
-    <!-- Supabase Configuration -->
+    <!-- Storage Configuration -->
     <section class="section">
-      <h2 class="section-title">Supabase Configuration</h2>
+      <h2 class="section-title">Storage Configuration</h2>
+      <p class="field-hint">选择一种存储后端配置即可。Supabase 和 Cloudflare R2 二选一。</p>
 
-      <div class="field">
-        <label class="field-label">Supabase URL</label>
-        <input v-model="config.supabaseUrl" class="field-input" placeholder="https://your-project.supabase.co" />
+      <div class="storage-section">
+        <h3 class="subsection-title">Option A: Supabase Storage</h3>
+        <div class="field">
+          <label class="field-label">Supabase URL</label>
+          <input v-model="config.supabaseUrl" class="field-input" placeholder="https://your-project.supabase.co" />
+        </div>
+        <div class="field">
+          <label class="field-label">Supabase Anon Key</label>
+          <input v-model="config.supabaseKey" class="field-input" type="password" placeholder="your-anon-key" />
+        </div>
+        <div class="field">
+          <label class="field-label">S3 Access Key ID (可选)</label>
+          <input v-model="config.supabaseS3AccessKeyId" class="field-input" placeholder="留空则使用 anon key" />
+        </div>
+        <div class="field">
+          <label class="field-label">S3 Secret Access Key (可选)</label>
+          <input v-model="config.supabaseS3SecretAccessKey" class="field-input" type="password" placeholder="留空则使用 anon key" />
+        </div>
       </div>
 
-      <div class="field">
-        <label class="field-label">Supabase Anon Key</label>
-        <input v-model="config.supabaseKey" class="field-input" type="password" placeholder="your-anon-key" />
+      <div class="storage-divider">
+        <span>— 或 —</span>
+      </div>
+
+      <div class="storage-section">
+        <h3 class="subsection-title">Option B: Cloudflare R2</h3>
+        <div class="field">
+          <label class="field-label">Account ID</label>
+          <input v-model="config.cloudflareAccountId" class="field-input" placeholder="your-account-id" />
+        </div>
+        <div class="field">
+          <label class="field-label">Access Key ID</label>
+          <input v-model="config.cloudflareAccessKeyId" class="field-input" placeholder="your-access-key-id" />
+        </div>
+        <div class="field">
+          <label class="field-label">Secret Access Key</label>
+          <input v-model="config.cloudflareSecretAccessKey" class="field-input" type="password" placeholder="your-secret-access-key" />
+        </div>
+        <div class="field">
+          <label class="field-label">Bucket Name</label>
+          <input v-model="config.cloudflareBucket" class="field-input" placeholder="my-bucket" />
+        </div>
+        <div class="field">
+          <label class="field-label">Public URL (可选)</label>
+          <input v-model="config.cloudflarePublicUrl" class="field-input" placeholder="https://pub-xxxx.r2.dev" />
+          <p class="field-hint">如果不填，将使用默认 R2.dev 域名</p>
+        </div>
       </div>
     </section>
 
@@ -219,6 +266,42 @@ html, body {
 
 .field-input::placeholder {
   color: var(--text-secondary);
+}
+
+.field-hint {
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-top: 2px;
+  margin-bottom: 8px;
+}
+
+.subsection-title {
+  font-size: 13px;
+  font-weight: 600;
+  margin-bottom: 10px;
+  color: var(--text-primary);
+}
+
+.storage-section {
+  padding: 8px 0;
+}
+
+.storage-divider {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 12px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  gap: 12px;
+}
+
+.storage-divider::before,
+.storage-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
 }
 
 .field-select {

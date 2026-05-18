@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { postMessage, onMessage } from '../api/vscode'
+import { uploadFile } from '../utils/upload'
 
 const chatStore = useChatStore()
 const inputRef = ref<HTMLTextAreaElement>()
@@ -118,25 +119,9 @@ function handleClickOutside(event: MouseEvent) {
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
 
-  // 监听文件上传结果
+  // 监听文件上传错误（统一 upload 模块不再需要监听 fileUploaded，通过 Promise 处理）
   onMessage((data: any) => {
-    if (data.type === 'fileUploaded') {
-      const { name, url, path: filePath, size, type } = data.payload
-      // 找到匹配的 pending file record（通过文件名匹配）
-      const record = pendingFiles.value.find(
-        f => f.status === 'uploading' && f.file.name === name && f.file.size === size
-      )
-      if (record) {
-        record.uploadedData = { name, url, path: filePath, size, type }
-        record.status = 'success'
-        record.progress = 100
-        uploadingFileIds.value.delete(record.id)
-        // 检查是否所有文件都已上传完成
-        if (uploadingFileIds.value.size === 0) {
-          isUploading.value = false
-        }
-      }
-    } else if (data.type === 'error') {
+    if (data.type === 'error') {
       // 将所有上传中的文件标记为失败
       for (const record of pendingFiles.value) {
         if (record.status === 'uploading') {
@@ -217,42 +202,19 @@ async function uploadPendingFiles() {
     uploadingFileIds.value.add(record.id)
 
     try {
-      // 读取文件为 base64
-      const base64 = await fileToBase64(record.file)
-
-      // 通过扩展代理上传（扩展有 Supabase 客户端和 userId）
-      postMessage({
-        type: 'uploadFile',
-        payload: {
-          fileName: record.file.name,
-          fileType: record.file.type,
-          base64Data: base64,
-          fileSize: record.file.size,
-        },
-      })
+      // 使用统一的 uploadFile 模块上传（通过 postMessage 转发到扩展进程）
+      const result = await uploadFile(record.file)
+      record.uploadedData = result
+      record.status = 'success'
+      record.progress = 100
+      uploadingFileIds.value.delete(record.id)
     } catch (error: any) {
       record.status = 'error'
       record.error = error.message || '读取文件失败'
       uploadingFileIds.value.delete(record.id)
     }
   }
-  // 注意：不能在这里设 isUploading = false，因为上传是异步的
-  // 需要在收到 fileUploaded 或 error 响应后设置
-}
-
-// 将 File 读取为 base64 字符串
-function fileToBase64(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => {
-      // 去掉 data:xxx;base64, 前缀
-      const result = reader.result as string
-      const base64 = result.split(',')[1] || result
-      resolve(base64)
-    }
-    reader.onerror = () => reject(new Error('Failed to read file'))
-    reader.readAsDataURL(file)
-  })
+  isUploading.value = false
 }
 
 // ==================== 发送消息 ====================

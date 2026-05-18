@@ -6,7 +6,7 @@
   "version": "0.1.0",
   "publisher": "broca",
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.120.0"
   },
   "categories": [
     "Chat",
@@ -196,6 +196,41 @@
           "type": "string",
           "default": "",
           "description": "Supabase anon/public key"
+        },
+        "broca.supabaseS3AccessKeyId": {
+          "type": "string",
+          "default": "",
+          "description": "Supabase S3 access key ID (optional, defaults to anon key)"
+        },
+        "broca.supabaseS3SecretAccessKey": {
+          "type": "string",
+          "default": "",
+          "description": "Supabase S3 secret access key (optional, defaults to anon key)"
+        },
+        "broca.cloudflareAccountId": {
+          "type": "string",
+          "default": "",
+          "description": "Cloudflare R2 Account ID"
+        },
+        "broca.cloudflareAccessKeyId": {
+          "type": "string",
+          "default": "",
+          "description": "Cloudflare R2 Access Key ID"
+        },
+        "broca.cloudflareSecretAccessKey": {
+          "type": "string",
+          "default": "",
+          "description": "Cloudflare R2 Secret Access Key"
+        },
+        "broca.cloudflareBucket": {
+          "type": "string",
+          "default": "",
+          "description": "Cloudflare R2 Bucket name"
+        },
+        "broca.cloudflarePublicUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Cloudflare R2 Public URL (e.g. https://pub-xxxx.r2.dev)"
         }
       }
     }
@@ -211,21 +246,22 @@
     "lint": "eslint src --ext ts,vue"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.97.0",
-    "@types/node": "^25.6.0",
-    "axios": "^1.13.5",
+    "@aws-sdk/client-s3": "^3.1048.0",
+    "@supabase/supabase-js": "^2.105.4",
+    "@types/node": "^25.8.0",
+    "axios": "^1.16.1",
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
-    "@types/vscode": "^1.85.0",
+    "@types/vscode": "^1.120.0",
     "@vitejs/plugin-vue": "^5.2.4",
-    "concurrently": "^9.1.2",
+    "concurrently": "^9.2.1",
     "diff": "^9.0.0",
-    "marked": "^17.0.5",
+    "marked": "^17.0.6",
     "pinia": "^3.0.4",
     "typescript": "^5.9.3",
-    "vite": "^6.3.5",
+    "vite": "^6.4.2",
     "vsce": "^2.15.0",
-    "vue": "^3.5.28"
+    "vue": "^3.5.34"
   }
 }
