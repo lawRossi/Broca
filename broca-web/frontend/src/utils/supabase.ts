@@ -6,7 +6,7 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_KEY as string
 
 if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Supabase URL and Anon Key must be provided in environment variables')
+  console.log('Supabase URL and Anon Key not provided!')
 }
 
 // AWS S3 配置 (使用 Supabase S3 兼容端点)

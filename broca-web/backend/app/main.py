@@ -9,12 +9,7 @@ from app.api import api_router
 from app.core.socketio_runtime import SocketIOServerConfig, SocketIOServerRuntime
 from app.utils.supabase_utils import get_supbase
 
-WHITE_LIST = {
-    "/api/user/login",
-    "/docs",
-    "/openapi.json",
-    "/api/health"
-}
+WHITE_LIST = {"/api/user/login", "/docs", "/openapi.json", "/api/health"}
 security = HTTPBearer(auto_error=False)
 supabase = get_supbase()
 
@@ -33,7 +28,8 @@ def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(secu
     req.state.user_id = payload.get("sub")
 
 
-app = FastAPI(dependencies=[Depends(verify_token)], title="Simple Backend")
+# app = FastAPI(dependencies=[Depends(verify_token)], title="Simple Backend")
+app = FastAPI()
 
 
 @app.on_event("startup")

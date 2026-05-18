@@ -4,7 +4,6 @@ import { ElMessage } from 'element-plus'
 import type { TaskStatus, TaskPriority } from '@/api/task'
 import { TaskStatus as TaskStatusEnum, TaskPriority as TaskPriorityEnum } from '@/api/task'
 import { useTaskStore } from '@/stores'
-import { useUserStore } from '@/stores'
 import { Loading, Check, Clock, Warning, User, Document, Link, Paperclip, Message, Edit } from '@element-plus/icons-vue'
 
 interface Props {
@@ -21,7 +20,6 @@ const props = defineProps<Props>()
 const emit = defineEmits<Emits>()
 
 const taskStore = useTaskStore()
-const userStore = useUserStore()
 
 // 评论相关
 const newComment = ref('')
@@ -131,11 +129,11 @@ const handleUpdateAssignee = async (assignee: string) => {
 }
 
 const handleSubmitComment = async () => {
-  if (!newComment.value.trim() || !task.value || !userStore.userInfo) return
+  if (!newComment.value.trim() || !task.value) return
 
   submittingComment.value = true
   try {
-    await taskStore.addComment(task.value.task_id, userStore.userInfo.name || '匿名用户', newComment.value)
+    await taskStore.addComment(task.value.task_id, '匿名用户', newComment.value)
     newComment.value = ''
     ElMessage.success('评论添加成功')
   } catch (error) {

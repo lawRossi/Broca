@@ -1,13 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
 import { useRoute } from 'vue-router'
-import { useUserStore, useAgentStore, useSocketStore } from '@/stores'
+import { useAgentStore, useSocketStore } from '@/stores'
 import { type Message } from '@/api/brocaSocket'
 import { sessionApi, type RunnerInfo } from '@/api/session'
 
 export const useChatStore = defineStore('chat', () => {
   const route = useRoute()
-  const userStore = useUserStore()
   const agentStore = useAgentStore()
   const socketStore = useSocketStore()
 
@@ -740,12 +739,12 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const init = async () => {
-    await userStore.init()
+    // await userStore.init()
 
-    if (!userStore.isLoggedIn) {
-      console.log('用户未登录，无法初始化聊天')
-      return
-    }
+    // if (!userStore.isLoggedIn) {
+    //   console.log('用户未登录，无法初始化聊天')
+    //   return
+    // }
 
     checkMobile()
     window.addEventListener('resize', checkMobile)

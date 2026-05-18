@@ -1,11 +1,10 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
-import { useChatStore, useAgentStore, useUserStore, useSocketStore } from '@/stores'
-import { SupabaseStorage } from '@/utils/supabase'
+import { useChatStore, useAgentStore, useSocketStore } from '@/stores'
+import { uploadFile, isStorageConfigured } from '@/utils/upload'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
-const userStore = useUserStore()
 const socketStore = useSocketStore()
 
 // 文件上传相关状态
@@ -27,7 +26,6 @@ const pendingFiles = ref<
   }>
 >([])
 
-const userId = computed(() => userStore.userId)
 const isUploading = ref(false)
 
 const showMentionSuggestions = ref(false)
@@ -211,7 +209,6 @@ const canSendMessage = computed(() => {
 // 添加和移除全局点击事件监听器
 onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
-  await userStore.init()
 })
 
 onUnmounted(() => {
@@ -275,6 +272,20 @@ const uploadSingleFile = async (
 } | null> => {
   const { file, id } = fileRecord
 
+  // 检查存储是否已配置
+  if (!isStorageConfigured()) {
+    console.error('[Upload] No storage backend configured. Please set VITE_CLOUDFLARE_* or VITE_SUPABASE_* env vars.')
+    const index = pendingFiles.value.findIndex((f) => f.id === id)
+    if (index !== -1) {
+      const record = pendingFiles.value[index]
+      if (record) {
+        record.status = 'error'
+        record.error = '存储未配置，请联系管理员'
+      }
+    }
+    return null
+  }
+
   // 更新状态为上传中
   const index = pendingFiles.value.findIndex((f) => f.id === id)
   if (index === -1) return null
@@ -283,21 +294,12 @@ const uploadSingleFile = async (
   if (!fileRecordRef) return null
 
   fileRecordRef.status = 'uploading'
-  fileRecordRef.progress = 0
+  fileRecordRef.progress = 30
 
   try {
-    const date = new Date()
-    const year = date.getFullYear()
-    const month = String(date.getMonth() + 1).padStart(2, '0')
-    const day = String(date.getDate()).padStart(2, '0')
-    const safeFilename = SupabaseStorage.generateUniqueFilename(file.name)
-    const path = `${userId.value}/${year}${month}${day}/${safeFilename}`
-    console.log(path)
-    // 上传到 Supabase Storage
-    await SupabaseStorage.upload('upload', path, file)
-
-    // 获取公网 URL
-    const url = SupabaseStorage.getPublicUrl('upload', path)
+    // 使用统一的 uploadFile 上传（不再依赖 userId，路径为 uploads/日期/文件名）
+    const result = await uploadFile(file)
+    fileRecordRef.progress = 80
 
     // 更新状态为成功
     if (index !== -1) {
@@ -305,13 +307,7 @@ const uploadSingleFile = async (
       if (record) {
         record.status = 'success'
         record.progress = 100
-        record.uploadedData = {
-          name: file.name,
-          url,
-          path,
-          size: file.size,
-          type: file.type,
-        }
+        record.uploadedData = result
       }
     }
 

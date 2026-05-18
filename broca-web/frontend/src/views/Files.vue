@@ -99,14 +99,14 @@ watch(
 // Lifecycle
 onMounted(async () => {
   // 初始化用户状态
-  await userStore.init()
+  // await userStore.init()
 
-  // 检查登录状态
-  if (!userStore.isLoggedIn) {
-    ElMessage.warning('请先登录')
-    router.push('/auth')
-    return
-  }
+  // // 检查登录状态
+  // if (!userStore.isLoggedIn) {
+  //   ElMessage.warning('请先登录')
+  //   router.push('/auth')
+  //   return
+  // }
 
   // 处理路由查询参数
   handleRouteQuery()

@@ -3,12 +3,8 @@ import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { sessionApi, type Session, type CreateSessionParams, type UpdateSessionParams } from '@/api/session'
 import { filesApi, type FileItem } from '@/api/files'
-import { useUserStore } from './user'
 
 export const useSessionStore = defineStore('session', () => {
-  // User store reference
-  const userStore = useUserStore()
-
   // State
   const sessions = ref<Session[]>([])
   const loading = ref(false)
@@ -40,9 +36,6 @@ export const useSessionStore = defineStore('session', () => {
   // Home directory
   const homeDirectory = ref<string>('')
 
-  // Computed
-  const isLoggedIn = computed(() => userStore.isLoggedIn)
-
   const isAllSelected = computed(() => {
     return sessions.value.length > 0 && selectedSessions.value.length === sessions.value.length
   })
@@ -53,10 +46,6 @@ export const useSessionStore = defineStore('session', () => {
 
   // Actions
   const fetchSessions = async (params?: { skip?: number; limit?: number; keyword?: string }) => {
-    if (!isLoggedIn.value) {
-      return
-    }
-
     loading.value = true
 
     try {
@@ -78,10 +67,6 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   const createSession = async (params: CreateSessionParams, autoCloseDialog = true) => {
-    if (!isLoggedIn.value) {
-      throw new Error('用户未登录')
-    }
-
     creating.value = true
 
     try {
@@ -185,9 +170,9 @@ export const useSessionStore = defineStore('session', () => {
   }
 
   const updateSession = async (sessionId: string, params: UpdateSessionParams) => {
-    if (!isLoggedIn.value) {
-      throw new Error('用户未登录')
-    }
+    // if (!isLoggedIn.value) {
+    //   throw new Error('用户未登录')
+    // }
 
     try {
       await sessionApi.updateSession(sessionId, params)
@@ -405,7 +390,7 @@ export const useSessionStore = defineStore('session', () => {
     homeDirectory,
 
     // Computed
-    isLoggedIn,
+    //isLoggedIn,
     isAllSelected,
     isIndeterminate,
 

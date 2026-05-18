@@ -173,11 +173,11 @@ watch(
 
 // 组件挂载
 onMounted(async () => {
-  await userStore.init()
-  if (!isLoggedIn.value) {
-    router.push('/auth')
-    return
-  }
+  // await userStore.init()
+  // if (!isLoggedIn.value) {
+  //   router.push('/auth')
+  //   return
+  // }
   // 获取home目录
   await sessionStore.fetchHomeDirectory()
   await sessionStore.fetchSessions()
