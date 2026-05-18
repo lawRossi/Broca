@@ -149,9 +149,9 @@ export async function activate(context: vscode.ExtensionContext) {
   // Initial login check
   if (!authManager.isLoggedIn) {
     // Try silent login from stored session
-    try {
-      await authManager.tryRestoreSession()
-    } catch {
+    if (authManager.isLoggedIn) {
+      // Session restored
+    } else {
       // Not logged in, show info
       vscode.window.showInformationMessage(
         'Welcome to Broca! Please login to get started.',

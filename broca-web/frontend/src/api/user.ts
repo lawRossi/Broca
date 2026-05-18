@@ -5,8 +5,10 @@ export interface LoginForm {
   password: string
 }
 
-export interface LoginResponse {
+export interface AuthResult {
   token: string
+  user_id: string
+  username: string
 }
 
 export interface UserInfo {
@@ -16,19 +18,23 @@ export interface UserInfo {
 }
 
 export const userApi = {
-  addUserInfo(data: UserInfo): Promise<UserInfo> {
-    return request.post('/user/add_info', data)
+  /** 登录 */
+  login(data: LoginForm): Promise<AuthResult> {
+    return request.post('/auth/login', data)
   },
 
+  /** 注册（用户名+密码，无需邮箱） */
+  register(data: LoginForm): Promise<AuthResult> {
+    return request.post('/auth/register', data)
+  },
+
+  /** 获取用户信息 */
   getUserInfo(): Promise<UserInfo> {
     return request.get('/user/info')
   },
 
-  login(data: LoginForm): Promise<LoginResponse> {
-    return request.post('/user/login', data)
-  },
-
-  logout(): Promise<void> {
-    return request.post('/user/logout')
+  /** 添加用户信息 */
+  addUserInfo(data: UserInfo): Promise<UserInfo> {
+    return request.post('/user/add_info', data)
   },
 }

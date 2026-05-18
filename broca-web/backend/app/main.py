@@ -7,11 +7,15 @@ from loguru import logger
 
 from app.api import api_router
 from app.core.socketio_runtime import SocketIOServerConfig, SocketIOServerRuntime
-from app.utils.supabase_utils import get_supbase
+from app.services.auth_service import AuthService
 
-WHITE_LIST = {"/api/user/login", "/docs", "/openapi.json", "/api/health"}
+WHITE_LIST = {
+    "/api/auth/login",
+    "/api/auth/register",
+    "/api/health",
+    "/api/user/login",
+}
 security = HTTPBearer(auto_error=False)
-supabase = get_supbase()
 
 
 def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(security)) -> None:
@@ -19,25 +23,21 @@ def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(secu
         return
     if not cred:
         raise HTTPException(401, "Unauthorized")
-    global supabase
-    if supabase.auth.is_token_expired(cred.credentials):
-        logger.error("Token expired")
-        raise HTTPException(401, "Unauthorized")
-    payload = supabase.auth.decode_supabase_token(cred.credentials)
-    req.state.user = payload.get("user_metadata")
-    req.state.user_id = payload.get("sub")
+    try:
+        payload = AuthService.decode_access_token(cred.credentials)
+        req.state.user_id = payload.get("sub")
+        req.state.username = payload.get("username")
+    except Exception as e:
+        raise HTTPException(401, "Unauthorized") from e
 
 
-# app = FastAPI(dependencies=[Depends(verify_token)], title="Simple Backend")
-app = FastAPI()
+app = FastAPI(dependencies=[Depends(verify_token)])
 
 
 @app.on_event("startup")
 async def setup() -> None:
     """应用启动时初始化"""
     logger.info("Starting up")
-    global supabase
-    app.state.supabase = supabase
 
     # === 1. 启动 SocketIO Server ===
     enabled = os.getenv("BROCA_SOCKETIO_ENABLED", "true").lower() == "true"

@@ -135,6 +135,18 @@ export class ApiClient {
     return response.data
   }
 
+  // ==================== Auth API ====================
+
+  async login(username: string, password: string): Promise<{ token: string; user_id: string; username: string }> {
+    const response = await this.client.post('/auth/login', { username, password })
+    return response.data
+  }
+
+  async register(username: string, password: string): Promise<{ token: string; user_id: string; username: string }> {
+    const response = await this.client.post('/auth/register', { username, password })
+    return response.data
+  }
+
   // ==================== Config API ====================
 
   async getLLMProviders(): Promise<LLMProvider[]> {

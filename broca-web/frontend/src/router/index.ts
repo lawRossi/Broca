@@ -1,5 +1,6 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import type { RouteRecordRaw } from 'vue-router'
+import { useUserStore } from '@/stores'
 
 const routes: RouteRecordRaw[] = [
   {
@@ -55,17 +56,32 @@ const routes: RouteRecordRaw[] = [
     component: () => import('@/views/Auth.vue'),
     meta: { requiresAuth: false },
   },
-  {
-    path: '/auth/callback',
-    name: 'AuthCallback',
-    component: () => import('@/views/AuthCallback.vue'),
-    meta: { requiresAuth: false },
-  },
 ]
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL || '/'),
   routes,
+})
+
+router.beforeEach(async (to, _from, next) => {
+  const userStore = useUserStore()
+
+  // 初始化用户状态
+  await userStore.init()
+
+  // 检查路由是否需要认证
+  if (to.meta.requiresAuth) {
+    if (userStore.isLoggedIn) {
+      // 用户已登录，允许访问
+      next()
+    } else {
+      // 用户未登录，重定向到登录页面
+      next('/auth')
+    }
+  } else {
+    // 不需要认证的路由，直接允许访问
+    next()
+  }
 })
 
 export default router

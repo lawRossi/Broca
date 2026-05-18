@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useUserStore } from '@/stores'
 import type { UserInfo } from '@/api/user'
 import { userApi } from '@/api/user'
-import { SupabaseStorage } from '@/utils/supabase'
+import { uploadFile, isStorageConfigured } from '@/utils/upload'
 import { ElMessage } from 'element-plus'
 
 const router = useRouter()
@@ -107,22 +107,19 @@ const handleAddUserInfo = async () => {
 
     let avatarUrl = ''
 
-    // 如果有头像文件，先上传到 Supabase Storage
+    // 如果有头像文件，先上传
     if (addInfoForm.value.avatarFile) {
-      try {
-        const originalName = addInfoForm.value.avatarFile.name
-        const newfileName = SupabaseStorage.generateUniqueFilename(originalName)
-        const date = new Date()
-        const year = date.getFullYear()
-        const month = String(date.getMonth() + 1).padStart(2, '0')
-        const day = String(date.getDate()).padStart(2, '0')
-        const fileName = `${userId.value}/${year}${month}${day}/${newfileName}`
-        await SupabaseStorage.upload('images', fileName, addInfoForm.value.avatarFile)
-        avatarUrl = SupabaseStorage.getPublicUrl('images', fileName)
-      } catch (uploadError) {
-        console.error('头像上传失败:', uploadError)
-        ElMessage.error('头像上传失败')
-        return
+      if (!isStorageConfigured()) {
+        ElMessage.warning('存储未配置，跳过头像上传')
+      } else {
+        try {
+          const result = await uploadFile(addInfoForm.value.avatarFile)
+          avatarUrl = result.url
+        } catch (uploadError) {
+          console.error('头像上传失败:', uploadError)
+          ElMessage.error('头像上传失败')
+          return
+        }
       }
     }
 

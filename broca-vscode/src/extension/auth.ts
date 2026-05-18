@@ -1,16 +1,17 @@
 import * as vscode from 'vscode'
-import { createClient, type SupabaseClient, type AuthChangeEvent, type Session } from '@supabase/supabase-js'
+import { ApiClient } from './api'
 import { ConfigManager } from './config'
 
 export type AuthStateChangeHandler = (loggedIn: boolean) => void
 
 export class AuthManager {
-  private supabase: SupabaseClient | null = null
   private _isLoggedIn = false
   private _userId: string | null = null
   private _token: string | null = null
+  private _username: string | null = null
   private context: vscode.ExtensionContext
   private configManager: ConfigManager
+  private apiClient: ApiClient
   private onDidChangeEvent = new vscode.EventEmitter<void>()
 
   readonly onDidChange: vscode.Event<void> = this.onDidChangeEvent.event
@@ -18,69 +19,38 @@ export class AuthManager {
   constructor(context: vscode.ExtensionContext, configManager: ConfigManager) {
     this.context = context
     this.configManager = configManager
-    this.initSupabase()
+    this.apiClient = new ApiClient(configManager, () => this._token)
+
+    // 从持久化存储恢复会话
+    this.restoreSession()
   }
 
-  private initSupabase() {
-    const supabaseUrl = this.configManager.supabaseUrl
-    const supabaseKey = this.configManager.supabaseKey
+  private restoreSession(): void {
+    const token = this.context.globalState.get<string>('token')
+    const userId = this.context.globalState.get<string>('userId')
+    const username = this.context.globalState.get<string>('username')
 
-    if (!supabaseUrl || !supabaseKey) {
-      console.warn('Supabase not configured. Please set broca.supabaseUrl and broca.supabaseKey in settings.')
-      this.supabase = null
-      return
+    if (token && userId) {
+      this._token = token
+      this._userId = userId
+      this._username = username || null
+      this._isLoggedIn = true
+      console.log('[Auth] Session restored for user:', username || userId)
     }
-
-    this.supabase = createClient(supabaseUrl, supabaseKey, {
-      auth: {
-        persistSession: true,
-        autoRefreshToken: true,
-        storage: {
-          getItem: (key: string) => {
-            return this.context.globalState.get<string>(key) || null
-          },
-          setItem: (key: string, value: string) => {
-            this.context.globalState.update(key, value)
-          },
-          removeItem: (key: string) => {
-            this.context.globalState.update(key, undefined)
-          },
-        },
-      },
-    })
-
-    // Listen for auth state changes
-    this.supabase.auth.onAuthStateChange((event: AuthChangeEvent, session: Session | null) => {
-      if (session) {
-        this._isLoggedIn = true
-        this._userId = session.user.id
-        this._token = session.access_token
-      } else {
-        this._isLoggedIn = false
-        this._userId = null
-        this._token = null
-      }
-      this.onDidChangeEvent.fire()
-    })
   }
 
-  /**
-   * Re-initialize Supabase client after config changes (e.g. user sets URL/key via settings page)
-   */
-  reconfigure(): void {
-    const wasLoggedIn = this._isLoggedIn
-    // Dispose old client
-    this.supabase = null
-    this._isLoggedIn = false
-    this._userId = null
-    this._token = null
-    // Re-init with new config
-    this.initSupabase()
-    // Try to restore session after reconfig
-    if (!wasLoggedIn) {
-      this.tryRestoreSession()
+  private persistSession(): void {
+    if (this._token && this._userId) {
+      this.context.globalState.update('token', this._token)
+      this.context.globalState.update('userId', this._userId)
+      this.context.globalState.update('username', this._username)
     }
-    this.onDidChangeEvent.fire()
+  }
+
+  private clearSession(): void {
+    this.context.globalState.update('token', undefined)
+    this.context.globalState.update('userId', undefined)
+    this.context.globalState.update('username', undefined)
   }
 
   get isLoggedIn(): boolean {
@@ -95,140 +65,115 @@ export class AuthManager {
     return this._token
   }
 
-  get supabaseClient(): SupabaseClient | null {
-    return this.supabase
+  get username(): string | null {
+    return this._username
   }
 
-  async tryRestoreSession(): Promise<boolean> {
-    if (!this.supabase) return false
-
-    try {
-      const { data: { session } } = await this.supabase.auth.getSession()
-      if (session) {
-        this._isLoggedIn = true
-        this._userId = session.user.id
-        this._token = session.access_token
-        return true
-      }
-    } catch (error) {
-      console.error('Failed to restore session:', error)
-    }
-    return false
+  /**
+   * 重新配置（配置变更后调用）
+   */
+  reconfigure(): void {
+    // 不改变登录状态，仅重新初始化 API client
+    this.apiClient = new ApiClient(this.configManager, () => this._token)
   }
 
   async login(): Promise<boolean> {
-    if (!this.supabase) {
-      vscode.window.showErrorMessage(
-        'Supabase is not configured. Please set broca.supabaseUrl and broca.supabaseKey in settings.'
-      )
-      return false
-    }
-
-    // Show login dialog
-    const email = await vscode.window.showInputBox({
-      prompt: 'Email',
-      placeHolder: 'your@email.com',
+    const username = await vscode.window.showInputBox({
+      prompt: '用户名',
+      placeHolder: '请输入用户名',
       ignoreFocusOut: true,
       validateInput: (value) => {
-        if (!value.includes('@')) return 'Please enter a valid email'
+        if (!value || value.length < 2) return '用户名至少需要2个字符'
         return null
       },
     })
-
-    if (!email) return false
+    if (!username) return false
 
     const password = await vscode.window.showInputBox({
-      prompt: 'Password',
+      prompt: '密码',
       password: true,
       ignoreFocusOut: true,
       validateInput: (value) => {
-        if (!value || value.length < 6) return 'Password must be at least 6 characters'
+        if (!value || value.length < 6) return '密码至少需要6个字符'
         return null
       },
     })
-
     if (!password) return false
 
     try {
       await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: 'Logging in...' },
+        { location: vscode.ProgressLocation.Notification, title: '登录中...' },
         async () => {
-          const { data, error } = await this.supabase!.auth.signInWithPassword({ email, password })
-          if (error) throw error
+          const response = await this.apiClient.login(username, password)
+          this._token = response.token
+          this._userId = response.user_id
+          this._username = response.username
+          this._isLoggedIn = true
+          this.persistSession()
         }
       )
-      vscode.window.showInformationMessage('Login successful!')
+      vscode.window.showInformationMessage(`登录成功！欢迎 ${this._username}`)
+      this.onDidChangeEvent.fire()
       return true
     } catch (error: any) {
-      vscode.window.showErrorMessage(`Login failed: ${error.message || 'Unknown error'}`)
+      const msg = error?.response?.data?.detail || error.message || '登录失败'
+      vscode.window.showErrorMessage(`登录失败: ${msg}`)
       return false
     }
   }
 
   async signUp(): Promise<boolean> {
-    if (!this.supabase) {
-      vscode.window.showErrorMessage('Supabase is not configured.')
-      return false
-    }
-
-    const email = await vscode.window.showInputBox({
-      prompt: 'Email',
-      placeHolder: 'your@email.com',
+    const username = await vscode.window.showInputBox({
+      prompt: '用户名',
+      placeHolder: '请输入用户名',
       ignoreFocusOut: true,
+      validateInput: (value) => {
+        if (!value || value.length < 2) return '用户名至少需要2个字符'
+        return null
+      },
     })
-
-    if (!email) return false
+    if (!username) return false
 
     const password = await vscode.window.showInputBox({
-      prompt: 'Password (min 6 characters)',
+      prompt: '密码 (至少6个字符)',
       password: true,
       ignoreFocusOut: true,
+      validateInput: (value) => {
+        if (!value || value.length < 6) return '密码至少需要6个字符'
+        return null
+      },
     })
-
     if (!password) return false
 
     try {
-      const { data, error } = await this.supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          emailRedirectTo: undefined, // No need for VSCode
-        },
-      })
-
-      if (error) throw error
-
-      if (data.user && !data.session) {
-        vscode.window.showInformationMessage(
-          'Registration successful! Please check your email to confirm your account.',
-          'OK'
-        )
-      } else {
-        vscode.window.showInformationMessage('Registration successful!')
-      }
+      await vscode.window.withProgress(
+        { location: vscode.ProgressLocation.Notification, title: '注册中...' },
+        async () => {
+          const response = await this.apiClient.register(username, password)
+          this._token = response.token
+          this._userId = response.user_id
+          this._username = response.username
+          this._isLoggedIn = true
+          this.persistSession()
+        }
+      )
+      vscode.window.showInformationMessage(`注册成功！欢迎 ${this._username}`)
+      this.onDidChangeEvent.fire()
       return true
     } catch (error: any) {
-      vscode.window.showErrorMessage(`Registration failed: ${error.message || 'Unknown error'}`)
+      const msg = error?.response?.data?.detail || error.message || '注册失败'
+      vscode.window.showErrorMessage(`注册失败: ${msg}`)
       return false
     }
   }
 
   async logout(): Promise<void> {
-    if (!this.supabase) return
-
-    try {
-      await this.supabase.auth.signOut()
-      this._isLoggedIn = false
-      this._userId = null
-      this._token = null
-      vscode.window.showInformationMessage('Logged out successfully')
-    } catch (error: any) {
-      console.error('Logout error:', error)
-      // Force clear local state
-      this._isLoggedIn = false
-      this._userId = null
-      this._token = null
-    }
+    this._isLoggedIn = false
+    this._token = null
+    this._userId = null
+    this._username = null
+    this.clearSession()
+    vscode.window.showInformationMessage('已登出')
     this.onDidChangeEvent.fire()
   }
 
