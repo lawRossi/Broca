@@ -5,8 +5,11 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Optional
 
+from broca.logging_config import get_logger
 from broca.tools.mcp import connect_mcp_servers
 from broca.tools.tool import Tool
+
+logger = get_logger(__name__)
 
 
 class ToolManager:
@@ -94,7 +97,7 @@ class ToolManager:
 
     def load_custom_tools(self, workspace: Optional[str] = None):
         """
-        Load custom tools from {workspace}/.broca/tool.py.
+        Load custom tools from {workspace}/.broca/tools.py.
         Raises ValueError if any custom tool name conflicts with built-in tools.
 
         Args:
@@ -108,7 +111,7 @@ class ToolManager:
             return
         self._custom_tools_loaded = True
 
-        tool_py = Path(workspace) / ".broca" / "tool.py"
+        tool_py = Path(workspace) / ".broca" / "tools.py"
         if not tool_py.exists():
             return
 
@@ -135,6 +138,7 @@ class ToolManager:
                         f"and must not overlap with built-in tools."
                     )
                 self.tools[instance.name] = instance
+                logger.info(f"Loaded custom tool: {instance.name}")
 
     def _add_tool(self, tool: Tool):
         """Legacy method kept for backward compatibility (e.g. MCP tools)."""
