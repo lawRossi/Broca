@@ -177,6 +177,12 @@ const getContent = (message: Message) => {
           const textParts = parsed.content.filter((part: any) => part.type === 'text')
           return textParts.map((part: any) => part.text).join('')
         } else {
+          if (message.message_type == 'user_message') {
+            const idx = parsed.content.indexOf('[附件文件]:')
+            if (idx !== -1) {
+              return parsed.content.substring(0, idx).trim()
+            }
+          }
           return parsed.content
         }
       }

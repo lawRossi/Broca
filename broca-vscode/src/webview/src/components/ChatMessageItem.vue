@@ -127,8 +127,15 @@ function getContent(message: Message): string {
       if (parsed && typeof parsed === 'object' && parsed.content !== undefined) {
         if (Array.isArray(parsed.content)) {
           return parsed.content.filter((part: any) => part.type === 'text').map((part: any) => part.text).join('')
+        } else {
+          if (message.message_type == 'user_message') {
+            const idx = parsed.content.indexOf('[附件文件]:')
+            if (idx !== -1) {
+              return parsed.content.substring(0, idx).trim()
+            }
+          }
+          return parsed.content
         }
-        return parsed.content
       }
       return JSON.stringify(parsed, null, 2)
     } catch {
