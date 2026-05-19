@@ -47,9 +47,9 @@
 
 ## 概述
 
-Broca 是一个用 Python 构建的轻量级 AI Agent 框架，核心设计理念是 **模块化** 和 **可扩展**。它支持：
+Broca 是一个用 Python 构建的Agent系统，核心设计理念是 **模块化** 和 **可扩展**。它支持：
 
-- **多模型 LLM**：通过 litellm 统一接入多种 LLM 提供商（NVIDIA、DeepSeek、OpenRouter、智谱等）
+- **多LLM供应商**：通过 litellm 统一接入多种 LLM 提供商
 - **实时通信**：基于 Socket.IO 实现浏览器/CLI/VS Code多端实时交互
 - **子进程隔离**：每个会话在独立子进程中运行，支持心跳监控
 - **快照与撤销**：基于Git的文件系统快照，实现操作级撤销/重做
@@ -308,11 +308,6 @@ SocketIOServer 是一个多端通信服务器，支持：
 
 **核心文件**: `broca/agent_crew.py`
 
-AgentCrew 实现多 Agent 协作模式：
-- **BlackBoard（黑板）**: 共享上下文
-- **Crew Leader**: 负责协调和任务分发的 Agent
-- **成员管理**: 动态添加/移除 Agent 成员
-- **上下文注入**: 通过 Jinja2 模板为成员注入协作上下文
 
 ### 10. Skill 系统
 
@@ -519,14 +514,13 @@ broca/
 
 ## 设计模式
 
-| 模式 | 使用场景 |
-|------|---------|
-| **单例 (Singleton)** | ToolManager、SkillManager、AgentFactory、RunnerManager、AsyncDatabaseManager |
-| **观察者 (Observer)** | Socket.IO 事件系统、RunnerManager 事件 |
-| **策略 (Strategy)** | 插件式工具系统、LLM 多提供商抽象 |
-| **工厂 (Factory)** | AgentFactory 创建/恢复 Agent |
-| **代理 (Proxy)** | IPC 子进程管理 |
-| **黑板 (Blackboard)** | AgentCrew 多 Agent 协作 |
-| **模板方法 (Template)** | 执行步骤生命周期 (capture → LLM → tool → compress) |
+| 模式　　　　　　　　　　| 使用场景　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
+| -------------------------| ------------------------------------------------------------------------------|
+| **单例 (Singleton)**　　| ToolManager、SkillManager、AgentFactory、RunnerManager、AsyncDatabaseManager |
+| **观察者 (Observer)**　 | Socket.IO 事件系统、RunnerManager 事件　　　　　　　　　　　　　　　　　　　 |
+| **策略 (Strategy)**　　 | 插件式工具系统、LLM 多提供商抽象　　　　　　　　　　　　　　　　　　　　　　 |
+| **工厂 (Factory)**　　　| AgentFactory 创建/恢复 Agent　　　　　　　　　　　　　　　　　　　　　　　　 |
+| **代理 (Proxy)**　　　　| IPC 子进程管理　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
+| **模板方法 (Template)** | 执行步骤生命周期 (capture → LLM → tool → compress)　　　　　　　　　　　　　 |
 
 ---
