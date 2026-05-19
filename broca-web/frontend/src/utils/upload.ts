@@ -52,14 +52,11 @@ function detectConfig(): S3Config | null {
 
   // 2. Supabase Storage（S3 兼容）
   const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-  const supabaseKey = import.meta.env.VITE_SUPABASE_KEY as string | undefined
+  const s3AccessKey = import.meta.env.VITE_SUPABASE_S3_ACCESS_KEY_ID as string | undefined
+  const s3SecretKey = import.meta.env.VITE_SUPABASE_S3_SECRET_ACCESS_KEY as string | undefined
   const supabaseBucket = (import.meta.env.VITE_SUPABASE_BUCKET as string) || 'upload'
 
-  if (supabaseUrl && supabaseKey) {
-    // S3 凭证：优先使用独立配置，否则回退到 anon key
-    const s3AccessKey = (import.meta.env.VITE_SUPABASE_S3_ACCESS_KEY_ID as string) || supabaseKey
-    const s3SecretKey = (import.meta.env.VITE_SUPABASE_S3_SECRET_ACCESS_KEY as string) || supabaseKey
-
+  if (supabaseUrl && s3AccessKey && s3SecretKey) {
     return {
       type: 'supabase',
       region: 'auto',

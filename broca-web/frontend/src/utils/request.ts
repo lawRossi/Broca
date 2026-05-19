@@ -1,5 +1,6 @@
 import axios, { type AxiosInstance, type AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
+import router from '@/router'
 
 // 创建 Axios 实例
 const request: AxiosInstance = axios.create({
@@ -48,8 +49,12 @@ request.interceptors.response.use(
       const { status, data } = error.response
       switch (status) {
         case 401:
-          ElMessage.error('未授权，请重新登录')
-          // 可以跳转到登录页
+          // 清除本地 token 并跳转到登录页
+          localStorage.removeItem('token')
+          localStorage.removeItem('user_id')
+          localStorage.removeItem('username')
+          ElMessage.error('登录已失效，请重新登录')
+          router.push('/auth')
           break
         case 403:
           ElMessage.error('拒绝访问')

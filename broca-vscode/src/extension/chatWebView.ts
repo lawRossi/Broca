@@ -855,10 +855,11 @@ export class ChatWebViewManager {
       } else if (storageType === 'supabase') {
         // Supabase Storage (S3 兼容端点)
         const supabaseUrl = this.configManager.supabaseUrl
-        const supabaseKey = this.configManager.supabaseKey
-        // S3 凭证：优先使用独立配置，否则回退到 anon key
-        const s3AccessKey = this.configManager.supabaseS3AccessKeyId || supabaseKey
-        const s3SecretKey = this.configManager.supabaseS3SecretAccessKey || supabaseKey
+        const s3AccessKey = this.configManager.supabaseS3AccessKeyId
+        const s3SecretKey = this.configManager.supabaseS3SecretAccessKey
+        if (!supabaseUrl || !s3AccessKey || !s3SecretKey) {
+          throw new Error('Supabase S3 configuration incomplete. Set supabaseUrl, supabaseS3AccessKeyId and supabaseS3SecretAccessKey.')
+        }
         s3Endpoint = `${supabaseUrl}/storage/v1/s3`
         s3Bucket = 'upload'
         s3Credentials = { accessKeyId: s3AccessKey, secretAccessKey: s3SecretKey }
@@ -1157,18 +1158,13 @@ export class ChatWebViewManager {
     html = this.transformResourcePaths(webview, webviewDist, html)
 
     // Inject initial data as a JSON script tag (CSP-safe, no inline JS)
-    const supabaseUrl = this.configManager.supabaseUrl
-    const supabaseKey = this.configManager.supabaseKey
     const token = this.authManager.token
-
     const serverUrl = this.configManager.get('serverUrl')
     const wsUrl = this.configManager.get('wsUrl')
 
     const initData = {
       sessionId,
       token: token || '',
-      supabaseUrl,
-      supabaseKey,
       serverUrl: serverUrl || 'http://localhost:8000',
       wsUrl: wsUrl || 'http://localhost:8000',
     }

@@ -44,8 +44,6 @@ export function onMessage(handler: (message: any) => void): () => void {
 export interface InitialData {
   sessionId: string
   token: string
-  supabaseUrl: string
-  supabaseKey: string
   serverUrl: string
   wsUrl: string
 }

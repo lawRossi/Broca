@@ -11,7 +11,7 @@ def create_async_db_engine() -> AsyncEngine:
     if settings.database_type == "sqlite":
         # SQLite异步引擎配置
         engine = create_async_engine(
-            settings.database_url,
+            settings.async_database_url,
             echo=False,
             poolclass=NullPool,
             connect_args={
@@ -19,9 +19,9 @@ def create_async_db_engine() -> AsyncEngine:
             },
         )
     else:
-        # PostgreSQL异步引擎配置 (Supabase)
+        # PostgreSQL异步引擎配置
         engine = create_async_engine(
-            settings.database_url,
+            settings.async_database_url,
             pool_pre_ping=False,
             echo=False,
             poolclass=NullPool,
@@ -45,7 +45,7 @@ def create_sync_db_engine() -> Engine:
     if settings.database_type == "sqlite":
         # SQLite同步引擎配置
         return create_engine(
-            settings.database_url_sync,
+            settings.sync_database_url,
             echo=False,
             poolclass=NullPool,
             connect_args={
@@ -53,8 +53,8 @@ def create_sync_db_engine() -> Engine:
             },
         )
     else:
-        # PostgreSQL同步引擎配置 (Supabase)
-        return create_engine(settings.database_url_sync, echo=False)
+        # PostgreSQL同步引擎配置
+        return create_engine(settings.sync_database_url, echo=False)
 
 
 # 创建引擎实例

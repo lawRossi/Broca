@@ -42,7 +42,7 @@ def get_database_url() -> str:
         return url
 
     # 如果alembic.ini中没有配置，则从应用配置获取
-    return settings.database_url_sync
+    return settings.sync_database_url
 
 
 def run_migrations_offline() -> None:

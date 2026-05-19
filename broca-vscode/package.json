@@ -187,26 +187,6 @@
           "default": "",
           "description": "Default LLM model for new sessions"
         },
-        "broca.supabaseUrl": {
-          "type": "string",
-          "default": "",
-          "description": "Supabase project URL"
-        },
-        "broca.supabaseKey": {
-          "type": "string",
-          "default": "",
-          "description": "Supabase anon/public key"
-        },
-        "broca.supabaseS3AccessKeyId": {
-          "type": "string",
-          "default": "",
-          "description": "Supabase S3 access key ID (optional, defaults to anon key)"
-        },
-        "broca.supabaseS3SecretAccessKey": {
-          "type": "string",
-          "default": "",
-          "description": "Supabase S3 secret access key (optional, defaults to anon key)"
-        },
         "broca.cloudflareAccountId": {
           "type": "string",
           "default": "",
@@ -231,6 +211,21 @@
           "type": "string",
           "default": "",
           "description": "Cloudflare R2 Public URL (e.g. https://pub-xxxx.r2.dev)"
+        },
+        "broca.supabaseUrl": {
+          "type": "string",
+          "default": "",
+          "description": "Supabase project URL (for S3 storage)"
+        },
+        "broca.supabaseS3AccessKeyId": {
+          "type": "string",
+          "default": "",
+          "description": "Supabase S3 access key ID"
+        },
+        "broca.supabaseS3SecretAccessKey": {
+          "type": "string",
+          "default": "",
+          "description": "Supabase S3 secret access key"
         }
       }
     }
@@ -247,7 +242,6 @@
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1048.0",
-    "@supabase/supabase-js": "^2.105.4",
     "@types/node": "^25.8.0",
     "axios": "^1.16.1",
     "socket.io-client": "^4.8.3"

@@ -15,7 +15,6 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.995.0",
     "@element-plus/icons-vue": "^2.3.2",
-    "@supabase/supabase-js": "^2.97.0",
     "axios": "^1.13.5",
     "diff": "^9.0.0",
     "element-plus": "^2.13.2",
