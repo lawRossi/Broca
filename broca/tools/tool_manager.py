@@ -66,7 +66,7 @@ class ToolManager:
 
             try:
                 module = importlib.import_module(modname)
-            except Exception as e:
+            except Exception:
                 continue
 
             self._register_tool_classes(module)
@@ -142,10 +142,12 @@ class ToolManager:
             raise ValueError(f"Tool with name '{tool.name}' already exists")
         self.tools[tool.name] = tool
 
-    async def setup_mcp(self, mcp_configs: dict):
+    async def setup_mcp(self, mcp_configs: dict) -> list[str]:
         mcp_tools = await connect_mcp_servers(mcp_configs, self.stack)
         for tool in mcp_tools:
             self._add_tool(tool)
+        tool_names = [tool.name for tool in mcp_tools]
+        return tool_names
 
     async def cleanup(self):
         await self.stack.aclose()

@@ -163,8 +163,11 @@ class Agent:
         tool_manager = ToolManager()
         tool_manager.load_custom_tools(self.config.workspace)
         if self.config.mcp_configs:
-            await tool_manager.setup_mcp(self.config.mcp_configs)
-        tools = tool_manager.get_tools(tool_names=self.config.tools)
+            mcp_tools = await tool_manager.setup_mcp(self.config.mcp_configs)
+        else:
+            mcp_tools = []
+        tool_names = self.config.tools + mcp_tools
+        tools = tool_manager.get_tools(tool_names=tool_names)
         self.tools = [tool.format() for tool in tools]
         self.tool_mapping = {tool.name: tool for tool in tools}
 
