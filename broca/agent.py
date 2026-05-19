@@ -59,10 +59,8 @@ class Agent:
 
         # Initialize core components
         self._setup_context(**kwargs)
-        self._setup_tools()
         self._setup_communicator()
         self._setup_session_memory()
-        self._setup_execution_engine()
         self._setup_permission_manager()
 
         self.message_queue: asyncio.Queue = asyncio.Queue(3)
@@ -72,6 +70,21 @@ class Agent:
         self.running = False
 
         asyncio.create_task(self.load_stats(session_manager))
+
+    @classmethod
+    async def create(
+        cls,
+        config: AgentConfig,
+        llm_client: LLMClient,
+        session_manager: SessionManager,
+        **kwargs,
+    ) -> "Agent":
+        """Async factory: creates an Agent and fully initializes it, including MCP connections."""
+        agent = cls.__new__(cls)
+        Agent.__init__(agent, config, llm_client, session_manager, **kwargs)
+        await agent._setup_tools()
+        agent._setup_execution_engine()
+        return agent
 
     async def load_stats(self, session_manager: SessionManager) -> None:
         """Load statistics from database"""
@@ -144,11 +157,13 @@ class Agent:
         """Set up agent context"""
         self.context = Context(self.config, self.session_manager, **kwargs)
 
-    def _setup_tools(self):
+    async def _setup_tools(self):
         """Set up tools for the agent, including auto-discovered built-in tools
         and custom tools from {workspace}/.broca/tool.py."""
         tool_manager = ToolManager()
         tool_manager.load_custom_tools(self.config.workspace)
+        if self.config.mcp_configs:
+            await tool_manager.setup_mcp(self.config.mcp_configs)
         tools = tool_manager.get_tools(tool_names=self.config.tools)
         self.tools = [tool.format() for tool in tools]
         self.tool_mapping = {tool.name: tool for tool in tools}

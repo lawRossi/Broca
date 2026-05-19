@@ -7,8 +7,6 @@ Memory Tool Module - 持久化记忆管理工具
 
 条目分隔符: § (section sign)，条目可以跨多行。
 字符数限制（非 token），因为字符数计数与模型无关。
-
-简化设计：无文件锁、无注入检测、始终反映最新状态。
 """
 
 import json

@@ -30,7 +30,6 @@ class ToolManager:
 
     READ_SEARCH_FILE_CONTENT_TOOLS = {"read_file", "grep"}
 
-    # Modules under broca/tools/ that should be skipped during auto-scan
     _SKIP_MODULES = {
         "tool_manager",  # self
         "tool",  # base class

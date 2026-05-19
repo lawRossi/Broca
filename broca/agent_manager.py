@@ -95,7 +95,7 @@ class AgentFactory:
             config.environment = self._init_environment(config)
         # Each agent gets its own LLMClient instance
         llm_client = LLMClient()
-        agent = Agent(config, llm_client, session_manager, agent_id=agent_id)
+        agent = await Agent.create(config, llm_client, session_manager, agent_id=agent_id)
         await session_manager.save_agent(agent)
         if session_manager.session_id not in self._session_agents:
             self._session_agents[session_manager.session_id] = {}
@@ -153,7 +153,7 @@ class AgentFactory:
         agent_config = AgentConfig.from_config(config)
 
         llm_client = LLMClient()
-        agent = Agent(agent_config, llm_client, session_manager, agent_id=agent_id)
+        agent = await Agent.create(agent_config, llm_client, session_manager, agent_id=agent_id)
         await agent.restore_from_session(agent_id)
         if session_manager.session_id not in self._session_agents:
             self._session_agents[session_manager.session_id] = {}
