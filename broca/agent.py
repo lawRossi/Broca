@@ -57,12 +57,6 @@ class Agent:
         self.total_llm_calls: int = 0
         self.last_context_length: Optional[int] = None
 
-        # Initialize core components
-        self._setup_context(**kwargs)
-        self._setup_communicator()
-        self._setup_session_memory()
-        self._setup_permission_manager()
-
         self.message_queue: asyncio.Queue = asyncio.Queue(3)
         self.error_handler = ErrorHandler()
 
@@ -82,6 +76,11 @@ class Agent:
         """Async factory: creates an Agent and fully initializes it, including MCP connections."""
         agent = cls.__new__(cls)
         Agent.__init__(agent, config, llm_client, session_manager, **kwargs)
+        # Initialize core components
+        agent._setup_context(**kwargs)
+        agent._setup_communicator()
+        agent._setup_session_memory()
+        agent._setup_permission_manager()
         await agent._setup_tools()
         agent._setup_execution_engine()
         return agent

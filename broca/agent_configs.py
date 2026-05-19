@@ -82,7 +82,7 @@ class AgentConfig:
         data = self.to_dict()
         data["session_memory_config"] = asdict(self.session_memory_config)
         data["compact_config"] = asdict(self.compact_config)
-        return json.dumps(data)
+        return json.dumps(data, ensure_ascii=False, indent=4)
 
     def to_dict(self) -> dict:
         return dict(self.__dict__)

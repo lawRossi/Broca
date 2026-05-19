@@ -95,25 +95,35 @@ class AgentFactory:
             config.environment = self._init_environment(config)
         # Each agent gets its own LLMClient instance
         llm_client = LLMClient()
-        agent = await Agent.create(config, llm_client, session_manager, agent_id=agent_id)
+        agent = await Agent.create(
+            config, llm_client, session_manager, agent_id=agent_id
+        )
         await session_manager.save_agent(agent)
         if session_manager.session_id not in self._session_agents:
             self._session_agents[session_manager.session_id] = {}
         self._session_agents[session_manager.session_id][agent.name] = agent
-        self.dump_agent_config_cache(config)
+        self.dump_agent_config_cache(config, session_manager.session_id)
 
         return agent
 
-    def dump_agent_config_cache(self, agent_config):
-        cache_dir = Path(agent_config.workspace) / ".broca/agents"
-        cache_dir.mkdir(parents=True, exist_ok=True)
-        cache_path = cache_dir / f"{agent_config.name}.json"
+    def _get_agent_config_cache_path(self, workspace, session_id, agent_name):
+        cache_path = (
+            Path(workspace) / ".broca" / session_id / "agents" / f"{agent_name}.json"
+        )
+        return cache_path
+
+    def dump_agent_config_cache(self, agent_config, session_id):
+        cache_path = self._get_agent_config_cache_path(
+            agent_config.workspace, session_id, agent_config.name
+        )
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
         with open(cache_path, "w") as f:
             f.write(agent_config.to_json())
 
-    def load_cached_agent_config(self, workspace, agent_name):
-        cache_dir = Path(workspace) / ".broca/agents"
-        cache_path = cache_dir / f"{agent_name}.json"
+    def load_cached_agent_config(self, workspace, session_id, agent_name):
+        cache_path = self._get_agent_config_cache_path(
+            workspace, session_id, agent_name
+        )
         if cache_path.exists():
             with open(cache_path, "r") as f:
                 return json.load(f)
@@ -142,7 +152,7 @@ class AgentFactory:
 
         config = await session_manager.get_agent_config(agent_id)
         cached_config = self.load_cached_agent_config(
-            config["workspace"], config["name"]
+            config["workspace"], session_manager.session_id, config["name"]
         )
         if cached_config:
             un_modifiable_fields = ["name", "workspace", "environment"]
@@ -153,7 +163,9 @@ class AgentFactory:
         agent_config = AgentConfig.from_config(config)
 
         llm_client = LLMClient()
-        agent = await Agent.create(agent_config, llm_client, session_manager, agent_id=agent_id)
+        agent = await Agent.create(
+            agent_config, llm_client, session_manager, agent_id=agent_id
+        )
         await agent.restore_from_session(agent_id)
         if session_manager.session_id not in self._session_agents:
             self._session_agents[session_manager.session_id] = {}
