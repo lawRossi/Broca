@@ -35,6 +35,14 @@ onMounted(() => {
     switch (data.type) {
       case 'config':
         config.value = { ...config.value, ...data.payload }
+        // 如果已配置默认 provider，自动拉取其模型列表
+        if (config.value.defaultProvider) {
+          const provider = config.value.defaultProvider
+          // 使用 nextTick 确保 providers 列表已渲染后再获取 models
+          setTimeout(() => {
+            postMessage({ type: 'getModels', payload: { provider } })
+          }, 100)
+        }
         break
       case 'providers':
         providers.value = data.payload || []

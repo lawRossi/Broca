@@ -411,6 +411,7 @@ const targetAgentDisplay = computed(() => {
       <button
         class="tool-button"
         title="Attach file"
+        :disabled="!chatStore.runnerAlive"
         @click="triggerFileSelect"
       >
         📎
