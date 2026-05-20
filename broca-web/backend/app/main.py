@@ -2,6 +2,7 @@ import os
 from datetime import datetime
 
 from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 
@@ -32,6 +33,15 @@ def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(secu
 
 
 app = FastAPI(dependencies=[Depends(verify_token)])
+
+# CORS 中间件 — 允许前端跨域访问（vite preview / nginx 均需）
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=os.getenv("CORS_ALLOW_ORIGINS", "*").split(","),
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("startup")

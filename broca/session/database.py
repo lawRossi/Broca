@@ -17,9 +17,25 @@ from broca.configs import get_configs
 
 
 def _get_database_config() -> tuple[str, str]:
-    """获取数据库配置，从环境变量或默认值"""
+    """获取数据库配置，优先级: 环境变量 > 配置文件 > 默认值"""
+    # 1. 环境变量优先
+    env_dir = os.getenv("BROCA_DATABASE_DIR")
+    if env_dir:
+        database_dir = str(Path(env_dir).resolve())
+        database_path = os.path.join(database_dir, "sessions.db")
+        print(f"Database dir from env: {database_dir}")
+        return database_dir, database_path
+
+    # 2. 从配置文件读取
     configs = get_configs()
-    database_dir = str(Path(configs.database_dir).resolve())
+    if configs.database_dir:
+        database_dir = str(Path(configs.database_dir).resolve())
+        database_path = os.path.join(database_dir, "sessions.db")
+        return database_dir, database_path
+
+    # 3. 默认值
+    home_dir = Path.home() / ".broca" / "data"
+    database_dir = str(home_dir.resolve())
     database_path = os.path.join(database_dir, "sessions.db")
     return database_dir, database_path
 

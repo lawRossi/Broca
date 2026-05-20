@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import warnings
 from pathlib import Path
 from typing import AsyncGenerator
@@ -23,9 +24,46 @@ class LLMClient:
         self.input_tokens_used = 0
         self.output_tokens_used = 0
 
-        config_file = Path(__file__).parent.parent / "configs" / "llm_config.json"
+        # 优先级: 环境变量 BROCA_LLM_CONFIG > 默认路径
+        config_path = os.getenv("BROCA_LLM_CONFIG")
+        if not config_path:
+            config_path = Path(__file__).parent.parent / "configs" / "llm_config.json"
+        config_file = Path(config_path)
+
         with open(config_file) as f:
             self.config = json.load(f)
+
+        # 环境变量覆盖 API Key: BROCA_API_KEY_{PROVIDER_UPPER}
+        self._apply_env_overrides()
+
+    def _apply_env_overrides(self):
+        """用环境变量覆盖配置文件中的 API Key 和 Base URL
+
+        格式:
+          BROCA_API_KEY_{PROVIDER}       → 覆盖对应 provider 的 api_key (连字符转为下划线)
+          BROCA_API_BASE_URL_{PROVIDER}  → 覆盖对应 provider 的 base_url
+
+        示例:
+          export BROCA_API_KEY_NVIDIA="nvapi-..."
+          export BROCA_API_BASE_URL_DEEPSEEK="https://api.deepseek.com/v1"
+        """
+        for provider in list(self.config.keys()):
+            if not isinstance(self.config[provider], dict):
+                continue
+            # provider 名中的连字符转下划线，全大写
+            provider_env = provider.upper().replace("-", "_")
+            key_env = f"BROCA_API_KEY_{provider_env}"
+            url_env = f"BROCA_API_BASE_URL_{provider_env}"
+
+            api_key = os.getenv(key_env)
+            if api_key:
+                self.config[provider]["api_key"] = api_key
+                logger.info("LLM config: %s api_key overridden from env %s", provider, key_env)
+
+            base_url = os.getenv(url_env)
+            if base_url:
+                self.config[provider]["base_url"] = base_url
+                logger.info("LLM config: %s base_url overridden from env %s", provider, url_env)
 
     def parse_message(self, provider: str, model: str, message: Message) -> dict:
         """

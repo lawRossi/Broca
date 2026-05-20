@@ -311,12 +311,14 @@ class RunnerManager:
             except IPCTimeoutError:
                 logger.error("Session %s runner connection timeout", session_id)
                 await self._kill_runner(session_id)
+                await self._cleanup_runner(session_id)
                 raise RunnerManagerError(
                     f"Runner for session {session_id} did not connect within timeout"
                 )
             except IPCConnectionError as e:
                 logger.error("Session %s runner IPC error: %s", session_id, e)
                 await self._kill_runner(session_id)
+                await self._cleanup_runner(session_id)
                 raise RunnerManagerError(
                     f"Runner IPC error for session {session_id}: {e}"
                 ) from e

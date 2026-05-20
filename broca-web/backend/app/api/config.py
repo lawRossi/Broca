@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 
 from broca.configs import get_configs
@@ -9,8 +10,12 @@ from app.schemas.schemas import ApiResponse
 
 router = APIRouter()
 
-configs = get_configs()
-LLM_CONFIG_PATH = Path(configs.llm_config_file)
+# 优先级: BROCA_LLM_CONFIG 环境变量 > configs.json 中的配置
+_llm_config_path = os.getenv("BROCA_LLM_CONFIG")
+if not _llm_config_path:
+    configs = get_configs()
+    _llm_config_path = configs.llm_config_file
+LLM_CONFIG_PATH = Path(_llm_config_path)
 
 
 @router.get("/llm/providers", response_model=ApiResponse)

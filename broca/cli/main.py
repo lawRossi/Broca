@@ -1,10 +1,22 @@
 """
 Broca CLI - Command Line Interface Entry Point
+
+用法:
+  Broca                     启动 TUI 界面
+  Broca web [...]           Web 服务 (开发模式)
+  Broca service install     一键安装
+  Broca service start       启动生产服务
+  Broca service stop        停止生产服务
+  Broca service restart     重启生产服务
+  Broca service status      查看服务状态
+  Broca version             显示版本
 """
 
 import argparse
+import os
 import subprocess
 import sys
+import time
 from pathlib import Path
 
 from broca.logging_config import get_logger
@@ -304,6 +316,178 @@ def run_backend_only(host="127.0.0.1", port=9000, reload=False):
                     print("Backend could not be stopped")
 
 
+# ======================================================================
+# Service Management (基于 supervisor 的生产环境服务管理)
+# ======================================================================
+
+
+def cmd_service_install():
+    """执行一键安装"""
+    install_script = Path(__file__).parent.parent.parent / "scripts" / "install.sh"
+    if not install_script.exists():
+        print(f"Error: 安装脚本未找到: {install_script}")
+        sys.exit(1)
+
+    print("=" * 60)
+    print("  Broca 一键安装")
+    print("=" * 60)
+    print()
+
+    # 以交互方式运行安装脚本
+    env = os.environ.copy()
+    env["PYTHONUNBUFFERED"] = "1"
+
+    proc = subprocess.Popen(
+        ["bash", str(install_script)],
+        stdout=None,
+        stderr=None,
+        env=env,
+    )
+    proc.wait()
+
+    if proc.returncode != 0:
+        print(f"\n安装失败 (exit code: {proc.returncode})")
+        sys.exit(proc.returncode)
+
+    print()
+    print("=" * 60)
+    print("  安装完成！使用以下命令管理服务：")
+    print()
+    print("    Broca service start     启动服务")
+    print("    Broca service stop      停止服务")
+    print("    Broca service restart   重启服务")
+    print("    Broca service status    查看状态")
+    print("=" * 60)
+
+
+def cmd_service_start(args):
+    """启动生产环境服务 (基于 supervisor)"""
+    # 延迟导入，允许在未安装时也能查看帮助
+    from broca.service_manager import start_services, status_services
+
+    print("正在启动 Broca 服务...")
+
+    # 先检查 supervisord 是否已运行，如果已运行则直接 start all
+    status = status_services()
+    if status.get("supervisord_running"):
+        print("supervisord 已在运行，启动托管服务...")
+    else:
+        print("启动 supervisord 进程管理器...")
+
+    result = start_services(wait=True)
+
+    if result.get("success"):
+        print(f"✅ {result['message']}")
+        if result.get("detail"):
+            for line in result["detail"].splitlines():
+                if line.strip():
+                    print(f"   {line.strip()}")
+
+        # 显示最终状态
+        print()
+        time.sleep(1)
+        cmd_service_status(args)
+    else:
+        print(f"❌ 启动失败: {result.get('error')}")
+        if result.get("stdout"):
+            print(result["stdout"])
+        sys.exit(1)
+
+
+def cmd_service_stop(args):
+    """停止生产环境服务 (基于 supervisor)"""
+    from broca.service_manager import stop_services
+
+    print("正在停止 Broca 服务...")
+    result = stop_services()
+
+    if result.get("success"):
+        print(f"✅ {result['message']}")
+    else:
+        print(f"❌ 停止失败: {result.get('error')}")
+        sys.exit(1)
+
+
+def cmd_service_restart(args):
+    """重启生产环境服务 (基于 supervisor)"""
+    from broca.service_manager import restart_services
+
+    print("正在重启 Broca 服务...")
+    result = restart_services()
+
+    if result.get("success"):
+        print(f"✅ {result['message']}")
+
+        # 显示最终状态
+        print()
+        time.sleep(1)
+        cmd_service_status(args)
+    else:
+        print(f"❌ 重启失败: {result.get('error')}")
+        sys.exit(1)
+
+
+def cmd_service_status(args):
+    """查看服务状态"""
+    from broca.service_manager import status_services
+
+    result = status_services()
+
+    print()
+    print("=" * 50)
+    print("  Broca 服务状态")
+    print("=" * 50)
+    print()
+
+    if result.get("error"):
+        print(f"⚠  {result['error']}")
+        print()
+        return
+
+    if not result.get("supervisord_running"):
+        print("⚠  supervisord 未运行")
+        print()
+        print("  使用 Broca service start 启动服务")
+        return
+
+    print(f"  supervisord:  ✅ 运行中")
+    print()
+    print(f"  {'服务名':<15} {'状态':<12} {'PID':<8} {'运行时间'}")
+    print(f"  {'------':<15} {'------':<12} {'---':<8} {'--------'}")
+
+    services = result.get("services", [])
+    if not services:
+        print("  (没有已注册的服务)")
+    else:
+        for svc in services:
+            name = svc.get("name", "?")
+            status = svc.get("status", "?")
+            pid = svc.get("pid", "-")
+            pid_str = str(pid) if pid else "-"
+            uptime = svc.get("uptime", "")
+
+            # 状态颜色标识
+            if status.upper() in ("RUNNING",):
+                status_display = f"✅ {status}"
+            elif status.upper() in ("STOPPED", "EXITED", "FATAL"):
+                status_display = f"❌ {status}"
+            elif status.upper() == "STARTING":
+                status_display = f"⏳ {status}"
+            else:
+                status_display = f"❓ {status}"
+
+            print(f"  {name:<15} {status_display:<12} {pid_str:<8} {uptime}")
+
+    print()
+    print("  提示: Broca service restart 重启所有服务")
+    print()
+
+
+# ======================================================================
+# Argument Parser
+# ======================================================================
+
+
 def create_parser():
     """Create the argument parser with all commands and options"""
     parser = argparse.ArgumentParser(
@@ -312,11 +496,14 @@ def create_parser():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
-  Broca                    Launch the TUI interface
-  Broca web                Start all web services
-  Broca web frontend       Start only the frontend
-  Broca web backend        Start only the backend
-  Broca version            Show version information
+  Broca                          Launch the TUI interface
+  Broca web                      Start all web services (dev mode)
+  Broca service install          One-click installation
+  Broca service start            Start production services
+  Broca service stop             Stop production services
+  Broca service restart          Restart production services
+  Broca service status           Show service status
+  Broca version                  Show version information
         """,
     )
 
@@ -326,18 +513,18 @@ examples:
     )
     parser.add_argument("--session", "-s", default=None, help="Session identifier")
 
-    # Web subcommand
-    web_parser = parser.add_subparsers(
+    # Subparsers
+    sub = parser.add_subparsers(
         dest="command",
         title="commands",
         description="Available commands",
         metavar="command",
     )
 
-    # Web command - start all services by default
-    web_sub = web_parser.add_parser(
+    # ---- web command (dev mode) ----
+    web_sub = sub.add_parser(
         "web",
-        help="Start the web frontend and/or backend services",
+        help="Start the web frontend and/or backend services (dev mode)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 examples:
@@ -347,67 +534,72 @@ examples:
   Broca web backend --port 9000       Start only backend with custom port
 """,
     )
-
-    # Add shared options to web (for starting all services without subcommand)
     web_sub.add_argument(
-        "--frontend-host",
-        default="0.0.0.0",
-        help="Frontend host address (default: 0.0.0.0)",
+        "--frontend-host", default="0.0.0.0", help="Frontend host address (default: 0.0.0.0)"
     )
     web_sub.add_argument(
-        "--frontend-port",
-        type=int,
-        default=5166,
-        help="Frontend port number (default: 5166)",
+        "--frontend-port", type=int, default=5166, help="Frontend port number (default: 5166)"
     )
     web_sub.add_argument(
-        "--backend-host",
-        default="127.0.0.1",
-        help="Backend host address (default: 127.0.0.1)",
+        "--backend-host", default="127.0.0.1", help="Backend host address (default: 127.0.0.1)"
     )
     web_sub.add_argument(
-        "--backend-port",
-        type=int,
-        default=9000,
-        help="Backend port number (default: 9000)",
+        "--backend-port", type=int, default=9000, help="Backend port number (default: 9000)"
     )
     web_sub.add_argument(
         "--reload", action="store_true", help="Enable backend auto-reload"
     )
-
-    # Second level subparsers for web command
-    web_subparsers = web_sub.add_subparsers(
-        dest="web_command",
-        title="web commands",
-        description="Web service commands",
+    web_sub.subcommands = web_sub.add_subparsers(
+        dest="web_command", title="web commands",
     )
-
-    # Frontend subcommand
-    frontend_sub = web_subparsers.add_parser(
-        "frontend",
-        help="Start only the frontend service",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
-    )
+    frontend_sub = web_sub.subcommands.add_parser("frontend", help="Start only the frontend service")
     frontend_sub.add_argument("--host", default="0.0.0.0", help="Frontend host address")
-    frontend_sub.add_argument(
-        "--port", type=int, default=5166, help="Frontend port number (default: 5166)"
+    frontend_sub.add_argument("--port", type=int, default=5166, help="Frontend port number")
+    backend_sub = web_sub.subcommands.add_parser("backend", help="Start only the backend service")
+    backend_sub.add_argument("--host", default="127.0.0.1", help="Backend host address")
+    backend_sub.add_argument("--port", type=int, default=9000, help="Backend port number")
+    backend_sub.add_argument("--no-reload", action="store_true", help="Disable backend auto-reload")
+
+    # ---- service command (production mode) ----
+    svc_sub = sub.add_parser(
+        "service",
+        help="Manage Broca production services (based on supervisor)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  Broca service install          One-click installation
+  Broca service start            Start all services
+  Broca service stop             Stop all services
+  Broca service restart          Restart all services
+  Broca service status           Show service status
+""",
+    )
+    svc_sub.subcommands = svc_sub.add_subparsers(
+        dest="service_command",
+        title="service commands",
+        description="Available service commands",
     )
 
-    # Backend subcommand
-    backend_sub = web_subparsers.add_parser(
-        "backend",
-        help="Start only the backend service",
-        formatter_class=argparse.RawDescriptionHelpFormatter,
+    # service install
+    svc_sub.subcommands.add_parser("install", help="One-click installation of Broca")
+
+    # service start
+    svc_start = svc_sub.subcommands.add_parser("start", help="Start all services")
+    svc_start.add_argument(
+        "--backend-port", type=int, default=9000,
+        help="Backend port (default: 9000)"
     )
-    backend_sub.add_argument(
-        "--host", default="127.0.0.1", help="Backend host address (default: 127.0.0.1)"
+    svc_start.add_argument(
+        "--frontend-port", type=int, default=5166,
+        help="Frontend port (default: 5166)"
     )
-    backend_sub.add_argument(
-        "--port", type=int, default=9000, help="Backend port number (default: 9000)"
-    )
-    backend_sub.add_argument(
-        "--no-reload", action="store_true", help="Disable backend auto-reload"
-    )
+
+    # service stop
+    svc_sub.subcommands.add_parser("stop", help="Stop all services")
+    # service restart
+    svc_sub.subcommands.add_parser("restart", help="Restart all services")
+    # service status
+    svc_sub.subcommands.add_parser("status", help="Show service status")
 
     return parser
 
@@ -417,16 +609,35 @@ def main():
     parser = create_parser()
     args = parser.parse_args()
 
-    # Route to appropriate handler
-    if args.command == "web":
+    command = getattr(args, "command", None)
+
+    # ---- service commands ----
+    if command == "service":
+        svc_cmd = getattr(args, "service_command", None)
+
+        if svc_cmd == "install":
+            cmd_service_install()
+        elif svc_cmd == "start":
+            cmd_service_start(args)
+        elif svc_cmd == "stop":
+            cmd_service_stop(args)
+        elif svc_cmd == "restart":
+            cmd_service_restart(args)
+        elif svc_cmd == "status":
+            cmd_service_status(args)
+        else:
+            # 没有子命令时显示帮助
+            parser.parse_args(["service", "--help"])
+
+    # ---- web commands ----
+    elif command == "web":
         web_command = getattr(args, "web_command", None)
 
         if web_command == "frontend":
             run_frontend_only(args.host, args.port)
         elif web_command == "backend":
-            run_backend_only(args.host, args.port, args.reload)
+            run_backend_only(args.host, args.port, not args.no_reload)
         else:
-            # No subcommand, start all services
             run_all_services(
                 args.frontend_host,
                 args.frontend_port,
@@ -434,6 +645,27 @@ def main():
                 args.backend_port,
                 args.reload,
             )
+
+    # ---- no command (TUI) ----
+    elif command is None:
+        # 默认行为：启动 TUI（如果存在）
+        try:
+            from broca.tui.app import BrocaTUIApp
+            app = BrocaTUIApp()
+            app.run()
+        except ImportError:
+            print(f"Broca {get_version()}")
+            print("Type 'Broca --help' for usage information.")
+            print()
+            print("Available commands:")
+            print("  web          Start web services (dev mode)")
+            print("  service      Manage production services")
+            print("  --version    Show version")
+            print()
+            print("TUI not available. Install with: pip install broca[tui]")
+
+    else:
+        parser.print_help()
 
 
 if __name__ == "__main__":
