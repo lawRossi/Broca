@@ -56,6 +56,7 @@ Broca 是一个用 Python 构建的Agent系统，核心设计理念是 **模块�
 - **上下文压缩**：智能管理长对话上下文，自动压缩过期内容
 - **Skill插件系统**：通过 Markdown 文件定义可复用的技能
 - **多客户端**：Web界面、CLI、VS Code 扩展
+- **一键安装**：通过安装脚本一键安装，支持supervisor进行服务管理
 
 ---
 
@@ -396,28 +397,107 @@ skills: all
 
 ## 快速开始
 
-### 安装
-
-```bash
-# 使用 poetry 安装
-poetry install
-
-# 或使用 pip
-pip install -e .
-```
-
-### 启动
-
-```bash
-# 启动 Web 服务（前端 + 后端）
-Broca web
-```
-
 ### 环境要求
 
-- Python ≥ 3.12
-- pnpm（Web 前端）
-- Node.js（VS Code 扩展）
+| 依赖 | 最低版本 | 说明 |
+|------|:--------:|------|
+| Python | ≥ 3.12 | 主语言 |
+| pnpm | 任意版本 | Web 前端构建（可降级 npm） |
+| Node.js | ≥ 18 | 前端构建 |
+| nginx | 任意版本 | **可选** — 生产环境推荐 |
+
+### 一键安装（生产环境）
+
+```bash
+# 克隆项目
+git clone <repo-url> && cd broca
+
+# 一键安装
+sh scripts/install.sh
+```
+
+安装脚本会依次执行：
+
+| 步骤 | 内容 |
+|:----:|------|
+| 1/8 | 检查系统依赖（Python、pnpm、nginx） |
+| 2/8 | 安装 broca Python 模块 + supervisor |
+| 3/8 | 创建数据库并执行迁移（`~/.broca/data/`） |
+| 4/8 | 配置文件上传存储（可选，支持 Cloudflare R2 / Supabase S3） |
+| 5/8 | 安装前端依赖并构建 |
+| 6/8 | 配置前端部署（检测到 nginx 则生成代理配置，否则使用 vite preview） |
+| 7/8 | 生成 supervisor 进程管理配置 |
+| 8/8 | 完成安装 |
+
+安装目录结构：
+
+```
+~/.broca/
+├── data/
+│   ├── sessions.db        # broca 主数据库（会话、消息、Agent）
+│   └── backend.db         # 后端数据库（用户、认证）
+├── logs/
+│   ├── supervisord.log
+│   ├── backend.out.log
+│   └── frontend.out.log
+├── supervisor/
+│   └── supervisord.conf   # supervisor 配置
+├── run/
+│   └── supervisord.pid
+├── install.json           # 安装信息
+└── nginx-broca.conf       # nginx 配置（仅 nginx 模式）
+```
+
+### 服务管理
+
+```bash
+# 启动所有生产服务
+broca service start
+
+# 查看服务状态
+broca service status
+
+# 重启服务
+broca service restart
+
+# 停止服务
+broca service stop
+```
+
+### 开发模式
+
+```bash
+# 同时启动前端 + 后端（热重载）
+broca web
+```
+
+### 部署架构
+
+#### nginx 模式（推荐）
+
+```
+浏览器 ──→ nginx(:5166) ──proxy──→ FastAPI(:9000)    REST API
+                        ──proxy──→ Socket.IO(:6868)  实时通信
+                        ──static──→ dist/            前端静态文件
+```
+
+**优点**：单端口访问，无需额外防火墙放行，WebSocket 代理自动处理跨域。
+
+#### vite preview 模式
+
+```
+浏览器 ──→ vite preview(:5166)  （静态文件，无代理）
+         axios ──→ http://SERVER:9000/api/...
+         WebSocket ──→ http://SERVER:6868/socket.io/
+```
+
+**优点**：无需 nginx，开箱即用。**注意**：需在安装时配置后端地址，并放行 9000 和 6868 端口。
+
+### 访问
+
+- Web 界面：`http://localhost:5166`
+- REST API：`http://localhost:9000/api/`
+- Socket.IO：`http://localhost:6868`
 
 ---
 
