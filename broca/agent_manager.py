@@ -16,7 +16,19 @@ logger = get_logger(__name__)
 
 class AgentFactory:
     _instance = None
-    built_in_agent_config_dir = Path(__file__).parent.parent / "configs" / "agents"
+
+    def _resolve_agent_config_dir(self) -> str:
+        """获取 Agent 配置目录，优先级: 环境变量 > ~/.broca > 包默认"""
+        # 1. 环境变量
+        env_dir = os.getenv("BROCA_AGENTS_CONFIG_DIR")
+        if env_dir:
+            return env_dir
+        # 2. ~/.broca/configs/agents/
+        user_dir = str(Path.home() / ".broca" / "configs" / "agents")
+        if os.path.isdir(user_dir):
+            return user_dir
+        # 3. 包内默认路径（editable 安装时指向项目，非 editable 时指向 site-packages）
+        return str(Path(__file__).parent.parent / "configs" / "agents")
 
     def __new__(cls):
         if cls._instance is None:
@@ -46,7 +58,7 @@ class AgentFactory:
             session_agents = {agent.name: agent for agent in agents}
             self._session_agents[session_id] = session_agents
         else:
-            agent_configs = self._load_agent_configs(self.built_in_agent_config_dir)
+            agent_configs = self._load_agent_configs(self._resolve_agent_config_dir())
             boostrap_config_dir = Path(os.getcwd()) / ".agents/agents"
             agent_configs.extend(self._load_agent_configs(boostrap_config_dir))
             session_manager = SessionManager()

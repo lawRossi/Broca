@@ -10,6 +10,11 @@ from app.api import api_router
 from app.core.socketio_runtime import SocketIOServerConfig, SocketIOServerRuntime
 from app.services.auth_service import AuthService
 
+# 初始化日志（stderr + 文件），必须在任何 import 之后、app 创建之前
+from broca.logging_config import init_logging
+
+init_logging()
+
 WHITE_LIST = {
     "/api/auth/login",
     "/api/auth/register",

@@ -1,94 +1,117 @@
 """
 统一的日志配置模块
 
-提供全局的日志配置，避免在各个模块中重复配置。
-支持不同模块的日志级别配置和日志文件分离。
+日志输出策略（由 supervisor 管理时）：
+  - stderr → supervisor 捕获到 backend.err.log （关键日志实时可见）
+  - 文件   → ~/.broca/logs/agent.log         （完整轮转归档）
+
+可通过环境变量覆盖：
+  BROCA_LOG_DIR    日志目录（默认 ~/.broca/logs）
+  BROCA_LOG_LEVEL  日志级别（默认 INFO）
 """
 
+import os
+import sys
 from pathlib import Path
 from typing import Optional
 
 from loguru import logger
 
-from broca.configs import get_configs
+
+def get_log_dir() -> str:
+    """获取日志目录，优先环境变量"""
+    env_dir = os.getenv("BROCA_LOG_DIR")
+    if env_dir:
+        return env_dir
+    return str(Path.home() / ".broca" / "logs")
+
+
+def get_log_level() -> str:
+    """获取日志级别，优先环境变量"""
+    return os.getenv("BROCA_LOG_LEVEL", "INFO")
 
 
 class LoggingConfig:
     """日志配置管理器"""
-    
+
     _initialized = False
-    
+
     @classmethod
-    def init_logging(cls, log_file: Optional[str] = None, log_level: Optional[str] = None):
+    def init_logging(
+        cls,
+        log_file: Optional[str] = None,
+        log_level: Optional[str] = None,
+    ):
         """
-        初始化全局日志配置
-        
+        初始化日志配置，同时输出到 stderr 和文件。
+
         Args:
-            log_file: 日志文件路径，如果为None则使用配置中的默认值
-            log_level: 日志级别，如果为None则使用配置中的默认值
+            log_file: 日志文件路径，默认 ~/.broca/logs/agent.log
+            log_level: 日志级别，默认 INFO
         """
         if cls._initialized:
-            logger.warning("Logging already initialized, skipping re-initialization")
             return
-            
-        # 获取配置
-        configs = get_configs()
-        
-        # 确定日志文件路径
+
+        log_level = log_level or get_log_level()
+        log_dir = get_log_dir()
+
         if log_file is None:
-            log_file = configs.log_file
-            
-        if log_level is None:
-            log_level = configs.log_level
-            
-        # 确保日志文件目录存在
-        log_path = Path(log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # 移除所有现有的处理器
+            log_file = os.path.join(log_dir, "agent.log")
+
+        # 确保日志目录存在
+        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+
+        # 移除默认的 stderr 处理器（loguru 自带的），替换为自定义配置
         logger.remove()
 
-        # 添加文件输出
+        # 1. stderr 输出（supervisor 捕获此输出）
+        logger.add(
+            sys.stderr,
+            format="<green>{time:HH:mm:ss}</green> | <level>{level: <8}</level> | <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> - <level>{message}</level>",
+            level=log_level,
+            colorize=True,
+            backtrace=True,
+            diagnose=True,
+        )
+
+        # 2. 文件输出（完整轮转归档，记录更多细节）
         logger.add(
             log_file,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-            level=log_level,
-            rotation="10 MB",  # 日志文件大小达到10MB时轮转
-            retention="30 days",  # 保留30天的日志
-            compression="zip",  # 压缩旧的日志文件
+            level="DEBUG",
+            rotation="10 MB",
+            retention="30 days",
+            compression="zip",
             encoding="utf-8",
+            backtrace=True,
+            diagnose=True,
         )
-        
+
         cls._initialized = True
-        logger.info(f"Logging initialized. Main log: {log_file}, Level: {log_level}")
+        logger.info(
+            "Logging initialized: stderr=ON, file=%s, level=%s",
+            log_file,
+            log_level,
+        )
 
     @classmethod
     def get_logger(cls, name: str = __name__):
-        """
-        获取指定名称的logger
-        
-        Args:
-            name: logger名称，通常是模块的__name__
-            
-        Returns:
-            配置好的logger实例
-        """
+        """获取 logger"""
         if not cls._initialized:
             cls.init_logging()
         return logger.bind(name=name)
 
 
 def init_logging(log_file: Optional[str] = None, log_level: Optional[str] = None):
-    """初始化日志配置的便捷函数"""
+    """初始化日志配置"""
     LoggingConfig.init_logging(log_file, log_level)
 
 
 def get_logger(name: str = __name__):
-    """获取logger的便捷函数"""
+    """获取 logger"""
     return LoggingConfig.get_logger(name)
 
 
-# 导出常用的日志级别常量
 DEBUG = "DEBUG"
 INFO = "INFO"
 WARNING = "WARNING"

@@ -364,31 +364,22 @@ def restart_services() -> Dict[str, Any]:
 
 
 def _generate_supervisor_config(
-    project_root: str,
-    frontend_dir: str,
-    use_nginx: bool,
     backend_port: int = 9000,
-    frontend_port: int = 5166,
 ) -> str:
     """
-    生成 supervisor 配置内容
+    生成 supervisor 配置内容（nginx 代理模式）
 
     Args:
-        project_root: 项目根目录
-        frontend_dir: 前端目录
-        use_nginx: 是否使用 nginx 部署前端
         backend_port: 后端端口
-        frontend_port: 前端端口
 
     Returns:
         配置文本
     """
     user = os.environ.get("USER", "root")
-    backend_host = "0.0.0.0" if not use_nginx else "127.0.0.1"
 
     lines = [
         "; Broca - Supervisor 配置",
-        f"; 项目路径: {project_root}",
+        f"; 安装目录: {BROCA_HOME}",
         f"; 生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
         "",
         "[unix_http_server]",
@@ -414,8 +405,8 @@ def _generate_supervisor_config(
         "; Backend (FastAPI / Uvicorn)",
         "; ====================",
         "[program:backend]",
-        f"command=uvicorn app.main:app --host {backend_host} --port {backend_port} --log-level info",
-        f"directory={project_root}/broca-web/backend",
+        f"command=uvicorn app.main:app --host 127.0.0.1 --port {backend_port} --log-level info",
+        f"directory={BROCA_HOME}/web/backend",
         f"user={user}",
         "autostart=true",
         "autorestart=true",
@@ -424,40 +415,16 @@ def _generate_supervisor_config(
         f"stdout_logfile={LOG_DIR}/backend.out.log",
         "stdout_logfile_maxbytes=20MB",
         "stderr_logfile_maxbytes=20MB",
-        f"environment=PYTHONPATH=\"{project_root}:$PYTHONPATH\",BROCA_DATABASE_DIR=\"{BROCA_HOME}/data\",BROCA_LLM_CONFIG=\"{BROCA_HOME}/llm_config.json\",SQLITE_DATABASE_PATH=\"sqlite:///{BROCA_HOME}/data/backend.db\"",
+        f"environment=PYTHONPATH=\"{BROCA_HOME}/web/backend:$PYTHONPATH\",BROCA_CONFIG=\"{BROCA_HOME}/configs.json\",BROCA_DATABASE_DIR=\"{BROCA_HOME}/data\",BROCA_LLM_CONFIG=\"{BROCA_HOME}/llm_config.json\",BROCA_AGENTS_CONFIG_DIR=\"{BROCA_HOME}/configs/agents\",BROCA_LOG_DIR=\"{BROCA_HOME}/logs\",SQLITE_DATABASE_PATH=\"sqlite:///{BROCA_HOME}/data/backend.db\"",
         "stopasgroup=true",
         "killasgroup=true",
     ]
-
-    # 前端配置 (仅在非 nginx 模式下)
-    if not use_nginx:
-        lines.extend([
-            "",
-            "; ====================",
-            "; Frontend (Vite Preview)",
-            "; ====================",
-            "[program:frontend]",
-            f"command=npx vite preview --host 0.0.0.0 --port {frontend_port} --strictPort",
-            f"directory={frontend_dir}",
-            f"user={user}",
-            "autostart=true",
-            "autorestart=true",
-            "startretries=3",
-            f"stderr_logfile={LOG_DIR}/frontend.err.log",
-            f"stdout_logfile={LOG_DIR}/frontend.out.log",
-            "stdout_logfile_maxbytes=20MB",
-            "stderr_logfile_maxbytes=20MB",
-            "stopasgroup=true",
-            "killasgroup=true",
-        ])
 
     return "\n".join(lines)
 
 
 def write_supervisor_config(
-    use_nginx: bool,
     backend_port: int = 9000,
-    frontend_port: int = 5166,
 ) -> str:
     """
     生成并写入 supervisor 配置文件
@@ -466,16 +433,9 @@ def write_supervisor_config(
         配置文件路径
     """
     _ensure_dirs()
-    project_root = _get_project_root()
-    frontend_dir = str(project_root / "broca-web" / "frontend")
-    project_root = str(project_root)
 
     config_text = _generate_supervisor_config(
-        project_root=project_root,
-        frontend_dir=frontend_dir,
-        use_nginx=use_nginx,
         backend_port=backend_port,
-        frontend_port=frontend_port,
     )
 
     SUPERVISOR_CONF.write_text(config_text)

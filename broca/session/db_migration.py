@@ -27,13 +27,11 @@ class DatabaseMigrationManager:
             if (current_dir / "pyproject.toml").exists():
                 self.project_root = str(current_dir)
             else:
-                raise ValueError("无法自动检测项目根目录，请显式指定project_root参数")
+                self.project_root = ".."
         else:
             self.project_root = project_root
 
-        self.alembic_ini = os.path.join(self.project_root, "alembic.ini")
-        if not os.path.exists(self.alembic_ini):
-            raise FileNotFoundError(f"未找到alembic配置文件: {self.alembic_ini}")
+        self.alembic_ini = os.path.join(self.project_root, "broca", "alembic.ini")
 
     def run_alembic_command(self, command: str, *args: str) -> bool:
         """
@@ -46,7 +44,7 @@ class DatabaseMigrationManager:
         Returns:
             bool: 命令是否成功执行
         """
-        cmd = [sys.executable, "-m", "alembic", command] + list(args)
+        cmd = [sys.executable, "-m", "alembic", "-c", "broca/alembic.ini", command] + list(args)
 
         try:
             result = subprocess.run(

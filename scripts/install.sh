@@ -84,10 +84,8 @@ else
 fi
 
 # --- nginx 检测 ---
-USE_NGINX=false
 NGINX_CONF_DIR=""
 if command -v nginx &>/dev/null; then
-    USE_NGINX=true
     info "nginx: $(nginx -v 2>&1)"
 
     # 查找 nginx 配置目录 (常见位置)
@@ -97,14 +95,18 @@ if command -v nginx &>/dev/null; then
             break
         fi
     done
+
     if [[ -z "$NGINX_CONF_DIR" ]]; then
-        warn "检测到 nginx 但未找到配置目录，将使用 vite preview 部署前端。"
-        USE_NGINX=false
-    else
-        info "nginx 配置目录: $NGINX_CONF_DIR"
+        error "已检测到 nginx 但未找到配置目录（已安装但未运行？）。"
+        error "请先启动 nginx: sudo systemctl start nginx"
+        exit 1
     fi
+
+    info "nginx 配置目录: $NGINX_CONF_DIR"
 else
-    info "未检测到 nginx，将使用 vite preview 部署前端。"
+    error "未检测到 nginx，生产部署需要 nginx。"
+    error "请先安装 nginx: sudo apt install nginx  (或 brew install nginx)"
+    exit 1
 fi
 
 # ============================================================================
@@ -117,9 +119,9 @@ cd "$PROJECT_ROOT"
 # 先安装 build 依赖
 $PYTHON -m pip install --upgrade pip setuptools wheel build 2>&1 | grep -v "^$" | grep -v "Requirement already"
 
-# 安装 broca 模块 (可编辑模式)
-info "安装 broca 模块 (editable mode)..."
-$PYTHON -m pip install -e "$PROJECT_ROOT" 2>&1 | grep -v "^$" | grep -v "Requirement already"
+# 安装 broca 模块
+info "安装 broca 模块..."
+$PYTHON -m pip install "$PROJECT_ROOT" 2>&1 | grep -v "^$" | grep -v "Requirement already"
 
 # 安装 supervisor (用于进程管理)
 info "安装 supervisor..."
@@ -142,19 +144,12 @@ BACKEND_DB_PATH="$BROCA_DB_DIR/backend.db"
 
 info "数据库目录: $BROCA_DB_DIR"
 
-# ---- 更新 root alembic.ini 中的数据库路径 ----
-ROOT_ALEMBIC_INI="$PROJECT_ROOT/alembic.ini"
-if [[ -f "$ROOT_ALEMBIC_INI" ]]; then
-    sed -i "s|^sqlalchemy.url = .*|sqlalchemy.url = sqlite:///${BROCA_DB_PATH}|" "$ROOT_ALEMBIC_INI"
-    info "alembic.ini 数据库路径已更新"
-fi
-
 # ---- 迁移1: broca 主数据库 ----
 info "迁移 broca 主数据库..."
 cd "$PROJECT_ROOT"
-BROCA_DATABASE_DIR="$BROCA_DB_DIR" $PYTHON -m alembic upgrade head 2>&1 | tail -5 && \
+BROCA_DATABASE_DIR="$BROCA_DB_DIR" $PYTHON -m alembic -c broca/alembic.ini upgrade head 2>&1 | tail -5 && \
     info "broca 主数据库迁移完成" || \
-    warn "broca 主数据库迁移失败（可之后手动执行: alembic upgrade head）"
+    warn "broca 主数据库迁移失败（可之后手动执行: alembic -c broca/alembic.ini upgrade head）"
 
 # ---- 迁移2: 后端数据库 ----
 info "迁移后端数据库..."
@@ -171,16 +166,37 @@ echo ""
 # 配置 LLM
 # ============================================================================
 echo ""
-echo "  LLM 配置文件"
+echo "  配置文件"
 echo "  ────────────────────────────────────────────"
-echo "  用户配置: $BROCA_HOME/llm_config.json"
+echo "  configs.json   → $BROCA_HOME/configs.json"  
+echo "  llm_config.json → $BROCA_HOME/llm_config.json"
 echo ""
-echo "  首次安装会自动创建用户配置副本，之后你可安全地编辑它。"
-echo "  单个 Key 也可通过环境变量覆盖:"
+echo "  首次安装会自动创建用户配置副本，之后你可安全地编辑它们。"
+echo "  单个 LLM Key 也可通过环境变量覆盖:"
 echo "    export BROCA_API_KEY_{PROVIDER}=\"your-key\""
 echo "  ────────────────────────────────────────────"
 echo ""
 
+# ---- 复制 configs.json ----
+CONFIG_DST="$BROCA_HOME/configs.json"
+CONFIG_SRC="$PROJECT_ROOT/configs/configs.json"
+
+if [[ ! -f "$CONFIG_DST" ]]; then
+    if [[ -f "$CONFIG_SRC" ]]; then
+        cp "$CONFIG_SRC" "$CONFIG_DST"
+        # 将路径改为指向 ~/.broca/
+        sed -i "s|\"database_dir\":.*|\"database_dir\": \"$BROCA_HOME/data\",|" "$CONFIG_DST"
+        sed -i "s|\"llm_config_file\":.*|\"llm_config_file\": \"$BROCA_HOME/llm_config.json\",|" "$CONFIG_DST"
+        sed -i "s|\"log_file\":.*|\"log_file\": \"$BROCA_HOME/logs/agent.log\"|" "$CONFIG_DST"
+        info "已创建用户配置: $CONFIG_DST"
+    else
+        warn "未找到默认配置: $CONFIG_SRC"
+    fi
+else
+    info "用户配置已存在: $CONFIG_DST（跳过）"
+fi
+
+# ---- 复制 llm_config.json ----
 LLM_DST="$BROCA_HOME/llm_config.json"
 LLM_SRC="$PROJECT_ROOT/configs/llm_config.json"
 
@@ -188,13 +204,62 @@ if [[ ! -f "$LLM_DST" ]]; then
     if [[ -f "$LLM_SRC" ]]; then
         cp "$LLM_SRC" "$LLM_DST"
         info "已创建用户 LLM 配置: $LLM_DST"
-        echo "  请编辑此文件配置你的 LLM API Key 和模型。"
     else
         warn "未找到默认 LLM 配置: $LLM_SRC"
         echo "  请手动创建 $LLM_DST"
     fi
 else
     info "用户 LLM 配置已存在: $LLM_DST（跳过）"
+fi
+
+# ---- 复制 Agent 配置 ----
+AGENTS_SRC="$PROJECT_ROOT/configs/agents"
+AGENTS_DST="$BROCA_HOME/configs/agents"
+
+if [[ -d "$AGENTS_SRC" ]]; then
+    if [[ ! -d "$AGENTS_DST" ]]; then
+        mkdir -p "$AGENTS_DST"
+        cp -r "$AGENTS_SRC/"* "$AGENTS_DST/" 2>/dev/null
+        info "已创建 Agent 配置: $AGENTS_DST"
+    else
+        info "Agent 配置已存在: $AGENTS_DST（跳过）"
+    fi
+else
+    warn "未找到 Agent 配置目录: $AGENTS_SRC"
+fi
+
+echo ""
+
+# ============================================================================
+# 部署 Web 代码到 ~/.broca/web/
+# ============================================================================
+echo ""
+echo "  部署后端和前端代码到 $BROCA_HOME/web/ ..."
+echo ""
+
+BROCA_WEB_DIR="$BROCA_HOME/web"
+mkdir -p "$BROCA_WEB_DIR"
+
+# 复制后端代码
+if [[ -d "$PROJECT_ROOT/broca-web/backend" ]]; then
+    rsync -a --delete "$PROJECT_ROOT/broca-web/backend/" "$BROCA_WEB_DIR/backend/" 2>/dev/null || \
+        cp -r "$PROJECT_ROOT/broca-web/backend" "$BROCA_WEB_DIR/"
+    info "后端代码已部署: $BROCA_WEB_DIR/backend/"
+else
+    error "后端代码目录不存在: $PROJECT_ROOT/broca-web/backend"
+    exit 1
+fi
+
+# 复制前端源码（不含 node_modules/dist）
+if [[ -d "$PROJECT_ROOT/broca-web/frontend" ]]; then
+    rsync -a --delete \
+        --exclude='node_modules' --exclude='dist' --exclude='.env.*' \
+        "$PROJECT_ROOT/broca-web/frontend/" "$BROCA_WEB_DIR/frontend/" 2>/dev/null || \
+        cp -r "$PROJECT_ROOT/broca-web/frontend" "$BROCA_WEB_DIR/frontend"
+    info "前端源码已部署: $BROCA_WEB_DIR/frontend/"
+else
+    error "前端源码目录不存在: $PROJECT_ROOT/broca-web/frontend"
+    exit 1
 fi
 
 echo ""
@@ -204,7 +269,7 @@ echo ""
 # ============================================================================
 step "Step 4/8: 配置文件上传存储..."
 
-FRONTEND_DIR="$PROJECT_ROOT/broca-web/frontend"
+FRONTEND_DIR="$BROCA_WEB_DIR/frontend"
 ENV_FILE="$FRONTEND_DIR/.env.production"
 
 # 检测是否已有配置
@@ -285,6 +350,7 @@ else
                 prompt "  S3 Secret Access Key [${current_s3_secret:-}]: "
                 read -r -s input_s3_secret
                 echo "  ********"
+                s3_secret="${input_s3_secret:-${current_s3_secret:-}}"
 
                 prompt "  Bucket 名称 [${current_bucket:-upload}]: "
                 read -r input_bucket
@@ -336,6 +402,7 @@ else
                 prompt "  Secret Access Key [${current_cf_secret:-}]: "
                 read -r -s input_cf_secret
                 echo "  ********"
+                cf_secret="${input_cf_secret:-${current_cf_secret:-}}"
 
                 prompt "  Bucket 名称 [${current_cf_bucket:-upload}]: "
                 read -r input_cf_bucket
@@ -376,140 +443,17 @@ else
     fi
 fi
 
+# nginx 代理 API 和 Socket.IO，前端用同域路径即可
+touch "$ENV_FILE"
+sed -i '/^VITE_API_BASE_URL=/d' "$ENV_FILE"
+echo "# VITE_API_BASE_URL=" >> "$ENV_FILE"
+sed -i '/^VITE_BROCA_SOCKET_SERVER_URL=/d' "$ENV_FILE"
+echo "# VITE_BROCA_SOCKET_SERVER_URL=" >> "$ENV_FILE"
+
+echo ""
+
 # ============================================================================
-# 配置后端连接地址 (REST API + Socket.IO)
-# ============================================================================
-echo ""
-echo "  Broca 前端需要连接后端两个服务："
-echo "    REST API      端口 9000  (axios 请求)"
-echo "    Socket.IO     端口 6868  (WebSocket 通信)"
-echo ""
-
-if $USE_NGINX; then
-    # nginx 模式：代理 /api/ → 9000，/socket.io/ → 6868
-    info "检测到 nginx 模式，将自动代理 API 和 Socket.IO 到后端。"
-    echo "  建议将两个地址都留空，前端直接使用当前页面地址，由 nginx 代理转发。"
-    echo ""
-
-    # VITE_API_BASE_URL
-    current_api_url=$(grep -E '^VITE_API_BASE_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-    if [[ -n "$current_api_url" ]]; then
-        echo "  API 地址当前为: $current_api_url"
-        prompt "  是否改为留空(使用 nginx 代理 /api/)？(y/N) "
-        read -r reset_api
-        if [[ "$reset_api" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            touch "$ENV_FILE"
-            sed -i '/^VITE_API_BASE_URL=/d' "$ENV_FILE"
-            echo "# VITE_API_BASE_URL=" >> "$ENV_FILE"
-            info "API 地址已重置为留空（nginx 代理）"
-        fi
-    else
-        echo "  API 地址: ✅ 留空（使用 nginx 代理 /api/）"
-    fi
-
-    # VITE_BROCA_SOCKET_SERVER_URL
-    current_socket_url=$(grep -E '^VITE_BROCA_SOCKET_SERVER_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-    if [[ -n "$current_socket_url" ]]; then
-        echo "  Socket.IO 地址当前为: $current_socket_url"
-        prompt "  是否改为留空(使用 nginx 代理 /socket.io/)？(y/N) "
-        read -r reset_socket
-        if [[ "$reset_socket" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            touch "$ENV_FILE"
-            sed -i '/^VITE_BROCA_SOCKET_SERVER_URL=/d' "$ENV_FILE"
-            echo "# VITE_BROCA_SOCKET_SERVER_URL=" >> "$ENV_FILE"
-            info "Socket.IO 地址已重置为留空（nginx 代理）"
-        fi
-    else
-        echo "  Socket.IO 地址: ✅ 留空（使用 nginx 代理 /socket.io/）"
-    fi
-else
-    # vite preview 模式：无代理，前端必须直连两个后端服务
-    echo "  当前使用 vite preview 部署前端（端口 5166），该模式无代理功能。"
-    echo ""
-    echo "  前端必须直接连接后端服务，请提供浏览器可访问到的服务器地址："
-    echo ""
-    echo "    服务        端口   示例 (本机)           示例 (公网)"
-    echo "    ─────────────────────────────────────────────────────────"
-    echo "    REST API    9000   http://localhost:9000  http://81.71.49.200:9000"
-    echo "    Socket.IO   6868   http://localhost:6868  http://81.71.49.200:6868"
-    echo ""
-    echo "  提示：API 地址只需输服务器地址，/api 前缀会自动补上。"
-    echo "  请确保服务器防火墙已放行 9000 和 6868 端口。"
-    echo ""
-
-    # VITE_API_BASE_URL
-    current_api_url=$(grep -E '^VITE_API_BASE_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-    if [[ -n "$current_api_url" ]]; then
-        echo "  当前 API 地址: $current_api_url"
-        prompt "  是否更改？(y/N) "
-        read -r change_api
-        if [[ "$change_api" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            prompt "  REST API 地址 (例如 http://81.71.49.200:9000): "
-            read -r input_api_url
-            input_api_url="${input_api_url:-}"
-        else
-            input_api_url="$current_api_url"
-        fi
-    else
-        echo "  ⚠  必须配置 REST API 地址，否则无法加载历史消息等数据！"
-        prompt "  REST API 地址 (例如 http://81.71.49.200:9000): "
-        read -r input_api_url
-        input_api_url="${input_api_url:-}"
-    fi
-
-    # VITE_BROCA_SOCKET_SERVER_URL
-    current_socket_url=$(grep -E '^VITE_BROCA_SOCKET_SERVER_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-    if [[ -n "$current_socket_url" ]]; then
-        echo ""
-        echo "  当前 Socket.IO 地址: $current_socket_url"
-        prompt "  是否更改？(y/N) "
-        read -r change_socket
-        if [[ "$change_socket" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-            prompt "  Socket.IO 地址 (例如 http://81.71.49.200:6868): "
-            read -r input_socket_url
-            input_socket_url="${input_socket_url:-}"
-        else
-            input_socket_url="$current_socket_url"
-        fi
-    else
-        echo ""
-        echo "  ⚠  必须配置 Socket.IO 地址，否则前端无法实时通信！"
-        prompt "  Socket.IO 地址 (例如 http://81.71.49.200:6868): "
-        read -r input_socket_url
-        input_socket_url="${input_socket_url:-}"
-    fi
-
-    # 写入 .env.production
-    touch "$ENV_FILE"
-
-    # 写 API 地址（自动补上 /api 前缀）
-    sed -i '/^VITE_API_BASE_URL=/d' "$ENV_FILE"
-    if [[ -n "$input_api_url" ]]; then
-        # 去掉末尾的 /
-        input_api_url="${input_api_url%/}"
-        # 如果用户没输 /api 就自动补上
-        if [[ "$input_api_url" != */api ]]; then
-            input_api_url="${input_api_url}/api"
-        fi
-        echo "VITE_API_BASE_URL=$input_api_url" >> "$ENV_FILE"
-        info "REST API 地址已配置: $input_api_url"
-    else
-        echo "# VITE_API_BASE_URL=" >> "$ENV_FILE"
-        warn "REST API 地址未配置！前端将使用默认 /api（仅 nginx 模式有效）。"
-    fi
-
-    # 写 Socket.IO 地址
-    sed -i '/^VITE_BROCA_SOCKET_SERVER_URL=/d' "$ENV_FILE"
-    if [[ -n "$input_socket_url" ]]; then
-        echo "VITE_BROCA_SOCKET_SERVER_URL=$input_socket_url" >> "$ENV_FILE"
-        info "Socket.IO 地址已配置: $input_socket_url"
-    else
-        echo "# VITE_BROCA_SOCKET_SERVER_URL=" >> "$ENV_FILE"
-        warn "Socket.IO 地址未配置！前端将无法连接 Socket.IO 服务。"
-    fi
-fi
-
-echo ""
+# Step 5: 安装前端依赖并构建
 
 # ============================================================================
 # Step 5: 安装前端依赖并构建
@@ -542,33 +486,51 @@ fi
 info "前端构建完成: $FRONTEND_DIR/dist"
 
 # ============================================================================
-# Step 6: 部署前端 (nginx / vite preview)
+# Step 6: 部署前端
 # ============================================================================
 step "Step 6/8: 配置前端部署方式..."
 
 mkdir -p "$BROCA_HOME"
 
-if $USE_NGINX; then
-    info "配置 nginx 站点..."
+info "配置 nginx 站点..."
 
-    # 复制前端构建产物到 broca home
-    rsync -a "$FRONTEND_DIR/dist/" "$BROCA_HOME/frontend-dist/" 2>/dev/null || \
-        cp -r "$FRONTEND_DIR/dist" "$BROCA_HOME/frontend-dist"
+    # nginx 以 www-data 运行，家目录不可读，静态文件放到系统路径
+    NGINX_DIST_DIR="/var/www/broca/frontend"
+    echo ""
+    echo "  注意：nginx 以 www-data 用户运行，不能读取 ~/.broca/ 下的文件。"
+    echo "  静态文件将部署到 $NGINX_DIST_DIR"
+    echo ""
 
-    # 生成 nginx 配置
+    if command -v sudo &>/dev/null; then
+        sudo mkdir -p "$NGINX_DIST_DIR"
+        sudo cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
+        sudo chown -R www-data:www-data "$NGINX_DIST_DIR" 2>/dev/null || true
+        info "前端静态文件已部署到: $NGINX_DIST_DIR"
+    else
+        warn "未找到 sudo，请手动复制前端文件:"
+        echo "    sudo mkdir -p $NGINX_DIST_DIR"
+        echo "    sudo cp -r $FRONTEND_DIR/dist/* $NGINX_DIST_DIR/"
+        echo "    sudo chown -R www-data:www-data $NGINX_DIST_DIR"
+        # 回退到 ~/.broca/（需要手工修权限）
+        NGINX_DIST_DIR="$BROCA_HOME/frontend-dist"
+        mkdir -p "$NGINX_DIST_DIR"
+        cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
+        warn "已回退部署到 $NGINX_DIST_DIR"
+        echo "  如遇权限错误，运行: chmod o+x ~ ~/.broca $NGINX_DIST_DIR"
+    fi
+
+    # 生成 nginx 配置（使用转义保留 nginx 变量）
     NGINX_SITE_CONF="$BROCA_HOME/nginx-broca.conf"
-    cat > "$NGINX_SITE_CONF" << 'NGINXEOF'
+    cat > "$NGINX_SITE_CONF" <<- NGINXEOF
 # Broca Web - Nginx 配置
-# 请将此文件软链接到 nginx 的 sites-enabled 目录:
-#   sudo ln -sf ~/.broca/nginx-broca.conf /etc/nginx/sites-enabled/broca.conf
-#   sudo nginx -t && sudo systemctl reload nginx
+# 由 broca service install 自动生成
 
 server {
     listen       5166;
     server_name  _;
 
     # 前端静态文件
-    root __BROCA_HOME__/frontend-dist;
+    root ${NGINX_DIST_DIR};
     index index.html;
 
     # gzip 压缩
@@ -578,49 +540,51 @@ server {
     # API 反向代理 (后端)
     location /api/ {
         proxy_pass http://127.0.0.1:9000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     # Socket.IO 反向代理
     location /socket.io/ {
         proxy_pass http://127.0.0.1:6868;
         proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto \$scheme;
     }
 
     # SPA 路由: 所有非文件请求返回 index.html
     location / {
-        try_files $uri $uri/ /index.html;
+        try_files \$uri \$uri/ /index.html;
     }
 }
 NGINXEOF
 
-    # 替换占位符
-    BROCA_HOME_ESC=$(echo "$BROCA_HOME" | sed 's/\//\\\//g')
-    sed -i "s/__BROCA_HOME__/$BROCA_HOME_ESC/g" "$NGINX_SITE_CONF"
-
     info "nginx 配置文件已生成: $NGINX_SITE_CONF"
-    echo ""
-    echo "  ----- 后续步骤 -----"
-    echo "  运行以下命令启用 nginx 站点:"
-    echo ""
-    echo "    sudo ln -sf $NGINX_SITE_CONF ${NGINX_CONF_DIR}/sites-enabled/broca.conf"
-    echo "    sudo nginx -t && sudo systemctl reload nginx"
-    echo ""
-    echo "  或手动复制配置到 nginx。"
-    echo "  --------------------"
-    echo ""
-else
-    info "使用 vite preview 部署前端 (由 supervisor 管理)。"
-fi
+
+    # 启用 nginx 站点
+    if command -v sudo &>/dev/null; then
+        info "启用 nginx 站点..."
+        sudo ln -sf "$NGINX_SITE_CONF" "${NGINX_CONF_DIR}/sites-enabled/broca.conf" 2>&1 || \
+            warn "符号链接失败，请手动执行: sudo ln -sf $NGINX_SITE_CONF ${NGINX_CONF_DIR}/sites-enabled/broca.conf"
+
+        if sudo nginx -t 2>&1; then
+            sudo systemctl reload nginx 2>/dev/null || sudo nginx -s reload 2>/dev/null || \
+                warn "nginx 重载失败，请手动执行: sudo nginx -t && sudo systemctl reload nginx"
+            info "nginx 站点已启用"
+        else
+            warn "nginx 配置测试失败，请检查: sudo nginx -t"
+        fi
+    else
+        warn "未找到 sudo，请手动执行以下命令:"
+        echo "    sudo ln -sf $NGINX_SITE_CONF ${NGINX_CONF_DIR}/sites-enabled/broca.conf"
+        echo "    sudo nginx -t && sudo systemctl reload nginx"
+    fi
 
 # ============================================================================
 # Step 7: 创建 supervisor 配置
@@ -636,14 +600,8 @@ mkdir -p "$SUPERVISOR_DIR" "$RUN_DIR" "$LOG_DIR"
 # 生成 supervisor 配置
 SUPERVISOR_CONF="$SUPERVISOR_DIR/supervisord.conf"
 
-# 根据部署模式选择后端监听地址
-if $USE_NGINX; then
-    # nginx 模式：后端只需监听本机，由 nginx 代理转发
-    BACKEND_HOST="127.0.0.1"
-else
-    # vite preview 模式：外部浏览器直连后端，必须监听 0.0.0.0
-    BACKEND_HOST="0.0.0.0"
-fi
+# nginx 代理后端，后端只需监听本机
+BACKEND_HOST="127.0.0.1"
 
 cat > "$SUPERVISOR_CONF" << SUPEOF
 ; Broca - Supervisor 配置
@@ -673,7 +631,7 @@ serverurl=unix://$SUPERVISOR_DIR/supervisor.sock
 ; ====================
 [program:backend]
 command=uvicorn app.main:app --host $BACKEND_HOST --port 9000 --log-level info
-directory=$PROJECT_ROOT/broca-web/backend
+directory=$BROCA_WEB_DIR/backend
 user=$USER
 autostart=true
 autorestart=true
@@ -682,38 +640,10 @@ stderr_logfile=$LOG_DIR/backend.err.log
 stdout_logfile=$LOG_DIR/backend.out.log
 stdout_logfile_maxbytes=20MB
 stderr_logfile_maxbytes=20MB
-environment=PYTHONPATH="$PROJECT_ROOT:\$PYTHONPATH",BROCA_DATABASE_DIR="$BROCA_HOME/data",BROCA_LLM_CONFIG="$BROCA_HOME/llm_config.json",SQLITE_DATABASE_PATH="sqlite:///${BROCA_HOME}/data/backend.db"
+environment=PYTHONPATH="$BROCA_WEB_DIR/backend:\$PYTHONPATH",BROCA_CONFIG="$BROCA_HOME/configs.json",BROCA_DATABASE_DIR="$BROCA_HOME/data",BROCA_LLM_CONFIG="$BROCA_HOME/llm_config.json",BROCA_AGENTS_CONFIG_DIR="$BROCA_HOME/configs/agents",BROCA_LOG_DIR="$BROCA_HOME/logs",SQLITE_DATABASE_PATH="sqlite:///${BROCA_HOME}/data/backend.db"
 stopasgroup=true
 killasgroup=true
 SUPEOF
-
-# 前端进程配置 (仅在非 nginx 模式下)
-if ! $USE_NGINX; then
-    cat >> "$SUPERVISOR_CONF" << 'SUPEOF2'
-
-; ====================
-; Frontend (Vite Preview)
-; ====================
-[program:frontend]
-command=npx vite preview --host 0.0.0.0 --port 5166 --strictPort
-directory=__FRONTEND_DIR__
-user=__USER__
-autostart=true
-autorestart=true
-startretries=3
-stderr_logfile=__LOG_DIR__/frontend.err.log
-stdout_logfile=__LOG_DIR__/frontend.out.log
-stdout_logfile_maxbytes=20MB
-stderr_logfile_maxbytes=20MB
-stopasgroup=true
-killasgroup=true
-SUPEOF2
-
-    # 替换占位符
-    sed -i "s|__FRONTEND_DIR__|$FRONTEND_DIR|g" "$SUPERVISOR_CONF"
-    sed -i "s|__USER__|$USER|g" "$SUPERVISOR_CONF"
-    sed -i "s|__LOG_DIR__|$LOG_DIR|g" "$SUPERVISOR_CONF"
-fi
 
 info "supervisor 配置已生成: $SUPERVISOR_CONF"
 echo ""
@@ -738,8 +668,9 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
   "python": "$($PYTHON --version 2>&1)",
   "python_path": "$(which $PYTHON)",
   "project_root": "$PROJECT_ROOT",
-  "frontend_mode": "$($USE_NGINX && echo 'nginx' || echo 'vite-preview')",
+  "frontend_mode": "nginx",
   "frontend_dist": "$FRONTEND_DIR/dist",
+  "nginx_dist_dir": "$NGINX_DIST_DIR",
   "storage_configured": $([ -f "$ENV_FILE" ] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" && echo "true" || echo "false"),
   "backend_port": 9000,
   "frontend_port": 5166
@@ -754,7 +685,7 @@ echo ""
 echo "  项目目录: $PROJECT_ROOT"
 echo "  配置目录: $BROCA_HOME"
 echo "  日志目录: $LOG_DIR"
-echo "  前端模式: $($USE_NGINX && echo 'nginx' || echo 'vite preview')"
+echo "  前端模式: nginx"
 if [[ -f "$ENV_FILE" ]] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" 2>/dev/null; then
     echo "  文件存储: ✅ 已配置"
 else
@@ -768,10 +699,5 @@ echo "    broca web                # 启动开发模式 (前后端同时启动)"
 echo ""
 echo "  访问: http://localhost:5166"
 echo ""
-
-if $USE_NGINX; then
-    echo -e "${YELLOW}  ⚠  别忘了配置 nginx 站点:${NC}"
-    echo "    sudo ln -sf $NGINX_SITE_CONF ${NGINX_CONF_DIR}/sites-enabled/broca.conf"
-    echo "    sudo nginx -t && sudo systemctl reload nginx"
-fi
+echo "  nginx: ✅ 站点已配置 ($NGINX_SITE_CONF)"
 echo ""

@@ -425,7 +425,7 @@ sh scripts/install.sh
 | 3/8 | 创建数据库并执行迁移（`~/.broca/data/`） |
 | 4/8 | 配置文件上传存储（可选，支持 Cloudflare R2 / Supabase S3） |
 | 5/8 | 安装前端依赖并构建 |
-| 6/8 | 配置前端部署（检测到 nginx 则生成代理配置，否则使用 vite preview） |
+| 6/8 | 配置 nginx 站点（生成代理配置 + 部署静态文件） |
 | 7/8 | 生成 supervisor 进程管理配置 |
 | 8/8 | 完成安装 |
 
@@ -445,7 +445,7 @@ sh scripts/install.sh
 ├── run/
 │   └── supervisord.pid
 ├── install.json           # 安装信息
-└── nginx-broca.conf       # nginx 配置（仅 nginx 模式）
+└── nginx-broca.conf       # nginx 配置
 ```
 
 ### 服务管理
@@ -473,25 +473,13 @@ broca web
 
 ### 部署架构
 
-#### nginx 模式（推荐）
-
 ```
 浏览器 ──→ nginx(:5166) ──proxy──→ FastAPI(:9000)    REST API
                         ──proxy──→ Socket.IO(:6868)  实时通信
-                        ──static──→ dist/            前端静态文件
+                        ──static──→ /var/www/broca/frontend/  前端静态文件
 ```
 
-**优点**：单端口访问，无需额外防火墙放行，WebSocket 代理自动处理跨域。
-
-#### vite preview 模式
-
-```
-浏览器 ──→ vite preview(:5166)  （静态文件，无代理）
-         axios ──→ http://SERVER:9000/api/...
-         WebSocket ──→ http://SERVER:6868/socket.io/
-```
-
-**优点**：无需 nginx，开箱即用。**注意**：需在安装时配置后端地址，并放行 9000 和 6868 端口。
+**单端口访问**，只需放行 5166 端口。WebSocket 代理自动处理跨域。
 
 ### 访问
 
@@ -566,7 +554,8 @@ broca/
 │   │   │   ├── schemas/            # Pydantic schema
 │   │   │   ├── services/           # 业务服务
 │   │   │   └── main.py             # 应用入口
-│   │   ├── alembic/                # 数据库迁移
+│   │   ├── alembic/                # 数据库迁移脚本
+│   │   ├── alembic.ini             # Alembic 配置（路径动态）
 │   │   └── pyproject.toml
 │   └── frontend/                   # Vue 3 前端
 │       └── src/
@@ -584,7 +573,6 @@ broca/
 │   ├── llm_config.json             # LLM 配置
 │   └── agents/                     # Agent 配置
 ├── skills/                         # 内置 Skills
-├── alembic/                        # 数据库迁移
 ├── tests/                          # 测试
 ├── docs/                           # 文档
 └── pyproject.toml                  # 项目元数据
