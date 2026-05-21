@@ -258,9 +258,9 @@ async def delete_sessions(request: dict) -> ApiResponse:
         runner_manager = RunnerManager()
         session_service = get_session_service()
 
-        # 先停止所有 Runner 进程
+        # 先停止所有 Runner 进程（超时缩短至2秒）
         for session_id in session_ids:
-            await runner_manager.stop_session(session_id)
+            await runner_manager.stop_session(session_id, timeout=2.0)
 
         # 再从数据库删除
         deleted_count = await session_service.delete_batch(session_ids)
@@ -313,9 +313,9 @@ async def delete_session(session_id: str) -> ApiResponse:
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
 
-        # 先停止 Runner 进程
+        # 先停止 Runner 进程（超时缩短至2秒，避免用户等待太久）
         runner_manager = RunnerManager()
-        await runner_manager.stop_session(session_id)
+        await runner_manager.stop_session(session_id, timeout=2.0)
 
         # 再从数据库删除
         success = await session_service.delete(session_id)

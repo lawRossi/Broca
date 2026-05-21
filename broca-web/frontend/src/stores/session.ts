@@ -79,11 +79,27 @@ export const useSessionStore = defineStore('session', () => {
 
       ElMessage.success('会话创建成功')
 
+      // 将新创建的会话立即插入到列表最前面
+      if (response?.session_id) {
+        const newSession: Session = {
+          session_id: response.session_id,
+          description: response.description || params.description,
+          workspace: response.workspace || params.workspace || '',
+          created_at: new Date().toISOString(),
+          runner_status: 'starting',
+        }
+        sessions.value.unshift(newSession)
+        total.value += 1
+      }
+
       // 重置表单（不自动关闭对话框，由调用方决定何时关闭）
       resetCreateForm()
       if (autoCloseDialog) {
         createDialogVisible.value = false
       }
+
+      // 后台刷新列表以确保数据一致性
+      setTimeout(() => fetchSessions(), 300)
 
       return response
     } catch (error: any) {
@@ -95,14 +111,15 @@ export const useSessionStore = defineStore('session', () => {
     }
   }
 
-  const deleteSession = async (sessionId: string) => {
-    try {
-      await ElMessageBox.confirm('确定要删除这个会话吗？此操作不可恢复。', '确认删除', {
-        confirmButtonText: '确定删除',
-        cancelButtonText: '取消',
-        type: 'warning',
-      })
+  const deletingSessions = ref<Set<string>>(new Set())
 
+  const isDeleting = (sessionId: string) => deletingSessions.value.has(sessionId)
+
+  const deleteSession = async (sessionId: string) => {
+    if (deletingSessions.value.has(sessionId)) return
+
+    deletingSessions.value = new Set(deletingSessions.value).add(sessionId)
+    try {
       await sessionApi.deleteSession(sessionId)
       ElMessage.success('会话已删除')
 
@@ -122,11 +139,13 @@ export const useSessionStore = defineStore('session', () => {
         setTimeout(fetchSessions, 500)
       }
     } catch (error: any) {
-      if (error !== 'cancel') {
-        console.error('删除会话失败:', error)
-        ElMessage.error('删除会话失败')
-        throw error
-      }
+      console.error('删除会话失败:', error)
+      ElMessage.error('删除会话失败')
+      throw error
+    } finally {
+      const newSet = new Set(deletingSessions.value)
+      newSet.delete(sessionId)
+      deletingSessions.value = newSet
     }
   }
 
@@ -139,6 +158,11 @@ export const useSessionStore = defineStore('session', () => {
         cancelButtonText: '取消',
         type: 'warning',
       })
+
+      // 标记所有待删除的会话为删除中状态
+      const newSet = new Set(deletingSessions.value)
+      sessionIds.forEach((id) => newSet.add(id))
+      deletingSessions.value = newSet
 
       await sessionApi.deleteSessions(sessionIds)
       ElMessage.success(`成功删除 ${sessionIds.length} 个会话`)
@@ -166,6 +190,11 @@ export const useSessionStore = defineStore('session', () => {
         ElMessage.error('批量删除失败')
         throw error
       }
+    } finally {
+      // 清除所有标记
+      const newSet = new Set(deletingSessions.value)
+      sessionIds.forEach((id) => newSet.delete(id))
+      deletingSessions.value = newSet
     }
   }
 
@@ -384,6 +413,7 @@ export const useSessionStore = defineStore('session', () => {
     createDialogVisible,
     creating,
     deleteLoading,
+    deletingSessions,
     createForm,
     workspaceAllSuggestions,
     workspacePickerVisible,
@@ -397,6 +427,7 @@ export const useSessionStore = defineStore('session', () => {
     // Actions
     fetchSessions,
     createSession,
+    isDeleting,
     deleteSession,
     deleteSessions,
     updateSession,

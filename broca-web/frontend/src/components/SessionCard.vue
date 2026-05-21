@@ -107,8 +107,21 @@ const handleBrowseFiles = (event: Event) => {
 }
 
 // 删除点击
-const handleDelete = (event: Event) => {
+const handleDelete = async (event: Event) => {
   event.stopPropagation()
+  if (sessionStore.isDeleting(props.session.session_id)) return
+
+  // 先显示确认对话框
+  try {
+    await ElMessageBox.confirm('确定要删除这个会话吗？此操作不可恢复。', '确认删除', {
+      confirmButtonText: '确定删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return // 用户取消
+  }
+
   emit('deselect', props.session.session_id)
   emit('delete', props.session)
 }
@@ -357,11 +370,11 @@ const handleRestartRunner = async () => {
         </el-button>
 
         <!-- 删除按钮 -->
-        <el-button type="danger" size="small" plain :disabled="isEditing" @click.stop="handleDelete">
-          <el-icon class="mr-1">
+        <el-button type="danger" size="small" plain :disabled="isEditing || sessionStore.isDeleting(session.session_id)" :loading="sessionStore.isDeleting(session.session_id)" @click.stop="handleDelete">
+          <el-icon v-if="!sessionStore.isDeleting(session.session_id)" class="mr-1">
             <Delete />
           </el-icon>
-          删除
+          {{ sessionStore.isDeleting(session.session_id) ? '删除中...' : '删除' }}
         </el-button>
       </div>
 
