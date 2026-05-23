@@ -449,7 +449,7 @@ function toggleToolParams() {
       <!-- 工具名标题行：点击可切换参数显示（todo_management 和 ask_user 始终展开，忽略点击） -->
       <span class="tool-name">{{ toolName }}</span>
       <div v-if="isFileManagementTool" class="file-header">
-        <span class="file-path">📃 {{ toolArgs.path || '' }}</span>
+        <span class="file-path" :title="toolArgs.path || ''">📃 {{ toolArgs.path || '' }}</span>
       </div>
       <div class="tool-call-header" @click="toggleToolParams()">
         <span>{{ getParameterTitle(props.message) }}</span>
@@ -806,6 +806,7 @@ function toggleToolParams() {
   background: rgba(168, 85, 247, 0.1);
   border-bottom: 1px solid var(--border-color);
   font-size: 12px;
+  overflow: hidden;
 }
 
 .diff-path,
@@ -817,6 +818,7 @@ function toggleToolParams() {
   text-overflow: ellipsis;
   max-width: 100%;
   min-width: 0;
+  display: block;
 }
 
 .diff-container {

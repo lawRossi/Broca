@@ -166,11 +166,16 @@ function handleRefreshStats() {
   fetchStats()
 }
 
+const copyFeedback = ref(false)
+
 function copySessionId() {
   const id = chatStore.sessionId
   if (!id) return
   navigator.clipboard.writeText(id).then(() => {
-    // 轻提示：短暂显示视觉反馈
+    copyFeedback.value = true
+    setTimeout(() => {
+      copyFeedback.value = false
+    }, 1500)
   })
 }
 
@@ -220,7 +225,7 @@ onUnmounted(() => {
             <span class="info-label">Session ID</span>
             <div class="session-id-group">
               <span class="session-id-text mono" :title="chatStore.sessionId">{{ chatStore.sessionId }}</span>
-              <button class="copy-btn" @click="copySessionId" title="复制 Session ID">📋</button>
+              <button class="copy-btn" :class="{ 'copied': copyFeedback }" @click="copySessionId" :title="copyFeedback ? '已复制' : '复制 Session ID'">{{ copyFeedback ? '✓' : '📋' }}</button>
             </div>
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">
@@ -515,6 +520,13 @@ onUnmounted(() => {
 .copy-btn:hover {
   opacity: 1;
   background: var(--bg-tertiary);
+}
+
+.copy-btn.copied {
+  opacity: 1;
+  background: rgba(34, 197, 94, 0.15);
+  border-color: rgba(34, 197, 94, 0.4);
+  color: #22c55e;
 }
 
 /* ==================== Status Tag ==================== */
