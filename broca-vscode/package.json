@@ -6,7 +6,7 @@
   "version": "0.1.0",
   "publisher": "broca",
   "engines": {
-    "vscode": "^1.120.0"
+    "vscode": "^1.85.0"
   },
   "categories": [
     "Chat",
@@ -66,10 +66,6 @@
         "command": "broca.refreshSessions",
         "title": "Refresh Sessions",
         "icon": "$(refresh)"
-      },
-      {
-        "command": "broca.signUp",
-        "title": "Create Broca Account"
       },
       {
         "command": "broca.copySessionId",
@@ -247,7 +243,7 @@
     "socket.io-client": "^4.8.3"
   },
   "devDependencies": {
-    "@types/vscode": "^1.120.0",
+    "@types/vscode": "^1.85.0",
     "@vitejs/plugin-vue": "^5.2.4",
     "concurrently": "^9.2.1",
     "diff": "^9.0.0",

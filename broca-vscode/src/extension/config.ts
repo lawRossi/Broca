@@ -5,8 +5,8 @@ export class ConfigManager {
     return vscode.workspace.getConfiguration('broca').get<string>(key) || ''
   }
 
-  set(key: string, value: string): void {
-    vscode.workspace.getConfiguration('broca').update(key, value, vscode.ConfigurationTarget.Global)
+  set(key: string, value: string): Thenable<void> {
+    return vscode.workspace.getConfiguration('broca').update(key, value, vscode.ConfigurationTarget.Global)
   }
 
   get serverUrl(): string {
@@ -89,9 +89,8 @@ export class ConfigManager {
     }
   }
 
-  setAll(config: Record<string, string>): void {
-    for (const [key, value] of Object.entries(config)) {
-      this.set(key, value)
-    }
+  async setAll(config: Record<string, string>): Promise<void> {
+    const promises = Object.entries(config).map(([key, value]) => this.set(key, value))
+    await Promise.all(promises)
   }
 }

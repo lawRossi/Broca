@@ -133,12 +133,6 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   )
 
-  context.subscriptions.push(
-    vscode.commands.registerCommand('broca.signUp', async () => {
-      await authManager.signUp()
-    })
-  )
-
   // Auth state change listener
   context.subscriptions.push(
     authManager.onDidChange(() => {

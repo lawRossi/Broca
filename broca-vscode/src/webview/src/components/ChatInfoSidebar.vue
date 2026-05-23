@@ -70,8 +70,6 @@ function stopStatsPolling() {
   }
 }
 
-// 计算型统计（与 Web 版保持一致）
-const totalMessagesFromApi = computed(() => stats.value?.total_messages || 0)
 
 const userMessagesFromApi = computed(() => {
   if (!stats.value?.messages_by_type) return 0
@@ -168,6 +166,14 @@ function handleRefreshStats() {
   fetchStats()
 }
 
+function copySessionId() {
+  const id = chatStore.sessionId
+  if (!id) return
+  navigator.clipboard.writeText(id).then(() => {
+    // 轻提示：短暂显示视觉反馈
+  })
+}
+
 // ==================== 侧栏状态 ====================
 const isOpen = computed(() => chatStore.showRightSidebar)
 
@@ -211,8 +217,11 @@ onUnmounted(() => {
         <div class="panel-title">Session Info</div>
         <div class="panel-body">
           <div class="info-row">
-            <span>Total Messages</span>
-            <span class="nav-badge">{{ totalMessagesFromApi }}</span>
+            <span class="info-label">Session ID</span>
+            <div class="session-id-group">
+              <span class="session-id-text mono" :title="chatStore.sessionId">{{ chatStore.sessionId }}</span>
+              <button class="copy-btn" @click="copySessionId" title="复制 Session ID">📋</button>
+            </div>
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">
             <span>📋</span>
@@ -467,6 +476,45 @@ onUnmounted(() => {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+/* ==================== Session ID ==================== */
+.session-id-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  justify-content: flex-end;
+}
+
+.session-id-text {
+  font-family: var(--code-font-family);
+  font-size: 11px;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: default;
+}
+
+.copy-btn {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 3px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  padding: 0 3px;
+  line-height: 18px;
+  flex-shrink: 0;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.copy-btn:hover {
+  opacity: 1;
+  background: var(--bg-tertiary);
 }
 
 /* ==================== Status Tag ==================== */

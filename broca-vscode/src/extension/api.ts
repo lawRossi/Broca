@@ -142,10 +142,7 @@ export class ApiClient {
     return response.data
   }
 
-  async register(username: string, password: string): Promise<{ token: string; user_id: string; username: string }> {
-    const response = await this.client.post('/auth/register', { username, password })
-    return response.data
-  }
+  // 注册功能已移除：请在安装时通过 scripts/setup_admin.py 创建账户
 
   // ==================== Config API ====================
 

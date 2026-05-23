@@ -125,13 +125,17 @@ export class ChatWebViewManager {
         } as ExtensionToWebView)
       } else if (message.type === 'saveConfig') {
         console.log('[ChatWebView] Received saveConfig:', JSON.stringify(message.payload))
-        this.configManager.setAll(message.payload)
-        console.log('[ChatWebView] Config saved, reconfiguring auth')
-        this.authManager.reconfigure()
-        console.log('[ChatWebView] Auth reconfigured, sending response')
-        vscode.window.showInformationMessage('Configuration saved')
-        this.postToPanel(panel, { type: 'saved' } as ExtensionToWebView)
-        console.log('[ChatWebView] saved response sent')
+        try {
+          await this.configManager.setAll(message.payload)
+          console.log('[ChatWebView] Config saved, reconfiguring auth')
+          this.authManager.reconfigure()
+          vscode.window.showInformationMessage('Configuration saved')
+          this.postToPanel(panel, { type: 'saved' } as ExtensionToWebView)
+        } catch (error: any) {
+          console.error('[ChatWebView] Failed to save config:', error)
+          vscode.window.showErrorMessage('Failed to save configuration: ' + (error.message || 'Unknown error'))
+          this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+        }
       } else if (message.type === 'getProviders') {
         try {
           const providers = await this.apiClient.getLLMProviders()

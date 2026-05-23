@@ -122,50 +122,7 @@ export class AuthManager {
     }
   }
 
-  async signUp(): Promise<boolean> {
-    const username = await vscode.window.showInputBox({
-      prompt: '用户名',
-      placeHolder: '请输入用户名',
-      ignoreFocusOut: true,
-      validateInput: (value) => {
-        if (!value || value.length < 2) return '用户名至少需要2个字符'
-        return null
-      },
-    })
-    if (!username) return false
-
-    const password = await vscode.window.showInputBox({
-      prompt: '密码 (至少6个字符)',
-      password: true,
-      ignoreFocusOut: true,
-      validateInput: (value) => {
-        if (!value || value.length < 6) return '密码至少需要6个字符'
-        return null
-      },
-    })
-    if (!password) return false
-
-    try {
-      await vscode.window.withProgress(
-        { location: vscode.ProgressLocation.Notification, title: '注册中...' },
-        async () => {
-          const response = await this.apiClient.register(username, password)
-          this._token = response.token
-          this._userId = response.user_id
-          this._username = response.username
-          this._isLoggedIn = true
-          this.persistSession()
-        }
-      )
-      vscode.window.showInformationMessage(`注册成功！欢迎 ${this._username}`)
-      this.onDidChangeEvent.fire()
-      return true
-    } catch (error: any) {
-      const msg = error?.response?.data?.detail || error.message || '注册失败'
-      vscode.window.showErrorMessage(`注册失败: ${msg}`)
-      return false
-    }
-  }
+  // 注册功能已移除：请在安装时通过 scripts/setup_admin.py 创建账户
 
   async logout(): Promise<void> {
     this._isLoggedIn = false
