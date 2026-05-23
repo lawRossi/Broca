@@ -89,9 +89,7 @@ class LoggingConfig:
 
         cls._initialized = True
         logger.info(
-            "Logging initialized: stderr=ON, file=%s, level=%s",
-            log_file,
-            log_level,
+            f"Logging initialized: stderr=ON, file={log_file}, level={log_level}"
         )
 
     @classmethod
