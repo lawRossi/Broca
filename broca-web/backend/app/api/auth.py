@@ -12,11 +12,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-class RegisterRequest(BaseModel):
-    username: str
-    password: str
-
-
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -28,29 +23,7 @@ class LoginResponse(BaseModel):
     username: str
 
 
-@router.post("/register", response_model=ApiResponse)
-async def register(data: RegisterRequest, db: AsyncSession = Depends(get_db)) -> ApiResponse:
-    """用户注册（用户名+密码，无需邮箱）"""
-    try:
-        service = AuthService(db)
-        user = await service.register(data.username, data.password)
-
-        # 注册后直接签发 token
-        token = service.create_access_token(user.id, user.username)
-
-        return ApiResponse.success(
-            {
-                "token": token,
-                "user_id": user.id,
-                "username": user.username,
-            },
-            msg="注册成功",
-        )
-    except AuthError as e:
-        raise HTTPException(status_code=400, detail=str(e)) from e
-    except Exception as e:
-        logger.error(f"Registration error: {e}")
-        raise HTTPException(status_code=500, detail="注册失败，请稍后重试") from e
+# 注册功能已移除：请在安装时通过 scripts/setup_admin.py 创建账户
 
 
 @router.post("/login", response_model=ApiResponse)

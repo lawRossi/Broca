@@ -13,36 +13,7 @@ export const useUserStore = defineStore('user', () => {
   const isLoggedIn = ref<boolean>(!!token.value)
   const userInfo = ref<UserInfo | null>(null)
 
-  // 注册
-  const register = async (loginForm: LoginForm) => {
-    try {
-      if (!loginForm.username || !loginForm.password) {
-        ElMessage.error('请填写用户名和密码')
-        return false
-      }
-      if (loginForm.password.length < 6) {
-        ElMessage.error('密码至少需要6位字符')
-        return false
-      }
-
-      const result = await userApi.register(loginForm)
-      token.value = result.token
-      userId.value = result.user_id
-      username.value = result.username
-      isLoggedIn.value = true
-
-      localStorage.setItem('token', result.token)
-      localStorage.setItem('user_id', result.user_id)
-      localStorage.setItem('username', result.username)
-
-      ElMessage.success('注册成功')
-      return true
-    } catch (error: any) {
-      const msg = error?.response?.data?.detail || error.message || '注册失败'
-      ElMessage.error(msg)
-      return false
-    }
-  }
+  // 注册功能已移除：请在安装时通过 scripts/setup_admin.py 创建账户
 
   // 登录
   const login = async (loginForm: LoginForm) => {
@@ -127,7 +98,6 @@ export const useUserStore = defineStore('user', () => {
     isLoggedIn,
     userInfo,
     login,
-    register,
     logout,
     init,
     fetchUserInfo,

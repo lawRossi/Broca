@@ -17,9 +17,7 @@ init_logging()
 
 WHITE_LIST = {
     "/api/auth/login",
-    "/api/auth/register",
     "/api/health",
-    "/api/user/login",
 }
 security = HTTPBearer(auto_error=False)
 

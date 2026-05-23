@@ -23,11 +23,6 @@ export const userApi = {
     return request.post('/auth/login', data)
   },
 
-  /** 注册（用户名+密码，无需邮箱） */
-  register(data: LoginForm): Promise<AuthResult> {
-    return request.post('/auth/register', data)
-  },
-
   /** 获取用户信息 */
   getUserInfo(): Promise<UserInfo> {
     return request.get('/user/info')
