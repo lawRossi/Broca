@@ -1209,6 +1209,46 @@ const handleUndoToHere = async () => {
 
 /* ========== 暗色模式 ========== */
 @media (prefers-color-scheme: dark) {
+  /* Markdown 内容暗色适配 */
+  :deep(.markdown-content pre) {
+    background-color: #0f172a;
+    border: 1px solid #334155;
+  }
+
+  :deep(.markdown-content pre code) {
+    background-color: transparent;
+    color: #e2e8f0;
+  }
+
+  :deep(.markdown-content code) {
+    background-color: rgba(100, 116, 139, 0.3);
+    color: #e2e8f0;
+  }
+
+  :deep(.markdown-content blockquote) {
+    color: #94a3b8;
+    border-left-color: #475569;
+    background-color: rgba(30, 41, 59, 0.5);
+  }
+
+  :deep(.markdown-content table th),
+  :deep(.markdown-content table td) {
+    border-color: #475569;
+  }
+
+  :deep(.markdown-content table th) {
+    background-color: #1e293b;
+    color: #f1f5f9;
+  }
+
+  :deep(.markdown-content tr:nth-child(2n)) {
+    background-color: #1e293b;
+  }
+
+  :deep(.markdown-content a) {
+    color: #60a5fa;
+  }
+
   /* 工具参数 */
   .params-container {
     background-color: rgba(88, 28, 135, 0.2);

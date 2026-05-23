@@ -35,12 +35,12 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="min-h-screen flex items-center justify-center bg-gray-50 p-4">
+  <div class="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950 p-4">
     <div class="w-full max-w-lg">
       <div class="card hover-lift">
         <div class="card-header">
-          <h2 class="text-3xl font-bold text-center text-gray-900">Broca</h2>
-          <p class="text-center text-gray-500 text-sm mt-2">
+          <h2 class="text-3xl font-bold text-center text-gray-900 dark:text-gray-100">Broca</h2>
+          <p class="text-center text-gray-500 dark:text-gray-400 text-sm mt-2">
             账户由管理员在安装时创建，请联系管理员获取登录凭据
           </p>
         </div>
@@ -72,3 +72,18 @@ onMounted(async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+@media (prefers-color-scheme: dark) {
+  :deep(.el-input__wrapper) {
+    background-color: var(--color-gray-100) !important;
+    box-shadow: 0 0 0 1px var(--color-gray-300) inset !important;
+  }
+  :deep(.el-input__inner) {
+    color: var(--color-gray-900) !important;
+  }
+  :deep(.el-input__inner::placeholder) {
+    color: var(--color-gray-500) !important;
+  }
+}
+</style>
