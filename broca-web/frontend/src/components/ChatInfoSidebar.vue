@@ -189,10 +189,6 @@ const toolCallErrorsFromApi = computed(() => {
   return stats.value?.tool_call_errors || 0
 })
 
-const totalMessagesFromApi = computed(() => {
-  return stats.value?.total_messages || 0
-})
-
 // Runner 状态显示配置
 const runnerStatusConfig: Record<string, { type: string; label: string }> = {
   alive: { type: 'success', label: '运行中' },
@@ -230,10 +226,6 @@ const getRunnerConfig = (status: string | undefined) => {
           <span class="font-mono text-xs truncate max-w-[150px] text-gray-800" :title="chatStore.sessionId">
             {{ chatStore.sessionId || '未设置' }}
           </span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-700">Total Messages:</span>
-          <span class="font-mono text-gray-800">{{ totalMessagesFromApi }}</span>
         </div>
         <div
           class="flex justify-between items-center cursor-pointer hover:bg-gray-50 p-1 rounded"

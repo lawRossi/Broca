@@ -383,6 +383,13 @@ def cmd_service_start(args):
                 if line.strip():
                     print(f"   {line.strip()}")
 
+        # 显示 nginx 状态
+        nginx_info = result.get("nginx", {})
+        if nginx_info.get("ok"):
+            print(f"   ✅ {nginx_info['message']}")
+        elif not nginx_info.get("ok") and nginx_info.get("message"):
+            print(f"   ⚠ {nginx_info['message']}")
+
         # 显示最终状态
         print()
         time.sleep(1)
@@ -403,6 +410,10 @@ def cmd_service_stop(args):
 
     if result.get("success"):
         print(f"✅ {result['message']}")
+        # 显示 nginx 状态
+        nginx_info = result.get("nginx", {})
+        if nginx_info.get("message"):
+            print(f"   {nginx_info['message']}")
     else:
         print(f"❌ 停止失败: {result.get('error')}")
         sys.exit(1)
@@ -477,6 +488,21 @@ def cmd_service_status(args):
                 status_display = f"❓ {status}"
 
             print(f"  {name:<15} {status_display:<12} {pid_str:<8} {uptime}")
+
+    # nginx 前端状态
+    nginx = result.get("nginx", {})
+    if nginx.get("available"):
+        nginx_status = "✅ 已启用" if nginx.get("enabled") else "⏸ 未启用"
+        nginx_version = nginx.get("version", "")
+        print()
+        print(f"  前端服务 (nginx 站点):")
+        print(f"    状态: {nginx_status}")
+        if nginx_version:
+            print(f"    版本: {nginx_version}")
+        print(f"    配置文件: {nginx.get('site_config', '-')}")
+    else:
+        print()
+        print(f"  前端服务: ⚠ nginx 未安装（静态文件需其他方式托管）")
 
     print()
     print("  提示: Broca service restart 重启所有服务")

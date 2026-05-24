@@ -75,15 +75,32 @@ onMounted(async () => {
 
 <style scoped>
 @media (prefers-color-scheme: dark) {
+  /* 页面背景不要太深 */
+  .bg-gray-50.dark\:bg-gray-950 {
+    background-color: #0f172a !important;
+  }
+
+  /* 卡片更明显 - 浅色背景 + 边框 + 阴影 */
+  :deep(.card) {
+    background-color: #1e293b !important;
+    border-color: #475569 !important;
+    box-shadow: 0 4px 24px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  :deep(.card-header) {
+    background-color: #334155 !important;
+    border-bottom-color: #475569 !important;
+  }
+
   :deep(.el-input__wrapper) {
-    background-color: var(--color-gray-100) !important;
-    box-shadow: 0 0 0 1px var(--color-gray-300) inset !important;
+    background-color: #0f172a !important;
+    box-shadow: 0 0 0 1px #475569 inset !important;
   }
   :deep(.el-input__inner) {
-    color: var(--color-gray-900) !important;
+    color: #f1f5f9 !important;
   }
   :deep(.el-input__inner::placeholder) {
-    color: var(--color-gray-500) !important;
+    color: #64748b !important;
   }
 }
 </style>

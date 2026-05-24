@@ -28,6 +28,36 @@ error() { echo -e "${RED}[ERROR]${NC} $*"; }
 step()  { echo -e "\n${BLUE}==>${NC} $*"; }
 prompt() { echo -e -n "${CYAN}==>${NC} $*"; }
 
+# ---- OS 检测 ----
+OS="$(uname -s)"
+case "$OS" in
+    Darwin)
+        IS_MACOS=true
+        # Homebrew nginx 配置目录 (Apple Silicon / Intel)
+        if [[ -d "/opt/homebrew/etc/nginx" ]]; then
+            HOMEBREW_NGINX_DIR="/opt/homebrew"
+        elif [[ -d "/usr/local/etc/nginx" ]]; then
+            HOMEBREW_NGINX_DIR="/usr/local"
+        fi
+        NGINX_SITES_DIR="${HOMEBREW_NGINX_DIR}/etc/nginx/sites-enabled"
+        NGINX_CONF_BASE="${HOMEBREW_NGINX_DIR}/etc/nginx"
+        NGINX_USER="_www"
+        SED_INPLACE=("sed" "-i" "")
+        ;;
+    *)
+        IS_MACOS=false
+        NGINX_SITES_DIR="/etc/nginx/sites-enabled"
+        NGINX_CONF_BASE="/etc/nginx"
+        NGINX_USER="www-data"
+        SED_INPLACE=("sed" "-i")
+        ;;
+esac
+
+# sed -i 跨平台辅助函数
+sed_inplace() {
+    "${SED_INPLACE[@]}" "$@"
+}
+
 # ---- 项目根目录 ----
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
@@ -48,7 +78,7 @@ step "Step 1/9: 检查系统依赖..."
 PYTHON=""
 for cmd in python3.12 python3 python; do
     if command -v "$cmd" &>/dev/null; then
-        ver=$("$cmd" --version 2>&1 | grep -oP '\d+\.\d+')
+        ver=$("$cmd" --version 2>&1 | grep -oE '[0-9]+\.[0-9]+' | head -1)
         major=${ver%.*}
         minor=${ver#*.}
         if [[ "$major" -ge 3 && "$minor" -ge 12 ]]; then
@@ -88,8 +118,9 @@ NGINX_CONF_DIR=""
 if command -v nginx &>/dev/null; then
     info "nginx: $(nginx -v 2>&1)"
 
-    # 查找 nginx 配置目录 (常见位置)
-    for dir in /etc/nginx /usr/local/etc/nginx /opt/homebrew/etc/nginx; do
+    # 查找 nginx 配置目录
+    NGINX_CONF_DIR=""
+    for dir in "$NGINX_CONF_BASE" /etc/nginx /usr/local/etc/nginx /opt/homebrew/etc/nginx; do
         if [[ -d "$dir" ]]; then
             NGINX_CONF_DIR="$dir"
             break
@@ -97,15 +128,35 @@ if command -v nginx &>/dev/null; then
     done
 
     if [[ -z "$NGINX_CONF_DIR" ]]; then
-        error "已检测到 nginx 但未找到配置目录（已安装但未运行？）。"
-        error "请先启动 nginx: sudo systemctl start nginx"
+        if $IS_MACOS; then
+            error "已检测到 nginx 但未找到配置目录。"
+            error "请先确保 nginx 已正确安装: brew info nginx"
+        else
+            error "已检测到 nginx 但未找到配置目录（已安装但未运行？）。"
+            error "请先启动 nginx: sudo systemctl start nginx"
+        fi
         exit 1
     fi
 
     info "nginx 配置目录: $NGINX_CONF_DIR"
+    # 确保 sites-enabled 目录存在
+    if $IS_MACOS && [[ ! -d "$NGINX_SITES_DIR" ]]; then
+        mkdir -p "$NGINX_SITES_DIR"
+        # 如果 nginx.conf 没有引入 sites-enabled，尝试引入
+        if ! grep -q "sites-enabled" "$NGINX_CONF_DIR/nginx.conf" 2>/dev/null; then
+            warn "nginx.conf 未包含 sites-enabled 目录，自动添加..."
+            sed_inplace -e '/^http {/a\
+    include '"$NGINX_SITES_DIR"'/*.conf;' "$NGINX_CONF_DIR/nginx.conf" 2>/dev/null || \
+            warn "无法自动修改 nginx.conf，请手动添加: include $NGINX_SITES_DIR/*.conf;"
+        fi
+    fi
 else
-    error "未检测到 nginx，生产部署需要 nginx。"
-    error "请先安装 nginx: sudo apt install nginx  (或 brew install nginx)"
+    if $IS_MACOS; then
+        error "未检测到 nginx，请先安装: brew install nginx"
+    else
+        error "未检测到 nginx，生产部署需要 nginx。"
+        error "请先安装 nginx: sudo apt install nginx"
+    fi
     exit 1
 fi
 
@@ -196,8 +247,8 @@ echo ""
 echo ""
 echo "  配置文件"
 echo "  ────────────────────────────────────────────"
-echo "  configs.json   → $BROCA_HOME/configs.json"  
-echo "  llm_config.json → $BROCA_HOME/llm_config.json"
+echo "  configs.json   → $BROCA_HOME/configs/configs.json"
+echo "  llm_config.json → $BROCA_HOME/configs/llm_config.json"
 echo ""
 echo "  首次安装会自动创建用户配置副本，之后你可安全地编辑它们。"
 echo "  单个 LLM Key 也可通过环境变量覆盖:"
@@ -206,16 +257,17 @@ echo "  ────────────────────────
 echo ""
 
 # ---- 复制 configs.json ----
-CONFIG_DST="$BROCA_HOME/configs.json"
+mkdir -p "$BROCA_HOME/configs"
+CONFIG_DST="$BROCA_HOME/configs/configs.json"
 CONFIG_SRC="$PROJECT_ROOT/configs/configs.json"
 
 if [[ ! -f "$CONFIG_DST" ]]; then
     if [[ -f "$CONFIG_SRC" ]]; then
         cp "$CONFIG_SRC" "$CONFIG_DST"
         # 将路径改为指向 ~/.broca/
-        sed -i "s|\"database_dir\":.*|\"database_dir\": \"$BROCA_HOME/data\",|" "$CONFIG_DST"
-        sed -i "s|\"llm_config_file\":.*|\"llm_config_file\": \"$BROCA_HOME/llm_config.json\",|" "$CONFIG_DST"
-        sed -i "s|\"log_file\":.*|\"log_file\": \"$BROCA_HOME/logs/agent.log\"|" "$CONFIG_DST"
+        sed_inplace "s|\"database_dir\":.*|\"database_dir\": \"$BROCA_HOME/data\",|" "$CONFIG_DST"
+        sed_inplace "s|\"llm_config_file\":.*|\"llm_config_file\": \"$BROCA_HOME/configs/llm_config.json\",|" "$CONFIG_DST"
+        sed_inplace "s|\"log_file\":.*|\"log_file\": \"$BROCA_HOME/logs/agent.log\"|" "$CONFIG_DST"
         info "已创建用户配置: $CONFIG_DST"
     else
         warn "未找到默认配置: $CONFIG_SRC"
@@ -225,7 +277,7 @@ else
 fi
 
 # ---- 复制 llm_config.json ----
-LLM_DST="$BROCA_HOME/llm_config.json"
+LLM_DST="$BROCA_HOME/configs/llm_config.json"
 LLM_SRC="$PROJECT_ROOT/configs/llm_config.json"
 
 if [[ ! -f "$LLM_DST" ]]; then
@@ -386,7 +438,7 @@ else
 
                 if [[ -n "$supabase_url" && -n "$s3_key" && -n "$s3_secret" ]]; then
                     # 写入 .env.production（清除同组旧配置）
-                    sed -i '/^VITE_SUPABASE_URL=/d; /^VITE_SUPABASE_S3_ACCESS_KEY_ID=/d; /^VITE_SUPABASE_S3_SECRET_ACCESS_KEY=/d; /^VITE_SUPABASE_BUCKET=/d; /^VITE_CLOUDFLARE_/d' "$ENV_FILE"
+                    sed_inplace -e '/^VITE_SUPABASE_URL=/d; /^VITE_SUPABASE_S3_ACCESS_KEY_ID=/d; /^VITE_SUPABASE_S3_SECRET_ACCESS_KEY=/d; /^VITE_SUPABASE_BUCKET=/d; /^VITE_CLOUDFLARE_/d' "$ENV_FILE"
                     {
                         echo "VITE_SUPABASE_URL=$supabase_url"
                         echo "VITE_SUPABASE_S3_ACCESS_KEY_ID=$s3_key"
@@ -442,7 +494,7 @@ else
 
                 if [[ -n "$account_id" && -n "$cf_key" && -n "$cf_secret" ]]; then
                     # 写入 .env.production（清除同组旧配置）
-                    sed -i '/^VITE_CLOUDFLARE_/d; /^VITE_SUPABASE_URL=/d; /^VITE_SUPABASE_S3_ACCESS_KEY_ID=/d; /^VITE_SUPABASE_S3_SECRET_ACCESS_KEY=/d; /^VITE_SUPABASE_BUCKET=/d' "$ENV_FILE"
+                    sed_inplace -e '/^VITE_CLOUDFLARE_/d; /^VITE_SUPABASE_URL=/d; /^VITE_SUPABASE_S3_ACCESS_KEY_ID=/d; /^VITE_SUPABASE_S3_SECRET_ACCESS_KEY=/d; /^VITE_SUPABASE_BUCKET=/d' "$ENV_FILE"
                     {
                         echo "VITE_CLOUDFLARE_ACCOUNT_ID=$account_id"
                         echo "VITE_CLOUDFLARE_ACCESS_KEY_ID=$cf_key"
@@ -473,9 +525,9 @@ fi
 
 # nginx 代理 API 和 Socket.IO，前端用同域路径即可
 touch "$ENV_FILE"
-sed -i '/^VITE_API_BASE_URL=/d' "$ENV_FILE"
+sed_inplace -e '/^VITE_API_BASE_URL=/d' "$ENV_FILE"
 echo "# VITE_API_BASE_URL=" >> "$ENV_FILE"
-sed -i '/^VITE_BROCA_SOCKET_SERVER_URL=/d' "$ENV_FILE"
+sed_inplace -e '/^VITE_BROCA_SOCKET_SERVER_URL=/d' "$ENV_FILE"
 echo "# VITE_BROCA_SOCKET_SERVER_URL=" >> "$ENV_FILE"
 
 echo ""
@@ -522,30 +574,38 @@ mkdir -p "$BROCA_HOME"
 
 info "配置 nginx 站点..."
 
-    # nginx 以 www-data 运行，家目录不可读，静态文件放到系统路径
+if $IS_MACOS; then
+    # macOS: Homebrew nginx 以当前用户运行，可直接读取 ~/.broca/
+    NGINX_DIST_DIR="$BROCA_HOME/frontend-dist"
+    mkdir -p "$NGINX_DIST_DIR"
+    cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
+    info "前端静态文件已部署到: $NGINX_DIST_DIR"
+else
+    # Linux: nginx 以 www-data 运行，家目录不可读，放到系统路径
     NGINX_DIST_DIR="/var/www/broca/frontend"
     echo ""
-    echo "  注意：nginx 以 www-data 用户运行，不能读取 ~/.broca/ 下的文件。"
+    echo "  注意：nginx 以 $NGINX_USER 用户运行，不能读取 ~/.broca/ 下的文件。"
     echo "  静态文件将部署到 $NGINX_DIST_DIR"
     echo ""
 
     if command -v sudo &>/dev/null; then
         sudo mkdir -p "$NGINX_DIST_DIR"
         sudo cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
-        sudo chown -R www-data:www-data "$NGINX_DIST_DIR" 2>/dev/null || true
+        sudo chown -R "${NGINX_USER}:${NGINX_USER}" "$NGINX_DIST_DIR" 2>/dev/null || true
         info "前端静态文件已部署到: $NGINX_DIST_DIR"
     else
         warn "未找到 sudo，请手动复制前端文件:"
         echo "    sudo mkdir -p $NGINX_DIST_DIR"
         echo "    sudo cp -r $FRONTEND_DIR/dist/* $NGINX_DIST_DIR/"
-        echo "    sudo chown -R www-data:www-data $NGINX_DIST_DIR"
-        # 回退到 ~/.broca/（需要手工修权限）
+        echo "    sudo chown -R ${NGINX_USER}:${NGINX_USER} $NGINX_DIST_DIR"
+        # 回退到 ~/.broca/
         NGINX_DIST_DIR="$BROCA_HOME/frontend-dist"
         mkdir -p "$NGINX_DIST_DIR"
         cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
         warn "已回退部署到 $NGINX_DIST_DIR"
         echo "  如遇权限错误，运行: chmod o+x ~ ~/.broca $NGINX_DIST_DIR"
     fi
+fi
 
     # 生成 nginx 配置（使用转义保留 nginx 变量）
     NGINX_SITE_CONF="$BROCA_HOME/nginx-broca.conf"
@@ -595,24 +655,20 @@ NGINXEOF
 
     info "nginx 配置文件已生成: $NGINX_SITE_CONF"
 
-    # 启用 nginx 站点
-    if command -v sudo &>/dev/null; then
-        info "启用 nginx 站点..."
-        sudo ln -sf "$NGINX_SITE_CONF" "${NGINX_CONF_DIR}/sites-enabled/broca.conf" 2>&1 || \
-            warn "符号链接失败，请手动执行: sudo ln -sf $NGINX_SITE_CONF ${NGINX_CONF_DIR}/sites-enabled/broca.conf"
-
-        if sudo nginx -t 2>&1; then
-            sudo systemctl reload nginx 2>/dev/null || sudo nginx -s reload 2>/dev/null || \
-                warn "nginx 重载失败，请手动执行: sudo nginx -t && sudo systemctl reload nginx"
-            info "nginx 站点已启用"
-        else
-            warn "nginx 配置测试失败，请检查: sudo nginx -t"
-        fi
+    # 验证 nginx 配置语法
+    info "验证 nginx 配置语法..."
+    if sudo nginx -t 2>&1; then
+        info "nginx 配置语法正确"
     else
-        warn "未找到 sudo，请手动执行以下命令:"
-        echo "    sudo ln -sf $NGINX_SITE_CONF ${NGINX_CONF_DIR}/sites-enabled/broca.conf"
-        echo "    sudo nginx -t && sudo systemctl reload nginx"
+        warn "nginx 配置语法有误，请检查: sudo nginx -t"
     fi
+
+    # 仅生成配置，不启用站点（用户通过 broca service start 启用）
+    info "nginx 前端配置就绪（未启用，执行 broca service start 后启用）"
+    echo ""
+    echo "  可用命令:"
+    echo "    broca service start      # 创建 symlink + reload nginx，启用前端"
+    echo "    broca service stop       # 删除 symlink + reload nginx，停用前端"
 
 # ============================================================================
 # Step 7: 创建 supervisor 配置
@@ -668,7 +724,7 @@ stderr_logfile=$LOG_DIR/backend.err.log
 stdout_logfile=$LOG_DIR/backend.out.log
 stdout_logfile_maxbytes=20MB
 stderr_logfile_maxbytes=20MB
-environment=PYTHONPATH="$BROCA_WEB_DIR/backend:\$PYTHONPATH",BROCA_CONFIG="$BROCA_HOME/configs.json",BROCA_DATABASE_DIR="$BROCA_HOME/data",BROCA_LLM_CONFIG="$BROCA_HOME/llm_config.json",BROCA_AGENTS_CONFIG_DIR="$BROCA_HOME/configs/agents",BROCA_LOG_DIR="$BROCA_HOME/logs",SQLITE_DATABASE_PATH="sqlite:///${BROCA_HOME}/data/backend.db"
+environment=PYTHONPATH="$BROCA_WEB_DIR/backend:\$PYTHONPATH",BROCA_CONFIG="$BROCA_HOME/configs/configs.json",BROCA_DATABASE_DIR="$BROCA_HOME/data",BROCA_LLM_CONFIG="$BROCA_HOME/configs/llm_config.json",BROCA_AGENTS_CONFIG_DIR="$BROCA_HOME/configs/agents",BROCA_LOG_DIR="$BROCA_HOME/logs",SQLITE_DATABASE_PATH="sqlite:///${BROCA_HOME}/data/backend.db"
 stopasgroup=true
 killasgroup=true
 SUPEOF
@@ -720,12 +776,13 @@ else
     echo -e "  文件存储: ${YELLOW}⚠ 未配置${NC} (编辑 ${ENV_FILE} 后重新构建)"
 fi
 echo ""
+echo "  nginx 前端配置文件已就绪: $NGINX_SITE_CONF"
+echo ""
 echo "  快速开始:"
-echo "    broca service start      # 启动所有服务"
-echo "    broca service status     # 查看状态"
+echo "    broca service start      # 启动所有服务（后端 + 启用前端站点）"
+echo "    broca service stop       # 停止所有服务"
+echo "    broca service status     # 查看服务状态"
 echo "    broca web                # 启动开发模式 (前后端同时启动)"
 echo ""
-echo "  访问: http://localhost:5166"
-echo ""
-echo "  nginx: ✅ 站点已配置 ($NGINX_SITE_CONF)"
+echo "  broca service start 后访问: http://localhost:5166"
 echo ""

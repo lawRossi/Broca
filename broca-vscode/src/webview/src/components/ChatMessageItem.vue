@@ -343,7 +343,7 @@ const formatFileSize = (bytes: number): string => {
 
 // ==================== 撤销功能 ====================
 const canUndo = computed(() => {
-  if (!chatStore.connected || !chatStore.sessionId) return false
+  if (!chatStore.connected || !chatStore.sessionId || !chatStore.runnerAlive) return false
   const undoableTypes = ['user_message', 'tool_call', 'agent_response']
   return undoableTypes.includes(props.message.message_type)
 })

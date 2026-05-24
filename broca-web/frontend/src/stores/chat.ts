@@ -522,6 +522,7 @@ export const useChatStore = defineStore('chat', () => {
             // 重做成功后，隐藏重做按钮
             showRedoButton.value = false
             redoReceiverId.value = undefined
+            loadHistory(sessionId.value, false)
           }
         }
         return

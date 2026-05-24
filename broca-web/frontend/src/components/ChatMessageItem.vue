@@ -493,7 +493,7 @@ const formatFileSize = (bytes: number): string => {
 // 判断消息是否可撤销
 const canUndoThisMessage = computed(() => {
   // 基本条件检查
-  if (!chatStore.connected || !chatStore.sessionId) {
+  if (!chatStore.connected || !chatStore.sessionId || !chatStore.runnerAlive) {
     return false
   }
   
@@ -1209,44 +1209,21 @@ const handleUndoToHere = async () => {
 
 /* ========== 暗色模式 ========== */
 @media (prefers-color-scheme: dark) {
-  /* Markdown 内容暗色适配 */
-  :deep(.markdown-content pre) {
-    background-color: #0f172a;
-    border: 1px solid #334155;
-  }
-
-  :deep(.markdown-content pre code) {
-    background-color: transparent;
-    color: #e2e8f0;
-  }
-
-  :deep(.markdown-content code) {
-    background-color: rgba(100, 116, 139, 0.3);
-    color: #e2e8f0;
-  }
-
+  /* Markdown 内容 - 容器背景色(bg-green-50)在暗色下仍是浅色，所以文字保持深色，不改背景避免黑色块 */
   :deep(.markdown-content blockquote) {
-    color: #94a3b8;
-    border-left-color: #475569;
-    background-color: rgba(30, 41, 59, 0.5);
-  }
-
-  :deep(.markdown-content table th),
-  :deep(.markdown-content table td) {
-    border-color: #475569;
+    color: #334155;
+    border-left-color: #64748b;
+    background-color: #e2e8f0;
   }
 
   :deep(.markdown-content table th) {
-    background-color: #1e293b;
-    color: #f1f5f9;
-  }
-
-  :deep(.markdown-content tr:nth-child(2n)) {
-    background-color: #1e293b;
+    background-color: #cbd5e1;
+    font-weight: 700;
+    color: #0f172a;
   }
 
   :deep(.markdown-content a) {
-    color: #60a5fa;
+    color: #1d4ed8;
   }
 
   /* 工具参数 */
@@ -1260,8 +1237,8 @@ const handleUndoToHere = async () => {
   }
 
   .params-inner {
-    background-color: #1e293b;
-    border-color: #475569;
+    background-color: transparent;
+    border-color: rgba(255, 255, 255, 0.1);
   }
 
   .params-todo-name {
