@@ -1,0 +1,50 @@
+# 深度研究模板
+# 用于技术调研、市场分析等研究场景
+#
+# 使用方法:
+#   broca run ./templates/deep_research.yaml --validate
+#   或通过 Web API 提交
+
+name: "深度研究"
+description: "AI Agent 技术趋势深度研究"
+
+orchestrator:
+  type: supervisor-worker
+  max_rounds: 3
+
+agents:
+  - role: supervisor
+    name: "研究主管"
+    config: coordinator_agent.md
+
+  - role: worker
+    name: "文献研究员"
+    config: researcher_agent.md
+
+  - role: worker
+    name: "数据分析师"
+    config: analyst_agent.md
+
+  - role: worker
+    name: "报告撰写人"
+    config: writer_agent.md
+
+  - role: worker
+    name: "质量审查员"
+    config: reviewer_agent.md
+
+blackboard:
+  initial_entries:
+    - key: objective
+      value: "2025年AI Agent领域的技术趋势与商业机会"
+
+# 撰写和审查阶段使用 Pipeline 子编排
+sub_crews:
+  - name: "报告撰写与审查"
+    orchestrator:
+      type: pipeline
+    steps:
+      - agent: "报告撰写人"
+        task: "根据黑板上所有调研结果，撰写结构化的研究报告"
+      - agent: "质量审查员"
+        task: "审查报告的质量、准确性和完整性，给出修改建议"
