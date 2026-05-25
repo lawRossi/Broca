@@ -84,9 +84,8 @@ class LLMClient:
             raise ValueError(f"Unknown model: {model}")
 
         modality = self.config[provider][model]["modality"]
-
+        raw_input = None
         if message.message_type == MessageType.USER_MESSAGE:
-            text_content = message.data.get("content", "")
             image_content = []
             audio_content = []
             video_content = []
@@ -117,6 +116,8 @@ class LLMClient:
                         file_info_parts.append(file_info)
 
                 if file_info_parts:
+                    text_content = message.data.get("content", "")
+                    raw_input = text_content
                     files_section = "\n\n[附件文件]:\n" + "\n".join(file_info_parts)
                     text_content = text_content + files_section
         elif message.message_type == MessageType.TASK_START:
@@ -137,7 +138,7 @@ class LLMClient:
             content = text_content
         if isinstance(content, list):
             content.append({"type": "text", "text": text_content})
-        return {"role": "user", "content": content}
+        return {"role": "user", "content": content, "raw_input": raw_input}
 
     async def get_stream_response(
         self,

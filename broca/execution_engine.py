@@ -803,8 +803,9 @@ class ExecutionEngine:
                     turn_description=f"Processing user message: {message_content}",
                     subscription=self.session_id,
                 )
-
             message.data["from_agent"] = from_agent
+            if user_message.get("raw_input"):
+                message.data["raw_input"] = user_message["raw_input"]
             message_id = message.message_id if not from_agent else None
             if not await self.session_manager.save_message(
                 role=MessageRole.USER,
