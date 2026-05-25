@@ -5,21 +5,20 @@ type: prompt
 use_sub_agent: true
 sub_agent_name: sub-agent
 ---
-请对当前 workspace 进行初始化扫描，了解项目概要情况。
+请对当前 workspace 进行初始化扫描，了解项目概要情况,编写.agents/AGENTS.md。
 
 ## 任务步骤
 
 ### 1. 探索项目结构
-- 使用 `tree_dir` 工具查看项目顶级目录结构（max_depth=3）
+- 使用 `tree_dir` 工具查看项目顶级目录结构
 - 浏览 `pyproject.toml`、`README.md`、`package.json`（如有）等元信息文件
 
-### 2. 深入了解核心模块
-- 读取 `broca/` 目录下的核心 Python 模块，了解项目的架构和功能模块
-- 阅读 `configs/configs.json` 了解配置
-- 阅读 `docs/` 下的设计文档，了解项目定位
+### 2. 了解核心模块
+- 如果项目没有README文件，或者README文件介绍不详细，则扫描并阅读核心模块的核心代码
+- 不需要了解所有细节，逻辑类似的文件只需要阅读一两个就行
 
 ### 3. 编写概要文件
-将了解到的项目信息以 Markdown 格式写入 `./agents/AGENTS.md` 文件，内容包括：
+将了解到的项目信息以 Markdown 格式写入 `.agents/AGENTS.md` 文件，内容包括：
 
 ```markdown
 # {项目名称}
@@ -40,4 +39,4 @@ sub_agent_name: sub-agent
 - 如何安装、配置、运行
 ```
 
-请确保 `./agents/AGENTS.md` 文件内容详实、结构清晰，能帮助新开发者快速了解整个项目。
+请确保 `.agents/AGENTS.md` 文件内容精简（不超过200行）、结构清晰，能帮助新开发者快速了解整个项目。
