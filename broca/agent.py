@@ -83,6 +83,7 @@ class Agent:
         agent._setup_permission_manager()
         await agent._setup_tools()
         agent._setup_execution_engine()
+        await agent._setup_command_system()
         return agent
 
     async def load_stats(self, session_manager: SessionManager) -> None:
@@ -223,6 +224,13 @@ class Agent:
             session_manager=self.session_manager,
             session_memory_manager=self.session_memory_manager,
         )
+
+    async def _setup_command_system(self):
+        """Set up command system (CommandManager with registry, loader, dispatcher)"""
+        from broca.commands.manager import CommandManager
+
+        self.command_manager = CommandManager(self)
+        await self.command_manager.initialize()
 
     def _setup_permission_manager(self):
         """Set up permission manager"""
@@ -420,6 +428,16 @@ class Agent:
         Returns:
             ExecutionResult: Result of the execution with status and details
         """
+        # ═══ Command interception ═══
+        if not from_agent and message.message_type == MessageType.USER_MESSAGE:
+            content = message.data.get("content", "")
+            if content and hasattr(self, "command_manager") and self.command_manager:
+                parsed = self.command_manager.parse(content)
+                if parsed:
+                    name, args = parsed
+                    return await self._handle_command(name, args, message)
+        # ════════════════════════════
+
         # Store the current execution task for potential cancellation
         self._abort_task = asyncio.current_task()
         await self._set_status(self.STATUS_RUNNING)
@@ -447,6 +465,40 @@ class Agent:
                 await self.reset()
             self._abort_task = None
             await self._set_status(self.STATUS_IDEL)
+
+    async def _handle_command(
+        self, name: str, args: str, original_message: Message
+    ) -> ExecutionResult:
+        """
+        Handle a command intercepted in run().
+
+        Dispatches the command via CommandManager and returns an ExecutionResult.
+        If the command is not found, continues execution as a normal message.
+        """
+        raw_input = original_message.data.get("content", "")
+        result = await self.command_manager.dispatch(
+            name,
+            args,
+            raw_input,
+            original_message_id=original_message.message_id,
+        )
+
+        if result is None:
+            # Command not found, treat as normal message
+            logger.warning(
+                f"Command '{name}' not found, treating as normal message"
+            )
+            return await self.run(original_message, from_agent=True)
+
+        if result.type == "error":
+            await self.communicator.send_error(
+                result.value, subscription=self.session_id
+            )
+
+        return ExecutionResult(
+            status=ExecutionStatus.COMPLETED,
+            message=result.value,
+        )
 
     async def _handle_task(self, message: Message) -> None:
         """Handle task assignment from another agent"""
@@ -544,8 +596,10 @@ class Agent:
         Handle command from Socket.io
 
         This method is called when a command is received via the command channel.
+        Routes to the command system via CommandManager for registered commands.
         """
         command = message.data.get("command")
+        arguments = message.data.get("arguments", {})
         logger.info(f"Received command: {command}")
 
         await self.session_manager.save_message(
@@ -556,11 +610,45 @@ class Agent:
             agent_id=self.agent_id,
         )
 
+        # Route to command system if available
+        if hasattr(self, "command_manager") and self.command_manager:
+            if self.command_manager.registry.has(command):
+                args_str = arguments.get("args", "")
+                raw_input = arguments.get(
+                    "raw_input", f"/{command} {args_str}".strip()
+                )
+                result = await self.command_manager.dispatch(
+                    command,
+                    args_str,
+                    raw_input,
+                    original_message_id=message.message_id,
+                )
+                if result:
+                    await self.communicator.send_command_result(
+                        command=command,
+                        result={
+                            "code": 0 if result.type != "error" else 1,
+                            "message": result.value,
+                        },
+                        subscription=self.session_id,
+                    )
+                    return
+
+        # Fallback: handle abort/undo/redo directly (backward compatibility)
         if command == "abort":
             logger.info("Received abort command from user")
             await self.abort()
+            await self.communicator.send_command_result(
+                command="abort",
+                result={"code": 0, "message": "Execution aborted"},
+                subscription=self.session_id,
+            )
         elif command in ["undo", "redo"]:
             await self._handle_undo_redo_command(message)
+        else:
+            await self.communicator.send_error(
+                f"Unknown command: {command}", subscription=self.session_id
+            )
 
     async def disconnect(self):
         """Disconnect from server"""
