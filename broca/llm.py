@@ -58,12 +58,16 @@ class LLMClient:
             api_key = os.getenv(key_env)
             if api_key:
                 self.config[provider]["api_key"] = api_key
-                logger.info("LLM config: %s api_key overridden from env %s", provider, key_env)
+                logger.info(
+                    "LLM config: %s api_key overridden from env %s", provider, key_env
+                )
 
             base_url = os.getenv(url_env)
             if base_url:
                 self.config[provider]["base_url"] = base_url
-                logger.info("LLM config: %s base_url overridden from env %s", provider, url_env)
+                logger.info(
+                    "LLM config: %s base_url overridden from env %s", provider, url_env
+                )
 
     def parse_message(self, provider: str, model: str, message: Message) -> dict:
         """
@@ -86,6 +90,7 @@ class LLMClient:
         modality = self.config[provider][model]["modality"]
         raw_input = None
         if message.message_type == MessageType.USER_MESSAGE:
+            text_content = message.data.get("content", "")
             image_content = []
             audio_content = []
             video_content = []
@@ -114,9 +119,7 @@ class LLMClient:
                     else:
                         file_info = f"文件类型：{file_type}\n文件链接：{file_url}"
                         file_info_parts.append(file_info)
-
                 if file_info_parts:
-                    text_content = message.data.get("content", "")
                     raw_input = text_content
                     files_section = "\n\n[附件文件]:\n" + "\n".join(file_info_parts)
                     text_content = text_content + files_section
