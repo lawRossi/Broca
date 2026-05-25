@@ -149,19 +149,11 @@ const getContentClass = (message: Message) => {
 
 const getContent = (message: Message) => {
   if (message.message_type === 'tool_call') {
-    const toolName = message.data?.tool_name || 'unknown_tool'
-    const status = message.data?.status
-    const hasResult = message.data?.result !== undefined
+    return message.data?.tool_name || 'unknown_tool'
+  }
 
-    if (!hasResult) {
-      return `${toolName}`
-    } else if (status === true || status === 'success') {
-      return `${toolName}`
-    } else if (status === false || status === 'error') {
-      return `${toolName}`
-    } else {
-      return toolName
-    }
+  if (message.data?.raw_input !== undefined) {
+    return message.data.raw_input
   }
 
   const content = message.data?.content || message.data?.message || ''
@@ -177,12 +169,6 @@ const getContent = (message: Message) => {
           const textParts = parsed.content.filter((part: any) => part.type === 'text')
           return textParts.map((part: any) => part.text).join('')
         } else {
-          if (message.message_type == 'user_message') {
-            const idx = parsed.content.indexOf('[附件文件]:')
-            if (idx !== -1) {
-              return parsed.content.substring(0, idx).trim()
-            }
-          }
           return parsed.content
         }
       }

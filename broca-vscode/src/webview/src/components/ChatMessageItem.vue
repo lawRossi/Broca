@@ -119,6 +119,10 @@ function getContent(message: Message): string {
     return message.data?.tool_name || 'unknown_tool'
   }
 
+  if (message.data?.raw_input !== undefined) {
+    return message.data.raw_input
+  }
+
   const content = message.data?.content || message.data?.message || ''
 
   if (typeof content === 'string') {
