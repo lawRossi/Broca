@@ -205,6 +205,81 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
         # 触发关闭
         _running = False
 
+    elif msg.type == IPCMessageType.CMD_RUN_CREW:
+        # 运行编排
+        from broca.orchestration.crew import CrewConfig
+        from broca.session_runner.orchestrator_runner import CrewOrchestratorRunner
+
+        yaml_content = msg.payload.get("yaml_content")
+        yaml_path = msg.payload.get("yaml_path")
+
+        try:
+            if yaml_content:
+                crew_config = CrewConfig.from_yaml(yaml_content)
+            elif yaml_path:
+                crew_config = CrewConfig.from_yaml_file(yaml_path)
+            else:
+                raise ValueError("Either yaml_content or yaml_path is required")
+
+            # 收集 Agent 引用
+            agent_refs = {}
+            for agent_cfg in crew_config.agents:
+                agent = None
+                for a in _agents:
+                    if a.name == agent_cfg.name:
+                        agent = a
+                        break
+                if agent is None:
+                    logger.warning(f"Agent '{agent_cfg.name}' not found in session, skipping")
+                else:
+                    agent_refs[agent_cfg.name] = agent
+
+            # 创建编排运行器并执行
+            crew_runner = CrewOrchestratorRunner(
+                session_id=msg.session_id,
+                ipc_client=ipc_client,
+                agent_factory=_agent_factory,
+                session_manager=_session_manager,
+            )
+
+            # 在后台任务中运行编排
+            asyncio.create_task(crew_runner.run_crew(crew_config, agent_refs))
+
+            response = create_ipc_message(
+                IPCMessageType.RESPONSE,
+                msg.session_id,
+                payload={
+                    "message": "Crew orchestration started",
+                    "crew_id": crew_config.name,
+                    "agent_count": len(agent_refs),
+                    "orchestrator_type": crew_config.orchestrator.type.value,
+                },
+                status=IPCStatusCode.SUCCESS,
+            )
+            ipc_client.send_message(response)
+
+        except Exception as e:
+            logger.error(f"Failed to start crew: {e}")
+            response = create_ipc_message(
+                IPCMessageType.RESPONSE,
+                msg.session_id,
+                payload={"error": str(e)},
+                status=IPCStatusCode.ERROR,
+            )
+            ipc_client.send_message(response)
+
+    elif msg.type == IPCMessageType.CMD_ABORT_CREW:
+        # 中止编排
+        crew_id = msg.payload.get("crew_id")
+        logger.info(f"Aborting crew: {crew_id}")
+        response = create_ipc_message(
+            IPCMessageType.RESPONSE,
+            msg.session_id,
+            payload={"message": f"Crew {crew_id} abort initiated"},
+            status=IPCStatusCode.SUCCESS,
+        )
+        ipc_client.send_message(response)
+
     elif msg.type == IPCMessageType.CMD_EXECUTE:
         # 执行用户消息 - 将消息放入 agent 的队列
         agent_id = msg.payload.get("agent_id")

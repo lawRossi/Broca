@@ -599,6 +599,46 @@ class RunnerManager:
             "runners": self.list_sessions(),
         }
 
+    async def send_command(
+        self, session_id: str, msg_type: IPCMessageType, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        向指定 Session 的 Runner 发送 IPC 命令并等待响应
+
+        Args:
+            session_id: Session ID
+            msg_type: IPC 消息类型
+            payload: 消息载荷
+
+        Returns:
+            响应数据，失败返回 None
+        """
+        ipc_server = self._ipc_servers.get(session_id)
+        if not ipc_server:
+            logger.warning(f"No IPC server found for session {session_id}")
+            return None
+
+        try:
+            msg = create_ipc_message(msg_type, session_id, payload=payload)
+            ipc_server.send_message(msg)
+
+            # 等待响应
+            import asyncio
+
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, ipc_server.receive_message, 10.0)
+
+            if response:
+                return response.payload
+            return {"error": "No response from runner"}
+
+        except IPCConnectionError as e:
+            logger.error(f"IPC send command failed for session {session_id}: {e}")
+            return {"error": str(e)}
+        except Exception as e:
+            logger.error(f"Failed to send command to session {session_id}: {e}")
+            return {"error": str(e)}
+
     def _runner_info_to_dict(self, info: RunnerProcessInfo) -> Dict[str, Any]:
         """将 RunnerProcessInfo 转为字典"""
         return {
