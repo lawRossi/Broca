@@ -12,7 +12,7 @@ Defines the base data types for the Broca command system:
 from __future__ import annotations
 
 import abc
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
@@ -50,8 +50,7 @@ class CommandContext:
     agent_id: str
     agent: "Agent"
     context: "Context"
-    raw_input: str  # Raw user input, e.g., "/deploy staging"
-    args_raw: str  # Parsed argument string, e.g., "staging"
+    raw_input: Optional[str] = None  # Raw user input, e.g., "/deploy staging"
     original_message_id: Optional[str] = None  # Original input message_id
 
 
@@ -86,6 +85,6 @@ class LocalCommand(CommandBase):
     type: str = "local"
 
     @abc.abstractmethod
-    async def execute(self, args: str, ctx: CommandContext) -> CommandResult:
+    async def execute(self, args: str, ctx: CommandContext) -> Optional[CommandResult]:
         """Execute the command with the given arguments and context"""
         ...

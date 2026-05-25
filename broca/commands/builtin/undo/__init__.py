@@ -1,4 +1,5 @@
 import json
+from typing import Optional
 
 from broca.commands.base import LocalCommand, CommandContext, CommandResult
 from broca.logging_config import get_logger
@@ -9,7 +10,7 @@ logger = get_logger(__name__)
 class UndoCommand(LocalCommand):
     """Undo the last operation"""
 
-    async def execute(self, args: str, ctx: CommandContext) -> CommandResult:
+    async def execute(self, args: str, ctx: CommandContext) -> Optional[CommandResult]:
         # Check agent status
         if ctx.agent.status == ctx.agent.STATUS_RUNNING:
             return CommandResult(

@@ -5,6 +5,7 @@ This module defines the core Agent class, which encapsulates the agent's behavio
 """
 
 import asyncio
+import json
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -279,105 +280,6 @@ class Agent:
         """
         await self.permission_manager.handle_permission_response(message)
 
-    async def _handle_undo_redo_command(self, message: Message):
-        """
-        Handle undo/redo command
-
-        Args:
-            message: Command message with undo/redo details
-        """
-        if self.status == self.STATUS_RUNNING:
-            logger.error("Agent is already running")
-            await self.communicator.send_command_result(
-                command=message.data.get("command"),
-                result={"code": 1, "message": "Agent is already running"},
-                subscription=self.session_id,
-            )
-            return
-
-        command = message.data.get("command")
-        session_id = self.session_id
-
-        if not session_id:
-            logger.error("No session ID available for undo/redo")
-            await self.communicator.send_error(
-                "No active session for undo/redo operation", subscription=session_id
-            )
-            return
-
-        try:
-            if command == "undo":
-                # 获取撤销参数
-                arguments = message.data.get("arguments", {})
-                target_message_id = arguments.get("target_message_id")
-                level = arguments.get("level", "step")
-
-                # 执行撤销
-                result = await self.revert_service.undo(
-                    session_id=session_id,
-                    agent_id=self.agent_id,
-                    target_message_id=target_message_id,
-                    level=level,
-                )
-
-                if result.get("success"):
-                    # 发送成功消息
-                    diff_summary = result.get("diff_summary", {})
-                    files_changed = diff_summary.get("total_files", 0)
-
-                    # 重建context
-                    await self.context.build_history_from_session(self.agent_id)
-
-                    await self.communicator.send_command_result(
-                        command="undo",
-                        result={
-                            "code": 0,
-                            "message": f"Undo successful, {files_changed} files changed",
-                        },
-                        subscription=session_id,
-                    )
-                else:
-                    await self.communicator.send_command_result(
-                        command="undo",
-                        result={
-                            "code": 1,
-                            "message": f"Undo failed: {result.get('message', 'Unknown error')}",
-                        },
-                        subscription=session_id,
-                    )
-
-            elif command == "redo":
-                # 执行重做
-                result = await self.revert_service.redo(
-                    session_id=session_id, agent_id=self.agent_id
-                )
-
-                if result.get("success"):
-                    # 重建context
-                    await self.context.build_history_from_session(self.agent_id)
-                    await self.communicator.send_command_result(
-                        command="redo",
-                        result={"code": 0, "message": "Redo successful"},
-                        subscription=session_id,
-                    )
-                else:
-                    await self.communicator.send_command_result(
-                        command="redo",
-                        result={
-                            "code": 1,
-                            "message": f"Redo failed: {result.get('message', 'Unknown error')}",
-                        },
-                        subscription=session_id,
-                    )
-
-        except Exception as e:
-            logger.error(f"Error handling {command} command: {e}")
-            await self.communicator.send_command_result(
-                command=command,
-                result={"code": 1, "message": f"Error handling {command} command: {e}"},
-                subscription=session_id,
-            )
-
     def stop(self):
         self.running = False
 
@@ -485,9 +387,7 @@ class Agent:
 
         if result is None:
             # Command not found, treat as normal message
-            logger.warning(
-                f"Command '{name}' not found, treating as normal message"
-            )
+            logger.warning(f"Command '{name}' not found, treating as normal message")
             return await self.run(original_message, from_agent=True)
 
         if result.type == "error":
@@ -610,41 +510,24 @@ class Agent:
             agent_id=self.agent_id,
         )
 
-        # Route to command system if available
-        if hasattr(self, "command_manager") and self.command_manager:
-            if self.command_manager.registry.has(command):
-                args_str = arguments.get("args", "")
-                raw_input = arguments.get(
-                    "raw_input", f"/{command} {args_str}".strip()
-                )
-                result = await self.command_manager.dispatch(
-                    command,
-                    args_str,
-                    raw_input,
-                    original_message_id=message.message_id,
-                )
-                if result:
-                    await self.communicator.send_command_result(
-                        command=command,
-                        result={
-                            "code": 0 if result.type != "error" else 1,
-                            "message": result.value,
-                        },
-                        subscription=self.session_id,
-                    )
-                    return
-
-        # Fallback: handle abort/undo/redo directly (backward compatibility)
-        if command == "abort":
-            logger.info("Received abort command from user")
-            await self.abort()
-            await self.communicator.send_command_result(
-                command="abort",
-                result={"code": 0, "message": "Execution aborted"},
-                subscription=self.session_id,
+        if self.command_manager.registry.has(command):
+            args_str = json.dumps(arguments)
+            result = await self.command_manager.dispatch(
+                command,
+                args_str,
+                None,
+                original_message_id=message.message_id,
             )
-        elif command in ["undo", "redo"]:
-            await self._handle_undo_redo_command(message)
+            if result:
+                await self.communicator.send_command_result(
+                    command=command,
+                    result={
+                        "code": 0 if result.type != "error" else 1,
+                        "message": result.value,
+                    },
+                    subscription=self.session_id,
+                )
+                return
         else:
             await self.communicator.send_error(
                 f"Unknown command: {command}", subscription=self.session_id

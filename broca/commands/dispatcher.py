@@ -9,10 +9,15 @@ Provides parsing and dispatching of commands.
 import asyncio
 from typing import Optional
 
-from broca.commands.base import CommandContext, CommandResult, LocalCommand, PromptCommand
+from broca.commands.base import (
+    CommandContext,
+    CommandResult,
+    LocalCommand,
+    PromptCommand,
+)
 from broca.commands.registry import CommandRegistry
 from broca.logging_config import get_logger
-from broca.session import MessageProtocol, MessageType
+from broca.session import MessageProtocol
 
 logger = get_logger(__name__)
 
@@ -71,7 +76,8 @@ async def dispatch_command(
         )
         if ctx.original_message_id:
             message.message_id = ctx.original_message_id
-        message.data["raw_input"] = ctx.raw_input
+        if ctx.raw_input:
+            message.data["raw_input"] = ctx.raw_input
 
         if cmd.use_sub_agent:
             # Sub Agent execution: async dispatch, non-blocking

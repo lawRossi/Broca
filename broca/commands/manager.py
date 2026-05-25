@@ -7,7 +7,6 @@ Mounted on the Agent to provide command management functionality.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Optional
 
 from broca.commands.base import CommandContext, CommandResult
@@ -49,7 +48,7 @@ class CommandManager:
         self,
         name: str,
         args: str,
-        raw_input: str,
+        raw_input: Optional[str] = None,
         original_message_id: Optional[str] = None,
     ) -> Optional[CommandResult]:
         """Dispatch a command to its handler"""
@@ -60,7 +59,6 @@ class CommandManager:
             agent=self.agent,
             context=self.agent.context,
             raw_input=raw_input,
-            args_raw=args,
             original_message_id=original_message_id,
         )
         return await dispatch_command(name, args, self.registry, ctx)
