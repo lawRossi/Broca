@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict
 from sqlalchemy import JSON, Column, Integer, String
-from sqlalchemy import ForeignKey as SA_ForeignKey
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -106,6 +105,15 @@ class Turn(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
 
+class SessionCategory(str, Enum):
+    """会话分类枚举"""
+
+    NORMAL = "normal"  # 普通会话：创建内置 Agent
+    AGENT_ORCHESTRATION = (
+        "agent-orchestration"  # Agent 编排会话：不创建内置 Agent，只加载自定义 Agent
+    )
+
+
 class Session(SQLModel, table=True):
     """
     会话模型
@@ -118,6 +126,11 @@ class Session(SQLModel, table=True):
     session_id: str = Field(index=True, primary_key=True, description="会话唯一标识符")
     description: Optional[str] = Field(default=None, description="会话描述")
     workspace: Optional[str] = Field(default=None, description="工作空间路径")
+    category: str = Field(
+        default=SessionCategory.NORMAL,
+        sa_column=Column(String, server_default="normal", nullable=False),
+        description="会话分类：normal（普通）/ agent-orchestration（Agent 编排）",
+    )
 
     # 元数据
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
@@ -137,6 +150,9 @@ class Session(SQLModel, table=True):
         back_populates="session", cascade_delete="all"
     )
     tasks: List["Task"] = Relationship(back_populates="session", cascade_delete="all")
+    crew_executions: List["CrewExecution"] = Relationship(
+        back_populates="session", cascade_delete="all"
+    )
 
 
 # ============================================================================
@@ -904,3 +920,109 @@ class Task(SQLModel, table=True):
     def update_timestamp(self):
         """更新更新时间戳"""
         self.updated_at = datetime.now()
+
+
+# ============================================================================
+# 编排执行相关模型
+# ============================================================================
+
+
+class CrewExecutionStatus(str, Enum):
+    """编排执行状态枚举"""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    ABORTED = "aborted"
+
+
+class CrewExecution(SQLModel, table=True):
+    """
+    编排执行记录模型
+
+    存储编排（Crew）的完整执行信息，支持断点恢复和状态查询。
+    """
+
+    __tablename__ = "crew_execution"
+
+    execution_id: str = Field(
+        index=True, primary_key=True, description="执行唯一标识符"
+    )
+    session_id: str = Field(
+        foreign_key="session.session_id",
+        ondelete="CASCADE",
+        description="关联的会话ID",
+    )
+    crew_name: str = Field(description="Crew 名称")
+    orchestrator_type: str = Field(
+        description="编排器类型（pipeline/supervisor-worker/等）"
+    )
+    yaml_content: str = Field(
+        sa_column=Column(String, nullable=False),
+        description="Crew 配置的 YAML/JSON 内容",
+    )
+    status: CrewExecutionStatus = Field(
+        default=CrewExecutionStatus.PENDING,
+        description="执行状态",
+    )
+    error_message: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String, nullable=True),
+        description="错误信息",
+    )
+    result_json: Optional[str] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+        description="执行结果（JSON）",
+    )
+    phases_json: Optional[str] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+        description="阶段执行记录（JSON）",
+    )
+    started_at: datetime = Field(default_factory=datetime.now, description="开始时间")
+    completed_at: Optional[datetime] = Field(default=None, description="完成时间")
+
+    # 关联关系
+    session: Optional["Session"] = Relationship(back_populates="crew_executions")
+    blackboard_entries: List["BlackboardEntry"] = Relationship(
+        back_populates="crew_execution", cascade_delete="all"
+    )
+
+
+class BlackboardEntry(SQLModel, table=True):
+    """
+    黑板条目持久化模型
+
+    存储编排执行期间黑板的状态变更记录。
+    """
+
+    __tablename__ = "blackboard_entry"
+
+    entry_id: str = Field(
+        index=True,
+        primary_key=True,
+        description="条目唯一标识符",
+        default_factory=lambda: "bb-" + uuid.uuid4().hex[:16],
+    )
+    execution_id: str = Field(
+        foreign_key="crew_execution.execution_id",
+        ondelete="CASCADE",
+        description="关联的执行ID",
+    )
+    key: str = Field(description="黑板键名")
+    value_json: Optional[str] = Field(
+        default=None,
+        sa_column=Column(JSON, nullable=True),
+        description="黑板值（JSON）",
+    )
+    version: int = Field(default=0, description="版本号")
+    producer: str = Field(default="system", description="写入者")
+    event_type: str = Field(
+        default="created", description="事件类型：created/updated/deleted"
+    )
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+
+    # 关联关系
+    crew_execution: CrewExecution = Relationship(back_populates="blackboard_entries")

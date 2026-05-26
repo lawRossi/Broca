@@ -1,0 +1,41 @@
+# 圆桌辩论模板
+# 用于多 Agent 讨论和方案辩论
+#
+# 使用方法:
+#   broca run ./templates/debate.yaml --validate
+#   或通过 Web API 提交
+
+name: "圆桌辩论"
+description: "多 Agent 圆桌讨论"
+
+orchestrator:
+  type: round-table
+  max_rounds: 5
+
+agents:
+  - role: moderator
+    name: "主持人"
+    config: moderator_agent.md
+
+  - role: participant
+    name: "支持方"
+    config: debater_agent.md
+    extras:
+      stance: pro
+
+  - role: participant
+    name: "反对方"
+    config: debater_agent.md
+    extras:
+      stance: con
+
+  - role: participant
+    name: "中立评估员"
+    config: analyst_agent.md
+    extras:
+      stance: neutral
+
+blackboard:
+  initial_entries:
+    - key: topic
+      value: "是否应该使用微服务架构重构现有单体应用？"

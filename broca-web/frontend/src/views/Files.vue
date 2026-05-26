@@ -16,7 +16,7 @@ const route = useRoute()
 const userStore = useUserStore()
 
 // State
-const currentPath = ref('.')
+const currentPath = ref((route.query.path as string) || '.')
 const fileInfoDialog = ref(false)
 const selectedFile = ref<FileItem | null>(null)
 const fileInfoLoading = ref(false)
@@ -78,14 +78,6 @@ const handleResize = () => {
   checkIsMobile()
 }
 
-// 处理路由查询参数
-const handleRouteQuery = () => {
-  const pathFromQuery = route.query.path as string
-  if (pathFromQuery) {
-    currentPath.value = pathFromQuery
-  }
-}
-
 // 监听路由查询参数变化
 watch(
   () => route.query.path,
@@ -107,9 +99,6 @@ onMounted(async () => {
   //   router.push('/auth')
   //   return
   // }
-
-  // 处理路由查询参数
-  handleRouteQuery()
 
   checkIsMobile()
   window.addEventListener('resize', handleResize)

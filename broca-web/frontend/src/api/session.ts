@@ -7,7 +7,8 @@ export interface Session {
   workspace?: string
   created_at: string
   finished_at?: string
-  runner_status?: string       // Runner 进程状态（由后端从 SessionRunner 表获取）
+  category?: string                // 会话分类：normal / agent-orchestration
+  runner_status?: string           // Runner 进程状态（由后端从 SessionRunner 表获取）
 }
 
 export interface Agent {
@@ -55,6 +56,7 @@ export interface CreateSessionParams {
   workspace?: string
   provider?: string
   model?: string
+  category?: string
 }
 
 export interface UpdateSessionParams {
@@ -110,6 +112,13 @@ export const sessionApi = {
         keyword: params.keyword,
       },
     })
+  },
+
+  /**
+   * 获取单个会话详情
+   */
+  async getSession(sessionId: string): Promise<Session> {
+    return request.get(`/session/${sessionId}`)
   },
 
   /**

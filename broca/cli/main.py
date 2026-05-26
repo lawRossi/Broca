@@ -37,6 +37,12 @@ def get_version():
     return "0.1.0"
 
 
+# 延迟导入用于 Crew 编排
+def _import_crew_config():
+    from broca.orchestration.crew import CrewConfig, CrewConfigValidator
+    return CrewConfig, CrewConfigValidator
+
+
 def get_web_backend_path():
     """Get the web backend directory path"""
     return Path(__file__).parent.parent.parent / "broca-web" / "backend"
@@ -586,6 +592,31 @@ examples:
     backend_sub.add_argument("--port", type=int, default=9000, help="Backend port number")
     backend_sub.add_argument("--no-reload", action="store_true", help="Disable backend auto-reload")
 
+    # ---- run command (crew orchestration) ----
+    run_sub = sub.add_parser(
+        "run",
+        help="Run a Crew orchestration from a YAML configuration file",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  Broca run ./discussion.yaml              Run a round-table discussion
+  Broca run ./research.yaml                Run a research workflow
+  Broca run --validate ./config.yaml       Validate a crew config without running
+""",
+    )
+    run_sub.add_argument(
+        "yaml_file",
+        help="Path to the Crew YAML configuration file",
+    )
+    run_sub.add_argument(
+        "--validate", action="store_true",
+        help="Only validate the configuration, don't execute",
+    )
+    run_sub.add_argument(
+        "--server", default="http://localhost:6868",
+        help="Socket.io server URL (default: http://localhost:6868)",
+    )
+
     # ---- service command (production mode) ----
     svc_sub = sub.add_parser(
         "service",
@@ -671,6 +702,73 @@ def main():
                 args.backend_port,
                 args.reload,
             )
+
+    # ---- run commands ----
+    elif command == "run":
+        yaml_file = args.yaml_file
+        server = getattr(args, "server", "http://localhost:6868")
+
+        if not os.path.exists(yaml_file):
+            print(f"Error: YAML file not found: {yaml_file}")
+            sys.exit(1)
+
+        if args.validate:
+            # 仅校验模式
+            from broca.orchestration.crew import CrewConfigValidator
+
+            print(f"Validating: {yaml_file}")
+            errors = CrewConfigValidator.validate_yaml_file(yaml_file)
+            if errors:
+                print("❌ Validation failed:")
+                for err in errors:
+                    print(f"  - {err}")
+                sys.exit(1)
+            else:
+                print("✅ Configuration is valid")
+                # 显示配置预览
+                config = CrewConfig.from_yaml_file(yaml_file)
+                print(f"\nCrew: {config.name}")
+                print(f"  Description: {config.description}")
+                print(f"  Orchestrator: {config.orchestrator.type.value}")
+                print(f"  Agents ({len(config.agents)}):")
+                for a in config.agents:
+                    print(f"    - {a.name} ({a.role.value})")
+                sys.exit(0)
+        else:
+            # 执行模式
+            print(f"Starting crew orchestration from: {yaml_file}")
+            print(f"Server: {server}")
+            print()
+            print("Note: Crew orchestration requires a running Broca session.")
+            print("Use 'broca run' in an active agent session or via the Web API.")
+            print()
+            print("To run via Web API:")
+            print(f'  curl -X POST http://localhost:9000/api/crews \\')
+            print(f'    -H "Content-Type: application/json" \\')
+            print(f'    -d \'{{"yaml_path": "{yaml_file}"}}\'')
+            print()
+
+            # 尝试通过 Web API 提交
+            import json
+            import urllib.request
+
+            try:
+                data = json.dumps({"yaml_path": os.path.abspath(yaml_file)}).encode()
+                req = urllib.request.Request(
+                    f"{server.replace(':6868', ':9000')}/api/crews",
+                    data=data,
+                    headers={"Content-Type": "application/json"},
+                    method="POST",
+                )
+                with urllib.request.urlopen(req, timeout=10) as resp:
+                    result = json.loads(resp.read())
+                    print(f"✅ Crew submitted successfully!")
+                    print(f"  Execution ID: {result.get('execution_id', 'N/A')}")
+                    print(f"  Status: {result.get('status', 'N/A')}")
+            except Exception as e:
+                print(f"⚠ Could not submit via Web API: {e}")
+                print()
+                print("Alternative: Start an agent session and use load_skill + execute-tasks")
 
     # ---- no command (TUI) ----
     elif command is None:

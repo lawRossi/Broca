@@ -13,6 +13,7 @@ class CreateSessionRequest(BaseModel):
     workspace: Optional[str] = None
     provider: Optional[str] = None  # LLM provider，如 openrouter、deepseek 等
     model: Optional[str] = None  # LLM model，如 stepfun、nemotron 等
+    category: Optional[str] = "normal"  # 会话分类：normal / agent-orchestration
 
 
 class UpdateSessionRequest(BaseModel):

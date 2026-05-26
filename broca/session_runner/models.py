@@ -32,6 +32,11 @@ class IPCMessageType(str, Enum):
     CMD_GET_STATS = "cmd_get_stats"       # 获取统计信息
     CMD_RESTART = "cmd_restart"           # 重启（由 Manager 处理）
 
+    # Web → Runner 编排命令
+    CMD_RUN_CREW = "cmd_run_crew"         # 运行编排
+    CMD_ABORT_CREW = "cmd_abort_crew"     # 中止编排
+    CMD_CREW_STATUS = "cmd_crew_status"   # 查询编排状态
+
     # Runner → Web 事件通知
     EVT_READY = "evt_ready"               # 启动完成
     EVT_HEARTBEAT = "evt_heartbeat"       # 心跳
@@ -40,6 +45,12 @@ class IPCMessageType(str, Enum):
     EVT_COMPLETED = "evt_completed"       # 执行完成
     EVT_LOG = "evt_log"                   # 日志信息
     EVT_SHUTDOWN_COMPLETE = "evt_shutdown_complete"  # 关闭完成
+
+    # Runner → Web 编排事件
+    EVT_CREW_START = "evt_crew_start"     # 编排开始
+    EVT_CREW_PROGRESS = "evt_crew_progress"  # 编排进度
+    EVT_CREW_COMPLETE = "evt_crew_complete"  # 编排完成
+    EVT_CREW_ERROR = "evt_crew_error"     # 编排错误
 
     # 响应
     RESPONSE = "response"                 # 通用响应

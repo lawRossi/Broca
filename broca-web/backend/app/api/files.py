@@ -307,7 +307,6 @@ async def get_home_directory() -> ApiResponse:
     """
     try:
         home_dir = str(Path.home())
-        logger.info(f"Home directory: {home_dir}")
         return ApiResponse.success({"home_dir": home_dir}, msg="Home directory retrieved successfully")
     except Exception as e:
         logger.error(f"Error getting home directory: {e}")

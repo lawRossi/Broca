@@ -599,6 +599,46 @@ class RunnerManager:
             "runners": self.list_sessions(),
         }
 
+    async def send_command(
+        self, session_id: str, msg_type: IPCMessageType, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
+        """
+        向指定 Session 的 Runner 发送 IPC 命令并等待响应
+
+        Args:
+            session_id: Session ID
+            msg_type: IPC 消息类型
+            payload: 消息载荷
+
+        Returns:
+            响应数据，失败返回 None
+        """
+        ipc_server = self._ipc_servers.get(session_id)
+        if not ipc_server:
+            logger.warning(f"No IPC server found for session {session_id}")
+            return None
+
+        try:
+            msg = create_ipc_message(msg_type, session_id, payload=payload)
+            ipc_server.send_message(msg)
+
+            # 等待响应
+            import asyncio
+
+            loop = asyncio.get_event_loop()
+            response = await loop.run_in_executor(None, ipc_server.receive_message, 10.0)
+
+            if response:
+                return response.payload
+            return {"error": "No response from runner"}
+
+        except IPCConnectionError as e:
+            logger.error(f"IPC send command failed for session {session_id}: {e}")
+            return {"error": str(e)}
+        except Exception as e:
+            logger.error(f"Failed to send command to session {session_id}: {e}")
+            return {"error": str(e)}
+
     def _runner_info_to_dict(self, info: RunnerProcessInfo) -> Dict[str, Any]:
         """将 RunnerProcessInfo 转为字典"""
         return {
@@ -681,6 +721,61 @@ class RunnerManager:
                     )
                 except ValueError:
                     pass
+
+        # 编排事件处理
+        elif msg.type in (
+            IPCMessageType.EVT_CREW_START,
+            IPCMessageType.EVT_CREW_PROGRESS,
+            IPCMessageType.EVT_CREW_COMPLETE,
+            IPCMessageType.EVT_CREW_ERROR,
+        ):
+            self._handle_crew_event(session_id, msg)
+
+    def _handle_crew_event(self, session_id: str, msg: IPCMessage) -> None:
+        """处理编排事件"""
+        payload = msg.payload
+        execution_id = payload.get("execution_id")
+        crew_id = payload.get("crew_id", "unknown")
+        status = payload.get("status", "running")
+
+        if msg.type == IPCMessageType.EVT_CREW_START:
+            logger.info(
+                "[Crew] '%s' started (session=%s, exec=%s, type=%s)",
+                crew_id, session_id, execution_id,
+                payload.get("orchestrator_type", "?"),
+            )
+
+        elif msg.type == IPCMessageType.EVT_CREW_PROGRESS:
+            progress = payload.get("progress", 0)
+            phase = payload.get("current_phase", "")
+            logger.info(
+                "[Crew] '%s' progress: %.0f%% (session=%s, exec=%s, phase=%s)",
+                crew_id, progress * 100, session_id, execution_id, phase,
+            )
+
+        elif msg.type == IPCMessageType.EVT_CREW_COMPLETE:
+            logger.info(
+                "[Crew] '%s' completed (session=%s, exec=%s)",
+                crew_id, session_id, execution_id,
+            )
+
+        elif msg.type == IPCMessageType.EVT_CREW_ERROR:
+            error = payload.get("error", "unknown error")
+            logger.error(
+                "[Crew] '%s' failed: %s (session=%s, exec=%s)",
+                crew_id, error, session_id, execution_id,
+            )
+
+        # 触发已注册的 crew 事件回调
+        handlers = self._event_handlers.get("crew_event", [])
+        for handler in handlers:
+            try:
+                if asyncio.iscoroutinefunction(handler):
+                    asyncio.create_task(handler(session_id, msg))
+                else:
+                    handler(session_id, msg)
+            except Exception as e:
+                logger.error("Crew event handler error: %s", e)
 
     # ==================== 心跳监控 ====================
 

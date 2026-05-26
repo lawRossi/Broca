@@ -1,0 +1,38 @@
+# 代码审查模板
+# 用于多维度代码审查和质量评估
+#
+# 使用方法:
+#   broca run ./templates/code_review.yaml --validate
+#   或通过 Web API 提交
+
+name: "代码审查"
+description: "多维度代码审查与质量评估"
+
+orchestrator:
+  type: consensus
+  strategy: weighted
+  threshold: 0.7
+  weights:
+    高级架构师: 1.5
+    安全工程师: 1.2
+    初级开发: 0.8
+
+agents:
+  - role: reviewer
+    name: "高级架构师"
+    config: senior_dev_agent.md
+
+  - role: reviewer
+    name: "安全工程师"
+    config: security_agent.md
+
+  - role: reviewer
+    name: "初级开发"
+    config: junior_dev_agent.md
+
+blackboard:
+  initial_entries:
+    - key: review_target
+      value: |
+        待审查的代码将在此处填写。
+        支持多行代码内容。

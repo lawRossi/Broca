@@ -47,6 +47,18 @@ async def _start_runner_background(
         logger.error(f"Unexpected error starting runner for session {session_id}: {e}")
 
 
+async def _cleanup_failed_session(session_id: str) -> None:
+    """清理创建失败的 session（删除数据库记录）"""
+    try:
+        from broca.session.service import get_session_service
+
+        service = get_session_service()
+        await service.delete(session_id)
+        logger.info(f"Cleaned up failed session: {session_id}")
+    except Exception as e:
+        logger.warning(f"Failed to clean up session {session_id}: {e}")
+
+
 @router.post("/sessions", response_model=ApiResponse)
 async def create_session(request: CreateSessionRequest) -> ApiResponse:
     """创建新会话，在独立进程中初始化 Agent"""
@@ -58,6 +70,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             raise HTTPException(400, "workspace directory does not exist")
 
     workspace = None
+    session_id = None
     try:
         workspace = request.workspace
         if workspace is None:
@@ -66,26 +79,23 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
         # === 阶段1: 在数据库中创建 Session 和 Agent 记录 ===
         factory = AgentFactory()
-        agents = await factory.init_session_agents(
+        agents, session_id = await factory.init_session_agents(
             workspace=workspace,
             provider=request.provider,
             model=request.model,
+            category=request.category or "normal",
         )
 
+        category = request.category or "normal"
         if not agents:
-            raise HTTPException(500, "No agents were initialized")
-
-        # 获取 session_id
-        session_ids = set()
-        for agent in agents:
-            if not hasattr(agent, "session_manager") or not hasattr(agent.session_manager, "session_id"):
-                raise HTTPException(500, f"Agent {agent} does not have a valid session_manager.session_id")
-            session_ids.add(agent.session_manager.session_id)
-
-        if len(session_ids) != 1:
-            raise HTTPException(500, f"Agents have inconsistent session_ids: {session_ids}")
-
-        session_id = session_ids.pop()
+            if category == "agent-orchestration":
+                raise HTTPException(
+                    400,
+                    "工作空间中未找到自定义 Agent 配置。请在 workspace 的 .broca/agents/ 目录下创建 Agent 配置文件（.md 格式），"
+                    "或在创建时选择「普通会话」类型。",
+                )
+            else:
+                raise HTTPException(500, "No agents were initialized")
 
         # === 阶段2: 更新 Session 信息 ===
         session_service = get_session_service()
@@ -94,6 +104,8 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             update_data["description"] = request.description
         if workspace:
             update_data["workspace"] = workspace
+        if request.category:
+            update_data["category"] = request.category
         if update_data:
             await session_service.update(session_id, **update_data)
 
@@ -120,17 +132,19 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
                 "description": request.description,
                 "provider": request.provider,
                 "model": request.model,
+                "category": request.category or "normal",
             },
             msg="Session created successfully",
         )
-
     except HTTPException:
+        if session_id:
+            await _cleanup_failed_session(session_id)
         raise
-    except Exception as e:
-        import traceback
 
-        traceback.print_exc()
-        logger.error(f"Error creating session: {e}")
+    except Exception as e:
+        # 创建失败时清理已入库的 session 记录
+        if session_id:
+            await _cleanup_failed_session(session_id)
         raise HTTPException(500, f"Failed to create session: {e!s}") from e
 
 
