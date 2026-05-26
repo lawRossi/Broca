@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close, WarningFilled } from '@element-plus/icons-vue'
+import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close, WarningFilled, Connection } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatBeijingTime } from '@/utils/time'
 import type { Session } from '@/api/session'
@@ -140,6 +140,15 @@ const handleManageTasks = (event: Event) => {
   event.stopPropagation()
   router.push({
     path: '/tasks',
+    query: { session_id: props.session.session_id },
+  })
+}
+
+// 管理编排（跳转到编排管理页面）
+const handleManageCrews = (event: Event) => {
+  event.stopPropagation()
+  router.push({
+    path: '/crews',
     query: { session_id: props.session.session_id },
   })
 }
@@ -367,6 +376,21 @@ const handleRestartRunner = async () => {
             <Document />
           </el-icon>
           管理任务
+        </el-button>
+
+        <!-- 编排管理按钮 -->
+        <el-button
+          type="primary"
+          size="small"
+          plain
+          :disabled="isEditing"
+          title="编排管理"
+          @click.stop="handleManageCrews"
+        >
+          <el-icon class="mr-1">
+            <Connection />
+          </el-icon>
+          编排
         </el-button>
 
         <!-- 删除按钮 -->
