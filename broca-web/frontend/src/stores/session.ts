@@ -76,6 +76,7 @@ export const useSessionStore = defineStore('session', () => {
         workspace: params.workspace || undefined,
         provider: params.provider || undefined,
         model: params.model || undefined,
+        category: params.category || 'normal',
       })
 
       ElMessage.success('会话创建成功')
@@ -86,6 +87,7 @@ export const useSessionStore = defineStore('session', () => {
           session_id: response.session_id,
           description: response.description || params.description,
           workspace: response.workspace || params.workspace || '',
+          category: params.category || 'normal',
           created_at: new Date().toISOString(),
           runner_status: 'starting',
         }
@@ -395,6 +397,7 @@ export const useSessionStore = defineStore('session', () => {
       workspace: '',
       provider: undefined,
       model: undefined,
+      category: 'normal',
     }
   }
 
