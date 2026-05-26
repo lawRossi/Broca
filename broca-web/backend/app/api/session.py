@@ -66,33 +66,16 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
         # === 阶段1: 在数据库中创建 Session 和 Agent 记录 ===
         factory = AgentFactory()
-        agents = await factory.init_session_agents(
+        agents, session_id = await factory.init_session_agents(
             workspace=workspace,
             provider=request.provider,
             model=request.model,
             category=request.category or "normal",
         )
 
-        # 获取 session_id（优先从 agents 获取，agent-orchestration 可能无 agent）
         category = request.category or "normal"
-        session_id = None
-
-        if agents:
-            session_ids = set()
-            for agent in agents:
-                if not hasattr(agent, "session_manager") or not hasattr(agent.session_manager, "session_id"):
-                    raise HTTPException(500, f"Agent {agent} does not have a valid session_manager.session_id")
-                session_ids.add(agent.session_manager.session_id)
-
-            if len(session_ids) != 1:
-                raise HTTPException(500, f"Agents have inconsistent session_ids: {session_ids}")
-
-            session_id = session_ids.pop()
-        elif category == "agent-orchestration":
-            # Agent 编排会话允许没有 Agent，从 AgentFactory 获取 session_id
-            session_id = factory.last_session_id
-            if not session_id:
-                raise HTTPException(500, "Failed to get session_id for agent-orchestration session")
+        if not agents and category != "agent-orchestration":
+            raise HTTPException(500, "No agents were initialized")
         else:
             raise HTTPException(500, "No agents were initialized")
 

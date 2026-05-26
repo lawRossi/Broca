@@ -3,6 +3,7 @@ import json
 import os
 import platform
 from pathlib import Path
+from typing import Optional
 
 import yaml
 
@@ -40,16 +41,10 @@ class AgentFactory:
             self._initialized = True
             # Removed shared LLMClient - each agent will have its own instance
             self._session_agents = {}
-            self._last_session_id = None  # 最近创建的 session_id
-
-    @property
-    def last_session_id(self) -> Optional[str]:
-        """获取最近创建的 session_id"""
-        return self._last_session_id
 
     async def init_session_agents(
         self, session_id=None, workspace=None, provider=None, model=None, category="normal"
-    ) -> list[Agent]:
+    ) -> tuple[list[Agent], Optional[str]]:
         """
         初始化会话的 Agent
 
@@ -60,6 +55,11 @@ class AgentFactory:
             model: 可选的 LLM model，会覆盖配置中的设置
             category: 会话分类（normal/agent-orchestration）
 
+        Returns:
+            (agents, session_id) 元组
+            agents: Agent 列表
+            session_id: 会话 ID（新建或恢复的）
+
         normal 分类：加载内置 Agent 配置（main_agent/sub_agent/explorer）
         agent-orchestration 分类：不加载内置 Agent，只从 workspace 加载自定义 Agent
         """
@@ -67,24 +67,22 @@ class AgentFactory:
             agents = await self.restore_agents_from_session(session_id)
             session_agents = {agent.name: agent for agent in agents}
             self._session_agents[session_id] = session_agents
-            self._last_session_id = session_id
+            return agents, session_id
         else:
             session_manager = SessionManager()
             await session_manager.create_session(workspace=workspace)
-            self._last_session_id = session_manager.session_id
+            new_session_id = session_manager.session_id
 
             if category == "agent-orchestration":
-                # Agent 编排会话：只从 workspace 加载自定义 Agent
                 agents = await self._init_agent_orchestration_agents(
                     session_manager, workspace, provider, model
                 )
             else:
-                # 普通会话：加载内置 Agent + workspace 自定义 Agent
                 agents = await self._init_normal_session_agents(
                     session_manager, workspace, provider, model
                 )
 
-        return agents
+            return agents, new_session_id
 
     async def _init_normal_session_agents(
         self, session_manager, workspace=None, provider=None, model=None
