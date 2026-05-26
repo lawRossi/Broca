@@ -51,6 +51,7 @@ async def _cleanup_failed_session(session_id: str) -> None:
     """清理创建失败的 session（删除数据库记录）"""
     try:
         from broca.session.service import get_session_service
+
         service = get_session_service()
         await service.delete(session_id)
         logger.info(f"Cleaned up failed session: {session_id}")
@@ -86,8 +87,15 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
         )
 
         category = request.category or "normal"
-        if not agents and category != "agent-orchestration":
-            raise HTTPException(500, "No agents were initialized for normal session")
+        if not agents:
+            if category == "agent-orchestration":
+                raise HTTPException(
+                    400,
+                    "工作空间中未找到自定义 Agent 配置。请在 workspace 的 .broca/agents/ 目录下创建 Agent 配置文件（.md 格式），"
+                    "或在创建时选择「普通会话」类型。",
+                )
+            else:
+                raise HTTPException(500, "No agents were initialized")
 
         # === 阶段2: 更新 Session 信息 ===
         session_service = get_session_service()
@@ -129,16 +137,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             msg="Session created successfully",
         )
 
-    except HTTPException:
-        # 创建失败时清理已入库的 session 记录
-        if session_id:
-            await _cleanup_failed_session(session_id)
-        raise
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
-        logger.error(f"Error creating session: {e}")
         # 创建失败时清理已入库的 session 记录
         if session_id:
             await _cleanup_failed_session(session_id)

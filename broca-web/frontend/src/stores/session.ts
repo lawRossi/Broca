@@ -107,7 +107,16 @@ export const useSessionStore = defineStore('session', () => {
       return response
     } catch (error: any) {
       console.error('创建会话失败:', error)
-      ElMessage.error('创建会话失败: ' + (error.message || '未知错误'))
+      const msg = error.message || '未知错误'
+      // Agent 编排会话无自定义 Agent 时给出明确指引
+      if (params.category === 'agent-orchestration' && msg.includes('自定义 Agent')) {
+        ElMessage.warning({
+          message: '未找到自定义 Agent 配置，已在创建页面切换为普通会话',
+          duration: 5000,
+        })
+      } else {
+        ElMessage.error('创建会话失败: ' + msg)
+      }
       throw error
     } finally {
       creating.value = false

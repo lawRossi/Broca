@@ -70,17 +70,24 @@ const handleDeselect = (sessionId: string) => {
 const handleCreate = async () => {
   const response = await sessionStore.createSession(createForm.value)
   if (response?.session_id) {
-    navigatingToChat.value = true
-    navigateCountdown.value = 5
-    
-    const countdown = setInterval(() => {
-      navigateCountdown.value--
-      if (navigateCountdown.value <= 0) {
-        clearInterval(countdown)
-        navigatingToChat.value = false
-        router.push(`/chat/${response.session_id}`)
-      }
-    }, 1000)
+    const category = createForm.value.category || 'normal'
+    if (category === 'agent-orchestration') {
+      // Agent 编排会话 -> 跳转到编排管理
+      router.push(`/crews?session_id=${response.session_id}`)
+    } else {
+      // 普通会话 -> 跳转到聊天
+      navigatingToChat.value = true
+      navigateCountdown.value = 5
+
+      const countdown = setInterval(() => {
+        navigateCountdown.value--
+        if (navigateCountdown.value <= 0) {
+          clearInterval(countdown)
+          navigatingToChat.value = false
+          router.push(`/chat/${response.session_id}`)
+        }
+      }, 1000)
+    }
   }
 }
 
