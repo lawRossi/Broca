@@ -9,14 +9,11 @@ Session Runner 编排入口模块
 from __future__ import annotations
 
 import asyncio
-import logging
-import os
-import uuid
-from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from broca.logging_config import get_logger
-from broca.orchestration.blackboard import Blackboard, set_blackboard, remove_blackboard
+from broca.orchestration.blackboard import Blackboard
+from broca.tools.blackboard import set_blackboard, remove_blackboard
 from broca.orchestration.crew import CrewConfig
 from broca.orchestration.orchestrator import (
     CrewContext,
@@ -29,7 +26,7 @@ from broca.session_runner.ipc import (
     IPCClient,
     create_ipc_message,
 )
-from broca.session_runner.models import IPCMessageType, IPCStatusCode
+from broca.session_runner.models import IPCMessageType
 
 logger = get_logger(__name__)
 
@@ -116,11 +113,14 @@ class CrewOrchestratorRunner:
         self._orchestrator = OrchestratorFactory.create(crew_config, context)
 
         # 4. 发送编排开始事件
-        self._send_crew_event(IPCMessageType.EVT_CREW_START, {
-            "crew_id": self._crew_id,
-            "orchestrator_type": crew_config.orchestrator.type.value,
-            "agent_count": len(agent_refs),
-        })
+        self._send_crew_event(
+            IPCMessageType.EVT_CREW_START,
+            {
+                "crew_id": self._crew_id,
+                "orchestrator_type": crew_config.orchestrator.type.value,
+                "agent_count": len(agent_refs),
+            },
+        )
 
         # 5. 执行编排（在后台任务中运行，同时推送进度）
         try:
@@ -130,20 +130,28 @@ class CrewOrchestratorRunner:
 
             # 6. 发送完成事件
             if result.status == ExecutionStatus.COMPLETED:
-                self._send_crew_event(IPCMessageType.EVT_CREW_COMPLETE, {
-                    "crew_id": self._crew_id,
-                    "status": result.status.value,
-                    "phases": [p.to_dict() for p in result.phases],
-                    "final_output": result.final_output,
-                    "progress": result.progress,
-                })
+                self._send_crew_event(
+                    IPCMessageType.EVT_CREW_COMPLETE,
+                    {
+                        "crew_id": self._crew_id,
+                        "execution_id": self._execution_id,
+                        "status": result.status.value,
+                        "phases": [p.to_dict() for p in result.phases],
+                        "final_output": result.final_output,
+                        "progress": result.progress,
+                    },
+                )
             else:
-                self._send_crew_event(IPCMessageType.EVT_CREW_ERROR, {
-                    "crew_id": self._crew_id,
-                    "status": result.status.value,
-                    "error": result.error,
-                    "phases": [p.to_dict() for p in result.phases],
-                })
+                self._send_crew_event(
+                    IPCMessageType.EVT_CREW_ERROR,
+                    {
+                        "crew_id": self._crew_id,
+                        "execution_id": self._execution_id,
+                        "status": result.status.value,
+                        "error": result.error,
+                        "phases": [p.to_dict() for p in result.phases],
+                    },
+                )
 
             return result
 
@@ -152,20 +160,26 @@ class CrewOrchestratorRunner:
             if self._orchestrator:
                 await self._orchestrator.abort()
 
-            self._send_crew_event(IPCMessageType.EVT_CREW_ERROR, {
-                "crew_id": self._crew_id,
-                "status": "aborted",
-                "error": "Execution cancelled",
-            })
+            self._send_crew_event(
+                IPCMessageType.EVT_CREW_ERROR,
+                {
+                    "crew_id": self._crew_id,
+                    "status": "aborted",
+                    "error": "Execution cancelled",
+                },
+            )
             raise
 
         except Exception as e:
             logger.error(f"Crew '{self._crew_id}' execution error: {e}")
-            self._send_crew_event(IPCMessageType.EVT_CREW_ERROR, {
-                "crew_id": self._crew_id,
-                "status": "error",
-                "error": str(e),
-            })
+            self._send_crew_event(
+                IPCMessageType.EVT_CREW_ERROR,
+                {
+                    "crew_id": self._crew_id,
+                    "status": "error",
+                    "error": str(e),
+                },
+            )
             raise
 
         finally:
@@ -188,17 +202,21 @@ class CrewOrchestratorRunner:
             result = await self._orchestrator.run()
 
             # 推送最终进度
-            self._send_crew_event(IPCMessageType.EVT_CREW_PROGRESS, {
-                "crew_id": self._crew_id,
-                "progress": result.progress,
-                "current_phase": result.current_phase,
-                "phases_completed": sum(
-                    1 for p in result.phases
-                    if p.status.value in ("completed", "failed")
-                ),
-                "phases_total": len(result.phases),
-                "status": result.status.value,
-            })
+            self._send_crew_event(
+                IPCMessageType.EVT_CREW_PROGRESS,
+                {
+                    "crew_id": self._crew_id,
+                    "progress": result.progress,
+                    "current_phase": result.current_phase,
+                    "phases_completed": sum(
+                        1
+                        for p in result.phases
+                        if p.status.value in ("completed", "failed")
+                    ),
+                    "phases_total": len(result.phases),
+                    "status": result.status.value,
+                },
+            )
 
             return result
         finally:
@@ -208,7 +226,30 @@ class CrewOrchestratorRunner:
         """黑板事件回调（用于实时进度推送）"""
         logger.debug(f"Blackboard event: {event.key} ({event.event_type.value})")
 
-    def _send_crew_event(self, event_type: IPCMessageType, payload: Dict[str, Any]) -> None:
+        # 当一轮讨论完成时，推送进度
+        if event.key.startswith("round_") and event.event_type.value == "created":
+            import re
+            match = re.match(r"round_(\d+)", event.key)
+            if match:
+                current_round = int(match.group(1))
+                max_rounds = self._orchestrator.crew.orchestrator.max_rounds if hasattr(self._orchestrator, 'crew') else 1
+                progress = current_round / max_rounds
+                self._send_crew_event(
+                    IPCMessageType.EVT_CREW_PROGRESS,
+                    {
+                        "crew_id": self._crew_id,
+                        "execution_id": self._execution_id,
+                        "progress": progress,
+                        "current_phase": f"round_{current_round}",
+                        "phases_completed": current_round,
+                        "phases_total": max_rounds,
+                        "status": "running",
+                    },
+                )
+
+    def _send_crew_event(
+        self, event_type: IPCMessageType, payload: Dict[str, Any]
+    ) -> None:
         """发送编排事件到 Web 进程"""
         try:
             # 始终携带 execution_id 以便 Web 进程关联执行记录

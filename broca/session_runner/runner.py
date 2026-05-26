@@ -262,10 +262,26 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
 
             execution_id = msg.payload.get("execution_id")
 
-            # 在后台任务中运行编排
-            asyncio.create_task(
-                crew_runner.run_crew(crew_config, agent_refs, execution_id=execution_id)
-            )
+            # 在后台任务中运行编排（带异常兜底，防止静默失败）
+            async def _run_crew_safe():
+                try:
+                    await crew_runner.run_crew(crew_config, agent_refs, execution_id=execution_id)
+                except Exception as e:
+                    logger.error(f"Crew background task failed: {e}", exc_info=True)
+                    try:
+                        crew_runner._send_crew_event(
+                            IPCMessageType.EVT_CREW_ERROR,
+                            {
+                                "crew_id": crew_config.name,
+                                "execution_id": execution_id,
+                                "status": "error",
+                                "error": f"Background task failed: {e}",
+                            },
+                        )
+                    except Exception:
+                        pass
+
+            asyncio.create_task(_run_crew_safe())
 
             response = create_ipc_message(
                 IPCMessageType.RESPONSE,
