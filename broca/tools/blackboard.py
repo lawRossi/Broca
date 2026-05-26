@@ -43,9 +43,13 @@ class ReadBlackboard(Tool):
     @property
     def description(self) -> str:
         return (
-            "Read a value from the shared Blackboard. "
+            "Read value(s) from the shared Blackboard. "
             "The Blackboard is a shared state space that all agents in the same Crew can read and write. "
-            "Supports dot-separated nested key paths (e.g., 'user.name')."
+            "Accepts either a single key (string) or multiple keys (array) to batch-read in one call. "
+            "Supports dot-separated nested key paths (e.g., 'config.model').\n\n"
+            "Examples:\n"
+            '  read_blackboard({"key": "topic"})\n'
+            '  read_blackboard({"key": ["topic", "discussion_history"]})'
         )
 
     @property
@@ -54,15 +58,22 @@ class ReadBlackboard(Tool):
             "type": "object",
             "properties": {
                 "key": {
-                    "type": "string",
-                    "description": "The key to read. Supports dot-separated nested paths (e.g., 'config.model')",
+                    "oneOf": [
+                        {"type": "string", "description": "A single key to read."},
+                        {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Multiple keys to read at once. Returns all values in a single response.",
+                        },
+                    ],
+                    "description": "Key or array of keys to read. Supports dot-separated nested paths.",
                 },
             },
             "required": ["key"],
         }
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
-        key = arguments.get("key", "")
+        raw_key = arguments.get("key", "")
         session_id = context.session_id
 
         blackboard = get_blackboard(session_id)
@@ -74,31 +85,65 @@ class ReadBlackboard(Tool):
             )
 
         try:
-            value = await blackboard.get(key)
-            if value is None:
-                # 检查 key 是否真的不存在
-                exists = await blackboard.exists(key)
-                if not exists:
+            import json
+
+            # 支持批量读取：单个 key（string）或多个 key（list）
+            if isinstance(raw_key, list):
+                if not raw_key:
                     return ToolResult(
                         status=ToolStatus.SUCCESS,
-                        content=f"Key '{key}' does not exist in the Blackboard.",
+                        content="Empty key list provided.",
                     )
+                results = []
+                missing = []
+                for k in raw_key:
+                    val = await blackboard.get(k)
+                    exists = await blackboard.exists(k) if val is None else True
+                    if val is None and not exists:
+                        missing.append(k)
+                    else:
+                        try:
+                            formatted = json.dumps(val, ensure_ascii=False, indent=2)
+                        except (TypeError, ValueError):
+                            formatted = str(val)
+                        results.append(f"  [{k}]: {formatted}")
 
-            import json
-            try:
-                content = json.dumps(value, ensure_ascii=False, indent=2)
-            except (TypeError, ValueError):
-                content = str(value)
+                lines = [f"Batch read {len(raw_key)} key(s):"]
+                lines.extend(results)
+                if missing:
+                    lines.append(f"\nKeys not found: {missing}")
 
-            return ToolResult(
-                status=ToolStatus.SUCCESS,
-                content=f"Blackboard['{key}'] = {content}",
-            )
+                return ToolResult(
+                    status=ToolStatus.SUCCESS,
+                    content="\n".join(lines),
+                )
+            else:
+                # 单个 key
+                key = str(raw_key)
+                value = await blackboard.get(key)
+                if value is None:
+                    exists = await blackboard.exists(key)
+                    if not exists:
+                        return ToolResult(
+                            status=ToolStatus.SUCCESS,
+                            content=f"Key '{key}' does not exist in the Blackboard.",
+                        )
+
+                try:
+                    content = json.dumps(value, ensure_ascii=False, indent=2)
+                except (TypeError, ValueError):
+                    content = str(value)
+
+                return ToolResult(
+                    status=ToolStatus.SUCCESS,
+                    content=f"Blackboard['{key}'] = {content}",
+                )
+
         except Exception as e:
-            logger.error(f"Error reading blackboard key '{key}': {e}")
+            logger.error(f"Error reading blackboard: {e}")
             return ToolResult(
                 status=ToolStatus.ERROR,
-                content=f"Error reading blackboard key '{key}': {e}",
+                content=f"Error reading blackboard: {e}",
             )
 
 
