@@ -70,6 +70,11 @@ async def setup() -> None:
         runner_manager = RunnerManager()
         app.state.runner_manager = runner_manager
 
+        # 注册编排事件处理器（接收 Runner 发回的进度/完成事件）
+        from app.services.crew_service import get_crew_service
+        crew_service = get_crew_service()
+        runner_manager.on("crew_event", crew_service.handle_crew_event)
+
         # 启动心跳监控
         await runner_manager.start_heartbeat_monitor()
 

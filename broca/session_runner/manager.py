@@ -722,6 +722,61 @@ class RunnerManager:
                 except ValueError:
                     pass
 
+        # 编排事件处理
+        elif msg.type in (
+            IPCMessageType.EVT_CREW_START,
+            IPCMessageType.EVT_CREW_PROGRESS,
+            IPCMessageType.EVT_CREW_COMPLETE,
+            IPCMessageType.EVT_CREW_ERROR,
+        ):
+            self._handle_crew_event(session_id, msg)
+
+    def _handle_crew_event(self, session_id: str, msg: IPCMessage) -> None:
+        """处理编排事件"""
+        payload = msg.payload
+        execution_id = payload.get("execution_id")
+        crew_id = payload.get("crew_id", "unknown")
+        status = payload.get("status", "running")
+
+        if msg.type == IPCMessageType.EVT_CREW_START:
+            logger.info(
+                "[Crew] '%s' started (session=%s, exec=%s, type=%s)",
+                crew_id, session_id, execution_id,
+                payload.get("orchestrator_type", "?"),
+            )
+
+        elif msg.type == IPCMessageType.EVT_CREW_PROGRESS:
+            progress = payload.get("progress", 0)
+            phase = payload.get("current_phase", "")
+            logger.info(
+                "[Crew] '%s' progress: %.0f%% (session=%s, exec=%s, phase=%s)",
+                crew_id, progress * 100, session_id, execution_id, phase,
+            )
+
+        elif msg.type == IPCMessageType.EVT_CREW_COMPLETE:
+            logger.info(
+                "[Crew] '%s' completed (session=%s, exec=%s)",
+                crew_id, session_id, execution_id,
+            )
+
+        elif msg.type == IPCMessageType.EVT_CREW_ERROR:
+            error = payload.get("error", "unknown error")
+            logger.error(
+                "[Crew] '%s' failed: %s (session=%s, exec=%s)",
+                crew_id, error, session_id, execution_id,
+            )
+
+        # 触发已注册的 crew 事件回调
+        handlers = self._event_handlers.get("crew_event", [])
+        for handler in handlers:
+            try:
+                if asyncio.iscoroutinefunction(handler):
+                    asyncio.create_task(handler(session_id, msg))
+                else:
+                    handler(session_id, msg)
+            except Exception as e:
+                logger.error("Crew event handler error: %s", e)
+
     # ==================== 心跳监控 ====================
 
     async def start_heartbeat_monitor(

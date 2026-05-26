@@ -58,6 +58,7 @@ class CrewOrchestratorRunner:
         self._task: Optional[asyncio.Task] = None
         self._running = False
         self._crew_id: Optional[str] = None
+        self._execution_id: Optional[str] = None
 
     @property
     def is_running(self) -> bool:
@@ -71,6 +72,7 @@ class CrewOrchestratorRunner:
         self,
         crew_config: CrewConfig,
         agent_refs: Dict[str, Any],
+        execution_id: Optional[str] = None,
     ) -> OrchestrationResult:
         """
         运行编排
@@ -78,11 +80,13 @@ class CrewOrchestratorRunner:
         Args:
             crew_config: Crew 配置
             agent_refs: Agent 引用字典 {name: agent}
+            execution_id: 执行 ID（用于事件关联）
 
         Returns:
             编排执行结果
         """
         self._crew_id = crew_config.name
+        self._execution_id = execution_id
         self._running = True
 
         # 1. 创建 Blackboard 并注册
@@ -207,6 +211,9 @@ class CrewOrchestratorRunner:
     def _send_crew_event(self, event_type: IPCMessageType, payload: Dict[str, Any]) -> None:
         """发送编排事件到 Web 进程"""
         try:
+            # 始终携带 execution_id 以便 Web 进程关联执行记录
+            if self._execution_id and "execution_id" not in payload:
+                payload["execution_id"] = self._execution_id
             msg = create_ipc_message(
                 event_type,
                 self.session_id,

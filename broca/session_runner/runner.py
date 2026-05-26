@@ -223,6 +223,7 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
 
             # 收集 Agent 引用
             agent_refs = {}
+            missing_agents = []
             for agent_cfg in crew_config.agents:
                 agent = None
                 for a in _agents:
@@ -230,9 +231,26 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
                         agent = a
                         break
                 if agent is None:
+                    missing_agents.append(agent_cfg.name)
                     logger.warning(f"Agent '{agent_cfg.name}' not found in session, skipping")
                 else:
                     agent_refs[agent_cfg.name] = agent
+
+            if missing_agents:
+                logger.warning(
+                    f"Crew agents not found in session: {missing_agents}. "
+                    f"Available agents: {[a.name for a in _agents]}"
+                )
+
+            if not agent_refs:
+                response = create_ipc_message(
+                    IPCMessageType.RESPONSE,
+                    msg.session_id,
+                    payload={"error": f"No agents matched. Crew requires: {[a.name for a in crew_config.agents]}, Session has: {[a.name for a in _agents]}"},
+                    status=IPCStatusCode.ERROR,
+                )
+                ipc_client.send_message(response)
+                return
 
             # 创建编排运行器并执行
             crew_runner = CrewOrchestratorRunner(
@@ -242,8 +260,12 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
                 session_manager=_session_manager,
             )
 
+            execution_id = msg.payload.get("execution_id")
+
             # 在后台任务中运行编排
-            asyncio.create_task(crew_runner.run_crew(crew_config, agent_refs))
+            asyncio.create_task(
+                crew_runner.run_crew(crew_config, agent_refs, execution_id=execution_id)
+            )
 
             response = create_ipc_message(
                 IPCMessageType.RESPONSE,

@@ -22,13 +22,13 @@ agents:
 
   - role: participant
     name: "正方"
-    config: debater.md
+    config: pro.md
     extras:
       stance: pro          # 支持立场
 
   - role: participant
     name: "反方"
-    config: debater.md
+    config: con.md
     extras:
       stance: con          # 反对立场
 

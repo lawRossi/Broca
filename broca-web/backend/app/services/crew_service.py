@@ -201,6 +201,56 @@ class CrewService:
         record.completed_at = datetime.now(timezone.utc)
 
     @staticmethod
+    async def handle_crew_event(session_id: str, msg: Any) -> None:
+        """
+        处理来自 Runner 的编排事件（由 RunnerManager 回调）
+
+        在 Web 进程的 IPC 监听循环中调用，更新执行记录。
+        """
+        from broca.session_runner.models import IPCMessageType
+
+        service = get_crew_service()
+        payload = msg.payload
+        execution_id = payload.get("execution_id")
+        if not execution_id:
+            return
+
+        record = service._executions.get(execution_id)
+        if not record:
+            logger.warning(f"Crew event for unknown execution: {execution_id}")
+            return
+
+        msg_type = msg.type
+        if msg_type == IPCMessageType.EVT_CREW_START:
+            record.status = "running"
+            logger.info(f"[CrewService] '{record.crew_config.name}' started (exec={execution_id})")
+
+        elif msg_type == IPCMessageType.EVT_CREW_PROGRESS:
+            progress = payload.get("progress", 0)
+            current_phase = payload.get("current_phase")
+            phases = payload.get("phases")
+            if phases:
+                record.phases = phases
+            logger.info(
+                f"[CrewService] '{record.crew_config.name}' progress: {progress:.0%}"
+                f"{f' phase={current_phase}' if current_phase else ''}"
+            )
+
+        elif msg_type == IPCMessageType.EVT_CREW_COMPLETE:
+            record.status = "completed"
+            record.result = payload.get("final_output")
+            record.phases = payload.get("phases", [])
+            record.completed_at = datetime.now(timezone.utc)
+            logger.info(f"[CrewService] '{record.crew_config.name}' completed (exec={execution_id})")
+
+        elif msg_type == IPCMessageType.EVT_CREW_ERROR:
+            record.status = "failed"
+            record.error = payload.get("error", "Unknown error")
+            record.phases = payload.get("phases", [])
+            record.completed_at = datetime.now(timezone.utc)
+            logger.error(f"[CrewService] '{record.crew_config.name}' failed: {record.error}")
+
+    @staticmethod
     def validate_crew_yaml(yaml_content: str) -> List[str]:
         """校验 YAML 配置"""
         return CrewConfigValidator.validate_yaml(yaml_content)
