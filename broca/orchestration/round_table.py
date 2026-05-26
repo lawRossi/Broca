@@ -56,10 +56,12 @@ class RoundTableOrchestrator(Orchestrator):
             if agent_cfg.role == AgentRole.PARTICIPANT:
                 agent = self.context.get_agent(agent_cfg.name)
                 if agent:
-                    participants.append({
-                        "agent": agent,
-                        "config": agent_cfg,
-                    })
+                    participants.append(
+                        {
+                            "agent": agent,
+                            "config": agent_cfg,
+                        }
+                    )
         return participants
 
     async def run(self) -> OrchestrationResult:
@@ -97,8 +99,7 @@ class RoundTableOrchestrator(Orchestrator):
             result.phases.append(phase)
 
             logger.info(
-                f"Round-Table round {round_num}/{max_rounds}: "
-                f"topic='{topic[:50]}...'"
+                f"Round-Table round {round_num}/{max_rounds}: topic='{topic[:50]}...'"
             )
 
             try:
@@ -111,7 +112,6 @@ class RoundTableOrchestrator(Orchestrator):
                     # 构建讨论提示
                     prompt = self._build_discussion_prompt(
                         topic=topic,
-                        history=discussion_history,
                         round_num=round_num,
                         agent_name=agent_cfg.name,
                         extras=agent_cfg.extras,
@@ -119,19 +119,22 @@ class RoundTableOrchestrator(Orchestrator):
 
                     # 获取 Agent 发言
                     response = await self._get_agent_response(agent, prompt)
-                    round_entries.append({
-                        "agent": agent_cfg.name,
-                        "content": response,
-                        "extras": agent_cfg.extras,
-                    })
+                    round_entries.append(
+                        {
+                            "agent": agent_cfg.name,
+                            "content": response,
+                            "extras": agent_cfg.extras,
+                        }
+                    )
+
+                    await self.context.blackboard.set(
+                        f"round_{round_num}_{agent_cfg.name}",
+                        round_entries,
+                        producer="round_table",
+                    )
 
                 # 记录本轮讨论
                 discussion_history.extend(round_entries)
-                await self.context.blackboard.set(
-                    f"round_{round_num}",
-                    round_entries,
-                    producer="round_table",
-                )
                 await self.context.blackboard.set(
                     "discussion_history",
                     discussion_history,
@@ -189,7 +192,6 @@ class RoundTableOrchestrator(Orchestrator):
     def _build_discussion_prompt(
         self,
         topic: str,
-        history: List[Dict[str, Any]],
         round_num: int,
         agent_name: str,
         extras: Dict[str, Any],
@@ -197,47 +199,25 @@ class RoundTableOrchestrator(Orchestrator):
         """构建 Agent 讨论提示"""
         parts = [f"## Discussion Topic\n{topic}\n"]
 
-        if history:
-            parts.append("## Previous Discussion\n")
-            for entry in history[-10:]:  # 最多展示最近 10 条
-                parts.append(f"[{entry['agent']}]: {entry['content'][:300]}")
-            parts.append("")
-
         stance = extras.get("stance", "")
         if stance:
-            parts.append(f"\n## Your Stance\nYou are arguing from the **{stance}** perspective.")
+            parts.append(
+                f"\n## Your Stance\nYou are arguing from the **{stance}** perspective."
+            )
 
         parts.append(f"\n## Your Turn (Round {round_num})")
-        parts.append("Please provide your perspective on the topic. "
-                     "You can agree, disagree, or build upon previous speakers' points.")
-
-        # 告知黑板结构和工具用法
-        parts.append("""
-## Blackboard Information (Shared Memory)
-
-The Blackboard is a shared memory space that all agents can read/write.
-Here is the current key structure:
-
-- `topic` - The discussion topic
-- `discussion_history` - Full history of all rounds
-- `round_1`, `round_2`, ... - Individual round entries
-
-Tips for using the Blackboard:
-1. Use `list_blackboard()` to see all available keys and versions
-2. Use `read_blackboard("discussion_history")` to read the full discussion
-3. Use `blackboard_changes(since_version=X)` to get only new changes since your last check
-4. Your final response message will be recorded as your discussion contribution automatically
-
-You DO NOT need to write to the Blackboard yourself - your response here will be captured.
-""")
+        parts.append(
+            "Please provide your perspective on the topic. "
+            "You can agree, disagree, or build upon previous speakers' points."
+        )
 
         return "\n".join(parts)
 
     async def _get_agent_response(self, agent: Any, prompt: str) -> str:
         """获取 Agent 的讨论发言"""
         try:
-            from broca.session import MessageProtocol
             from broca.execution_engine import ExecutionStatus
+            from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=prompt)
             execution_result = await agent.run(trigger_message, from_agent=True)
@@ -275,24 +255,39 @@ You DO NOT need to write to the Blackboard yourself - your response here will be
             f"Round {round_num} of {max_rounds}.\n"
             f"Total statements: {len(history)}.\n\n"
             f"Should we conclude the discussion? "
-            f"Reply with a JSON: {{\"should_conclude\": true/false, \"summary\": \"...\"}}"
+            f'Just reply with a JSON: {{"should_conclude": true/false, "summary": "..."}}'
         )
 
         try:
-            from broca.session import MessageProtocol
             from broca.execution_engine import ExecutionStatus
+            from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=prompt)
             execution_result = await moderator.run(trigger_message, from_agent=True)
 
             if execution_result.status == ExecutionStatus.COMPLETED:
                 response = moderator.context.get_latest_assistant_message() or "{}"
+                import re
                 import json
-                # Try to extract JSON from response
-                try:
-                    return json.loads(response)
-                except (json.JSONDecodeError, TypeError):
-                    pass
+
+                # 从响应中提取第一个 JSON 对象（兼容前后有多余文本）
+                json_match = re.search(
+                    r'\{(?:[^{}]|\n)*"should_conclude"(?:[^{}]|\n)*\}',
+                    response, re.DOTALL
+                )
+                if json_match:
+                    try:
+                        return json.loads(json_match.group())
+                    except (json.JSONDecodeError, TypeError):
+                        pass
+
+                # 回退：尝试找任何 JSON 对象（兼容 markdown 代码块等格式）
+                brace_match = re.search(r'\{(?:[^{}]|\n)*\}', response, re.DOTALL)
+                if brace_match:
+                    try:
+                        return json.loads(brace_match.group())
+                    except (json.JSONDecodeError, TypeError):
+                        pass
         except Exception:
             pass
 
