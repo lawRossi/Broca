@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, nextTick } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close, WarningFilled, Connection } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
@@ -93,10 +93,16 @@ const handleCheckboxChange = (checked: boolean) => {
   }
 }
 
-// 卡片点击 - 跳转到聊天（不触发选中）
+// 卡片点击 - 根据类型跳转
 const handleCardClick = () => {
   if (isEditing.value) return // 编辑状态下不跳转
-  router.push(`/chat/${props.session.session_id}`)
+  if (isAgentOrchestrationSession.value) {
+    // Agent 编排会话 -> 跳转到编排管理
+    router.push(`/crews?session_id=${props.session.session_id}`)
+  } else {
+    // 普通会话 -> 跳转到聊天
+    router.push(`/chat/${props.session.session_id}`)
+  }
 }
 
 // 浏览文件点击
