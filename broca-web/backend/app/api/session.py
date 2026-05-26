@@ -47,6 +47,17 @@ async def _start_runner_background(
         logger.error(f"Unexpected error starting runner for session {session_id}: {e}")
 
 
+async def _cleanup_failed_session(session_id: str) -> None:
+    """清理创建失败的 session（删除数据库记录）"""
+    try:
+        from broca.session.service import get_session_service
+        service = get_session_service()
+        await service.delete(session_id)
+        logger.info(f"Cleaned up failed session: {session_id}")
+    except Exception as e:
+        logger.warning(f"Failed to clean up session {session_id}: {e}")
+
+
 @router.post("/sessions", response_model=ApiResponse)
 async def create_session(request: CreateSessionRequest) -> ApiResponse:
     """创建新会话，在独立进程中初始化 Agent"""
@@ -58,6 +69,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             raise HTTPException(400, "workspace directory does not exist")
 
     workspace = None
+    session_id = None
     try:
         workspace = request.workspace
         if workspace is None:
@@ -75,9 +87,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
 
         category = request.category or "normal"
         if not agents and category != "agent-orchestration":
-            raise HTTPException(500, "No agents were initialized")
-        else:
-            raise HTTPException(500, "No agents were initialized")
+            raise HTTPException(500, "No agents were initialized for normal session")
 
         # === 阶段2: 更新 Session 信息 ===
         session_service = get_session_service()
@@ -120,12 +130,18 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
         )
 
     except HTTPException:
+        # 创建失败时清理已入库的 session 记录
+        if session_id:
+            await _cleanup_failed_session(session_id)
         raise
     except Exception as e:
         import traceback
 
         traceback.print_exc()
         logger.error(f"Error creating session: {e}")
+        # 创建失败时清理已入库的 session 记录
+        if session_id:
+            await _cleanup_failed_session(session_id)
         raise HTTPException(500, f"Failed to create session: {e!s}") from e
 
 
