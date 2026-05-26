@@ -72,8 +72,8 @@ const handleCreate = async () => {
   if (response?.session_id) {
     const category = createForm.value.category || 'normal'
     if (category === 'agent-orchestration') {
-      // Agent 编排会话 -> 跳转到编排管理
-      router.push(`/crews?session_id=${response.session_id}`)
+      // Agent 编排会话 -> 不跳转，留在会话列表页
+      // 用户可手动操作进程启停
     } else {
       // 普通会话 -> 跳转到聊天
       navigatingToChat.value = true

@@ -136,6 +136,10 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             },
             msg="Session created successfully",
         )
+    except HTTPException:
+        if session_id:
+            await _cleanup_failed_session(session_id)
+        raise
 
     except Exception as e:
         # 创建失败时清理已入库的 session 记录

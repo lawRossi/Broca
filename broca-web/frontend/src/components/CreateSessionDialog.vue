@@ -183,7 +183,12 @@ const handleCreate = () => {
       </el-form-item>
 
       <el-form-item label="描述（可选）">
-        <el-input v-model="localFormData.description" placeholder="输入会话描述..." clearable />
+        <el-input
+          :model-value="localFormData.description"
+          placeholder="输入会话描述..."
+          clearable
+          @update:model-value="(val: string) => updateFormData({ description: val })"
+        />
       </el-form-item>
 
       <el-form-item label="LLM 提供商（可选）">
@@ -223,13 +228,14 @@ const handleCreate = () => {
         <div class="flex gap-2">
           <el-autocomplete
             ref="workspaceInputRef"
-            v-model="localFormData.workspace"
+            :model-value="localFormData.workspace"
             :suggestions="filteredWorkspaceSuggestions"
             :trigger-on-focus="false"
             clearable
             placeholder="输入或选择工作目录路径"
             class="flex-1"
-            @select="(suggestion: string) => (localFormData.workspace = suggestion)"
+            @update:model-value="(val: string) => updateFormData({ workspace: val })"
+            @select="(suggestion: string) => updateFormData({ workspace: suggestion })"
           >
             <template #default="{ item }">
               <div class="flex items-center justify-between w-full">

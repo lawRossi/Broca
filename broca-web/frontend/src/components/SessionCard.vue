@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close, WarningFilled, Connection } from '@element-plus/icons-vue'
+import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close, WarningFilled, VideoPlay, VideoPause } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatBeijingTime } from '@/utils/time'
 import type { Session } from '@/api/session'
@@ -159,15 +159,6 @@ const handleManageTasks = (event: Event) => {
   })
 }
 
-// 管理编排（跳转到编排管理页面）
-const handleManageCrews = (event: Event) => {
-  event.stopPropagation()
-  router.push({
-    path: '/crews',
-    query: { session_id: props.session.session_id },
-  })
-}
-
 // 开始编辑描述
 const startEdit = (event: Event) => {
   event.stopPropagation()
@@ -228,22 +219,37 @@ const handleKeydown = (event: KeyboardEvent) => {
   }
 }
 
-// 重启 Runner 进程
-const handleRestartRunner = async () => {
+// Runner 进程启停
+const togglingRunner = ref(false)
+
+const handleToggleRunner = async () => {
+  if (togglingRunner.value) return
+  togglingRunner.value = true
+
   try {
-    await ElMessageBox.confirm('该会话的后台进程异常，是否重启？', '重启确认', {
-      confirmButtonText: '重启',
-      cancelButtonText: '取消',
-      type: 'warning',
-    })
-    await sessionApi.restartRunner(props.session.session_id)
-    ElMessage.success('进程已重启')
+    const status = props.session.runner_status || 'none'
+    if (status === 'alive') {
+      // 运行中 → 停止
+      await ElMessageBox.confirm('确定要停止该会话的后台进程吗？停止后需要手动启动才能继续使用。', '停止确认', {
+        confirmButtonText: '停止',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
+      await sessionApi.stopRunner(props.session.session_id)
+      ElMessage.success('进程已停止')
+    } else {
+      // 已停止/异常/未运行 → 启动（重启）
+      await sessionApi.restartRunner(props.session.session_id)
+      ElMessage.success('进程已启动')
+    }
     // 刷新列表
     sessionStore.refresh()
   } catch (error: any) {
     if (error !== 'cancel') {
-      ElMessage.error('重启失败: ' + (error.message || '未知错误'))
+      ElMessage.error('操作失败: ' + (error.message || '未知错误'))
     }
+  } finally {
+    togglingRunner.value = false
   }
 }
 </script>
@@ -336,7 +342,7 @@ const handleRestartRunner = async () => {
           content="后台进程异常，点击重启"
           placement="top"
         >
-          <el-icon class="text-red-500 cursor-pointer" size="14" @click.stop="handleRestartRunner">
+          <el-icon class="text-red-500 cursor-pointer" size="14" @click.stop="handleToggleRunner">
             <WarningFilled />
           </el-icon>
         </el-tooltip>
@@ -403,20 +409,21 @@ const handleRestartRunner = async () => {
           管理任务
         </el-button>
 
-        <!-- 编排管理按钮（仅 Agent 编排会话显示） -->
+        <!-- 进程启停按钮（所有会话类型） -->
         <el-button
-          v-if="isAgentOrchestrationSession"
-          type="primary"
+          :type="session.runner_status === 'alive' ? 'warning' : 'primary'"
           size="small"
           plain
-          :disabled="isEditing"
-          title="编排管理"
-          @click.stop="handleManageCrews"
+          :disabled="isEditing || session.runner_status === 'starting'"
+          :loading="togglingRunner"
+          :title="session.runner_status === 'alive' ? '停止进程' : '启动进程'"
+          @click.stop="handleToggleRunner"
         >
           <el-icon class="mr-1">
-            <Connection />
+            <VideoPlay v-if="session.runner_status !== 'alive'" />
+            <VideoPause v-else />
           </el-icon>
-          编排
+          {{ session.runner_status === 'alive' ? '停止' : session.runner_status === 'starting' ? '启动中' : '启动' }}
         </el-button>
 
         <!-- 删除按钮 -->
