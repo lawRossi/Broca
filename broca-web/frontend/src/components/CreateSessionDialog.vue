@@ -160,6 +160,28 @@ const handleCreate = () => {
     @update:model-value="handleClose"
   >
     <el-form ref="createFormRef" :model="localFormData" label-position="top">
+      <!-- 会话分类选择 -->
+      <el-form-item label="会话类型">
+        <el-radio-group
+          :model-value="localFormData.category || 'normal'"
+          @change="(val: string) => updateFormData({ category: val })"
+          class="w-full"
+        >
+          <el-radio value="normal" class="category-radio">
+            <div class="flex flex-col">
+              <span class="font-medium">普通会话</span>
+              <span class="text-xs text-gray-400">创建内置 Agent（Broca、sub-agent、explorer），适合日常对话和任务</span>
+            </div>
+          </el-radio>
+          <el-radio value="agent-orchestration" class="category-radio">
+            <div class="flex flex-col">
+              <span class="font-medium">Agent 编排会话</span>
+              <span class="text-xs text-gray-400">不创建内置 Agent，从工作空间加载自定义 Agent，适合多 Agent 编排工作流</span>
+            </div>
+          </el-radio>
+        </el-radio-group>
+      </el-form-item>
+
       <el-form-item label="描述（可选）">
         <el-input v-model="localFormData.description" placeholder="输入会话描述..." clearable />
       </el-form-item>
@@ -239,6 +261,34 @@ const handleCreate = () => {
 <style scoped>
 :deep(.el-select) {
   width: 100%;
+}
+
+/* 会话分类单选样式 */
+.category-radio {
+  display: flex;
+  align-items: flex-start;
+  height: auto !important;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 8px;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.category-radio:hover {
+  border-color: var(--el-color-primary-light-3);
+  background-color: var(--el-color-primary-light-9);
+}
+
+.category-radio.is-checked {
+  border-color: var(--el-color-primary);
+  background-color: var(--el-color-primary-light-9);
+}
+
+.category-radio :deep(.el-radio__label) {
+  width: 100%;
+  padding-left: 8px;
 }
 
 /* 移动端优化 */

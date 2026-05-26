@@ -106,6 +106,13 @@ class Turn(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
 
+class SessionCategory(str, Enum):
+    """会话分类枚举"""
+
+    NORMAL = "normal"                # 普通会话：创建内置 Agent
+    AGENT_ORCHESTRATION = "agent-orchestration"  # Agent 编排会话：不创建内置 Agent，只加载自定义 Agent
+
+
 class Session(SQLModel, table=True):
     """
     会话模型
@@ -118,6 +125,11 @@ class Session(SQLModel, table=True):
     session_id: str = Field(index=True, primary_key=True, description="会话唯一标识符")
     description: Optional[str] = Field(default=None, description="会话描述")
     workspace: Optional[str] = Field(default=None, description="工作空间路径")
+    category: str = Field(
+        default=SessionCategory.NORMAL,
+        sa_column=Column(String, server_default="normal", nullable=False),
+        description="会话分类：normal（普通）/ agent-orchestration（Agent 编排）",
+    )
 
     # 元数据
     created_at: datetime = Field(default_factory=datetime.now, description="创建时间")

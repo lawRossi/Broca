@@ -70,6 +70,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             workspace=workspace,
             provider=request.provider,
             model=request.model,
+            category=request.category or "normal",
         )
 
         if not agents:
@@ -94,6 +95,8 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             update_data["description"] = request.description
         if workspace:
             update_data["workspace"] = workspace
+        if request.category:
+            update_data["category"] = request.category
         if update_data:
             await session_service.update(session_id, **update_data)
 
@@ -120,6 +123,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
                 "description": request.description,
                 "provider": request.provider,
                 "model": request.model,
+                "category": request.category or "normal",
             },
             msg="Session created successfully",
         )

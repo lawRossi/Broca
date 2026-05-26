@@ -42,7 +42,7 @@ class AgentFactory:
             self._session_agents = {}
 
     async def init_session_agents(
-        self, session_id=None, workspace=None, provider=None, model=None
+        self, session_id=None, workspace=None, provider=None, model=None, category="normal"
     ) -> list[Agent]:
         """
         初始化会话的 Agent
@@ -52,23 +52,75 @@ class AgentFactory:
             workspace: 工作空间路径
             provider: 可选的 LLM provider，会覆盖配置中的设置
             model: 可选的 LLM model，会覆盖配置中的设置
+            category: 会话分类（normal/agent-orchestration）
+
+        normal 分类：加载内置 Agent 配置（main_agent/sub_agent/explorer）
+        agent-orchestration 分类：不加载内置 Agent，只从 workspace 加载自定义 Agent
         """
         if session_id is not None:
             agents = await self.restore_agents_from_session(session_id)
             session_agents = {agent.name: agent for agent in agents}
             self._session_agents[session_id] = session_agents
         else:
-            agent_configs = self._load_agent_configs(self._resolve_agent_config_dir())
-            boostrap_config_dir = Path(os.getcwd()) / ".agents/agents"
-            agent_configs.extend(self._load_agent_configs(boostrap_config_dir))
             session_manager = SessionManager()
             await session_manager.create_session(workspace=workspace)
-            agents = []
-            for config in agent_configs:
+
+            if category == "agent-orchestration":
+                # Agent 编排会话：只从 workspace 加载自定义 Agent
+                agents = await self._init_agent_orchestration_agents(
+                    session_manager, workspace, provider, model
+                )
+            else:
+                # 普通会话：加载内置 Agent + workspace 自定义 Agent
+                agents = await self._init_normal_session_agents(
+                    session_manager, workspace, provider, model
+                )
+
+        return agents
+
+    async def _init_normal_session_agents(
+        self, session_manager, workspace=None, provider=None, model=None
+    ) -> list[Agent]:
+        """初始化普通会话的 Agent（内置 + 自定义）"""
+        agent_configs = self._load_agent_configs(self._resolve_agent_config_dir())
+        boostrap_config_dir = Path(os.getcwd()) / ".agents/agents"
+        agent_configs.extend(self._load_agent_configs(boostrap_config_dir))
+
+        agents = []
+        for config in agent_configs:
+            agent = await self.create_agent(
+                config, session_manager, workspace, provider, model
+            )
+            agents.append(agent)
+        return agents
+
+    async def _init_agent_orchestration_agents(
+        self, session_manager, workspace=None, provider=None, model=None
+    ) -> list[Agent]:
+        """
+        初始化 Agent 编排会话的 Agent
+
+        从 workspace 的 .broca/agents/ 目录加载自定义 Agent 配置。
+        如果没有自定义 Agent，则返回空列表（编排器会动态创建 Agent）。
+        """
+        agents = []
+
+        if not workspace:
+            logger.info("Agent-orchestration session has no workspace, skipping custom agent loading")
+            return agents
+
+        # 从 workspace/.broca/agents/ 加载自定义 Agent 配置
+        custom_agents_dir = Path(workspace) / ".broca" / "agents"
+        if custom_agents_dir.exists():
+            custom_configs = self._load_agent_configs(str(custom_agents_dir))
+            for config in custom_configs:
                 agent = await self.create_agent(
                     config, session_manager, workspace, provider, model
                 )
                 agents.append(agent)
+            logger.info(f"Loaded {len(agents)} custom agents from {custom_agents_dir}")
+        else:
+            logger.info(f"No custom agents directory found at {custom_agents_dir}")
 
         return agents
 

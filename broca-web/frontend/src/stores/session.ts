@@ -25,6 +25,7 @@ export const useSessionStore = defineStore('session', () => {
     workspace: '',
     provider: undefined,
     model: undefined,
+    category: 'normal',
   })
 
   // Workspace suggestions

@@ -38,6 +38,15 @@ const editDescription = ref('')
 const editing = ref(false)
 const descriptionInputRef = ref<HTMLInputElement | null>(null)
 
+// 会话分类判断
+const isNormalSession = computed(() => {
+  return !props.session.category || props.session.category === 'normal'
+})
+
+const isAgentOrchestrationSession = computed(() => {
+  return props.session.category === 'agent-orchestration'
+})
+
 // 状态类型映射（仅使用 runner_status）
 const statusTypeMap: Record<string, string> = {
   alive: 'success',
@@ -301,6 +310,14 @@ const handleRestartRunner = async () => {
       <!-- 状态标签（使用 runner_status） -->
       <div class="ml-3 flex-shrink-0 flex items-center gap-1">
         <el-tag
+          v-if="isAgentOrchestrationSession"
+          type="warning"
+          size="small"
+          effect="plain"
+        >
+          Agent 编排
+        </el-tag>
+        <el-tag
           :type="getDisplayStatusType(session)"
           size="small"
           effect="plain"
@@ -347,8 +364,9 @@ const handleRestartRunner = async () => {
           文件
         </el-button>
 
-        <!-- 定时任务按钮 -->
+        <!-- 定时任务按钮（仅普通会话显示） -->
         <el-button
+          v-if="isNormalSession"
           type="info"
           size="small"
           plain
@@ -363,8 +381,9 @@ const handleRestartRunner = async () => {
           <el-badge v-if="jobCount && jobCount > 0" :value="jobCount" class="ml-1" type="info" is-dot />
         </el-button>
 
-        <!-- 任务管理按钮 -->
+        <!-- 任务管理按钮（仅普通会话显示） -->
         <el-button
+          v-if="isNormalSession"
           type="success"
           size="small"
           plain
@@ -378,8 +397,9 @@ const handleRestartRunner = async () => {
           管理任务
         </el-button>
 
-        <!-- 编排管理按钮 -->
+        <!-- 编排管理按钮（仅 Agent 编排会话显示） -->
         <el-button
+          v-if="isAgentOrchestrationSession"
           type="primary"
           size="small"
           plain
