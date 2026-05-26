@@ -115,6 +115,13 @@ export const sessionApi = {
   },
 
   /**
+   * 获取单个会话详情
+   */
+  async getSession(sessionId: string): Promise<Session> {
+    return request.get(`/session/${sessionId}`)
+  },
+
+  /**
    * 获取会话的Agent列表
    */
   async getSessionAgents(sessionId: string): Promise<Agent[]> {

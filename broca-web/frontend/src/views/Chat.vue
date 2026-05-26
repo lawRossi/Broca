@@ -1,6 +1,8 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { Connection } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores'
+import { sessionApi, type Session } from '@/api/session'
 import ChatHeader from '@/components/ChatHeader.vue'
 import AgentSidebar from '@/components/AgentSidebar.vue'
 import ChatMessageList from '@/components/ChatMessageList.vue'
@@ -12,11 +14,29 @@ import AgentQueryDialog from '@/components/AgentQueryDialog.vue'
 
 const chatStore = useChatStore()
 
+// 当前会话信息（用于判断分类）
+const currentSession = ref<Session | null>(null)
+const isAgentOrchestration = computed(() => {
+  return currentSession.value?.category === 'agent-orchestration'
+})
+
+// 加载会话信息
+const loadSessionInfo = async () => {
+  const sessionId = chatStore.sessionId || chatStore.urlSessionId
+  if (!sessionId) return
+  try {
+    currentSession.value = await sessionApi.getSession(sessionId)
+  } catch {
+    // 忽略错误，不影响聊天功能
+  }
+}
+
 watch(
   () => chatStore.urlSessionId,
   (newSessionId) => {
     if (newSessionId && newSessionId !== chatStore.sessionId) {
       chatStore.autoConnectAndSubscribe()
+      loadSessionInfo()
     }
   },
   { immediate: true }
@@ -25,6 +45,7 @@ watch(
 onMounted(() => {
   chatStore.init()
   chatStore.autoConnectAndSubscribe()
+  loadSessionInfo()
 })
 
 onUnmounted(() => {
@@ -48,7 +69,17 @@ onUnmounted(() => {
           }"
         >
           <ChatMessageList />
-          <ChatInput />
+          <!-- 编排会话只读，隐藏输入框 -->
+          <template v-if="isAgentOrchestration">
+            <div class="flex items-center justify-center gap-2 py-3 px-4 bg-purple-50 border-t border-purple-100 text-sm text-purple-600">
+              <el-icon><Connection /></el-icon>
+              <span>此会话为 Agent 编排会话，聊天仅用于查看执行日志</span>
+              <el-button size="small" type="primary" plain @click="$router.push('/crews')">
+                返回编排管理
+              </el-button>
+            </div>
+          </template>
+          <ChatInput v-else />
         </div>
 
         <ChatInfoSidebar />

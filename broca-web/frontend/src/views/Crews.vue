@@ -328,11 +328,18 @@ onMounted(async () => {
           <!-- 操作按钮 -->
           <div class="flex gap-2 pt-2">
             <el-button
-              v-if="crewStore.executionDetail.status === 'running'"
+              v-if="crewStore.executionDetail?.status === 'running'"
               type="danger"
               @click="handleAbort(crewStore.executionDetail)"
             >
               中止执行
+            </el-button>
+            <el-button
+              type="primary"
+              plain
+              @click="router.push(`/chat/${crewStore.executionDetail?.session_id}`)"
+            >
+              查看聊天日志
             </el-button>
             <el-button @click="handleRefresh">刷新状态</el-button>
           </div>
