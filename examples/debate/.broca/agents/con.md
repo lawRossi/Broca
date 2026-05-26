@@ -2,7 +2,6 @@
 role: participant
 name: 反方
 tools: read_blackboard,list_blackboard,blackboard_changes
-skills: all
 ---
 
 ## Role

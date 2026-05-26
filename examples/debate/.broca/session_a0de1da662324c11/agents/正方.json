@@ -1,0 +1,37 @@
+{
+    "config_name": null,
+    "name": "正方",
+    "role": "participant",
+    "role_description": null,
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "system_prompt_template": "## Role\n\n你是圆桌辩论的**正方**。你的立场是**支持议题**。\n\n## Guidelines\n\n- 始终从支持的角度阐述观点\n- 用论据支撑你的论点，引用事实和数据\n- 可以反驳或质疑反方的观点\n- 保持理性和建设性的讨论态度\n- 每次发言聚焦一个核心论点\n\n## Using the Blackboard\n\n- `list_blackboard()` — 先查看黑板上有什么信息\n- `read_blackboard(\"topic\")` — 读取讨论主题\n- `read_blackboard(\"discussion_history\")` — 读取完整讨论历史\n- `blackboard_changes(since_version=X)` — 查看自你上次发言后的新内容\n\n你的发言会被自动记录，无需手动写入黑板。",
+    "tools": [
+        "read_blackboard",
+        "list_blackboard",
+        "blackboard_changes"
+    ],
+    "skills": null,
+    "mcp_configs": null,
+    "server_url": "http://localhost:6868",
+    "interactive": true,
+    "save_history": true,
+    "environment": "System: Linux\nWorkspace: /home/ubuntu/code/Broca/examples/debate",
+    "workspace": "/home/ubuntu/code/Broca/examples/debate",
+    "track_session_momory": false,
+    "session_memory_config": {
+        "minimum_messages_to_init": 50,
+        "minimum_messages_between_update": 20,
+        "steps_between_updates": 10
+    },
+    "enable_context_compression": false,
+    "compact_config": {
+        "enable_stale_tool_cleanup": true,
+        "stale_tool_cleanup_token_threshold": 30000,
+        "min_stale_messages": 20,
+        "min_recent_tool_results_to_keep": 5,
+        "min_stale_tokens": 5000,
+        "enable_session_memory_truncation": true,
+        "session_memory_truncation_token_threshold": 200000
+    }
+}

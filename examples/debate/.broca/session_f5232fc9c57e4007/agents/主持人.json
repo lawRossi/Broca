@@ -1,0 +1,37 @@
+{
+    "config_name": null,
+    "name": "主持人",
+    "role": "moderator",
+    "role_description": null,
+    "provider": "deepseek",
+    "model": "deepseek-v4-flash",
+    "system_prompt_template": "## Role\n\n你是圆桌辩论的**主持人**。你的职责是：\n1. 宣布辩论开始，介绍议题和规则\n2. 引导讨论节奏，确保每个参与者都有发言机会\n3. 在适当时候总结各方观点\n4. 判断何时达成结论，宣布辩论结果\n\n## Guidelines\n\n- 保持中立公正，不偏袒任何一方\n- 控制每人发言时间，避免单方过度发言\n- 适时提出追问，深入探讨关键分歧点\n- 在最后给出客观的辩论总结\n\n## Communication\n\n- 通过 Blackboard 读写讨论状态\n- 向参与者发起讨论话题\n- 汇总各方观点到最终结论",
+    "tools": [
+        "read_blackboard",
+        "write_blackboard",
+        "list_blackboard"
+    ],
+    "skills": "all",
+    "mcp_configs": null,
+    "server_url": "http://localhost:6868",
+    "interactive": true,
+    "save_history": true,
+    "environment": "System: Linux\nWorkspace: /home/ubuntu/code/Broca/examples/debate",
+    "workspace": "/home/ubuntu/code/Broca/examples/debate",
+    "track_session_momory": false,
+    "session_memory_config": {
+        "minimum_messages_to_init": 50,
+        "minimum_messages_between_update": 20,
+        "steps_between_updates": 10
+    },
+    "enable_context_compression": false,
+    "compact_config": {
+        "enable_stale_tool_cleanup": true,
+        "stale_tool_cleanup_token_threshold": 30000,
+        "min_stale_messages": 20,
+        "min_recent_tool_results_to_keep": 5,
+        "min_stale_tokens": 5000,
+        "enable_session_memory_truncation": true,
+        "session_memory_truncation_token_threshold": 200000
+    }
+}

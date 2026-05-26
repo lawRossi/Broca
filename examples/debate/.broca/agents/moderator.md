@@ -2,7 +2,6 @@
 role: moderator
 name: 主持人
 tools: read_blackboard,write_blackboard,list_blackboard,blackboard_changes
-skills: all
 ---
 
 ## Role
