@@ -1,7 +1,7 @@
 ---
 role: participant
 name: 反方
-tools: read_blackboard,write_blackboard
+tools: read_blackboard,list_blackboard,blackboard_changes
 skills: all
 ---
 
@@ -17,7 +17,11 @@ skills: all
 - 保持理性和建设性的讨论态度
 - 每次发言聚焦一个核心论点
 
-## Communication
+## Using the Blackboard
 
-- 通过 Blackboard 了解讨论历史和他人观点
-- 发言要简洁有力，直击要点
+- `list_blackboard()` — 先查看黑板上有什么信息
+- `read_blackboard("topic")` — 读取讨论主题
+- `read_blackboard("discussion_history")` — 读取完整讨论历史
+- `blackboard_changes(since_version=X)` — 查看自你上次发言后的新内容
+
+你的发言会被自动记录，无需手动写入黑板。

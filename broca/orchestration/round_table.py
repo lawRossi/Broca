@@ -211,6 +211,26 @@ class RoundTableOrchestrator(Orchestrator):
         parts.append("Please provide your perspective on the topic. "
                      "You can agree, disagree, or build upon previous speakers' points.")
 
+        # 告知黑板结构和工具用法
+        parts.append("""
+## Blackboard Information (Shared Memory)
+
+The Blackboard is a shared memory space that all agents can read/write.
+Here is the current key structure:
+
+- `topic` - The discussion topic
+- `discussion_history` - Full history of all rounds
+- `round_1`, `round_2`, ... - Individual round entries
+
+Tips for using the Blackboard:
+1. Use `list_blackboard()` to see all available keys and versions
+2. Use `read_blackboard("discussion_history")` to read the full discussion
+3. Use `blackboard_changes(since_version=X)` to get only new changes since your last check
+4. Your final response message will be recorded as your discussion contribution automatically
+
+You DO NOT need to write to the Blackboard yourself - your response here will be captured.
+""")
+
         return "\n".join(parts)
 
     async def _get_agent_response(self, agent: Any, prompt: str) -> str:

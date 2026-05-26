@@ -98,6 +98,7 @@ class Blackboard:
         self._entries: Dict[str, BlackboardEntry] = {}
         self._callbacks: List[Callable[[BlackboardEvent], None]] = []
         self._version_counter: int = 0
+        self._changelog: List[BlackboardEvent] = []  # 变更日志，用于增量查询
 
         if initial_entries:
             for key, value in initial_entries.items():
@@ -124,7 +125,7 @@ class Blackboard:
         producer: str,
         event_type: BlackboardEventType,
     ) -> None:
-        """通知所有订阅者"""
+        """通知所有订阅者，并记录变更日志"""
         event = BlackboardEvent(
             key=key,
             old_value=old_value,
@@ -133,6 +134,8 @@ class Blackboard:
             timestamp=datetime.now(timezone.utc),
             event_type=event_type,
         )
+        # 记录变更日志
+        self._changelog.append(event)
         for callback in self._callbacks:
             try:
                 callback(event)
@@ -230,9 +233,10 @@ class Blackboard:
                 created_at=self._entries[key].created_at if key in self._entries else now,
                 updated_at=now,
             )
+            version = self._version_counter
 
         # 锁外通知
-        self._notify(key, old_value, value, producer, event_type)
+        event = self._notify(key, old_value, value, producer, event_type)
         return BlackboardEvent(
             key=key,
             old_value=old_value,
@@ -318,6 +322,41 @@ class Blackboard:
         """获取当前全局版本号"""
         async with self._lock:
             return self._version_counter
+
+    async def get_changes(
+        self,
+        since_version: int = 0,
+        producer: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
+        """
+        获取指定版本之后的变更列表
+
+        Args:
+            since_version: 起始版本号（不包含），0 表示获取全部
+            producer: 按写入者过滤（可选）
+
+        Returns:
+            变更事件列表 [{"key", "event_type", "producer", "timestamp", "value", ...}]
+        """
+        async with self._lock:
+            changes = []
+            for event in self._changelog:
+                event_version = self._entries.get(event.key)
+                if event_version is None:
+                    continue
+                ev_version = event_version.version if event_version else 0
+                if ev_version <= since_version:
+                    continue
+                if producer and event.producer != producer:
+                    continue
+                changes.append({
+                    "key": event.key,
+                    "event_type": event.event_type.value,
+                    "producer": event.producer,
+                    "timestamp": event.timestamp.isoformat(),
+                    "value": copy.deepcopy(event.new_value),
+                })
+            return changes
 
     def to_serializable(self) -> Dict[str, Any]:
         """序列化为可持久化的字典"""

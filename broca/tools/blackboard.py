@@ -174,7 +174,11 @@ class ListBlackboard(Tool):
 
     @property
     def description(self) -> str:
-        return "List all keys currently available in the shared Blackboard."
+        return (
+            "List all keys currently available in the shared Blackboard, "
+            "with their types, version numbers, last update time, and who wrote them. "
+            "Use this first to discover available information before reading specific keys."
+        )
 
     @property
     def parameters(self) -> dict:
@@ -197,30 +201,110 @@ class ListBlackboard(Tool):
 
         try:
             keys = await blackboard.keys()
+            version = await blackboard.get_version()
             if not keys:
                 return ToolResult(
                     status=ToolStatus.SUCCESS,
-                    content="Blackboard is empty (no keys).",
+                    content=f"Blackboard is empty (global version={version}).",
                 )
 
             # 获取每个 key 的类型和版本信息
-            entries_info = []
-            for key in keys:
+            entries_info = [f"Blackboard (global version={version}):"]
+            for key in sorted(keys):
                 entry = await blackboard.get_entry(key)
                 if entry:
                     val_type = type(entry.value).__name__
-                    entries_info.append(f"  • {key} ({val_type}, v{entry.version})")
+                    val_preview = str(entry.value)[:60].replace("\n", " ")
+                    ts = entry.updated_at.strftime("%H:%M:%S")
+                    entries_info.append(
+                        f"  • {key} ({val_type}, v{entry.version}) "
+                        f"[by {entry.producer} @ {ts}]: {val_preview}"
+                    )
                 else:
                     entries_info.append(f"  • {key}")
 
-            content = "Blackboard keys:\n" + "\n".join(entries_info)
-            return ToolResult(status=ToolStatus.SUCCESS, content=content)
+            return ToolResult(status=ToolStatus.SUCCESS, content="\n".join(entries_info))
 
         except Exception as e:
             logger.error(f"Error listing blackboard keys: {e}")
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content=f"Error listing blackboard keys: {e}",
+            )
+
+
+class BlackboardChanges(Tool):
+    """黑板变更查询工具"""
+
+    @property
+    def name(self) -> str:
+        return "blackboard_changes"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Get recent changes to the Blackboard since a given version number. "
+            "Use this to find out what new information has been added since you last checked. "
+            "Returns a list of changed keys, who changed them, and their new values. "
+            "If you don't know the version, use list_blackboard first to see the current version."
+        )
+
+    @property
+    def parameters(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "since_version": {
+                    "type": "integer",
+                    "description": "Return changes after this version number. "
+                                   "Use list_blackboard to find the current global version, "
+                                   "then pass it here on your next call to get only new changes.",
+                    "default": 0,
+                },
+            },
+            "required": [],
+        }
+
+    async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
+        session_id = context.session_id
+        since_version = arguments.get("since_version", 0)
+
+        blackboard = get_blackboard(session_id)
+        if blackboard is None:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content="No active Blackboard found for this session. "
+                        "Blackboard is only available during Crew orchestration execution.",
+            )
+
+        try:
+            current_version = await blackboard.get_version()
+            changes = await blackboard.get_changes(since_version=since_version)
+
+            if not changes:
+                return ToolResult(
+                    status=ToolStatus.SUCCESS,
+                    content=f"No changes since version {since_version}. "
+                            f"Current global version: {current_version}.",
+                )
+
+            lines = [f"Changes since version {since_version} (current: {current_version}):"]
+            for c in changes:
+                val_str = str(c["value"])[:100].replace("\n", " ")
+                lines.append(
+                    f"  [{c['event_type']}] {c['key']} "
+                    f"(by {c['producer']} @ {c['timestamp'][11:19]}): {val_str}"
+                )
+            lines.append(f"\nTotal: {len(changes)} change(s). "
+                         f"Use list_blackboard to see all keys.")
+
+            return ToolResult(status=ToolStatus.SUCCESS, content="\n".join(lines))
+
+        except Exception as e:
+            logger.error(f"Error querying blackboard changes: {e}")
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Error querying blackboard changes: {e}",
             )
 
 
