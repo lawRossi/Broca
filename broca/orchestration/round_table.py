@@ -230,6 +230,38 @@ class RoundTableOrchestrator(Orchestrator):
             logger.error(f"Agent response error: {e}")
             return f"(error: {e})"
 
+    @staticmethod
+    def _extract_json(text: str) -> Optional[Dict[str, Any]]:
+        """
+        从文本中提取 JSON 对象。
+
+        兼容 LLM 响应中前后有多余文本、markdown 代码块等情况。
+        优先查找包含 "should_conclude" 键的 JSON，再回退到任意 JSON。
+        """
+        import json
+        import re
+
+        # 优先找包含 should_conclude 的 JSON
+        m = re.search(
+            r'\{(?:[^{}]|\n)*"should_conclude"(?:[^{}]|\n)*\}',
+            text, re.DOTALL,
+        )
+        if m:
+            try:
+                return json.loads(m.group())
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        # 回退：找任意 JSON 对象
+        m = re.search(r'\{(?:[^{}]|\n)*\}', text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group())
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+        return None
+
     async def _evaluate_by_moderator(
         self,
         history: List[Dict[str, Any]],
@@ -266,28 +298,10 @@ class RoundTableOrchestrator(Orchestrator):
             execution_result = await moderator.run(trigger_message, from_agent=True)
 
             if execution_result.status == ExecutionStatus.COMPLETED:
-                response = moderator.context.get_latest_assistant_message() or "{}"
-                import re
-                import json
-
-                # 从响应中提取第一个 JSON 对象（兼容前后有多余文本）
-                json_match = re.search(
-                    r'\{(?:[^{}]|\n)*"should_conclude"(?:[^{}]|\n)*\}',
-                    response, re.DOTALL
-                )
-                if json_match:
-                    try:
-                        return json.loads(json_match.group())
-                    except (json.JSONDecodeError, TypeError):
-                        pass
-
-                # 回退：尝试找任何 JSON 对象（兼容 markdown 代码块等格式）
-                brace_match = re.search(r'\{(?:[^{}]|\n)*\}', response, re.DOTALL)
-                if brace_match:
-                    try:
-                        return json.loads(brace_match.group())
-                    except (json.JSONDecodeError, TypeError):
-                        pass
+                response = moderator.context.get_latest_assistant_message() or ""
+                result = self._extract_json(response)
+                if result is not None:
+                    return result
         except Exception:
             pass
 
