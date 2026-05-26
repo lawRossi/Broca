@@ -39,8 +39,8 @@ class AgentConfig:
         self.name = None
         self.role = None
         self.role_description = None
-        self.provider = "openrouter"
-        self.model = "glm"
+        self.provider = "deepseek"
+        self.model = "deepseek-v4-flash"
         self.system_prompt_template = None
         self.tools = None
         self.skills = None

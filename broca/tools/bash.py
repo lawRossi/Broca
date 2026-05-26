@@ -277,9 +277,7 @@ class ExecuteCode(Tool):
                     if stderr
                     else "",
                 }
-                status = (
-                    ToolStatus.SUCCESS if process.returncode == 0 else ToolStatus.ERROR
-                )
+                status = ToolStatus.SUCCESS
 
             except asyncio.TimeoutError:
                 # 超时处理
@@ -365,9 +363,7 @@ class ExecuteCode(Tool):
                     "stdout": stdout_result,
                     "stderr": stderr_result,
                 }
-                status = (
-                    ToolStatus.SUCCESS if process.returncode == 0 else ToolStatus.ERROR
-                )
+                status = ToolStatus.SUCCESS
 
             except asyncio.TimeoutError:
                 # 超时处理

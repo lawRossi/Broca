@@ -81,7 +81,7 @@ class ReadBlackboard(Tool):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content="No active Blackboard found for this session. "
-                        "Blackboard is only available during Crew orchestration execution.",
+                "Blackboard is only available during Crew orchestration execution.",
             )
 
         try:
@@ -190,7 +190,7 @@ class WriteBlackboard(Tool):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content="No active Blackboard found for this session. "
-                        "Blackboard is only available during Crew orchestration execution.",
+                "Blackboard is only available during Crew orchestration execution.",
             )
 
         agent_name = context.agent.name if context.agent else "unknown"
@@ -200,7 +200,7 @@ class WriteBlackboard(Tool):
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 content=f"Successfully wrote to Blackboard['{key}']. "
-                        f"New version: {event.key}@{event.timestamp.isoformat()}",
+                f"New version: {event.key}@{event.timestamp.isoformat()}",
             )
         except Exception as e:
             logger.error(f"Error writing blackboard key '{key}': {e}")
@@ -241,7 +241,7 @@ class ListBlackboard(Tool):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content="No active Blackboard found for this session. "
-                        "Blackboard is only available during Crew orchestration execution.",
+                "Blackboard is only available during Crew orchestration execution.",
             )
 
         try:
@@ -259,16 +259,17 @@ class ListBlackboard(Tool):
                 entry = await blackboard.get_entry(key)
                 if entry:
                     val_type = type(entry.value).__name__
-                    val_preview = str(entry.value)[:60].replace("\n", " ")
                     ts = entry.updated_at.strftime("%H:%M:%S")
                     entries_info.append(
                         f"  • {key} ({val_type}, v{entry.version}) "
-                        f"[by {entry.producer} @ {ts}]: {val_preview}"
+                        f"[by {entry.producer} @ {ts}]"
                     )
                 else:
                     entries_info.append(f"  • {key}")
 
-            return ToolResult(status=ToolStatus.SUCCESS, content="\n".join(entries_info))
+            return ToolResult(
+                status=ToolStatus.SUCCESS, content="\n".join(entries_info)
+            )
 
         except Exception as e:
             logger.error(f"Error listing blackboard keys: {e}")
@@ -302,8 +303,8 @@ class BlackboardChanges(Tool):
                 "since_version": {
                     "type": "integer",
                     "description": "Return changes after this version number. "
-                                   "Use list_blackboard to find the current global version, "
-                                   "then pass it here on your next call to get only new changes.",
+                    "Use list_blackboard to find the current global version, "
+                    "then pass it here on your next call to get only new changes.",
                     "default": 0,
                 },
             },
@@ -319,7 +320,7 @@ class BlackboardChanges(Tool):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content="No active Blackboard found for this session. "
-                        "Blackboard is only available during Crew orchestration execution.",
+                "Blackboard is only available during Crew orchestration execution.",
             )
 
         try:
@@ -330,18 +331,22 @@ class BlackboardChanges(Tool):
                 return ToolResult(
                     status=ToolStatus.SUCCESS,
                     content=f"No changes since version {since_version}. "
-                            f"Current global version: {current_version}.",
+                    f"Current global version: {current_version}.",
                 )
 
-            lines = [f"Changes since version {since_version} (current: {current_version}):"]
+            lines = [
+                f"Changes since version {since_version} (current: {current_version}):"
+            ]
             for c in changes:
                 val_str = str(c["value"])[:100].replace("\n", " ")
                 lines.append(
                     f"  [{c['event_type']}] {c['key']} "
                     f"(by {c['producer']} @ {c['timestamp'][11:19]}): {val_str}"
                 )
-            lines.append(f"\nTotal: {len(changes)} change(s). "
-                         f"Use list_blackboard to see all keys.")
+            lines.append(
+                f"\nTotal: {len(changes)} change(s). "
+                f"Use list_blackboard to see all keys."
+            )
 
             return ToolResult(status=ToolStatus.SUCCESS, content="\n".join(lines))
 
@@ -386,7 +391,7 @@ class DeleteBlackboard(Tool):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content="No active Blackboard found for this session. "
-                        "Blackboard is only available during Crew orchestration execution.",
+                "Blackboard is only available during Crew orchestration execution.",
             )
 
         agent_name = context.agent.name if context.agent else "unknown"

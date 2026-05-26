@@ -13,7 +13,6 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict
 from sqlalchemy import JSON, Column, Integer, String
-from sqlalchemy import ForeignKey as SA_ForeignKey
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -109,8 +108,10 @@ class Turn(SQLModel, table=True):
 class SessionCategory(str, Enum):
     """会话分类枚举"""
 
-    NORMAL = "normal"                # 普通会话：创建内置 Agent
-    AGENT_ORCHESTRATION = "agent-orchestration"  # Agent 编排会话：不创建内置 Agent，只加载自定义 Agent
+    NORMAL = "normal"  # 普通会话：创建内置 Agent
+    AGENT_ORCHESTRATION = (
+        "agent-orchestration"  # Agent 编排会话：不创建内置 Agent，只加载自定义 Agent
+    )
 
 
 class Session(SQLModel, table=True):
@@ -954,7 +955,9 @@ class CrewExecution(SQLModel, table=True):
         description="关联的会话ID",
     )
     crew_name: str = Field(description="Crew 名称")
-    orchestrator_type: str = Field(description="编排器类型（pipeline/supervisor-worker/等）")
+    orchestrator_type: str = Field(
+        description="编排器类型（pipeline/supervisor-worker/等）"
+    )
     yaml_content: str = Field(
         sa_column=Column(String, nullable=False),
         description="Crew 配置的 YAML/JSON 内容",
@@ -978,12 +981,8 @@ class CrewExecution(SQLModel, table=True):
         sa_column=Column(JSON, nullable=True),
         description="阶段执行记录（JSON）",
     )
-    started_at: datetime = Field(
-        default_factory=datetime.now, description="开始时间"
-    )
-    completed_at: Optional[datetime] = Field(
-        default=None, description="完成时间"
-    )
+    started_at: datetime = Field(default_factory=datetime.now, description="开始时间")
+    completed_at: Optional[datetime] = Field(default=None, description="完成时间")
 
     # 关联关系
     session: Optional["Session"] = Relationship(back_populates="crew_executions")
@@ -1002,7 +1001,9 @@ class BlackboardEntry(SQLModel, table=True):
     __tablename__ = "blackboard_entry"
 
     entry_id: str = Field(
-        index=True, primary_key=True, description="条目唯一标识符",
+        index=True,
+        primary_key=True,
+        description="条目唯一标识符",
         default_factory=lambda: "bb-" + uuid.uuid4().hex[:16],
     )
     execution_id: str = Field(
@@ -1021,9 +1022,7 @@ class BlackboardEntry(SQLModel, table=True):
     event_type: str = Field(
         default="created", description="事件类型：created/updated/deleted"
     )
-    created_at: datetime = Field(
-        default_factory=datetime.now, description="创建时间"
-    )
+    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
 
     # 关联关系
     crew_execution: CrewExecution = Relationship(back_populates="blackboard_entries")
