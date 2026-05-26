@@ -40,6 +40,12 @@ class AgentFactory:
             self._initialized = True
             # Removed shared LLMClient - each agent will have its own instance
             self._session_agents = {}
+            self._last_session_id = None  # 最近创建的 session_id
+
+    @property
+    def last_session_id(self) -> Optional[str]:
+        """获取最近创建的 session_id"""
+        return self._last_session_id
 
     async def init_session_agents(
         self, session_id=None, workspace=None, provider=None, model=None, category="normal"
@@ -61,9 +67,11 @@ class AgentFactory:
             agents = await self.restore_agents_from_session(session_id)
             session_agents = {agent.name: agent for agent in agents}
             self._session_agents[session_id] = session_agents
+            self._last_session_id = session_id
         else:
             session_manager = SessionManager()
             await session_manager.create_session(workspace=workspace)
+            self._last_session_id = session_manager.session_id
 
             if category == "agent-orchestration":
                 # Agent 编排会话：只从 workspace 加载自定义 Agent
