@@ -152,7 +152,7 @@ class ExecutionEngine:
         self.context_compressor: Optional[ContextCompressor] = None
 
         # 死循环检测
-        self._recent_tool_call_signatures: List[List[str]] = []
+        self._recent_tool_call_signatures: List[str] = []
 
         # 允许调用的工具列表 (None 表示不限制)
         self.allowed_tools: Optional[List[str]] = None
@@ -336,11 +336,8 @@ class ExecutionEngine:
             )
             self._recent_tool_call_signatures.extend(tool_call_signatures)
             if len(self._recent_tool_call_signatures) >= 3:
-                if (
-                    self._recent_tool_call_signatures[-1]
-                    == self._recent_tool_call_signatures[-2]
-                    == self._recent_tool_call_signatures[-3]
-                ):
+                last3 = self._recent_tool_call_signatures[-3:]
+                if last3[0] == last3[1] == last3[2]:
                     logger.warning(
                         f"Dead loop detected: last 3 tool calls are identical "
                         f"({self._recent_tool_call_signatures[-1]})"
@@ -705,6 +702,7 @@ class ExecutionEngine:
             return ExecutionResult(status=ExecutionStatus.SKIPPED)
 
         self.abort_event.clear()
+        self._recent_tool_call_signatures.clear()
 
         if not await self._setup_execution_context(message, from_agent):
             return ExecutionResult(
