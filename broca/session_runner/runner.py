@@ -41,6 +41,7 @@ _running = False
 _agent_factory: Optional[AgentFactory] = None
 _agents: List[Any] = []
 _session_manager: Any = None
+_crew_runner: Optional[Any] = None  # 当前正在运行的编排（用于中止）
 
 
 def setup_logging(log_file: Optional[str] = None, level: str = "INFO") -> None:
@@ -253,12 +254,14 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
                 return
 
             # 创建编排运行器并执行
-            crew_runner = CrewOrchestratorRunner(
+            global _crew_runner
+            _crew_runner = CrewOrchestratorRunner(
                 session_id=msg.session_id,
                 ipc_client=ipc_client,
                 agent_factory=_agent_factory,
                 session_manager=_session_manager,
             )
+            crew_runner = _crew_runner
 
             execution_id = msg.payload.get("execution_id")
 
@@ -307,13 +310,22 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
             ipc_client.send_message(response)
 
     elif msg.type == IPCMessageType.CMD_ABORT_CREW:
-        # 中止编排
+        # 中止编排（实际调用 crew_runner.abort_crew()）
         crew_id = msg.payload.get("crew_id")
         logger.info(f"Aborting crew: {crew_id}")
+        if _crew_runner:
+            try:
+                await _crew_runner.abort_crew()
+                logger.info(f"Crew '{crew_id}' aborted successfully")
+            except Exception as e:
+                logger.error(f"Error aborting crew: {e}")
+        else:
+            logger.warning(f"No active crew runner to abort (crew_id={crew_id})")
+
         response = create_ipc_message(
             IPCMessageType.RESPONSE,
             msg.session_id,
-            payload={"message": f"Crew {crew_id} abort initiated"},
+            payload={"message": f"Crew {crew_id} aborted"},
             status=IPCStatusCode.SUCCESS,
         )
         ipc_client.send_message(response)
