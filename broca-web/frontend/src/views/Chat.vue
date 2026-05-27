@@ -47,6 +47,14 @@ watch(
   { immediate: true }
 )
 
+// 同 session 下切换 execution_id 时重新加载历史
+watch(executionId, (newExecId, oldExecId) => {
+  if (newExecId && newExecId !== oldExecId && chatStore.sessionId) {
+    chatStore.executionId = newExecId as string
+    chatStore.loadHistory(chatStore.sessionId, false, newExecId)
+  }
+})
+
 onMounted(() => {
   chatStore.init()
   chatStore.autoConnectAndSubscribe(executionId.value)
