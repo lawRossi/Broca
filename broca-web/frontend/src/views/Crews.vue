@@ -609,6 +609,8 @@ onMounted(async () => {
                 :phases="crewStore.executionDetail.phases || []"
                 :status="crewStore.executionDetail.status"
                 :orchestrator-type="crewStore.executionDetail.orchestrator_type"
+                :progress="crewStore.executionDetail.progress"
+                :phases-total="crewStore.executionDetail.phases_total"
               />
             </div>
           </div>

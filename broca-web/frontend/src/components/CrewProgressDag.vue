@@ -17,6 +17,8 @@ const props = defineProps<{
   phases: PhaseResult[]
   status: ExecutionStatus
   orchestratorType?: string
+  progress?: number         // 后端算好的进度（0~1）
+  phasesTotal?: number      // 预期总阶段数
 }>()
 
 // 阶段状态映射
@@ -60,6 +62,8 @@ const phaseBgClass = computed(() => (status: string) => {
 })
 
 const overallProgress = computed(() => {
+  // 优先用后端算好的进度
+  if (props.progress !== undefined) return Math.round(props.progress * 100)
   if (!props.phases.length) return 0
   const completed = props.phases.filter((p) => p.status === 'completed').length
   return Math.round((completed / props.phases.length) * 100)
@@ -182,7 +186,7 @@ const overallStatus = computed(() => {
 
           <!-- 阶段序号 -->
           <div class="mt-1 text-xs text-gray-400">
-            步骤 {{ index + 1 }} / {{ phases.length }}
+            步骤 {{ index + 1 }} / {{ props.phasesTotal || phases.length }}
           </div>
         </div>
       </div>
