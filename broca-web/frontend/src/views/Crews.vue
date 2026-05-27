@@ -391,9 +391,7 @@ onMounted(async () => {
             <!-- 进度条 -->
             <div v-if="exec.phases?.length" class="mt-3">
               <el-progress
-                :percentage="Math.round(
-                  exec.phases.filter(p => p.status === 'completed').length / (exec.phases_total || exec.phases.length) * 100
-                )"
+                :percentage="Math.round((exec.progress || 0) * 100)"
                 :stroke-width="4"
                 :status="exec.status === 'failed' ? 'exception' : exec.status === 'completed' ? 'success' : undefined"
               />

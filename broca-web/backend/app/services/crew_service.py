@@ -87,6 +87,7 @@ class CrewService:
             "result": result,
             "phases": phases,
             "phases_total": execution.phases_total or len(phases),
+            "progress": execution.progress or 0,
             "created_at": execution.started_at.isoformat() if execution.started_at else None,
             "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
         }
@@ -282,6 +283,7 @@ class CrewService:
 
             if msg_type == IPCMessageType.EVT_CREW_START:
                 record.status = CrewExecutionStatus.RUNNING
+                record.progress = 0.0
                 logger.info(f"[CrewService] '{record.crew_name}' started (exec={execution_id})")
 
             elif msg_type == IPCMessageType.EVT_CREW_PROGRESS:
@@ -291,8 +293,9 @@ class CrewService:
                 phases_total = payload.get("phases_total")
                 if phases_total:
                     record.phases_total = phases_total
-                progress = payload.get("progress", 0)
-                logger.info(f"[CrewService] '{record.crew_name}' progress: {progress:.0%}")
+                progress_val = payload.get("progress", 0)
+                record.progress = progress_val
+                logger.info(f"[CrewService] '{record.crew_name}' progress: {progress_val:.0%}")
 
             elif msg_type == IPCMessageType.EVT_CREW_COMPLETE:
                 record.status = CrewExecutionStatus.COMPLETED

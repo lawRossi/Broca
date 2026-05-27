@@ -95,6 +95,7 @@ export interface CrewExecution {
   result?: Record<string, any>
   phases?: PhaseResult[]
   phases_total?: number
+  progress?: number
   created_at: string
   completed_at?: string
 }

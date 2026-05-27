@@ -12,7 +12,7 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from pydantic import ConfigDict
-from sqlalchemy import JSON, Column, Integer, String
+from sqlalchemy import JSON, Column, Float, Integer, String
 from sqlmodel import Field, Relationship, SQLModel
 
 
@@ -990,6 +990,11 @@ class CrewExecution(SQLModel, table=True):
         default=None,
         sa_column=Column(Integer, nullable=True),
         description="预期总阶段数（用于前端进度计算）",
+    )
+    progress: Optional[float] = Field(
+        default=None,
+        sa_column=Column(Float, nullable=True),
+        description="后端计算好的执行进度（0.0~1.0）",
     )
     started_at: datetime = Field(default_factory=datetime.now, description="开始时间")
     completed_at: Optional[datetime] = Field(default=None, description="完成时间")
