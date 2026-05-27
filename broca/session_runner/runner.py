@@ -267,6 +267,7 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
 
             # 在后台任务中运行编排（带异常兜底，防止静默失败）
             async def _run_crew_safe():
+                global _crew_runner
                 try:
                     await crew_runner.run_crew(crew_config, agent_refs, execution_id=execution_id)
                 except Exception as e:
@@ -283,6 +284,10 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
                         )
                     except Exception:
                         pass
+                finally:
+                    # 编排执行完毕，清除引用（不管成功/失败/取消）
+                    if _crew_runner is crew_runner:
+                        _crew_runner = None
 
             asyncio.create_task(_run_crew_safe())
 
