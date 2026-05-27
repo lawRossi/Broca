@@ -126,6 +126,8 @@ class CrewOrchestratorRunner:
 
         # 3. 创建编排器
         self._orchestrator = OrchestratorFactory.create(crew_config, context)
+        # 设置进度回调，阶段完成时推送实时进度
+        self._orchestrator.progress_callback = self._on_phase_complete
 
         # 4. 发送编排开始事件
         self._send_crew_event(
@@ -239,6 +241,26 @@ class CrewOrchestratorRunner:
             return result
         finally:
             unsubscribe()
+
+    def _on_phase_complete(self, phases: List[Any]) -> None:
+        """阶段完成回调：计算进度并推送"""
+        total = len(phases)
+        completed = sum(1 for p in phases if p.status.value in ("completed", "failed"))
+        progress = completed / total if total > 0 else 0
+
+        self._send_crew_event(
+            IPCMessageType.EVT_CREW_PROGRESS,
+            {
+                "crew_id": self._crew_id,
+                "execution_id": self._execution_id,
+                "progress": progress,
+                "current_phase": phases[-1].name if phases else "",
+                "phases": [p.to_dict() for p in phases],
+                "phases_completed": completed,
+                "phases_total": total,
+                "status": "running",
+            },
+        )
 
     def _on_blackboard_event(self, event) -> None:
         """黑板事件回调（用于实时进度推送）"""

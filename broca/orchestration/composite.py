@@ -8,13 +8,11 @@ Composite 组合嵌套编排器
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Optional
 
 from broca.logging_config import get_logger
 from broca.orchestration.crew import (
-    AgentRoleConfig,
     CrewConfig,
-    OrchestratorConfig,
     OrchestratorType,
     SubCrewConfig,
 )
@@ -52,7 +50,9 @@ class CompositeOrchestrator(Orchestrator):
             phases=[],
         )
 
-        logger.info(f"Composite orchestrator '{crew_id}' started with {len(self.sub_crews)} sub-crews")
+        logger.info(
+            f"Composite orchestrator '{crew_id}' started with {len(self.sub_crews)} sub-crews"
+        )
 
         try:
             # 根据主拓扑类型执行主流程
@@ -76,7 +76,9 @@ class CompositeOrchestrator(Orchestrator):
                     phase = PhaseResult(
                         name=f"sub_crew_{i + 1}: {sub_crew.name}",
                         status=PhaseStatus.RUNNING,
-                        agents=[a.name for a in (sub_crew.agents or [])] if sub_crew.agents else [],
+                        agents=[a.name for a in (sub_crew.agents or [])]
+                        if sub_crew.agents
+                        else [],
                         started_at=datetime.now(timezone.utc),
                     )
                     result.phases.append(phase)
@@ -90,6 +92,7 @@ class CompositeOrchestrator(Orchestrator):
                         )
 
                         phase.status = PhaseStatus.COMPLETED
+                        self.notify_progress(result.phases)
                         phase.output = sub_result.final_output
                         phase.completed_at = datetime.now(timezone.utc)
                     except Exception as e:
@@ -122,7 +125,9 @@ class CompositeOrchestrator(Orchestrator):
 
         return result
 
-    async def _run_supervisor_worker_with_sub_crews(self, result: OrchestrationResult) -> None:
+    async def _run_supervisor_worker_with_sub_crews(
+        self, result: OrchestrationResult
+    ) -> None:
         """以 Supervisor-Worker 为主流程，在 Worker 阶段嵌入子 Crew"""
         # 主流程阶段
         main_phase = PhaseResult(
@@ -141,7 +146,9 @@ class CompositeOrchestrator(Orchestrator):
             sub_phase = PhaseResult(
                 name=f"sub_crew_{i + 1}: {sub_crew.name}",
                 status=PhaseStatus.RUNNING,
-                agents=[a.name for a in (sub_crew.agents or [])] if sub_crew.agents else [],
+                agents=[a.name for a in (sub_crew.agents or [])]
+                if sub_crew.agents
+                else [],
                 started_at=datetime.now(timezone.utc),
             )
             result.phases.append(sub_phase)
@@ -154,6 +161,7 @@ class CompositeOrchestrator(Orchestrator):
                     producer="composite",
                 )
                 sub_phase.status = PhaseStatus.COMPLETED
+                self.notify_progress(result.phases)
                 sub_phase.output = sub_result.final_output
                 sub_phase.completed_at = datetime.now(timezone.utc)
             except Exception as e:
@@ -162,6 +170,7 @@ class CompositeOrchestrator(Orchestrator):
                 sub_phase.completed_at = datetime.now(timezone.utc)
                 raise
 
+        self.notify_progress(result.phases)
         main_phase.status = PhaseStatus.COMPLETED
         main_phase.output = {"sub_crews_count": len(self.sub_crews)}
         main_phase.completed_at = datetime.now(timezone.utc)
@@ -175,7 +184,9 @@ class CompositeOrchestrator(Orchestrator):
             phase = PhaseResult(
                 name=f"pipeline_step_{i + 1}: {sub_crew.name}",
                 status=PhaseStatus.RUNNING,
-                agents=[a.name for a in (sub_crew.agents or [])] if sub_crew.agents else [],
+                agents=[a.name for a in (sub_crew.agents or [])]
+                if sub_crew.agents
+                else [],
                 started_at=datetime.now(timezone.utc),
             )
             result.phases.append(phase)
@@ -188,6 +199,7 @@ class CompositeOrchestrator(Orchestrator):
                     producer="composite",
                 )
                 phase.status = PhaseStatus.COMPLETED
+                self.notify_progress(result.phases)
                 phase.output = sub_result.final_output
                 phase.completed_at = datetime.now(timezone.utc)
             except Exception as e:

@@ -133,6 +133,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                     "is_acceptable": is_acceptable,
                 }
                 phase.status = PhaseStatus.COMPLETED
+                self.notify_progress(result.phases)
                 phase.completed_at = datetime.now(timezone.utc)
 
                 if is_acceptable:

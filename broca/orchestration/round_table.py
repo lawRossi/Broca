@@ -146,6 +146,7 @@ class RoundTableOrchestrator(Orchestrator):
                     "entries_count": len(round_entries),
                 }
                 phase.status = PhaseStatus.COMPLETED
+                self.notify_progress(result.phases)
                 phase.completed_at = datetime.now(timezone.utc)
 
                 # Moderator 评估是否达成结论

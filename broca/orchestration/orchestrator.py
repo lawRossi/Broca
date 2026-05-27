@@ -9,7 +9,6 @@ Orchestrator 基类模块
 
 from __future__ import annotations
 
-import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -17,11 +16,9 @@ from enum import Enum
 from typing import Any, Dict, List, Optional
 
 from broca.logging_config import get_logger
-from broca.orchestration.blackboard import Blackboard, BlackboardEvent
+from broca.orchestration.blackboard import Blackboard
 from broca.orchestration.crew import (
-    AgentRoleConfig,
     CrewConfig,
-    OrchestratorConfig,
     OrchestratorType,
 )
 
@@ -67,7 +64,9 @@ class PhaseResult:
             "output": self.output,
             "error": self.error,
             "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "completed_at": self.completed_at.isoformat()
+            if self.completed_at
+            else None,
         }
 
 
@@ -93,7 +92,9 @@ class OrchestrationResult:
             "final_output": self.final_output,
             "error": self.error,
             "started_at": self.started_at.isoformat(),
-            "completed_at": self.completed_at.isoformat() if self.completed_at else None,
+            "completed_at": self.completed_at.isoformat()
+            if self.completed_at
+            else None,
         }
 
     @property
@@ -147,7 +148,9 @@ class CrewContext:
         """按角色获取 Agent 实例列表"""
         return [
             agent
-            for agent_config, agent in zip(self.crew_config.agents, self._agents.values())
+            for agent_config, agent in zip(
+                self.crew_config.agents, self._agents.values()
+            )
             if agent_config.role.value == role
         ]
 
@@ -188,6 +191,13 @@ class Orchestrator(ABC):
         )
         self._aborted = False
         self._result: Optional[OrchestrationResult] = None
+        # 进度回调（由 CrewOrchestratorRunner 设置，阶段完成时推送实时进度）
+        self.progress_callback = None
+
+    def notify_progress(self, phases: List[Any]) -> None:
+        """阶段完成时回调，推送实时进度（由子编排器在阶段完成后调用）"""
+        if self.progress_callback:
+            self.progress_callback(phases)
 
     @property
     def name(self) -> str:
@@ -231,12 +241,30 @@ class OrchestratorFactory:
     """
 
     _ORCHESTRATOR_MAP = {
-        OrchestratorType.PIPELINE: ("broca.orchestration.pipeline", "PipelineOrchestrator"),
-        OrchestratorType.SUPERVISOR_WORKER: ("broca.orchestration.supervisor_worker", "SupervisorWorkerOrchestrator"),
-        OrchestratorType.ROUND_TABLE: ("broca.orchestration.round_table", "RoundTableOrchestrator"),
-        OrchestratorType.BROADCAST: ("broca.orchestration.broadcast", "BroadcastOrchestrator"),
-        OrchestratorType.CONSENSUS: ("broca.orchestration.consensus", "ConsensusOrchestrator"),
-        OrchestratorType.COMPOSITE: ("broca.orchestration.composite", "CompositeOrchestrator"),
+        OrchestratorType.PIPELINE: (
+            "broca.orchestration.pipeline",
+            "PipelineOrchestrator",
+        ),
+        OrchestratorType.SUPERVISOR_WORKER: (
+            "broca.orchestration.supervisor_worker",
+            "SupervisorWorkerOrchestrator",
+        ),
+        OrchestratorType.ROUND_TABLE: (
+            "broca.orchestration.round_table",
+            "RoundTableOrchestrator",
+        ),
+        OrchestratorType.BROADCAST: (
+            "broca.orchestration.broadcast",
+            "BroadcastOrchestrator",
+        ),
+        OrchestratorType.CONSENSUS: (
+            "broca.orchestration.consensus",
+            "ConsensusOrchestrator",
+        ),
+        OrchestratorType.COMPOSITE: (
+            "broca.orchestration.composite",
+            "CompositeOrchestrator",
+        ),
     }
 
     @staticmethod
@@ -266,6 +294,7 @@ class OrchestratorFactory:
         module_path, class_name = mapping[otype]
         try:
             import importlib
+
             module = importlib.import_module(module_path)
             cls = getattr(module, class_name)
             return cls(crew_config, context)

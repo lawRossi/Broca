@@ -20,7 +20,6 @@ from broca.logging_config import get_logger
 from broca.orchestration.crew import (
     AgentRole,
     CrewConfig,
-    OrchestratorConfig,
     TaskDefinition,
 )
 from broca.orchestration.orchestrator import (
@@ -59,16 +58,21 @@ class PipelineOrchestrator(Orchestrator):
         # 尝试从 extras.steps 读取
         steps_data = self.crew.orchestrator.extras.get("steps", [])
         if steps_data:
-            return [TaskDefinition.from_dict(s) if isinstance(s, dict) else s for s in steps_data]
+            return [
+                TaskDefinition.from_dict(s) if isinstance(s, dict) else s
+                for s in steps_data
+            ]
 
         # 回退：按 agents 列表中的 worker 顺序
         steps = []
         for agent_cfg in self.crew.agents:
             if agent_cfg.role in (AgentRole.WORKER, AgentRole.PARTICIPANT):
-                steps.append(TaskDefinition(
-                    agent=agent_cfg.name,
-                    task=f"Execute your role as {agent_cfg.name}",
-                ))
+                steps.append(
+                    TaskDefinition(
+                        agent=agent_cfg.name,
+                        task=f"Execute your role as {agent_cfg.name}",
+                    )
+                )
         return steps
 
     async def run(self) -> OrchestrationResult:
@@ -93,7 +97,7 @@ class PipelineOrchestrator(Orchestrator):
                 result.status = ExecutionStatus.ABORTED
                 break
 
-            phase_name = f"step_{i+1}: {step.agent}"
+            phase_name = f"step_{i + 1}: {step.agent}"
             phase = PhaseResult(
                 name=phase_name,
                 status=PhaseStatus.RUNNING,
@@ -103,7 +107,7 @@ class PipelineOrchestrator(Orchestrator):
             result.phases.append(phase)
 
             logger.info(
-                f"Pipeline step {i+1}/{len(self.steps)}: "
+                f"Pipeline step {i + 1}/{len(self.steps)}: "
                 f"agent='{step.agent}', task='{step.task[:50]}...'"
             )
 
@@ -124,24 +128,25 @@ class PipelineOrchestrator(Orchestrator):
                     accumulated_context[step.agent] = step_output
 
                 phase.status = PhaseStatus.COMPLETED
+                self.notify_progress(result.phases)
                 phase.output = {"output": step_output}
                 phase.completed_at = datetime.now(timezone.utc)
 
                 # 将阶段性结果写入黑板
                 await self.context.blackboard.set(
-                    f"pipeline.step_{i+1}",
+                    f"pipeline.step_{i + 1}",
                     {"agent": step.agent, "output": step_output},
                     producer="pipeline_orchestrator",
                 )
 
             except Exception as e:
-                logger.error(f"Pipeline step {i+1} failed: {e}")
+                logger.error(f"Pipeline step {i + 1} failed: {e}")
                 phase.status = PhaseStatus.FAILED
                 phase.error = str(e)
                 phase.completed_at = datetime.now(timezone.utc)
 
                 result.status = ExecutionStatus.FAILED
-                result.error = f"Step {i+1} ('{step.agent}') failed: {e}"
+                result.error = f"Step {i + 1} ('{step.agent}') failed: {e}"
                 break
 
         # 最终汇总
@@ -180,9 +185,7 @@ class PipelineOrchestrator(Orchestrator):
 
         if previous_output is not None:
             output_str = str(previous_output)[:300]
-            context_parts.append(
-                f"\n\nImmediately previous step output:\n{output_str}"
-            )
+            context_parts.append(f"\n\nImmediately previous step output:\n{output_str}")
 
         return "\n".join(context_parts)
 
@@ -201,7 +204,9 @@ class PipelineOrchestrator(Orchestrator):
             raise ValueError(f"Agent '{step.agent}' not found in Crew context")
 
         # 构建完整的任务描述
-        full_task = f"{task_context}\n\nIMPORTANT: This is part of a pipeline workflow. "
+        full_task = (
+            f"{task_context}\n\nIMPORTANT: This is part of a pipeline workflow. "
+        )
         full_task += "Complete the assigned work thoroughly. "
         full_task += "After finishing, provide a clear summary of what you did and the key results."
 
@@ -229,8 +234,8 @@ class PipelineOrchestrator(Orchestrator):
 
         except ImportError:
             # fallback: 直接调用 agent.run()
-            from broca.session import MessageProtocol
             from broca.execution_engine import ExecutionStatus
+            from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=full_task)
             execution_result = await target_agent.run(trigger_message, from_agent=True)
@@ -241,9 +246,7 @@ class PipelineOrchestrator(Orchestrator):
             elif execution_result.status == ExecutionStatus.ABORTED:
                 raise RuntimeError("Execution was aborted by user")
             else:
-                raise RuntimeError(
-                    f"Execution failed: {execution_result.error}"
-                )
+                raise RuntimeError(f"Execution failed: {execution_result.error}")
 
     def _create_tool_context(self, agent_name: str) -> Any:
         """创建工具调用上下文"""

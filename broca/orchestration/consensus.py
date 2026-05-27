@@ -117,6 +117,7 @@ class ConsensusOrchestrator(Orchestrator):
             await self.context.blackboard.set("reviews", [r.to_dict() for r in reviews])
 
             phase1.status = PhaseStatus.COMPLETED
+            self.notify_progress(result.phases)
             phase1.output = {"reviews_count": len(reviews)}
             phase1.completed_at = datetime.now(timezone.utc)
 
@@ -138,6 +139,7 @@ class ConsensusOrchestrator(Orchestrator):
             await self.context.blackboard.set("consensus_result", consensus)
 
             phase2.status = PhaseStatus.COMPLETED
+            self.notify_progress(result.phases)
             phase2.output = consensus
             phase2.completed_at = datetime.now(timezone.utc)
 
