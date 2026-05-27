@@ -186,10 +186,6 @@ const handleViewDetail = (execution: CrewExecution) => {
   crewStore.openDetail(execution.execution_id)
 }
 
-const handleAbort = async (execution: CrewExecution) => {
-  await crewStore.abortExecution(execution.execution_id)
-}
-
 const handleRefresh = () => {
   if (activeTab.value === 'executions') {
     crewStore.refresh()
@@ -623,30 +619,6 @@ onMounted(async () => {
             <pre class="p-4 text-xs text-gray-600 overflow-x-auto max-h-64">{{ JSON.stringify(crewStore.executionDetail.result, null, 2) }}</pre>
           </div>
 
-          <!-- 操作按钮 -->
-          <div class="flex gap-2 pt-2">
-            <el-button
-              v-if="crewStore.executionDetail?.status === 'running'"
-              type="danger"
-              @click="handleAbort(crewStore.executionDetail)"
-            >
-              中止执行
-            </el-button>
-            <el-button
-              type="primary"
-              plain
-              @click="router.push(`/chat/${crewStore.executionDetail?.session_id}?execution_id=${crewStore.executionDetail?.execution_id}`)"
-            >
-              查看聊天日志
-            </el-button>
-            <el-button
-              type="danger"
-              plain
-              @click="crewStore.deleteExecution(crewStore.executionDetail?.execution_id!)"
-            >
-              删除
-            </el-button>
-          </div>
         </div>
       </template>
 
