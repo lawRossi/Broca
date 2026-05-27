@@ -319,17 +319,16 @@ export const useCrewStore = defineStore('crew', () => {
     import('@/stores/socket').then(({ useSocketStore }) => {
       const socketStore = useSocketStore()
       socketStore.onCrewEvent = (event: string, data: any) => {
-        // 更新列表中的记录
         if (data?.execution_id) {
-          const idx = executions.value.findIndex(e => e.execution_id === data.execution_id)
+          // 深拷贝数据，避免引用问题
+          const update = JSON.parse(JSON.stringify(data)) as CrewExecution
+          const idx = executions.value.findIndex(e => e.execution_id === update.execution_id)
           if (idx >= 0) {
-            executions.value[idx] = data as CrewExecution
-            // 触发响应式更新
+            executions.value[idx] = update
             executions.value = [...executions.value]
           }
-          // 如果正在查看该执行记录的详情，同步更新
-          if (selectedExecutionId.value === data.execution_id && executionDetail.value) {
-            executionDetail.value = data as CrewExecution
+          if (selectedExecutionId.value === update.execution_id && executionDetail.value) {
+            executionDetail.value = update
           }
         }
       }
