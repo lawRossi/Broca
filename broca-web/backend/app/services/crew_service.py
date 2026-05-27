@@ -86,6 +86,7 @@ class CrewService:
             "error": execution.error_message,
             "result": result,
             "phases": phases,
+            "phases_total": execution.phases_total or len(phases),
             "created_at": execution.started_at.isoformat() if execution.started_at else None,
             "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
         }
@@ -287,6 +288,9 @@ class CrewService:
                 phases = payload.get("phases")
                 if phases:
                     record.phases_json = json.dumps(phases, ensure_ascii=False)
+                phases_total = payload.get("phases_total")
+                if phases_total:
+                    record.phases_total = phases_total
                 progress = payload.get("progress", 0)
                 logger.info(f"[CrewService] '{record.crew_name}' progress: {progress:.0%}")
 
@@ -298,6 +302,7 @@ class CrewService:
                 phases = payload.get("phases", [])
                 if phases:
                     record.phases_json = json.dumps(phases, ensure_ascii=False)
+                    record.phases_total = len(phases)
                 record.completed_at = datetime.now(UTC)
                 logger.info(f"[CrewService] '{record.crew_name}' completed (exec={execution_id})")
 
@@ -307,6 +312,7 @@ class CrewService:
                 phases = payload.get("phases", [])
                 if phases:
                     record.phases_json = json.dumps(phases, ensure_ascii=False)
+                    record.phases_total = len(phases)
                 record.completed_at = datetime.now(UTC)
                 logger.error(f"[CrewService] '{record.crew_name}' failed: {record.error_message}")
 

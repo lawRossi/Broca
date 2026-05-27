@@ -986,6 +986,11 @@ class CrewExecution(SQLModel, table=True):
         sa_column=Column(JSON, nullable=True),
         description="阶段执行记录（JSON）",
     )
+    phases_total: Optional[int] = Field(
+        default=None,
+        sa_column=Column(Integer, nullable=True),
+        description="预期总阶段数（用于前端进度计算）",
+    )
     started_at: datetime = Field(default_factory=datetime.now, description="开始时间")
     completed_at: Optional[datetime] = Field(default=None, description="完成时间")
 

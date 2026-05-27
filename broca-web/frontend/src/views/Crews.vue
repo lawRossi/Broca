@@ -380,7 +380,7 @@ onMounted(async () => {
             <div class="mt-3 flex items-center justify-between text-xs text-gray-400">
               <div class="flex items-center gap-4">
                 <span>Agent: {{ exec.agent_count }} 个</span>
-                <span v-if="exec.phases?.length">阶段: {{ exec.phases.length }} 个</span>
+                <span v-if="exec.phases_total">阶段: {{ exec.phases.length }}/{{ exec.phases_total }} 个</span>
               </div>
               <div class="flex items-center gap-4">
                 <span>{{ formatTime(exec.created_at) }}</span>
@@ -392,7 +392,7 @@ onMounted(async () => {
             <div v-if="exec.phases?.length" class="mt-3">
               <el-progress
                 :percentage="Math.round(
-                  exec.phases.filter(p => p.status === 'completed').length / exec.phases.length * 100
+                  exec.phases.filter(p => p.status === 'completed').length / (exec.phases_total || exec.phases.length) * 100
                 )"
                 :stroke-width="4"
                 :status="exec.status === 'failed' ? 'exception' : exec.status === 'completed' ? 'success' : undefined"
@@ -414,7 +414,7 @@ onMounted(async () => {
                 size="small"
                 type="danger"
                 plain
-                @click.stop="crewStore.abortExecution(exec)"
+                @click.stop="crewStore.abortExecution(exec.execution_id)"
               >
                 中止
               </el-button>
