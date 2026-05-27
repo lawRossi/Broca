@@ -124,7 +124,6 @@ export const useSocketStore = defineStore('socket', () => {
       throw e
     }
   }
-  }
 
   const sendUserMessage = async (params: {
     messageId: string
