@@ -307,6 +307,9 @@ class CrewOrchestratorRunner:
         """中止当前编排"""
         if self._orchestrator:
             await self._orchestrator.abort()
+            # 取消正在执行的 task，让 CancelledError 传播到 run_crew
+            if self._task and not self._task.done():
+                self._task.cancel()
             logger.info(f"Crew '{self._crew_id}' aborted by user")
             return True
         return False
