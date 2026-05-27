@@ -92,7 +92,7 @@ class CompositeOrchestrator(Orchestrator):
                         )
 
                         phase.status = PhaseStatus.COMPLETED
-                        self.notify_progress(result.phases)
+                        self.notify_progress(result.phases, len(self.sub_crews))
                         phase.output = sub_result.final_output
                         phase.completed_at = datetime.now(timezone.utc)
                     except Exception as e:
@@ -161,7 +161,7 @@ class CompositeOrchestrator(Orchestrator):
                     producer="composite",
                 )
                 sub_phase.status = PhaseStatus.COMPLETED
-                self.notify_progress(result.phases)
+                self.notify_progress(result.phases, len(self.sub_crews))
                 sub_phase.output = sub_result.final_output
                 sub_phase.completed_at = datetime.now(timezone.utc)
             except Exception as e:
@@ -170,7 +170,7 @@ class CompositeOrchestrator(Orchestrator):
                 sub_phase.completed_at = datetime.now(timezone.utc)
                 raise
 
-        self.notify_progress(result.phases)
+        self.notify_progress(result.phases, len(self.sub_crews))
         main_phase.status = PhaseStatus.COMPLETED
         main_phase.output = {"sub_crews_count": len(self.sub_crews)}
         main_phase.completed_at = datetime.now(timezone.utc)
@@ -199,7 +199,7 @@ class CompositeOrchestrator(Orchestrator):
                     producer="composite",
                 )
                 phase.status = PhaseStatus.COMPLETED
-                self.notify_progress(result.phases)
+                self.notify_progress(result.phases, len(self.sub_crews))
                 phase.output = sub_result.final_output
                 phase.completed_at = datetime.now(timezone.utc)
             except Exception as e:

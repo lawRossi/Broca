@@ -95,7 +95,7 @@ class BroadcastOrchestrator(Orchestrator):
             await self.context.blackboard.set("sub_tasks", sub_tasks, producer="dispatcher")
 
             phase1.status = PhaseStatus.COMPLETED
-            self.notify_progress(result.phases)
+            self.notify_progress(result.phases, 3)
             phase1.output = {"sub_tasks_count": len(sub_tasks)}
             phase1.completed_at = datetime.now(timezone.utc)
 
@@ -119,7 +119,7 @@ class BroadcastOrchestrator(Orchestrator):
             )
 
             phase2.status = PhaseStatus.COMPLETED
-            self.notify_progress(result.phases)
+            self.notify_progress(result.phases, 3)
             phase2.output = {"results_count": len(worker_results)}
             phase2.completed_at = datetime.now(timezone.utc)
 
@@ -143,7 +143,7 @@ class BroadcastOrchestrator(Orchestrator):
             )
 
             phase3.status = PhaseStatus.COMPLETED
-            self.notify_progress(result.phases)
+            self.notify_progress(result.phases, 3)
             phase3.output = {"aggregated": True}
             phase3.completed_at = datetime.now(timezone.utc)
 

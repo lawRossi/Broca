@@ -242,9 +242,8 @@ class CrewOrchestratorRunner:
         finally:
             unsubscribe()
 
-    def _on_phase_complete(self, phases: List[Any]) -> None:
+    def _on_phase_complete(self, phases: List[Any], total: int) -> None:
         """阶段完成回调：计算进度并推送"""
-        total = len(phases)
         completed = sum(1 for p in phases if p.status.value in ("completed", "failed"))
         progress = completed / total if total > 0 else 0
 

@@ -128,7 +128,7 @@ class PipelineOrchestrator(Orchestrator):
                     accumulated_context[step.agent] = step_output
 
                 phase.status = PhaseStatus.COMPLETED
-                self.notify_progress(result.phases)
+                self.notify_progress(result.phases, len(self.steps))
                 phase.output = {"output": step_output}
                 phase.completed_at = datetime.now(timezone.utc)
 

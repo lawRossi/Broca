@@ -194,10 +194,15 @@ class Orchestrator(ABC):
         # 进度回调（由 CrewOrchestratorRunner 设置，阶段完成时推送实时进度）
         self.progress_callback = None
 
-    def notify_progress(self, phases: List[Any]) -> None:
-        """阶段完成时回调，推送实时进度（由子编排器在阶段完成后调用）"""
+    def notify_progress(self, phases: List[Any], total: int) -> None:
+        """阶段完成时回调，推送实时进度（由子编排器在阶段完成后调用）
+
+        Args:
+            phases: 当前已完成的阶段列表
+            total: 预期总阶段数（用于正确计算进度百分比）
+        """
         if self.progress_callback:
-            self.progress_callback(phases)
+            self.progress_callback(phases, total)
 
     @property
     def name(self) -> str:

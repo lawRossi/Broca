@@ -244,7 +244,7 @@ class CrewService:
             await session.commit()
 
             # 实时推送编排事件到前端
-            await _emit_crew_event("aborted", service._execution_to_dict(record), record.session_id)
+            await _emit_crew_event("aborted", self._execution_to_dict(record), record.session_id)
             return True
 
     # ==========================================================================
