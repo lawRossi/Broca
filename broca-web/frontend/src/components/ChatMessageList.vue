@@ -68,7 +68,7 @@ const handleScroll = (event: Event) => {
       const scrollState = saveScrollState()
 
       chatStore
-        .loadHistory(chatStore.sessionId, true)
+        .loadHistory(chatStore.sessionId, true, chatStore.executionId)
         .then(() => {
           restoreScrollState(scrollState)
         })

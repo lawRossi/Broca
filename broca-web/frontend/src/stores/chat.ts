@@ -518,12 +518,12 @@ export const useChatStore = defineStore('chat', () => {
             // 撤销成功后，显示重做按钮
             showRedoButton.value = true
             redoReceiverId.value = m.sender_id
-            loadHistory(sessionId.value, false)
+            loadHistory(sessionId.value, false, executionId.value)
           } else {
             // 重做成功后，隐藏重做按钮
             showRedoButton.value = false
             redoReceiverId.value = undefined
-            loadHistory(sessionId.value, false)
+            loadHistory(sessionId.value, false, executionId.value)
           }
         }
         return
