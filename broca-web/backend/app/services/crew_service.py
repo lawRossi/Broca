@@ -310,7 +310,12 @@ class CrewService:
                 logger.info(f"[CrewService] '{record.crew_name}' completed (exec={execution_id})")
 
             elif msg_type == IPCMessageType.EVT_CREW_ERROR:
-                record.status = CrewExecutionStatus.FAILED
+                # 如果 payload 中有 status=aborted，则标记为已中止而非失败
+                event_status = payload.get("status", "failed")
+                if event_status == "aborted":
+                    record.status = CrewExecutionStatus.ABORTED
+                else:
+                    record.status = CrewExecutionStatus.FAILED
                 record.error_message = payload.get("error", "Unknown error")
                 phases = payload.get("phases", [])
                 if phases:
