@@ -31,6 +31,7 @@ const loadSessionInfo = async () => {
   if (!sessionId) return
   try {
     currentSession.value = await sessionApi.getSession(sessionId)
+    chatStore.isAgentOrchestration = currentSession.value?.category === 'agent-orchestration'
   } catch {
     // 忽略错误，不影响聊天功能
   }

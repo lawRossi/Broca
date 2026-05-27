@@ -564,8 +564,8 @@ const handleUndoToHere = async () => {
           {{ formatBeijingTimeShort(message.timestamp) }}
         </div>
         
-        <!-- 悬停撤销按钮 -->
-        <div class="hover-actions" v-if="showActions && canUndoThisMessage">
+        <!-- 悬停撤销按钮（编排会话禁用） -->
+        <div class="hover-actions" v-if="showActions && canUndoThisMessage && !chatStore.isAgentOrchestration">
           <el-button 
             size="small" 
             link

@@ -121,9 +121,9 @@ const handleRedo = () => {
 
     <ChatMessageItem v-for="m in chatStore.messages" :key="m.message_id" :message="m" />
 
-    <!-- 重做按钮 - 撤销成功后显示 -->
+    <!-- 重做按钮 - 撤销成功后显示（编排会话禁用） -->
     <div
-      v-if="chatStore.showRedoButton"
+      v-if="chatStore.showRedoButton && !chatStore.isAgentOrchestration"
       class="flex justify-center py-2"
     >
       <el-button

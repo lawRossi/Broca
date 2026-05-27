@@ -26,6 +26,8 @@ export const useChatStore = defineStore('chat', () => {
   // 撤销/重做相关状态
   const showRedoButton = ref(false)
   const redoReceiverId = ref<string | undefined>()
+  // 编排会话标记（禁用撤销/重做）
+  const isAgentOrchestration = ref(false)
 
   // Runner 状态
   const runnerInfo = ref<RunnerInfo | null>(null)
@@ -510,6 +512,9 @@ export const useChatStore = defineStore('chat', () => {
       console.log('Disconnected from server')
     }
     socketStore.onMessage = (m: Message) => {
+      // 编排会话跳过撤销/重做处理
+      if (isAgentOrchestration.value) return addMessage(m)
+
       // 如果是撤销或重做的结果，显示提示并重新加载消息
       if (m.message_type === 'command_result' && (m.data?.command === 'undo' || m.data?.command === 'redo')) {
         const result = m.data?.result
@@ -776,6 +781,7 @@ export const useChatStore = defineStore('chat', () => {
     executionId,
     showRedoButton,
     redoReceiverId,
+    isAgentOrchestration,
     messagesContainer,
     showLeftSidebar,
     showRightSidebar,
