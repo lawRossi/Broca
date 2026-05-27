@@ -145,7 +145,8 @@ const handleLoadConfig = async (cfg: CrewConfigFile) => {
   await crewStore.loadConfigIntoEditor(cfg.filename, currentWorkspace.value)
 }
 
-// 正在执行中的编排（按文件名追踪，用于按钮 loading 状态）
+// 同个 session 同一时间只允许一个编排执行
+const sessionExecuting = ref(false)
 const executingFile = ref<string>('')
 
 const handleQuickSubmit = async (cfg: CrewConfigFile) => {
@@ -153,6 +154,11 @@ const handleQuickSubmit = async (cfg: CrewConfigFile) => {
     ElMessageBox.alert('请先选择一个会话', '提示')
     return
   }
+  if (sessionExecuting.value) {
+    ElMessageBox.alert('该会话已有编排正在执行，请等待完成后再试', '提示')
+    return
+  }
+  sessionExecuting.value = true
   executingFile.value = cfg.filename
   try {
     await crewStore.submitCrewByPath(cfg.path, currentSessionId.value)
@@ -160,6 +166,7 @@ const handleQuickSubmit = async (cfg: CrewConfigFile) => {
     // store 已处理
   } finally {
     executingFile.value = ''
+    sessionExecuting.value = false
   }
 }
 
@@ -524,6 +531,7 @@ onMounted(async () => {
                   type="success"
                   plain
                   :loading="executingFile === cfg.filename"
+                  :disabled="sessionExecuting && executingFile !== cfg.filename"
                   @click="handleQuickSubmit(cfg)"
                 >
                   执行
