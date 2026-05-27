@@ -58,15 +58,9 @@ class ReadBlackboard(Tool):
             "type": "object",
             "properties": {
                 "key": {
-                    "oneOf": [
-                        {"type": "string", "description": "A single key to read."},
-                        {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Multiple keys to read at once. Returns all values in a single response.",
-                        },
-                    ],
-                    "description": "Key or array of keys to read. Supports dot-separated nested paths.",
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Multiple keys to read at once(Supports dot-separated nested paths). Returns all values in a single response.",
                 },
             },
             "required": ["key"],
