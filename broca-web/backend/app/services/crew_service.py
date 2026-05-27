@@ -16,6 +16,8 @@ from typing import Any, Dict, List, Optional
 from sqlalchemy import select, desc
 from loguru import logger
 
+from broca.session.models import Message, MessageProtocol, MessageRole, MessageType
+
 from broca.orchestration.crew import CrewConfig, CrewConfigValidator, OrchestratorType
 from broca.session.database import db_manager
 from broca.session.models import CrewExecution, CrewExecutionStatus
@@ -237,6 +239,10 @@ class CrewService:
             record.completed_at = datetime.now(timezone.utc)
             session.add(record)
             await session.commit()
+
+            # 实时推送编排事件到前端
+            event_name = msg_type.value.replace("evt_crew_", "") if hasattr(msg_type, 'value') else str(msg_type)
+            await _emit_crew_event(event_name, service._execution_to_dict(record))
             return True
 
     # ==========================================================================
@@ -436,6 +442,8 @@ class CrewService:
 
 # 全局服务实例
 _crew_service: Optional[CrewService] = None
+# Socket.IO 服务器引用（由 app startup 时注入）
+_socketio_server: Any = None
 
 
 def get_crew_service() -> CrewService:
@@ -444,3 +452,28 @@ def get_crew_service() -> CrewService:
     if _crew_service is None:
         _crew_service = CrewService()
     return _crew_service
+
+
+def set_socketio_server(server: Any) -> None:
+    """注入 Socket.IO 服务器实例（用于实时推送编排进度）"""
+    global _socketio_server
+    _socketio_server = server
+    logger.info("SocketIO server injected into CrewService")
+
+
+async def _emit_crew_event(event: str, data: Dict[str, Any]) -> None:
+    """通过 Socket.IO 向所有客户端广播编排事件"""
+    global _socketio_server
+    if not _socketio_server:
+        return
+    try:
+        message = Message(
+            message_type=MessageType.SYSTEM_MESSAGE,
+            role=MessageRole.SYSTEM,
+            sender_id="system",
+            data={"crew_event": event, "payload": data},
+            subscription="crew",
+        )
+        await _socketio_server.send_message(message, subscription="crew")
+    except Exception as e:
+        logger.warning(f"Failed to emit crew event via SocketIO: {e}")

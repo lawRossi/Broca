@@ -35,6 +35,7 @@ export const useSocketStore = defineStore('socket', () => {
   const onToolCall = ref<((message: Message) => void) | null>(null)
   const onPermissionRequest = ref<((message: Message) => void) | null>(null)
   const onAgentQuery = ref<((message: Message) => void) | null>(null)
+  const onCrewEvent = ref<((event: string, data: any) => void) | null>(null)
 
   const connect = async () => {
     if (connected.value || connecting.value) return
@@ -58,6 +59,10 @@ export const useSocketStore = defineStore('socket', () => {
         onDisconnect.value?.()
       })
       client.on('message', (m: Message) => {
+        // 如果是编排事件，路由到 onCrewEvent
+        if (m.message_type === 'system_message' && m.data?.crew_event) {
+          onCrewEvent.value?.(m.data.crew_event, m.data.payload)
+        }
         onMessage.value?.(m)
       })
       client.on('turn_start', (m: Message) => {
@@ -108,10 +113,17 @@ export const useSocketStore = defineStore('socket', () => {
     }
     try {
       await client.subscribe(sessionId.trim())
+      // 同时订阅编排事件
+      if (client) {
+        client.subscribe('crew')
+      }
+      onConnect.value?.()
+      return { success: true, message: '已订阅' }
     } catch (e: any) {
       ElMessage.error(e?.message || '订阅失败')
       throw e
     }
+  }
   }
 
   const sendUserMessage = async (params: {
@@ -264,6 +276,7 @@ export const useSocketStore = defineStore('socket', () => {
     onToolCall,
     onPermissionRequest,
     onAgentQuery,
+    onCrewEvent,
     connect,
     disconnect,
     subscribe,

@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { crewApi, type CrewExecution, type ExecutionStatus, type CrewConfig, type CrewConfigFile, type CrewConfigDetail } from '@/api/crew'
 
+let _crewEventHandlerRegistered = false
+
 export const useCrewStore = defineStore('crew', () => {
   // 状态
   const executions = ref<CrewExecution[]>([])
@@ -283,6 +285,38 @@ export const useCrewStore = defineStore('crew', () => {
       await fetchDetail(selectedExecutionId.value)
     }
   }
+
+  // ==========================================================================
+  // Socket.IO 实时更新
+  // ==========================================================================
+
+  const initSocketSubscription = () => {
+    if (_crewEventHandlerRegistered) return
+    _crewEventHandlerRegistered = true
+
+    // 延迟导入避免循环依赖
+    import('@/stores/socket').then(({ useSocketStore }) => {
+      const socketStore = useSocketStore()
+      socketStore.onCrewEvent = (event: string, data: any) => {
+        // 更新列表中的记录
+        if (data?.execution_id) {
+          const idx = executions.value.findIndex(e => e.execution_id === data.execution_id)
+          if (idx >= 0) {
+            executions.value[idx] = data as CrewExecution
+            // 触发响应式更新
+            executions.value = [...executions.value]
+          }
+          // 如果正在查看该执行记录的详情，同步更新
+          if (selectedExecutionId.value === data.execution_id && executionDetail.value) {
+            executionDetail.value = data as CrewExecution
+          }
+        }
+      }
+    })
+  }
+
+  // 初始化时注册
+  initSocketSubscription()
 
   return {
     // State

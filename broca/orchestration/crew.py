@@ -221,7 +221,10 @@ class CrewConfig:
 
         blackboard = None
         if "blackboard" in data:
-            if isinstance(data["blackboard"], dict) and "initial_entries" in data["blackboard"]:
+            if (
+                isinstance(data["blackboard"], dict)
+                and "initial_entries" in data["blackboard"]
+            ):
                 blackboard = data["blackboard"]
             else:
                 blackboard = data["blackboard"]
@@ -295,8 +298,8 @@ class CrewConfigValidator:
             # 无法继续校验编排器相关字段
             return errors
 
-        # 编排器配置（已在上面验证过，此处直接使用）
-        # 拓扑特定校验
+            # 编排器配置（已在上面验证过，此处直接使用）
+            # 拓扑特定校验
             if not config.orchestrator.type:
                 errors.append("Orchestrator type is required")
 
@@ -329,13 +332,18 @@ class CrewConfigValidator:
                                 f"Supervisor-Worker: supervisor '{agent.name}' should be the first agent"
                             )
                     elif otype == OrchestratorType.ROUND_TABLE:
-                        if agent.role not in (AgentRole.MODERATOR, AgentRole.PARTICIPANT):
+                        if agent.role not in (
+                            AgentRole.MODERATOR,
+                            AgentRole.PARTICIPANT,
+                        ):
                             errors.append(
                                 f"Round-Table: agent '{agent.name}' role must be 'moderator' or 'participant'"
                             )
                     elif otype == OrchestratorType.BROADCAST:
                         if agent.role not in (
-                            AgentRole.DISPATCHER, AgentRole.AGGREGATOR, AgentRole.WORKER
+                            AgentRole.DISPATCHER,
+                            AgentRole.AGGREGATOR,
+                            AgentRole.WORKER,
                         ):
                             errors.append(
                                 f"Broadcast: agent '{agent.name}' role must be 'dispatcher', 'aggregator', or 'worker'"

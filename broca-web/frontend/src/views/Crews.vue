@@ -10,6 +10,7 @@ import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { useCrewStore } from '@/stores/crew'
 import { useSessionStore } from '@/stores/session'
+import { useSocketStore } from '@/stores/socket'
 import type { CrewExecution, CrewConfigFile } from '@/api/crew'
 import {
   Refresh,
@@ -29,6 +30,7 @@ const route = useRoute()
 const userStore = useUserStore()
 const crewStore = useCrewStore()
 const sessionStore = useSessionStore()
+const socketStore = useSocketStore()
 
 // ============ Tab 切换 ============
 const activeTab = ref<'executions' | 'configs'>('executions')
@@ -248,6 +250,15 @@ onMounted(async () => {
   await crewStore.fetchExecutions()
   await sessionStore.fetchSessions()
   await resolveCurrentSession()
+
+  // 连接 Socket.IO 并订阅编排事件（实时更新进度）
+  if (!socketStore.connected && !socketStore.connecting) {
+    try {
+      await socketStore.connect()
+    } catch {
+      // 连接失败不影响功能，只是没有实时推送
+    }
+  }
 })
 </script>
 
