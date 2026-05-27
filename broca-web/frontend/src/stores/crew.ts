@@ -156,6 +156,27 @@ export const useCrewStore = defineStore('crew', () => {
     }
   }
 
+  const deleteExecution = async (executionId: string) => {
+    try {
+      await ElMessageBox.confirm('确定要删除此编排执行记录吗？', '确认删除', {
+        confirmButtonText: '确定删除',
+        cancelButtonText: '取消',
+        type: 'warning',
+      })
+      await crewApi.delete(executionId)
+      ElMessage.success('编排已删除')
+      executions.value = executions.value.filter(e => e.execution_id !== executionId)
+      if (selectedExecutionId.value === executionId) {
+        closeDetail()
+      }
+    } catch (error: any) {
+      if (error !== 'cancel') {
+        console.error('删除编排失败:', error)
+        ElMessage.error('删除编排失败')
+      }
+    }
+  }
+
   const openDetail = async (executionId: string) => {
     selectedExecutionId.value = executionId
     detailDrawerVisible.value = true
@@ -351,6 +372,7 @@ export const useCrewStore = defineStore('crew', () => {
     submitCrewByPath,
     validateYaml,
     abortExecution,
+    deleteExecution,
     openDetail,
     closeDetail,
     openYamlEditor,

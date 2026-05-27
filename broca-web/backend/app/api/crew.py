@@ -283,3 +283,23 @@ async def abort_crew_execution(execution_id: str) -> ApiResponse:
     except Exception as e:
         logger.error(f"Error aborting crew execution {execution_id}: {e}")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
+
+
+@router.delete("/{execution_id}", response_model=ApiResponse)
+async def delete_crew_execution(execution_id: str) -> ApiResponse:
+    """删除编排执行记录"""
+    try:
+        crew_service = get_crew_service()
+        success = await crew_service.delete_execution(execution_id)
+        if not success:
+            return ApiResponse.error(
+                code=404,
+                msg=f"Execution '{execution_id}' not found",
+            )
+        return ApiResponse.success(
+            data={"execution_id": execution_id},
+            msg="Execution deleted successfully",
+        )
+    except Exception as e:
+        logger.error(f"Error deleting crew execution {execution_id}: {e}")
+        return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")

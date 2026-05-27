@@ -211,6 +211,13 @@ export const crewApi = {
     return request.post(`/crews/${executionId}/abort`)
   },
 
+  /**
+   * 删除编排执行记录
+   */
+  async delete(executionId: string): Promise<{ execution_id: string }> {
+    return request.delete(`/crews/${executionId}`)
+  },
+
   // ==========================================================================
   // Workspace crew_configs 操作
   // ==========================================================================

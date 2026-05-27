@@ -398,6 +398,35 @@ onMounted(async () => {
                 :status="exec.status === 'failed' ? 'exception' : exec.status === 'completed' ? 'success' : undefined"
               />
             </div>
+
+            <!-- 操作按钮 -->
+            <div class="mt-3 flex items-center gap-2 pt-2 border-t">
+              <el-button
+                size="small"
+                type="primary"
+                plain
+                @click.stop="router.push(`/chat/${exec.session_id}?execution_id=${exec.execution_id}`)"
+              >
+                查看聊天日志
+              </el-button>
+              <el-button
+                v-if="exec.status === 'running'"
+                size="small"
+                type="danger"
+                plain
+                @click.stop="crewStore.abortExecution(exec)"
+              >
+                中止
+              </el-button>
+              <el-button
+                size="small"
+                type="danger"
+                plain
+                @click.stop="crewStore.deleteExecution(exec.execution_id)"
+              >
+                删除
+              </el-button>
+            </div>
           </div>
         </div>
 
@@ -610,7 +639,13 @@ onMounted(async () => {
             >
               查看聊天日志
             </el-button>
-            <el-button @click="handleRefresh">刷新状态</el-button>
+            <el-button
+              type="danger"
+              plain
+              @click="crewStore.deleteExecution(crewStore.executionDetail?.execution_id!)"
+            >
+              删除
+            </el-button>
           </div>
         </div>
       </template>

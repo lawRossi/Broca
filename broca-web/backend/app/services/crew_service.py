@@ -247,6 +247,16 @@ class CrewService:
             await _emit_crew_event("aborted", self._execution_to_dict(record), record.session_id)
             return True
 
+    async def delete_execution(self, execution_id: str) -> bool:
+        """删除编排执行记录"""
+        async with db_manager.get_session() as session:
+            record = await session.get(CrewExecution, execution_id)
+            if not record:
+                return False
+            await session.delete(record)
+            await session.commit()
+            return True
+
     # ==========================================================================
     # IPC 事件处理（由 RunnerManager 回调）
     # ==========================================================================
