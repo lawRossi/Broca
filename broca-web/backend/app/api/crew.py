@@ -68,14 +68,14 @@ async def submit_crew(request: CrewSubmitRequest) -> ApiResponse:
                 msg="Either yaml_content or yaml_path is required",
             )
 
-        if record.status == "failed":
+        if record["status"] == "failed":
             return ApiResponse.error(
                 code=500,
-                msg=f"Crew submission failed: {record.error}",
+                msg=f"Crew submission failed: {record.get('error', 'Unknown error')}",
             )
 
         return ApiResponse.success(
-            data=record.to_dict(),
+            data=record,
             msg="Crew orchestration submitted successfully",
         )
 
@@ -132,7 +132,7 @@ async def list_crews(
     """列出编排执行记录"""
     try:
         crew_service = get_crew_service()
-        executions = crew_service.list_executions(
+        executions = await crew_service.list_executions(
             session_id=session_id,
             status=status,
         )
@@ -148,12 +148,105 @@ async def list_crews(
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
 
 
+@router.get("/configs", response_model=ApiResponse)
+async def list_crew_configs(workspace: str) -> ApiResponse:
+    """
+    列出 workspace 下 crew_configs 目录中已有的编排配置文件
+
+    Args:
+        workspace: 工作空间路径（需 URL 编码）
+    """
+    try:
+        crew_service = get_crew_service()
+        configs = crew_service.list_crew_configs(workspace)
+        return ApiResponse.success(
+            data={"configs": configs, "total": len(configs)},
+            msg=f"Found {len(configs)} crew configs in workspace",
+        )
+    except Exception as e:
+        logger.error(f"Error listing crew configs: {e}")
+        return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
+
+
+@router.get("/configs/{filename}", response_model=ApiResponse)
+async def get_crew_config_detail(filename: str, workspace: str) -> ApiResponse:
+    """
+    获取 workspace crew_configs 目录下指定配置文件的内容
+
+    Args:
+        filename: 配置文件名（不含路径）
+        workspace: 工作空间路径
+    """
+    try:
+        crew_service = get_crew_service()
+        result = crew_service.get_crew_config_content(workspace, filename)
+        return ApiResponse.success(data=result, msg="Config content retrieved")
+    except FileNotFoundError as e:
+        return ApiResponse.error(code=404, msg=str(e))
+    except ValueError as e:
+        return ApiResponse.error(code=400, msg=str(e))
+    except Exception as e:
+        logger.error(f"Error getting crew config {filename}: {e}")
+        return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
+
+
+class CrewConfigSaveRequest(BaseModel):
+    """保存编排配置文件的请求模型"""
+    workspace: str
+    filename: str
+    content: str
+
+    model_config = {"from_attributes": True}
+
+
+@router.put("/configs/{filename}", response_model=ApiResponse)
+async def save_crew_config(filename: str, request: CrewConfigSaveRequest) -> ApiResponse:
+    """
+    保存/更新 workspace crew_configs 目录下的配置文件
+
+    Args:
+        filename: 配置文件名
+        request: 保存请求（含 workspace, content）
+    """
+    try:
+        crew_service = get_crew_service()
+        result = crew_service.save_crew_config(
+            workspace=request.workspace,
+            filename=filename,
+            content=request.content,
+        )
+        return ApiResponse.success(data=result, msg="Config saved successfully")
+    except ValueError as e:
+        return ApiResponse.error(code=400, msg=str(e))
+    except Exception as e:
+        logger.error(f"Error saving crew config {filename}: {e}")
+        return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
+    """
+    获取 workspace crew_configs 目录下指定配置文件的内容
+
+    Args:
+        filename: 配置文件名（不含路径）
+        workspace: 工作空间路径
+    """
+    try:
+        crew_service = get_crew_service()
+        result = crew_service.get_crew_config_content(workspace, filename)
+        return ApiResponse.success(data=result, msg="Config content retrieved")
+    except FileNotFoundError as e:
+        return ApiResponse.error(code=404, msg=str(e))
+    except ValueError as e:
+        return ApiResponse.error(code=400, msg=str(e))
+    except Exception as e:
+        logger.error(f"Error getting crew config {filename}: {e}")
+        return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
+
+
 @router.get("/{execution_id}", response_model=ApiResponse)
 async def get_crew_execution(execution_id: str) -> ApiResponse:
     """获取编排执行详情"""
     try:
         crew_service = get_crew_service()
-        record = crew_service.get_execution(execution_id)
+        record = await crew_service.get_execution(execution_id)
 
         if not record:
             return ApiResponse.error(
@@ -162,7 +255,7 @@ async def get_crew_execution(execution_id: str) -> ApiResponse:
             )
 
         return ApiResponse.success(
-            data=record.to_dict(),
+            data=record,
             msg="Execution retrieved successfully",
         )
     except Exception as e:

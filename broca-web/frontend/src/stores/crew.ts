@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { crewApi, type CrewExecution, type ExecutionStatus, type CrewConfig } from '@/api/crew'
+import { crewApi, type CrewExecution, type ExecutionStatus, type CrewConfig, type CrewConfigFile, type CrewConfigDetail } from '@/api/crew'
 
 export const useCrewStore = defineStore('crew', () => {
   // 状态
@@ -24,6 +24,18 @@ export const useCrewStore = defineStore('crew', () => {
   const yamlEditorVisible = ref(false)
   const yamlContent = ref('')
   const validationErrors = ref<string[]>([])
+
+  // Workspace crew_configs 相关
+  const configFiles = ref<CrewConfigFile[]>([])
+  const configFilesLoading = ref(false)
+  const selectedConfigFile = ref<CrewConfigDetail | null>(null)
+  const configDetailLoading = ref(false)
+  const activeWorkspace = ref<string>('')
+
+  // 当前编辑中的文件路径（用于保存回写）
+  const currentEditedFilePath = ref<string>('')
+  const currentEditedFilename = ref<string>('')
+  const saving = ref(false)
 
   // Actions
   const fetchExecutions = async (params?: {
@@ -74,6 +86,25 @@ export const useCrewStore = defineStore('crew', () => {
       yamlEditorVisible.value = false
       yamlContent.value = ''
       validationErrors.value = []
+      await fetchExecutions()
+      return result
+    } catch (error: any) {
+      console.error('提交编排失败:', error)
+      ElMessage.error(error.message || '提交编排失败')
+      throw error
+    } finally {
+      submitting.value = false
+    }
+  }
+
+  const submitCrewByPath = async (yamlPath: string, sessionId: string) => {
+    submitting.value = true
+    try {
+      const result = await crewApi.submit({
+        yaml_path: yamlPath,
+        session_id: sessionId,
+      })
+      ElMessage.success('编排已提交')
       await fetchExecutions()
       return result
     } catch (error: any) {
@@ -141,15 +172,101 @@ export const useCrewStore = defineStore('crew', () => {
     }, 300)
   }
 
-  const openYamlEditor = () => {
+  // ==========================================================================
+  // Workspace crew_configs 相关 Actions
+  // ==========================================================================
+
+  const setActiveWorkspace = (workspace: string) => {
+    activeWorkspace.value = workspace
+  }
+
+  const fetchConfigFiles = async (workspace?: string) => {
+    const ws = workspace || activeWorkspace.value
+    if (!ws) {
+      configFiles.value = []
+      return
+    }
+    configFilesLoading.value = true
+    try {
+      const response = await crewApi.listConfigs(ws)
+      configFiles.value = response.configs
+      activeWorkspace.value = ws
+    } catch (error: any) {
+      console.error('获取编排配置文件列表失败:', error)
+      configFiles.value = []
+      // 不弹错误提示，因为 workspace 可能还没有 crew_configs 目录
+    } finally {
+      configFilesLoading.value = false
+    }
+  }
+
+  const fetchConfigDetail = async (filename: string, workspace?: string) => {
+    const ws = workspace || activeWorkspace.value
+    if (!ws) return null
+    configDetailLoading.value = true
+    try {
+      const detail = await crewApi.getConfigDetail(filename, ws)
+      selectedConfigFile.value = detail
+      return detail
+    } catch (error: any) {
+      console.error('获取编排配置文件详情失败:', error)
+      ElMessage.error('加载编排配置失败')
+      selectedConfigFile.value = null
+      return null
+    } finally {
+      configDetailLoading.value = false
+    }
+  }
+
+  const loadConfigIntoEditor = async (filename: string, workspace?: string) => {
+    const detail = await fetchConfigDetail(filename, workspace)
+    if (detail) {
+      yamlContent.value = detail.content
+      currentEditedFilePath.value = detail.path
+      currentEditedFilename.value = detail.filename
+      validationErrors.value = []
+      yamlEditorVisible.value = true
+    }
+  }
+
+  const saveConfigFile = async (content: string): Promise<boolean> => {
+    if (!activeWorkspace.value || !currentEditedFilename.value) {
+      ElMessage.warning('没有可保存的目标文件')
+      return false
+    }
+    saving.value = true
+    try {
+      await crewApi.saveConfig(currentEditedFilename.value, activeWorkspace.value, content)
+      ElMessage.success('配置已保存')
+      yamlContent.value = content
+      // 刷新配置文件列表
+      await fetchConfigFiles(activeWorkspace.value)
+      return true
+    } catch (error: any) {
+      console.error('保存配置失败:', error)
+      ElMessage.error(error.message || '保存配置失败')
+      return false
+    } finally {
+      saving.value = false
+    }
+  }
+
+  const openYamlEditor = (prefilledYaml?: string) => {
     yamlEditorVisible.value = true
     validationErrors.value = []
+    currentEditedFilePath.value = ''
+    currentEditedFilename.value = ''
+    if (prefilledYaml) {
+      yamlContent.value = prefilledYaml
+    }
   }
 
   const closeYamlEditor = () => {
     yamlEditorVisible.value = false
     yamlContent.value = ''
     validationErrors.value = []
+    currentEditedFilePath.value = ''
+    currentEditedFilename.value = ''
   }
 
   const setSessionFilter = (sessionId: string) => {
@@ -183,10 +300,21 @@ export const useCrewStore = defineStore('crew', () => {
     yamlContent,
     validationErrors,
 
+    // Workspace crew_configs state
+    configFiles,
+    configFilesLoading,
+    selectedConfigFile,
+    configDetailLoading,
+    activeWorkspace,
+    currentEditedFilePath,
+    currentEditedFilename,
+    saving,
+
     // Actions
     fetchExecutions,
     fetchDetail,
     submitCrew,
+    submitCrewByPath,
     validateYaml,
     abortExecution,
     openDetail,
@@ -196,5 +324,12 @@ export const useCrewStore = defineStore('crew', () => {
     setSessionFilter,
     setStatusFilter,
     refresh,
+
+    // Workspace crew_configs actions
+    setActiveWorkspace,
+    fetchConfigFiles,
+    fetchConfigDetail,
+    loadConfigIntoEditor,
+    saveConfigFile,
   }
 })

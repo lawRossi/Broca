@@ -34,6 +34,7 @@ export interface AgentRoleConfig {
   role: string
   name: string
   config: string
+  use_history?: boolean        // 是否保留历史消息（默认 false）
   extras?: Record<string, any>
 }
 
@@ -131,6 +132,43 @@ export interface CrewListResponse {
   total: number
 }
 
+// ============================================================================
+// Workspace crew_configs 相关类型
+// ============================================================================
+
+/**
+ * 编排配置文件摘要信息
+ */
+export interface CrewConfigFile {
+  filename: string
+  path: string
+  name: string
+  description: string
+  orchestrator_type: string | null
+  agent_count: number
+  agent_names: string[]
+  modified_time: number
+  parse_error?: string
+}
+
+/**
+ * 编排配置文件详情（含完整内容）
+ */
+export interface CrewConfigDetail {
+  filename: string
+  path: string
+  content: string
+  summary: {
+    name?: string
+    description?: string
+    orchestrator_type?: string | null
+    agent_count?: number
+    agent_names?: string[]
+    parse_error?: string
+  }
+  modified_time: number
+}
+
 /**
  * Crew API
  */
@@ -171,6 +209,37 @@ export const crewApi = {
    */
   async abort(executionId: string): Promise<{ execution_id: string }> {
     return request.post(`/crews/${executionId}/abort`)
+  },
+
+  // ==========================================================================
+  // Workspace crew_configs 操作
+  // ==========================================================================
+
+  /**
+   * 列出 workspace 下 crew_configs 目录中已有的编排配置文件
+   */
+  async listConfigs(workspace: string): Promise<{ configs: CrewConfigFile[]; total: number }> {
+    return request.get('/crews/configs', { params: { workspace } })
+  },
+
+  /**
+   * 获取 workspace crew_configs 目录下指定配置文件的内容
+   */
+  async getConfigDetail(filename: string, workspace: string): Promise<CrewConfigDetail> {
+    return request.get(`/crews/configs/${encodeURIComponent(filename)}`, {
+      params: { workspace },
+    })
+  },
+
+  /**
+   * 保存/更新 workspace crew_configs 目录下的配置文件
+   */
+  async saveConfig(filename: string, workspace: string, content: string): Promise<CrewConfigFile> {
+    return request.put(`/crews/configs/${encodeURIComponent(filename)}`, {
+      workspace,
+      filename,
+      content,
+    })
   },
 }
 

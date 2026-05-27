@@ -130,11 +130,14 @@ export const sessionApi = {
 
   /**
    * 获取会话的消息历史
+   * @param executionId - 可选，按编排执行ID过滤
    */
-  async getSessionMessages(sessionId: string, skip: number = 0, limit: number = 50): Promise<MessagesResponse> {
-    return request.get(`/session/${sessionId}/messages`, {
-      params: { skip, limit },
-    })
+  async getSessionMessages(sessionId: string, skip: number = 0, limit: number = 50, executionId?: string): Promise<MessagesResponse> {
+    const params: Record<string, any> = { skip, limit }
+    if (executionId) {
+      params.execution_id = executionId
+    }
+    return request.get(`/session/${sessionId}/messages`, { params })
   },
 
   /**

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { useRoute } from 'vue-router'
 import { Connection } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores'
 import { sessionApi, type Session } from '@/api/session'
@@ -13,12 +14,16 @@ import PermissionDialog from '@/components/PermissionDialog.vue'
 import AgentQueryDialog from '@/components/AgentQueryDialog.vue'
 
 const chatStore = useChatStore()
+const route = useRoute()
 
 // 当前会话信息（用于判断分类）
 const currentSession = ref<Session | null>(null)
 const isAgentOrchestration = computed(() => {
   return currentSession.value?.category === 'agent-orchestration'
 })
+
+// 编排执行 ID（从 query 参数 ?execution_id=xxx 读取）
+const executionId = computed(() => route.query.execution_id as string | undefined)
 
 // 加载会话信息
 const loadSessionInfo = async () => {
@@ -35,7 +40,7 @@ watch(
   () => chatStore.urlSessionId,
   (newSessionId) => {
     if (newSessionId && newSessionId !== chatStore.sessionId) {
-      chatStore.autoConnectAndSubscribe()
+      chatStore.autoConnectAndSubscribe(executionId.value)
       loadSessionInfo()
     }
   },
@@ -44,7 +49,7 @@ watch(
 
 onMounted(() => {
   chatStore.init()
-  chatStore.autoConnectAndSubscribe()
+  chatStore.autoConnectAndSubscribe(executionId.value)
   loadSessionInfo()
 })
 

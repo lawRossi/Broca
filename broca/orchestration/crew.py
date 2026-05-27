@@ -160,6 +160,7 @@ class AgentRoleConfig:
     role: AgentRole
     name: str
     config: str
+    use_history: bool = False
     extras: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
@@ -167,6 +168,7 @@ class AgentRoleConfig:
             "role": self.role.value,
             "name": self.name,
             "config": self.config,
+            "use_history": self.use_history,
             "extras": self.extras,
         }
 
@@ -176,6 +178,7 @@ class AgentRoleConfig:
             role=AgentRole(data["role"]),
             name=data["name"],
             config=data["config"],
+            use_history=data.get("use_history", False),
             extras=data.get("extras", {}),
         )
 

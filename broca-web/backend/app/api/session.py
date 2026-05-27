@@ -7,6 +7,7 @@
 import asyncio
 import os
 import tempfile
+from typing import Optional
 
 from broca.agent_manager import AgentFactory
 from broca.session.service import (
@@ -235,8 +236,20 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
 
 
 @router.get("/{session_id}/messages", response_model=ApiResponse)
-async def get_session_messages(session_id: str, skip: int = 0, limit: int = 50) -> ApiResponse:
-    """获取会话的消息历史（按时间正序），支持分页"""
+async def get_session_messages(
+    session_id: str,
+    skip: int = 0,
+    limit: int = 50,
+    execution_id: Optional[str] = None,
+) -> ApiResponse:
+    """获取会话的消息历史（按时间正序），支持分页
+
+    Args:
+        session_id: 会话ID
+        skip: 跳过的记录数
+        limit: 返回的最大记录数
+        execution_id: 可选，按编排执行ID过滤（只返回该编排产生的消息）
+    """
     try:
         session_service = get_session_service()
         session = await session_service.get(session_id)
@@ -244,11 +257,24 @@ async def get_session_messages(session_id: str, skip: int = 0, limit: int = 50) 
             raise HTTPException(status_code=404, detail="Session not found")
 
         message_service = get_message_service()
-        total = await message_service.count({"session_id": session_id})
-        messages = await message_service.get_messages_by_session(
-            session_id, order_by="sequence_number desc", skip=skip, limit=limit
-        )
-        messages.reverse()
+
+        if execution_id:
+            # 按 execution_id 过滤时：降序取最新消息，reverse 后返回（与无过滤一致）
+            total = await message_service.count_messages_by_execution(session_id, execution_id)
+            messages = await message_service.get_messages_by_session(
+                session_id,
+                order_by="sequence_number desc",
+                skip=skip,
+                limit=limit,
+                execution_id=execution_id,
+            )
+            messages.reverse()
+        else:
+            total = await message_service.count({"session_id": session_id})
+            messages = await message_service.get_messages_by_session(
+                session_id, order_by="sequence_number desc", skip=skip, limit=limit
+            )
+            messages.reverse()
 
         return ApiResponse.success({"messages": messages, "total": total, "skip": skip, "limit": limit})
     except HTTPException:

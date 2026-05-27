@@ -86,6 +86,10 @@ class CrewOrchestratorRunner:
         self._execution_id = execution_id
         self._running = True
 
+        # 设置 execution_id，后续 agent 保存消息时自动注入
+        if self.session_manager and execution_id:
+            self.session_manager.current_execution_id = execution_id
+
         # 1. 创建 Blackboard 并注册
         blackboard = Blackboard()
         if crew_config.blackboard:
@@ -108,6 +112,17 @@ class CrewOrchestratorRunner:
         )
         for name, agent in agent_refs.items():
             context.register_agent(name, agent)
+
+        # 2.5 根据 use_history 配置清空 Agent 上下文历史
+        #    默认不清历史，让 agent 每次执行从干净状态开始
+        for agent_cfg in crew_config.agents:
+            agent = agent_refs.get(agent_cfg.name)
+            if agent and not agent_cfg.use_history:
+                agent.context._init_history()
+                logger.info(
+                    f"Cleared history for agent '{agent_cfg.name}' "
+                    f"(use_history={agent_cfg.use_history})"
+                )
 
         # 3. 创建编排器
         self._orchestrator = OrchestratorFactory.create(crew_config, context)
@@ -187,6 +202,9 @@ class CrewOrchestratorRunner:
             remove_blackboard(self.session_id)
             self._orchestrator = None
             self._task = None
+            # 清除 execution_id
+            if self.session_manager:
+                self.session_manager.current_execution_id = None
 
     async def _run_with_progress(self) -> OrchestrationResult:
         """带进度推送的编排执行"""

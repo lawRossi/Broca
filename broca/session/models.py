@@ -244,6 +244,11 @@ class Message(SQLModel, table=True):
         default=None,
         description="关联的Agent ID",
     )
+    execution_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String, nullable=True, index=True),
+        description="关联的编排执行ID（仅编排会话产生的消息有此值）",
+    )
 
     # 消息内容
     role: MessageRole = Field(description="消息角色")

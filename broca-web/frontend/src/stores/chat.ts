@@ -16,6 +16,7 @@ export const useChatStore = defineStore('chat', () => {
   const sessionId = ref<string>('')
   const input = ref('')
   const loading = ref(false)
+  const executionId = ref<string | undefined>(undefined)
   const loadingMore = ref(false)
   const hasMoreHistory = ref(true)
   const historySkip = ref(0)
@@ -424,7 +425,7 @@ export const useChatStore = defineStore('chat', () => {
     addMessageToList(msg)
   }
 
-  const loadHistory = async (sessionId: string, isLoadMore: boolean = false) => {
+  const loadHistory = async (sessionId: string, isLoadMore: boolean = false, filterExecutionId?: string) => {
     const limit = 50
 
     if (isLoadMore) {
@@ -445,7 +446,7 @@ export const useChatStore = defineStore('chat', () => {
         skip = 0
       }
 
-      const response = await sessionApi.getSessionMessages(sessionId, skip, limit)
+      const response = await sessionApi.getSessionMessages(sessionId, skip, limit, filterExecutionId)
       historyTotal.value = response.total
 
       if (response.messages) {
@@ -706,7 +707,7 @@ export const useChatStore = defineStore('chat', () => {
     runnerInfo.value = null
   }
 
-  const autoConnectAndSubscribe = async () => {
+  const autoConnectAndSubscribe = async (execId?: string) => {
     if (!urlSessionId.value) {
       return
     }
@@ -722,12 +723,13 @@ export const useChatStore = defineStore('chat', () => {
 
     connectingSession.value = true
     sessionId.value = urlSessionId.value
+    executionId.value = execId
 
     try {
       await agentStore.fetchAgents(urlSessionId.value)
       await doConnect()
       await doSubscribe()
-      await loadHistory(urlSessionId.value)
+      await loadHistory(urlSessionId.value, false, executionId.value)
       // 获取 Runner 状态并启动轮询
       await fetchRunnerStatus()
       startRunnerPolling()
@@ -771,6 +773,7 @@ export const useChatStore = defineStore('chat', () => {
     loading,
     loadingMore,
     hasMoreHistory,
+    executionId,
     showRedoButton,
     redoReceiverId,
     messagesContainer,

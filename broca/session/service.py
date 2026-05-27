@@ -302,6 +302,7 @@ class MessageService(BaseService[Message]):
         message_type: MessageType = MessageType.USER_MESSAGE,
         sequence_number: int = 1,
         data: Optional[Dict[str, Any]] = None,
+        execution_id: Optional[str] = None,
     ) -> Message:
         """创建新消息"""
         # 构建data字段
@@ -309,7 +310,7 @@ class MessageService(BaseService[Message]):
         if content:
             message_data["content"] = content
 
-        return await self.create(
+        kwargs = dict(
             message_id=message_id,
             session_id=session_id,
             turn_id=turn_id,
@@ -320,6 +321,11 @@ class MessageService(BaseService[Message]):
             timestamp=datetime.utcnow(),
             data=message_data,
         )
+        # 仅编排消息设置 execution_id（普通会话为 None，不影响）
+        if execution_id:
+            kwargs["execution_id"] = execution_id
+
+        return await self.create(**kwargs)
 
     async def get_messages_by_session(
         self,
@@ -328,8 +334,27 @@ class MessageService(BaseService[Message]):
         skip=None,
         limit=None,
         ignore_reverted=True,
+        execution_id: Optional[str] = None,
     ) -> List[Message]:
         """根据会话ID获取消息"""
+        if execution_id:
+            from sqlalchemy import text
+            async with db_manager.get_session() as session:
+                stmt = (
+                    select(Message)
+                    .where(Message.session_id == session_id)
+                    .where(Message.execution_id == execution_id)
+                )
+                if ignore_reverted:
+                    stmt = stmt.where(Message.reverted == False)  # noqa: E712
+                stmt = stmt.order_by(text(order_by))
+                if skip:
+                    stmt = stmt.offset(skip)
+                if limit:
+                    stmt = stmt.limit(limit)
+                result = await session.execute(stmt)
+                return list(result.scalars().all())
+
         filters = {"session_id": session_id}
         if ignore_reverted:
             filters["reverted"] = False
@@ -339,6 +364,22 @@ class MessageService(BaseService[Message]):
             skip=skip,
             limit=limit,
         )
+
+    async def count_messages_by_execution(
+        self, session_id: str, execution_id: str, ignore_reverted=True
+    ) -> int:
+        """统计编排执行相关的消息总数"""
+        from sqlalchemy import func
+        async with db_manager.get_session() as session:
+            stmt = (
+                select(func.count(Message.message_id))
+                .where(Message.session_id == session_id)
+                .where(Message.execution_id == execution_id)
+            )
+            if ignore_reverted:
+                stmt = stmt.where(Message.reverted == False)  # noqa: E712
+            result = await session.execute(stmt)
+            return result.scalar() or 0
 
     async def get_messages_by_agent(
         self, agent_id: str, ignore_reverted=True

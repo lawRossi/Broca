@@ -1,0 +1,48 @@
+# 圆桌辩论 Demo
+# 多 Agent 围绕议题进行多轮辩论
+#
+# 使用方法:
+#   1. 创建 Agent 编排会话，工作目录指向本目录
+#   2. 在编排管理页面提交此 YAML
+#   3. 或通过 API 提交
+#
+# 前提: 会话必须包含以下 Agent（已在 .broca/agents/ 中定义）
+
+name: "圆桌辩论"
+description: "AI Agent 圆桌辩论：AI 对人类社会的利与弊"
+
+orchestrator:
+  type: round-table
+  max_rounds: 2  # 辩论轮数
+
+agents:
+  - role: moderator
+    name: "主持人"
+    config: moderator.md
+    use_history: false      # 每次辩论开始清空历史，从干净状态开始
+
+  - role: participant
+    name: "正方"
+    config: pro.md
+    use_history: false
+    extras:
+      stance: pro          # 支持立场
+
+  - role: participant
+    name: "反方"
+    config: con.md
+    use_history: false
+    extras:
+      stance: con          # 反对立场
+
+  - role: participant
+    name: "中立评估员"
+    config: analyst.md
+    use_history: false
+    extras:
+      stance: neutral      # 中立立场
+
+blackboard:
+  initial_entries:
+    - key: topic
+      value: "人工智能对人类社会究竟是利大于弊还是弊大于利？"

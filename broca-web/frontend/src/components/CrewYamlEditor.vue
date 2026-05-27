@@ -1,17 +1,31 @@
 <script setup lang="ts">
 /**
  * Crew YAML 编辑器组件
- * 支持语法高亮、实时校验、模板选择
+ * 支持语法高亮、实时校验、模板选择、加载已有配置
  */
-import { ref, computed, watch } from 'vue'
-import { ElMessage } from 'element-plus'
+import { ref, computed, watch, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import { useCrewStore } from '@/stores/crew'
 import { useSessionStore } from '@/stores/session'
-import { Document, Edit, Check, Warning } from '@element-plus/icons-vue'
+import type { CrewConfigFile } from '@/api/crew'
+import { Document, Edit, Check, Warning, FolderOpened } from '@element-plus/icons-vue'
+
+const props = withDefaults(defineProps<{
+  initialYaml?: string
+  configFiles?: CrewConfigFile[]
+  activeWorkspace?: string
+  fixedSessionId?: string   // 当从编排管理页进入时，session 固定
+}>(), {
+  initialYaml: '',
+  configFiles: () => [],
+  activeWorkspace: '',
+  fixedSessionId: '',
+})
 
 const emit = defineEmits<{
   close: []
   submit: [yaml: string, sessionId: string]
+  loadConfig: [cfg: CrewConfigFile]
 }>()
 
 const crewStore = useCrewStore()
@@ -106,16 +120,34 @@ blackboard:
 }
 
 // 状态
-const localYaml = ref('')
+const localYaml = ref(props.initialYaml || '')
 const selectedTemplate = ref<string>('')
-const selectedSessionId = ref('')
+const selectedSessionId = ref(props.fixedSessionId || '')
 const sessionList = ref<Array<{ session_id: string; description?: string }>>([])
 const isValidating = ref(false)
 const isValid = ref(false)
 const yamlError = ref('')
+const activeSection = ref<'templates' | 'configs'>('templates')
 
 // 编辑器行数
 const lineCount = computed(() => localYaml.value.split('\n').length)
+
+// 如果绑定了固定 session，直接使用
+watch(() => props.fixedSessionId, (newVal) => {
+  if (newVal) {
+    selectedSessionId.value = newVal
+  }
+}, { immediate: true })
+
+// 监听 initialYaml prop 变化
+watch(() => props.initialYaml, (newVal) => {
+  if (newVal) {
+    localYaml.value = newVal
+    isValid.value = false
+    yamlError.value = ''
+    selectedTemplate.value = ''
+  }
+}, { immediate: true })
 
 // 选择模板
 const selectTemplate = (templateId: string) => {
@@ -125,6 +157,15 @@ const selectTemplate = (templateId: string) => {
     isValid.value = false
     yamlError.value = ''
   }
+}
+
+// 从已有配置加载
+const handleLoadConfigClick = async (cfg: CrewConfigFile) => {
+  await crewStore.loadConfigIntoEditor(cfg.filename, props.activeWorkspace)
+  localYaml.value = crewStore.yamlContent
+  isValid.value = false
+  yamlError.value = ''
+  selectedTemplate.value = ''
 }
 
 // 校验 YAML
@@ -149,17 +190,40 @@ const handleValidate = async () => {
   }
 }
 
-// 提交
-const handleSubmit = async () => {
+// 保存
+const isEditingExisting = computed(() => !!crewStore.currentEditedFilePath)
+
+const handleSave = async () => {
   if (!localYaml.value.trim()) {
     ElMessage.warning('请输入 YAML 配置')
     return
   }
-  if (!selectedSessionId.value) {
-    ElMessage.warning('请选择目标 Session')
-    return
+
+  if (crewStore.currentEditedFilePath) {
+    // 编辑已有文件 → 直接保存回写
+    await crewStore.saveConfigFile(localYaml.value)
+  } else {
+    // 新建文件 → 弹窗让用户输入文件名
+    try {
+      const { value: filename } = await ElMessageBox.prompt(
+        '请输入编排配置文件名（.yaml）',
+        '保存为新文件',
+        {
+          confirmButtonText: '保存',
+          cancelButtonText: '取消',
+          inputValue: 'crew.yaml',
+          inputPattern: /^[\w-]+\.(yaml|yml)$/,
+          inputErrorMessage: '文件名必须以 .yaml 或 .yml 结尾',
+        }
+      )
+      if (filename && crewStore.activeWorkspace) {
+        crewStore.currentEditedFilename = filename
+        await crewStore.saveConfigFile(localYaml.value)
+      }
+    } catch {
+      // 用户取消，不处理
+    }
   }
-  emit('submit', localYaml.value, selectedSessionId.value)
 }
 
 // 取消
@@ -168,24 +232,24 @@ const handleClose = () => {
 }
 
 // 初始化
-watch(
-  () => crewStore.yamlEditorVisible,
-  async (visible) => {
-    if (visible) {
-      // 加载 Session 列表
-      try {
-        await sessionStore.fetchSessions()
-        sessionList.value = sessionStore.sessions
-        if (sessionList.value.length > 0) {
-          selectedSessionId.value = sessionList.value[0].session_id
-        }
-      } catch {
-        console.error('Failed to load sessions')
-      }
+onMounted(async () => {
+  // 如果已经绑定了固定 session，不需要加载列表
+  if (props.fixedSessionId) {
+    selectedSessionId.value = props.fixedSessionId
+    return
+  }
+
+  // 否则才加载 Session 列表供选择
+  try {
+    await sessionStore.fetchSessions()
+    sessionList.value = sessionStore.sessions
+    if (sessionList.value.length > 0 && !selectedSessionId.value) {
+      selectedSessionId.value = sessionList.value[0].session_id
     }
-  },
-  { immediate: true }
-)
+  } catch {
+    console.error('Failed to load sessions')
+  }
+})
 </script>
 
 <template>
@@ -200,18 +264,41 @@ watch(
         <div class="flex items-center gap-3">
           <el-tag v-if="isValid" type="success" effect="dark">校验通过</el-tag>
           <el-tag v-else-if="yamlError" type="danger" effect="dark">配置有误</el-tag>
+          <el-tag v-if="isEditingExisting" type="info" effect="plain" size="small">
+            {{ crewStore.currentEditedFilename }}
+          </el-tag>
           <el-button @click="handleClose">取消</el-button>
-          <el-button type="primary" :loading="crewStore.submitting" @click="handleSubmit">
-            提交执行
+          <el-button type="primary" :loading="crewStore.saving" @click="handleSave">
+            保存
           </el-button>
         </div>
       </div>
 
       <div class="flex flex-1 overflow-hidden">
         <!-- 左侧工具栏 -->
-        <div class="w-56 border-r bg-gray-50 p-4 flex flex-col gap-4 overflow-y-auto">
+        <div class="w-60 border-r bg-gray-50 p-4 flex flex-col gap-4 overflow-y-auto">
+          <!-- 切换标签：模板 / 已有配置 -->
+          <div class="flex border-b pb-2">
+            <el-button
+              :type="activeSection === 'templates' ? 'primary' : 'default'"
+              size="small"
+              @click="activeSection = 'templates'"
+              style="flex: 1"
+            >
+              模板
+            </el-button>
+            <el-button
+              :type="activeSection === 'configs' ? 'primary' : 'default'"
+              size="small"
+              @click="activeSection = 'configs'"
+              style="flex: 1"
+            >
+              已有配置
+            </el-button>
+          </div>
+
           <!-- 模板选择 -->
-          <div>
+          <div v-if="activeSection === 'templates'">
             <label class="block text-sm font-medium text-gray-700 mb-2">预置模板</label>
             <div class="flex flex-col gap-2">
               <el-button
@@ -238,8 +325,51 @@ watch(
             </div>
           </div>
 
-          <!-- Session 选择 -->
-          <div>
+          <!-- 已有配置列表 -->
+          <div v-if="activeSection === 'configs'">
+            <label class="block text-sm font-medium text-gray-700 mb-2">
+              已有编排配置
+              <span v-if="configFiles.length" class="text-gray-400 font-normal">({{ configFiles.length }})</span>
+            </label>
+            <div v-if="configFiles.length === 0" class="text-xs text-gray-400 py-4 text-center">
+              <p>暂无已有配置</p>
+              <p class="mt-1">请先在「已有编排」Tab 中选择工作空间</p>
+            </div>
+            <div v-else class="flex flex-col gap-2">
+              <div
+                v-for="cfg in configFiles"
+                :key="cfg.filename"
+                class="bg-white rounded border p-2 cursor-pointer hover:border-blue-300 transition-colors"
+                @click="handleLoadConfigClick(cfg)"
+              >
+                <div class="text-xs font-medium text-gray-800 truncate">{{ cfg.name || cfg.filename }}</div>
+                <div class="flex items-center gap-2 mt-1">
+                  <el-tag
+                    v-if="cfg.orchestrator_type"
+                    size="small"
+                    type="info"
+                    effect="plain"
+                    style="font-size: 10px; height: 18px; line-height: 16px;"
+                  >
+                    {{ cfg.orchestrator_type }}
+                  </el-tag>
+                  <el-tag
+                    v-if="cfg.parse_error"
+                    size="small"
+                    type="danger"
+                    effect="light"
+                    style="font-size: 10px; height: 18px; line-height: 16px;"
+                  >
+                    错误
+                  </el-tag>
+                </div>
+                <div class="text-xs text-gray-400 mt-1 truncate">{{ cfg.filename }}</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Session 选择（仅当没有固定 session 时显示） -->
+          <div v-if="!fixedSessionId" class="mt-auto pt-2 border-t">
             <label class="block text-sm font-medium text-gray-700 mb-2">目标 Session</label>
             <el-select
               v-model="selectedSessionId"
@@ -255,8 +385,16 @@ watch(
             </el-select>
           </div>
 
+          <!-- 固定 session 提示 -->
+          <div v-else class="mt-auto pt-2 border-t">
+            <label class="block text-sm font-medium text-gray-700 mb-2">目标 Session</label>
+            <el-tag type="primary" effect="plain" style="width: 100%; justify-content: center;">
+              {{ fixedSessionId.slice(0, 12) }}...
+            </el-tag>
+          </div>
+
           <!-- 操作按钮 -->
-          <div class="flex flex-col gap-2 mt-auto">
+          <div class="flex flex-col gap-2">
             <el-button
               :loading="isValidating"
               :icon="Check"

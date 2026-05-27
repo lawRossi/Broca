@@ -45,6 +45,8 @@ class SessionManager:
         self._services: Dict[str, Any] = {}
         self._initialized = False
         self._init_future: Optional[asyncio.Future] = None
+        # 编排执行 ID（由 CrewOrchestratorRunner 设置，消息保存时自动注入）
+        self.current_execution_id: Optional[str] = None
 
     async def _ensure_initialized(self) -> None:
         """确保SessionManager已初始化"""
@@ -189,6 +191,8 @@ class SessionManager:
                 message_type=MessageType(message_type),
                 sequence_number=seq_num,
                 data=message_data,
+                # 编排执行 ID：仅编排运行时设置，普通会话为 None
+                execution_id=self.current_execution_id,
             )
 
             return message is not None
