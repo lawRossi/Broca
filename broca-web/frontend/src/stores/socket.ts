@@ -113,9 +113,9 @@ export const useSocketStore = defineStore('socket', () => {
     }
     try {
       await client.subscribe(sessionId.trim())
-      // 同时订阅编排事件
+      // 同时订阅该会话的编排事件频道（按 session 隔离）
       if (client) {
-        client.subscribe('crew')
+        client.subscribe(`crew:${sessionId.trim()}`)
       }
       onConnect.value?.()
       return { success: true, message: '已订阅' }

@@ -116,6 +116,15 @@ const resolveCurrentSession = async () => {
   } finally {
     sessionWorkspaceLoading.value = false
   }
+
+  // 订阅该会话的编排频道，接收实时进度
+  if (socketStore.connected && sid) {
+    try {
+      socketStore.subscribe(sid)
+    } catch {
+      // 订阅失败不影响功能
+    }
+  }
 }
 
 // ============ 已有编排相关 ============
