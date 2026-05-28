@@ -1,40 +1,47 @@
 {
-    "nvidia": {
-        "base_url": "https://integrate.api.nvidia.com/v1",
-        "api_key": "",
-        "minimax": {
-            "model": "openai/minimaxai/minimax-m2.5",
-            "temperature": 0.5
-        }
-    },
     "z-ai": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "api_key": "",
         "glm-4.7" : {
             "model": "openai/glm-4.7-flash",
-            "temperature": 0.5
+            "temperature": 0.5,
+            "modality": {"text": ""}
         }
     },
     "deepseek": {
         "base_url": "https://api.deepseek.com/v1",
         "api_key": "",
-        "deepeek-chat": {
-            "model": "openai/deepseek-chat",
-            "temperature": 0.5
+        "deepseek-v4-flash-thinking": {
+            "model": "openai/deepseek-v4-flash",
+            "temperature": 0.5,
+            "max_tokens": 15000,
+            "extra_body": {"thinking": {"type": "enabled"}},
+            "reasoning_effort": "high",
+            "allowed_openai_params": ["reasoning_effort"],
+            "modality": {"text": ""}
+        },
+        "deepseek-v4-flash": {
+            "model": "openai/deepseek-v4-flash",
+            "temperature": 0.5,
+            "max_tokens": 15000,
+            "extra_body": {"thinking": {"type": "disabled"}},
+            "modality": {"text": ""}
         }
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "api_key": "",
-        "nemotron": {
-            "model": "openai/nvidia/nemotron-3-super-120b-a12b:free",
+        "minimax": {
+            "model": "openai/minimax/minimax-m2.5:free",
             "temperature": 0.5,
-            "extra_body": {"reasoning": {"enabled": true}}
+            "extra_body": {"reasoning": {"enabled": true}},
+            "modality": {"text": ""}
         },
-        "stepfun": {
-            "model": "openai/stepfun/step-3.5-flash:free",
+        "hy3-preview": {
+            "model": "openai/tencent/hy3-preview:free",
             "temperature": 0.5,
-            "extra_body": {"reasoning": {"enabled": true}}
+            "extra_body": {"reasoning": {"enabled": true}},
+            "modality": {"text": ""}
         }
     }
 }
