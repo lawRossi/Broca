@@ -23,7 +23,7 @@ import os
 import subprocess
 import sys
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.dirname(SCRIPT_DIR)
@@ -186,7 +186,7 @@ def main():
             async with engine.connect() as conn:
                 user_id = str(uuid.uuid4())
                 hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-                now = datetime.now(datetime.UTC)
+                now = datetime.now(timezone.utc)
 
                 await conn.execute(
                     text(
