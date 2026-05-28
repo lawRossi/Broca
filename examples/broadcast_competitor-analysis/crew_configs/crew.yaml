@@ -1,0 +1,50 @@
+# 多维度竞品分析 Demo
+# Broadcast 编排：任务分发 → 并行执行 → 结果汇总
+#
+# 使用方法:
+#   1. 创建 Agent 编排会话，工作目录指向本目录
+#   2. 在编排管理页面提交此 YAML
+#   3. 或通过 API 提交
+
+name: "多维度竞品分析"
+description: "AI Agent 广播分析：从多个维度对智能健身镜产品进行竞品分析"
+
+orchestrator:
+  type: broadcast
+
+agents:
+  - role: dispatcher
+    name: "任务分发器"
+    config: dispatcher.md
+
+  - role: worker
+    name: "市场分析师"
+    config: market_analyst.md
+
+  - role: worker
+    name: "技术专家"
+    config: tech_expert.md
+
+  - role: worker
+    name: "用户体验专家"
+    config: ux_expert.md
+
+  - role: aggregator
+    name: "结果汇总器"
+    config: aggregator.md
+
+blackboard:
+  initial_entries:
+    - key: task
+      value: |
+        对「智能健身镜」产品进行全面的竞品分析。
+        
+        目标产品：一款家用智能健身镜，配备 AI 动作识别、实时健身指导、
+        个性化训练计划、社交互动功能，售价 3000-5000 元。
+        
+        请从以下维度进行分析：
+        1. 市场定位与商业模式
+        2. 技术实现与功能特性
+        3. 用户体验与交互设计
+        
+        最后汇总为一份全面的竞品分析报告。

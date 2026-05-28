@@ -13,32 +13,38 @@ description: "AI Agent 圆桌辩论：AI 对人类社会的利与弊"
 
 orchestrator:
   type: round-table
-  max_rounds: 4  # 辩论轮数
+  max_rounds: 2  # 辩论轮数
 
 agents:
   - role: moderator
     name: "主持人"
     config: moderator.md
+    use_history: false      # 每次辩论开始清空历史，从干净状态开始
 
   - role: participant
     name: "正方"
     config: pro.md
+    use_history: false
     extras:
       stance: pro          # 支持立场
 
   - role: participant
     name: "反方"
     config: con.md
+    use_history: false
     extras:
       stance: con          # 反对立场
 
   - role: participant
     name: "中立评估员"
     config: analyst.md
+    use_history: false
     extras:
       stance: neutral      # 中立立场
 
 blackboard:
   initial_entries:
     - key: topic
-      value: "人工智能对人类社会究竟是利大于弊还是弊大于利？"
+      value: "人工智能对人类社会究竟是利大于弊还是弊大于利?"
+    - key: debate-rules
+      value: "辩论只进行两轮，各方每轮发言不能超过500字"
