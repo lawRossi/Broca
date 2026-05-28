@@ -18,6 +18,7 @@ Broca 服务管理器
 
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -141,10 +142,14 @@ def _call_supervisorctl(args: List[str]) -> Tuple[int, str, str]:
     if not cmd:
         raise RuntimeError("supervisorctl 未找到，请先执行 'broca service install'")
 
-    full_cmd = cmd.split() + [
-        "-c",
-        str(SUPERVISOR_CONF),
-    ] + args
+    full_cmd = (
+        cmd.split()
+        + [
+            "-c",
+            str(SUPERVISOR_CONF),
+        ]
+        + args
+    )
 
     try:
         result = subprocess.run(
@@ -167,7 +172,12 @@ def _is_macos() -> bool:
 
 def _find_nginx() -> Optional[str]:
     """查找 nginx 可执行文件路径"""
-    for cmd in ["nginx", "/usr/sbin/nginx", "/usr/local/bin/nginx", "/opt/homebrew/bin/nginx"]:
+    for cmd in [
+        "nginx",
+        "/usr/sbin/nginx",
+        "/usr/local/bin/nginx",
+        "/opt/homebrew/bin/nginx",
+    ]:
         try:
             result = subprocess.run([cmd, "-v"], capture_output=True, timeout=5)
             if result.returncode == 0:
@@ -204,12 +214,20 @@ def _broca_sites_enabled_dir() -> Optional[Path]:
         # 通过 nginx -t 找到配置目录
         try:
             result = subprocess.run(
-                [nginx_cmd, "-t"], capture_output=True, timeout=5, text=True,
+                [nginx_cmd, "-t"],
+                capture_output=True,
+                timeout=5,
+                text=True,
             )
             for line in result.stderr.splitlines():
                 # 输出示例: "nginx: the configuration file /etc/nginx/nginx.conf syntax is ok"
                 if "configuration file" in line:
-                    conf_path = line.split("configuration file")[-1].strip().split()[0].rstrip(".")
+                    conf_path = (
+                        line.split("configuration file")[-1]
+                        .strip()
+                        .split()[0]
+                        .rstrip(".")
+                    )
                     conf_dir = Path(conf_path).parent
                     sites_dir = conf_dir / "sites-enabled"
                     if sites_dir.is_dir() or conf_dir.is_dir():
@@ -244,30 +262,41 @@ def _enable_broca_site() -> Tuple[bool, str]:
     if target.exists():
         return _reload_nginx()
 
-    # 创建 symlink（需要 sudo 则尝试）
-    for need_sudo in [False, True]:
+    # 创建 symlink（尝试: 免sudo → sudo -n 非交互 → 交互式sudo）
+    for cmd in [
+        ["ln", "-sf", str(site_conf), str(target)],
+        ["sudo", "-n", "ln", "-sf", str(site_conf), str(target)],
+        ["sudo", "ln", "-sf", str(site_conf), str(target)],
+    ]:
         try:
-            if need_sudo:
-                result = subprocess.run(
-                    ["sudo", "-n", "ln", "-sf", str(site_conf), str(target)],
-                    capture_output=True, timeout=10, text=True,
-                )
-            else:
-                result = subprocess.run(
-                    ["ln", "-sf", str(site_conf), str(target)],
-                    capture_output=True, timeout=10, text=True,
-                )
+            # 交互式 sudo 需要让终端 I/O 通过，以便用户输入密码
+            is_interactive = cmd[0] == "sudo" and cmd[1] != "-n"
+            result = subprocess.run(
+                cmd,
+                capture_output=not is_interactive,
+                timeout=10,
+                text=True,
+            )
             if result.returncode == 0:
                 ok, msg = _reload_nginx()
                 if ok:
                     return True, "broca 站点已启用"
                 return False, f"symlink 已创建，但 nginx 重载失败: {msg}"
-            last_error = result.stderr.strip() or result.stdout.strip()
+            # 安全获取错误信息（capture_output=False 时 stdout/stderr 为 None）
+            err_msg = (result.stderr or "").strip() or (result.stdout or "").strip()
+            if err_msg:
+                last_error = err_msg
         except Exception as e:
             last_error = str(e)
 
+    if not last_error:
+        last_error = "操作失败（权限不足或非交互式终端）"
+
     hint = ""
-    if "permission denied" in last_error.lower() or " Operation not permitted" in last_error:
+    if (
+        "permission denied" in last_error.lower()
+        or " Operation not permitted" in last_error
+    ):
         hint = f" (需要 sudo 权限，请手动执行: sudo ln -sf {site_conf} {target} && sudo nginx -s reload)"
     return False, f"启用 broca 站点失败: {last_error}{hint}"
 
@@ -282,60 +311,304 @@ def _disable_broca_site() -> Tuple[bool, str]:
     if not target.exists():
         return True, "broca 站点未启用"
 
-    for need_sudo in [False, True]:
+    # 删除 symlink（尝试: 免sudo → sudo -n 非交互 → 交互式sudo）
+    for cmd in [
+        ["rm", "-f", str(target)],
+        ["sudo", "-n", "rm", "-f", str(target)],
+        ["sudo", "rm", "-f", str(target)],
+    ]:
         try:
-            if need_sudo:
-                result = subprocess.run(
-                    ["sudo", "-n", "rm", "-f", str(target)],
-                    capture_output=True, timeout=10, text=True,
-                )
-            else:
-                result = subprocess.run(
-                    ["rm", "-f", str(target)],
-                    capture_output=True, timeout=10, text=True,
-                )
+            is_interactive = cmd[0] == "sudo" and cmd[1] != "-n"
+            result = subprocess.run(
+                cmd,
+                capture_output=not is_interactive,
+                timeout=10,
+                text=True,
+            )
             if result.returncode == 0:
                 ok, msg = _reload_nginx()
                 if ok:
                     return True, "broca 站点已禁用"
                 return False, f"symlink 已删除，但 nginx 重载失败: {msg}"
-            last_error = result.stderr.strip() or result.stdout.strip()
+            # 安全获取错误信息（capture_output=False 时 stdout/stderr 为 None）
+            err_msg = (result.stderr or "").strip() or (result.stdout or "").strip()
+            if err_msg:
+                last_error = err_msg
         except Exception as e:
             last_error = str(e)
 
+    if not last_error:
+        last_error = "操作失败（权限不足或非交互式终端）"
     hint = ""
     if "permission denied" in last_error.lower():
-        hint = f" (需要 sudo 权限，请手动执行: sudo rm {target} && sudo nginx -s reload)"
+        hint = (
+            f" (需要 sudo 权限，请手动执行: sudo rm {target} && sudo nginx -s reload)"
+        )
     return False, f"禁用 broca 站点失败: {last_error}{hint}"
 
 
-def _reload_nginx() -> Tuple[bool, str]:
-    """重载 nginx 配置（不启停 nginx 进程本身）"""
+def _is_nginx_running() -> bool:
+    """检查 nginx master 进程是否在运行"""
+    # 常见 PID 文件路径
+    pid_paths = [
+        "/opt/homebrew/var/run/nginx.pid",
+        "/usr/local/var/run/nginx.pid",
+        "/var/run/nginx.pid",
+        "/run/nginx.pid",
+    ]
+    for pid_path in pid_paths:
+        try:
+            pid = Path(pid_path).read_text().strip()
+            if pid:
+                # 尝试 kill -0（普通用户进程）
+                for cmd in [
+                    ["kill", "-0", pid],
+                    ["sudo", "-n", "kill", "-0", pid],
+                ]:
+                    result = subprocess.run(
+                        cmd,
+                        capture_output=True,
+                        timeout=5,
+                    )
+                    if result.returncode == 0:
+                        return True
+                    # "Operation not permitted" 意味着进程存在但属 root，也算在运行
+                    if (
+                        "operation not permitted"
+                        in (result.stderr or b"").decode().lower()
+                    ):
+                        return True
+        except (FileNotFoundError, ValueError, subprocess.TimeoutExpired):
+            continue
+        except PermissionError:
+            # 无权读取 PID 文件，尝试其他方式检测
+            break
+
+    # 兜底: ps aux 搜索 nginx master 进程
+    try:
+        result = subprocess.run(
+            ["ps", "aux"],
+            capture_output=True,
+            timeout=5,
+            text=True,
+        )
+        for line in result.stdout.splitlines():
+            if "nginx: master process" in line:
+                return True
+    except Exception:
+        pass
+
+    return False
+
+
+def _ensure_nginx_user() -> None:
+    """确保 nginx.conf 中 user 指令设为当前用户（解决 macOS 上 nobody 无权访问家目录的问题）"""
+    nginx_conf_paths = [
+        "/opt/homebrew/etc/nginx/nginx.conf",
+        "/usr/local/etc/nginx/nginx.conf",
+        "/etc/nginx/nginx.conf",
+    ]
+    current_user = os.environ.get("USER", "")
+    if not current_user:
+        return
+
+    # 获取用户的主组名（nginx 需要 user <name> <group>; 格式）
+    current_group = None
+    try:
+        import grp
+
+        current_group = grp.getgrgid(os.getgid()).gr_name
+    except Exception:
+        pass
+
+    user_directive = (
+        f"user {current_user} {current_group};"
+        if current_group
+        else f"user {current_user};"
+    )
+
+    for conf_path in nginx_conf_paths:
+        conf = Path(conf_path)
+        if not conf.exists():
+            continue
+        try:
+            content = conf.read_text()
+
+            # 检测所有 user 指令行（包括被注释的 #user 行）
+            # 查找所有匹配 user 指令的行
+            all_user_lines = list(
+                re.finditer(
+                    r"^[ \t]*(?:#\s*)?user\s+\S+(?:\s+\S+)?\s*;",
+                    content,
+                    re.MULTILINE,
+                )
+            )
+            active_user_lines = [
+                m for m in all_user_lines if not m.group(0).lstrip().startswith("#")
+            ]
+            commented_user_lines = [
+                m for m in all_user_lines if m.group(0).lstrip().startswith("#")
+            ]
+
+            if active_user_lines:
+                # 有激活的 user 指令 → 修改它（同时删除其他重复行）
+                active = active_user_lines[0]
+                existing = re.match(
+                    r"^\s*user\s+(\S+)(?:\s+(\S+))?\s*;", active.group(0)
+                )
+                if existing:
+                    eu, eg = existing.group(1), existing.group(2)
+                    if (
+                        eu == current_user
+                        and (not current_group or eg == current_group)
+                        and len(active_user_lines) == 1
+                    ):
+                        return  # 已经是正确的唯一 user 指令
+                # 替换所有 user 指令行（激活的和注释的）为正确的一条
+                new_content = re.sub(
+                    r"^[ \t]*(?:#\s*)?user\s+\S+(?:\s+\S+)?\s*;\n?",
+                    "",
+                    content,
+                    flags=re.MULTILINE,
+                )
+                # 在 worker_processes 后插入正确的 user 指令
+                new_content = re.sub(
+                    r"(worker_processes\s+\d+\s*;)",
+                    f"\\1\n{user_directive}",
+                    new_content,
+                    count=1,
+                )
+            elif commented_user_lines:
+                # 只有被注释的 user 指令 → 取消注释并修改
+                new_content = re.sub(
+                    r"^[ \t]*#\s*user\s+\S+(?:\s+\S+)?\s*;",
+                    user_directive,
+                    content,
+                    count=1,
+                    flags=re.MULTILINE,
+                )
+            else:
+                # 完全没有 user 指令 → 在 worker_processes 后添加
+                new_content = re.sub(
+                    r"(worker_processes\s+\d+\s*;)",
+                    f"\\1\n{user_directive}",
+                    content,
+                    count=1,
+                )
+
+            if new_content != content:
+                # 写入临时文件后通过 sudo cp 写入目标路径（比 cat > file 更安全）
+                import tempfile
+
+                tmp = tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".tmp")
+                try:
+                    tmp.write(new_content)
+                    tmp.close()
+                    for cmd in [
+                        ["cp", tmp.name, str(conf_path)],
+                        ["sudo", "-n", "cp", tmp.name, str(conf_path)],
+                        ["sudo", "cp", tmp.name, str(conf_path)],
+                    ]:
+                        is_interactive = cmd[0] == "sudo" and cmd[1] != "-n"
+                        try:
+                            result = subprocess.run(
+                                cmd,
+                                capture_output=not is_interactive,
+                                timeout=10,
+                            )
+                            if result.returncode == 0:
+                                logger.info(
+                                    f"nginx user 已设为 {current_user} (in {conf_path})"
+                                )
+                                return
+                        except Exception:
+                            continue
+                finally:
+                    os.unlink(tmp.name)
+        except Exception:
+            continue
+
+
+def _start_nginx() -> Tuple[bool, str]:
+    """启动 nginx 服务"""
     nginx_cmd = _find_nginx()
     if not nginx_cmd:
         return False, "nginx 未安装"
 
-    # 免 sudo → sudo -n
-    for need_sudo in [False, True]:
+    # 确保 nginx worker 以当前用户运行（避免权限问题）
+    _ensure_nginx_user()
+
+    # 尝试: nginx → sudo -n nginx → sudo nginx
+    for cmd in [
+        [nginx_cmd],
+        ["sudo", "-n", nginx_cmd],
+        ["sudo", nginx_cmd],
+    ]:
         try:
-            if need_sudo:
-                result = subprocess.run(
-                    ["sudo", "-n", nginx_cmd, "-s", "reload"],
-                    capture_output=True, timeout=15, text=True,
-                )
-            else:
-                result = subprocess.run(
-                    [nginx_cmd, "-s", "reload"],
-                    capture_output=True, timeout=15, text=True,
-                )
+            is_interactive = cmd[0] == "sudo" and cmd[1] != "-n"
+            result = subprocess.run(
+                cmd,
+                capture_output=not is_interactive,
+                timeout=15,
+                text=True,
+            )
+            if result.returncode == 0:
+                return True, "nginx 已启动"
+            err_msg = (result.stderr or "").strip() or (result.stdout or "").strip()
+            if err_msg:
+                last_error = err_msg
+        except Exception as e:
+            last_error = str(e)
+
+    if not last_error:
+        last_error = "操作失败（权限不足或非交互式终端）"
+    hint = ""
+    if "sudo" in last_error.lower() or "permission denied" in last_error.lower():
+        hint = " (需要 sudo 权限，请手动执行: sudo nginx)"
+    return False, f"nginx 启动失败: {last_error}{hint}"
+
+
+def _reload_nginx() -> Tuple[bool, str]:
+    """重载 nginx 配置（若 nginx 未运行则先启动）"""
+    nginx_cmd = _find_nginx()
+    if not nginx_cmd:
+        return False, "nginx 未安装"
+
+    # 检查 nginx 是否在运行
+    if not _is_nginx_running():
+        logger.info("nginx 未运行，正在启动...")
+        ok, msg = _start_nginx()
+        if ok:
+            return True, "nginx 已启动"
+        # 启动失败，给出提示
+        return False, msg
+
+    # nginx 在运行，执行 reload
+    for cmd in [
+        [nginx_cmd, "-s", "reload"],
+        ["sudo", "-n", nginx_cmd, "-s", "reload"],
+        ["sudo", nginx_cmd, "-s", "reload"],
+    ]:
+        try:
+            is_interactive = cmd[0] == "sudo" and cmd[1] != "-n"
+            result = subprocess.run(
+                cmd,
+                capture_output=not is_interactive,
+                timeout=15,
+                text=True,
+            )
             if result.returncode == 0:
                 return True, "nginx 配置已重载"
-            last_error = result.stderr.strip() or result.stdout.strip()
+            err_msg = (result.stderr or "").strip() or (result.stdout or "").strip()
+            if err_msg:
+                last_error = err_msg
         except subprocess.TimeoutExpired:
             last_error = "命令超时"
         except Exception as e:
             last_error = str(e)
 
+    if not last_error:
+        last_error = "操作失败（权限不足或非交互式终端）"
     hint = ""
     if "sudo" in last_error.lower() or "permission denied" in last_error.lower():
         hint = " (需要 sudo 权限，请手动执行: sudo nginx -s reload)"
@@ -353,7 +626,9 @@ def _get_frontend_status() -> Dict[str, Any]:
     # 获取版本号
     version = ""
     try:
-        result = subprocess.run([nginx_cmd, "-v"], capture_output=True, timeout=5, text=True)
+        result = subprocess.run(
+            [nginx_cmd, "-v"], capture_output=True, timeout=5, text=True
+        )
         version = result.stderr.strip() or result.stdout.strip()
     except Exception:
         pass
@@ -412,19 +687,23 @@ def status_services() -> Dict[str, Any]:
             continue
         parts = line.split()
         if len(parts) >= 4:
-            services.append({
-                "name": parts[0],
-                "status": parts[1],
-                "pid": int(parts[2]) if parts[2].isdigit() else None,
-                "uptime": " ".join(parts[3:]) if len(parts) > 3 else None,
-            })
+            services.append(
+                {
+                    "name": parts[0],
+                    "status": parts[1],
+                    "pid": int(parts[2]) if parts[2].isdigit() else None,
+                    "uptime": " ".join(parts[3:]) if len(parts) > 3 else None,
+                }
+            )
         else:
-            services.append({
-                "name": parts[0] if parts else "?",
-                "status": " ".join(parts[1:]) if len(parts) > 1 else "?",
-                "pid": None,
-                "uptime": None,
-            })
+            services.append(
+                {
+                    "name": parts[0] if parts else "?",
+                    "status": " ".join(parts[1:]) if len(parts) > 1 else "?",
+                    "pid": None,
+                    "uptime": None,
+                }
+            )
 
     result["services"] = services
 
@@ -432,13 +711,15 @@ def status_services() -> Dict[str, Any]:
     nginx_status = _get_frontend_status()
     result["nginx"] = nginx_status
     if nginx_status.get("available"):
-        result["services"].append({
-            "name": "frontend (nginx)",
-            "status": "ENABLED" if nginx_status["enabled"] else "DISABLED",
-            "pid": None,
-            "uptime": None,
-            "detail": nginx_status.get("version", ""),
-        })
+        result["services"].append(
+            {
+                "name": "frontend (nginx)",
+                "status": "ENABLED" if nginx_status["enabled"] else "DISABLED",
+                "pid": None,
+                "uptime": None,
+                "detail": nginx_status.get("version", ""),
+            }
+        )
 
     return result
 
@@ -657,7 +938,7 @@ def _generate_supervisor_config(
         f"stdout_logfile={LOG_DIR}/backend.out.log",
         "stdout_logfile_maxbytes=20MB",
         "stderr_logfile_maxbytes=20MB",
-        f"environment=PYTHONPATH=\"{BROCA_HOME}/web/backend:$PYTHONPATH\",BROCA_CONFIG=\"{BROCA_HOME}/configs/configs.json\",BROCA_DATABASE_DIR=\"{BROCA_HOME}/data\",BROCA_LLM_CONFIG=\"{BROCA_HOME}/configs/llm_config.json\",BROCA_AGENTS_CONFIG_DIR=\"{BROCA_HOME}/configs/agents\",BROCA_LOG_DIR=\"{BROCA_HOME}/logs\",SQLITE_DATABASE_PATH=\"sqlite:///{BROCA_HOME}/data/backend.db\"",
+        f'environment=PYTHONPATH="{BROCA_HOME}/web/backend:$PYTHONPATH",BROCA_CONFIG="{BROCA_HOME}/configs/configs.json",BROCA_DATABASE_DIR="{BROCA_HOME}/data",BROCA_LLM_CONFIG="{BROCA_HOME}/configs/llm_config.json",BROCA_AGENTS_CONFIG_DIR="{BROCA_HOME}/configs/agents",BROCA_LOG_DIR="{BROCA_HOME}/logs",SQLITE_DATABASE_PATH="sqlite:///{BROCA_HOME}/data/backend.db"',
         "stopasgroup=true",
         "killasgroup=true",
     ]
@@ -681,5 +962,6 @@ def write_supervisor_config(
     )
 
     SUPERVISOR_CONF.write_text(config_text)
+    SUPERVISOR_CONF.chmod(0o600)  # 限制权限，防止路径/配置泄露
     logger.info("Supervisor config written to %s", SUPERVISOR_CONF)
     return str(SUPERVISOR_CONF)

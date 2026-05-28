@@ -174,15 +174,30 @@ step "Step 2/9: 安装 broca Python 模块..."
 cd "$PROJECT_ROOT"
 
 # 先安装 build 依赖
-$PYTHON -m pip install --upgrade pip setuptools wheel build 2>&1 | grep -v "^$" | grep -v "Requirement already"
+PIP_OUTPUT=$($PYTHON -m pip install --upgrade pip setuptools wheel build 2>&1) || {
+    error "pip 依赖安装失败"
+    echo "$PIP_OUTPUT"
+    exit 1
+}
+echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already" || true; }
 
 # 安装 broca 模块
 info "安装 broca 模块..."
-$PYTHON -m pip install "$PROJECT_ROOT" 2>&1 | grep -v "^$" | grep -v "Requirement already"
+PIP_OUTPUT=$($PYTHON -m pip install "$PROJECT_ROOT" 2>&1) || {
+    error "broca 模块安装失败"
+    echo "$PIP_OUTPUT"
+    exit 1
+}
+echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already" || true; }
 
 # 安装 supervisor (用于进程管理)
 info "安装 supervisor..."
-$PYTHON -m pip install supervisor 2>&1 | grep -v "^$" | grep -v "Requirement already"
+PIP_OUTPUT=$($PYTHON -m pip install supervisor 2>&1) || {
+    error "supervisor 安装失败"
+    echo "$PIP_OUTPUT"
+    exit 1
+}
+echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already" || true; }
 
 info "broca 模块安装完成。"
 
@@ -204,16 +219,24 @@ info "数据库目录: $BROCA_DB_DIR"
 # ---- 迁移1: broca 主数据库 ----
 info "迁移 broca 主数据库..."
 cd "$PROJECT_ROOT"
-BROCA_DATABASE_DIR="$BROCA_DB_DIR" $PYTHON -m alembic -c broca/alembic.ini upgrade head 2>&1 | tail -5 && \
-    info "broca 主数据库迁移完成" || \
+if ALEMBIC_OUTPUT=$(BROCA_DATABASE_DIR="$BROCA_DB_DIR" $PYTHON -m alembic -c broca/alembic.ini upgrade head 2>&1); then
+    echo "$ALEMBIC_OUTPUT" | tail -5
+    info "broca 主数据库迁移完成"
+else
+    echo "$ALEMBIC_OUTPUT" | tail -10
     warn "broca 主数据库迁移失败（可之后手动执行: alembic -c broca/alembic.ini upgrade head）"
+fi
 
 # ---- 迁移2: 后端数据库 ----
 info "迁移后端数据库..."
 cd "$PROJECT_ROOT/broca-web/backend"
-SQLITE_DATABASE_PATH="sqlite:///${BACKEND_DB_PATH}" $PYTHON -m alembic upgrade head 2>&1 | tail -5 && \
-    info "后端数据库迁移完成" || \
+if ALEMBIC_OUTPUT=$(SQLITE_DATABASE_PATH="sqlite:///${BACKEND_DB_PATH}" $PYTHON -m alembic upgrade head 2>&1); then
+    echo "$ALEMBIC_OUTPUT" | tail -5
+    info "后端数据库迁移完成"
+else
+    echo "$ALEMBIC_OUTPUT" | tail -10
     warn "后端数据库迁移失败（可之后手动执行: alembic upgrade head）"
+fi
 
 cd "$PROJECT_ROOT"
 
@@ -279,7 +302,7 @@ if [[ ! -f "$CONFIG_DST" ]]; then
         warn "未找到默认配置: $CONFIG_SRC"
     fi
 else
-    info "用户配置已存在: $CONFIG_DST（跳过）"
+    info "用户配置已存在: ${CONFIG_DST}（跳过）"
 fi
 
 # ---- 复制 llm_config.json ----
@@ -295,7 +318,7 @@ if [[ ! -f "$LLM_DST" ]]; then
         echo "  请手动创建 $LLM_DST"
     fi
 else
-    info "用户 LLM 配置已存在: $LLM_DST（跳过）"
+        info "用户 LLM 配置已存在: ${LLM_DST}（跳过）"
 fi
 
 # ---- 复制 Agent 配置 ----
@@ -308,7 +331,7 @@ if [[ -d "$AGENTS_SRC" ]]; then
         cp -r "$AGENTS_SRC/"* "$AGENTS_DST/" 2>/dev/null
         info "已创建 Agent 配置: $AGENTS_DST"
     else
-        info "Agent 配置已存在: $AGENTS_DST（跳过）"
+        info "Agent 配置已存在: ${AGENTS_DST}（跳过）"
     fi
 else
     warn "未找到 Agent 配置目录: $AGENTS_SRC"
@@ -555,19 +578,34 @@ cd "$FRONTEND_DIR"
 
 if $USE_PNPM; then
     info "使用 pnpm 安装前端依赖..."
-    pnpm install 2>&1 | tail -5
+    if ! BUILD_OUTPUT=$(pnpm install 2>&1); then
+        error "pnpm install 失败"
+        echo "$BUILD_OUTPUT"
+        exit 1
+    fi
+    echo "$BUILD_OUTPUT" | tail -5
     info "构建前端 (production mode, 加载 .env.production)..."
-    npx vite build 2>&1 | tail -10
+    if ! BUILD_OUTPUT=$(npx vite build 2>&1); then
+        error "前端构建失败"
+        echo "$BUILD_OUTPUT"
+        exit 1
+    fi
+    echo "$BUILD_OUTPUT" | tail -10
 else
     info "使用 npm 安装前端依赖 (如项目需要 pnpm，请先安装: npm install -g pnpm)..."
-    npm install 2>&1 | tail -5
+    if ! BUILD_OUTPUT=$(npm install 2>&1); then
+        error "npm install 失败"
+        echo "$BUILD_OUTPUT"
+        exit 1
+    fi
+    echo "$BUILD_OUTPUT" | tail -5
     info "构建前端 (production mode, 加载 .env.production)..."
-    npx vite build 2>&1 | tail -10
-fi
-
-if [[ ! -d "$FRONTEND_DIR/dist" ]]; then
-    error "前端构建失败，dist 目录不存在。"
-    exit 1
+    if ! BUILD_OUTPUT=$(npx vite build 2>&1); then
+        error "前端构建失败"
+        echo "$BUILD_OUTPUT"
+        exit 1
+    fi
+    echo "$BUILD_OUTPUT" | tail -10
 fi
 info "前端构建完成: $FRONTEND_DIR/dist"
 
@@ -661,9 +699,11 @@ NGINXEOF
 
     info "nginx 配置文件已生成: $NGINX_SITE_CONF"
 
-    # 验证 nginx 配置语法
+    # 验证 nginx 配置语法（使用 sudo -n 避免非交互环境挂起）
     info "验证 nginx 配置语法..."
-    if sudo nginx -t 2>&1; then
+    if sudo -n nginx -t 2>&1; then
+        info "nginx 配置语法正确"
+    elif sudo nginx -t 2>&1; then
         info "nginx 配置语法正确"
     else
         warn "nginx 配置语法有误，请检查: sudo nginx -t"
