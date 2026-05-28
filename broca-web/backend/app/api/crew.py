@@ -268,17 +268,17 @@ async def abort_crew_execution(execution_id: str) -> ApiResponse:
     """中止编排执行"""
     try:
         crew_service = get_crew_service()
-        success = await crew_service.abort_execution(execution_id)
+        success, message = await crew_service.abort_execution(execution_id)
 
         if not success:
             return ApiResponse.error(
-                code=404,
-                msg=f"Execution '{execution_id}' not found",
+                code=400,
+                msg=message,
             )
 
         return ApiResponse.success(
             data={"execution_id": execution_id},
-            msg="Execution aborted successfully",
+            msg=message,
         )
     except Exception as e:
         logger.error(f"Error aborting crew execution {execution_id}: {e}")

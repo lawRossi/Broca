@@ -68,9 +68,10 @@ const handleDeselect = (sessionId: string) => {
 
 // 创建会话
 const handleCreate = async () => {
+  // 先保存表单中的 category，因为 createSession 会重置 createForm
+  const category = createForm.value.category || 'normal'
   const response = await sessionStore.createSession(createForm.value)
   if (response?.session_id) {
-    const category = createForm.value.category || 'normal'
     if (category === 'agent-orchestration') {
       // Agent 编排会话 -> 不跳转，留在会话列表页
       // 用户可手动操作进程启停

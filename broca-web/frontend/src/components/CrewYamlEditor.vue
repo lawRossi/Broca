@@ -253,30 +253,28 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50">
-    <div class="bg-white rounded-xl shadow-2xl w-[90vw] h-[85vh] flex flex-col overflow-hidden">
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-50 p-0 sm:p-4">
+    <div class="bg-white shadow-2xl flex flex-col overflow-hidden w-full h-full sm:rounded-xl sm:w-[90vw] sm:h-[85vh]">
       <!-- 标题栏 -->
-      <div class="flex items-center justify-between px-6 py-4 border-b bg-gray-50">
-        <div class="flex items-center gap-3">
-          <el-icon class="text-blue-600 text-xl"><Edit /></el-icon>
-          <h2 class="text-lg font-bold text-gray-900">编排配置编辑器</h2>
+      <div class="flex items-center justify-between px-4 py-3 sm:px-6 sm:py-4 border-b bg-gray-50">
+        <div class="flex items-center gap-2 min-w-0">
+          <el-icon class="text-blue-600 text-lg sm:text-xl flex-shrink-0"><Edit /></el-icon>
+          <h2 class="text-sm sm:text-lg font-bold text-gray-900 truncate">编排配置编辑器</h2>
         </div>
-        <div class="flex items-center gap-3">
-          <el-tag v-if="isValid" type="success" effect="dark">校验通过</el-tag>
-          <el-tag v-else-if="yamlError" type="danger" effect="dark">配置有误</el-tag>
-          <el-tag v-if="isEditingExisting" type="info" effect="plain" size="small">
-            {{ crewStore.currentEditedFilename }}
-          </el-tag>
-          <el-button @click="handleClose">取消</el-button>
-          <el-button type="primary" :loading="crewStore.saving" @click="handleSave">
+        <div class="flex items-center gap-2 sm:gap-3 flex-shrink-0">
+          <el-tag v-if="isValid" type="success" effect="dark" size="small" class="hidden sm:inline-flex">校验通过</el-tag>
+          <el-tag v-else-if="yamlError" type="danger" effect="dark" size="small" class="hidden sm:inline-flex">配置有误</el-tag>
+          <el-button size="small" @click="handleClose">取消</el-button>
+          <el-button size="small" type="primary" :loading="crewStore.saving" @click="handleSave">
             保存
           </el-button>
         </div>
       </div>
 
-      <div class="flex flex-1 overflow-hidden">
+      <div class="flex flex-1 overflow-hidden flex-col sm:flex-row">
         <!-- 左侧工具栏 -->
-        <div class="w-60 border-r bg-gray-50 p-4 flex flex-col gap-4 overflow-y-auto">
+        <div class="border-b sm:border-b-0 sm:border-r bg-gray-50 overflow-y-auto sm:w-48 lg:w-60 flex-shrink-0">
+          <div class="p-3 sm:p-4 flex flex-col gap-3">
           <!-- 切换标签：模板 / 已有配置 -->
           <div class="flex border-b pb-2">
             <el-button
@@ -404,33 +402,34 @@ onMounted(async () => {
             </el-button>
           </div>
         </div>
+      </div>
 
         <!-- 编辑器区域 -->
-        <div class="flex-1 flex">
+        <div class="flex-1 flex flex-col sm:flex-row">
           <!-- YAML 编辑器 -->
-          <div class="flex-1 flex flex-col">
+          <div class="flex-1 flex flex-col min-h-0">
             <div class="flex items-center justify-between px-4 py-2 bg-gray-100 border-b text-sm text-gray-500">
               <span>YAML 配置 ({{ lineCount }} 行)</span>
               <span class="text-xs">支持 YAML 1.2 格式</span>
             </div>
             <textarea
               v-model="localYaml"
-              class="flex-1 w-full p-4 font-mono text-sm leading-relaxed border-0 resize-none focus:outline-none"
+              class="flex-1 w-full p-3 sm:p-4 font-mono text-xs sm:text-sm leading-relaxed border-0 resize-none focus:outline-none"
               placeholder="在此输入或粘贴 Crew YAML 配置..."
               spellcheck="false"
             />
           </div>
 
-          <!-- 错误面板 -->
+          <!-- 错误面板（桌面端右侧，移动端底部） -->
           <div
             v-if="yamlError"
-            class="w-72 border-l bg-red-50 p-4 overflow-y-auto"
+            class="bg-red-50 overflow-y-auto sm:w-72 sm:border-l max-h-32 sm:max-h-none border-t sm:border-t-0"
           >
-            <div class="flex items-center gap-2 text-red-600 font-medium mb-3">
+            <div class="flex items-center gap-2 text-red-600 font-medium px-4 py-2 sm:px-4 sm:py-3">
               <el-icon><Warning /></el-icon>
               <span>校验错误</span>
             </div>
-            <pre class="text-xs text-red-700 whitespace-pre-wrap">{{ yamlError }}</pre>
+            <pre class="text-xs text-red-700 whitespace-pre-wrap px-4 pb-3 sm:px-4 sm:pb-4">{{ yamlError }}</pre>
           </div>
         </div>
       </div>
@@ -442,5 +441,26 @@ onMounted(async () => {
 textarea {
   tab-size: 2;
   line-height: 1.6;
+}
+
+@media (max-width: 640px) {
+  :deep(.el-button) {
+    min-height: 36px;
+    min-width: 36px;
+  }
+
+  :deep(*) {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :deep(input),
+  :deep(textarea),
+  :deep(.el-input__inner) {
+    font-size: 16px;
+  }
+
+  textarea {
+    font-size: 13px;
+  }
 }
 </style>

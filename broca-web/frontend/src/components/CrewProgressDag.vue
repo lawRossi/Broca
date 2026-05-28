@@ -123,19 +123,19 @@ const overallStatus = computed(() => {
       <div
         v-for="(phase, index) in phases"
         :key="phase.name"
-        class="relative flex gap-4 pb-6"
+        class="relative flex gap-3 sm:gap-4 pb-4 sm:pb-6"
       >
         <!-- 节点圆点 -->
-        <div class="relative z-10 flex-shrink-0">
+        <div class="relative z-10 flex-shrink-0 pt-0.5">
           <div
             :class="[
-              'w-5 h-5 rounded-full border-2 flex items-center justify-center',
+              'w-4 h-4 sm:w-5 sm:h-5 rounded-full border-2 flex items-center justify-center',
               phaseBgClass(phase.status).replace('bg-', '').replace('border-', ''),
             ]"
           >
             <div
               :class="[
-                'w-2.5 h-2.5 rounded-full',
+                'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full',
                 phase.status === 'completed' ? 'bg-green-500' :
                 phase.status === 'running' ? 'bg-blue-500' :
                 phase.status === 'failed' ? 'bg-red-500' : 'bg-gray-300'
@@ -147,45 +147,48 @@ const overallStatus = computed(() => {
         <!-- 阶段卡片 -->
         <div
           :class="[
-            'flex-1 rounded-lg border p-4 transition-all',
+            'flex-1 rounded-lg border p-3 sm:p-4 transition-all',
             phaseBgClass(phase.status),
           ]"
         >
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-2">
-              <el-icon :class="phaseStatusClass(phase.status)">
+          <!-- 头部：名称 + 状态（移动端竖直排列） -->
+          <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
+            <div class="flex items-center gap-1.5 sm:gap-2">
+              <el-icon :class="phaseStatusClass(phase.status)" class="text-sm sm:text-base">
                 <component :is="phaseStatusIcon(phase.status)" />
               </el-icon>
-              <span class="font-medium text-gray-900">{{ phase.name }}</span>
+              <span class="font-medium text-gray-900 text-sm sm:text-base">{{ phase.name }}</span>
             </div>
             <el-tag
               :type="phase.status === 'completed' ? 'success' : phase.status === 'running' ? 'primary' : phase.status === 'failed' ? 'danger' : 'info'"
               size="small"
+              class="self-start sm:self-auto"
             >
               {{ phase.status }}
             </el-tag>
           </div>
 
           <!-- Agent 列表 -->
-          <div v-if="phase.agents.length" class="mt-2 flex flex-wrap gap-1">
+          <div v-if="phase.agents.length" class="mt-1.5 sm:mt-2 flex flex-wrap gap-1">
             <el-tag
               v-for="agent in phase.agents"
               :key="agent"
               size="small"
               :type="phase.status === 'completed' ? 'success' : phase.status === 'running' ? 'primary' : 'info'"
               effect="plain"
+              class="!h-5 text-[10px] sm:!h-6 sm:text-xs"
             >
               {{ agent }}
             </el-tag>
           </div>
 
           <!-- 错误信息 -->
-          <div v-if="phase.error" class="mt-2 text-sm text-red-600 bg-red-50 rounded p-2">
+          <div v-if="phase.error" class="mt-1.5 sm:mt-2 text-xs sm:text-sm text-red-600 bg-red-50 rounded p-1.5 sm:p-2">
             {{ phase.error }}
           </div>
 
           <!-- 阶段序号 -->
-          <div class="mt-1 text-xs text-gray-400">
+          <div class="mt-1 text-2xs sm:text-xs text-gray-400">
             步骤 {{ index + 1 }} / {{ props.phasesTotal || phases.length }}
           </div>
         </div>
@@ -213,6 +216,21 @@ const overallStatus = computed(() => {
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* 移动端极小字号 */
+.text-2xs {
+  font-size: 0.65rem;
+}
+
+@media (max-width: 640px) {
+  :deep(.el-tag) {
+    min-height: 22px;
+  }
+
+  :deep(*) {
+    -webkit-tap-highlight-color: transparent;
   }
 }
 </style>

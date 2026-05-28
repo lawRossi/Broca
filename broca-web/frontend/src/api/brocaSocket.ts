@@ -160,6 +160,22 @@ export class BrocaSocketClient {
     })
   }
 
+  async unsubscribe(subscription: string): Promise<void> {
+    if (!this.socket || !this.isConnected) {
+      throw new Error('Not connected')
+    }
+
+    return new Promise((resolve, reject) => {
+      this.socket!.emit('unsubscribe', { subscription }, (response: any) => {
+        if (response?.error) {
+          reject(new Error(response.error))
+        } else {
+          resolve()
+        }
+      })
+    })
+  }
+
   async sendUserMessage(params: {
     messageId: string
     content: string

@@ -4,7 +4,7 @@
  * - 执行记录：查看已提交的编排执行历史和状态
  * - 已有编排：从当前 session 所在 workspace 的 crew_configs 目录读取已有的编排配置
  */
-import { computed, onMounted, watch, ref } from 'vue'
+import { computed, onMounted, onUnmounted, watch, ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores'
@@ -22,6 +22,7 @@ import {
   Upload,
 } from '@element-plus/icons-vue'
 
+import { formatBeijingTime } from '@/utils/time'
 import CrewYamlEditor from '@/components/CrewYamlEditor.vue'
 import CrewProgressDag from '@/components/CrewProgressDag.vue'
 
@@ -116,16 +117,31 @@ const resolveCurrentSession = async () => {
   } finally {
     sessionWorkspaceLoading.value = false
   }
+}
 
-  // 订阅该会话的编排频道，接收实时进度
-  if (socketStore.connected && sid) {
-    try {
-      socketStore.subscribe(sid)
-    } catch {
-      // 订阅失败不影响功能
+// 订阅会话的编排频道，接收实时进度（与 resolveCurrentSession 分离，避免早返回跳过）
+let _unsubCrewEvents: (() => Promise<void>) | null = null
+
+const subscribeCrewEvents = async () => {
+  const sid = sessionFilter.value || (route.query.session_id as string) || ''
+  if (!socketStore.connected || !sid) return
+  try {
+    // 先取消旧的订阅（如果有），再订阅新的
+    if (_unsubCrewEvents) {
+      await _unsubCrewEvents()
     }
+    _unsubCrewEvents = await socketStore.subscribe(sid)
+  } catch {
+    // 订阅失败不影响功能
   }
 }
+
+onUnmounted(async () => {
+  if (_unsubCrewEvents) {
+    await _unsubCrewEvents()
+    _unsubCrewEvents = null
+  }
+})
 
 // ============ 已有编排相关 ============
 const configs = computed(() => crewStore.configFiles)
@@ -148,6 +164,23 @@ const handleLoadConfig = async (cfg: CrewConfigFile) => {
 // 同个 session 同一时间只允许一个编排执行
 const sessionExecuting = ref(false)
 const executingFile = ref<string>('')
+
+// 监听执行记录的变化，自动同步 sessionExecuting 状态（防止页面刷新后丢失锁定）
+watch(
+  [executions, currentSessionId],
+  ([execs, sid]) => {
+    if (!sid) {
+      sessionExecuting.value = false
+      return
+    }
+    // 检查当前 session 是否有正在运行的编排
+    const hasRunning = execs.some(
+      (e: CrewExecution) => e.session_id === sid && e.status === 'running'
+    )
+    sessionExecuting.value = hasRunning
+  },
+  { immediate: true, deep: true }
+)
 
 const handleQuickSubmit = async (cfg: CrewConfigFile) => {
   if (!currentSessionId.value) {
@@ -172,8 +205,7 @@ const handleQuickSubmit = async (cfg: CrewConfigFile) => {
 
 // 格式化文件修改时间
 const formatModTime = (timestamp: number): string => {
-  const d = new Date(timestamp * 1000)
-  return d.toLocaleString('zh-CN', {
+  return formatBeijingTime(timestamp * 1000, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -209,8 +241,7 @@ const clearSessionFilter = () => {
 
 const formatTime = (timeStr: string): string => {
   if (!timeStr) return '-'
-  const d = new Date(timeStr)
-  return d.toLocaleString('zh-CN', {
+  return formatBeijingTime(timeStr, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -243,6 +274,7 @@ watch(
       crewStore.setSessionFilter(newId as string)
     }
     await resolveCurrentSession()
+    await subscribeCrewEvents()
   },
   { immediate: true }
 )
@@ -259,11 +291,7 @@ onMounted(async () => {
     crewStore.setSessionFilter(sessionIdFromRoute)
   }
 
-  await crewStore.fetchExecutions()
-  await sessionStore.fetchSessions()
-  await resolveCurrentSession()
-
-  // 连接 Socket.IO 并订阅编排事件（实时更新进度）
+  // 先连接 Socket.IO，确保能订阅编排实时事件
   if (!socketStore.connected && !socketStore.connecting) {
     try {
       await socketStore.connect()
@@ -271,6 +299,13 @@ onMounted(async () => {
       // 连接失败不影响功能，只是没有实时推送
     }
   }
+
+  await crewStore.fetchExecutions()
+  await sessionStore.fetchSessions()
+
+  // 此时 socket 已连接（或已尝试连接），订阅会话频道以接收编排实时进度
+  await resolveCurrentSession()
+  await subscribeCrewEvents()
 })
 </script>
 
@@ -279,27 +314,29 @@ onMounted(async () => {
     <!-- 页面标题栏 -->
     <div class="sticky top-0 z-10 bg-white border-b shadow-sm">
       <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-        <div class="flex items-center justify-between h-16">
-          <div class="flex items-center gap-3">
-            <el-icon class="text-purple-600 text-xl"><Connection /></el-icon>
-            <h1 class="text-xl font-bold text-gray-900">编排管理</h1>
-            <el-tag type="info" size="small" effect="plain">Multi-Agent Orchestration</el-tag>
+        <div class="flex items-center justify-between h-14 sm:h-16">
+          <div class="flex items-center gap-2 sm:gap-3 min-w-0">
+            <el-icon class="text-purple-600 text-lg sm:text-xl flex-shrink-0"><Connection /></el-icon>
+            <h1 class="text-base sm:text-xl font-bold text-gray-900 truncate">编排管理</h1>
+            <el-tag type="info" size="small" effect="plain" class="hidden sm:inline-flex">Multi-Agent Orchestration</el-tag>
           </div>
-          <div class="flex items-center gap-4">
+          <div class="flex items-center gap-2 sm:gap-3 flex-shrink-0">
             <el-button
               v-if="activeTab === 'configs'"
               type="primary"
+              size="small"
               :icon="Plus"
               @click="handleOpenEditor"
             >
-              新建编排
+              <span class="hidden sm:inline">新建编排</span>
             </el-button>
             <el-button
+              size="small"
               :loading="activeTab === 'executions' ? loading : configsLoading"
               :icon="Refresh"
               @click="handleRefresh"
             >
-              刷新
+              <span class="hidden sm:inline">刷新</span>
             </el-button>
           </div>
         </div>
@@ -317,15 +354,15 @@ onMounted(async () => {
     </div>
 
     <!-- ==================== 执行记录 Tab ==================== -->
-    <div v-if="activeTab === 'executions'" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+    <div v-if="activeTab === 'executions'" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
       <!-- 搜索和筛选栏 -->
-      <div class="bg-white rounded-lg shadow-sm border p-4 mb-6">
-        <div class="flex flex-wrap gap-4 items-center">
+      <div class="bg-white rounded-lg shadow-sm border p-3 sm:p-4 mb-4 sm:mb-6">
+        <div class="flex flex-wrap gap-3 items-center">
           <el-select
             v-model="crewStore.statusFilter"
             placeholder="执行状态"
             clearable
-            style="width: 140px"
+            class="w-full sm:w-[140px]"
           >
             <el-option
               v-for="opt in statusOptions"
@@ -335,57 +372,55 @@ onMounted(async () => {
             />
           </el-select>
 
-          <el-tag v-if="sessionFilter" type="info" closable class="ml-2" @close="clearSessionFilter">
+          <el-tag v-if="sessionFilter" type="info" closable size="small" @close="clearSessionFilter">
             会话: {{ sessionFilter.slice(0, 8) }}...
           </el-tag>
 
-          <span class="text-sm text-gray-400 ml-auto">共 {{ total }} 条记录</span>
+          <span class="text-xs sm:text-sm text-gray-400 ml-auto">共 {{ total }} 条记录</span>
         </div>
       </div>
 
       <!-- 编排列表 -->
-      <div class="space-y-3">
+      <div class="space-y-2 sm:space-y-3">
         <div
           v-for="exec in executions"
           :key="exec.execution_id"
           class="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow cursor-pointer"
           @click="handleViewDetail(exec)"
         >
-          <div class="p-5">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-3">
+          <div class="p-3 sm:p-5">
+            <!-- 头部：状态 + 名称 + 类型 + ID -->
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex items-start gap-2 flex-1 min-w-0 flex-wrap">
                 <el-tag
                   :type="statusTypeMap[exec.status] as any"
                   size="small"
                   effect="dark"
+                  class="!h-5 sm:!h-6"
                 >
                   {{ statusLabelMap[exec.status] || exec.status }}
                 </el-tag>
-                <h3 class="font-semibold text-gray-900">{{ exec.crew_name }}</h3>
-                <el-tag size="small" type="info" effect="plain">
+                <h3 class="font-semibold text-gray-900 text-sm sm:text-base truncate max-w-full">{{ exec.crew_name }}</h3>
+                <el-tag size="small" type="info" effect="plain" class="!h-5 sm:!h-6">
                   {{ orchestratorLabel[exec.orchestrator_type] || exec.orchestrator_type }}
                 </el-tag>
               </div>
-              <div class="flex items-center gap-2">
-                <span class="text-xs text-gray-400">{{ exec.execution_id.slice(0, 12) }}...</span>
-              </div>
+              <span class="text-xs text-gray-400 flex-shrink-0 hidden sm:inline">{{ exec.execution_id.slice(0, 12) }}...</span>
             </div>
 
-            <p class="mt-2 text-sm text-gray-600 line-clamp-1">{{ exec.description }}</p>
+            <!-- 描述 -->
+            <p class="mt-1 sm:mt-2 text-xs sm:text-sm text-gray-600 line-clamp-1">{{ exec.description }}</p>
 
-            <div class="mt-3 flex items-center justify-between text-xs text-gray-400">
-              <div class="flex items-center gap-4">
-                <span>Agent: {{ exec.agent_count }} 个</span>
-                <span v-if="exec.phases_total">阶段: {{ exec.phases.length }}/{{ exec.phases_total }} 个</span>
-              </div>
-              <div class="flex items-center gap-4">
-                <span>{{ formatTime(exec.created_at) }}</span>
-                <span v-if="exec.completed_at">耗时: {{ getDuration(exec) }}</span>
-              </div>
+            <!-- 元信息（移动端两列布局） -->
+            <div class="mt-2 sm:mt-3 grid grid-cols-2 sm:flex sm:items-center gap-1 sm:gap-4 text-xs text-gray-400">
+              <span>Agent: {{ exec.agent_count }} 个</span>
+              <span v-if="exec.phases_total">阶段: {{ exec.phases.length }}/{{ exec.phases_total }}</span>
+              <span class="col-span-2 sm:col-auto">{{ formatTime(exec.created_at) }}</span>
+              <span v-if="exec.completed_at" class="col-span-2 sm:col-auto">耗时: {{ getDuration(exec) }}</span>
             </div>
 
             <!-- 进度条 -->
-            <div v-if="exec.phases?.length" class="mt-3">
+            <div v-if="exec.phases?.length" class="mt-2 sm:mt-3">
               <el-progress
                 :percentage="Math.round((exec.progress || 0) * 100)"
                 :stroke-width="4"
@@ -394,11 +429,12 @@ onMounted(async () => {
             </div>
 
             <!-- 操作按钮 -->
-            <div class="mt-3 flex items-center gap-2 pt-2 border-t">
+            <div class="mt-2 sm:mt-3 flex flex-wrap gap-1.5 sm:gap-2 pt-2 sm:pt-3 border-t">
               <el-button
                 size="small"
                 type="primary"
                 plain
+                class="flex-1 sm:flex-none"
                 @click.stop="router.push(`/chat/${exec.session_id}?execution_id=${exec.execution_id}`)"
               >
                 查看聊天日志
@@ -408,6 +444,7 @@ onMounted(async () => {
                 size="small"
                 type="danger"
                 plain
+                class="flex-1 sm:flex-none"
                 @click.stop="crewStore.abortExecution(exec.execution_id)"
               >
                 中止
@@ -416,6 +453,7 @@ onMounted(async () => {
                 size="small"
                 type="danger"
                 plain
+                class="flex-1 sm:flex-none"
                 @click.stop="crewStore.deleteExecution(exec.execution_id)"
               >
                 删除
@@ -427,123 +465,121 @@ onMounted(async () => {
         <!-- 空状态 -->
         <div
           v-if="!loading && !executions.length"
-          class="text-center py-16 text-gray-400"
+          class="text-center py-12 sm:py-16 text-gray-400"
         >
-          <el-icon class="text-4xl mb-4"><Connection /></el-icon>
-          <p class="text-lg">暂无编排执行记录</p>
-          <p class="mt-2 text-sm">切换到「已有编排」Tab 查看已有配置，或点击「新建编排」创建新任务</p>
+          <el-icon class="text-3xl sm:text-4xl mb-3 sm:mb-4"><Connection /></el-icon>
+          <p class="text-base sm:text-lg">暂无编排执行记录</p>
+          <p class="mt-1 sm:mt-2 text-xs sm:text-sm">切换到「已有编排」Tab 查看已有配置，或点击「新建编排」创建新任务</p>
         </div>
       </div>
     </div>
 
     <!-- ==================== 已有编排 Tab ==================== -->
-    <div v-if="activeTab === 'configs'" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
+    <div v-if="activeTab === 'configs'" class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-6">
       <!-- Session/Workspace 信息栏 -->
-      <div class="bg-white rounded-lg shadow-sm border p-4 mb-6">
-        <div class="flex flex-wrap gap-4 items-center">
-          <el-icon class="text-gray-400"><FolderOpened /></el-icon>
-          <span class="text-sm text-gray-600 font-medium">当前会话：</span>
+      <div class="bg-white rounded-lg shadow-sm border p-3 sm:p-4 mb-4 sm:mb-6">
+        <div class="flex flex-col sm:flex-row flex-wrap gap-2 sm:gap-4 items-start sm:items-center">
+          <div class="flex items-center gap-2">
+            <el-icon class="text-gray-400 flex-shrink-0"><FolderOpened /></el-icon>
+            <span class="text-sm text-gray-600 font-medium">当前会话：</span>
+          </div>
 
           <template v-if="currentSessionId">
-            <el-tag type="primary" effect="plain">
+            <el-tag type="primary" effect="plain" size="small">
               {{ currentSessionId.slice(0, 12) }}...
             </el-tag>
-            <span v-if="currentWorkspace" class="text-sm text-gray-500">
+            <span v-if="currentWorkspace" class="text-xs sm:text-sm text-gray-500 break-all">
               工作空间: <code class="bg-gray-100 px-1 rounded text-xs">{{ currentWorkspace }}</code>
             </span>
-            <span v-else class="text-sm text-yellow-500">
+            <span v-else class="text-xs sm:text-sm text-yellow-500">
               该会话没有关联的工作空间
             </span>
           </template>
           <template v-else>
-            <span class="text-sm text-yellow-500">
+            <span class="text-xs sm:text-sm text-yellow-500">
               请先选择一个会话（从会话列表或聊天页面进入）
             </span>
           </template>
 
-          <span v-if="currentWorkspace" class="text-xs text-gray-400 ml-auto">
-            crew_configs/ 目录下 {{ configs.length }} 个配置文件
+          <span v-if="currentWorkspace" class="text-xs text-gray-400 sm:ml-auto">
+            {{ configs.length }} 个配置文件
           </span>
         </div>
       </div>
 
       <!-- 配置文件列表 -->
-      <div v-if="configsLoading || sessionWorkspaceLoading" class="text-center py-16 text-gray-400">
-        <el-icon class="text-4xl mb-4 is-loading"><Refresh /></el-icon>
+      <div v-if="configsLoading || sessionWorkspaceLoading" class="text-center py-12 sm:py-16 text-gray-400">
+        <el-icon class="text-3xl sm:text-4xl mb-3 sm:mb-4 is-loading"><Refresh /></el-icon>
         <p>加载中...</p>
       </div>
 
-      <div v-else-if="!currentWorkspace" class="text-center py-16 text-gray-400">
-        <el-icon class="text-4xl mb-4"><FolderOpened /></el-icon>
-        <p class="text-lg">无法读取编排配置</p>
-        <p class="mt-2 text-sm">当前会话没有关联的工作空间，请选择一个有 workspace 的会话</p>
+      <div v-else-if="!currentWorkspace" class="text-center py-12 sm:py-16 text-gray-400">
+        <el-icon class="text-3xl sm:text-4xl mb-3 sm:mb-4"><FolderOpened /></el-icon>
+        <p class="text-base sm:text-lg">无法读取编排配置</p>
+        <p class="mt-1 sm:mt-2 text-xs sm:text-sm">当前会话没有关联的工作空间，请选择一个有 workspace 的会话</p>
       </div>
 
-      <div v-else-if="configs.length === 0" class="text-center py-16 text-gray-400">
-        <el-icon class="text-4xl mb-4"><Document /></el-icon>
-        <p class="text-lg">该工作空间下没有编排配置文件</p>
-        <p class="mt-2 text-sm">
-          请在 <code class="bg-gray-100 px-1 rounded">{{ currentWorkspace }}/crew_configs/</code> 目录下创建 .yaml 文件
+      <div v-else-if="configs.length === 0" class="text-center py-12 sm:py-16 text-gray-400">
+        <el-icon class="text-3xl sm:text-4xl mb-3 sm:mb-4"><Document /></el-icon>
+        <p class="text-base sm:text-lg">该工作空间下没有编排配置文件</p>
+        <p class="mt-1 sm:mt-2 text-xs sm:text-sm px-4">
+          请在 <code class="bg-gray-100 px-1 rounded break-all">{{ currentWorkspace }}/crew_configs/</code> 目录下创建 .yaml 文件
         </p>
       </div>
 
-      <div v-else class="space-y-3">
+      <div v-else class="space-y-2 sm:space-y-3">
         <div
           v-for="cfg in configs"
           :key="cfg.filename"
           class="bg-white rounded-lg shadow-sm border hover:shadow-md transition-shadow"
         >
-          <div class="p-5">
-            <div class="flex items-start justify-between">
+          <div class="p-3 sm:p-5">
+            <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
               <div class="flex-1 min-w-0">
-                <div class="flex items-center gap-3">
-                  <!-- 编排名称 -->
-                  <h3 class="font-semibold text-gray-900 truncate">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <h3 class="font-semibold text-gray-900 text-sm sm:text-base truncate max-w-full">
                     {{ cfg.name }}
                   </h3>
-                  <!-- 编排器类型 -->
                   <el-tag
                     v-if="cfg.orchestrator_type"
                     size="small"
                     type="info"
                     effect="plain"
+                    class="!h-5 sm:!h-6"
                   >
                     {{ orchestratorLabel[cfg.orchestrator_type] || cfg.orchestrator_type }}
                   </el-tag>
-                  <!-- 解析错误标记 -->
-                  <el-tag v-if="cfg.parse_error" size="small" type="danger" effect="light">
+                  <el-tag v-if="cfg.parse_error" size="small" type="danger" effect="light" class="!h-5 sm:!h-6">
                     解析失败
                   </el-tag>
                 </div>
 
-                <!-- 描述 -->
-                <p class="mt-1 text-sm text-gray-500 line-clamp-1">
+                <p class="mt-1 text-xs sm:text-sm text-gray-500 line-clamp-1">
                   {{ cfg.description || '无描述' }}
                 </p>
 
-                <!-- 元信息 -->
-                <div class="mt-2 flex items-center gap-4 text-xs text-gray-400">
+                <div class="mt-2 flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-4 text-xs text-gray-400">
                   <span class="flex items-center gap-1">
                     <el-icon size="12"><Document /></el-icon>
                     {{ cfg.filename }}
                   </span>
                   <span v-if="cfg.agent_count > 0">
                     Agent: {{ cfg.agent_count }} 个
-                    <span v-if="cfg.agent_names.length">({{ cfg.agent_names.join(', ') }})</span>
+                    <span v-if="cfg.agent_names.length" class="hidden sm:inline">({{ cfg.agent_names.join(', ') }})</span>
                   </span>
                   <span>
-                    修改时间: {{ formatModTime(cfg.modified_time) }}
+                    修改: {{ formatModTime(cfg.modified_time) }}
                   </span>
                 </div>
               </div>
 
-              <!-- 操作按钮 -->
-              <div class="flex items-center gap-2 ml-4 flex-shrink-0">
+              <div class="flex items-center gap-2 flex-shrink-0">
                 <el-button
                   size="small"
                   :icon="Edit"
                   type="primary"
                   plain
+                  class="flex-1 sm:flex-none"
                   @click="handleLoadConfig(cfg)"
                 >
                   编辑
@@ -553,6 +589,7 @@ onMounted(async () => {
                   :icon="Upload"
                   type="success"
                   plain
+                  class="flex-1 sm:flex-none"
                   :loading="executingFile === cfg.filename"
                   :disabled="sessionExecuting && executingFile !== cfg.filename"
                   @click="handleQuickSubmit(cfg)"
@@ -574,33 +611,35 @@ onMounted(async () => {
       @close="crewStore.closeDetail()"
     >
       <template v-if="crewStore.executionDetail">
-        <div class="space-y-4">
-          <!-- 基本信息 -->
-          <div class="bg-gray-50 rounded-lg p-4 space-y-2">
-            <div class="flex justify-between text-sm">
-              <span class="text-gray-500">执行 ID</span>
-              <span class="font-mono text-xs">{{ crewStore.executionDetail.execution_id }}</span>
-            </div>
-            <div class="flex justify-between text-sm">
-              <span class="text-gray-500">Session</span>
-              <span class="font-mono text-xs">{{ crewStore.executionDetail.session_id }}</span>
-            </div>
-            <div class="flex justify-between text-sm">
-              <span class="text-gray-500">编排器</span>
-              <span>{{ orchestratorLabel[crewStore.executionDetail.orchestrator_type] || crewStore.executionDetail.orchestrator_type }}</span>
-            </div>
-            <div class="flex justify-between text-sm">
-              <span class="text-gray-500">Agent 数量</span>
-              <span>{{ crewStore.executionDetail.agent_count }}</span>
+        <div class="space-y-3 sm:space-y-4">
+          <!-- 基本信息（移动端两列网格） -->
+          <div class="bg-gray-50 rounded-lg p-3 sm:p-4">
+            <div class="grid grid-cols-2 sm:grid-cols-1 gap-2 sm:gap-3">
+              <div class="text-xs sm:text-sm">
+                <span class="text-gray-500 block">执行 ID</span>
+                <span class="font-mono text-xs break-all">{{ crewStore.executionDetail.execution_id }}</span>
+              </div>
+              <div class="text-xs sm:text-sm">
+                <span class="text-gray-500 block">Session</span>
+                <span class="font-mono text-xs break-all">{{ crewStore.executionDetail.session_id }}</span>
+              </div>
+              <div class="text-xs sm:text-sm">
+                <span class="text-gray-500 block">编排器</span>
+                <span>{{ orchestratorLabel[crewStore.executionDetail.orchestrator_type] || crewStore.executionDetail.orchestrator_type }}</span>
+              </div>
+              <div class="text-xs sm:text-sm">
+                <span class="text-gray-500 block">Agent 数量</span>
+                <span>{{ crewStore.executionDetail.agent_count }}</span>
+              </div>
             </div>
           </div>
 
           <!-- 进度 DAG -->
           <div class="bg-white rounded-lg border">
-            <div class="px-4 py-3 border-b bg-gray-50 font-medium text-sm text-gray-700">
+            <div class="px-3 sm:px-4 py-2 sm:py-3 border-b bg-gray-50 font-medium text-xs sm:text-sm text-gray-700">
               执行进度
             </div>
-            <div class="p-4">
+            <div class="p-3 sm:p-4">
               <CrewProgressDag
                 :phases="crewStore.executionDetail.phases || []"
                 :status="crewStore.executionDetail.status"
@@ -613,18 +652,18 @@ onMounted(async () => {
 
           <!-- 执行结果 -->
           <div v-if="crewStore.executionDetail.result" class="bg-white rounded-lg border">
-            <div class="px-4 py-3 border-b bg-gray-50 font-medium text-sm text-gray-700">
+            <div class="px-3 sm:px-4 py-2 sm:py-3 border-b bg-gray-50 font-medium text-xs sm:text-sm text-gray-700">
               执行结果
             </div>
-            <pre class="p-4 text-xs text-gray-600 overflow-x-auto max-h-64">{{ JSON.stringify(crewStore.executionDetail.result, null, 2) }}</pre>
+            <pre class="p-3 sm:p-4 text-xs text-gray-600 overflow-x-auto max-h-48 sm:max-h-64">{{ JSON.stringify(crewStore.executionDetail.result, null, 2) }}</pre>
           </div>
 
         </div>
       </template>
 
       <template v-else>
-        <div class="text-center py-16 text-gray-400">
-          <el-icon class="text-4xl mb-4"><Refresh /></el-icon>
+        <div class="text-center py-12 sm:py-16 text-gray-400">
+          <el-icon class="text-3xl sm:text-4xl mb-3 sm:mb-4"><Refresh /></el-icon>
           <p>加载中...</p>
         </div>
       </template>
@@ -659,8 +698,43 @@ onMounted(async () => {
   margin-bottom: 0;
 }
 
+/* 移动端优化（参考 Chat.vue / SessionCard.vue / JobDetail.vue） */
 @media (max-width: 640px) {
   :deep(.el-drawer) {
+    width: 100% !important;
+  }
+
+  :deep(.el-drawer__header) {
+    padding: 10px 16px;
+    margin-bottom: 0;
+  }
+
+  :deep(.el-drawer__body) {
+    padding: 12px;
+  }
+
+  /* 触摸友好 */
+  :deep(.el-button) {
+    min-height: 36px;
+    min-width: 36px;
+  }
+
+  :deep(.overflow-y-auto) {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  :deep(*) {
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  :deep(input),
+  :deep(textarea),
+  :deep(.el-input__inner) {
+    font-size: 16px;
+  }
+
+  /* el-select 移动端撑满 */
+  :deep(.el-select) {
     width: 100% !important;
   }
 }

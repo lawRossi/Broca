@@ -9,10 +9,17 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timezone
 from typing import Any
 
 from broca.orchestration.crew import CrewConfig, CrewConfigValidator
+
+
+def _ensure_tz(dt: datetime) -> datetime:
+    """确保 datetime 有时区信息（SQLite 不保存时区，读出后补回 UTC）"""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 from broca.session.database import db_manager
 from broca.session.models import CrewExecution, CrewExecutionStatus, Message, MessageRole, MessageType
 from broca.session_runner import RunnerManager
@@ -88,8 +95,8 @@ class CrewService:
             "phases": phases,
             "phases_total": execution.phases_total or len(phases),
             "progress": execution.progress or 0,
-            "created_at": execution.started_at.isoformat() if execution.started_at else None,
-            "completed_at": execution.completed_at.isoformat() if execution.completed_at else None,
+            "created_at": _ensure_tz(execution.started_at).isoformat() if execution.started_at else None,
+            "completed_at": _ensure_tz(execution.completed_at).isoformat() if execution.completed_at else None,
         }
 
     # ==========================================================================
@@ -120,7 +127,23 @@ class CrewService:
         if errors:
             raise ValueError(f"Crew config validation failed: {'; '.join(errors)}")
 
-        # 2. 检查 Runner 状态
+        # 2. 检查是否已有正在执行的编排（同一 session 只能有一个在执行）
+        async with db_manager.get_session() as session:
+            running = await session.execute(
+                select(CrewExecution).where(
+                    CrewExecution.session_id == session_id,
+                    CrewExecution.status == CrewExecutionStatus.RUNNING,
+                )
+            )
+            existing = running.scalar_one_or_none()
+            if existing:
+                raise RuntimeError(
+                    f"Session {session_id} already has a running crew execution "
+                    f"'{existing.crew_name}' ({existing.execution_id}). "
+                    f"Please wait for it to complete before submitting a new one."
+                )
+
+        # 3. 检查 Runner 状态
         runner_status = self._runner_manager.get_session_status(session_id)
         if not runner_status:
             raise RuntimeError(f"Session {session_id} has no active runner")
@@ -227,18 +250,49 @@ class CrewService:
     # 中止
     # ==========================================================================
 
-    async def abort_execution(self, execution_id: str) -> bool:
-        """中止编排执行"""
+    async def abort_execution(self, execution_id: str) -> tuple[bool, str]:
+        """中止编排执行
+
+        Returns:
+            tuple[bool, str]: (success, message) — success 表示是否成功中止，
+                               message 包含成功/失败原因描述
+        """
         async with db_manager.get_session() as session:
             record = await session.get(CrewExecution, execution_id)
             if not record:
-                return False
+                return False, f"Execution '{execution_id}' not found"
 
-            await self._runner_manager.send_command(
+            # 向 runner 发送中止命令，并检查是否成功送达
+            response = await self._runner_manager.send_command(
                 session_id=record.session_id,
                 msg_type=IPCMessageType.CMD_ABORT_CREW,
                 payload={"crew_id": record.crew_name, "execution_id": execution_id},
             )
+
+            # 检查 runner 是否成功处理了中止命令
+            if response is None:
+                msg = (
+                    f"Runner IPC not available for session {record.session_id}. "
+                    f"The runner process may be dead or disconnected."
+                )
+                logger.warning(f"Abort failed for execution {execution_id}: {msg}")
+                return False, msg
+
+            if isinstance(response, dict):
+                if response.get("success") is False:
+                    error = response.get("error", "Unknown error")
+                    logger.warning(
+                        f"Abort failed for execution {execution_id}: "
+                        f"runner reported: {error}"
+                    )
+                    return False, error
+                if response.get("error"):
+                    error = response["error"]
+                    logger.warning(
+                        f"Abort failed for execution {execution_id}: "
+                        f"runner responded with error: {error}"
+                    )
+                    return False, error
 
             record.status = CrewExecutionStatus.ABORTED
             record.completed_at = datetime.now(UTC)
@@ -247,7 +301,7 @@ class CrewService:
 
             # 实时推送编排事件到前端
             await _emit_crew_event("aborted", self._execution_to_dict(record), record.session_id)
-            return True
+            return True, "Execution aborted successfully"
 
     async def delete_execution(self, execution_id: str) -> bool:
         """删除编排执行记录"""

@@ -318,7 +318,7 @@ export const useCrewStore = defineStore('crew', () => {
     // 延迟导入避免循环依赖
     import('@/stores/socket').then(({ useSocketStore }) => {
       const socketStore = useSocketStore()
-      socketStore.onCrewEvent = (event: string, data: any) => {
+      socketStore.onCrewEvent('crew', (event: string, data: any) => {
         if (data?.execution_id) {
           // 深拷贝数据，避免引用问题
           const update = JSON.parse(JSON.stringify(data)) as CrewExecution
@@ -331,7 +331,7 @@ export const useCrewStore = defineStore('crew', () => {
             executionDetail.value = update
           }
         }
-      }
+      })
     })
   }
 

@@ -497,6 +497,9 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  // 保存 socket 处理器注销函数，在 cleanup 时统一清理
+  const _cleanupHandlers: (() => void)[] = []
+
   const doConnect = async () => {
     socketStore.onConnect = () => {
       agentStore.agents = agentStore.agents.map((agent) => ({
@@ -511,7 +514,7 @@ export const useChatStore = defineStore('chat', () => {
       }))
       console.log('Disconnected from server')
     }
-    socketStore.onMessage = (m: Message) => {
+    const unsubMessage = socketStore.onMessage('chat', (m: Message) => {
       // 编排会话跳过撤销/重做处理
       if (isAgentOrchestration.value) return addMessage(m)
 
@@ -542,49 +545,54 @@ export const useChatStore = defineStore('chat', () => {
 
       // 正常处理其他消息
       addMessage(m)
-    }
-    socketStore.onTurnStart = (m: Message) => {
+    })
+    const unsubTurnStart = socketStore.onTurnStart('chat', (m: Message) => {
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
-    }
-    socketStore.onTurnEnd = (m: Message) => {
+    })
+    const unsubTurnEnd = socketStore.onTurnEnd('chat', (m: Message) => {
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'idle')
-    }
-    socketStore.onAgentResponse = (m: Message) => {
+    })
+    const unsubAgentResponse = socketStore.onAgentResponse('chat', (m: Message) => {
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
       // 收到 agent_response 时隐藏对话框
       permissionDialog.visible = false
       agentQueryDialog.visible = false
-    }
-    socketStore.onToolCall = (m: Message) => {
+    })
+    const unsubToolCall = socketStore.onToolCall('chat', (m: Message) => {
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
       // 收到 tool_call 时隐藏对话框
       permissionDialog.visible = false
       agentQueryDialog.visible = false
-    }
-    socketStore.onPermissionRequest = (m: Message) => {
+    })
+    const unsubPermission = socketStore.onPermissionRequest('chat', (m: Message) => {
       permissionDialog.visible = true
       permissionDialog.requestId = m.data?.request_id
       permissionDialog.senderId = m.sender_id
       permissionDialog.message = m.data?.message || 'Permission required'
-    }
-
-    socketStore.onAgentQuery = (m: Message) => {
+    })
+    const unsubAgentQuery = socketStore.onAgentQuery('chat', (m: Message) => {
       agentQueryDialog.visible = true
       agentQueryDialog.requestId = m.data?.request_id
       agentQueryDialog.senderId = m.sender_id
       agentQueryDialog.question = m.data?.question || m.data?.content || ''
       agentQueryDialog.options = m.data?.options || []
-    }
+    })
+
+    // 保存注销函数以便 cleanup 时清理
+    _cleanupHandlers.push(unsubMessage, unsubTurnStart, unsubTurnEnd,
+      unsubAgentResponse, unsubToolCall, unsubPermission, unsubAgentQuery)
 
     await socketStore.connect()
   }
 
   const doSubscribe = async () => {
-    await socketStore.subscribe(sessionId.value)
+    // 订阅会话频道（不订阅编排事件），保存取消订阅函数以便 cleanup
+    const unsub = await socketStore.subscribe(sessionId.value, false)
+    _cleanupHandlers.push(unsub)
   }
 
   const sendUserMessage = async (
@@ -760,7 +768,9 @@ export const useChatStore = defineStore('chat', () => {
 
   const cleanup = () => {
     window.removeEventListener('resize', checkMobile)
-    socketStore.cleanup()
+    // 清理当前页面注册的处理器
+    _cleanupHandlers.forEach(fn => fn())
+    _cleanupHandlers.length = 0
     connectingSession.value = false
     sessionId.value = ''
     agentStore.agents = []

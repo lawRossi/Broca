@@ -322,14 +322,6 @@ const handleToggleRunner = async () => {
       <!-- 状态标签（使用 runner_status） -->
       <div class="ml-3 flex-shrink-0 flex items-center gap-1">
         <el-tag
-          v-if="isAgentOrchestrationSession"
-          type="warning"
-          size="small"
-          effect="plain"
-        >
-          Agent 编排
-        </el-tag>
-        <el-tag
           :type="getDisplayStatusType(session)"
           size="small"
           effect="plain"
@@ -374,39 +366,6 @@ const handleToggleRunner = async () => {
             <FolderOpened />
           </el-icon>
           文件
-        </el-button>
-
-        <!-- 定时任务按钮（仅普通会话显示） -->
-        <el-button
-          v-if="isNormalSession"
-          type="info"
-          size="small"
-          plain
-          :disabled="isEditing"
-          :title="`查看定时任务${jobCount ? ` (${jobCount})` : ''}`"
-          @click.stop="handleViewJobs"
-        >
-          <el-icon class="mr-1">
-            <Bell />
-          </el-icon>
-          定时任务
-          <el-badge v-if="jobCount && jobCount > 0" :value="jobCount" class="ml-1" type="info" is-dot />
-        </el-button>
-
-        <!-- 任务管理按钮（仅普通会话显示） -->
-        <el-button
-          v-if="isNormalSession"
-          type="success"
-          size="small"
-          plain
-          :disabled="isEditing"
-          title="管理任务"
-          @click.stop="handleManageTasks"
-        >
-          <el-icon class="mr-1">
-            <Document />
-          </el-icon>
-          管理任务
         </el-button>
 
         <!-- 进程启停按钮（所有会话类型） -->
