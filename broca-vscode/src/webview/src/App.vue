@@ -11,6 +11,7 @@ import RunnerStatusBar from './components/RunnerStatusBar.vue'
 import LoadingOverlay from './components/LoadingOverlay.vue'
 import TaskPage from './components/TaskPage.vue'
 import JobPage from './components/JobPage.vue'
+import { postMessage } from './api/vscode'
 
 const chatStore = useChatStore()
 
@@ -54,7 +55,20 @@ onUnmounted(() => {
           <div class="chat-messages-area">
             <ChatMessageList />
           </div>
-          <ChatInput />
+          <!-- Agent orchestration: read-only banner instead of ChatInput -->
+          <div v-if="chatStore.isAgentOrchestration" class="orchestration-readonly-bar">
+            <div class="orchestration-readonly-content">
+              <span class="orchestration-readonly-icon">⚡</span>
+              <div class="orchestration-readonly-text">
+                <div class="orchestration-readonly-title">Agent 编排会话</div>
+                <div class="orchestration-readonly-desc">此会话为只读模式，聊天仅用于查看执行日志</div>
+              </div>
+              <button class="orchestration-readonly-btn" @click="postMessage({ type: 'openCrewPanel' })">
+                查看编排
+              </button>
+            </div>
+          </div>
+          <ChatInput v-else />
         </div>
 
         <!-- Right Sidebar: Info -->
@@ -135,6 +149,59 @@ html, body {
 .chat-messages-area {
   flex: 1;
   min-height: 0;
+}
+
+/* Agent orchestration read-only banner */
+.orchestration-readonly-bar {
+  flex-shrink: 0;
+  padding: 12px 16px;
+  border-top: 1px solid var(--border-color, #333);
+  background: var(--vscode-editor-background, #1e1e1e);
+}
+
+.orchestration-readonly-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.orchestration-readonly-icon {
+  font-size: 20px;
+  flex-shrink: 0;
+}
+
+.orchestration-readonly-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.orchestration-readonly-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--vscode-editor-foreground, #cccccc);
+}
+
+.orchestration-readonly-desc {
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #888);
+  margin-top: 2px;
+}
+
+.orchestration-readonly-btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  background: var(--vscode-button-background, #007acc);
+  color: var(--vscode-button-foreground, #fff);
+  border: none;
+  border-radius: 4px;
+  font-size: 12px;
+  cursor: pointer;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.orchestration-readonly-btn:hover {
+  background: var(--vscode-button-hoverBackground, #005a9e);
 }
 
 /* Sub-page (Task / Job management) */

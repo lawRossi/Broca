@@ -46,6 +46,8 @@ export interface InitialData {
   token: string
   serverUrl: string
   wsUrl: string
+  category?: string
+  executionId?: string
 }
 
 /**

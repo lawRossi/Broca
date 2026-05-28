@@ -7,6 +7,7 @@ export interface Session {
   created_at: string
   finished_at?: string
   runner_status?: string
+  category?: 'normal' | 'agent-orchestration'
 }
 
 export interface CreateSessionParams {
@@ -14,6 +15,7 @@ export interface CreateSessionParams {
   workspace?: string
   provider?: string
   model?: string
+  category?: 'normal' | 'agent-orchestration'
 }
 
 export interface UpdateSessionParams {
@@ -34,6 +36,7 @@ export interface CreateSessionResponse {
   description?: string
   provider?: string
   model?: string
+  category?: string
 }
 
 export interface RunnerInfo {
@@ -115,6 +118,66 @@ export interface LLMModel {
   name: string
 }
 
+// ==================== Crew (Orchestration) Types ====================
+
+export type OrchestratorType = 'pipeline' | 'supervisor-worker' | 'round-table' | 'broadcast' | 'consensus' | 'composite'
+
+export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'aborted'
+
+export interface PhaseResult {
+  name: string
+  status: string
+  agents: string[]
+  output?: Record<string, any>
+  error?: string
+  started_at?: string
+  completed_at?: string
+}
+
+export interface CrewExecution {
+  execution_id: string
+  session_id: string
+  crew_name: string
+  description: string
+  orchestrator_type: OrchestratorType
+  agent_count: number
+  status: ExecutionStatus
+  error?: string
+  result?: Record<string, any>
+  phases?: PhaseResult[]
+  phases_total?: number
+  progress?: number
+  created_at: string
+  completed_at?: string
+}
+
+export interface CrewConfigFile {
+  filename: string
+  path: string
+  name: string
+  description: string
+  orchestrator_type: string | null
+  agent_count: number
+  agent_names: string[]
+  modified_time: number
+  parse_error?: string
+}
+
+export interface CrewConfigDetail {
+  filename: string
+  path: string
+  content: string
+  summary: {
+    name?: string
+    description?: string
+    orchestrator_type?: string | null
+    agent_count?: number
+    agent_names?: string[]
+    parse_error?: string
+  }
+  modified_time: number
+}
+
 // WebView ↔ Extension Host communication protocol
 export interface WebViewMessage {
   type: string
@@ -123,12 +186,12 @@ export interface WebViewMessage {
 
 // Extension → WebView messages
 export interface ExtensionToWebView {
-  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'sessionStats' | 'sessionCreated' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted'
+  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'sessionStats' | 'sessionCreated' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted' | 'crewExecutions' | 'crewDetail' | 'crewEvent' | 'crewConfigs' | 'crewConfigDetail'
   payload: any
 }
 
 // WebView → Extension messages
 export interface WebViewToExtension {
-  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile' | 'runnerAction' | 'fetchRunnerStatus' | 'fetchSessionStats' | 'fetchAgents' | 'openFile' | 'fetchTasks' | 'fetchTaskDetail' | 'createTask' | 'updateTask' | 'deleteTask' | 'addTaskComment' | 'fetchJobs' | 'fetchJobDetail' | 'executeJob' | 'pauseJob' | 'resumeJob' | 'deleteJob'
+  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile' | 'runnerAction' | 'fetchRunnerStatus' | 'fetchSessionStats' | 'fetchAgents' | 'openFile' | 'fetchTasks' | 'fetchTaskDetail' | 'createTask' | 'updateTask' | 'deleteTask' | 'addTaskComment' | 'fetchJobs' | 'fetchJobDetail' | 'executeJob' | 'pauseJob' | 'resumeJob' | 'deleteJob' | 'fetchCrewExecutions' | 'fetchCrewDetail' | 'submitCrew' | 'abortCrew' | 'deleteCrew' | 'fetchCrewConfigs' | 'fetchCrewConfigDetail' | 'saveCrewConfig' | 'openCrewConfigFile'
   payload?: any
 }

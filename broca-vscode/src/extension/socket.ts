@@ -14,7 +14,18 @@ export class SocketClient {
   private configManager: ConfigManager
   private getToken: () => string | null
   private clientId: string
-  private eventHandlers: SocketEventHandler = {}
+
+  // 多路复用处理器（类似 Web 前端的 Map 模式）
+  // Map 值用 NonNullable 包裹，因为 on() 和 setEventHandlers() 只存入非空 handler
+  private _handlers: { [K in keyof SocketEventHandler]: Map<string, NonNullable<SocketEventHandler[K]>> } = {
+    onConnect: new Map(),
+    onDisconnect: new Map(),
+    onMessage: new Map(),
+    onError: new Map(),
+  }
+
+  // 订阅引用计数
+  private _subscriptionRefCounts = new Map<string, number>()
 
   constructor(configManager: ConfigManager, getToken: () => string | null) {
     this.configManager = configManager
@@ -22,8 +33,44 @@ export class SocketClient {
     this.clientId = `vscode_${Math.random().toString(16).slice(2)}`
   }
 
+  /** 获取事件对应的 Map（非空，因为初始化时已定义所有 key） */
+  private _getHandlerMap<K extends keyof SocketEventHandler>(event: K): Map<string, NonNullable<SocketEventHandler[K]>> {
+    return this._handlers[event]!
+  }
+
+  /**
+   * 注册事件处理器
+   * @param event 事件名
+   * @param id 处理器唯一标识（用于取消注册）
+   * @param handler 处理函数
+   * @returns 取消注册函数
+   */
+  on<K extends keyof SocketEventHandler>(
+    event: K,
+    id: string,
+    handler: NonNullable<SocketEventHandler[K]>
+  ): () => void {
+    this._getHandlerMap(event).set(id, handler)
+    return () => { this._getHandlerMap(event).delete(id) }
+  }
+
+  /** 取消注册事件处理器 */
+  off<K extends keyof SocketEventHandler>(event: K, id: string): void {
+    this._getHandlerMap(event).delete(id)
+  }
+
+  /**
+   * 批量注册事件处理器（兼容旧 API）
+   * 内部仍使用多路复用 Map，以 "default" 为 id
+   */
   setEventHandlers(handlers: SocketEventHandler) {
-    this.eventHandlers = handlers
+    type HandlerKey = keyof SocketEventHandler
+    for (const key of Object.keys(handlers) as HandlerKey[]) {
+      const handler = handlers[key]
+      if (handler) {
+        this._getHandlerMap(key as HandlerKey).set('default', handler as any)
+      }
+    }
   }
 
   async connect(): Promise<void> {
@@ -45,23 +92,23 @@ export class SocketClient {
 
     this.socket.on('connect', () => {
       console.log('Socket connected')
-      this.eventHandlers.onConnect?.()
+      this._getHandlerMap('onConnect').forEach(h => h())
     })
 
     this.socket.on('disconnect', (reason) => {
       console.log('Socket disconnected:', reason)
-      this.eventHandlers.onDisconnect?.()
+      this._getHandlerMap('onDisconnect').forEach(h => h())
     })
 
     this.socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error)
-      this.eventHandlers.onError?.(error)
+      this._getHandlerMap('onError').forEach(h => h(error))
     })
 
     this.socket.on('message', (data: any) => {
       try {
         const message = this.parseMessage(data)
-        this.eventHandlers.onMessage?.(message)
+        this._getHandlerMap('onMessage').forEach(h => h(message))
       } catch (error) {
         console.error('Failed to parse message:', error)
       }
@@ -82,18 +129,52 @@ export class SocketClient {
     })
   }
 
-  async subscribe(sessionId: string): Promise<void> {
+  /**
+   * 订阅频道（带引用计数）
+   * @returns 取消订阅函数（引用计数归零时才真正取消）
+   */
+  async subscribe(sessionId: string): Promise<() => Promise<void>> {
     if (!this.socket?.connected) {
       throw new Error('Not connected')
     }
 
-    return new Promise((resolve, reject) => {
-      this.socket!.emit('subscribe', { subscription: sessionId }, (response: any) => {
-        if (response?.error) {
-          reject(new Error(response.error))
+    const channels = [sessionId, `crew:${sessionId}`]
+
+    for (const channel of channels) {
+      const count = this._subscriptionRefCounts.get(channel) || 0
+      if (count === 0) {
+        await this._doSubscribe(channel)
+      }
+      this._subscriptionRefCounts.set(channel, count + 1)
+    }
+
+    return async () => {
+      for (const channel of channels) {
+        const count = this._subscriptionRefCounts.get(channel) || 0
+        if (count <= 1) {
+          this._subscriptionRefCounts.delete(channel)
+          await this._doUnsubscribe(channel).catch(() => {})
         } else {
-          resolve()
+          this._subscriptionRefCounts.set(channel, count - 1)
         }
+      }
+    }
+  }
+
+  private _doSubscribe(subscription: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.socket!.emit('subscribe', { subscription }, (response: any) => {
+        if (response?.error) reject(new Error(response.error))
+        else resolve()
+      })
+    })
+  }
+
+  private _doUnsubscribe(subscription: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      this.socket!.emit('unsubscribe', { subscription }, (response: any) => {
+        if (response?.error) reject(new Error(response.error))
+        else resolve()
       })
     })
   }
@@ -234,6 +315,7 @@ export class SocketClient {
   }
 
   disconnect(): void {
+    this._subscriptionRefCounts.clear()
     if (this.socket) {
       this.socket.disconnect()
       this.socket = null

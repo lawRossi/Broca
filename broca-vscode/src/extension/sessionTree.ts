@@ -15,14 +15,27 @@ class SessionTreeItem extends vscode.TreeItem {
     this.contextValue = 'session'
     this.tooltip = this.buildTooltip(session)
 
-    // Set icon based on runner status
-    this.iconPath = this.getStatusIcon(session.runner_status)
+    // Set icon based on runner status and category
+    if (session.category === 'agent-orchestration') {
+      this.iconPath = new vscode.ThemeIcon('organization')
+    } else {
+      this.iconPath = this.getStatusIcon(session.runner_status)
+    }
 
     // Command when clicking the item
-    this.command = {
-      command: 'broca.openChat',
-      title: 'Open Chat',
-      arguments: [session.session_id],
+    if (session.category === 'agent-orchestration') {
+      // Orchestration sessions open crew management panel
+      this.command = {
+        command: 'broca.openCrewList',
+        title: 'View Orchestration Executions',
+        arguments: [session.session_id],
+      }
+    } else {
+      this.command = {
+        command: 'broca.openChat',
+        title: 'Open Chat',
+        arguments: [session.session_id],
+      }
     }
   }
 
@@ -34,6 +47,9 @@ class SessionTreeItem extends vscode.TreeItem {
     }
     if (session.workspace) {
       tooltip.appendMarkdown(`**Workspace**: \`${session.workspace}\`\n\n`)
+    }
+    if (session.category === 'agent-orchestration') {
+      tooltip.appendMarkdown(`**Category**: Agent Orchestration\n\n`)
     }
     tooltip.appendMarkdown(`**Created**: ${new Date(session.created_at).toLocaleString()}\n\n`)
     tooltip.appendMarkdown(`**Runner**: ${session.runner_status || 'unknown'}`)

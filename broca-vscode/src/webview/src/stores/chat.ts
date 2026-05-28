@@ -2,7 +2,6 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { postMessage, onMessage, getInitialData } from '../api/vscode'
 import type { Message, RunnerInfo } from '../types'
-import { subscribe } from 'diagnostics_channel'
 
 export const useChatStore = defineStore('chat', () => {
   const sessionId = ref(getInitialData()?.sessionId || '')
@@ -18,6 +17,9 @@ export const useChatStore = defineStore('chat', () => {
   const inputText = ref('')
   const defaultAgentId = ref<string | undefined>(undefined)
   const agentNames = ref<Record<string, string>>({})
+  // Agent orchestration session flags
+  const isAgentOrchestration = ref(getInitialData()?.category === 'agent-orchestration')
+  const executionId = ref<string | undefined>(getInitialData()?.executionId)
 
   // ==================== 完整 Agent 数据 ====================
   interface AgentInfo {
@@ -481,6 +483,11 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function sendMessage(content: string, receiverId?: string, files?: any[]) {
+    // Disable sending in orchestration sessions
+    if (isAgentOrchestration.value) {
+      console.log('[ChatStore] sendMessage blocked: orchestration session is read-only')
+      return
+    }
     if (!content.trim() && (!files || files.length === 0)) {
       console.log('[ChatStore] sendMessage skipped: empty content')
       return
@@ -524,9 +531,15 @@ export const useChatStore = defineStore('chat', () => {
       loadingMore.value = true
     }
 
+    const payload: any = { skip, limit }
+    // If executionId is set, filter messages by this execution
+    if (executionId.value) {
+      payload.executionId = executionId.value
+    }
+
     postMessage({
       type: 'loadHistory',
-      payload: { skip, limit },
+      payload,
     })
   }
 
@@ -560,6 +573,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function sendRedo() {
+    if (isAgentOrchestration.value) return
     postMessage({
       type: 'redo',
       payload: { receiverId: redoReceiverId.value },
@@ -569,6 +583,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function sendUndo(targetMessageId?: string, level: 'turn' | 'step' = 'step', receiverId?: string) {
+    if (isAgentOrchestration.value) return
     postMessage({
       type: 'undo',
       payload: { targetMessageId, level, receiverId },
@@ -604,6 +619,9 @@ export const useChatStore = defineStore('chat', () => {
     updateAgentStatus,
     getAgentStatus,
     getAgentRuntimeStatus,
+    // Agent orchestration flags
+    isAgentOrchestration,
+    executionId,
     // Sidebar state
     showLeftSidebar,
     showRightSidebar,

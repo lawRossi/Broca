@@ -58,6 +58,66 @@ export interface LLMModel {
   name: string
 }
 
+// ==================== Crew (Orchestration) Types ====================
+
+export type OrchestratorType = 'pipeline' | 'supervisor-worker' | 'round-table' | 'broadcast' | 'consensus' | 'composite'
+
+export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'aborted'
+
+export interface PhaseResult {
+  name: string
+  status: string
+  agents: string[]
+  output?: Record<string, any>
+  error?: string
+  started_at?: string
+  completed_at?: string
+}
+
+export interface CrewExecution {
+  execution_id: string
+  session_id: string
+  crew_name: string
+  description: string
+  orchestrator_type: OrchestratorType
+  agent_count: number
+  status: ExecutionStatus
+  error?: string
+  result?: Record<string, any>
+  phases?: PhaseResult[]
+  phases_total?: number
+  progress?: number
+  created_at: string
+  completed_at?: string
+}
+
+export interface CrewConfigFile {
+  filename: string
+  path: string
+  name: string
+  description: string
+  orchestrator_type: string | null
+  agent_count: number
+  agent_names: string[]
+  modified_time: number
+  parse_error?: string
+}
+
+export interface CrewConfigDetail {
+  filename: string
+  path: string
+  content: string
+  summary: {
+    name?: string
+    description?: string
+    orchestrator_type?: string | null
+    agent_count?: number
+    agent_names?: string[]
+    parse_error?: string
+  }
+  modified_time: number
+}
+
 // ==================== Task Types ====================
 
 export type TaskStatus = 'pending' | 'in_progress' | 'blocked' | 'completed'

@@ -12,6 +12,9 @@ import type {
   MessagesResponse,
   LLMProvider,
   LLMModel,
+  CrewExecution,
+  CrewConfigFile,
+  CrewConfigDetail,
 } from './types'
 
 export class ApiClient {
@@ -128,10 +131,12 @@ export class ApiClient {
 
   // ==================== Message API ====================
 
-  async getSessionMessages(sessionId: string, skip: number = 0, limit: number = 50): Promise<MessagesResponse> {
-    const response = await this.client.get(`/session/${sessionId}/messages`, {
-      params: { skip, limit },
-    })
+  async getSessionMessages(sessionId: string, skip: number = 0, limit: number = 50, executionId?: string): Promise<MessagesResponse> {
+    const params: Record<string, any> = { skip, limit }
+    if (executionId) {
+      params.execution_id = executionId
+    }
+    const response = await this.client.get(`/session/${sessionId}/messages`, { params })
     return response.data
   }
 
@@ -153,6 +158,59 @@ export class ApiClient {
 
   async getLLMModels(provider: string): Promise<LLMModel[]> {
     const response = await this.client.get(`/config/llm/models/${provider}`)
+    return response.data
+  }
+
+  // ==================== Crew (Orchestration) API ====================
+
+  async submitCrew(data: { yaml_content?: string; yaml_path?: string; session_id: string }): Promise<CrewExecution> {
+    const response = await this.client.post('/crews', data)
+    return response.data
+  }
+
+  async validateCrew(data: { yaml_content?: string; yaml_path?: string }): Promise<{ valid: boolean; errors: string[]; error_count: number }> {
+    const response = await this.client.post('/crews/validate', data)
+    return response.data
+  }
+
+  async getCrews(params?: { session_id?: string; status?: string }): Promise<{ executions: CrewExecution[]; total: number }> {
+    const response = await this.client.get('/crews', { params })
+    return response.data
+  }
+
+  async getCrewDetail(executionId: string): Promise<CrewExecution> {
+    const response = await this.client.get(`/crews/${executionId}`)
+    return response.data
+  }
+
+  async abortCrew(executionId: string): Promise<{ execution_id: string }> {
+    const response = await this.client.post(`/crews/${executionId}/abort`)
+    return response.data
+  }
+
+  async deleteCrew(executionId: string): Promise<{ execution_id: string }> {
+    const response = await this.client.delete(`/crews/${executionId}`)
+    return response.data
+  }
+
+  async listCrewConfigs(workspace: string): Promise<{ configs: CrewConfigFile[]; total: number }> {
+    const response = await this.client.get('/crews/configs', { params: { workspace } })
+    return response.data
+  }
+
+  async getCrewConfig(filename: string, workspace: string): Promise<CrewConfigDetail> {
+    const response = await this.client.get(`/crews/configs/${encodeURIComponent(filename)}`, {
+      params: { workspace },
+    })
+    return response.data
+  }
+
+  async saveCrewConfig(filename: string, workspace: string, content: string): Promise<CrewConfigFile> {
+    const response = await this.client.put(`/crews/configs/${encodeURIComponent(filename)}`, {
+      workspace,
+      filename,
+      content,
+    })
     return response.data
   }
 }

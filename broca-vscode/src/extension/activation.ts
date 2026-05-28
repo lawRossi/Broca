@@ -48,7 +48,7 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('broca.createSession', async () => {
       if (!authManager.isLoggedIn) {
-        vscode.window.showErrorMessage('Please login first')
+        vscode.window.showErrorMessage('请先登录')
         return
       }
       chatWebViewManager.openCreateSessionDialog(() => {
@@ -130,6 +130,55 @@ export async function activate(context: vscode.ExtensionContext) {
       } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to stop runner: ${error.message}`)
       }
+    })
+  )
+
+  // ==================== Crew Commands ====================
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('broca.submitCrew', async (item: any) => {
+      const sessionId = typeof item === 'string' ? item : item?.id
+      if (!sessionId) {
+        vscode.window.showErrorMessage('请先选择一个会话')
+        return
+      }
+
+      // Let user pick a YAML file from workspace crew_configs/
+      const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath
+      if (!workspacePath) {
+        vscode.window.showErrorMessage('没有打开的工作目录')
+        return
+      }
+
+      const uris = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        openLabel: '提交编排',
+        filters: { 'YAML files': ['yaml', 'yml'] },
+        defaultUri: vscode.Uri.file(workspacePath + '/crew_configs'),
+      })
+
+      if (!uris || uris.length === 0) return
+
+      try {
+        const result = await apiClient.submitCrew({ yaml_path: uris[0].fsPath, session_id: sessionId })
+        vscode.window.showInformationMessage(`编排 '${result.crew_name}' 提交成功`)
+        // Refresh crew panel if open
+        vscode.commands.executeCommand('broca.openCrewList', sessionId)
+      } catch (error: any) {
+        vscode.window.showErrorMessage(`提交编排失败: ${error.message}`)
+      }
+    })
+  )
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('broca.openCrewList', (sessionId?: string) => {
+      if (!sessionId) {
+        vscode.window.showErrorMessage('请先选择一个会话')
+        return
+      }
+      chatWebViewManager.openCrewPanel(sessionId)
     })
   )
 

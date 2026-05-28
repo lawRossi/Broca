@@ -13,6 +13,7 @@ export default defineConfig({
       input: {
         index: resolve(__dirname, 'src/webview/index.html'),
         config: resolve(__dirname, 'src/webview/config.html'),
+        crew: resolve(__dirname, 'src/webview/crew.html'),
       },
       output: {
         entryFileNames: 'assets/[name].js',

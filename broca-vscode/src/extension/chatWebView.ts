@@ -7,8 +7,11 @@ import type { WebViewMessage, ExtensionToWebView } from './types'
 
 export class ChatWebViewManager {
   private panels = new Map<string, vscode.WebviewPanel>()
+  private crewPanels = new Map<string, vscode.WebviewPanel>()
   private socketClients = new Map<string, SocketClient>()
+  private socketUnsubs = new Map<string, () => Promise<void>>()
   private runnerPollTimers = new Map<string, NodeJS.Timeout>()
+  private sessionExecutionIds = new Map<string, string>()
   private apiClient: ApiClient
   private createSessionPanel: vscode.WebviewPanel | null = null
 
@@ -31,7 +34,7 @@ export class ChatWebViewManager {
     }
   }
 
-  async openChat(sessionId: string) {
+  async openChat(sessionId: string, executionId?: string) {
     try {
       // Check if panel already exists and is not disposed
       const existingPanel = this.panels.get(sessionId)
@@ -45,9 +48,10 @@ export class ChatWebViewManager {
         }
       }
 
-      // Get session info for title
+      // Get session info for title and category
       const sessionInfo = await this.apiClient.getSession(sessionId)
       const title = sessionInfo?.description || sessionId
+      const category = sessionInfo?.category || 'normal'
 
       // Create new WebView panel
       const panel = vscode.window.createWebviewPanel(
@@ -63,15 +67,33 @@ export class ChatWebViewManager {
         }
       )
 
-      // Set HTML content
-      panel.webview.html = this.getWebviewContent(panel.webview, sessionId)
+      // Set HTML content with category and executionId
+      panel.webview.html = this.getWebviewContent(panel.webview, sessionId, category, executionId)
+
+      // Store executionId for this session (used by initializeSession for filtered history load)
+      if (executionId) {
+        this.sessionExecutionIds.set(sessionId, executionId)
+      }
 
       // Store panel reference
       this.panels.set(sessionId, panel)
 
       // Handle panel disposal
       panel.onDidDispose(() => {
-        this.disposeSession(sessionId)
+        // Only fully dispose the socket if crew panel is not open
+        if (!this.crewPanels.has(sessionId)) {
+          this.disposeSession(sessionId)
+        } else {
+          // Just remove chat panel handlers from the existing socket
+          const socketClient = this.socketClients.get(sessionId)
+          if (socketClient) {
+            socketClient.off('onConnect', 'chat')
+            socketClient.off('onDisconnect', 'chat')
+            socketClient.off('onMessage', 'chat')
+            socketClient.off('onError', 'chat')
+          }
+        }
+        this.sessionExecutionIds.delete(sessionId)
         this.panels.delete(sessionId)
       })
 
@@ -97,7 +119,7 @@ export class ChatWebViewManager {
         const respData = error?.response?.data
         message = respData?.detail || respData?.msg || respData?.message || (typeof respData === 'string' ? respData : null) || error.message || 'Unknown error'
       }
-      vscode.window.showErrorMessage(`Failed to open chat: ${message}`)
+      vscode.window.showErrorMessage(`打开聊天失败: ${message}`)
     }
   }
 
@@ -166,6 +188,85 @@ export class ChatWebViewManager {
     })
   }
 
+  async openCrewPanel(sessionId: string) {
+    try {
+      const sessionInfo = await this.apiClient.getSession(sessionId)
+      const title = sessionInfo?.description || sessionId
+
+      const panel = vscode.window.createWebviewPanel(
+        'broca.crews',
+        `Broca: 编排管理 - ${title}`,
+        vscode.ViewColumn.One,
+        {
+          enableScripts: true,
+          retainContextWhenHidden: true,
+          localResourceRoots: [
+            vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
+          ],
+        }
+      )
+
+      panel.webview.html = this.getCrewWebviewContent(panel.webview, sessionId)
+
+      // Store crew panel reference
+      this.crewPanels.set(sessionId, panel)
+
+      panel.onDidDispose(() => {
+        this.crewPanels.delete(sessionId)
+        // If no chat panel is open either, fully dispose the socket
+        if (!this.panels.has(sessionId)) {
+          this.disposeSession(sessionId)
+        }
+      })
+
+      panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
+        console.log('[CrewPanel] received:', message.type)
+        await this.handleWebViewMessage(sessionId, panel, message)
+      })
+
+      // Ensure Socket connection exists for real-time crew events
+      // (chat panel's initializeSession also creates one, but crew panel may open standalone)
+      if (!this.socketClients.has(sessionId)) {
+        this.initializeCrewSocket(sessionId, panel)
+      }
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`打开编排管理失败: ${error.message}`)
+    }
+  }
+
+  private async initializeCrewSocket(sessionId: string, panel: vscode.WebviewPanel) {
+    try {
+      const socketClient = new SocketClient(this.configManager, () => this.authManager.token)
+      this.socketClients.set(sessionId, socketClient)
+
+      socketClient.setEventHandlers({
+        onConnect: () => {
+          console.log('[CrewSocket] connected for', sessionId)
+        },
+        onDisconnect: () => {
+          console.log('[CrewSocket] disconnected for', sessionId)
+        },
+        onMessage: (msg) => {
+          // Only forward crew events to the crew panel
+          if (msg.message_type === 'system_message' && msg.data?.crew_event) {
+            this.postToPanel(panel, { type: 'crewEvent', payload: msg.data.payload } as ExtensionToWebView)
+          }
+        },
+        onError: (error) => {
+          console.error('[CrewSocket] error:', error.message)
+        },
+      })
+
+      await socketClient.connect()
+      // Subscribe only to crew channel (not chat)
+      const unsub = await socketClient.subscribe(sessionId)
+      this.socketUnsubs.set(sessionId, unsub)
+      console.log('[CrewSocket] subscribed to crew:', sessionId)
+    } catch (error: any) {
+      console.warn('[CrewSocket] initialization failed (progress updates will be unavailable):', error.message)
+    }
+  }
+
   async openCreateSessionDialog(onSessionCreated?: () => void) {
     // Close existing panel if any
     if (this.createSessionPanel) {
@@ -175,7 +276,7 @@ export class ChatWebViewManager {
 
     const panel = vscode.window.createWebviewPanel(
       'broca.createSession',
-      'Create Session',
+      '创建会话',
       { viewColumn: vscode.ViewColumn.Active, preserveFocus: true },
       {
         enableScripts: true,
@@ -222,13 +323,13 @@ export class ChatWebViewManager {
           try {
             const result = await this.apiClient.createSession(message.payload)
             this.postToPanel(panel, { type: 'sessionCreated', payload: result } as ExtensionToWebView)
-            vscode.window.showInformationMessage('Session created successfully')
+            vscode.window.showInformationMessage('会话创建成功')
             panel.dispose()
             if (onSessionCreated) onSessionCreated()
           } catch (error: any) {
             this.postToPanel(panel, {
               type: 'error',
-              payload: { message: error.message || 'Failed to create session' },
+              payload: { message: error.message || '创建会话失败' },
             } as ExtensionToWebView)
           }
           break
@@ -312,40 +413,87 @@ export class ChatWebViewManager {
       margin-top: 8px;
       display: none;
     }
-    .loading { opacity: 0.6; pointer-events: none; }
+    .category-group { margin-bottom: 20px; }
+    .category-option {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border: 1px solid var(--vscode-input-border, #555);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: border-color 0.2s, background 0.2s;
+    }
+    .category-option:hover {
+      border-color: var(--vscode-focusBorder, #007fd4);
+      background: var(--vscode-list-hoverBackground, #2a2d2e);
+    }
+    .category-option.selected {
+      border-color: var(--vscode-focusBorder, #007fd4);
+      background: var(--vscode-list-activeSelectionBackground, #04395e);
+    }
+    .category-option input[type="radio"] {
+      margin-top: 2px;
+      accent-color: var(--vscode-focusBorder, #007fd4);
+      width: auto;
+      flex-shrink: 0;
+    }
+    .category-label { font-weight: 500; font-size: 13px; }
+    .category-desc { font-size: 11px; color: var(--vscode-descriptionForeground, #888); margin-top: 2px; }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>Create Session</h1>
+    <h1>创建会话</h1>
 
     <div class="field">
-      <label for="description">Description</label>
-      <input id="description" type="text" placeholder="e.g., Debug the login issue (optional)" />
-      <div class="hint">Optional. Leave empty to skip.</div>
+      <label>会话类型</label>
+      <div class="category-group">
+        <div class="category-option selected" data-category="normal" onclick="selectCategory(this)">
+          <input type="radio" name="category" value="normal" checked>
+          <div>
+            <div class="category-label">普通会话</div>
+            <div class="category-desc">创建内置 Agent（Broca、sub-agent、explorer），适合日常对话和任务</div>
+          </div>
+        </div>
+        <div class="category-option" data-category="agent-orchestration" onclick="selectCategory(this)">
+          <input type="radio" name="category" value="agent-orchestration">
+          <div>
+            <div class="category-label">Agent 编排会话</div>
+            <div class="category-desc">不创建内置 Agent，从工作空间加载自定义 Agent，适合多 Agent 编排工作流</div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <div class="field">
-      <label for="provider">LLM Provider</label>
+      <label for="description">描述</label>
+      <input id="description" type="text" placeholder="例如：调试登录问题（可选）" />
+      <div class="hint">可选，留空则跳过</div>
+    </div>
+
+    <div class="field">
+      <label for="provider">LLM 提供商</label>
       <select id="provider">
-        <option value="">-- Use default${defaultProvider ? ' (' + defaultProvider + ')' : ''} --</option>
+        <option value="">-- 使用默认${defaultProvider ? ' (' + defaultProvider + ')' : ''} --</option>
       </select>
-      <div class="hint">Select a provider or leave empty to use default.</div>
+      <div class="hint">选择提供商，留空则使用默认配置</div>
     </div>
 
     <div class="field">
-      <label for="model">LLM Model</label>
+      <label for="model">LLM 模型</label>
       <select id="model" disabled>
-        <option value="">-- Select provider first --</option>
+        <option value="">-- 请先选择提供商 --</option>
       </select>
-      <div class="hint">Select a model or leave empty to use default.</div>
+      <div class="hint">选择模型，留空则使用提供商默认模型</div>
     </div>
 
     <div class="error" id="errorMsg"></div>
 
     <div class="buttons">
-      <button class="btn-secondary" id="cancelBtn">Cancel</button>
-      <button class="btn-primary" id="createBtn">Create Session</button>
+      <button class="btn-secondary" id="cancelBtn">取消</button>
+      <button class="btn-primary" id="createBtn">创建会话</button>
     </div>
   </div>
 
@@ -358,12 +506,19 @@ export class ChatWebViewManager {
       const cancelBtn = document.getElementById('cancelBtn');
       const errorMsg = document.getElementById('errorMsg');
       const descriptionInput = document.getElementById('description');
+      const categoryInputs = document.querySelectorAll('input[name="category"]');
 
       let providers = [];
       let models = [];
 
       const defaultProviderVal = ${JSON.stringify(defaultProvider)};
       const defaultModelVal = ${JSON.stringify(defaultModel)};
+
+      function selectCategory(el) {
+        document.querySelectorAll('.category-option').forEach(opt => opt.classList.remove('selected'));
+        el.classList.add('selected');
+        el.querySelector('input[type="radio"]').checked = true;
+      }
 
       // Request providers on load
       vscode.postMessage({ type: 'getProviders' });
@@ -382,11 +537,11 @@ export class ChatWebViewManager {
             break;
           case 'sessionCreated':
             createBtn.disabled = false;
-            createBtn.textContent = 'Create Session';
+            createBtn.textContent = '创建会话';
             break;
           case 'error':
             createBtn.disabled = false;
-            createBtn.textContent = 'Create Session';
+            createBtn.textContent = '创建会话';
             errorMsg.textContent = msg.payload?.message || 'Unknown error';
             errorMsg.style.display = 'block';
             break;
@@ -394,7 +549,7 @@ export class ChatWebViewManager {
       });
 
       function renderProviders() {
-        providerSelect.innerHTML = '<option value="">-- Use default' + (defaultProviderVal ? ' (' + defaultProviderVal + ')' : '') + ' --</option>';
+        providerSelect.innerHTML = '<option value="">-- 使用默认' + (defaultProviderVal ? ' (' + defaultProviderVal + ')' : '') + ' --</option>';
         providers.forEach(p => {
           const opt = document.createElement('option');
           opt.value = p.id;
@@ -404,7 +559,7 @@ export class ChatWebViewManager {
       }
 
       function renderModels() {
-        modelSelect.innerHTML = '<option value="">-- Use default' + (defaultModelVal ? ' (' + defaultModelVal + ')' : '') + ' --</option>';
+        modelSelect.innerHTML = '<option value="">-- 使用默认' + (defaultModelVal ? ' (' + defaultModelVal + ')' : '') + ' --</option>';
         models.forEach(m => {
           const opt = document.createElement('option');
           opt.value = m.id;
@@ -418,28 +573,29 @@ export class ChatWebViewManager {
       providerSelect.addEventListener('change', () => {
         const provider = providerSelect.value;
         modelSelect.disabled = true;
-        modelSelect.innerHTML = '<option value="">Loading...</option>';
+          modelSelect.innerHTML = '<option value="">加载中...</option>';
         models = [];
         if (provider) {
           vscode.postMessage({ type: 'getModels', payload: { provider } });
         } else {
-          modelSelect.innerHTML = '<option value="">-- Select provider first --</option>';
+          modelSelect.innerHTML = '<option value="">-- 请先选择提供商 --</option>';
         }
       });
 
       createBtn.addEventListener('click', () => {
         createBtn.disabled = true;
-        createBtn.textContent = 'Creating...';
+        createBtn.textContent = '创建中...';
         errorMsg.style.display = 'none';
 
         const description = descriptionInput.value.trim() || undefined;
         const provider = providerSelect.value || defaultProviderVal || undefined;
         const model = modelSelect.value || defaultModelVal || undefined;
         const workspace = ${JSON.stringify(workspacePath)} || undefined;
+        const category = document.querySelector('input[name="category"]:checked')?.value || 'normal';
 
         vscode.postMessage({
           type: 'createSession',
-          payload: { description, workspace, provider, model }
+          payload: { description, workspace, provider, model, category }
         });
       });
 
@@ -488,6 +644,14 @@ export class ChatWebViewManager {
 
       case 'abort':
         await this.sendCommand(sessionId, 'abort', message.payload)
+        break
+
+      case 'openCrewPanel':
+        this.openCrewPanel(sessionId)
+        break
+
+      case 'openChat':
+        this.openChat(message.payload.sessionId, message.payload.executionId)
         break
 
       case 'runnerAction':
@@ -565,11 +729,75 @@ export class ChatWebViewManager {
       case 'deleteJob':
         await this.handleDeleteJob(panel, message.payload)
         break
+
+      // ==================== Crew (Orchestration) handlers ====================
+      case 'fetchCrewExecutions':
+        await this.handleFetchCrewExecutions(panel, message.payload)
+        break
+
+      case 'fetchCrewDetail':
+        await this.handleFetchCrewDetail(panel, message.payload)
+        break
+
+      case 'submitCrew':
+        await this.handleSubmitCrew(panel, message.payload)
+        break
+
+      case 'abortCrew':
+        await this.handleAbortCrew(panel, message.payload)
+        break
+
+      case 'deleteCrew':
+        await this.handleDeleteCrew(panel, message.payload)
+        break
+
+      case 'fetchCrewConfigs':
+        await this.handleFetchCrewConfigs(panel, message.payload)
+        break
+
+      case 'fetchCrewConfigDetail':
+        await this.handleFetchCrewConfigDetail(panel, message.payload)
+        break
+
+      case 'saveCrewConfig':
+        await this.handleSaveCrewConfig(panel, message.payload)
+        break
+
+      case 'openCrewConfigFile':
+        await this.handleOpenCrewConfigFile(message.payload)
+        break
+
+      case 'confirmAction':
+        await this.handleConfirmAction(panel, message.payload)
+        break
     }
   }
 
   private async initializeSession(sessionId: string, panel: vscode.WebviewPanel) {
     try {
+      // If socket already exists (e.g., created by crew panel), skip reconnection
+      if (this.socketClients.has(sessionId)) {
+        // Register chat panel handlers on the existing socket
+        const existingClient = this.socketClients.get(sessionId)!
+        existingClient.on('onConnect', 'chat', () => {
+          this.postToPanel(panel, { type: 'connected', payload: { connected: true } } as ExtensionToWebView)
+        })
+        existingClient.on('onDisconnect', 'chat', () => {
+          this.postToPanel(panel, { type: 'connected', payload: { connected: false } } as ExtensionToWebView)
+        })
+        existingClient.on('onMessage', 'chat', (msg) => {
+          // Don't forward crew events to chat panel
+          if (msg.message_type === 'system_message' && msg.data?.crew_event) return
+          this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
+        })
+        existingClient.on('onError', 'chat', (error) => {
+          this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+        })
+        // Still need to fetch agents and history for the chat panel
+        await this.fetchAgentsAndHistory(sessionId, panel)
+        return
+      }
+
       // Create socket client
       const socketClient = new SocketClient(this.configManager, () => this.authManager.token)
       this.socketClients.set(sessionId, socketClient)
@@ -583,6 +811,14 @@ export class ChatWebViewManager {
           this.postToPanel(panel, { type: 'connected', payload: { connected: false } } as ExtensionToWebView)
         },
         onMessage: (msg) => {
+          // Route crew events to crew panel if it exists
+          if (msg.message_type === 'system_message' && msg.data?.crew_event) {
+            const crewPanel = this.crewPanels.get(sessionId)
+            if (crewPanel) {
+              this.postToPanel(crewPanel, { type: 'crewEvent', payload: msg.data.payload } as ExtensionToWebView)
+              return  // Don't forward crew events to chat panel
+            }
+          }
           this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
         },
         onError: (error) => {
@@ -594,32 +830,12 @@ export class ChatWebViewManager {
       console.log('[ChatWebView] Connecting socket...')
       await socketClient.connect()
       console.log('[ChatWebView] Socket connected, subscribing...')
-      await socketClient.subscribe(sessionId)
+      const unsub = await socketClient.subscribe(sessionId)
+      this.socketUnsubs.set(sessionId, unsub)
       console.log('[ChatWebView] Subscribed to', sessionId)
 
-      // Fetch session agents and send default agent ID to WebView
-      try {
-        console.log('[ChatWebView] Fetching agents for', sessionId)
-        const agents = await this.apiClient.getSessionAgents(sessionId)
-        console.log('[ChatWebView] Agents:', JSON.stringify(agents.map((a: any) => ({ id: a.agent_id, role: a.role, name: a.name }))))
-        const defaultAgentId = agents.find((a: any) => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id
-                              || agents[0]?.agent_id
-        console.log('[ChatWebView] defaultAgentId:', defaultAgentId)
-        if (defaultAgentId) {
-          this.postToPanel(panel, {
-            type: 'agents',
-            payload: { agents, defaultAgentId }
-          } as ExtensionToWebView)
-        }
-      } catch (e) {
-        console.error('[ChatWebView] Failed to fetch agents:', e)
-      }
-
-      // Load initial history
-      await this.handleLoadHistory(sessionId, panel, { skip: 0, limit: 50 })
-
-      // Start runner polling
-      this.startRunnerPolling(sessionId, panel)
+      // Fetch session agents, history, and start polling
+      await this.fetchAgentsAndHistory(sessionId, panel)
 
     } catch (error: any) {
       this.postToPanel(panel, {
@@ -627,6 +843,33 @@ export class ChatWebViewManager {
         payload: { message: `Failed to initialize: ${error.message}` },
       } as ExtensionToWebView)
     }
+  }
+
+  private async fetchAgentsAndHistory(sessionId: string, panel: vscode.WebviewPanel) {
+    // Fetch session agents and send default agent ID to WebView
+    try {
+      console.log('[ChatWebView] Fetching agents for', sessionId)
+      const agents = await this.apiClient.getSessionAgents(sessionId)
+      console.log('[ChatWebView] Agents:', JSON.stringify(agents.map((a: any) => ({ id: a.agent_id, role: a.role, name: a.name }))))
+      const defaultAgentId = agents.find((a: any) => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id
+                            || agents[0]?.agent_id
+      console.log('[ChatWebView] defaultAgentId:', defaultAgentId)
+      if (defaultAgentId) {
+        this.postToPanel(panel, {
+          type: 'agents',
+          payload: { agents, defaultAgentId }
+        } as ExtensionToWebView)
+      }
+    } catch (e) {
+      console.error('[ChatWebView] Failed to fetch agents:', e)
+    }
+
+    // Load initial history (with executionId filter if set)
+    const execId = this.sessionExecutionIds.get(sessionId)
+    await this.handleLoadHistory(sessionId, panel, { skip: 0, limit: 50, executionId: execId })
+
+    // Start runner polling
+    this.startRunnerPolling(sessionId, panel)
   }
 
   private async handleSendMessage(
@@ -668,10 +911,10 @@ export class ChatWebViewManager {
   private async handleLoadHistory(
     sessionId: string,
     panel: vscode.WebviewPanel,
-    payload: { skip: number; limit: number }
+    payload: { skip: number; limit: number; executionId?: string }
   ) {
     try {
-      const response = await this.apiClient.getSessionMessages(sessionId, payload.skip, payload.limit)
+      const response = await this.apiClient.getSessionMessages(sessionId, payload.skip, payload.limit, payload.executionId)
       this.postToPanel(panel, {
         type: 'historyLoaded',
         payload: {
@@ -1088,6 +1331,137 @@ export class ChatWebViewManager {
     }
   }
 
+  // ==================== Crew Handler Methods ====================
+
+  private async handleFetchCrewExecutions(panel: vscode.WebviewPanel, payload?: { session_id?: string; status?: string }) {
+    try {
+      const result = await this.apiClient.getCrews(payload)
+      this.postToPanel(panel, { type: 'crewExecutions', payload: result } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchCrewDetail(panel: vscode.WebviewPanel, payload: { executionId: string }) {
+    try {
+      const result = await this.apiClient.getCrewDetail(payload.executionId)
+      this.postToPanel(panel, { type: 'crewDetail', payload: result } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleSubmitCrew(panel: vscode.WebviewPanel, payload: { yaml_content?: string; yaml_path?: string; session_id: string }) {
+    try {
+      await this.apiClient.submitCrew(payload)
+      // Fetch full execution list to get all records (including previous ones)
+      const listResult = await this.apiClient.getCrews({ session_id: payload.session_id })
+      this.postToPanel(panel, { type: 'crewExecutions', payload: listResult } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleAbortCrew(panel: vscode.WebviewPanel, payload: { executionId: string }) {
+    try {
+      await this.apiClient.abortCrew(payload.executionId)
+      this.postToPanel(panel, { type: 'crewEvent', payload: { event: 'aborted', execution_id: payload.executionId, status: 'aborted' } } as ExtensionToWebView)
+      vscode.window.showInformationMessage('编排已中止')
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`中止失败: ${error.message}`)
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleDeleteCrew(panel: vscode.WebviewPanel, payload: { executionId: string }) {
+    try {
+      await this.apiClient.deleteCrew(payload.executionId)
+      this.postToPanel(panel, { type: 'crewEvent', payload: { event: 'deleted', execution_id: payload.executionId } } as ExtensionToWebView)
+      vscode.window.showInformationMessage('编排已删除')
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`删除失败: ${error.message}`)
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchCrewConfigs(panel: vscode.WebviewPanel, payload: { workspace?: string; session_id?: string }) {
+    try {
+      // Resolve workspace from session_id if not provided directly
+      let workspace = payload.workspace
+      if (!workspace && payload.session_id) {
+        const session = await this.apiClient.getSession(payload.session_id)
+        workspace = session.workspace || ''
+      }
+      if (!workspace) {
+        this.postToPanel(panel, { type: 'crewConfigs', payload: { configs: [], total: 0 } } as ExtensionToWebView)
+        return
+      }
+      const result = await this.apiClient.listCrewConfigs(workspace)
+      this.postToPanel(panel, { type: 'crewConfigs', payload: result } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchCrewConfigDetail(panel: vscode.WebviewPanel, payload: { filename: string; workspace: string }) {
+    try {
+      const result = await this.apiClient.getCrewConfig(payload.filename, payload.workspace)
+      this.postToPanel(panel, { type: 'crewConfigDetail', payload: result } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleSaveCrewConfig(panel: vscode.WebviewPanel, payload: { filename: string; workspace: string; content: string }) {
+    try {
+      const result = await this.apiClient.saveCrewConfig(payload.filename, payload.workspace, payload.content)
+      this.postToPanel(panel, { type: 'crewConfigDetail', payload: result } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+    }
+  }
+
+  private async handleOpenCrewConfigFile(payload: { sessionId: string; crewName: string }) {
+    try {
+      // Get session workspace
+      const session = await this.apiClient.getSession(payload.sessionId)
+      const workspace = session?.workspace
+      if (!workspace) {
+        vscode.window.showErrorMessage('该会话没有关联的工作空间')
+        return
+      }
+
+      // List crew configs and find matching file
+      const result = await this.apiClient.listCrewConfigs(workspace)
+      const matching = result.configs.find(cfg => cfg.name === payload.crewName)
+      if (!matching) {
+        vscode.window.showErrorMessage(`未找到编排 '${payload.crewName}' 对应的配置文件`)
+        return
+      }
+
+      // Open file in VS Code
+      const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(matching.path))
+      vscode.window.showTextDocument(doc)
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`打开配置文件失败: ${error.message}`)
+    }
+  }
+
+  private async handleConfirmAction(panel: vscode.WebviewPanel, payload: { action: string; executionId: string; message: string }) {
+    const confirmed = await vscode.window.showWarningMessage(payload.message, { modal: true }, '确定')
+    if (confirmed !== '确定') return
+
+    // Dispatch to the actual handler
+    switch (payload.action) {
+      case 'abortCrew':
+        await this.handleAbortCrew(panel, { executionId: payload.executionId })
+        break
+      case 'deleteCrew':
+        await this.handleDeleteCrew(panel, { executionId: payload.executionId })
+        break
+    }
+  }
+
   private async startRunnerPolling(sessionId: string, panel: vscode.WebviewPanel) {
     this.stopRunnerPolling(sessionId)
 
@@ -1139,6 +1513,13 @@ export class ChatWebViewManager {
   private disposeSession(sessionId: string) {
     this.stopRunnerPolling(sessionId)
 
+    // 先取消订阅（引用计数归零），再断开连接
+    const unsub = this.socketUnsubs.get(sessionId)
+    if (unsub) {
+      unsub().catch(() => {})
+      this.socketUnsubs.delete(sessionId)
+    }
+
     const socketClient = this.socketClients.get(sessionId)
     if (socketClient) {
       socketClient.disconnect()
@@ -1146,7 +1527,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private getWebviewContent(webview: vscode.Webview, sessionId: string): string {
+  private getWebviewContent(webview: vscode.Webview, sessionId: string, category?: string, executionId?: string): string {
     const webviewDist = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
     const htmlPath = vscode.Uri.joinPath(webviewDist, 'index.html')
 
@@ -1166,11 +1547,17 @@ export class ChatWebViewManager {
     const serverUrl = this.configManager.get('serverUrl')
     const wsUrl = this.configManager.get('wsUrl')
 
-    const initData = {
+    const initData: Record<string, any> = {
       sessionId,
       token: token || '',
       serverUrl: serverUrl || 'http://localhost:8000',
       wsUrl: wsUrl || 'http://localhost:8000',
+    }
+    if (category) {
+      initData.category = category
+    }
+    if (executionId) {
+      initData.executionId = executionId
     }
     const initTag = `<script type="application/json" id="init-data">${JSON.stringify(initData)}</script>`
 
@@ -1197,6 +1584,36 @@ export class ChatWebViewManager {
 
     // Inject empty data for config page (no session-specific data needed)
     const initTag = `<script type="application/json" id="init-data">{}</script>`
+    html = html.replace('</head>', initTag + '</head>')
+    html = this.addCSP(webview, html)
+
+    return html
+  }
+
+  private getCrewWebviewContent(webview: vscode.Webview, sessionId: string): string {
+    const webviewDist = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
+    const htmlPath = vscode.Uri.joinPath(webviewDist, 'crew.html')
+
+    let html: string
+    try {
+      html = require('fs').readFileSync(htmlPath.fsPath, 'utf-8')
+    } catch {
+      return this.getFallbackHtml('Crew Management', 'Failed to load crew UI')
+    }
+
+    html = this.transformResourcePaths(webview, webviewDist, html)
+
+    const token = this.authManager.token
+    const serverUrl = this.configManager.get('serverUrl')
+    const wsUrl = this.configManager.get('wsUrl')
+
+    const initData = {
+      sessionId,
+      token: token || '',
+      serverUrl: serverUrl || 'http://localhost:8000',
+      wsUrl: wsUrl || 'http://localhost:8000',
+    }
+    const initTag = `<script type="application/json" id="init-data">${JSON.stringify(initData)}</script>`
     html = html.replace('</head>', initTag + '</head>')
     html = this.addCSP(webview, html)
 

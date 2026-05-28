@@ -18,7 +18,9 @@
     "onCommand:broca.createSession",
     "onCommand:broca.login",
     "onCommand:broca.logout",
-    "onCommand:broca.configure"
+    "onCommand:broca.configure",
+    "onCommand:broca.submitCrew",
+    "onCommand:broca.openCrewList"
   ],
   "main": "./dist/extension/activation.js",
   "contributes": {
@@ -86,6 +88,14 @@
       {
         "command": "broca.deleteSession",
         "title": "Delete Session"
+      },
+      {
+        "command": "broca.submitCrew",
+        "title": "提交编排"
+      },
+      {
+        "command": "broca.openCrewList",
+        "title": "查看编排执行记录"
       }
     ],
     "submenus": [
@@ -129,6 +139,14 @@
           "when": "view == broca.sessionManager && viewItem == session"
         },
         {
+          "command": "broca.submitCrew",
+          "when": "view == broca.sessionManager && viewItem == session"
+        },
+        {
+          "command": "broca.openCrewList",
+          "when": "view == broca.sessionManager && viewItem == session"
+        },
+        {
           "command": "broca.copySessionWorkspace",
           "when": "view == broca.sessionManager && viewItem == session"
         },
@@ -156,6 +174,14 @@
         },
         {
           "command": "broca.deleteSession",
+          "when": "false"
+        },
+        {
+          "command": "broca.submitCrew",
+          "when": "false"
+        },
+        {
+          "command": "broca.openCrewList",
           "when": "false"
         }
       ]
