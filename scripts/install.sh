@@ -34,10 +34,16 @@ case "$OS" in
     Darwin)
         IS_MACOS=true
         # Homebrew nginx 配置目录 (Apple Silicon / Intel)
+        HOMEBREW_NGINX_DIR=""
         if [[ -d "/opt/homebrew/etc/nginx" ]]; then
             HOMEBREW_NGINX_DIR="/opt/homebrew"
         elif [[ -d "/usr/local/etc/nginx" ]]; then
             HOMEBREW_NGINX_DIR="/usr/local"
+        fi
+        if [[ -z "$HOMEBREW_NGINX_DIR" ]]; then
+            error "未找到 Homebrew nginx 配置目录"
+            error "请确保 nginx 已安装: brew install nginx"
+            exit 1
         fi
         NGINX_SITES_DIR="${HOMEBREW_NGINX_DIR}/etc/nginx/sites-enabled"
         NGINX_CONF_BASE="${HOMEBREW_NGINX_DIR}/etc/nginx"
