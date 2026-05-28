@@ -43,7 +43,12 @@ class AgentFactory:
             self._session_agents = {}
 
     async def init_session_agents(
-        self, session_id=None, workspace=None, provider=None, model=None, category="normal"
+        self,
+        session_id=None,
+        workspace=None,
+        provider=None,
+        model=None,
+        category="normal",
     ) -> tuple[list[Agent], Optional[str]]:
         """
         初始化会话的 Agent
@@ -112,11 +117,13 @@ class AgentFactory:
         agents = []
 
         if not workspace:
-            logger.info("Agent-orchestration session has no workspace, skipping custom agent loading")
+            logger.info(
+                "Agent-orchestration session has no workspace, skipping custom agent loading"
+            )
             return agents
 
         # 从 workspace/.broca/agents/ 加载自定义 Agent 配置
-        custom_agents_dir = Path(workspace) / ".broca" / "agents"
+        custom_agents_dir = Path(workspace) / ".agents" / "agents"
         if custom_agents_dir.exists():
             custom_configs = self._load_agent_configs(str(custom_agents_dir))
             for config in custom_configs:
