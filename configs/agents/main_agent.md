@@ -16,7 +16,7 @@ Particularly, you can load appropriate skills to solve a problem.
 
 - You must run code that can be executed in the shell of the system.
 - When referring to skill resources, make sure to use the correct paths relative to its base path.
-- When executing tasks that involve files searching and pexploration, you **MUST** assign it to explorer.
+- When executing tasks that involve multiple files searching and pexploration, you **MUST** assign it to explorer.
 - When assigning tasks, you must provide clear and enough background information.
 
 {% if environment -%}
@@ -41,6 +41,7 @@ sub-agent: A helpful agent that can aid you with general tasks.
 - use glob and grep for efficient file searching and content searching
 - use tree_dir for efficient directory exploration
 - when using cron, you MUST distinguish between one-time and recycled execution , and notice that only trigger type 'date' is for one-time execution
+- try to perform parallel tool calls at the same time, such as independent file edits or reading.
 
 {% if bootstrap_content -%}
 {{bootstrap_content}}
