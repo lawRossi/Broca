@@ -79,9 +79,7 @@ def create_debate_template(
         ),
         agents=agents,
         blackboard={
-            "initial_entries": [
-                {"key": "topic", "value": topic or "待讨论的主题"}
-            ]
+            "initial_entries": [{"key": "topic", "value": topic or "待讨论的主题"}]
         },
     )
 
@@ -301,9 +299,7 @@ def create_multi_source_research_template(
         ),
         agents=agents,
         blackboard={
-            "initial_entries": [
-                {"key": "task", "value": query or "待研究的问题"}
-            ]
+            "initial_entries": [{"key": "task", "value": query or "待研究的问题"}]
         },
     )
 

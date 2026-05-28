@@ -13,9 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import json
-import uuid
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
@@ -154,12 +152,14 @@ class Blackboard:
             存储的值，或 default
         """
         async with self._lock:
+            # 先尝试精确匹配（带点号的扁平 key 优先）
+            entry = self._entries.get(key)
+            if entry is not None:
+                return copy.deepcopy(entry.value)
+            # 精确匹配失败，再尝试嵌套路径解析
             if "." in key:
                 return self._get_nested(key, default)
-            entry = self._entries.get(key)
-            if entry is None:
-                return default
-            return copy.deepcopy(entry.value)
+            return default
 
     def _get_nested(self, key: str, default: Any = None) -> Any:
         """获取嵌套路径的值"""
@@ -230,10 +230,11 @@ class Blackboard:
                 value=copy.deepcopy(value),
                 version=self._version_counter,
                 producer=producer,
-                created_at=self._entries[key].created_at if key in self._entries else now,
+                created_at=self._entries[key].created_at
+                if key in self._entries
+                else now,
                 updated_at=now,
             )
-            version = self._version_counter
 
         # 锁外通知
         event = self._notify(key, old_value, value, producer, event_type)
@@ -246,7 +247,9 @@ class Blackboard:
             event_type=event_type,
         )
 
-    async def delete(self, key: str, producer: str = "system") -> Optional[BlackboardEvent]:
+    async def delete(
+        self, key: str, producer: str = "system"
+    ) -> Optional[BlackboardEvent]:
         """
         删除黑板中指定 key
 
@@ -349,21 +352,21 @@ class Blackboard:
                     continue
                 if producer and event.producer != producer:
                     continue
-                changes.append({
-                    "key": event.key,
-                    "event_type": event.event_type.value,
-                    "producer": event.producer,
-                    "timestamp": event.timestamp.isoformat(),
-                    "value": copy.deepcopy(event.new_value),
-                })
+                changes.append(
+                    {
+                        "key": event.key,
+                        "event_type": event.event_type.value,
+                        "producer": event.producer,
+                        "timestamp": event.timestamp.isoformat(),
+                        "value": copy.deepcopy(event.new_value),
+                    }
+                )
             return changes
 
     def to_serializable(self) -> Dict[str, Any]:
         """序列化为可持久化的字典"""
         return {
-            "entries": {
-                k: v.to_dict() for k, v in self._entries.items()
-            },
+            "entries": {k: v.to_dict() for k, v in self._entries.items()},
             "version": self._version_counter,
         }
 

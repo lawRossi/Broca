@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 import asyncio
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 class RetryStrategy(str, Enum):
     """重试策略"""
 
-    FIXED = "fixed"          # 固定间隔重试
+    FIXED = "fixed"  # 固定间隔重试
     EXPONENTIAL = "exponential"  # 指数退避
     IMMEDIATE = "immediate"  # 立即重试
 
@@ -39,17 +39,17 @@ class RetryConfig:
 class CircuitBreakerConfig:
     """断路器配置"""
 
-    failure_threshold: int = 5       # 连续失败次数阈值
-    recovery_timeout: float = 30.0   # 恢复超时（秒）
+    failure_threshold: int = 5  # 连续失败次数阈值
+    recovery_timeout: float = 30.0  # 恢复超时（秒）
     half_open_max_requests: int = 1  # 半开状态最大请求数
 
 
 class CircuitState(str, Enum):
     """断路器状态"""
 
-    CLOSED = "closed"          # 正常
-    OPEN = "open"              # 断开
-    HALF_OPEN = "half_open"    # 半开
+    CLOSED = "closed"  # 正常
+    OPEN = "open"  # 断开
+    HALF_OPEN = "half_open"  # 半开
 
 
 class CircuitBreaker:
@@ -83,7 +83,7 @@ class CircuitBreaker:
             result = await func(*args, **kwargs)
             self._on_success()
             return result
-        except Exception as e:
+        except Exception:
             self._on_failure()
             raise
 
@@ -125,6 +125,7 @@ class CircuitBreaker:
 
 class CircuitBreakerOpenError(Exception):
     """断路器断开异常"""
+
     pass
 
 
@@ -200,7 +201,9 @@ class DeadLoopDetector:
     检测编排中 Agent 是否陷入重复无意义的循环。
     """
 
-    def __init__(self, max_similar_responses: int = 3, similarity_threshold: float = 0.9):
+    def __init__(
+        self, max_similar_responses: int = 3, similarity_threshold: float = 0.9
+    ):
         self.max_similar_responses = max_similar_responses
         self.similarity_threshold = similarity_threshold
         self._response_history: Dict[str, List[str]] = {}
@@ -231,9 +234,7 @@ class DeadLoopDetector:
             return False
 
         # 检查所有记录是否相似
-        if all(
-            self._is_similar(history[0], h) for h in history[1:]
-        ):
+        if all(self._is_similar(history[0], h) for h in history[1:]):
             logger.warning(
                 f"Dead loop detected for agent '{agent_name}': "
                 f"{self.max_similar_responses} similar responses"
@@ -307,9 +308,7 @@ class HumanInTheLoop:
         """
         prompt = question
         if context:
-            context_str = "\n".join(
-                f"  {k}: {v}" for k, v in context.items()
-            )
+            context_str = "\n".join(f"  {k}: {v}" for k, v in context.items())
             prompt = f"{question}\n\nContext:\n{context_str}"
 
         prompt += "\n\nPlease approve or reject with a reason."
@@ -319,7 +318,6 @@ class HumanInTheLoop:
                 answer = await self._ask_func(prompt)
             else:
                 # 使用默认的 ask_user
-                from broca.tools.agent_interaction import AskUserToolManager
 
                 answer = await self._ask_via_ask_user(prompt, timeout)
 
@@ -347,10 +345,13 @@ class HumanInTheLoop:
 
         ctx = ToolCallContext()
         result = await tool._execute(
-            {"question": question, "options": [
-                {"name": "approve", "description": "Approve and continue"},
-                {"name": "reject", "description": "Reject and provide feedback"},
-            ]},
+            {
+                "question": question,
+                "options": [
+                    {"name": "approve", "description": "Approve and continue"},
+                    {"name": "reject", "description": "Reject and provide feedback"},
+                ],
+            },
             ctx,
         )
         return result.content
@@ -360,12 +361,16 @@ class HumanInTheLoop:
         answer_lower = answer.lower().strip()
 
         # 检查关键词
-        if any(word in answer_lower for word in ["approve", "yes", "同意", "批准", "继续"]):
+        if any(
+            word in answer_lower for word in ["approve", "yes", "同意", "批准", "继续"]
+        ):
             return ApprovalResult(
                 approved=True,
                 reason=answer,
             )
-        elif any(word in answer_lower for word in ["reject", "no", "拒绝", "不同意", "停止"]):
+        elif any(
+            word in answer_lower for word in ["reject", "no", "拒绝", "不同意", "停止"]
+        ):
             return ApprovalResult(
                 approved=False,
                 reason=answer,
@@ -403,9 +408,7 @@ class ErrorRecoveryManager:
     ):
         self.retry_handler = RetryHandler(retry_config)
         self.circuit_breaker = CircuitBreaker(circuit_config)
-        self.dead_loop_detector = DeadLoopDetector(
-            **(dead_loop_config or {})
-        )
+        self.dead_loop_detector = DeadLoopDetector(**(dead_loop_config or {}))
         self.human_in_the_loop = HumanInTheLoop()
 
     async def safe_execute(
@@ -439,7 +442,8 @@ class ErrorRecoveryManager:
         try:
             result = await self.circuit_breaker.call(
                 self.retry_handler.execute,
-                func, *args,
+                func,
+                *args,
                 context=context,
                 **kwargs,
             )
@@ -452,8 +456,7 @@ class ErrorRecoveryManager:
         if agent_name and isinstance(result, str):
             if self.dead_loop_detector.check(agent_name, result):
                 logger.warning(
-                    f"Dead loop detected for '{agent_name}'. "
-                    f"Asking user for guidance."
+                    f"Dead loop detected for '{agent_name}'. Asking user for guidance."
                 )
                 approval = await self.human_in_the_loop.request_approval(
                     f"Agent '{agent_name}' appears to be in a loop. "
@@ -474,8 +477,6 @@ class ErrorRecoveryManager:
                 context=context,
             )
             if not approval.approved:
-                raise RuntimeError(
-                    f"Step rejected by user: {approval.reason}"
-                )
+                raise RuntimeError(f"Step rejected by user: {approval.reason}")
 
         return result

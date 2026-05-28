@@ -143,12 +143,21 @@ class ConsensusOrchestrator(Orchestrator):
             phase2.output = consensus
             phase2.completed_at = datetime.now(timezone.utc)
 
-            result.status = ExecutionStatus.COMPLETED
+            if self._check_aborted():
+                result.status = ExecutionStatus.ABORTED
+                result.error = "Aborted during consensus aggregation"
+            else:
+                result.status = ExecutionStatus.COMPLETED
 
         except Exception as e:
             logger.error(f"Consensus execution failed: {e}")
-            result.status = ExecutionStatus.FAILED
-            result.error = str(e)
+            # 如果编排已被中止，按中止处理而非失败
+            if self._check_aborted():
+                result.status = ExecutionStatus.ABORTED
+                result.error = "Aborted during consensus execution"
+            else:
+                result.status = ExecutionStatus.FAILED
+                result.error = str(e)
 
         result.completed_at = datetime.now(timezone.utc)
         result.blackboard_snapshot = await self.context.blackboard.to_dict()

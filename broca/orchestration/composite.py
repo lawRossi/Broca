@@ -85,6 +85,16 @@ class CompositeOrchestrator(Orchestrator):
 
                     try:
                         sub_result = await self._run_sub_crew(sub_crew)
+
+                        # 如果编排已被中止，即使子 Crew 成功也要停止
+                        if self._check_aborted():
+                            phase.status = PhaseStatus.FAILED
+                            phase.error = "Execution aborted"
+                            phase.completed_at = datetime.now(timezone.utc)
+                            result.status = ExecutionStatus.ABORTED
+                            result.error = f"Aborted after sub-crew '{sub_crew.name}'"
+                            break
+
                         await self.context.blackboard.set(
                             f"sub_crew_{sub_crew.name}",
                             sub_result.final_output,
@@ -101,17 +111,31 @@ class CompositeOrchestrator(Orchestrator):
                         phase.error = str(e)
                         phase.completed_at = datetime.now(timezone.utc)
 
-                        result.status = ExecutionStatus.FAILED
-                        result.error = f"Sub-crew '{sub_crew.name}' failed: {e}"
+                        # 如果编排已被中止，按中止处理而非失败
+                        if self._check_aborted():
+                            result.status = ExecutionStatus.ABORTED
+                            result.error = f"Aborted during sub-crew '{sub_crew.name}'"
+                        else:
+                            result.status = ExecutionStatus.FAILED
+                            result.error = f"Sub-crew '{sub_crew.name}' failed: {e}"
                         break
 
             if result.status == ExecutionStatus.RUNNING:
-                result.status = ExecutionStatus.COMPLETED
+                if self._check_aborted():
+                    result.status = ExecutionStatus.ABORTED
+                    result.error = "Aborted after all sub-crews completed"
+                else:
+                    result.status = ExecutionStatus.COMPLETED
 
         except Exception as e:
             logger.error(f"Composite execution failed: {e}")
-            result.status = ExecutionStatus.FAILED
-            result.error = str(e)
+            # 如果编排已被中止，按中止处理而非失败
+            if self._check_aborted():
+                result.status = ExecutionStatus.ABORTED
+                result.error = "Aborted during composite execution"
+            else:
+                result.status = ExecutionStatus.FAILED
+                result.error = str(e)
 
         result.completed_at = datetime.now(timezone.utc)
         result.blackboard_snapshot = await self.context.blackboard.to_dict()
@@ -155,6 +179,16 @@ class CompositeOrchestrator(Orchestrator):
 
             try:
                 sub_result = await self._run_sub_crew(sub_crew)
+
+                # 如果编排已被中止，即使子 Crew 成功也要停止
+                if self._check_aborted():
+                    sub_phase.status = PhaseStatus.FAILED
+                    sub_phase.error = "Execution aborted"
+                    sub_phase.completed_at = datetime.now(timezone.utc)
+                    result.status = ExecutionStatus.ABORTED
+                    result.error = f"Aborted after sub-crew '{sub_crew.name}'"
+                    return
+
                 await self.context.blackboard.set(
                     f"sub_crew_{sub_crew.name}",
                     sub_result.final_output,
@@ -193,6 +227,16 @@ class CompositeOrchestrator(Orchestrator):
 
             try:
                 sub_result = await self._run_sub_crew(sub_crew)
+
+                # 如果编排已被中止，即使子 Crew 成功也要停止
+                if self._check_aborted():
+                    phase.status = PhaseStatus.FAILED
+                    phase.error = "Execution aborted"
+                    phase.completed_at = datetime.now(timezone.utc)
+                    result.status = ExecutionStatus.ABORTED
+                    result.error = f"Aborted after step '{sub_crew.name}'"
+                    return
+
                 await self.context.blackboard.set(
                     f"pipeline_step_{sub_crew.name}",
                     sub_result.final_output,

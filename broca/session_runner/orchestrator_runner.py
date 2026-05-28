@@ -158,6 +158,17 @@ class CrewOrchestratorRunner:
                         "progress": result.progress,
                     },
                 )
+            elif result.status == ExecutionStatus.ABORTED:
+                self._send_crew_event(
+                    IPCMessageType.EVT_CREW_ERROR,
+                    {
+                        "crew_id": self._crew_id,
+                        "execution_id": self._execution_id,
+                        "status": "aborted",
+                        "error": result.error or "Execution aborted by user",
+                        "phases": [p.to_dict() for p in result.phases],
+                    },
+                )
             else:
                 self._send_crew_event(
                     IPCMessageType.EVT_CREW_ERROR,
@@ -304,10 +315,16 @@ class CrewOrchestratorRunner:
             logger.warning(f"Failed to send crew event: {e}")
 
     async def abort_crew(self) -> bool:
-        """中止当前编排"""
+        """中止当前编排
+
+        注意：不依赖 task.cancel() 来中断执行，因为 CancelledError 会被
+        execution_engine 捕获并转换为普通结果，无法可靠传播到 run_crew()。
+        改用 _aborted 标志，由编排器在步骤边界检查并优雅停止。
+        """
         if self._orchestrator:
             await self._orchestrator.abort()
-            # 取消正在执行的 task，让 CancelledError 传播到 run_crew
+            # 如果有正在执行的任务，取消它以加速停止（CancelledError 会被
+            # execution_engine 捕获并转换为 ABORTED 状态，编排器据此中止）
             if self._task and not self._task.done():
                 self._task.cancel()
             logger.info(f"Crew '{self._crew_id}' aborted by user")

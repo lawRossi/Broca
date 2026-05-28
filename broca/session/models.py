@@ -11,6 +11,10 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+# 统一的 UTC 时间工厂函数（确保所有模型使用 timezone-aware datetime）
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
+
 from pydantic import ConfigDict
 from sqlalchemy import JSON, Column, Float, Integer, String
 from sqlmodel import Field, Relationship, SQLModel
@@ -102,7 +106,7 @@ class Turn(SQLModel, table=True):
         back_populates="turn", cascade_delete="all"
     )
 
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
 
 
 class SessionCategory(str, Enum):
@@ -133,7 +137,7 @@ class Session(SQLModel, table=True):
     )
 
     # 元数据
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
 
     finished_at: Optional[datetime] = Field(default=None, description="结束时间")
 
@@ -195,7 +199,7 @@ class SessionRunner(SQLModel, table=True):
         description="资源使用信息（JSON）",
     )
     error_message: Optional[str] = Field(default=None, description="错误信息")
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
 
 
 def generate_message_id() -> str:
@@ -319,7 +323,7 @@ class AgentConfig(SQLModel, table=True):
     config_content: str = Field(description="配置内容")
 
     # 元数据
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
 
     # 关联关系
     session: Session = Relationship(back_populates="agent_configs")
@@ -378,7 +382,7 @@ class Agent(SQLModel, table=True):
     )
 
     # 元数据
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
 
     # 关联关系
     agent_config: AgentConfig = Relationship(back_populates="agents")
@@ -762,8 +766,8 @@ class ScheduledJob(SQLModel, table=True):
     )
 
     # 元数据
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
-    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
     next_run_time: Optional[datetime] = Field(default=None, description="下次执行时间")
 
     # 关联关系
@@ -786,7 +790,7 @@ class JobExecution(SQLModel, table=True):
         description="关联的任务ID",
     )
 
-    executed_at: datetime = Field(default_factory=datetime.now, description="执行时间")
+    executed_at: datetime = Field(default_factory=utc_now, description="执行时间")
     success: bool = Field(description="是否成功")
     result: Optional[str] = Field(default=None, description="执行结果")
 
@@ -841,7 +845,7 @@ class TaskComment(SQLModel, table=True):
     )
     author: str = Field(description="评论作者")
     content: str = Field(description="评论内容")
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
 
     # 关联关系
     task: "Task" = Relationship(back_populates="comments")
@@ -908,8 +912,8 @@ class Task(SQLModel, table=True):
     )
 
     # 元数据
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
-    updated_at: datetime = Field(default_factory=datetime.now, description="更新时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
+    updated_at: datetime = Field(default_factory=utc_now, description="更新时间")
 
     # 关联关系
     session: Optional["Session"] = Relationship(back_populates="tasks")
@@ -924,7 +928,7 @@ class Task(SQLModel, table=True):
 
     def update_timestamp(self):
         """更新更新时间戳"""
-        self.updated_at = datetime.now()
+        self.updated_at = utc_now()
 
 
 # ============================================================================
@@ -996,7 +1000,7 @@ class CrewExecution(SQLModel, table=True):
         sa_column=Column(Float, nullable=True),
         description="后端计算好的执行进度（0.0~1.0）",
     )
-    started_at: datetime = Field(default_factory=datetime.now, description="开始时间")
+    started_at: datetime = Field(default_factory=utc_now, description="开始时间")
     completed_at: Optional[datetime] = Field(default=None, description="完成时间")
 
     # 关联关系
@@ -1037,7 +1041,7 @@ class BlackboardEntry(SQLModel, table=True):
     event_type: str = Field(
         default="created", description="事件类型：created/updated/deleted"
     )
-    created_at: datetime = Field(default_factory=datetime.now, description="创建时间")
+    created_at: datetime = Field(default_factory=utc_now, description="创建时间")
 
     # 关联关系
     crew_execution: CrewExecution = Relationship(back_populates="blackboard_entries")

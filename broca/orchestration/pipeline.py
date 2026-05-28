@@ -30,6 +30,7 @@ from broca.orchestration.orchestrator import (
     PhaseResult,
     PhaseStatus,
 )
+from broca.session import MessageProtocol
 
 logger = get_logger(__name__)
 
@@ -122,6 +123,15 @@ class PipelineOrchestrator(Orchestrator):
                 # 执行任务
                 step_output = await self._execute_step(step, task_context)
 
+                # 如果编排已被中止，即使步骤成功也要停止执行
+                if self._check_aborted():
+                    phase.status = PhaseStatus.FAILED
+                    phase.error = "Execution aborted"
+                    phase.completed_at = datetime.now(timezone.utc)
+                    result.status = ExecutionStatus.ABORTED
+                    result.error = f"Aborted after step {i + 1} ('{step.agent}')"
+                    break
+
                 # 记录结果
                 previous_output = step_output
                 if step_output:
@@ -145,13 +155,22 @@ class PipelineOrchestrator(Orchestrator):
                 phase.error = str(e)
                 phase.completed_at = datetime.now(timezone.utc)
 
-                result.status = ExecutionStatus.FAILED
-                result.error = f"Step {i + 1} ('{step.agent}') failed: {e}"
+                # 如果编排已被中止，按中止处理而非失败
+                if self._check_aborted():
+                    result.status = ExecutionStatus.ABORTED
+                    result.error = f"Aborted during step {i + 1} ('{step.agent}')"
+                else:
+                    result.status = ExecutionStatus.FAILED
+                    result.error = f"Step {i + 1} ('{step.agent}') failed: {e}"
                 break
 
-        # 最终汇总
+        # 最终汇总 — 循环结束后再次检查中止标志（防止最后一步完成后才被中止的情况）
         if result.status == ExecutionStatus.RUNNING:
-            result.status = ExecutionStatus.COMPLETED
+            if self._check_aborted():
+                result.status = ExecutionStatus.ABORTED
+                result.error = "Execution aborted after all steps completed"
+            else:
+                result.status = ExecutionStatus.COMPLETED
 
         result.completed_at = datetime.now(timezone.utc)
         result.blackboard_snapshot = await self.context.blackboard.to_dict()
@@ -210,53 +229,15 @@ class PipelineOrchestrator(Orchestrator):
         full_task += "Complete the assigned work thoroughly. "
         full_task += "After finishing, provide a clear summary of what you did and the key results."
 
-        # 使用 assign_task 工具执行
-        try:
-            from broca.tools.agent_interaction import AssignTask
+        trigger_message = MessageProtocol.create_user_message(content=full_task)
+        execution_result = await target_agent.run(trigger_message, from_agent=True)
 
-            assign_tool = AssignTask()
-            tool_context = self._create_tool_context(step.agent)
+        from broca.execution_engine import ExecutionStatus
 
-            result = await assign_tool._execute(
-                {
-                    "agent": step.agent,
-                    "task_id": f"pipeline_step_{step.agent}",
-                    "task": full_task,
-                    "execution_type": "blocking",
-                },
-                tool_context,
-            )
-
-            if result.status.value == "success":
-                return result.content
-            else:
-                raise RuntimeError(f"Agent execution failed: {result.content}")
-
-        except ImportError:
-            # fallback: 直接调用 agent.run()
-            from broca.execution_engine import ExecutionStatus
-            from broca.session import MessageProtocol
-
-            trigger_message = MessageProtocol.create_user_message(content=full_task)
-            execution_result = await target_agent.run(trigger_message, from_agent=True)
-
-            if execution_result.status == ExecutionStatus.COMPLETED:
-                message = target_agent.context.get_latest_assistant_message()
-                return message or "Task completed (no output message)"
-            elif execution_result.status == ExecutionStatus.ABORTED:
-                raise RuntimeError("Execution was aborted by user")
-            else:
-                raise RuntimeError(f"Execution failed: {execution_result.error}")
-
-    def _create_tool_context(self, agent_name: str) -> Any:
-        """创建工具调用上下文"""
-        from broca.tools.tool import ToolCallContext
-
-        ctx = ToolCallContext()
-        ctx.agent = self.context.get_agent(agent_name)
-        ctx.session_id = (
-            self.context.session_manager.session_id
-            if self.context.session_manager
-            else None
-        )
-        return ctx
+        if execution_result.status == ExecutionStatus.COMPLETED:
+            message = target_agent.context.get_latest_assistant_message()
+            return message or "Task completed (no output message)"
+        elif execution_result.status == ExecutionStatus.ABORTED:
+            raise RuntimeError("Execution was aborted by user")
+        else:
+            raise RuntimeError(f"Execution failed: {execution_result.error}")

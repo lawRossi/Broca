@@ -320,19 +320,39 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
         logger.info(f"Aborting crew: {crew_id}")
         if _crew_runner:
             try:
-                await _crew_runner.abort_crew()
-                logger.info(f"Crew '{crew_id}' aborted successfully")
+                aborted = await _crew_runner.abort_crew()
+                if aborted:
+                    logger.info(f"Crew '{crew_id}' aborted successfully")
+                    response = create_ipc_message(
+                        IPCMessageType.RESPONSE,
+                        msg.session_id,
+                        payload={"message": f"Crew {crew_id} aborted", "success": True},
+                        status=IPCStatusCode.SUCCESS,
+                    )
+                else:
+                    logger.warning(f"No active orchestrator to abort for crew '{crew_id}'")
+                    response = create_ipc_message(
+                        IPCMessageType.RESPONSE,
+                        msg.session_id,
+                        payload={"error": f"No active orchestrator for crew {crew_id}", "success": False},
+                        status=IPCStatusCode.ERROR,
+                    )
             except Exception as e:
                 logger.error(f"Error aborting crew: {e}")
+                response = create_ipc_message(
+                    IPCMessageType.RESPONSE,
+                    msg.session_id,
+                    payload={"error": str(e), "success": False},
+                    status=IPCStatusCode.ERROR,
+                )
         else:
             logger.warning(f"No active crew runner to abort (crew_id={crew_id})")
-
-        response = create_ipc_message(
-            IPCMessageType.RESPONSE,
-            msg.session_id,
-            payload={"message": f"Crew {crew_id} aborted"},
-            status=IPCStatusCode.SUCCESS,
-        )
+            response = create_ipc_message(
+                IPCMessageType.RESPONSE,
+                msg.session_id,
+                payload={"error": f"No active crew runner for {crew_id}", "success": False},
+                status=IPCStatusCode.ERROR,
+            )
         ipc_client.send_message(response)
 
     elif msg.type == IPCMessageType.CMD_EXECUTE:

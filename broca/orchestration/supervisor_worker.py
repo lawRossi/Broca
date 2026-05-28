@@ -133,11 +133,20 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                     "is_acceptable": is_acceptable,
                 }
                 phase.status = PhaseStatus.COMPLETED
-                self.notify_progress(result.phases, len(self.tasks))
+                self.notify_progress(result.phases, max_rounds)
                 phase.completed_at = datetime.now(timezone.utc)
 
                 if is_acceptable:
-                    # 质量达标，合成最终结果
+                    # 质量达标，但需检查是否已被中止
+                    if self._check_aborted():
+                        phase.status = PhaseStatus.FAILED
+                        phase.error = "Execution aborted"
+                        phase.completed_at = datetime.now(timezone.utc)
+                        result.status = ExecutionStatus.ABORTED
+                        result.error = "Aborted after acceptable iteration"
+                        break
+
+                    # 合成最终结果
                     synthesis = await self._synthesize(accumulated_results, final=False)
                     result.status = ExecutionStatus.COMPLETED
                     result.final_output = {
@@ -153,6 +162,12 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                 phase.error = str(e)
                 phase.completed_at = datetime.now(timezone.utc)
 
+                # 如果编排已被中止，按中止处理而非失败
+                if self._check_aborted():
+                    result.status = ExecutionStatus.ABORTED
+                    result.error = f"Aborted during iteration {attempt + 1}"
+                    break
+
                 if attempt == max_rounds - 1:
                     result.status = ExecutionStatus.FAILED
                     result.error = f"All {max_rounds} iterations failed. Last error: {e}"
@@ -163,14 +178,18 @@ class SupervisorWorkerOrchestrator(Orchestrator):
 
         # 如果所有轮次都用完仍未达标，使用当前最佳结果
         if result.status == ExecutionStatus.RUNNING:
-            synthesis = await self._synthesize(accumulated_results, final=True)
-            result.status = ExecutionStatus.COMPLETED
-            result.final_output = {
-                "iterations_completed": max_rounds,
-                "synthesis": synthesis,
-                "note": "Max rounds reached. Using best available results.",
-                "accumulated": accumulated_results,
-            }
+            if self._check_aborted():
+                result.status = ExecutionStatus.ABORTED
+                result.error = "Aborted during execution"
+            else:
+                synthesis = await self._synthesize(accumulated_results, final=True)
+                result.status = ExecutionStatus.COMPLETED
+                result.final_output = {
+                    "iterations_completed": max_rounds,
+                    "synthesis": synthesis,
+                    "note": "Max rounds reached. Using best available results.",
+                    "accumulated": accumulated_results,
+                }
 
         result.completed_at = datetime.now(timezone.utc)
         result.blackboard_snapshot = await self.context.blackboard.to_dict()

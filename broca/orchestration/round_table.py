@@ -109,6 +109,20 @@ class RoundTableOrchestrator(Orchestrator):
                     agent = participant["agent"]
                     agent_cfg = participant["config"]
 
+                    # 每个参与者发言前检查是否已被中止
+                    if self._check_aborted():
+                        logger.info(
+                            f"Round-Table aborted during round {round_num}, "
+                            f"stopping after '{agent_cfg.name}'"
+                        )
+                        # 本轮未完成，标记当前 phase 为 ABORTED
+                        phase.status = PhaseStatus.FAILED
+                        phase.error = "Execution aborted during round"
+                        phase.completed_at = datetime.now(timezone.utc)
+                        result.status = ExecutionStatus.ABORTED
+                        result.error = f"Aborted during round {round_num} after {agent_cfg.name}"
+                        break
+
                     # 构建讨论提示
                     prompt = self._build_discussion_prompt(
                         topic=topic,
@@ -133,6 +147,10 @@ class RoundTableOrchestrator(Orchestrator):
                         producer="round_table",
                     )
 
+                # 如果已被中止，跳出外层 round 循环
+                if result.status == ExecutionStatus.ABORTED:
+                    break
+
                 # 记录本轮讨论
                 discussion_history.extend(round_entries)
                 await self.context.blackboard.set(
@@ -146,7 +164,7 @@ class RoundTableOrchestrator(Orchestrator):
                     "entries_count": len(round_entries),
                 }
                 phase.status = PhaseStatus.COMPLETED
-                self.notify_progress(result.phases, self.max_rounds)
+                self.notify_progress(result.phases, max_rounds)
                 phase.completed_at = datetime.now(timezone.utc)
 
                 # Moderator 评估是否达成结论
@@ -165,6 +183,12 @@ class RoundTableOrchestrator(Orchestrator):
                 phase.error = str(e)
                 phase.completed_at = datetime.now(timezone.utc)
 
+                # 如果编排已被中止，按中止处理而非失败
+                if self._check_aborted():
+                    result.status = ExecutionStatus.ABORTED
+                    result.error = f"Aborted during round {round_num}"
+                    break
+
                 if round_num == max_rounds:
                     result.status = ExecutionStatus.FAILED
                     result.error = f"Last round failed: {e}"
@@ -174,7 +198,11 @@ class RoundTableOrchestrator(Orchestrator):
 
         # 结果汇总
         if result.status == ExecutionStatus.RUNNING:
-            result.status = ExecutionStatus.COMPLETED
+            if self._check_aborted():
+                result.status = ExecutionStatus.ABORTED
+                result.error = "Aborted during discussion"
+            else:
+                result.status = ExecutionStatus.COMPLETED
 
         result.completed_at = datetime.now(timezone.utc)
         result.blackboard_snapshot = await self.context.blackboard.to_dict()
