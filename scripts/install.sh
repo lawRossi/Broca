@@ -277,8 +277,8 @@ else
 fi
 
 # ---- 复制 llm_config.json ----
-LLM_DST="$BROCA_HOME/configs/llm_config.json"
-LLM_SRC="$PROJECT_ROOT/configs/llm_config.json"
+LLM_DST="$BROCA_HOME/configs/llm_config_template.json"
+LLM_SRC="$PROJECT_ROOT/configs/llm_config_template.json"
 
 if [[ ! -f "$LLM_DST" ]]; then
     if [[ -f "$LLM_SRC" ]]; then
