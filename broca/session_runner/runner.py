@@ -233,7 +233,9 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
                         break
                 if agent is None:
                     missing_agents.append(agent_cfg.name)
-                    logger.warning(f"Agent '{agent_cfg.name}' not found in session, skipping")
+                    logger.warning(
+                        f"Agent '{agent_cfg.name}' not found in session, skipping"
+                    )
                 else:
                     agent_refs[agent_cfg.name] = agent
 
@@ -247,7 +249,9 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
                 response = create_ipc_message(
                     IPCMessageType.RESPONSE,
                     msg.session_id,
-                    payload={"error": f"No agents matched. Crew requires: {[a.name for a in crew_config.agents]}, Session has: {[a.name for a in _agents]}"},
+                    payload={
+                        "error": f"No agents matched. Crew requires: {[a.name for a in crew_config.agents]}, Session has: {[a.name for a in _agents]}"
+                    },
                     status=IPCStatusCode.ERROR,
                 )
                 ipc_client.send_message(response)
@@ -269,7 +273,9 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
             async def _run_crew_safe():
                 global _crew_runner
                 try:
-                    await crew_runner.run_crew(crew_config, agent_refs, execution_id=execution_id)
+                    await crew_runner.run_crew(
+                        crew_config, agent_refs, execution_id=execution_id
+                    )
                 except Exception as e:
                     logger.error(f"Crew background task failed: {e}", exc_info=True)
                     try:
@@ -330,11 +336,16 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
                         status=IPCStatusCode.SUCCESS,
                     )
                 else:
-                    logger.warning(f"No active orchestrator to abort for crew '{crew_id}'")
+                    logger.warning(
+                        f"No active orchestrator to abort for crew '{crew_id}'"
+                    )
                     response = create_ipc_message(
                         IPCMessageType.RESPONSE,
                         msg.session_id,
-                        payload={"error": f"No active orchestrator for crew {crew_id}", "success": False},
+                        payload={
+                            "error": f"No active orchestrator for crew {crew_id}",
+                            "success": False,
+                        },
                         status=IPCStatusCode.ERROR,
                     )
             except Exception as e:
@@ -350,7 +361,10 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
             response = create_ipc_message(
                 IPCMessageType.RESPONSE,
                 msg.session_id,
-                payload={"error": f"No active crew runner for {crew_id}", "success": False},
+                payload={
+                    "error": f"No active crew runner for {crew_id}",
+                    "success": False,
+                },
                 status=IPCStatusCode.ERROR,
             )
         ipc_client.send_message(response)
@@ -515,24 +529,7 @@ async def async_main(args: argparse.Namespace, ipc_client: IPCClient) -> None:
             args.session_id,
         )
 
-        # === 3. 并行连接 Agent 到 SocketIO Server ===
-        connect_results = await asyncio.gather(*[
-            agent.connect() for agent in _agents
-        ], return_exceptions=True)
-        for i, result in enumerate(connect_results):
-            if isinstance(result, Exception):
-                logger.error("Agent %s connect failed: %s", _agents[i].agent_id, result)
-            else:
-                logger.info("Agent %s connected to SocketIO", _agents[i].agent_id)
-
-        # === 4. 启动 Agent 消息循环 ===
-        agent_tasks = []
-        for agent in _agents:
-            task = asyncio.create_task(agent.start())
-            agent_tasks.append(task)
-            logger.info("Agent %s message loop started", agent.agent_id)
-
-        # === 5. 发送 READY 事件 ===
+        # === 3. 发送 READY 事件 ===
         ready_msg = create_ipc_message(
             IPCMessageType.EVT_READY,
             args.session_id,
@@ -544,6 +541,23 @@ async def async_main(args: argparse.Namespace, ipc_client: IPCClient) -> None:
         )
         ipc_client.send_message(ready_msg)
         logger.info("Runner READY signal sent")
+
+        # === 4. 并行连接 Agent 到 SocketIO Server ===
+        connect_results = await asyncio.gather(
+            *[agent.connect() for agent in _agents], return_exceptions=True
+        )
+        for i, result in enumerate(connect_results):
+            if isinstance(result, Exception):
+                logger.error("Agent %s connect failed: %s", _agents[i].agent_id, result)
+            else:
+                logger.info("Agent %s connected to SocketIO", _agents[i].agent_id)
+
+        # === 5. 启动 Agent 消息循环 ===
+        agent_tasks = []
+        for agent in _agents:
+            task = asyncio.create_task(agent.start())
+            agent_tasks.append(task)
+            logger.info("Agent %s message loop started", agent.agent_id)
 
         # === 6. 并发运行：心跳 + IPC监听 + Agent监控 ===
         await asyncio.gather(
