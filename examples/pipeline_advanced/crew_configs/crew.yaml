@@ -104,10 +104,16 @@ orchestrator:
               2. 标记待处理事项
               3. 通知相关开发人员
 
-      # ── Step 5: Switch — 按优先级后续处理 ──
+      # ── Step 5: Switch — 由集成管理员决定后续处理 ──
       - type: switch
         name: "后续处理"
-        switch_field: "pipeline.step_1.output"
+        evaluator: "集成管理员"
+        evaluation_prompt: |
+          根据整个审查流程的结果，决定后续处理方式。
+          
+          如果是关键/阻塞性问题 -> "紧急"
+          如果是常规改进项 -> "普通"
+          如果是微小问题或无需处理 -> "低优先级"
         branches:
           - name: "紧急"
             agent: "通知代理"

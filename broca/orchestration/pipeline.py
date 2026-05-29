@@ -200,8 +200,13 @@ class PipelineStep:
 
         # SWITCH
         if self.type == PipelineStepType.SWITCH:
-            if self.switch_field:
-                result["switch_field"] = self.switch_field
+            if self.evaluator:
+                result["evaluator"] = self.evaluator
+                if self.evaluation_prompt:
+                    result["evaluation_prompt"] = self.evaluation_prompt
+            else:
+                if self.switch_field:
+                    result["switch_field"] = self.switch_field
             if self.default_branch:
                 result["default_branch"] = self.default_branch
 
@@ -273,6 +278,17 @@ class PipelineStep:
             )
 
         if step_type == PipelineStepType.SWITCH:
+            evaluator = data.get("evaluator")
+            if evaluator:
+                return cls(
+                    type=step_type,
+                    name=data.get("name"),
+                    branches=branches,
+                    evaluator=evaluator,
+                    evaluation_prompt=data.get("evaluation_prompt"),
+                    default_branch=data.get("default_branch"),
+                    extras=data.get("extras", {}),
+                )
             return cls(
                 type=step_type,
                 name=data.get("name"),
@@ -1018,7 +1034,11 @@ class PipelineOrchestrator(Orchestrator):
         if not step.branches or len(step.branches) < 1:
             raise ValueError("SWITCH step requires at least 1 branch")
 
-        # 获取匹配值
+        # ── Agent 评估模式 ──
+        if step.evaluator:
+            return await self._execute_condition_by_agent(step, index, accumulated)
+
+        # ── 静态匹配模式 ──
         actual_value = None
         if step.switch_field:
             actual_value = await self.context.blackboard.get(step.switch_field)
@@ -1030,7 +1050,6 @@ class PipelineOrchestrator(Orchestrator):
             f"actual={actual_value}, branches={[b.name for b in step.branches]}"
         )
 
-        # 匹配分支
         matched_name = _match_switch(
             actual_value, step.branches, step.default_branch
         )
@@ -1048,24 +1067,13 @@ class PipelineOrchestrator(Orchestrator):
             )
             return {"branch": None, "output": None, "matched_value": actual_value}
 
-        # 执行选中的分支
-        previous_output = self._get_previous_output(accumulated)
-        branch_context = PromptLoader.render(
-            "pipeline",
-            "fan_out_branch.j2",
-            branch_name=selected_branch.name,
-            task=selected_branch.task,
-            context=selected_branch.context,
-            previous_output=previous_output,
-            accumulated=accumulated,
-        )
-
-        output = await self._execute_agent(selected_branch.agent, branch_context)
+        output = await self._execute_selected_branch(selected_branch, accumulated)
 
         result = {
             "branch": selected_branch.name,
             "output": output,
             "matched_value": actual_value,
+            "condition": {"mode": "static", "field": step.switch_field},
         }
 
         await self.context.blackboard.set(
