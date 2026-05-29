@@ -24,6 +24,21 @@ export class ChatWebViewManager {
   }
 
   /**
+   * Close all panels (chat + crew) associated with a session.
+   * Panel disposal triggers onDidDispose which handles cleanup automatically.
+   */
+  closeSessionPanel(sessionId: string) {
+    const panel = this.panels.get(sessionId)
+    if (panel) {
+      try { panel.dispose() } catch { /* already disposed */ }
+    }
+    const crewPanel = this.crewPanels.get(sessionId)
+    if (crewPanel) {
+      try { crewPanel.dispose() } catch { /* already disposed */ }
+    }
+  }
+
+  /**
    * Safely post a message to a WebView panel. Silently ignore if panel is disposed.
    */
   private postToPanel(panel: vscode.WebviewPanel, message: ExtensionToWebView): void {

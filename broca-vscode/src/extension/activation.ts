@@ -232,6 +232,8 @@ async function handleDeleteSession(item: any) {
 
   try {
     await apiClient.deleteSession(sessionId)
+    // Close any open chat/crew panels for this session
+    chatWebViewManager.closeSessionPanel(sessionId)
     sessionTreeProvider.refresh()
   } catch (error: any) {
     vscode.window.showErrorMessage(`Failed to delete session: ${error.message || 'Unknown error'}`)
