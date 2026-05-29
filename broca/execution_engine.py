@@ -303,9 +303,6 @@ class ExecutionEngine:
             except asyncio.CancelledError:
                 logger.info("Agent execution cancelled by user during LLM call")
                 return ExecutionStatus.ABORTED
-            except Exception as e:
-                logger.error(f"Error during LLM call: {e}")
-                return ExecutionStatus.ERROR
 
         if self.abort_event.is_set():
             logger.info("Agent execution aborted after tool calls")
@@ -780,11 +777,15 @@ class ExecutionEngine:
         self._recent_tool_call_signatures.clear()
 
         if not await self._setup_execution_context(message, from_agent):
+            if self.config.interactive:
+                await self.communicator.send_error(
+                    message="Error setting up execution context",
+                    subscription=self.session_id,
+                )
             return ExecutionResult(
                 status=ExecutionStatus.ERROR,
                 message="Error setting up execution context",
             )
-
         try:
             result = await self.execute_round(max_steps)
         except asyncio.CancelledError:
