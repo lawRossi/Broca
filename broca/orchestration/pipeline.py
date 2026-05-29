@@ -37,8 +37,10 @@ from broca.orchestration.orchestrator import (
     ExecutionStatus,
     OrchestrationResult,
     Orchestrator,
+    OrchestrationStopRequest,
     PhaseResult,
     PhaseStatus,
+    check_agent_output_for_stop,
 )
 from broca.orchestration.prompt_loader import PromptLoader
 from broca.session import MessageProtocol
@@ -457,6 +459,19 @@ class PipelineOrchestrator(Orchestrator):
                     producer="pipeline_orchestrator",
                 )
 
+            except OrchestrationStopRequest as stop_req:
+                logger.warning(
+                    f"Pipeline step {i + 1} ('{phase_name}') requested stop: "
+                    f"{stop_req}"
+                )
+                phase.status = PhaseStatus.FAILED
+                phase.error = str(stop_req)
+                phase.completed_at = datetime.now(timezone.utc)
+                await self.abort()
+                result.status = ExecutionStatus.ABORTED
+                result.error = str(stop_req)
+                break
+
             except Exception as e:
                 logger.error(f"Pipeline step {i + 1} ('{phase_name}') failed: {e}")
                 phase.status = PhaseStatus.FAILED
@@ -611,7 +626,9 @@ class PipelineOrchestrator(Orchestrator):
         from broca.execution_engine import ExecutionStatus as ExecStatus
 
         if execution_result.status == ExecStatus.COMPLETED:
-            message = target_agent.context.get_latest_assistant_message()
+            message = target_agent.context.get_latest_assistant_message() or ""
+            # 检查是否请求停止编排
+            check_agent_output_for_stop(agent_name, message)
             return message or "Task completed (no output message)"
         elif execution_result.status == ExecStatus.ABORTED:
             raise RuntimeError("Execution was aborted by user")

@@ -23,6 +23,7 @@ from broca.orchestration.crew import (
     OrchestratorType,
 )
 from broca.session import MessageProtocol
+from broca.tools.end_execution import STOP_ORCHESTRATION_MARKER
 
 logger = get_logger(__name__)
 
@@ -241,6 +242,47 @@ class Orchestrator(ABC):
 
 
 # ============================================================================
+# OrchestrationStopRequest — Agent 请求停止编排
+# ============================================================================
+
+
+class OrchestrationStopRequest(Exception):
+    """
+    Agent 通过 end_execution 工具请求停止编排时抛出的异常。
+
+    编排器的 run() 方法应当捕获此异常并调用 self.abort() 来优雅终止。
+    """
+
+    def __init__(self, agent_name: str, reason: str):
+        self.agent_name = agent_name
+        self.reason = reason
+        super().__init__(f"Orchestration stop requested by '{agent_name}': {reason}")
+
+
+def check_agent_output_for_stop(
+    agent_name: str,
+    output: str,
+) -> None:
+    """
+    检查 Agent 输出中是否包含编排停止标记。
+
+    如果包含，抛出 OrchestrationStopRequest 异常。
+    此函数供 _execute_agent、fan-out、Broadcast 等调用处使用。
+
+    Args:
+        agent_name: Agent 名称（用于异常信息）
+        output: Agent 的输出文本
+
+    Raises:
+        OrchestrationStopRequest: 如果输出包含停止标记
+    """
+    if STOP_ORCHESTRATION_MARKER in output:
+        # 提取原因
+        reason = output.split(STOP_ORCHESTRATION_MARKER, 1)[-1].strip().strip(": ")
+        raise OrchestrationStopRequest(agent_name, reason)
+
+
+# ============================================================================
 # 共享并行执行工具
 # ============================================================================
 
@@ -277,11 +319,16 @@ async def execute_agents_in_parallel(
 
             if execution_result.status == ES.COMPLETED:
                 message = agent.context.get_latest_assistant_message()
-                return (agent_name, message or "(no output)")
+                # 检查是否请求停止编排
+                output = message or "(no output)"
+                check_agent_output_for_stop(agent_name, output)
+                return (agent_name, output)
             elif execution_result.status == ES.ABORTED:
                 return (agent_name, "Error: Execution aborted by user")
             else:
                 return (agent_name, f"Error: {execution_result.error}")
+        except OrchestrationStopRequest:
+            raise
         except Exception as e:
             logger.error(f"Agent '{agent_name}' execution error: {e}")
             return (agent_name, f"Error: {e}")

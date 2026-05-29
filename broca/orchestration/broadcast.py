@@ -27,6 +27,7 @@ from broca.orchestration.orchestrator import (
     ExecutionStatus,
     OrchestrationResult,
     Orchestrator,
+    OrchestrationStopRequest,
     PhaseResult,
     PhaseStatus,
     execute_agents_in_parallel,
@@ -174,6 +175,18 @@ class BroadcastOrchestrator(Orchestrator):
                 result.error = "Aborted during aggregation"
             else:
                 result.status = ExecutionStatus.COMPLETED
+
+        except OrchestrationStopRequest as stop_req:
+            logger.warning(f"Broadcast execution stop requested: {stop_req}")
+            await self.abort()
+            result.status = ExecutionStatus.ABORTED
+            result.error = str(stop_req)
+            # 标记当前活跃 phase 为失败
+            for phase in result.phases:
+                if phase.status == PhaseStatus.RUNNING:
+                    phase.status = PhaseStatus.FAILED
+                    phase.error = str(stop_req)
+                    phase.completed_at = datetime.now(timezone.utc)
 
         except Exception as e:
             logger.error(f"Broadcast execution failed: {e}")
