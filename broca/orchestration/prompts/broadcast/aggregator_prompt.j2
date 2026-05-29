@@ -1,0 +1,21 @@
+## Original Task
+
+{{ task }}
+
+## Worker Results to Synthesize
+
+{% for name, result in worker_results.items() %}
+### {{ name }}
+{{ result }}
+
+{% endfor %}
+## Your Job
+
+As the Aggregator, synthesize the above worker results into a comprehensive, coherent final report.
+
+1. Identify common themes and key findings across all workers
+2. Resolve any contradictions or disagreements
+3. Prioritize the most important insights
+4. Produce a well-structured final output that directly addresses the original task
+
+The final output should be self-contained and valuable to someone who hasn't read the individual worker reports.

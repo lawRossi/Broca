@@ -639,8 +639,11 @@ class PipelineOrchestrator(Orchestrator):
 
         previous_output = self._get_previous_output(accumulated)
 
-        async def run_branch(branch: BranchDefinition) -> Tuple[str, Any]:
-            """执行单个分支"""
+        # 为每个分支构建上下文，然后通过共享并行执行器执行
+        from broca.orchestration.orchestrator import execute_agents_in_parallel
+
+        tasks = []
+        for branch in step.branches:
             branch_context = PromptLoader.render(
                 "pipeline",
                 "fan_out_branch.j2",
@@ -650,16 +653,9 @@ class PipelineOrchestrator(Orchestrator):
                 previous_output=previous_output,
                 accumulated=accumulated,
             )
-            try:
-                output = await self._execute_agent(branch.agent, branch_context)
-                return (branch.name, output)
-            except Exception as e:
-                logger.error(f"FAN-OUT branch '{branch.name}' failed: {e}")
-                return (branch.name, f"Error: {e}")
+            tasks.append((branch.agent, branch_context))
 
-        # 所有分支并行执行
-        results = await asyncio.gather(*[run_branch(b) for b in step.branches])
-        result_dict = dict(results)
+        result_dict = await execute_agents_in_parallel(self.context, tasks)
 
         # 记录到黑板
         for branch_name, output in result_dict.items():

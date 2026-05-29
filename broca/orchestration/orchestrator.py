@@ -9,11 +9,12 @@ Orchestrator 基类模块
 
 from __future__ import annotations
 
+import asyncio
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from broca.logging_config import get_logger
 from broca.orchestration.blackboard import Blackboard
@@ -21,6 +22,7 @@ from broca.orchestration.crew import (
     CrewConfig,
     OrchestratorType,
 )
+from broca.session import MessageProtocol
 
 logger = get_logger(__name__)
 
@@ -236,6 +238,58 @@ class Orchestrator(ABC):
         if self._aborted:
             logger.info(f"Orchestrator '{self.name}' execution aborted")
         return self._aborted
+
+
+# ============================================================================
+# 共享并行执行工具
+# ============================================================================
+
+
+async def execute_agents_in_parallel(
+    context: CrewContext,
+    tasks: List[Tuple[str, str]],
+) -> Dict[str, str]:
+    """
+    并行执行多个 Agent 任务（共享工具，供 fan-out / Broadcast 共用）
+
+    对每个 (agent_name, task_prompt) 创建用户消息并调用 agent.run()，
+    所有任务通过 asyncio.gather 并行执行。
+
+    Args:
+        context: Crew 上下文（通过 get_agent 获取 Agent 实例）
+        tasks: (agent_name, task_prompt) 列表
+
+    Returns:
+        {agent_name: output} 字典，每个 Agent 的输出或错误信息
+    """
+
+    async def _execute_one(agent_name: str, prompt: str) -> Tuple[str, str]:
+        agent = context.get_agent(agent_name)
+        if agent is None:
+            logger.warning(f"Agent '{agent_name}' not found, skipping")
+            return (agent_name, f"Error: Agent '{agent_name}' not found")
+
+        try:
+            trigger_message = MessageProtocol.create_user_message(content=prompt)
+            execution_result = await agent.run(trigger_message, from_agent=True)
+
+            from broca.execution_engine import ExecutionStatus as ES
+
+            if execution_result.status == ES.COMPLETED:
+                message = agent.context.get_latest_assistant_message()
+                return (agent_name, message or "(no output)")
+            elif execution_result.status == ES.ABORTED:
+                return (agent_name, "Error: Execution aborted by user")
+            else:
+                return (agent_name, f"Error: {execution_result.error}")
+        except Exception as e:
+            logger.error(f"Agent '{agent_name}' execution error: {e}")
+            return (agent_name, f"Error: {e}")
+
+    results = await asyncio.gather(
+        *[_execute_one(agent, prompt) for agent, prompt in tasks]
+    )
+    return dict(results)
 
 
 class OrchestratorFactory:

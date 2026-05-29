@@ -1,0 +1,34 @@
+## Task to Decompose
+
+{{ task }}
+
+## Available Workers
+
+The following agents are available to execute sub-tasks:
+
+{% for worker in workers %}
+- **{{ worker.name }}**: {{ worker.description or "No description" }}
+{% endfor %}
+
+## Your Job
+
+As the Dispatcher, your job is to:
+1. Analyze the task above
+2. Break it down into meaningful sub-tasks, one per available worker
+3. Assign each sub-task to the most appropriate worker
+4. Provide clear, specific instructions for each worker
+
+IMPORTANT: You must produce exactly **{{ worker_count }}** sub-tasks — one for each worker.
+Each sub-task should leverage the unique expertise of the assigned worker.
+
+## Output Format
+
+Return your response as a JSON array:
+```json
+[
+    {
+        "agent": "worker_name",
+        "task": "specific task description for this worker"
+    }
+]
+```
