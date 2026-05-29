@@ -15,8 +15,6 @@ vs Pipeline fan-out/fan-in:
 
 from __future__ import annotations
 
-import json
-import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -31,6 +29,7 @@ from broca.orchestration.orchestrator import (
     PhaseResult,
     PhaseStatus,
     execute_agents_in_parallel,
+    check_blackboard_for_stop,
 )
 from broca.orchestration.prompt_loader import PromptLoader
 
@@ -221,29 +220,23 @@ class BroadcastOrchestrator(Orchestrator):
 
     async def _dispatch(self, task: str) -> List[Dict[str, str]]:
         """
-        由 Dispatcher Agent 调用 LLM 将任务分解为并行子任务。
+        由 Dispatcher Agent 将任务分解为并行子任务。
 
-        Dispatcher 接收原始任务 + Worker 列表，输出 JSON 格式的子任务分配。
+        Dispatcher 通过 task_management 工具创建子任务，
+        并将 {worker_name: task_id} 映射写入黑板 key `task_assignments`。
+        _dispatch 从黑板读取映射结果，返回子任务列表。
 
         Returns:
-            [{"agent": worker_name, "task": sub_task_desc}, ...]
+            [{"agent": worker_name, "task_id": task_id}, ...]
+            或兜底: [{"agent": worker_name, "task": task_desc}, ...]
         """
         dispatcher_agent = self.dispatcher
         if dispatcher_agent is None:
-            logger.warning(
-                "No Dispatcher Agent found, using static task distribution"
-            )
+            logger.warning("No Dispatcher Agent found, using static dispatch")
             return self._static_dispatch(task)
 
-        # 构建 Dispatcher 提示
         workers_info = [
-            {
-                "name": w["config"].name,
-                "description": w["config"].extras.get(
-                    "description",
-                    w["config"].config.replace(".md", ""),
-                ),
-            }
+            {"name": w["config"].name}
             for w in self.workers
         ]
 
@@ -255,7 +248,7 @@ class BroadcastOrchestrator(Orchestrator):
             worker_count=len(self.workers),
         )
 
-        # 调用 Dispatcher Agent (LLM)
+        # 调用 Dispatcher Agent (LLM)，它会通过工具创建任务和写黑板
         from broca.session import MessageProtocol
         from broca.execution_engine import ExecutionStatus as ES
 
@@ -269,44 +262,53 @@ class BroadcastOrchestrator(Orchestrator):
             )
             return self._static_dispatch(task)
 
-        response = dispatcher_agent.context.get_latest_assistant_message() or ""
+        # 从黑板读取 Dispatcher 写入的任务分配
+        sub_tasks = await self._read_task_assignments()
+        if sub_tasks:
+            return sub_tasks
 
-        # 解析 JSON 输出
-        sub_tasks = self._parse_json_list(response)
-        if not sub_tasks:
-            logger.warning(
-                "Failed to parse Dispatcher output as JSON, "
-                "falling back to static dispatch"
-            )
-            return self._static_dispatch(task)
+        logger.warning(
+            "No task assignments found in blackboard after Dispatcher execution, "
+            "falling back to static dispatch"
+        )
+        return self._static_dispatch(task)
 
-        # 验证子任务格式
-        valid_tasks = []
-        for st in sub_tasks:
-            if isinstance(st, dict) and "agent" in st and "task" in st:
-                # 确保 agent 在 worker 列表中
-                if st["agent"] in self.worker_names:
-                    valid_tasks.append(st)
+    async def _read_task_assignments(self) -> List[Dict[str, str]]:
+        """
+        从黑板读取 Dispatcher 写入的任务分配。
 
-        if not valid_tasks:
-            logger.warning(
-                "No valid sub-tasks from Dispatcher, "
-                "falling back to static dispatch"
-            )
-            return self._static_dispatch(task)
+        Dispatcher 应当写入黑板 key `task_assignments`，
+        value 为 {worker_name: task_id} 的 JSON 对象。
 
-        return valid_tasks
+        Returns:
+            [{"agent": worker_name, "task_id": task_id}, ...]
+            如果黑板中没有有效分配则返回空列表
+        """
+        assignments = await self.context.blackboard.get("task_assignments")
+        if not assignments or not isinstance(assignments, dict):
+            return []
+
+        result = []
+        for worker_name in self.worker_names:
+            task_id = assignments.get(worker_name)
+            if task_id:
+                result.append({"agent": worker_name, "task_id": task_id})
+            else:
+                logger.warning(
+                    f"Worker '{worker_name}' has no task assignment in blackboard"
+                )
+
+        return result
 
     def _static_dispatch(self, task: str) -> List[Dict[str, str]]:
         """
-        静态分发（兜底方案）：无 Dispatcher Agent 或 LLM 失败时使用。
+        静态分发（兜底方案）：Dispatcher 不可用或失败时使用。
 
-        为每个 Worker 构建 "从你的独特角度分析" 的任务描述。
+        为每个 Worker 构建直接的任务描述，Worker 无需查黑板/TM。
         """
         sub_tasks = []
-        worker_count = max(len(self.workers), 1)
 
-        for i, worker in enumerate(self.workers):
+        for worker in self.workers:
             task_desc = PromptLoader.render(
                 "broadcast",
                 "dispatch_task.j2",
@@ -316,42 +318,9 @@ class BroadcastOrchestrator(Orchestrator):
             sub_tasks.append({
                 "agent": worker["config"].name,
                 "task": task_desc,
-                "index": i,
             })
 
         return sub_tasks
-
-    @staticmethod
-    def _parse_json_list(text: str) -> Optional[List[Dict[str, str]]]:
-        """
-        从 LLM 响应中解析 JSON 数组。
-
-        兼容 markdown 代码块、前后多余文本等情况。
-        """
-        # 尝试提取 ```json ... ``` 代码块
-        m = re.search(
-            r"```(?:json)?\s*\n?(\\[.*?\\])\s*\n?```",
-            text, re.DOTALL,
-        )
-        if m:
-            try:
-                return json.loads(m.group(1))
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        # 尝试提取 [...] 数组
-        m = re.search(r"\[(?:[^\[\]]|\n)*\]", text, re.DOTALL)
-        if m:
-            try:
-                return json.loads(m.group())
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        # 直接尝试解析整个文本
-        try:
-            return json.loads(text)
-        except (json.JSONDecodeError, TypeError):
-            return None
 
     # ═══════════════════════════════════════════════
     # Phase 2: Worker 并行执行
@@ -361,12 +330,30 @@ class BroadcastOrchestrator(Orchestrator):
         self, sub_tasks: List[Dict[str, str]]
     ) -> Dict[str, str]:
         """
-        并行执行所有 Worker 任务
+        并行执行所有 Worker 任务。
 
-        使用共享的 execute_agents_in_parallel 工具。
+        支持两种格式：
+        - 有 task_id: Worker 通过 blackboard + task_management 自主拉取任务
+        - 有 task: Worker 直接执行内联任务（静态分发兜底）
         """
-        tasks = [(st["agent"], st["task"]) for st in sub_tasks]
-        return await execute_agents_in_parallel(self.context, tasks)
+        # 判断是 task_id 模式还是内联 task 模式
+        has_task_ids = any("task_id" in st for st in sub_tasks)
+
+        if has_task_ids:
+            # Dispatcher 模式: Worker 自主查黑板找任务
+            tasks = []
+            for st in sub_tasks:
+                worker_prompt = PromptLoader.render(
+                    "broadcast",
+                    "worker_prompt.j2",
+                    agent_name=st["agent"],
+                )
+                tasks.append((st["agent"], worker_prompt))
+            return await execute_agents_in_parallel(self.context, tasks)
+        else:
+            # 静态分发模式: 直接执行内联任务
+            tasks = [(st["agent"], st["task"]) for st in sub_tasks]
+            return await execute_agents_in_parallel(self.context, tasks)
 
     # ═══════════════════════════════════════════════
     # Phase 3: Aggregator LLM 汇聚结果
