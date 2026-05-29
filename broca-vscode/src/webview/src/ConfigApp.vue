@@ -24,6 +24,21 @@ const loadingProviders = ref(false)
 const loadingModels = ref(false)
 const saving = ref(false)
 
+// Error toast
+const errorToast = ref({ visible: false, message: '' })
+let errorToastTimer: ReturnType<typeof setTimeout> | null = null
+
+function showError(message: string, duration = 5000) {
+  errorToast.value = { visible: true, message }
+  if (errorToastTimer) clearTimeout(errorToastTimer)
+  errorToastTimer = setTimeout(() => { errorToast.value.visible = false }, duration)
+}
+
+function hideError() {
+  errorToast.value.visible = false
+  if (errorToastTimer) { clearTimeout(errorToastTimer); errorToastTimer = null }
+}
+
 onMounted(() => {
   // Request config from extension
   postMessage({ type: 'getConfig' })
@@ -55,6 +70,7 @@ onMounted(() => {
         break
       case 'error':
         console.error('Error:', data.payload.message)
+        showError(data.payload.message || '操作失败')
         break
     }
   })
@@ -88,6 +104,14 @@ function saveConfig() {
 
 <template>
   <div class="config-container">
+    <!-- Error Toast -->
+    <Transition name="toast-fade">
+      <div v-if="errorToast.visible" class="config-error-toast" @click="hideError">
+        <span class="config-error-toast__icon">✕</span>
+        <span class="config-error-toast__message">{{ errorToast.message }}</span>
+      </div>
+    </Transition>
+
     <h1 class="title">Broca Settings</h1>
 
     <!-- Server Configuration -->
@@ -339,5 +363,54 @@ html, body {
 .save-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* Error Toast */
+.config-error-toast {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  max-width: 360px;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 12px;
+  line-height: 1.5;
+  cursor: pointer;
+  z-index: 9999;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  word-break: break-word;
+  background: #5a1d1d;
+  border: 1px solid #c04040;
+  color: #f0c0c0;
+}
+
+.config-error-toast__icon {
+  flex-shrink: 0;
+  font-size: 14px;
+  font-weight: bold;
+  line-height: 1.5;
+}
+
+.config-error-toast__message {
+  flex: 1;
+  min-width: 0;
+}
+
+.toast-fade-enter-active,
+.toast-fade-leave-active {
+  transition: all 0.3s ease;
+}
+
+.toast-fade-enter-from {
+  opacity: 0;
+  transform: translateX(20px);
+}
+
+.toast-fade-leave-to {
+  opacity: 0;
+  transform: translateX(20px);
 }
 </style>

@@ -107,7 +107,7 @@ async def list_files(path: str = ".") -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error listing files in {path}: {e}")
+        logger.exception(f"Error listing files in {path}")
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
@@ -147,7 +147,7 @@ async def get_file_info(path: str) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting file info for {path}: {e}")
+        logger.exception(f"Error getting file info for {path}")
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
@@ -206,10 +206,10 @@ async def preview_file(path: str) -> ApiResponse:
     except HTTPException:
         raise
     except PermissionError as e:
-        logger.error(f"Permission denied for {path}: {e}")
+        logger.exception(f"Permission denied for {path}")
         raise HTTPException(status_code=403, detail=f"Permission denied: {path}") from e
     except Exception as e:
-        logger.error(f"Error previewing file {path}: {e}")
+        logger.exception(f"Error previewing file {path}")
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
@@ -284,18 +284,18 @@ async def edit_file(path: str, request: FileEditRequest) -> ApiResponse:
                 try:
                     shutil.copy2(backup_path, target_path)
                     logger.info(f"Restored file from backup: {path}")
-                except Exception as restore_error:
-                    logger.error(f"Failed to restore from backup: {restore_error}")
+                except Exception:
+                    logger.exception("Failed to restore from backup")
 
             raise HTTPException(status_code=500, detail="Failed to write file") from e
 
     except HTTPException:
         raise
     except PermissionError as e:
-        logger.error(f"Permission denied for {path}: {e}")
+        logger.exception(f"Permission denied for {path}")
         raise HTTPException(status_code=403, detail=f"Permission denied: {path}") from e
     except Exception as e:
-        logger.error(f"Error editing file {path}: {e}")
+        logger.exception(f"Error editing file {path}")
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
@@ -309,5 +309,5 @@ async def get_home_directory() -> ApiResponse:
         home_dir = str(Path.home())
         return ApiResponse.success({"home_dir": home_dir}, msg="Home directory retrieved successfully")
     except Exception as e:
-        logger.error(f"Error getting home directory: {e}")
+        logger.exception("Error getting home directory")
         raise HTTPException(status_code=500, detail="Internal server error") from e

@@ -3,6 +3,7 @@ import { AuthManager } from './auth'
 import { ConfigManager } from './config'
 import { ApiClient } from './api'
 import { SocketClient } from './socket'
+import { extractErrorMessage, showErrorNotification } from './errors'
 import type { WebViewMessage, ExtensionToWebView } from './types'
 
 export class ChatWebViewManager {
@@ -127,14 +128,7 @@ export class ChatWebViewManager {
         }
       })
     } catch (error: any) {
-      let message: string
-      if (!error?.response) {
-        message = error.code === 'ECONNABORTED' ? 'Request timed out' : 'Cannot connect to server, please check if the service is running'
-      } else {
-        const respData = error?.response?.data
-        message = respData?.detail || respData?.msg || respData?.message || (typeof respData === 'string' ? respData : null) || error.message || 'Unknown error'
-      }
-      vscode.window.showErrorMessage(`打开聊天失败: ${message}`)
+      showErrorNotification(error, '打开聊天失败')
     }
   }
 
@@ -170,8 +164,8 @@ export class ChatWebViewManager {
           this.postToPanel(panel, { type: 'saved' } as ExtensionToWebView)
         } catch (error: any) {
           console.error('[ChatWebView] Failed to save config:', error)
-          vscode.window.showErrorMessage('Failed to save configuration: ' + (error.message || 'Unknown error'))
-          this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+          showErrorNotification(error, 'Failed to save configuration')
+          this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
         }
       } else if (message.type === 'getProviders') {
         try {
@@ -183,7 +177,7 @@ export class ChatWebViewManager {
         } catch (error: any) {
           this.postToPanel(panel, {
             type: 'error',
-            payload: { message: error.message },
+            payload: { message: extractErrorMessage(error) },
           } as ExtensionToWebView)
         }
       } else if (message.type === 'getModels') {
@@ -196,7 +190,7 @@ export class ChatWebViewManager {
         } catch (error: any) {
           this.postToPanel(panel, {
             type: 'error',
-            payload: { message: error.message },
+            payload: { message: extractErrorMessage(error) },
           } as ExtensionToWebView)
         }
       }
@@ -245,7 +239,7 @@ export class ChatWebViewManager {
         this.initializeCrewSocket(sessionId, panel)
       }
     } catch (error: any) {
-      vscode.window.showErrorMessage(`打开编排管理失败: ${error.message}`)
+      showErrorNotification(error, '打开编排管理失败')
     }
   }
 
@@ -278,7 +272,7 @@ export class ChatWebViewManager {
       this.socketUnsubs.set(sessionId, unsub)
       console.log('[CrewSocket] subscribed to crew:', sessionId)
     } catch (error: any) {
-      console.warn('[CrewSocket] initialization failed (progress updates will be unavailable):', error.message)
+      console.warn('[CrewSocket] initialization failed:', error)
     }
   }
 
@@ -321,7 +315,7 @@ export class ChatWebViewManager {
             const providers = await this.apiClient.getLLMProviders()
             this.postToPanel(panel, { type: 'providers', payload: providers } as ExtensionToWebView)
           } catch (error: any) {
-            this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+            this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
           }
           break
 
@@ -330,7 +324,7 @@ export class ChatWebViewManager {
             const models = await this.apiClient.getLLMModels(message.payload.provider)
             this.postToPanel(panel, { type: 'models', payload: models } as ExtensionToWebView)
           } catch (error: any) {
-            this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+            this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
           }
           break
 
@@ -344,7 +338,7 @@ export class ChatWebViewManager {
           } catch (error: any) {
             this.postToPanel(panel, {
               type: 'error',
-              payload: { message: error.message || '创建会话失败' },
+              payload: { message: extractErrorMessage(error, '创建会话失败') },
             } as ExtensionToWebView)
           }
           break
@@ -806,7 +800,7 @@ export class ChatWebViewManager {
           this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
         })
         existingClient.on('onError', 'chat', (error) => {
-          this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+          this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
         })
         // Still need to fetch agents and history for the chat panel
         await this.fetchAgentsAndHistory(sessionId, panel)
@@ -837,7 +831,7 @@ export class ChatWebViewManager {
           this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
         },
         onError: (error) => {
-          this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+          this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
         },
       })
 
@@ -855,7 +849,7 @@ export class ChatWebViewManager {
     } catch (error: any) {
       this.postToPanel(panel, {
         type: 'error',
-        payload: { message: `Failed to initialize: ${error.message}` },
+        payload: { message: extractErrorMessage(error, 'Failed to initialize') },
       } as ExtensionToWebView)
     }
   }
@@ -918,7 +912,7 @@ export class ChatWebViewManager {
       console.log('[ChatWebView] socket.sendUserMessage FAILED:', error.message)
       this.postToPanel(panel, {
         type: 'error',
-        payload: { message: `Send failed: ${error.message}` },
+        payload: { message: extractErrorMessage(error, 'Send failed') },
       } as ExtensionToWebView)
     }
   }
@@ -942,7 +936,7 @@ export class ChatWebViewManager {
     } catch (error: any) {
       this.postToPanel(panel, {
         type: 'error',
-        payload: { message: `Failed to load history: ${error.message}` },
+        payload: { message: extractErrorMessage(error, 'Failed to load history') },
       } as ExtensionToWebView)
     }
   }
@@ -1027,10 +1021,10 @@ export class ChatWebViewManager {
       }, 2000)
       this.postToPanel(panel, { type: 'runnerActionResult', payload: { success: true } } as ExtensionToWebView)
     } catch (error: any) {
-      vscode.window.showErrorMessage(`Runner action failed: ${error.message}`)
+      showErrorNotification(error, 'Runner action failed')
       this.postToPanel(panel, {
         type: 'runnerActionResult',
-        payload: { success: false, error: error.message },
+        payload: { success: false, error: extractErrorMessage(error) },
       } as ExtensionToWebView)
     }
   }
@@ -1163,7 +1157,7 @@ export class ChatWebViewManager {
       console.error('[UploadFile] Failed:', error.message)
       this.postToPanel(panel, {
         type: 'error',
-        payload: { message: `Upload failed: ${error.message}`, fileName: payload.fileName },
+        payload: { message: extractErrorMessage(error, 'Upload failed'), fileName: payload.fileName },
       } as ExtensionToWebView)
     }
   }
@@ -1194,7 +1188,7 @@ export class ChatWebViewManager {
       })
       this.postToPanel(panel, { type: 'tasks', payload: response.data } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1208,7 +1202,7 @@ export class ChatWebViewManager {
       })
       this.postToPanel(panel, { type: 'taskDetail', payload: response.data } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1220,7 +1214,7 @@ export class ChatWebViewManager {
       const response = await this.apiClient.client.post('/task/', payload)
       this.postToPanel(panel, { type: 'taskCreated', payload: response.data } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1232,7 +1226,7 @@ export class ChatWebViewManager {
       await this.apiClient.client.put(`/task/${payload.taskId}`, payload.data)
       this.postToPanel(panel, { type: 'taskUpdated', payload: { taskId: payload.taskId } } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1244,7 +1238,7 @@ export class ChatWebViewManager {
       await this.apiClient.client.delete(`/task/${payload.taskId}`)
       this.postToPanel(panel, { type: 'taskDeleted', payload: { taskId: payload.taskId } } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1259,7 +1253,7 @@ export class ChatWebViewManager {
       })
       this.postToPanel(panel, { type: 'taskCommentAdded', payload: response.data } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1281,7 +1275,7 @@ export class ChatWebViewManager {
       })
       this.postToPanel(panel, { type: 'jobs', payload: response.data } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1295,7 +1289,7 @@ export class ChatWebViewManager {
       })
       this.postToPanel(panel, { type: 'jobDetail', payload: response.data } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1307,7 +1301,7 @@ export class ChatWebViewManager {
       await this.apiClient.client.post(`/job/${payload.jobId}/execute`)
       this.postToPanel(panel, { type: 'jobExecuted', payload: { jobId: payload.jobId } } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1319,7 +1313,7 @@ export class ChatWebViewManager {
       await this.apiClient.client.post(`/job/${payload.jobId}/pause`)
       this.postToPanel(panel, { type: 'jobPaused', payload: { jobId: payload.jobId } } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1331,7 +1325,7 @@ export class ChatWebViewManager {
       await this.apiClient.client.post(`/job/${payload.jobId}/resume`)
       this.postToPanel(panel, { type: 'jobResumed', payload: { jobId: payload.jobId } } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1343,7 +1337,7 @@ export class ChatWebViewManager {
       await this.apiClient.client.delete(`/job/${payload.jobId}`)
       this.postToPanel(panel, { type: 'jobDeleted', payload: { jobId: payload.jobId } } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1354,7 +1348,7 @@ export class ChatWebViewManager {
       const result = await this.apiClient.getCrews(payload)
       this.postToPanel(panel, { type: 'crewExecutions', payload: result } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1363,7 +1357,7 @@ export class ChatWebViewManager {
       const result = await this.apiClient.getCrewDetail(payload.executionId)
       this.postToPanel(panel, { type: 'crewDetail', payload: result } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1374,7 +1368,7 @@ export class ChatWebViewManager {
       const listResult = await this.apiClient.getCrews({ session_id: payload.session_id })
       this.postToPanel(panel, { type: 'crewExecutions', payload: listResult } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1384,8 +1378,8 @@ export class ChatWebViewManager {
       this.postToPanel(panel, { type: 'crewEvent', payload: { event: 'aborted', execution_id: payload.executionId, status: 'aborted' } } as ExtensionToWebView)
       vscode.window.showInformationMessage('编排已中止')
     } catch (error: any) {
-      vscode.window.showErrorMessage(`中止失败: ${error.message}`)
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      showErrorNotification(error, '中止失败')
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1395,8 +1389,8 @@ export class ChatWebViewManager {
       this.postToPanel(panel, { type: 'crewEvent', payload: { event: 'deleted', execution_id: payload.executionId } } as ExtensionToWebView)
       vscode.window.showInformationMessage('编排已删除')
     } catch (error: any) {
-      vscode.window.showErrorMessage(`删除失败: ${error.message}`)
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      showErrorNotification(error, '删除失败')
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1415,7 +1409,7 @@ export class ChatWebViewManager {
       const result = await this.apiClient.listCrewConfigs(workspace)
       this.postToPanel(panel, { type: 'crewConfigs', payload: result } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1424,7 +1418,7 @@ export class ChatWebViewManager {
       const result = await this.apiClient.getCrewConfig(payload.filename, payload.workspace)
       this.postToPanel(panel, { type: 'crewConfigDetail', payload: result } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1433,7 +1427,7 @@ export class ChatWebViewManager {
       const result = await this.apiClient.saveCrewConfig(payload.filename, payload.workspace, payload.content)
       this.postToPanel(panel, { type: 'crewConfigDetail', payload: result } as ExtensionToWebView)
     } catch (error: any) {
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message } } as ExtensionToWebView)
+      this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
     }
   }
 
@@ -1459,7 +1453,7 @@ export class ChatWebViewManager {
       const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(matching.path))
       vscode.window.showTextDocument(doc)
     } catch (error: any) {
-      vscode.window.showErrorMessage(`打开配置文件失败: ${error.message}`)
+      showErrorNotification(error, '打开配置文件失败')
     }
   }
 

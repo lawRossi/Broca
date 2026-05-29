@@ -103,7 +103,30 @@ export const useChatStore = defineStore('chat', () => {
     state.showReasoning = !state.showReasoning
   }
 
-  // Permission dialog state
+  // ==================== 错误通知状态 ====================
+  const errorToast = ref({
+    visible: false,
+    message: '',
+    type: 'error' as 'error' | 'warning' | 'info',
+  })
+  let errorToastTimer: ReturnType<typeof setTimeout> | null = null
+
+  function showError(message: string, type: 'error' | 'warning' | 'info' = 'error', duration: number = 5000) {
+    errorToast.value = { visible: true, message, type }
+    if (errorToastTimer) clearTimeout(errorToastTimer)
+    errorToastTimer = setTimeout(() => {
+      errorToast.value.visible = false
+    }, duration)
+  }
+
+  function hideError() {
+    errorToast.value.visible = false
+    if (errorToastTimer) {
+      clearTimeout(errorToastTimer)
+      errorToastTimer = null
+    }
+  }
+
   const permissionDialog = ref({
     visible: false,
     requestId: '' as string | undefined,
@@ -221,6 +244,7 @@ export const useChatStore = defineStore('chat', () => {
 
         case 'error':
           console.error('Extension error:', data.payload.message)
+          showError(data.payload.message || '操作失败', 'error')
           break
       }
     })
@@ -610,6 +634,11 @@ export const useChatStore = defineStore('chat', () => {
     runnerInfo,
     runnerActionLoading,
     inputText,
+    // Error toast
+    errorToast,
+    showError,
+    hideError,
+    // Dialogs
     permissionDialog,
     agentQueryDialog,
     showRedoButton,

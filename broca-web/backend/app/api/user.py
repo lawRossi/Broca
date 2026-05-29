@@ -27,7 +27,7 @@ async def get_user_info(req: Request, db: AsyncSession = Depends(get_db)) -> Api
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting user info: {e}")
+        logger.exception("Error getting user info")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -60,5 +60,5 @@ async def add_user_info(user_data: UserProfile, req: Request, db: AsyncSession =
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating user profile: {e}")
+        logger.exception("Error creating user profile")
         raise HTTPException(500, f"Failed to create user profile: {e!s}") from e

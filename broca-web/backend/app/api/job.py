@@ -76,7 +76,7 @@ async def get_jobs(
 
         return ApiResponse.success({"jobs": job_list, "total": total, "skip": skip, "limit": limit})
     except Exception as e:
-        logger.error(f"Error getting jobs: {e}")
+        logger.exception("Error getting jobs")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -131,7 +131,7 @@ async def get_job_detail(job_id: str, execution_limit: int = 10) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting job detail: {e}")
+        logger.exception("Error getting job detail")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -195,7 +195,7 @@ async def get_job_executions(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting job executions: {e}")
+        logger.exception("Error getting job executions")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -213,7 +213,7 @@ async def execute_job_now(job_id: str) -> ApiResponse:
         else:
             return ApiResponse.error(400, "Failed to execute job")
     except Exception as e:
-        logger.error(f"Error executing job {job_id}: {e}")
+        logger.exception(f"Error executing job {job_id}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -252,7 +252,7 @@ async def update_job(job_id: str, update_data: dict[str, Any]) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating job: {e}")
+        logger.exception("Error updating job")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -270,7 +270,7 @@ async def delete_job(job_id: str) -> ApiResponse:
         else:
             raise HTTPException(status_code=404, detail="Job not found")
     except Exception as e:
-        logger.error(f"Error deleting job: {e}")
+        logger.exception("Error deleting job")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -295,7 +295,7 @@ async def pause_job(job_id: str) -> ApiResponse:
         else:
             raise HTTPException(status_code=404, detail="Job not found")
     except Exception as e:
-        logger.error(f"Error pausing job: {e}")
+        logger.exception("Error pausing job")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -320,5 +320,5 @@ async def resume_job(job_id: str) -> ApiResponse:
         else:
             raise HTTPException(status_code=404, detail="Job not found")
     except Exception as e:
-        logger.error(f"Error resuming job: {e}")
+        logger.exception("Error resuming job")
         raise HTTPException(500, f"Internal server error: {e!s}") from e

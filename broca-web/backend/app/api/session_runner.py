@@ -22,7 +22,7 @@ async def list_runners():
         stats = runner_manager.get_stats()
         return ApiResponse.success(stats, msg="Runners retrieved successfully")
     except Exception as e:
-        logger.error(f"Error listing runners: {e}")
+        logger.exception("Error listing runners")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -34,7 +34,7 @@ async def get_runner_stats():
         stats = runner_manager.get_stats()
         return ApiResponse.success(stats, msg="Runner stats retrieved successfully")
     except Exception as e:
-        logger.error(f"Error getting runner stats: {e}")
+        logger.exception("Error getting runner stats")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -53,7 +53,7 @@ async def get_runner_status(session_id: str):
 
         return ApiResponse.success(status, msg="Runner status retrieved successfully")
     except Exception as e:
-        logger.error(f"Error getting runner status for {session_id}: {e}")
+        logger.exception(f"Error getting runner status for {session_id}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -74,10 +74,10 @@ async def restart_runner(session_id: str):
             msg="Runner restarted successfully",
         )
     except RunnerManagerError as e:
-        logger.error(f"Error restarting runner for {session_id}: {e}")
+        logger.exception(f"Error restarting runner for {session_id}")
         raise HTTPException(500, str(e)) from e
     except Exception as e:
-        logger.error(f"Error restarting runner for {session_id}: {e}")
+        logger.exception(f"Error restarting runner for {session_id}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -99,5 +99,5 @@ async def stop_runner(session_id: str):
                 msg="No runner found",
             )
     except Exception as e:
-        logger.error(f"Error stopping runner for {session_id}: {e}")
+        logger.exception(f"Error stopping runner for {session_id}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e

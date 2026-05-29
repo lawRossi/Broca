@@ -48,7 +48,7 @@ async def get_llm_providers() -> ApiResponse:
 
         return ApiResponse.success(providers, msg="LLM providers retrieved successfully")
     except Exception as e:
-        logger.error(f"Error getting LLM providers: {e}")
+        logger.exception("Error getting LLM providers")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -76,5 +76,5 @@ async def get_llm_models(provider: str) -> ApiResponse:
 
         return ApiResponse.success(models, msg=f"Models for provider '{provider}' retrieved successfully")
     except Exception as e:
-        logger.error(f"Error getting LLM models: {e}")
+        logger.exception("Error getting LLM models")
         raise HTTPException(500, f"Internal server error: {e!s}") from e

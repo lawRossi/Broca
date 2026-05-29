@@ -7,6 +7,7 @@ from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 
 from app.api import api_router
+from app.core.exception_handlers import http_exception_handler, general_exception_handler
 from app.core.socketio_runtime import SocketIOServerConfig, SocketIOServerRuntime
 from app.services.auth_service import AuthService
 
@@ -36,6 +37,10 @@ def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(secu
 
 
 app = FastAPI(dependencies=[Depends(verify_token)])
+
+# 注册全局异常处理器 — 统一所有 API 错误响应为 ApiResponse 格式
+app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(Exception, general_exception_handler)
 
 # CORS 中间件 — 允许前端跨域访问（vite preview / nginx 均需）
 app.add_middleware(
@@ -85,8 +90,8 @@ async def setup() -> None:
         checked = await runner_manager.restore_active_sessions()
         logger.info(f"Startup session check complete: {checked} records verified")
 
-    except Exception as e:
-        logger.error(f"Failed to initialize RunnerManager: {e}")
+    except Exception:
+        logger.exception("Failed to initialize RunnerManager")
 
 
 @app.on_event("shutdown")
@@ -105,8 +110,8 @@ async def shutdown() -> None:
         if runner_manager:
             stopped = await runner_manager.shutdown_all()
             logger.info(f"Stopped {stopped} session runners")
-    except Exception as e:
-        logger.error(f"Failed to shutdown runners: {e}")
+    except Exception:
+        logger.exception("Failed to shutdown runners")
 
 
 @app.get("/api/health")

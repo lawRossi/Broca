@@ -1,6 +1,25 @@
-import axios, { type AxiosInstance, type AxiosResponse } from 'axios'
+import axios, { type AxiosInstance, type AxiosResponse, type InternalAxiosRequestConfig } from 'axios'
 import { ElMessage } from 'element-plus'
 import router from '@/router'
+
+// 扩展 AxiosRequestConfig 类型，支持自定义选项
+declare module 'axios' {
+  interface AxiosRequestConfig {
+    /** 静默模式：不弹出错误提示，适用于后台轮询等场景 */
+    silent?: boolean
+  }
+}
+
+/** 从各种可能的响应格式中提取错误消息 */
+function extractErrorMsg(data: any): string {
+  if (!data) return ''
+  return data.detail || data.msg || data.message || (typeof data === 'string' ? data : '')
+}
+
+/** 判断当前请求是否启用了静默模式 */
+function isSilent(config: InternalAxiosRequestConfig | undefined): boolean {
+  return !!(config as any)?.silent
+}
 
 // 创建 Axios 实例
 const request: AxiosInstance = axios.create({
@@ -31,47 +50,55 @@ request.interceptors.request.use(
 // 响应拦截器
 request.interceptors.response.use(
   (response: AxiosResponse) => {
-    const { data } = response
+    const { data, config } = response
+    const silent = isSilent(config)
 
     // 处理业务状态码
     if (data.code === 200) {
       return data.data
     } else {
-      ElMessage.error(data.msg || '请求失败')
-      return Promise.reject(new Error(data.msg || '请求失败'))
+      const errMsg = data.msg || '请求失败'
+      if (!silent) {
+        ElMessage.error(errMsg)
+      }
+      return Promise.reject(new Error(errMsg))
     }
   },
   (error) => {
     console.error('响应错误:', error)
+    const config = error.config as InternalAxiosRequestConfig | undefined
+    const silent = isSilent(config)
 
     if (error.response) {
       // HTTP 错误状态码处理
       const { status, data } = error.response
+      const detail = extractErrorMsg(data)
+
       switch (status) {
         case 401:
           // 清除本地 token 并跳转到登录页
           localStorage.removeItem('token')
           localStorage.removeItem('user_id')
           localStorage.removeItem('username')
-          ElMessage.error('登录已失效，请重新登录')
+          if (!silent) ElMessage.error('登录已失效，请重新登录')
           router.push('/auth')
           break
         case 403:
-          ElMessage.error('拒绝访问')
+          if (!silent) ElMessage.error(detail || '拒绝访问')
           break
         case 404:
-          ElMessage.error('请求地址不存在')
+          if (!silent) ElMessage.error(detail || '请求地址不存在')
           break
         case 500:
-          ElMessage.error('服务器内部错误')
+          if (!silent) ElMessage.error(detail || '服务器内部错误，请稍后重试')
           break
         default:
-          ElMessage.error(data?.msg || '网络连接失败')
+          if (!silent) ElMessage.error(detail || data?.msg || '网络连接失败')
       }
     } else if (error.request) {
-      ElMessage.error('网络连接失败，请检查网络设置')
+      if (!silent) ElMessage.error('网络连接失败，请检查网络设置')
     } else {
-      ElMessage.error('请求配置错误')
+      console.error('请求配置错误:', error.message)
     }
 
     return Promise.reject(error)

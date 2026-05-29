@@ -71,13 +71,14 @@ export const useSessionStore = defineStore('session', () => {
     creating.value = true
 
     try {
+      // silent=true: 关闭 Axios 拦截器的 ElMessage 弹窗，由本 catch 块统一处理错误展示
       const response = await sessionApi.createSession({
         description: params.description || undefined,
         workspace: params.workspace || undefined,
         provider: params.provider || undefined,
         model: params.model || undefined,
         category: params.category || 'normal',
-      })
+      }, true)
 
       ElMessage.success('会话创建成功')
 
@@ -107,13 +108,18 @@ export const useSessionStore = defineStore('session', () => {
       return response
     } catch (error: any) {
       console.error('创建会话失败:', error)
-      const msg = error.message || '未知错误'
+      // 从后端响应中提取真实错误消息（优先用服务器返回的 msg/detail）
+      const responseMsg = error?.response?.data?.msg || error?.response?.data?.detail || ''
+      const msg = responseMsg || error.message || '未知错误'
       // Agent 编排会话无自定义 Agent 时给出明确指引
       if (params.category === 'agent-orchestration' && msg.includes('自定义 Agent')) {
         ElMessage.warning({
           message: '未找到自定义 Agent 配置，已在创建页面切换为普通会话',
           duration: 5000,
         })
+      } else if (responseMsg) {
+        // 已有后端真实错误消息，直接展示（不加前缀避免冗余）
+        ElMessage.error(msg)
       } else {
         ElMessage.error('创建会话失败: ' + msg)
       }

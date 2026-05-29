@@ -44,5 +44,5 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> ApiRe
     except AuthError as e:
         raise HTTPException(status_code=401, detail=str(e)) from e
     except Exception as e:
-        logger.error(f"Login error: {e}")
+        logger.exception("Login error")
         raise HTTPException(status_code=500, detail="登录失败，请稍后重试") from e

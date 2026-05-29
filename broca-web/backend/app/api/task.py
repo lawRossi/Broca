@@ -88,7 +88,7 @@ async def get_tasks(
 
         return ApiResponse.success({"tasks": task_list, "total": total, "skip": skip, "limit": limit})
     except Exception as e:
-        logger.error(f"Error getting tasks: {e}")
+        logger.exception("Error getting tasks")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -159,7 +159,7 @@ async def get_task_detail(task_id: str, include_comments: bool = True) -> ApiRes
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting task detail: {e}")
+        logger.exception("Error getting task detail")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -214,7 +214,7 @@ async def create_task(task_data: dict[str, Any]) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating task: {e}")
+        logger.exception("Error creating task")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -254,7 +254,7 @@ async def update_task(task_id: str, update_data: dict[str, Any]) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating task: {e}")
+        logger.exception("Error updating task")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -270,7 +270,7 @@ async def delete_task(task_id: str) -> ApiResponse:
         else:
             raise HTTPException(status_code=404, detail="Task not found")
     except Exception as e:
-        logger.error(f"Error deleting task: {e}")
+        logger.exception("Error deleting task")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -317,7 +317,7 @@ async def get_task_comments(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting task comments: {e}")
+        logger.exception("Error getting task comments")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -348,7 +348,7 @@ async def add_task_comment(task_id: str, comment_data: dict[str, Any]) -> ApiRes
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error adding comment: {e}")
+        logger.exception("Error adding comment")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -383,7 +383,7 @@ async def get_task_children(task_id: str) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting task children: {e}")
+        logger.exception("Error getting task children")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -424,5 +424,5 @@ async def search_tasks(
 
         return ApiResponse.success({"tasks": task_list, "total": total, "skip": skip, "limit": limit})
     except Exception as e:
-        logger.error(f"Error searching tasks: {e}")
+        logger.exception("Error searching tasks")
         raise HTTPException(500, f"Internal server error: {e!s}") from e

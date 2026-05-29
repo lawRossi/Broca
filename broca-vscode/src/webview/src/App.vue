@@ -9,6 +9,7 @@ import PermissionDialog from './components/PermissionDialog.vue'
 import AgentQueryDialog from './components/AgentQueryDialog.vue'
 import RunnerStatusBar from './components/RunnerStatusBar.vue'
 import LoadingOverlay from './components/LoadingOverlay.vue'
+import ErrorToast from './components/ErrorToast.vue'
 import TaskPage from './components/TaskPage.vue'
 import JobPage from './components/JobPage.vue'
 import { postMessage } from './api/vscode'
@@ -74,6 +75,9 @@ onUnmounted(() => {
         <!-- Right Sidebar: Info -->
         <ChatInfoSidebar v-if="chatStore.showRightSidebar" @navigate="navigate" />
       </div>
+
+      <!-- Error Toast -->
+      <ErrorToast />
 
       <!-- Dialogs -->
       <PermissionDialog />

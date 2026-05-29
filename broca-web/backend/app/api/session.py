@@ -7,7 +7,6 @@
 import asyncio
 import os
 import tempfile
-from typing import Optional
 
 from broca.agent_manager import AgentFactory
 from broca.session.service import (
@@ -42,10 +41,10 @@ async def _start_runner_background(
             model=model,
         )
         logger.info(f"Runner started for session {session_id}")
-    except RunnerManagerError as e:
-        logger.error(f"Failed to start runner for session {session_id} in background: {e}")
-    except Exception as e:
-        logger.error(f"Unexpected error starting runner for session {session_id}: {e}")
+    except RunnerManagerError:
+        logger.exception(f"Failed to start runner for session {session_id} in background")
+    except Exception:
+        logger.exception(f"Unexpected error starting runner for session {session_id}")
 
 
 async def _cleanup_failed_session(session_id: str) -> None:
@@ -91,9 +90,7 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
         if not agents:
             if category == "agent-orchestration":
                 raise HTTPException(
-                    400,
-                    "工作空间中未找到自定义 Agent 配置。请在 workspace 的 .broca/agents/ 目录下创建 Agent 配置文件（.md 格式），"
-                    "或在创建时选择「普通会话」类型。",
+                    400, "workspace中未找到Agent配置。请在workspace的.agents/agents/目录下创建Agent配置文件"
                 )
             else:
                 raise HTTPException(500, "No agents were initialized")
@@ -182,7 +179,7 @@ async def get_sessions(skip: int = 0, limit: int = 20, keyword: str | None = Non
 
         return ApiResponse.success({"sessions": session_list, "total": total, "skip": skip, "limit": limit})
     except Exception as e:
-        logger.error(f"Error getting sessions: {e}")
+        logger.exception("Error getting sessions")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -204,7 +201,7 @@ async def get_session(session_id: str) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting session: {e}")
+        logger.exception("Error getting session")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -228,10 +225,7 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
 
         return ApiResponse.success(response_agents)
     except Exception as e:
-        import traceback
-
-        traceback.print_exc()
-        logger.error(f"Error getting session agents: {e}")
+        logger.exception("Error getting session agents")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -240,7 +234,7 @@ async def get_session_messages(
     session_id: str,
     skip: int = 0,
     limit: int = 50,
-    execution_id: Optional[str] = None,
+    execution_id: str | None = None,
 ) -> ApiResponse:
     """获取会话的消息历史（按时间正序），支持分页
 
@@ -249,6 +243,7 @@ async def get_session_messages(
         skip: 跳过的记录数
         limit: 返回的最大记录数
         execution_id: 可选，按编排执行ID过滤（只返回该编排产生的消息）
+
     """
     try:
         session_service = get_session_service()
@@ -280,7 +275,7 @@ async def get_session_messages(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting session messages: {e}")
+        logger.exception("Error getting session messages")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -313,7 +308,7 @@ async def delete_sessions(request: dict) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error batch deleting sessions: {e}")
+        logger.exception("Error batch deleting sessions")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -339,7 +334,7 @@ async def update_session(session_id: str, request: UpdateSessionRequest) -> ApiR
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error updating session: {e}")
+        logger.exception("Error updating session")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -369,10 +364,8 @@ async def delete_session(session_id: str) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error deleting session: {e}")
-        import traceback
+        logger.exception("Error deleting session")
 
-        logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -407,8 +400,8 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
 
         try:
             config_content = json.loads(agent_config.config_content)
-        except json.JSONDecodeError as e:
-            logger.error(f"Failed to parse agent config JSON: {e}")
+        except json.JSONDecodeError:
+            logger.exception("Failed to parse agent config JSON")
             config_content = {"error": "Failed to parse config content", "raw_content": agent_config.config_content}
 
         # 返回完整的配置信息
@@ -428,10 +421,8 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting agent config: {e}")
-        import traceback
+        logger.exception("Error getting agent config")
 
-        logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
@@ -458,8 +449,6 @@ async def get_session_stats(session_id: str) -> ApiResponse:
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error getting session stats: {e}")
-        import traceback
+        logger.exception("Error getting session stats")
 
-        logger.error(traceback.format_exc())
         raise HTTPException(500, f"Internal server error: {e!s}") from e

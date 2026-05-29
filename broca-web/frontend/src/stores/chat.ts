@@ -47,7 +47,8 @@ export const useChatStore = defineStore('chat', () => {
       const data = await sessionApi.getRunnerStatus(sessionId.value)
       runnerInfo.value = data
     } catch (error) {
-      console.error('获取Runner状态失败:', error)
+      // Runner 轮询失败属于后台行为，静默处理即可
+      console.debug('获取Runner状态失败:', error)
     } finally {
       runnerLoading.value = false
     }
@@ -492,6 +493,11 @@ export const useChatStore = defineStore('chat', () => {
       }
     } catch (error: any) {
       console.error('加载历史消息失败:', error)
+      // 首次加载失败时给用户可见提示
+      if (!isLoadMore) {
+        const { ElMessage } = await import('element-plus')
+        ElMessage.error('加载消息历史失败，请刷新页面重试')
+      }
     } finally {
       loading.value = false
       loadingMore.value = false
@@ -752,6 +758,8 @@ export const useChatStore = defineStore('chat', () => {
     } catch (error: any) {
       console.error('自动连接失败:', error)
       sessionId.value = ''
+      const { ElMessage } = await import('element-plus')
+      ElMessage.error('连接会话失败: ' + (error.message || '未知错误'))
     } finally {
       connectingSession.value = false
     }

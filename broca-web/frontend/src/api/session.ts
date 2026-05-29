@@ -143,8 +143,9 @@ export const sessionApi = {
   /**
    * 创建新会话
    */
-  async createSession(params: CreateSessionParams = {}): Promise<CreateSessionResponse> {
-    return request.post('/session/sessions', params)
+  async createSession(params: CreateSessionParams = {}, silent = false): Promise<CreateSessionResponse> {
+    const config = silent ? { silent: true as any } : undefined
+    return request.post('/session/sessions', params, config)
   },
 
   /**

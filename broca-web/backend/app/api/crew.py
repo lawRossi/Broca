@@ -84,7 +84,7 @@ async def submit_crew(request: CrewSubmitRequest) -> ApiResponse:
     except RuntimeError as e:
         return ApiResponse.error(code=400, msg=str(e))
     except Exception as e:
-        logger.error(f"Error submitting crew: {e}")
+        logger.exception("Error submitting crew")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
 
 
@@ -120,7 +120,7 @@ async def validate_crew(request: CrewValidateRequest) -> ApiResponse:
         )
 
     except Exception as e:
-        logger.error(f"Error validating crew: {e}")
+        logger.exception("Error validating crew")
         return ApiResponse.error(code=500, msg=f"Validation error: {e!s}")
 
 
@@ -144,7 +144,7 @@ async def list_crews(
             msg="Executions retrieved successfully",
         )
     except Exception as e:
-        logger.error(f"Error listing crews: {e}")
+        logger.exception("Error listing crews")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
 
 
@@ -164,7 +164,7 @@ async def list_crew_configs(workspace: str) -> ApiResponse:
             msg=f"Found {len(configs)} crew configs in workspace",
         )
     except Exception as e:
-        logger.error(f"Error listing crew configs: {e}")
+        logger.exception("Error listing crew configs")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
 
 
@@ -186,7 +186,7 @@ async def get_crew_config_detail(filename: str, workspace: str) -> ApiResponse:
     except ValueError as e:
         return ApiResponse.error(code=400, msg=str(e))
     except Exception as e:
-        logger.error(f"Error getting crew config {filename}: {e}")
+        logger.exception(f"Error getting crew config {filename}")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
 
 
@@ -219,7 +219,7 @@ async def save_crew_config(filename: str, request: CrewConfigSaveRequest) -> Api
     except ValueError as e:
         return ApiResponse.error(code=400, msg=str(e))
     except Exception as e:
-        logger.error(f"Error saving crew config {filename}: {e}")
+        logger.exception(f"Error saving crew config {filename}")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
     """
     获取 workspace crew_configs 目录下指定配置文件的内容
@@ -237,7 +237,7 @@ async def save_crew_config(filename: str, request: CrewConfigSaveRequest) -> Api
     except ValueError as e:
         return ApiResponse.error(code=400, msg=str(e))
     except Exception as e:
-        logger.error(f"Error getting crew config {filename}: {e}")
+        logger.exception(f"Error getting crew config {filename}")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
 
 
@@ -259,7 +259,7 @@ async def get_crew_execution(execution_id: str) -> ApiResponse:
             msg="Execution retrieved successfully",
         )
     except Exception as e:
-        logger.error(f"Error getting crew execution {execution_id}: {e}")
+        logger.exception(f"Error getting crew execution {execution_id}")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
 
 
@@ -281,7 +281,7 @@ async def abort_crew_execution(execution_id: str) -> ApiResponse:
             msg=message,
         )
     except Exception as e:
-        logger.error(f"Error aborting crew execution {execution_id}: {e}")
+        logger.exception(f"Error aborting crew execution {execution_id}")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
 
 
@@ -301,5 +301,5 @@ async def delete_crew_execution(execution_id: str) -> ApiResponse:
             msg="Execution deleted successfully",
         )
     except Exception as e:
-        logger.error(f"Error deleting crew execution {execution_id}: {e}")
+        logger.exception(f"Error deleting crew execution {execution_id}")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
