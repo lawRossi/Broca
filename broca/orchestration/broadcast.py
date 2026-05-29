@@ -227,12 +227,16 @@ class BroadcastOrchestrator(Orchestrator):
 
         Returns:
             [{"agent": worker_name, "task_id": task_id}, ...]
-            或兜底: [{"agent": worker_name, "task": task_desc}, ...]
+
+        Raises:
+            RuntimeError: Dispatcher 不可用或执行失败
         """
         dispatcher_agent = self.dispatcher
         if dispatcher_agent is None:
-            logger.warning("No Dispatcher Agent found, using static dispatch")
-            return self._static_dispatch(task)
+            raise RuntimeError(
+                "No Dispatcher Agent found. Broadcast requires a "
+                "dispatcher agent (role=dispatcher) to decompose tasks."
+            )
 
         workers_info = [
             {"name": w["config"].name}
@@ -255,22 +259,19 @@ class BroadcastOrchestrator(Orchestrator):
         exec_result = await dispatcher_agent.run(trigger_message, from_agent=True)
 
         if exec_result.status != ES.COMPLETED:
-            logger.warning(
-                f"Dispatcher Agent failed: {exec_result.error}, "
-                f"falling back to static dispatch"
+            raise RuntimeError(
+                f"Dispatcher Agent failed: {exec_result.error}"
             )
-            return self._static_dispatch(task)
 
         # 从黑板读取 Dispatcher 写入的任务分配
         sub_tasks = await self._read_task_assignments()
-        if sub_tasks:
-            return sub_tasks
+        if not sub_tasks:
+            raise RuntimeError(
+                "Dispatcher completed but no task assignments found "
+                "in blackboard key 'task_assignments'"
+            )
 
-        logger.warning(
-            "No task assignments found in blackboard after Dispatcher execution, "
-            "falling back to static dispatch"
-        )
-        return self._static_dispatch(task)
+        return sub_tasks
 
     async def _read_task_assignments(self) -> List[Dict[str, str]]:
         """
@@ -299,28 +300,6 @@ class BroadcastOrchestrator(Orchestrator):
 
         return result
 
-    def _static_dispatch(self, task: str) -> List[Dict[str, str]]:
-        """
-        静态分发（兜底方案）：Dispatcher 不可用或失败时使用。
-
-        为每个 Worker 构建直接的任务描述，Worker 无需查黑板/TM。
-        """
-        sub_tasks = []
-
-        for worker in self.workers:
-            task_desc = PromptLoader.render(
-                "broadcast",
-                "dispatch_task.j2",
-                agent_name=worker["config"].name,
-                task=task,
-            )
-            sub_tasks.append({
-                "agent": worker["config"].name,
-                "task": task_desc,
-            })
-
-        return sub_tasks
-
     # ═══════════════════════════════════════════════
     # Phase 2: Worker 并行执行
     # ═══════════════════════════════════════════════
@@ -331,28 +310,17 @@ class BroadcastOrchestrator(Orchestrator):
         """
         并行执行所有 Worker 任务。
 
-        支持两种格式：
-        - 有 task_id: Worker 通过 blackboard + task_management 自主拉取任务
-        - 有 task: Worker 直接执行内联任务（静态分发兜底）
+        Worker 通过 blackboard + task_management 自主拉取任务详情并执行。
         """
-        # 判断是 task_id 模式还是内联 task 模式
-        has_task_ids = any("task_id" in st for st in sub_tasks)
-
-        if has_task_ids:
-            # Dispatcher 模式: Worker 自主查黑板找任务
-            tasks = []
-            for st in sub_tasks:
-                worker_prompt = PromptLoader.render(
-                    "broadcast",
-                    "worker_prompt.j2",
-                    agent_name=st["agent"],
-                )
-                tasks.append((st["agent"], worker_prompt))
-            return await execute_agents_in_parallel(self.context, tasks)
-        else:
-            # 静态分发模式: 直接执行内联任务
-            tasks = [(st["agent"], st["task"]) for st in sub_tasks]
-            return await execute_agents_in_parallel(self.context, tasks)
+        tasks = []
+        for st in sub_tasks:
+            worker_prompt = PromptLoader.render(
+                "broadcast",
+                "worker_prompt.j2",
+                agent_name=st["agent"],
+            )
+            tasks.append((st["agent"], worker_prompt))
+        return await execute_agents_in_parallel(self.context, tasks)
 
     # ═══════════════════════════════════════════════
     # Phase 3: Aggregator LLM 汇聚结果
