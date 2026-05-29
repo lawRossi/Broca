@@ -934,7 +934,7 @@ export class ChatWebViewManager {
 
   private async handlePermissionResponse(
     sessionId: string,
-    payload: { granted: boolean; requestId?: string; receiverId?: string }
+    payload: { granted: boolean; session_action?: string; requestId?: string; receiverId?: string }
   ) {
     const socketClient = this.socketClients.get(sessionId)
     if (!socketClient) return
@@ -942,6 +942,7 @@ export class ChatWebViewManager {
     try {
       await socketClient.sendPermissionResponse({
         granted: payload.granted,
+        session_action: payload.session_action,
         requestId: payload.requestId,
         receiverId: payload.receiverId,
         subscription: sessionId,

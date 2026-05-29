@@ -605,6 +605,7 @@ class SocketIOClient:
         self,
         message: str,
         request_id: Optional[str] = None,
+        request_type: Optional[str] = None,
         receiver_id: Optional[str] = None,
         room: Optional[str] = None,
         subscription: Optional[str] = None,
@@ -614,6 +615,7 @@ class SocketIOClient:
         msg = MessageProtocol.create_permission_request(
             message=message,
             request_id=request_id,
+            request_type=request_type,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,

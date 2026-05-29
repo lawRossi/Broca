@@ -258,11 +258,20 @@ export class SocketClient {
 
   async sendPermissionResponse(params: {
     granted: boolean
+    session_action?: string
     requestId?: string
     receiverId?: string
     subscription?: string
   }): Promise<void> {
     if (!this.socket?.connected) throw new Error('Not connected')
+
+    const data: Record<string, unknown> = {
+      granted: params.granted,
+      request_id: params.requestId,
+    }
+    if (params.session_action) {
+      data.session_action = params.session_action
+    }
 
     const message: Message = {
       message_id: `perm_${Date.now()}`,
@@ -272,10 +281,7 @@ export class SocketClient {
       sender_id: this.clientId,
       receiver_id: params.receiverId,
       subscription: params.subscription,
-      data: {
-        granted: params.granted,
-        request_id: params.requestId,
-      },
+      data,
     }
 
     return new Promise((resolve, reject) => {

@@ -1,0 +1,32 @@
+{
+  "_description": "工具权限配置文件。读取顺序（找到第一个即停）：① workspace/.broca/ → ② ~/.broca/configs/ → ③ 全部默认allow",
+  "_permission_values": {
+    "allow": "直接执行，无需询问",
+    "ask": "每次执行前询问用户",
+    "forbidden": "禁止执行"
+  },
+  "tools": {
+    "read_file": "allow",
+    "write_file": "ask",
+    "edit_file": "ask",
+    "glob": "allow",
+    "grep": "allow",
+    "list_dir": "allow",
+    "tree_dir": "allow",
+    "web_fetch": "allow",
+    "web_search": "allow",
+    "ask_user": "allow",
+    "assign_task": "allow",
+    "execute_code": "ask",
+    "task_management": "allow",
+    "todo_management": "allow",
+    "cron": "ask",
+    "memory": "ask",
+    "load_skill": "allow",
+    "blackboard_changes": "allow",
+    "delete_blackboard": "ask",
+    "list_blackboard": "allow",
+    "read_blackboard": "allow",
+    "write_blackboard": "ask"
+  }
+}

@@ -550,12 +550,17 @@ class MessageProtocol:
 
     @staticmethod
     def create_permission_request(
-        message: str, request_id: Optional[str] = None, **kwargs
+        message: str,
+        request_id: Optional[str] = None,
+        request_type: Optional[str] = None,
+        **kwargs,
     ) -> Message:
         """创建权限请求消息"""
         data = {"message": message}
         if request_id:
             data["request_id"] = request_id
+        if request_type:
+            data["request_type"] = request_type
         return Message(
             message_type=MessageType.PERMISSION_REQUEST,
             role=MessageRole.SYSTEM,

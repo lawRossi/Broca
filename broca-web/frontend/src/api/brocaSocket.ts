@@ -260,6 +260,7 @@ export class BrocaSocketClient {
 
   async sendPermissionResponse(params: {
     granted: boolean
+    session_action?: string
     requestId?: string
     receiverId?: string
     room?: string
@@ -267,6 +268,14 @@ export class BrocaSocketClient {
   }): Promise<void> {
     if (!this.socket || !this.isConnected) {
       throw new Error('Not connected')
+    }
+
+    const data: Record<string, unknown> = {
+      granted: params.granted,
+      request_id: params.requestId,
+    }
+    if (params.session_action) {
+      data.session_action = params.session_action
     }
 
     const message: Message = {
@@ -278,10 +287,7 @@ export class BrocaSocketClient {
       receiver_id: params.receiverId,
       room: params.room,
       subscription: params.subscription,
-      data: {
-        granted: params.granted,
-        request_id: params.requestId,
-      },
+      data,
     }
 
     return new Promise((resolve, reject) => {

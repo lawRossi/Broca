@@ -337,6 +337,21 @@ else
     warn "未找到 Agent 配置目录: $AGENTS_SRC"
 fi
 
+# ---- 复制 tool_permission_config.json ----
+PERM_DST="$BROCA_HOME/configs/tool_permission_config.json"
+PERM_SRC="$PROJECT_ROOT/configs/tool_permission_config.json"
+
+if [[ ! -f "$PERM_DST" ]]; then
+    if [[ -f "$PERM_SRC" ]]; then
+        cp "$PERM_SRC" "$PERM_DST"
+        info "已创建工具权限配置: $PERM_DST"
+    else
+        warn "未找到默认工具权限配置: $PERM_SRC"
+    fi
+else
+    info "工具权限配置已存在: ${PERM_DST}（跳过）"
+fi
+
 echo ""
 
 # ============================================================================

@@ -113,6 +113,7 @@ export const useChatStore = defineStore('chat', () => {
     requestId: '' as string | undefined,
     senderId: '' as string | undefined,
     message: '',
+    requestType: 'general' as string,
   })
 
   const agentQueryDialog = reactive({
@@ -573,6 +574,7 @@ export const useChatStore = defineStore('chat', () => {
       permissionDialog.requestId = m.data?.request_id
       permissionDialog.senderId = m.sender_id
       permissionDialog.message = m.data?.message || 'Permission required'
+      permissionDialog.requestType = m.data?.request_type || 'general'
     })
     const unsubAgentQuery = socketStore.onAgentQuery('chat', (m: Message) => {
       agentQueryDialog.visible = true
@@ -689,9 +691,10 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
-  const respondPermission = async (granted: boolean) => {
+  const respondPermission = async (granted: boolean, sessionAction?: string) => {
     await socketStore.respondPermission({
       granted,
+      session_action: sessionAction,
       requestId: permissionDialog.requestId,
       receiverId: permissionDialog.senderId || '',
       subscription: sessionId.value ? String(sessionId.value) : undefined,

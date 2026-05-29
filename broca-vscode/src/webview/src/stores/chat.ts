@@ -109,6 +109,7 @@ export const useChatStore = defineStore('chat', () => {
     requestId: '' as string | undefined,
     senderId: '' as string | undefined,
     message: '',
+    requestType: 'general' as string,
   })
 
   // Agent query dialog state
@@ -247,6 +248,7 @@ export const useChatStore = defineStore('chat', () => {
         requestId: message.data?.request_id,
         senderId: message.sender_id,
         message: message.data?.message || 'Permission required',
+        requestType: message.data?.request_type || 'general',
       }
       return
     }
@@ -548,11 +550,12 @@ export const useChatStore = defineStore('chat', () => {
     loadHistory(historySkip.value, 50)
   }
 
-  function respondPermission(granted: boolean) {
+  function respondPermission(granted: boolean, sessionAction?: string) {
     postMessage({
       type: 'respondPermission',
       payload: {
         granted,
+        session_action: sessionAction,
         requestId: permissionDialog.value.requestId,
         receiverId: permissionDialog.value.senderId,
       },

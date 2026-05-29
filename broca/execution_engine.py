@@ -35,6 +35,7 @@ from broca.snapshot.patch import PatchCalculator
 from broca.snapshot.track import SnapshotTracker
 from broca.tools.tool import ToolCallContext, ToolResult, ToolStatus
 from broca.tools.tool_manager import ToolManager
+from broca.tools.tool_permission_manager import ToolPermissionManager
 
 logger = get_logger(__name__)
 
@@ -98,6 +99,7 @@ class ExecutionEngine:
         communicator: Any,
         session_manager: SessionManager,
         session_memory_manager: Any = None,
+        tool_permission_manager: Optional[ToolPermissionManager] = None,
         step_max_errors=3,
         llm_retry_delay=10,
         tool_call_timeout=600,
@@ -123,6 +125,9 @@ class ExecutionEngine:
         self.communicator = communicator
         self.session_manager = session_manager
         self.session_memory_manager = session_memory_manager
+        self.tool_permission_manager = tool_permission_manager or ToolPermissionManager(
+            workspace=config.workspace if config else None
+        )
 
         self.error_handler = ErrorHandler(
             session_manager=session_manager, turn_id=None, agent_id=None
@@ -481,30 +486,87 @@ class ExecutionEngine:
                     content="this tool is currently not allowed",
                 )
             else:
-                try:
-                    async with self.error_handler.handle_tool_execution(
-                        tool_name=tool_name, context="tool_call_processing"
-                    ):
-                        timeout = (
-                            self.assign_task_timeout
-                            if tool_name == "assign_task"
-                            else self.tool_call_timeout
-                        )
-                        tool_result = await asyncio.wait_for(
-                            self.tool_mapping[tool_name].execute(arguments, context),
-                            timeout=timeout,
-                        )
-                except AgentError as e:
-                    logger.error(
-                        f"Tool execution failed with {e.error_type}: {e.message}"
+                # ── Permission check from ToolPermissionManager ──
+                permission = self.tool_permission_manager.get_permission(tool_name)
+                if permission == "forbidden":
+                    logger.warning(
+                        f"Tool '{tool_name}' is forbidden by permission settings, skipping."
                     )
                     tool_result = ToolResult(
                         status=ToolStatus.ERROR,
-                        content=f"Tool {tool_name} execution failed: {e.message}",
+                        content=f"Tool {tool_name} is forbidden by permission settings",
                     )
-                except asyncio.CancelledError:
-                    logger.info("Tool execution cancelled by user")
-                    raise
+                elif permission == "ask":
+                    # Ask user for permission with session-level options
+                    granted, session_action = await self.agent.ask_for_tool_permission(
+                        tool_name, arguments
+                    )
+                    if not granted:
+                        logger.info(
+                            f"Tool '{tool_name}' execution denied by user"
+                        )
+                        tool_result = ToolResult(
+                            status=ToolStatus.ERROR,
+                            content=f"Tool {tool_name} execution denied by user",
+                        )
+                    else:
+                        try:
+                            async with self.error_handler.handle_tool_execution(
+                                tool_name=tool_name, context="tool_call_processing"
+                            ):
+                                timeout = (
+                                    self.assign_task_timeout
+                                    if tool_name == "assign_task"
+                                    else self.tool_call_timeout
+                                )
+                                tool_result = await asyncio.wait_for(
+                                    self.tool_mapping[tool_name].execute(arguments, context),
+                                    timeout=timeout,
+                                )
+                        except AgentError as e:
+                            logger.error(
+                                f"Tool execution failed with {e.error_type}: {e.message}"
+                            )
+                            tool_result = ToolResult(
+                                status=ToolStatus.ERROR,
+                                content=f"Tool {tool_name} execution failed: {e.message}",
+                            )
+                        except asyncio.CancelledError:
+                            logger.info("Tool execution cancelled by user")
+                            raise
+
+                    # Handle session-level decisions
+                    if session_action == "allow":
+                        self.tool_permission_manager.set_session_override(tool_name, "allow")
+                        logger.info(f"User chose to always allow '{tool_name}' for this session")
+                    elif session_action == "forbid":
+                        self.tool_permission_manager.set_session_override(tool_name, "forbidden")
+                        logger.info(f"User chose to always forbid '{tool_name}' for this session")
+                else:  # "allow"
+                    try:
+                        async with self.error_handler.handle_tool_execution(
+                            tool_name=tool_name, context="tool_call_processing"
+                        ):
+                            timeout = (
+                                self.assign_task_timeout
+                                if tool_name == "assign_task"
+                                else self.tool_call_timeout
+                            )
+                            tool_result = await asyncio.wait_for(
+                                self.tool_mapping[tool_name].execute(arguments, context),
+                                timeout=timeout,
+                            )
+                    except AgentError as e:
+                        logger.error(
+                            f"Tool execution failed with {e.error_type}: {e.message}"
+                        )
+                        tool_result = ToolResult(
+                            status=ToolStatus.ERROR,
+                            content=f"Tool {tool_name} execution failed: {e.message}",
+                        )
+                    except asyncio.CancelledError:
+                        logger.info("Tool execution cancelled by user")
+                        raise
 
             if not await self.process_tool_call_result(tool_call, tool_result):
                 raise Exception("Tool call result processing failed")
@@ -842,10 +904,12 @@ class ExecutionEngine:
         """
         Reset execution state
 
-        Clears abort state and resets execution flags
+        Clears abort state, resets execution flags, and clears
+        session-level permission overrides.
         """
         self.abort_event.clear()
         self.turn_id = None
+        self.tool_permission_manager.clear_session_overrides()
 
     async def _truncate_last_assistant_message_with_tool_calls(self):
         """

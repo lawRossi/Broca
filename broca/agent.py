@@ -7,7 +7,7 @@ This module defines the core Agent class, which encapsulates the agent's behavio
 import asyncio
 import json
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from broca.agent_configs import AgentConfig
 from broca.comm.agent_communicator import AgentCommunicator
@@ -20,6 +20,7 @@ from broca.permission_manager import PermissionManager
 from broca.session import Message, MessageRole, MessageType, SessionManager
 from broca.session.revert_service import SessionRevertService
 from broca.tools.tool_manager import ToolManager
+from broca.tools.tool_permission_manager import ToolPermissionManager
 
 logger = get_logger(__name__)
 
@@ -82,6 +83,7 @@ class Agent:
         agent._setup_communicator()
         agent._setup_session_memory()
         agent._setup_permission_manager()
+        agent._setup_tool_permission_manager()
         await agent._setup_tools()
         agent._setup_execution_engine()
         await agent._setup_command_system()
@@ -213,6 +215,12 @@ class Agent:
             config=self.config.session_memory_config,
         )
 
+    def _setup_tool_permission_manager(self):
+        """Set up tool permission manager"""
+        self.tool_permission_manager = ToolPermissionManager(
+            workspace=self.config.workspace
+        )
+
     def _setup_execution_engine(self):
         """Set up execution engine"""
         self.execution_engine = ExecutionEngine(
@@ -224,6 +232,7 @@ class Agent:
             communicator=self.communicator,
             session_manager=self.session_manager,
             session_memory_manager=self.session_memory_manager,
+            tool_permission_manager=self.tool_permission_manager,
         )
 
     async def _setup_command_system(self):
@@ -270,6 +279,37 @@ class Agent:
         # Use permission manager to handle the request
         async with self.error_handler.handle_permission_request():
             return await self.permission_manager.request_permission(message)
+
+    async def ask_for_tool_permission(
+        self, tool_name: str, arguments: str
+    ) -> Tuple[bool, Optional[str]]:
+        """
+        Ask for user permission for a tool execution (tool permission system).
+
+        This is used by the new tool permission system when a tool is configured
+        as "ask". It supports session-level decisions (allow/forbid for the
+        entire session). The existing ask_for_permission() remains unchanged
+        for backward compatibility.
+
+        Args:
+            tool_name: Name of the tool
+            arguments: Tool arguments as JSON string
+
+        Returns:
+            Tuple of (granted: bool, session_action: Optional[str])
+        """
+        # Update permission manager state
+        self.permission_manager.set_state(
+            turn_id=self.turn_id,
+            agent_id=self.agent_id,
+            session_id=self.session_id,
+        )
+
+        # Use permission manager to handle the request with request_type="tool"
+        async with self.error_handler.handle_permission_request():
+            return await self.permission_manager.request_tool_permission(
+                f"Tool `{tool_name}` requires your permission."
+            )
 
     async def _on_permission_response(self, message: Message):
         """

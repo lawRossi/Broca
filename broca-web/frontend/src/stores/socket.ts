@@ -270,6 +270,7 @@ export const useSocketStore = defineStore('socket', () => {
 
   const respondPermission = async (params: {
     granted: boolean
+    session_action?: string
     requestId?: string
     receiverId?: string
     subscription?: string
@@ -278,6 +279,7 @@ export const useSocketStore = defineStore('socket', () => {
     try {
       await client.sendPermissionResponse({
         granted: params.granted,
+        session_action: params.session_action,
         requestId: params.requestId,
         receiverId: params.receiverId,
         subscription: params.subscription,
