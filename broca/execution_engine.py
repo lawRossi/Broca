@@ -303,6 +303,9 @@ class ExecutionEngine:
             except asyncio.CancelledError:
                 logger.info("Agent execution cancelled by user during LLM call")
                 return ExecutionStatus.ABORTED
+            except Exception as e:
+                logger.error(f"Error during LLM call: {e}")
+                return ExecutionStatus.ERROR
 
         if self.abort_event.is_set():
             logger.info("Agent execution aborted after tool calls")
@@ -502,9 +505,7 @@ class ExecutionEngine:
                         tool_name, arguments
                     )
                     if not granted:
-                        logger.info(
-                            f"Tool '{tool_name}' execution denied by user"
-                        )
+                        logger.info(f"Tool '{tool_name}' execution denied by user")
                         tool_result = ToolResult(
                             status=ToolStatus.ERROR,
                             content=f"Tool {tool_name} execution denied by user",
@@ -520,7 +521,9 @@ class ExecutionEngine:
                                     else self.tool_call_timeout
                                 )
                                 tool_result = await asyncio.wait_for(
-                                    self.tool_mapping[tool_name].execute(arguments, context),
+                                    self.tool_mapping[tool_name].execute(
+                                        arguments, context
+                                    ),
                                     timeout=timeout,
                                 )
                         except AgentError as e:
@@ -537,11 +540,19 @@ class ExecutionEngine:
 
                     # Handle session-level decisions
                     if session_action == "allow":
-                        self.tool_permission_manager.set_session_override(tool_name, "allow")
-                        logger.info(f"User chose to always allow '{tool_name}' for this session")
+                        self.tool_permission_manager.set_session_override(
+                            tool_name, "allow"
+                        )
+                        logger.info(
+                            f"User chose to always allow '{tool_name}' for this session"
+                        )
                     elif session_action == "forbid":
-                        self.tool_permission_manager.set_session_override(tool_name, "forbidden")
-                        logger.info(f"User chose to always forbid '{tool_name}' for this session")
+                        self.tool_permission_manager.set_session_override(
+                            tool_name, "forbidden"
+                        )
+                        logger.info(
+                            f"User chose to always forbid '{tool_name}' for this session"
+                        )
                 else:  # "allow"
                     try:
                         async with self.error_handler.handle_tool_execution(
@@ -553,7 +564,9 @@ class ExecutionEngine:
                                 else self.tool_call_timeout
                             )
                             tool_result = await asyncio.wait_for(
-                                self.tool_mapping[tool_name].execute(arguments, context),
+                                self.tool_mapping[tool_name].execute(
+                                    arguments, context
+                                ),
                                 timeout=timeout,
                             )
                     except AgentError as e:
