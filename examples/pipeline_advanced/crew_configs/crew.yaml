@@ -74,12 +74,20 @@ orchestrator:
           3. 改进建议（按优先级排序）
           4. 最终结论: 批准 / 需修改 / 拒绝
 
-      # ── Step 4: 条件分支 — 根据评分决策 ──
+      # ── Step 4: 条件分支 — 由质量管理员评估决策 ──
       - type: condition
         name: "决策分支"
-        condition_field: "pipeline.step_3.output"
-        condition_operator: "contains"
-        condition_value: "批准"
+        evaluator: "质量管理员"
+        evaluation_prompt: |
+          根据fan-in汇聚的审查结果，判断代码是否可以自动批准合并。
+          
+          考虑因素：
+          - 是否存在高危安全问题
+          - 代码质量是否达标
+          - 是否有未解决的重大缺陷
+          
+          如果可以自动批准，选择"自动批准"分支；
+          如果需要人工介入，选择"需人工处理"分支。
         branches:
           - name: "自动批准"
             agent: "集成管理员"

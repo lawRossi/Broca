@@ -136,11 +136,15 @@ class PipelineStep:
 
     # === CONDITION 字段 ===
     condition_field: Optional[str] = None
-    """黑板中用于条件判断的字段路径"""
+    """黑板中用于条件判断的字段路径（静态比较模式使用）"""
     condition_operator: str = "eq"
-    """比较运算符: eq | ne | gt | gte | lt | lte | contains | startswith | endswith"""
+    """比较运算符: eq | ne | gt | gte | lt | lte | contains | startswith | endswith（静态比较模式使用）"""
     condition_value: Any = None
-    """比较目标值"""
+    """比较目标值（静态比较模式使用）"""
+    evaluator: Optional[str] = None
+    """评估 Agent 名称（Agent 评估模式使用）。指定后由该 Agent 根据 evaluation_prompt 判断走哪个分支"""
+    evaluation_prompt: Optional[str] = None
+    """评估指令（Agent 评估模式使用）。Agent 根据此指令和当前黑板上下文决定走哪个分支"""
 
     # === SWITCH 字段 ===
     switch_field: Optional[str] = None
@@ -181,10 +185,16 @@ class PipelineStep:
 
         # CONDITION
         if self.type == PipelineStepType.CONDITION:
-            if self.condition_field:
-                result["condition_field"] = self.condition_field
-            result["condition_operator"] = self.condition_operator
-            result["condition_value"] = self.condition_value
+            if self.evaluator:
+                result["evaluator"] = self.evaluator
+                if self.evaluation_prompt:
+                    result["evaluation_prompt"] = self.evaluation_prompt
+            else:
+                # 静态比较模式
+                if self.condition_field:
+                    result["condition_field"] = self.condition_field
+                result["condition_operator"] = self.condition_operator
+                result["condition_value"] = self.condition_value
             if self.default_branch:
                 result["default_branch"] = self.default_branch
 
@@ -239,6 +249,18 @@ class PipelineStep:
             )
 
         if step_type == PipelineStepType.CONDITION:
+            # Agent 评估模式 vs 静态比较模式
+            evaluator = data.get("evaluator")
+            if evaluator:
+                return cls(
+                    type=step_type,
+                    name=data.get("name"),
+                    branches=branches,
+                    evaluator=evaluator,
+                    evaluation_prompt=data.get("evaluation_prompt"),
+                    default_branch=data.get("default_branch"),
+                    extras=data.get("extras", {}),
+                )
             return cls(
                 type=step_type,
                 name=data.get("name"),
@@ -780,8 +802,9 @@ class PipelineOrchestrator(Orchestrator):
         """
         条件分支执行
 
-        从黑板读取 condition_field 的值，用 condition_operator 与 condition_value 比较，
-        选择匹配的分支执行。
+        支持两种模式：
+        1. Agent 评估模式（推荐）: 指定 evaluator Agent，由 LLM 根据 evaluation_prompt 判断走哪个分支
+        2. 静态比较模式: 从黑板读取 condition_field，用 condition_operator 与 condition_value 比较
 
         Returns:
             {"branch": branch_name, "output": branch_output}
@@ -789,12 +812,15 @@ class PipelineOrchestrator(Orchestrator):
         if not step.branches or len(step.branches) < 1:
             raise ValueError("CONDITION step requires at least 1 branch")
 
-        # 获取条件值
+        # ── Agent 评估模式 ──
+        if step.evaluator:
+            return await self._execute_condition_by_agent(step, index, accumulated)
+
+        # ── 静态比较模式 ──
         actual_value = None
         if step.condition_field:
             actual_value = await self.context.blackboard.get(step.condition_field)
             if actual_value is None:
-                # 也尝试从 accumulated 查
                 actual_value = accumulated.get(step.condition_field)
 
         logger.info(
@@ -803,50 +829,27 @@ class PipelineOrchestrator(Orchestrator):
             f"target={step.condition_value}"
         )
 
-        # 求值
         matched = _evaluate_condition(
             actual_value, step.condition_operator, step.condition_value
         )
 
-        # 选择分支
-        selected_branch: Optional[BranchDefinition] = None
-        if matched and step.branches:
-            selected_branch = step.branches[0]  # 第一个分支是 "true" 分支
-        elif not matched and len(step.branches) > 1:
-            selected_branch = step.branches[1]  # 第二个分支是 "false" 分支
-        elif step.default_branch:
-            # 按名称查找默认分支
-            for b in (step.branches or []):
-                if b.name == step.default_branch:
-                    selected_branch = b
-                    break
+        selected_branch = self._pick_branch(step, matched)
 
         if selected_branch is None:
             logger.warning(
                 f"CONDITION step '{self._step_name(step, index)}': "
-                f"no branch matched and no default, skipping"
+                f"no branch matched, skipping"
             )
             return {"branch": None, "output": None, "matched": matched}
 
-        # 执行选中的分支
-        previous_output = self._get_previous_output(accumulated)
-        branch_context = PromptLoader.render(
-            "pipeline",
-            "fan_out_branch.j2",
-            branch_name=selected_branch.name,
-            task=selected_branch.task,
-            context=selected_branch.context,
-            previous_output=previous_output,
-            accumulated=accumulated,
-        )
-
-        output = await self._execute_agent(selected_branch.agent, branch_context)
+        output = await self._execute_selected_branch(selected_branch, accumulated)
 
         result = {
             "branch": selected_branch.name,
             "output": output,
             "matched": matched,
             "condition": {
+                "mode": "static",
                 "field": step.condition_field,
                 "operator": step.condition_operator,
                 "expected": step.condition_value,
@@ -861,6 +864,137 @@ class PipelineOrchestrator(Orchestrator):
         )
 
         return result
+
+    async def _execute_condition_by_agent(
+        self,
+        step: PipelineStep,
+        index: int,
+        accumulated: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """
+        Agent 评估模式：由指定的 evaluator Agent 根据当前上下文判断走哪个分支。
+        """
+        evaluator_agent = self.context.get_agent(step.evaluator)
+        if evaluator_agent is None:
+            logger.warning(
+                f"Evaluator Agent '{step.evaluator}' not found, "
+                f"falling back to default branch"
+            )
+            selected_branch = self._pick_branch(step, matched=False)
+            if selected_branch is None:
+                return {"branch": None, "output": None, "error": "evaluator not found"}
+            output = await self._execute_selected_branch(selected_branch, accumulated)
+            return {"branch": selected_branch.name, "output": output}
+
+        # 构建评估提示，包含当前黑板状态和累加结果
+        blackboard_snapshot = await self.context.blackboard.to_dict()
+        prompt = PromptLoader.render(
+            "pipeline",
+            "condition_eval.j2",
+            evaluation_prompt=step.evaluation_prompt or "",
+            branches=[{"name": b.name, "task": b.task} for b in (step.branches or [])],
+            blackboard_snapshot=blackboard_snapshot,
+            accumulated=accumulated,
+        )
+
+        eval_prompt_display = step.evaluation_prompt or "(default)"
+        logger.info(
+            f"CONDITION (agent) evaluator='{step.evaluator}', "
+            f"prompt='{eval_prompt_display}'"
+        )
+
+        # 调用 evaluator Agent 做判断
+        from broca.session import MessageProtocol
+        from broca.execution_engine import ExecutionStatus as ES
+
+        trigger_message = MessageProtocol.create_user_message(content=prompt)
+        exec_result = await evaluator_agent.run(trigger_message, from_agent=True)
+
+        branch_name = None
+        if exec_result.status == ES.COMPLETED:
+            response = evaluator_agent.context.get_latest_assistant_message() or ""
+            # 从响应中提取分支名（按顺序匹配）
+            for b in (step.branches or []):
+                if b.name in response:
+                    branch_name = b.name
+                    break
+
+        if branch_name is None:
+            logger.warning(
+                f"Evaluator Agent didn't return a valid branch name, "
+                f"falling back to default"
+            )
+            selected_branch = self._pick_branch(step, matched=False)
+            if selected_branch is None:
+                return {"branch": None, "output": None, "error": "no branch selected"}
+        else:
+            selected_branch = None
+            for b in (step.branches or []):
+                if b.name == branch_name:
+                    selected_branch = b
+                    break
+
+        if selected_branch is None:
+            return {"branch": None, "output": None, "error": "branch not found"}
+
+        output = await self._execute_selected_branch(selected_branch, accumulated)
+
+        result = {
+            "branch": selected_branch.name,
+            "output": output,
+            "condition": {
+                "mode": "agent",
+                "evaluator": step.evaluator,
+                "prompt": step.evaluation_prompt,
+            },
+        }
+
+        await self.context.blackboard.set(
+            f"pipeline.condition.{step.name or f'step_{index + 1}'}",
+            result,
+            producer="pipeline_orchestrator",
+        )
+
+        return result
+
+    def _pick_branch(
+        self,
+        step: PipelineStep,
+        matched: bool,
+    ) -> Optional[BranchDefinition]:
+        """
+        根据匹配结果选择分支。
+        - matched=True → 第一个分支
+        - matched=False → 第二个分支（如有）
+        - 都不满足 → default_branch
+        """
+        if matched and step.branches:
+            return step.branches[0]
+        if not matched and step.branches and len(step.branches) > 1:
+            return step.branches[1]
+        if step.default_branch:
+            for b in (step.branches or []):
+                if b.name == step.default_branch:
+                    return b
+        return None
+
+    async def _execute_selected_branch(
+        self,
+        branch: BranchDefinition,
+        accumulated: Dict[str, Any],
+    ) -> str:
+        """执行选中的分支"""
+        previous_output = self._get_previous_output(accumulated)
+        branch_context = PromptLoader.render(
+            "pipeline",
+            "fan_out_branch.j2",
+            branch_name=branch.name,
+            task=branch.task,
+            context=branch.context,
+            previous_output=previous_output,
+            accumulated=accumulated,
+        )
+        return await self._execute_agent(branch.agent, branch_context)
 
     # ═══════════════════════════════════════════════
     # SWITCH 类型
