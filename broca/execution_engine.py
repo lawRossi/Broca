@@ -779,7 +779,7 @@ class ExecutionEngine:
         if not await self._setup_execution_context(message, from_agent):
             if self.config.interactive:
                 await self.communicator.send_error(
-                    message="Error setting up execution context",
+                    "Error setting up execution context",
                     subscription=self.session_id,
                 )
             return ExecutionResult(
