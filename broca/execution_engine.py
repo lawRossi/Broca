@@ -849,13 +849,13 @@ class ExecutionEngine:
         Args:
             message: The message to process
         """
-        user_message = self.llm_client.parse_message(
-            provider=self.config.provider, model=self.config.model, message=message
-        )
-        if not user_message:
-            return False
-
         try:
+            user_message = self.llm_client.parse_message(
+                provider=self.config.provider, model=self.config.model, message=message
+            )
+            if not user_message:
+                return False
+
             await self._ensure_session()
 
             turn_id = await self.session_manager.start_turn(self.agent_id)
