@@ -26,6 +26,7 @@ from broca.orchestration.orchestrator import (
     PhaseResult,
     PhaseStatus,
 )
+from broca.orchestration.prompt_loader import PromptLoader
 
 logger = get_logger(__name__)
 
@@ -178,11 +179,11 @@ class ConsensusOrchestrator(Orchestrator):
             agent = reviewer["agent"]
             agent_cfg = reviewer["config"]
 
-            prompt = (
-                f"Please review the following:\n\n{review_target}\n\n"
-                f"Provide your evaluation as a JSON:\n"
-                f'{{"score": <0.0-1.0>, "summary": "...", "issues": ["..."]}}\n'
-                f"Score above 0.7 means passing."
+            prompt = PromptLoader.render(
+                "consensus",
+                "review_prompt.j2",
+                review_target=review_target,
+                threshold=0.7,
             )
 
             try:

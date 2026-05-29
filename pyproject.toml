@@ -1,4 +1,12 @@
 
+[tool.poetry]
+packages = [
+    {include = "broca"}
+]
+include = [
+    "broca/orchestration/prompts/**/*.j2"
+]
+
 [project]
 name = "broca"
 version = "0.1.0"

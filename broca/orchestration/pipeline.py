@@ -30,6 +30,7 @@ from broca.orchestration.orchestrator import (
     PhaseResult,
     PhaseStatus,
 )
+from broca.orchestration.prompt_loader import PromptLoader
 from broca.session import MessageProtocol
 
 logger = get_logger(__name__)
@@ -191,22 +192,14 @@ class PipelineOrchestrator(Orchestrator):
         previous_output: Any,
     ) -> str:
         """构建步骤执行的任务上下文"""
-        context_parts = [f"Task: {step.task}"]
-
-        if step.context:
-            context_parts.append(f"\nAdditional context:\n{step.context}")
-
-        if accumulated:
-            context_parts.append("\n\nPrevious steps results:")
-            for agent_name, output in accumulated.items():
-                output_str = str(output)[:500]
-                context_parts.append(f"\n  [{agent_name}]:\n    {output_str}")
-
-        if previous_output is not None:
-            output_str = str(previous_output)[:300]
-            context_parts.append(f"\n\nImmediately previous step output:\n{output_str}")
-
-        return "\n".join(context_parts)
+        return PromptLoader.render(
+            "pipeline",
+            "task_context.j2",
+            task=step.task,
+            context=step.context,
+            accumulated=accumulated,
+            previous_output=previous_output,
+        )
 
     async def _execute_step(
         self,
@@ -223,11 +216,11 @@ class PipelineOrchestrator(Orchestrator):
             raise ValueError(f"Agent '{step.agent}' not found in Crew context")
 
         # 构建完整的任务描述
-        full_task = (
-            f"{task_context}\n\nIMPORTANT: This is part of a pipeline workflow. "
+        full_task = PromptLoader.render(
+            "pipeline",
+            "execute_step.j2",
+            task_context=task_context,
         )
-        full_task += "Complete the assigned work thoroughly. "
-        full_task += "After finishing, provide a clear summary of what you did and the key results."
 
         trigger_message = MessageProtocol.create_user_message(content=full_task)
         execution_result = await target_agent.run(trigger_message, from_agent=True)

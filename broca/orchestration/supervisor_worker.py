@@ -27,6 +27,7 @@ from broca.orchestration.orchestrator import (
     PhaseResult,
     PhaseStatus,
 )
+from broca.orchestration.prompt_loader import PromptLoader
 
 logger = get_logger(__name__)
 
@@ -208,9 +209,15 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             # 首轮：生成初始计划
             tasks = []
             for i, w_name in enumerate(self.worker_names):
+                task = PromptLoader.render(
+                    "supervisor_worker",
+                    "generate_plan_initial.j2",
+                    index=i,
+                    objective=objective,
+                )
                 tasks.append({
                     "agent": w_name,
-                    "task": f"Investigate aspect {i + 1} of: {objective}",
+                    "task": task,
                 })
             return {
                 "objective": objective,
@@ -222,15 +229,21 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             prev_results = await self.context.blackboard.get(
                 f"worker_results_iteration_{attempt}", {}
             )
+            tasks = []
+            for w_name in self.worker_names:
+                task = PromptLoader.render(
+                    "supervisor_worker",
+                    "generate_plan_refine.j2",
+                    objective=objective,
+                    previous_results_summary=str(prev_results)[:200],
+                )
+                tasks.append({
+                    "agent": w_name,
+                    "task": task,
+                })
             return {
                 "objective": objective,
-                "tasks": [
-                    {
-                        "agent": w_name,
-                        "task": f"Refine and improve previous work on: {objective}",
-                    }
-                    for w_name in self.worker_names
-                ],
+                "tasks": tasks,
                 "previous_results_summary": str(prev_results)[:200],
                 "attempt": attempt + 1,
             }

@@ -25,6 +25,7 @@ from broca.orchestration.orchestrator import (
     PhaseResult,
     PhaseStatus,
 )
+from broca.orchestration.prompt_loader import PromptLoader
 
 logger = get_logger(__name__)
 
@@ -185,9 +186,16 @@ class BroadcastOrchestrator(Orchestrator):
         sub_tasks = []
 
         for i, worker in enumerate(self.workers):
+            task_desc = PromptLoader.render(
+                "broadcast",
+                "dispatch_task.j2",
+                index=i + 1,
+                total=worker_count,
+                task=task,
+            )
             sub_tasks.append({
                 "agent": worker["config"].name,
-                "task": f"Perspective {i + 1}/{worker_count}: Analyze the following from your unique angle.\n\n{task}",
+                "task": task_desc,
                 "index": i,
             })
 

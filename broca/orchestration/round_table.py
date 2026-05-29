@@ -26,6 +26,7 @@ from broca.orchestration.orchestrator import (
     PhaseResult,
     PhaseStatus,
 )
+from broca.orchestration.prompt_loader import PromptLoader
 
 logger = get_logger(__name__)
 
@@ -226,21 +227,13 @@ class RoundTableOrchestrator(Orchestrator):
         extras: Dict[str, Any],
     ) -> str:
         """构建 Agent 讨论提示"""
-        parts = [f"## Discussion Topic\n{topic}\n"]
-
-        stance = extras.get("stance", "")
-        if stance:
-            parts.append(
-                f"\n## Your Stance\nYou are arguing from the **{stance}** perspective."
-            )
-
-        parts.append(f"\n## Your Turn (Round {round_num})")
-        parts.append(
-            "Please provide your perspective on the topic. "
-            "You can agree, disagree, or build upon previous speakers' points."
+        return PromptLoader.render(
+            "round_table",
+            "discussion_prompt.j2",
+            topic=topic,
+            round_num=round_num,
+            stance=extras.get("stance", ""),
         )
-
-        return "\n".join(parts)
 
     async def _get_agent_response(self, agent: Any, prompt: str) -> str:
         """获取 Agent 的讨论发言"""
@@ -311,12 +304,12 @@ class RoundTableOrchestrator(Orchestrator):
                 "summary": "Discussion completed." if round_num >= 3 else "",
             }
 
-        prompt = (
-            f"As moderator, evaluate the discussion so far.\n"
-            f"Round {round_num} of {max_rounds}.\n"
-            f"Total statements: {len(history)}.\n\n"
-            f"Should we conclude the discussion? "
-            f'Just reply with a JSON: {{"should_conclude": true/false, "summary": "..."}}'
+        prompt = PromptLoader.render(
+            "round_table",
+            "moderator_evaluation.j2",
+            round_num=round_num,
+            max_rounds=max_rounds,
+            statements_count=len(history),
         )
 
         try:
