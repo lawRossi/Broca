@@ -23,7 +23,6 @@ from broca.orchestration.crew import (
     OrchestratorType,
 )
 from broca.session import MessageProtocol
-from broca.tools.end_execution import STOP_ORCHESTRATION_MARKER
 
 logger = get_logger(__name__)
 
@@ -246,11 +245,16 @@ class Orchestrator(ABC):
 # ============================================================================
 
 
+# 黑板约定 key：Agent 向此 key 写入停止信号来请求终止编排
+STOP_ORCHESTRATION_KEY = "orchestration.stop"
+
+
 class OrchestrationStopRequest(Exception):
     """
-    Agent 通过 end_execution 工具请求停止编排时抛出的异常。
+    Agent 通过黑板约定请求停止编排时抛出的异常。
 
-    编排器的 run() 方法应当捕获此异常并调用 self.abort() 来优雅终止。
+    编排器在 Agent 执行完毕后检查黑板 key `orchestration.stop`，
+    如果存在则抛出此异常，由 run() 捕获后调用 self.abort() 优雅终止。
     """
 
     def __init__(self, agent_name: str, reason: str):
@@ -259,26 +263,25 @@ class OrchestrationStopRequest(Exception):
         super().__init__(f"Orchestration stop requested by '{agent_name}': {reason}")
 
 
-def check_agent_output_for_stop(
-    agent_name: str,
-    output: str,
-) -> None:
+async def check_blackboard_for_stop(blackboard) -> None:
     """
-    检查 Agent 输出中是否包含编排停止标记。
+    检查黑板中是否有编排停止信号。
 
-    如果包含，抛出 OrchestrationStopRequest 异常。
-    此函数供 _execute_agent、fan-out、Broadcast 等调用处使用。
+    所有编排模式的 run() 方法应当在每个 Agent 执行完毕后调用此函数。
+    如果黑板中存在 `orchestration.stop` key，则抛出 OrchestrationStopRequest。
 
     Args:
-        agent_name: Agent 名称（用于异常信息）
-        output: Agent 的输出文本
+        blackboard: Blackboard 实例
 
     Raises:
-        OrchestrationStopRequest: 如果输出包含停止标记
+        OrchestrationStopRequest: 如果黑板中存在停止信号
     """
-    if STOP_ORCHESTRATION_MARKER in output:
-        # 提取原因
-        reason = output.split(STOP_ORCHESTRATION_MARKER, 1)[-1].strip().strip(": ")
+    stop_signal = await blackboard.get(STOP_ORCHESTRATION_KEY)
+    if stop_signal is not None:
+        agent_name = stop_signal.get("agent", "unknown")
+        reason = stop_signal.get("reason", "No reason")
+        # 清除信号，防止重复触发
+        await blackboard.delete(STOP_ORCHESTRATION_KEY, producer="orchestrator")
         raise OrchestrationStopRequest(agent_name, reason)
 
 
@@ -319,10 +322,9 @@ async def execute_agents_in_parallel(
 
             if execution_result.status == ES.COMPLETED:
                 message = agent.context.get_latest_assistant_message()
-                # 检查是否请求停止编排
-                output = message or "(no output)"
-                check_agent_output_for_stop(agent_name, output)
-                return (agent_name, output)
+                # 检查黑板中是否有停止编排信号
+                await check_blackboard_for_stop(context.blackboard)
+                return (agent_name, message or "(no output)")
             elif execution_result.status == ES.ABORTED:
                 return (agent_name, "Error: Execution aborted by user")
             else:
