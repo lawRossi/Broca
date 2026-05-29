@@ -1,0 +1,175 @@
+# 增强流水线 Demo
+# 展示 Pipeline 的 fan-out / fan-in / condition / switch 高级编排能力
+#
+# 场景: PR 代码审查流水线
+# 1. 代码审查员审查代码 → 输出评分和分类
+# 2. 扇出: 安全审计员 + 性能分析员 + 风格检查员 并行执行
+# 3. 扇入: 质量管理员汇聚所有分支结果
+# 4. 条件分支: 根据评分决定是否批准
+# 5. 后续处理...
+
+name: "PR 代码审查增强流水线"
+description: >
+  展示 Pipeline 高级编排能力：扇出并行分析、扇入汇聚、
+  条件分支决策的完整 PR 审查流程。
+
+orchestrator:
+  type: pipeline
+  extras:
+    steps:
+      # ── Step 1: 代码审查员（普通 TASK） ──
+      - agent: "代码审查员"
+        task: |
+          请审查以下代码，完成后输出:
+          1. 质量评分 (0.0 - 1.0)
+          2. 分类: "紧急" / "普通" / "低优先级"
+          3. 主要问题列表
+          4. 总体评价
+        context: "请全面审查代码的正确性、安全性和可维护性。"
+
+      # ── Step 2: 扇出 — 三个维度并行分析 ──
+      - type: fan-out
+        name: "并行分析"
+        branches:
+          - name: "安全审计"
+            agent: "安全审计员"
+            task: |
+              对代码进行安全审查，检查:
+              1. SQL/NoSQL 注入风险
+              2. XSS 攻击面
+              3. 敏感信息泄露
+              4. 认证授权缺陷
+              输出详细的安全报告和风险评级。
+
+          - name: "性能分析"
+            agent: "性能分析员"
+            task: |
+              分析代码性能影响:
+              1. 时间复杂度分析
+              2. 内存使用评估
+              3. 数据库查询效率
+              4. 潜在瓶颈识别
+              输出性能评估报告。
+
+          - name: "风格检查"
+            agent: "风格检查员"
+            task: |
+              检查代码风格和质量:
+              1. 命名规范
+              2. 代码组织
+              3. 注释完整性
+              4. 最佳实践遵循度
+              输出风格检查报告。
+
+      # ── Step 3: 扇入 — 汇聚分析结果 ──
+      - type: fan-in
+        name: "结果汇聚"
+        aggregation_strategy: agent
+        aggregator: "质量管理员"
+        sources: ["安全审计", "性能分析", "风格检查"]
+        task: |
+          综合各维度分析结果，输出最终审查报告:
+          1. 总体评分（加权）
+          2. 关键风险汇总
+          3. 改进建议（按优先级排序）
+          4. 最终结论: 批准 / 需修改 / 拒绝
+
+      # ── Step 4: 条件分支 — 根据评分决策 ──
+      - type: condition
+        name: "决策分支"
+        condition_field: "pipeline.step_3.output"
+        condition_operator: "contains"
+        condition_value: "批准"
+        branches:
+          - name: "自动批准"
+            agent: "集成管理员"
+            task: |
+              代码已通过审查，执行自动合并操作:
+              1. 合并 PR
+              2. 更新 Jira 状态
+              3. 通知相关方
+          - name: "需人工处理"
+            agent: "集成管理员"
+            task: |
+              代码需人工介入处理:
+              1. 整理审查报告
+              2. 标记待处理事项
+              3. 通知相关开发人员
+
+      # ── Step 5: Switch — 按优先级后续处理 ──
+      - type: switch
+        name: "后续处理"
+        switch_field: "pipeline.step_1.output"
+        branches:
+          - name: "紧急"
+            agent: "通知代理"
+            task: |
+              紧急问题！请立即:
+              1. 发送紧急通知到团队群
+              2. 创建 P0 级工单
+              3. 标记为阻塞
+          - name: "普通"
+            agent: "通知代理"
+            task: |
+              常规处理:
+              1. 记录到 Sprint Backlog
+              2. 分配责任人
+              3. 设置截止日期
+          - name: "低优先级"
+            agent: "通知代理"
+            task: |
+              低优先级处理:
+              1. 记录到技术债务清单
+              2. 标记为后续迭代处理
+        default_branch: "普通"
+
+agents:
+  - role: worker
+    name: "代码审查员"
+    config: code_reviewer.md
+
+  - role: worker
+    name: "安全审计员"
+    config: security_auditor.md
+
+  - role: worker
+    name: "性能分析员"
+    config: performance_analyst.md
+
+  - role: worker
+    name: "风格检查员"
+    config: style_checker.md
+
+  - role: worker
+    name: "质量管理员"
+    config: quality_manager.md
+
+  - role: worker
+    name: "集成管理员"
+    config: integration_manager.md
+
+  - role: worker
+    name: "通知代理"
+    config: notification_agent.md
+
+blackboard:
+  initial_entries:
+    - key: code_to_review
+      value: |
+        def process_user_input(data):
+            import sqlite3
+            conn = sqlite3.connect('users.db')
+            cursor = conn.cursor()
+            
+            query = f"SELECT * FROM users WHERE name = '{data['name']}'"
+            cursor.execute(query)
+            
+            result = eval(data.get('calc', '1+1'))
+            
+            API_KEY = "sk-1234567890abcdef"
+            
+            password = data.get('password')
+            cursor.execute(f"INSERT INTO users (name, password) VALUES ('{data['name']}', '{password}')")
+            
+            conn.commit()
+            return result
