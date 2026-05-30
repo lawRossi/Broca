@@ -61,8 +61,8 @@ export const useChatStore = defineStore('chat', () => {
       const { ElMessage } = await import('element-plus')
       await sessionApi.restartRunner(sessionId.value)
       ElMessage.success('进程重启成功')
-      // 延迟刷新状态
-      setTimeout(fetchRunnerStatus, 3000)
+      // 立刻刷新状态
+      await fetchRunnerStatus()
     } catch (error: any) {
       const { ElMessage } = await import('element-plus')
       ElMessage.error('重启失败: ' + (error.message || '未知错误'))
