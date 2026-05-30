@@ -244,14 +244,14 @@ onUnmounted(() => {
         <div class="panel-title">Session Info</div>
         <div class="panel-body">
           <div class="info-row">
-            <span class="info-label">Session ID</span>
+            <span class="info-label">Session ID: </span>
             <div class="session-id-group">
               <span class="session-id-text mono" :title="chatStore.sessionId">{{ chatStore.sessionId }}</span>
               <button class="copy-btn" :class="{ 'copied': copyFeedback }" @click="copySessionId" :title="copyFeedback ? '已复制' : '复制 Session ID'">{{ copyFeedback ? '✓' : '📋' }}</button>
             </div>
           </div>
           <div class="info-row">
-            <span class="info-label">Workspace</span>
+            <span class="info-label">Workspace: </span>
             <span class="info-value mono" :title="workspace">{{ workspace || '未设置' }}</span>
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">
