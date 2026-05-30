@@ -1,7 +1,16 @@
-Please review the following:
+## Review Task
 
 {{ review_target }}
 
-Provide your evaluation as a JSON:
-{"score": <0.0-1.0>, "summary": "...", "issues": ["..."]}
-Score above {{ threshold }} means passing.
+## Your Job
+
+As a Reviewer, evaluate the above and record your assessment.
+
+Use the **write_blackboard** tool to record your review:
+- `key`: "reviews.{{ agent_name }}"
+- `value`: A JSON object with:
+  - `score`: A number from 0.0 to 1.0 ({{ threshold }} or above = passing)
+  - `summary`: A brief summary of your evaluation
+  - `issues`: A list of specific issues or concerns
+
+If you cannot find the review target or something is wrong, use **write_blackboard** to set key `orchestration.stop` with value `{"reason": "cannot review, target not found"}` to stop the orchestration.

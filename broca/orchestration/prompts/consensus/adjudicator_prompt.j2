@@ -1,0 +1,40 @@
+## Consensus Synthesis
+
+### Review Target
+{{ review_target }}
+
+### Aggregation Results
+
+- **Strategy**: {{ strategy }}
+- **Threshold**: {{ threshold }}
+- **Passed**: {{ "Yes" if passed else "No" }}
+
+{% if strategy == "average" %}
+- **Average Score**: {{ average_score }}
+{% elif strategy == "majority" %}
+- **Passed**: {{ passed_count }}/{{ total }}
+{% elif strategy == "unanimous" %}
+- **All Passed**: {{ "Yes" if passed else "No" }}
+{% elif strategy == "weighted" %}
+- **Weighted Score**: {{ weighted_score }}
+{% endif %}
+
+### Individual Reviews
+
+{% for review in reviews %}
+#### {{ review.reviewer }}
+- Score: {{ review.score }}
+- Passed: {{ "Yes" if review.passed else "No" }}
+- Summary: {{ review.summary }}
+{% if review.issues %}
+- Issues: {{ review.issues | join("; ") }}
+{% endif %}
+
+{% endfor %}
+### Your Task
+
+As the Adjudicator, synthesize the above into a final consensus report:
+1. Explain the overall assessment and whether consensus was reached
+2. Highlight key areas of agreement and disagreement
+3. Provide actionable recommendations based on the reviews
+4. Flag any minority concerns that deserve attention

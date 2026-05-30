@@ -38,6 +38,7 @@ class AgentRole(str, Enum):
     DISPATCHER = "dispatcher"
     AGGREGATOR = "aggregator"
     REVIEWER = "reviewer"
+    ADJUDICATOR = "adjudicator"
 
 
 @dataclass
