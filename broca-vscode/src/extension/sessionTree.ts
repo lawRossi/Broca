@@ -14,6 +14,10 @@ class SessionTreeItem extends vscode.TreeItem {
     this.id = session.session_id
     this.contextValue = 'session'
     this.tooltip = this.buildTooltip(session)
+    // Show workspace as secondary text in tree view
+    if (session.workspace) {
+      this.description = session.workspace
+    }
 
     // Set icon based on runner status and category
     if (session.category === 'agent-orchestration') {
