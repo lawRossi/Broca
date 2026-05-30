@@ -580,7 +580,7 @@ echo ""
 # Step 5: 安装前端依赖并构建
 
 # ============================================================================
-# Step 5: 安装前端依赖并构建
+# Step 6: 安装前端依赖并构建
 # ============================================================================
 step "Step 6/9: 安装前端依赖并构建..."
 
@@ -625,7 +625,44 @@ fi
 info "前端构建完成: $FRONTEND_DIR/dist"
 
 # ============================================================================
-# Step 6: 部署前端
+# Step 6.5: 打包 VS Code 插件
+# ============================================================================
+step "Step 6.5/9: 打包 VS Code 插件..."
+
+VSCODE_DIR="$PROJECT_ROOT/broca-vscode"
+if [[ -d "$VSCODE_DIR" ]]; then
+    cd "$VSCODE_DIR"
+    if command -v pnpm &>/dev/null; then
+        info "使用 pnpm 安装 VS Code 插件依赖..."
+        if ! BUILD_OUTPUT=$(pnpm install 2>&1); then
+            warn "pnpm install 失败: $BUILD_OUTPUT"
+        else
+            info "构建 VS Code 插件..."
+            if ! BUILD_OUTPUT=$(pnpm run build 2>&1); then
+                warn "VS Code 插件构建失败: $BUILD_OUTPUT"
+            else
+                info "打包 VS Code 插件..."
+                if ! BUILD_OUTPUT=$(pnpm run package 2>&1); then
+                    warn "VS Code 插件打包失败: $BUILD_OUTPUT"
+                else
+                    VSIX_FILE=$(ls -t "$VSCODE_DIR"/*.vsix 2>/dev/null | head -1 || true)
+                    if [[ -n "$VSIX_FILE" ]]; then
+                        info "VS Code 插件已打包: $VSIX_FILE"
+                    else
+                        warn "未找到生成的 .vsix 文件"
+                    fi
+                fi
+            fi
+        fi
+    else
+        warn "未找到 pnpm，跳过 VS Code 插件打包（请先安装 pnpm: npm install -g pnpm）"
+    fi
+else
+    warn "未找到 VS Code 插件目录: $VSCODE_DIR"
+fi
+
+# ============================================================================
+# Step 7: 部署前端
 # ============================================================================
 step "Step 7/9: 配置前端部署方式..."
 
@@ -732,7 +769,7 @@ NGINXEOF
     echo "    broca service stop       # 删除 symlink + reload nginx，停用前端"
 
 # ============================================================================
-# Step 7: 创建 supervisor 配置
+# Step 8: 创建 supervisor 配置
 # ============================================================================
 step "Step 8/9: 创建 supervisor 进程管理配置..."
 
