@@ -1,19 +1,20 @@
 """
 Supervisor-Worker 主管-工人拓扑编排器
 
-一个 Supervisor Agent 负责分解任务、委派给多个 Worker Agent 并行执行、
-质量检查、结果汇总。支持多轮迭代优化。
+一个 Supervisor Agent 负责将目标分解为子任务（通过 task_management 工具）、
+委派给多个 Worker Agent 并行执行（Worker 自主从黑板拉取任务）、
+质量检查（LLM 评估）、结果汇总（LLM 合成）。支持多轮迭代优化。
 
 拓扑特征：
-- Supervisor 计划生成和任务分解
-- Worker 并行执行子任务
-- Supervisor 质量检查和迭代优化
-- 最终结果汇总合成
+- Supervisor 通过工具创建子任务并记录到黑板
+- Worker 自主从黑板拉取任务详情并执行
+- Supervisor 质量检查（LLM 评估）
+- 支持多轮迭代优化
+- 最终结果汇总合成（LLM 合成）
 """
 
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -24,8 +25,11 @@ from broca.orchestration.orchestrator import (
     ExecutionStatus,
     OrchestrationResult,
     Orchestrator,
+    OrchestrationStopRequest,
     PhaseResult,
     PhaseStatus,
+    execute_agents_in_parallel,
+    check_blackboard_for_stop,
 )
 from broca.orchestration.prompt_loader import PromptLoader
 
@@ -36,8 +40,9 @@ class SupervisorWorkerOrchestrator(Orchestrator):
     """
     主管-工人拓扑编排器
 
-    Supervisor Agent 负责将目标分解为子任务并委派给 Worker，
-    然后对结果进行质量检查，支持多轮迭代优化。
+    Supervisor Agent 通过工具创建子任务 → Worker 自主拉取并执行 →
+    Supervisor LLM 质量检查 → 达标则 LLM 合成最终结果。
+    支持多轮迭代优化。
     """
 
     def __init__(self, crew_config: CrewConfig, context: Optional[CrewContext] = None):
@@ -65,7 +70,8 @@ class SupervisorWorkerOrchestrator(Orchestrator):
     @property
     def worker_names(self) -> List[str]:
         return [
-            a_cfg.name for a_cfg in self.crew.agents
+            a_cfg.name
+            for a_cfg in self.crew.agents
             if a_cfg.role == AgentRole.WORKER
         ]
 
@@ -86,7 +92,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             result.error = "No 'objective' found in Blackboard"
             return result
 
-        accumulated_results = {}
+        accumulated_results: Dict[str, Any] = {}
 
         for attempt in range(max_rounds):
             if self._check_aborted():
@@ -108,28 +114,34 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             )
 
             try:
-                # Phase A: Supervisor 计划生成
-                plan = await self._generate_plan(attempt, objective)
-                await self.context.blackboard.set(
-                    f"plan_iteration_{attempt + 1}",
-                    plan,
-                    producer="supervisor",
-                )
+                # ═══════════════════════════════════════
+                # Phase A: Supervisor 创建任务
+                # ═══════════════════════════════════════
+                await self._generate_plan(attempt, objective, max_rounds)
 
+                # 从黑板读取任务分配
+                sub_tasks = await self._read_task_assignments()
+
+                # ═══════════════════════════════════════
                 # Phase B: Worker 并行执行
-                worker_results = await self._execute_in_parallel(plan)
+                # ═══════════════════════════════════════
+                worker_results = await self._execute_workers(sub_tasks)
                 accumulated_results[f"iteration_{attempt + 1}"] = worker_results
+
                 await self.context.blackboard.set(
                     f"worker_results_iteration_{attempt + 1}",
                     worker_results,
                     producer="supervisor",
                 )
 
+                # ═══════════════════════════════════════
                 # Phase C: Supervisor 质量检查
-                is_acceptable = await self._quality_check(worker_results, attempt, max_rounds)
+                # ═══════════════════════════════════════
+                is_acceptable = await self._quality_check(
+                    objective, worker_results, attempt, max_rounds
+                )
 
                 phase.output = {
-                    "plan": plan,
                     "worker_results": worker_results,
                     "is_acceptable": is_acceptable,
                 }
@@ -138,7 +150,6 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                 phase.completed_at = datetime.now(timezone.utc)
 
                 if is_acceptable:
-                    # 质量达标，但需检查是否已被中止
                     if self._check_aborted():
                         phase.status = PhaseStatus.FAILED
                         phase.error = "Execution aborted"
@@ -148,7 +159,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                         break
 
                     # 合成最终结果
-                    synthesis = await self._synthesize(accumulated_results, final=False)
+                    synthesis = await self._synthesize(objective, accumulated_results)
                     result.status = ExecutionStatus.COMPLETED
                     result.final_output = {
                         "iterations_completed": attempt + 1,
@@ -157,13 +168,27 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                     }
                     break
 
+            except OrchestrationStopRequest as stop_req:
+                logger.warning(
+                    f"Supervisor-Worker iteration {attempt + 1} stop requested: "
+                    f"{stop_req}"
+                )
+                phase.status = PhaseStatus.FAILED
+                phase.error = str(stop_req)
+                phase.completed_at = datetime.now(timezone.utc)
+                await self.abort()
+                result.status = ExecutionStatus.ABORTED
+                result.error = str(stop_req)
+                break
+
             except Exception as e:
-                logger.error(f"Supervisor-Worker iteration {attempt + 1} failed: {e}")
+                logger.error(
+                    f"Supervisor-Worker iteration {attempt + 1} failed: {e}"
+                )
                 phase.status = PhaseStatus.FAILED
                 phase.error = str(e)
                 phase.completed_at = datetime.now(timezone.utc)
 
-                # 如果编排已被中止，按中止处理而非失败
                 if self._check_aborted():
                     result.status = ExecutionStatus.ABORTED
                     result.error = f"Aborted during iteration {attempt + 1}"
@@ -171,19 +196,19 @@ class SupervisorWorkerOrchestrator(Orchestrator):
 
                 if attempt == max_rounds - 1:
                     result.status = ExecutionStatus.FAILED
-                    result.error = f"All {max_rounds} iterations failed. Last error: {e}"
+                    result.error = (
+                        f"All {max_rounds} iterations failed. Last error: {e}"
+                    )
                     break
-                else:
-                    # 继续下一轮迭代
-                    continue
+                continue
 
-        # 如果所有轮次都用完仍未达标，使用当前最佳结果
+        # 所有轮次用完仍未达标
         if result.status == ExecutionStatus.RUNNING:
             if self._check_aborted():
                 result.status = ExecutionStatus.ABORTED
                 result.error = "Aborted during execution"
             else:
-                synthesis = await self._synthesize(accumulated_results, final=True)
+                synthesis = await self._synthesize(objective, accumulated_results)
                 result.status = ExecutionStatus.COMPLETED
                 result.final_output = {
                     "iterations_completed": max_rounds,
@@ -196,121 +221,191 @@ class SupervisorWorkerOrchestrator(Orchestrator):
         result.blackboard_snapshot = await self.context.blackboard.to_dict()
         return result
 
-    async def _generate_plan(self, attempt: int, objective: str) -> Dict[str, Any]:
-        """
-        生成工作计划
+    # ═══════════════════════════════════════════════
+    # Phase A: Supervisor 创建任务
+    # ═══════════════════════════════════════════════
 
-        在真实环境中，Supervisor Agent 会调用 LLM 生成计划。
-        当前简化实现返回一个基本的任务分配。
+    async def _generate_plan(
+        self, attempt: int, objective: str, max_rounds: int
+    ) -> None:
         """
-        worker_count = len(self.worker_names)
+        Supervisor Agent 通过 task_management 工具创建子任务，
+        并将 {worker_name: task_id} 写入黑板 key `task_assignments`。
+        """
+        supervisor_agent = self.supervisor
+        if supervisor_agent is None:
+            raise RuntimeError(
+                "No Supervisor Agent found. Supervisor-Worker requires "
+                "a supervisor agent (role=supervisor)."
+            )
 
-        if attempt == 0:
-            # 首轮：生成初始计划
-            tasks = []
-            for i, w_name in enumerate(self.worker_names):
-                task = PromptLoader.render(
-                    "supervisor_worker",
-                    "generate_plan_initial.j2",
-                    index=i,
-                    objective=objective,
-                )
-                tasks.append({
-                    "agent": w_name,
-                    "task": task,
-                })
-            return {
-                "objective": objective,
-                "tasks": tasks,
-                "attempt": attempt + 1,
-            }
-        else:
-            # 后续轮次：根据上一轮结果修订计划
+        # 首轮与后续轮次提示略有不同
+        prev_summary = ""
+        if attempt > 0:
             prev_results = await self.context.blackboard.get(
                 f"worker_results_iteration_{attempt}", {}
             )
-            tasks = []
-            for w_name in self.worker_names:
-                task = PromptLoader.render(
-                    "supervisor_worker",
-                    "generate_plan_refine.j2",
-                    objective=objective,
-                    previous_results_summary=str(prev_results)[:200],
+            prev_summary = str(prev_results)[:500]
+
+        prompt = PromptLoader.render(
+            "supervisor_worker",
+            "supervisor_plan.j2",
+            objective=objective,
+            workers=[{"name": w} for w in self.worker_names],
+            worker_count=len(self.worker_names),
+            previous_summary=prev_summary,
+        )
+
+        from broca.session import MessageProtocol
+        from broca.execution_engine import ExecutionStatus as ES
+
+        trigger_message = MessageProtocol.create_user_message(content=prompt)
+        exec_result = await supervisor_agent.run(trigger_message, from_agent=True)
+
+        if exec_result.status != ES.COMPLETED:
+            raise RuntimeError(f"Supervisor Agent failed: {exec_result.error}")
+
+    async def _read_task_assignments(self) -> List[Dict[str, str]]:
+        """从黑板读取 Supervisor 写入的任务分配"""
+        assignments = await self.context.blackboard.get("task_assignments")
+        if not assignments or not isinstance(assignments, dict):
+            raise RuntimeError(
+                "Supervisor completed but no task assignments found "
+                "in blackboard key 'task_assignments'"
+            )
+
+        sub_tasks = []
+        for worker_name in self.worker_names:
+            task_id = assignments.get(worker_name)
+            if task_id:
+                sub_tasks.append({"agent": worker_name, "task_id": task_id})
+            else:
+                logger.warning(
+                    f"Worker '{worker_name}' has no task assignment"
                 )
-                tasks.append({
-                    "agent": w_name,
-                    "task": task,
-                })
-            return {
-                "objective": objective,
-                "tasks": tasks,
-                "previous_results_summary": str(prev_results)[:200],
-                "attempt": attempt + 1,
-            }
+        return sub_tasks
 
-    async def _execute_in_parallel(self, plan: Dict[str, Any]) -> Dict[str, str]:
-        """并行执行 Worker 任务"""
-        tasks = plan.get("tasks", [])
+    # ═══════════════════════════════════════════════
+    # Phase B: Worker 并行执行
+    # ═══════════════════════════════════════════════
 
-        async def execute_single(task_def: Dict[str, Any]) -> tuple:
-            agent_name = task_def["agent"]
-            task_desc = task_def["task"]
-            target_agent = self.context.get_agent(agent_name)
+    async def _execute_workers(
+        self, sub_tasks: List[Dict[str, str]]
+    ) -> Dict[str, str]:
+        """
+        Worker 通过黑板 + task_management 自主拉取任务并执行。
+        """
+        tasks = []
+        for st in sub_tasks:
+            worker_prompt = PromptLoader.render(
+                "supervisor_worker",
+                "worker_prompt.j2",
+                agent_name=st["agent"],
+            )
+            tasks.append((st["agent"], worker_prompt))
+        return await execute_agents_in_parallel(self.context, tasks)
 
-            if target_agent is None:
-                return (agent_name, f"Error: Agent '{agent_name}' not found")
-
-            try:
-                from broca.session import MessageProtocol
-                from broca.execution_engine import ExecutionStatus
-
-                trigger_message = MessageProtocol.create_user_message(content=task_desc)
-                execution_result = await target_agent.run(trigger_message, from_agent=True)
-
-                if execution_result.status == ExecutionStatus.COMPLETED:
-                    message = target_agent.context.get_latest_assistant_message()
-                    return (agent_name, message or "Task completed (no output)")
-                else:
-                    return (agent_name, f"Error: {execution_result.error}")
-            except Exception as e:
-                logger.error(f"Worker '{agent_name}' execution error: {e}")
-                return (agent_name, f"Error: {e}")
-
-        results = await asyncio.gather(*[execute_single(t) for t in tasks])
-        return dict(results)
+    # ═══════════════════════════════════════════════
+    # Phase C: Supervisor 质量检查
+    # ═══════════════════════════════════════════════
 
     async def _quality_check(
         self,
+        objective: str,
         worker_results: Dict[str, str],
         attempt: int,
         max_rounds: int,
     ) -> bool:
         """
-        质量检查
-
-        最后一轮自动达标，否则由 Supervisor 判断。
-        简化实现：识别是否有明显错误。
+        Supervisor Agent (LLM) 评估 Worker 结果质量。
+        最后一轮自动通过。
         """
-        # 最后一轮自动通过
         if attempt >= max_rounds - 1:
             return True
 
-        # 检查是否有错误
-        for agent_name, result in worker_results.items():
-            if result.startswith("Error:"):
-                return False
+        supervisor_agent = self.supervisor
+        if supervisor_agent is None:
+            # 无 Supervisor 时简单检查错误
+            return not any(
+                r.startswith("Error:") for r in worker_results.values()
+            )
 
-        return True
+        prompt = PromptLoader.render(
+            "supervisor_worker",
+            "supervisor_quality_check.j2",
+            objective=objective,
+            worker_results=worker_results,
+            attempt=attempt + 1,
+            max_rounds=max_rounds,
+        )
+
+        from broca.session import MessageProtocol
+        from broca.execution_engine import ExecutionStatus as ES
+
+        trigger_message = MessageProtocol.create_user_message(content=prompt)
+        exec_result = await supervisor_agent.run(trigger_message, from_agent=True)
+
+        if exec_result.status != ES.COMPLETED:
+            logger.warning(
+                f"Quality check failed: {exec_result.error}, "
+                f"assuming acceptable"
+            )
+            return True
+
+        response = (
+            supervisor_agent.context.get_latest_assistant_message() or ""
+        ).strip().upper()
+
+        return "PASS" in response
+
+    # ═══════════════════════════════════════════════
+    # Synthesis: Supervisor 合成最终结果
+    # ═══════════════════════════════════════════════
 
     async def _synthesize(
         self,
+        objective: str,
         accumulated_results: Dict[str, Any],
-        final: bool = False,
-    ) -> Dict[str, Any]:
-        """合成最终结果"""
-        return {
-            "type": "final" if final else "interim",
-            "iterations_completed": len(accumulated_results),
-            "summary": f"Synthesized results from {len(accumulated_results)} iteration(s)",
-            "detail": accumulated_results,
-        }
+    ) -> str:
+        """
+        Supervisor Agent (LLM) 综合所有 Worker 结果生成最终报告。
+        """
+        supervisor_agent = self.supervisor
+        if supervisor_agent is None:
+            # 无 Supervisor 时简单拼接
+            parts = []
+            for iter_name, results in accumulated_results.items():
+                parts.append(f"=== {iter_name} ===")
+                for worker_name, output in results.items():
+                    parts.append(f"[{worker_name}]:\n{output}")
+            return "\n\n".join(parts)
+
+        prompt = PromptLoader.render(
+            "supervisor_worker",
+            "supervisor_synthesize.j2",
+            objective=objective,
+            accumulated=accumulated_results,
+        )
+
+        from broca.session import MessageProtocol
+        from broca.execution_engine import ExecutionStatus as ES
+
+        trigger_message = MessageProtocol.create_user_message(content=prompt)
+        exec_result = await supervisor_agent.run(trigger_message, from_agent=True)
+
+        if exec_result.status == ES.COMPLETED:
+            return (
+                supervisor_agent.context.get_latest_assistant_message()
+                or "Synthesis completed (no output)"
+            )
+        else:
+            logger.warning(
+                f"Synthesis failed: {exec_result.error}, "
+                f"falling back to concatenation"
+            )
+            parts = []
+            for iter_name, results in accumulated_results.items():
+                parts.append(f"=== {iter_name} ===")
+                for worker_name, output in results.items():
+                    parts.append(f"[{worker_name}]:\n{output}")
+            return "\n\n".join(parts)

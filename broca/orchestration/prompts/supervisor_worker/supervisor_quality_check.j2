@@ -1,0 +1,25 @@
+## Quality Check
+
+As the Supervisor, evaluate the quality of the workers' results.
+
+## Objective
+{{ objective }}
+
+## Iteration {{ attempt }} of {{ max_rounds }}
+
+## Worker Results
+
+{% for name, result in worker_results.items() %}
+### {{ name }}
+{{ result | string | truncate(1000) }}
+
+{% endfor %}
+## Evaluation Criteria
+
+Are the results satisfactory and complete enough to proceed?
+Consider:
+- Are all aspects of the objective addressed?
+- Are there any errors or critical issues?
+- Is the quality acceptable?
+
+Reply with exactly one word: **PASS** or **FAIL**

@@ -1,0 +1,24 @@
+## Synthesis Task
+
+As the Supervisor, synthesize all worker results into a comprehensive final report.
+
+## Original Objective
+{{ objective }}
+
+## All Iteration Results
+
+{% for iter_name, results in accumulated.items() %}
+### {{ iter_name }}
+{% for worker_name, worker_result in results.items() %}
+#### {{ worker_name }}
+{{ worker_result | string | truncate(800) }}
+
+{% endfor %}
+{% endfor %}
+## Output
+
+Synthesize a final report that:
+1. Summarizes key findings from all workers across all iterations
+2. Highlights the most important insights
+3. Provides actionable conclusions that address the original objective
+4. Is self-contained and valuable to someone who hasn't read the individual results
