@@ -1,0 +1,12 @@
+## Aggregation Task
+
+{{ prompt }}
+
+### Sub-crew Results
+
+{% for name, result in results.items() %}
+### {{ name }}
+{{ result | string | truncate(1000) }}
+
+{% endfor %}
+Synthesize the above results into a coherent, unified output that captures key findings from all sub-crews.

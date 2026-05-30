@@ -11,9 +11,11 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 from broca.logging_config import get_logger
+from broca.orchestration.prompt_loader import PromptLoader
+from broca.session import MessageProtocol
 from broca.orchestration.crew import (
     CrewConfig,
     OrchestratorType,
@@ -296,10 +298,20 @@ class CompositeOrchestrator(Orchestrator):
                 raise
 
     async def _run_parallel(self, result: OrchestrationResult) -> None:
-        """并行执行所有子 Crew"""
+        """
+        并行执行所有子 Crew。
+
+        支持通过 extras 配置：
+        - aggregator: 扇入汇聚 Agent（并行完成后执行）
+        - aggregator_prompt: 汇聚指令
+        - follow_up: 后续串行子 Crew 列表
+        """
         if not self.sub_crews:
             return
 
+        extras = self.crew.orchestrator.extras
+
+        # ── 扇出：并行执行所有子 Crew ──
         phases = []
         for sub_crew in self.sub_crews:
             phase = PhaseResult(
@@ -314,11 +326,10 @@ class CompositeOrchestrator(Orchestrator):
             result.phases.append(phase)
 
         async def run_one(sub_crew: SubCrewConfig, phase: PhaseResult) -> bool:
-            """执行单个子 Crew，返回是否继续"""
             try:
                 sub_result = await self._run_and_check_sub_crew(sub_crew, phase)
                 if sub_result is None:
-                    return False  # 停止
+                    return False
                 return True
             except OrchestrationStopRequest:
                 return False
@@ -329,19 +340,130 @@ class CompositeOrchestrator(Orchestrator):
                 phase.completed_at = datetime.now(timezone.utc)
                 return False
 
-        results = await asyncio.gather(*[
+        par_results = await asyncio.gather(*[
             run_one(sc, ph) for sc, ph in zip(self.sub_crews, phases)
         ])
 
         self.notify_progress(result.phases, len(self.sub_crews))
 
-        if not all(results):
+        if not all(par_results):
             await self.abort()
             result.status = ExecutionStatus.ABORTED
             failed = [
-                s.name for s, ok in zip(self.sub_crews, results) if not ok
+                s.name for s, ok in zip(self.sub_crews, par_results) if not ok
             ]
             result.error = f"One or more sub-crews failed/aborted: {failed}"
+            return
+
+        # ── 扇入：汇聚（可选） ──
+        aggregator_name = extras.get("aggregator")
+        if aggregator_name:
+            await self._run_aggregator(result, aggregator_name, extras)
+
+        # ── 后续串行步骤（可选） ──
+        follow_up_data = extras.get("follow_up")
+        if follow_up_data:
+            follow_ups = [
+                SubCrewConfig.from_dict(s) if isinstance(s, dict) else s
+                for s in follow_up_data
+            ]
+            for sub_crew in follow_ups:
+                if self._check_aborted():
+                    result.status = ExecutionStatus.ABORTED
+                    result.error = "Aborted during follow-up"
+                    break
+
+                phase = PhaseResult(
+                    name=f"follow_up: {sub_crew.name}",
+                    status=PhaseStatus.RUNNING,
+                    agents=[a.name for a in (sub_crew.agents or [])]
+                    if sub_crew.agents
+                    else [],
+                    started_at=datetime.now(timezone.utc),
+                )
+                result.phases.append(phase)
+
+                try:
+                    sub_result = await self._run_and_check_sub_crew(sub_crew, phase)
+                    if sub_result is None:
+                        result.status = ExecutionStatus.ABORTED
+                        result.error = (
+                            f"Aborted during follow-up '{sub_crew.name}'"
+                        )
+                        break
+                    self.notify_progress(result.phases, len(self.sub_crews))
+                except OrchestrationStopRequest:
+                    result.status = ExecutionStatus.ABORTED
+                    result.error = (
+                        f"Stop during follow-up '{sub_crew.name}'"
+                    )
+                    break
+                except Exception as e:
+                    logger.error(f"Follow-up '{sub_crew.name}' failed: {e}")
+                    phase.status = PhaseStatus.FAILED
+                    phase.error = str(e)
+                    phase.completed_at = datetime.now(timezone.utc)
+                    raise
+
+    async def _run_aggregator(
+        self,
+        result: OrchestrationResult,
+        aggregator_name: str,
+        extras: dict,
+    ) -> None:
+        """执行扇入汇聚"""
+        # 收集所有子 Crew 的结果
+        sub_results = {}
+        for sub_crew in self.sub_crews:
+            val = await self.context.blackboard.get(
+                f"sub_crew_{sub_crew.name}"
+            )
+            if val:
+                sub_results[sub_crew.name] = val
+
+        agg_prompt = extras.get(
+            "aggregator_prompt",
+            "Synthesize the results from all sub-crews.",
+        )
+
+        agg_phase = PhaseResult(
+            name="aggregation",
+            status=PhaseStatus.RUNNING,
+            agents=[aggregator_name],
+            started_at=datetime.now(timezone.utc),
+        )
+        result.phases.append(agg_phase)
+
+        agent = self.context.get_agent(aggregator_name)
+        if agent is None:
+            logger.warning(f"Aggregator '{aggregator_name}' not found, skipping")
+            agg_phase.status = PhaseStatus.FAILED
+            agg_phase.completed_at = datetime.now(timezone.utc)
+            return
+
+        prompt = PromptLoader.render(
+            "composite",
+            "aggregator_prompt.j2",
+            prompt=agg_prompt,
+            results=sub_results,
+        )
+
+        from broca.session import MessageProtocol
+        from broca.execution_engine import ExecutionStatus as ES
+
+        trigger_message = MessageProtocol.create_user_message(content=prompt)
+        exec_result = await agent.run(trigger_message, from_agent=True)
+
+        if exec_result.status == ES.COMPLETED:
+            output = agent.context.get_latest_assistant_message() or ""
+            agg_phase.status = PhaseStatus.COMPLETED
+            agg_phase.output = {"aggregated": output}
+        else:
+            logger.warning(f"Aggregator failed: {exec_result.error}")
+            agg_phase.status = PhaseStatus.FAILED
+            agg_phase.error = exec_result.error
+        agg_phase.completed_at = datetime.now(timezone.utc)
+        self.notify_progress(result.phases, len(self.sub_crews))
 
     async def _run_sub_crew(self, sub_crew: SubCrewConfig) -> OrchestrationResult:
         """
