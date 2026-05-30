@@ -9,6 +9,7 @@ Composite 组合嵌套编排器
 
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -66,6 +67,8 @@ class CompositeOrchestrator(Orchestrator):
                 await self._run_supervisor_worker_with_sub_crews(result)
             elif main_type == OrchestratorType.PIPELINE:
                 await self._run_pipeline_with_sub_crews(result)
+            elif main_type == OrchestratorType.BROADCAST:
+                await self._run_parallel(result)
             else:
                 await self._run_default(result)
 
@@ -291,6 +294,54 @@ class CompositeOrchestrator(Orchestrator):
                 phase.error = str(e)
                 phase.completed_at = datetime.now(timezone.utc)
                 raise
+
+    async def _run_parallel(self, result: OrchestrationResult) -> None:
+        """并行执行所有子 Crew"""
+        if not self.sub_crews:
+            return
+
+        phases = []
+        for sub_crew in self.sub_crews:
+            phase = PhaseResult(
+                name=f"parallel: {sub_crew.name}",
+                status=PhaseStatus.RUNNING,
+                agents=[a.name for a in (sub_crew.agents or [])]
+                if sub_crew.agents
+                else [],
+                started_at=datetime.now(timezone.utc),
+            )
+            phases.append(phase)
+            result.phases.append(phase)
+
+        async def run_one(sub_crew: SubCrewConfig, phase: PhaseResult) -> bool:
+            """执行单个子 Crew，返回是否继续"""
+            try:
+                sub_result = await self._run_and_check_sub_crew(sub_crew, phase)
+                if sub_result is None:
+                    return False  # 停止
+                return True
+            except OrchestrationStopRequest:
+                return False
+            except Exception as e:
+                logger.error(f"Parallel sub-crew '{sub_crew.name}' failed: {e}")
+                phase.status = PhaseStatus.FAILED
+                phase.error = str(e)
+                phase.completed_at = datetime.now(timezone.utc)
+                return False
+
+        results = await asyncio.gather(*[
+            run_one(sc, ph) for sc, ph in zip(self.sub_crews, phases)
+        ])
+
+        self.notify_progress(result.phases, len(self.sub_crews))
+
+        if not all(results):
+            await self.abort()
+            result.status = ExecutionStatus.ABORTED
+            failed = [
+                s.name for s, ok in zip(self.sub_crews, results) if not ok
+            ]
+            result.error = f"One or more sub-crews failed/aborted: {failed}"
 
     async def _run_sub_crew(self, sub_crew: SubCrewConfig) -> OrchestrationResult:
         """
