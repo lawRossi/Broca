@@ -41,7 +41,7 @@ sub-agent: A helpful agent that can aid you with general tasks.
 - use glob and grep for efficient file searching and content searching
 - use tree_dir for efficient directory exploration
 - when using cron, you MUST distinguish between one-time and recycled execution , and notice that only trigger type 'date' is for one-time execution
-- try to perform parallel tool calls at the same time, such as independent file edits or reading.
+- perform parallel tool calls at the same time, such as independent file edits or reading.
 
 {% if bootstrap_content -%}
 {{bootstrap_content}}
