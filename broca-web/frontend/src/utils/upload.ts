@@ -93,14 +93,19 @@ function getClient(): S3Client {
 // ==================== 工具函数 ====================
 
 /**
- * 生成唯一文件名
+ * 生成唯一文件名（处理中文文件名，避免 Supabase S3 兼容接口报错）
+ * 使用 encodeURIComponent 编码非 ASCII 字符，保留原始文件名信息且保证 ASCII 安全
  */
 export function generateUniqueFilename(originalName: string): string {
   const parts = originalName.split('.')
   const extension = parts.length > 1 ? parts.pop() : ''
   const nameWithoutExt = parts.join('.')
+
+  // 使用 URL 编码处理非 ASCII 字符（如中文），避免 S3 Key 编码问题
+  const sanitizedName = encodeURIComponent(nameWithoutExt)
+
   const uniqueId = Math.random().toString(36).substring(6)
-  return extension ? `${nameWithoutExt}_${uniqueId}.${extension}` : `${nameWithoutExt}_${uniqueId}`
+  return extension ? `${sanitizedName}_${uniqueId}.${extension}` : `${sanitizedName}_${uniqueId}`
 }
 
 /**

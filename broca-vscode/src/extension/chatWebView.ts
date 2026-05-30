@@ -1078,9 +1078,11 @@ export class ChatWebViewManager {
       const extension = parts.length > 1 ? parts.pop() : ''
       const nameWithoutExt = parts.join('.')
       const uniqueId = Math.random().toString(36).substring(6)
+      // 使用 encodeURIComponent 编码非 ASCII 字符（如中文），避免 S3 Key 编码问题
+      const sanitizedName = encodeURIComponent(nameWithoutExt)
       const safeFilename = extension
-        ? `${nameWithoutExt}_${uniqueId}.${extension}`
-        : `${nameWithoutExt}_${uniqueId}`
+        ? `${sanitizedName}_${uniqueId}.${extension}`
+        : `${sanitizedName}_${uniqueId}`
 
       const now = new Date()
       const year = now.getFullYear()
