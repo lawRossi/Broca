@@ -195,17 +195,43 @@ export async function activate(context: vscode.ExtensionContext) {
     if (authManager.isLoggedIn) {
       // Session restored
     } else {
-      // Not logged in, show info
-      vscode.window.showInformationMessage(
-        'Welcome to Broca! Please login to get started.',
-        'Login'
-      ).then((selection) => {
-        if (selection === 'Login') {
-          vscode.commands.executeCommand('broca.login')
+      // Not logged in, show login popup directly
+      authManager.login().then((success) => {
+        if (success) {
+          sessionTreeProvider.refresh()
         }
       })
     }
   }
+
+  // Show login button in status bar when not logged in
+  const loginStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
+  loginStatusItem.text = '$(sign-in) Broca: Not Logged In'
+  loginStatusItem.tooltip = 'Click to login to Broca'
+  loginStatusItem.command = 'broca.login'
+  loginStatusItem.show()
+
+  // Update status bar when auth state changes
+  const updateLoginStatus = () => {
+    if (authManager.isLoggedIn) {
+      loginStatusItem.text = '$(sign-in) Broca: Logged In'
+      loginStatusItem.tooltip = `Logged in as ${authManager.username || authManager.userId}`
+      loginStatusItem.command = 'broca.logout'
+    } else {
+      loginStatusItem.text = '$(sign-in) Broca: Not Logged In'
+      loginStatusItem.tooltip = 'Click to login to Broca'
+      loginStatusItem.command = 'broca.login'
+    }
+  }
+
+  context.subscriptions.push(
+    authManager.onDidChange(() => {
+      updateLoginStatus()
+      sessionTreeProvider.refresh()
+    })
+  )
+
+  updateLoginStatus()
 
   // Initial load
   sessionTreeProvider.refresh()
