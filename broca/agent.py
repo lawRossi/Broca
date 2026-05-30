@@ -443,7 +443,10 @@ class Agent:
             if cmd is not None and getattr(cmd, "show_result", False):
                 await self.communicator.send_command_result(
                     command=name,
-                    result=result.value,
+                    result={
+                        "code": 0,
+                        "message": result.value,
+                    },
                     subscription=self.session_id,
                 )
 
