@@ -129,6 +129,12 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
       this.sessions = sessions
     } catch (error: any) {
       console.error('Failed to fetch sessions:', error)
+      // 未登录时不显示错误提示（静默处理）
+      if (!this.authManager.isLoggedIn) {
+        this.sessions = []
+        this._onDidChangeTreeData.fire()
+        return
+      }
       // Show error notification to user
       let message: string
       if (!error?.response) {
