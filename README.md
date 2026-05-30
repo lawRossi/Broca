@@ -306,9 +306,396 @@ SocketIOServer 是一个多端通信服务器，支持：
 - 操作级重做
 - 变更摘要展示
 
-### 9. 多智能体协作
+### 9. 多智能体编排
 
-**核心文件**: `broca/agent_crew.py`
+**核心文件**: `broca/orchestration/`
+
+Broca 提供 6 种编排拓扑，支持将多个 Agent 组合为复杂工作流。编排器通过 **共享黑板（Blackboard）** 实现 Agent 间状态共享，Agent 通过内置工具（`task_management`、`write_blackboard`）自主协作，无需编排器"推送"任务。
+
+#### 9.1 拓扑总览
+
+| 拓扑 | 说明 | 适用场景 |
+|------|------|----------|
+| **Pipeline** | 流水线顺序执行，支持 5 种步骤类型 | 有明确步骤的工作流 |
+| **Supervisor-Worker** | 主管分解任务，工人执行，主管检查/迭代 | 需要分工协作和质量把控 |
+| **Round-Table** | 多轮圆桌讨论，Moderator 控制节奏 | 头脑风暴、辩论、集体决策 |
+| **Broadcast** | Dispatcher 分解任务，Worker 并行执行，Aggregator 汇聚 | 多角度分析同一问题 |
+| **Consensus** | 多个 Reviewer 独立评分，按策略聚合 | 代码审查、方案评估 |
+| **Composite** | 组合嵌套多种拓扑 | 复杂工作流编排 |
+
+#### 9.2 核心概念
+
+**共享黑板（Blackboard）**
+所有编排器共享同一个 Blackboard 实例，Agent 通过 `write_blackboard` / `read_blackboard` 工具读写。黑板支持：
+- 嵌套路径（`pipeline.step_1.output`）
+- 版本化管理（每次写入生成新版本）
+- 变更事件通知
+
+**工具驱动（Tool-Driven）**
+编排器通过 Agent 的内置工具（`task_management`、`write_blackboard`）驱动协作，而非解析 LLM 的文本输出：
+- 调度者（Dispatcher/Supervisor）通过 `task_management.create` 创建任务
+- 将 `{worker_name: task_id}` 映射通过 `write_blackboard` 写入黑板
+- Worker 自主从黑板读取 task_id，用 `task_management.get` 获取详情后执行
+- 执行完成后通过 `task_management.update` 标记完成
+
+**停止约定（Stop Convention）**
+Agent 通过黑板约定请求停止整个编排：
+- Agent 调用 `write_blackboard(key="orchestration.stop", value={"reason": "..."})`
+- 编排器在每个 Agent 执行完毕后检查黑板，发现信号则调用 `abort()` 优雅终止
+- 信号自动清除，防止重复触发
+
+**共享并行执行器**
+所有编排器共用 `execute_agents_in_parallel()` 函数，通过 `asyncio.gather` 并行执行 Agent 任务，每个 Agent 独立容错。
+
+#### 9.3 Pipeline 流水线
+
+Pipeline 是最灵活的拓扑，支持 5 种步骤类型，可在一个 YAML 中表达复杂工作流。
+
+**步骤类型**：
+
+| 类型 | 说明 | 执行方式 |
+|------|------|----------|
+| `task` | 单 Agent 顺序执行 | 串行 |
+| `fan-out` | 扇出并行分发到多个 Agent 或子 Crew | `asyncio.gather` |
+| `fan-in` | 汇聚多个分支结果 | concat / merge / agent |
+| `condition` | 条件分支判断 | 静态比较 / Agent 评估 |
+| `switch` | 多路分支匹配 | 静态匹配 / Agent 评估 |
+
+**YAML 示例**：
+
+```yaml
+orchestrator:
+  type: pipeline
+  extras:
+    steps:
+      # 普通任务
+      - agent: "代码审查员"
+        task: "审查代码质量"
+
+      # 扇出：三个维度并行分析
+      - type: fan-out
+        name: "并行分析"
+        branches:
+          - name: "安全审计"
+            agent: "安全审计员"
+            task: "检查安全漏洞"
+          - name: "性能分析"
+            agent: "性能分析员"
+            task: "分析性能瓶颈"
+          - name: "风格检查"
+            crew:                         # 分支也可运行子编排器
+              type: pipeline
+              steps:
+                - agent: "风格检查员"
+                  task: "检查代码风格"
+                - agent: "质量管理员"
+                  task: "汇总质量报告"
+
+      # 扇入：汇聚所有结果
+      - type: fan-in
+        name: "结果汇聚"
+        aggregation_strategy: agent
+        aggregator: "质量管理员"
+        task: "综合各维度分析结果"
+
+      # 条件分支：Agent 评估决策
+      - type: condition
+        name: "决策分支"
+        evaluator: "质量管理员"
+        evaluation_prompt: |
+          根据审查结果判断是否可以自动批准。
+          考虑：安全风险、代码质量、缺陷严重性。
+        branches:
+          - name: "自动批准"
+            agent: "集成管理员"
+            task: "执行自动合并"
+          - name: "需人工处理"
+            agent: "集成管理员"
+            task: "通知开发人员"
+
+      # Switch 多路分支
+      - type: switch
+        name: "优先级处理"
+        evaluator: "项目经理"
+        evaluation_prompt: "根据结果决定处理优先级"
+        branches:
+          - name: "紧急"
+            agent: "通知代理"
+            task: "发送紧急通知"
+          - name: "普通"
+            agent: "通知代理"
+            task: "记录到 Sprint Backlog"
+          - name: "低优先级"
+            agent: "通知代理"
+            task: "记录到技术债务"
+        default_branch: "普通"
+```
+
+**Condition 评估模式**：
+
+```yaml
+# Agent 评估模式（推荐）：LLM 根据上下文判断
+- type: condition
+  evaluator: "质量管理员"
+  evaluation_prompt: "判断代码质量是否达标"
+
+# 静态比较模式：简单的值比较
+- type: condition
+  condition_field: "score"
+  condition_operator: "gte"
+  condition_value: 0.7
+```
+
+支持运算符：`eq` / `ne` / `gt` / `gte` / `lt` / `lte` / `contains` / `startswith` / `endswith`
+
+**Fan-in 汇聚策略**：
+
+| 策略 | 说明 |
+|------|------|
+| `concat` | 将所有结果拼接为一个字符串 |
+| `merge` | 合并为一个 dict |
+| `agent` | 由指定的 Aggregator Agent 调用 LLM 汇聚 |
+
+#### 9.4 Supervisor-Worker 主管-工人
+
+Supervisor Agent 通过工具创建子任务，Worker 自主拉取，Supervisor 做质量检查和最终合成。
+
+```yaml
+orchestrator:
+  type: supervisor-worker
+  max_rounds: 3
+
+agents:
+  - role: supervisor
+    name: "研究主管"
+    config: supervisor.md
+  - role: worker
+    name: "文献研究员"
+    config: researcher.md
+  - role: worker
+    name: "数据分析师"
+    config: analyst.md
+  - role: worker
+    name: "报告撰写人"
+    config: writer.md
+```
+
+执行流程：
+```
+Supervisor (task_management.create + write_blackboard)
+  → Worker 自主拉取任务并执行
+    → Supervisor LLM 质量检查 (PASS/FAIL)
+      → 达标 → Supervisor LLM 合成最终报告
+      → 不达标 → 下一轮迭代
+```
+
+#### 9.5 Round-Table 圆桌讨论
+
+多个参与者围绕议题进行多轮发言，支持三种发言顺序和可选的主持人开场/结束语。
+
+```yaml
+orchestrator:
+  type: round-table
+  max_rounds: 3
+  extras:
+    moderator_opening: true      # 主持人开场语
+    moderator_closing: true      # 主持人结束语
+    speaker_order: moderator     # 发言顺序
+
+agents:
+  - role: moderator
+    name: "主持人"
+    config: moderator.md
+  - role: participant
+    name: "正方"
+    config: pro.md
+    extras:
+      stance: pro
+  - role: participant
+    name: "反方"
+    config: con.md
+    extras:
+      stance: con
+```
+
+**发言顺序模式**：
+
+| 模式 | 说明 |
+|------|------|
+| `fixed` | 按配置顺序发言（默认） |
+| `random` | 每轮随机打乱 |
+| `moderator` | Moderator Agent 根据讨论进展决定每轮顺序 |
+
+#### 9.6 Broadcast 广播
+
+Dispatcher Agent 通过工具创建子任务，Worker 自主拉取执行，Aggregator 汇聚结果。
+
+```yaml
+orchestrator:
+  type: broadcast
+
+agents:
+  - role: dispatcher
+    name: "分析主管"
+    config: dispatcher.md
+  - role: worker
+    name: "市场分析师"
+    config: market_analyst.md
+  - role: worker
+    name: "技术评估员"
+    config: tech_evaluator.md
+  - role: aggregator
+    name: "报告撰写员"
+    config: aggregator.md
+```
+
+执行流程：
+```
+Dispatcher (task_management.create + write_blackboard)
+  → Worker 自主拉取任务并执行
+    → Aggregator LLM 汇聚结果
+```
+
+#### 9.7 Consensus 共识
+
+多个 Reviewer 独立评分，按策略聚合，可选 Adjudicator LLM 综合评议。
+
+```yaml
+orchestrator:
+  type: consensus
+  strategy: average        # average / majority / unanimous / weighted
+  threshold: 0.7           # 通过阈值
+  weights:                 # weighted 策略的权重
+    reviewer_a: 1.5
+    reviewer_b: 1.0
+
+agents:
+  - role: reviewer
+    name: "评审员A"
+    config: reviewer.md
+  - role: reviewer
+    name: "评审员B"
+    config: reviewer.md
+  - role: adjudicator       # 可选：LLM 综合评议
+    name: "决策者"
+    config: adjudicator.md
+```
+
+**聚合策略**：
+
+| 策略 | 算法 |
+|------|------|
+| `average` | 平均分 >= 阈值 |
+| `majority` | 超过半数通过 |
+| `unanimous` | 全部通过 |
+| `weighted` | 加权平均 >= 阈值 |
+
+#### 9.8 Composite 组合嵌套
+
+Composite 可以将其他拓扑组合使用，支持四种执行模式：
+
+```yaml
+orchestrator:
+  type: composite
+
+  # 子 Crew 执行方式由 type 决定
+  # pipeline:          串行执行所有子 Crew
+  # supervisor-worker: 串行 + supervisor phase
+  # broadcast:         并行执行所有子 Crew
+  # (其他):            串行
+
+  extras:
+    # broadcast 模式专用：
+    aggregator: "项目经理"          # 扇入汇聚（并行完成后执行）
+    aggregator_prompt: "综合结果"
+    follow_up:                      # 后续串行步骤
+      - name: "最终决策"
+        orchestrator:
+          type: consensus
+        agents: [...]
+
+sub_crews:
+  - name: "市场分析"
+    orchestrator:
+      type: pipeline
+    agents:
+      - role: worker
+        name: "市场研究员"
+        config: researcher.md
+    steps:
+      - agent: "市场研究员"
+        task: "分析市场趋势"
+
+  - name: "技术评估"
+    orchestrator:
+      type: pipeline
+    agents:
+      - role: worker
+        name: "技术评估员"
+        config: evaluator.md
+    steps:
+      - agent: "技术评估员"
+        task: "评估技术可行性"
+```
+
+#### 9.9 完整工作流示例
+
+以下示例展示 6 种拓扑组合的复杂编排：
+
+```yaml
+name: "产品发布决策全流程"
+orchestrator:
+  type: pipeline
+  extras:
+    steps:
+      # Step 1-2: 顺序准备
+      - agent: "数据工程师"
+        task: "准备数据"
+      - agent: "分析师"
+        task: "初步分析"
+
+      # Step 3: 扇出 — 市场和技术并行分析
+      - type: fan-out
+        name: "并行分析"
+        branches:
+          - name: "市场分析"
+            crew:
+              type: pipeline
+              steps:
+                - agent: "市场研究员"
+                  task: "分析市场趋势"
+                - agent: "竞品分析师"
+                  task: "分析竞争对手"
+          - name: "技术评估"
+            crew:
+              type: pipeline
+              steps:
+                - agent: "技术评估员"
+                  task: "技术可行性评估"
+                - agent: "安全审计员"
+                  task: "安全风险评估"
+
+      # Step 4: 扇入 — 汇聚
+      - type: fan-in
+        aggregation_strategy: agent
+        aggregator: "项目经理"
+        task: "综合双方分析结果"
+
+      # Step 5-6: 顺序后续
+      - agent: "决策者"
+        task: "做出最终决策"
+      - agent: "报告撰写员"
+        task: "撰写综合报告"
+```
+
+完整执行流程：
+```
+数据准备 → 初步分析
+  → [并行] 市场分析(pipeline) ─┐
+  → [并行] 技术评估(pipeline) ─┤
+                               ├─→ 项目经理汇聚
+                                  → 决策者决策 → 撰写报告
+```
 
 
 ### 10. Skill 系统
@@ -638,6 +1025,19 @@ broca/
 │   ├── agent_configs.py            # Agent 配置
 │   ├── agent_crew.py               # 多 Agent 协作
 │   ├── agent_manager.py            # Agent 工厂
+│   ├── orchestration/              # 多 Agent 编排系统
+│   │   ├── orchestrator.py         # 编排器基类 + 共享执行器
+│   │   ├── crew.py                 # 编排数据结构 (CrewConfig/拓扑/角色)
+│   │   ├── pipeline.py             # Pipeline 流水线（5 种步骤类型）
+│   │   ├── supervisor_worker.py    # Supervisor-Worker 主管-工人
+│   │   ├── round_table.py          # Round-Table 圆桌讨论
+│   │   ├── broadcast.py            # Broadcast 广播分发
+│   │   ├── consensus.py            # Consensus 共识评估
+│   │   ├── composite.py            # Composite 组合嵌套
+│   │   ├── blackboard.py           # 共享黑板
+│   │   ├── prompt_loader.py        # Jinja2 提示词模板加载器
+│   │   └── prompts/                # 按拓扑分组的提示词模板
+│   ├── execution_engine.py         # 执行引擎
 │   ├── commands/                   # 命令系统
 │   │   ├── base.py                 # 命令基类（CommandBase/LocalCommand/PromptCommand）
 │   │   ├── registry.py             # 命令注册中心
