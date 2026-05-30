@@ -119,9 +119,13 @@ function getContent(message: Message): string {
     return message.data?.tool_name || 'unknown_tool'
   }
 
-  // command_result 消息内容在 data.result 中
+  // command_result 消息内容在 data.result 中（可能是 { code, message } 对象或纯字符串）
   if (message.message_type === 'command_result') {
-    return message.data?.result || message.data?.message || ''
+    const result = message.data?.result
+    if (typeof result === 'object' && result !== null) {
+      return result.message || result.value || JSON.stringify(result)
+    }
+    return result || message.data?.message || ''
   }
 
   if (message.data?.raw_input !== undefined) {
