@@ -20,6 +20,7 @@ Pipeline 流水线拓扑编排器
 
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -29,12 +30,14 @@ from broca.logging_config import get_logger
 from broca.orchestration.crew import (
     AgentRole,
     CrewConfig,
+    SubCrewConfig,
 )
 from broca.orchestration.orchestrator import (
     CrewContext,
     ExecutionStatus,
     OrchestrationResult,
     Orchestrator,
+    OrchestratorFactory,
     OrchestrationStopRequest,
     PhaseResult,
     PhaseStatus,
@@ -68,33 +71,47 @@ class PipelineStepType(str, Enum):
 
 @dataclass
 class BranchDefinition:
-    """分支定义（fan-out / condition / switch 的子步骤）"""
+    """分支定义（fan-out / condition / switch 的子步骤）
+
+    支持两种执行模式：
+    - Agent 模式: 指定 agent + task，由单个 Agent 执行
+    - Crew 模式: 指定 crew，运行一个子编排器
+    """
 
     name: str
     """分支名称"""
-    agent: str
-    """执行 Agent"""
-    task: str
-    """任务描述"""
+    agent: Optional[str] = None
+    """执行 Agent（Agent 模式）"""
+    task: Optional[str] = None
+    """任务描述（Agent 模式）"""
     context: Optional[str] = None
-    """额外上下文"""
+    """额外上下文（Agent 模式）"""
+    crew: Optional[SubCrewConfig] = None
+    """子 Crew 配置（Crew 模式）"""
 
     def to_dict(self) -> Dict[str, Any]:
-        result: Dict[str, Any] = {
-            "name": self.name,
-            "agent": self.agent,
-            "task": self.task,
-        }
-        if self.context:
-            result["context"] = self.context
+        result: Dict[str, Any] = {"name": self.name}
+        if self.agent:
+            result["agent"] = self.agent
+            result["task"] = self.task or ""
+            if self.context:
+                result["context"] = self.context
+        if self.crew:
+            result["crew"] = self.crew.to_dict()
         return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BranchDefinition":
+        crew_data = data.get("crew")
+        if crew_data:
+            return cls(
+                name=data["name"],
+                crew=SubCrewConfig.from_dict(crew_data),
+            )
         return cls(
             name=data["name"],
-            agent=data["agent"],
-            task=data["task"],
+            agent=data.get("agent"),
+            task=data.get("task", ""),
             context=data.get("context"),
         )
 
@@ -692,23 +709,45 @@ class PipelineOrchestrator(Orchestrator):
 
         previous_output = self._get_previous_output(accumulated)
 
-        # 为每个分支构建上下文，然后通过共享并行执行器执行
         from broca.orchestration.orchestrator import execute_agents_in_parallel
 
-        tasks = []
-        for branch in step.branches:
-            branch_context = PromptLoader.render(
-                "pipeline",
-                "fan_out_branch.j2",
-                branch_name=branch.name,
-                task=branch.task,
-                context=branch.context,
-                previous_output=previous_output,
-                accumulated=accumulated,
-            )
-            tasks.append((branch.agent, branch_context))
+        # 区分 Agent 分支和 Crew 分支
+        agent_branches = [b for b in step.branches if not b.crew]
+        crew_branches = [b for b in step.branches if b.crew]
 
-        result_dict = await execute_agents_in_parallel(self.context, tasks)
+        result_dict: Dict[str, Any] = {}
+
+        # Agent 分支：通过共享并行执行器
+        if agent_branches:
+            tasks = []
+            for branch in agent_branches:
+                branch_context = PromptLoader.render(
+                    "pipeline",
+                    "fan_out_branch.j2",
+                    branch_name=branch.name,
+                    task=branch.task,
+                    context=branch.context,
+                    previous_output=previous_output,
+                    accumulated=accumulated,
+                )
+                tasks.append((branch.agent, branch_context))
+            agent_results = await execute_agents_in_parallel(self.context, tasks)
+            result_dict.update(agent_results)
+
+        # Crew 分支：通过子编排器并行执行
+        if crew_branches:
+            async def run_crew_branch(branch: BranchDefinition) -> tuple:
+                try:
+                    output = await self._execute_branch_crew(branch)
+                    return (branch.name, output)
+                except Exception as e:
+                    logger.error(f"Crew branch '{branch.name}' failed: {e}")
+                    return (branch.name, f"Error: {e}")
+
+            crew_results = await asyncio.gather(
+                *[run_crew_branch(b) for b in crew_branches]
+            )
+            result_dict.update(dict(crew_results))
 
         # 记录到黑板
         for branch_name, output in result_dict.items():
@@ -999,7 +1038,9 @@ class PipelineOrchestrator(Orchestrator):
         branch: BranchDefinition,
         accumulated: Dict[str, Any],
     ) -> str:
-        """执行选中的分支"""
+        """执行选中的分支（支持 Agent 模式或 Crew 模式）"""
+        if branch.crew:
+            return await self._execute_branch_crew(branch)
         previous_output = self._get_previous_output(accumulated)
         branch_context = PromptLoader.render(
             "pipeline",
@@ -1011,6 +1052,40 @@ class PipelineOrchestrator(Orchestrator):
             accumulated=accumulated,
         )
         return await self._execute_agent(branch.agent, branch_context)
+
+    async def _execute_branch_crew(self, branch: BranchDefinition) -> str:
+        """以子 Crew 模式执行分支"""
+        crew = branch.crew
+        sub_config = CrewConfig(
+            name=crew.name or branch.name,
+            description=f"Branch: {branch.name}",
+            orchestrator=crew.orchestrator,
+            agents=crew.agents or [],
+        )
+        sub_context = CrewContext(
+            crew_config=sub_config,
+            blackboard=self.context.blackboard,
+            agent_factory=self.context.agent_factory,
+            session_manager=self.context.session_manager,
+        )
+        if crew.agents:
+            for agent_cfg in crew.agents:
+                agent = self.context.get_agent(agent_cfg.name)
+                if agent:
+                    sub_context.register_agent(agent_cfg.name, agent)
+        if (
+            crew.orchestrator.type == OrchestratorType.PIPELINE
+            and crew.steps
+        ):
+            sub_config.orchestrator.extras["steps"] = [
+                s.to_dict() for s in crew.steps
+            ]
+
+        orchestrator = OrchestratorFactory.create(sub_config, sub_context)
+        sub_result = await orchestrator.run()
+
+        result = sub_result.final_output or {}
+        return str(result)
 
     # ═══════════════════════════════════════════════
     # SWITCH 类型
