@@ -655,6 +655,13 @@ const handleUndoToHere = async () => {
         v-html="renderMarkdown(getContent(message))"
       ></div>
 
+      <!-- command_result 使用 markdown 渲染（如 /help 输出的标题、列表等） -->
+      <div
+        v-else-if="message.message_type === 'command_result'"
+        class="markdown-content text-xs sm:text-sm leading-relaxed mb-2"
+        v-html="renderMarkdown(getContent(message))"
+      ></div>
+
       <!-- 其他消息类型 -->
       <pre
         v-else

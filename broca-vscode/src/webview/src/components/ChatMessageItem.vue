@@ -179,6 +179,16 @@ const renderedContent = computed(() => {
   }
 })
 
+const renderedSystemContent = computed(() => {
+  const content = getContent(props.message)
+  if (!content) return ''
+  try {
+    return marked.parse(content) as string
+  } catch {
+    return content
+  }
+})
+
 const agentReasoning = computed(() => {
   if (!isAgentResponse.value || !props.message.data?.content) return ''
   try {
@@ -417,7 +427,12 @@ function toggleToolParams() {
 
     <!-- ==================== 系统消息 ==================== -->
     <div v-if="isSystem" class="system-content">
-      <pre class="system-text">{{ getContent(props.message) }}</pre>
+      <div
+        v-if="props.message.message_type === 'command_result'"
+        class="markdown-body"
+        v-html="renderedSystemContent"
+      ></div>
+      <pre v-else class="system-text">{{ getContent(props.message) }}</pre>
     </div>
 
     <!-- ==================== 用户消息 ==================== -->
