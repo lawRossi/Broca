@@ -1,18 +1,24 @@
 """
 Round-Table 圆桌拓扑编排器
 
-多个 Agent 围绕议题进行多轮按序发言，可设 Moderator 控制节奏和终止条件。
+多个 Agent 围绕议题进行多轮发言，可设 Moderator 控制节奏和终止条件。
 Agent 通过共享讨论历史互相引用/反驳。
 
-拓扑特征：
-- Moderator 控制讨论节奏和终止条件
-- 多轮按序发言（每轮每个参与者发言一次）
-- 讨论历史注入（Agent 可引用/反驳上一轮观点）
-- Moderator 判断是否达成结论
+可选阶段：
+- 主持人开场语（moderator_opening）
+- 主持人结束语（moderator_closing）
+
+发言顺序（speaker_order）：
+- fixed:    每轮固定顺序（默认）
+- random:   每轮随机打乱
+- moderator:由 Moderator Agent 决定每轮顺序
 """
 
 from __future__ import annotations
 
+import json
+import random
+import re
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -23,6 +29,7 @@ from broca.orchestration.orchestrator import (
     ExecutionStatus,
     OrchestrationResult,
     Orchestrator,
+    OrchestrationStopRequest,
     PhaseResult,
     PhaseStatus,
 )
@@ -35,11 +42,20 @@ class RoundTableOrchestrator(Orchestrator):
     """
     圆桌拓扑编排器
 
-    参与者围绕议题进行多轮讨论，Moderator 控制节奏和终止条件。
+    参与者围绕议题进行多轮发言，支持三种发言顺序和可选的主持人开场/结束语。
     """
+
+    # 发言顺序模式
+    ORDER_FIXED = "fixed"
+    ORDER_RANDOM = "random"
+    ORDER_MODERATOR = "moderator"
 
     def __init__(self, crew_config: CrewConfig, context: Optional[CrewContext] = None):
         super().__init__(crew_config, context)
+        extras = self.crew.orchestrator.extras
+        self.speaker_order = extras.get("speaker_order", self.ORDER_FIXED)
+        self.moderator_opening = extras.get("moderator_opening", False)
+        self.moderator_closing = extras.get("moderator_closing", False)
 
     @property
     def moderator(self) -> Optional[Any]:
@@ -51,19 +67,101 @@ class RoundTableOrchestrator(Orchestrator):
 
     @property
     def participants(self) -> List[Dict[str, Any]]:
-        """获取所有参与者（含角色配置扩展信息）"""
+        """获取所有参与者"""
         participants = []
         for agent_cfg in self.crew.agents:
             if agent_cfg.role == AgentRole.PARTICIPANT:
                 agent = self.context.get_agent(agent_cfg.name)
                 if agent:
-                    participants.append(
-                        {
-                            "agent": agent,
-                            "config": agent_cfg,
-                        }
-                    )
+                    participants.append({"agent": agent, "config": agent_cfg})
         return participants
+
+    @property
+    def participant_names(self) -> List[str]:
+        return [p["config"].name for p in self.participants]
+
+    # ── 发言顺序 ──
+
+    def _get_speaker_order(self, round_num: int) -> List[str]:
+        """
+        根据配置的 speaker_order 模式返回本轮发言顺序。
+
+        Returns:
+            Agent 名称列表
+        """
+        names = list(self.participant_names)
+
+        if self.speaker_order == self.ORDER_RANDOM:
+            random.shuffle(names)
+            return names
+
+        # fixed: 按配置顺序
+        return names
+
+    async def _get_moderator_order(self, round_num: int, history: list) -> List[str]:
+        """
+        Moderator Agent 决定本轮发言顺序。
+        """
+        moderator_agent = self.moderator
+        if moderator_agent is None:
+            return self.participant_names
+
+        prompt = PromptLoader.render(
+            "round_table",
+            "moderator_order.j2",
+            topic=await self.context.blackboard.get("topic", ""),
+            participants=self.participant_names,
+            round_num=round_num,
+            history=history,
+        )
+
+        try:
+            from broca.session import MessageProtocol
+            from broca.execution_engine import ExecutionStatus as ES
+
+            trigger_message = MessageProtocol.create_user_message(content=prompt)
+            exec_result = await moderator_agent.run(trigger_message, from_agent=True)
+
+            if exec_result.status == ES.COMPLETED:
+                response = (
+                    moderator_agent.context.get_latest_assistant_message() or ""
+                )
+                order = self._parse_json_list(response)
+                if order and isinstance(order, list):
+                    # 验证所有名称都在参与者列表中
+                    valid = [n for n in order if n in self.participant_names]
+                    if valid:
+                        # 补充遗漏的参与者
+                        for n in self.participant_names:
+                            if n not in valid:
+                                valid.append(n)
+                        return valid
+        except Exception as e:
+            logger.warning(f"Moderator order failed: {e}")
+
+        return self.participant_names
+
+    @staticmethod
+    def _parse_json_list(text: str) -> Optional[list]:
+        """从 LLM 响应中解析 JSON 数组"""
+        m = re.search(r"```(?:json)?\s*\n?(\[.*?\])\s*\n?```", text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group(1))
+            except (json.JSONDecodeError, TypeError):
+                pass
+        m = re.search(r"\[(?:[^\[\]]|\n)*\]", text, re.DOTALL)
+        if m:
+            try:
+                return json.loads(m.group())
+            except (json.JSONDecodeError, TypeError):
+                pass
+        try:
+            return json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+    # ── 主执行流程 ──
 
     async def run(self) -> OrchestrationResult:
         """执行圆桌讨论"""
@@ -85,74 +183,125 @@ class RoundTableOrchestrator(Orchestrator):
         concluded = False
         conclusion = None
 
-        for round_num in range(1, max_rounds + 1):
-            if self._check_aborted():
-                result.status = ExecutionStatus.ABORTED
-                break
+        try:
+            # ═══════════════════════════════════════════
+            # Opening: Moderator 开场语
+            # ═══════════════════════════════════════════
+            if self.moderator_opening and self.moderator:
+                opening_phase = PhaseResult(
+                    name="opening",
+                    status=PhaseStatus.RUNNING,
+                    agents=[self.moderator_name()],
+                    started_at=datetime.now(timezone.utc),
+                )
+                result.phases.append(opening_phase)
 
-            phase_name = f"round_{round_num}"
-            phase = PhaseResult(
-                name=phase_name,
-                status=PhaseStatus.RUNNING,
-                agents=[a["config"].name for a in self.participants],
-                started_at=datetime.now(timezone.utc),
-            )
-            result.phases.append(phase)
+                opening = await self._moderator_speak(
+                    "moderator_opening.j2",
+                    topic=topic,
+                    participants=self.participant_names,
+                    max_rounds=max_rounds,
+                )
+                discussion_history.append({
+                    "agent": self.moderator_name(),
+                    "content": opening,
+                    "round": 0,
+                    "type": "opening",
+                })
+                opening_phase.status = PhaseStatus.COMPLETED
+                opening_phase.output = {"statement": opening}
+                opening_phase.completed_at = datetime.now(timezone.utc)
+                self.notify_progress(result.phases, max_rounds + 2)
 
-            logger.info(
-                f"Round-Table round {round_num}/{max_rounds}: topic='{topic[:50]}...'"
-            )
+            # ═══════════════════════════════════════════
+            # Discussion Rounds
+            # ═══════════════════════════════════════════
+            for round_num in range(1, max_rounds + 1):
+                if self._check_aborted():
+                    result.status = ExecutionStatus.ABORTED
+                    break
 
-            try:
-                # 本轮讨论
+                phase_name = f"round_{round_num}"
+                phase = PhaseResult(
+                    name=phase_name,
+                    status=PhaseStatus.RUNNING,
+                    agents=self.participant_names,
+                    started_at=datetime.now(timezone.utc),
+                )
+                result.phases.append(phase)
+
+                logger.info(
+                    f"Round-Table round {round_num}/{max_rounds}: "
+                    f"topic='{topic[:50]}...'"
+                )
+
+                # 确定本轮发言顺序
+                if (
+                    self.speaker_order == self.ORDER_MODERATOR
+                    and self.moderator
+                ):
+                    order = await self._get_moderator_order(
+                        round_num, discussion_history
+                    )
+                else:
+                    order = self._get_speaker_order(round_num)
+
+                logger.info(
+                    f"Round {round_num} speaker order: {order}"
+                )
+
+                # 本轮发言
                 round_entries = []
-                for participant in self.participants:
-                    agent = participant["agent"]
-                    agent_cfg = participant["config"]
-
-                    # 每个参与者发言前检查是否已被中止
+                for agent_name in order:
                     if self._check_aborted():
-                        logger.info(
-                            f"Round-Table aborted during round {round_num}, "
-                            f"stopping after '{agent_cfg.name}'"
-                        )
-                        # 本轮未完成，标记当前 phase 为 ABORTED
                         phase.status = PhaseStatus.FAILED
                         phase.error = "Execution aborted during round"
                         phase.completed_at = datetime.now(timezone.utc)
                         result.status = ExecutionStatus.ABORTED
-                        result.error = f"Aborted during round {round_num} after {agent_cfg.name}"
+                        result.error = (
+                            f"Aborted during round {round_num}"
+                        )
                         break
 
-                    # 构建讨论提示
+                    # 查找 participant
+                    participant = None
+                    for p in self.participants:
+                        if p["config"].name == agent_name:
+                            participant = p
+                            break
+                    if participant is None:
+                        continue
+
+                    agent = participant["agent"]
+                    agent_cfg = participant["config"]
+
                     prompt = self._build_discussion_prompt(
                         topic=topic,
                         round_num=round_num,
                         agent_name=agent_cfg.name,
                         extras=agent_cfg.extras,
+                        history=discussion_history,
+                        order_info=order,
                     )
 
-                    # 获取 Agent 发言
                     response = await self._get_agent_response(agent, prompt)
-                    round_entries.append(
-                        {
-                            "agent": agent_cfg.name,
-                            "content": response,
-                            "extras": agent_cfg.extras,
-                        }
-                    )
+                    round_entries.append({
+                        "agent": agent_cfg.name,
+                        "content": response,
+                        "round": round_num,
+                        "extras": agent_cfg.extras,
+                    })
 
                     await self.context.blackboard.set(
                         f"round_{round_num}_{agent_cfg.name}",
-                        round_entries,
+                        response,
                         producer="round_table",
                     )
 
-                # 如果已被中止，跳出外层 round 循环
                 if result.status == ExecutionStatus.ABORTED:
                     break
 
-                # 记录本轮讨论
+                # 记录本轮
                 discussion_history.extend(round_entries)
                 await self.context.blackboard.set(
                     "discussion_history",
@@ -160,42 +309,85 @@ class RoundTableOrchestrator(Orchestrator):
                     producer="round_table",
                 )
 
+                phase.status = PhaseStatus.COMPLETED
+                self.notify_progress(result.phases, max_rounds + 2)
                 phase.output = {
                     "round": round_num,
                     "entries_count": len(round_entries),
+                    "speaker_order": order,
                 }
-                phase.status = PhaseStatus.COMPLETED
-                self.notify_progress(result.phases, max_rounds)
                 phase.completed_at = datetime.now(timezone.utc)
 
-                # Moderator 评估是否达成结论
+                # Moderator 评估是否结束
                 if self.moderator:
                     verdict = await self._evaluate_by_moderator(
                         discussion_history, round_num, max_rounds
                     )
                     if verdict.get("should_conclude", False):
                         concluded = True
-                        conclusion = verdict.get("summary", "Discussion concluded.")
+                        conclusion = verdict.get(
+                            "summary", "Discussion concluded."
+                        )
                         break
 
-            except Exception as e:
-                logger.error(f"Round {round_num} failed: {e}")
-                phase.status = PhaseStatus.FAILED
-                phase.error = str(e)
-                phase.completed_at = datetime.now(timezone.utc)
+            # ═══════════════════════════════════════════
+            # Closing: Moderator 结束语
+            # ═══════════════════════════════════════════
+            if (
+                self.moderator_closing
+                and self.moderator
+                and result.status != ExecutionStatus.ABORTED
+            ):
+                closing_phase = PhaseResult(
+                    name="closing",
+                    status=PhaseStatus.RUNNING,
+                    agents=[self.moderator_name()],
+                    started_at=datetime.now(timezone.utc),
+                )
+                result.phases.append(closing_phase)
 
-                # 如果编排已被中止，按中止处理而非失败
-                if self._check_aborted():
-                    result.status = ExecutionStatus.ABORTED
-                    result.error = f"Aborted during round {round_num}"
-                    break
+                closing = await self._moderator_speak(
+                    "moderator_closing.j2",
+                    topic=topic,
+                    rounds_completed=sum(
+                        1
+                        for p in result.phases
+                        if p.status == PhaseStatus.COMPLETED
+                        and p.name.startswith("round_")
+                    ),
+                )
+                discussion_history.append({
+                    "agent": self.moderator_name(),
+                    "content": closing,
+                    "round": max_rounds + 1,
+                    "type": "closing",
+                })
+                closing_phase.status = PhaseStatus.COMPLETED
+                closing_phase.output = {"statement": closing}
+                closing_phase.completed_at = datetime.now(timezone.utc)
+                self.notify_progress(result.phases, max_rounds + 2)
 
-                if round_num == max_rounds:
-                    result.status = ExecutionStatus.FAILED
-                    result.error = f"Last round failed: {e}"
-                    break
-                else:
-                    continue
+        except OrchestrationStopRequest as stop_req:
+            logger.warning(
+                f"Round-Table stop requested: {stop_req}"
+            )
+            await self.abort()
+            result.status = ExecutionStatus.ABORTED
+            result.error = str(stop_req)
+            for phase in result.phases:
+                if phase.status == PhaseStatus.RUNNING:
+                    phase.status = PhaseStatus.FAILED
+                    phase.error = str(stop_req)
+                    phase.completed_at = datetime.now(timezone.utc)
+
+        except Exception as e:
+            logger.error(f"Round-Table execution failed: {e}")
+            if self._check_aborted():
+                result.status = ExecutionStatus.ABORTED
+                result.error = "Aborted during discussion"
+            else:
+                result.status = ExecutionStatus.FAILED
+                result.error = str(e)
 
         # 结果汇总
         if result.status == ExecutionStatus.RUNNING:
@@ -209,8 +401,14 @@ class RoundTableOrchestrator(Orchestrator):
         result.blackboard_snapshot = await self.context.blackboard.to_dict()
         result.final_output = {
             "topic": topic,
+            "speaker_order_mode": self.speaker_order,
+            "moderator_opening": self.moderator_opening,
+            "moderator_closing": self.moderator_closing,
             "rounds_completed": sum(
-                1 for p in result.phases if p.status == PhaseStatus.COMPLETED
+                1
+                for p in result.phases
+                if p.status == PhaseStatus.COMPLETED
+                and p.name.startswith("round_")
             ),
             "concluded": concluded,
             "conclusion": conclusion,
@@ -219,12 +417,43 @@ class RoundTableOrchestrator(Orchestrator):
 
         return result
 
+    # ── 辅助方法 ──
+
+    def moderator_name(self) -> str:
+        for agent_cfg in self.crew.agents:
+            if agent_cfg.role == AgentRole.MODERATOR:
+                return agent_cfg.name
+        return "moderator"
+
+    async def _moderator_speak(self, template: str, **kwargs) -> str:
+        """Moderator 发言（开场/结束语）"""
+        moderator_agent = self.moderator
+        if moderator_agent is None:
+            return ""
+
+        prompt = PromptLoader.render("round_table", template, **kwargs)
+
+        from broca.session import MessageProtocol
+        from broca.execution_engine import ExecutionStatus as ES
+
+        trigger_message = MessageProtocol.create_user_message(content=prompt)
+        exec_result = await moderator_agent.run(trigger_message, from_agent=True)
+
+        if exec_result.status == ES.COMPLETED:
+            return (
+                moderator_agent.context.get_latest_assistant_message()
+                or "(no response)"
+            )
+        return f"(error: {exec_result.error})"
+
     def _build_discussion_prompt(
         self,
         topic: str,
         round_num: int,
         agent_name: str,
         extras: Dict[str, Any],
+        history: List[Dict[str, Any]],
+        order_info: List[str],
     ) -> str:
         """构建 Agent 讨论提示"""
         return PromptLoader.render(
@@ -233,6 +462,8 @@ class RoundTableOrchestrator(Orchestrator):
             topic=topic,
             round_num=round_num,
             stance=extras.get("stance", ""),
+            history=history,
+            speaker_order_info=" → ".join(order_info),
         )
 
     async def _get_agent_response(self, agent: Any, prompt: str) -> str:
@@ -245,7 +476,9 @@ class RoundTableOrchestrator(Orchestrator):
             execution_result = await agent.run(trigger_message, from_agent=True)
 
             if execution_result.status == ExecutionStatus.COMPLETED:
-                return agent.context.get_latest_assistant_message() or "(no response)"
+                return (
+                    agent.context.get_latest_assistant_message() or "(no response)"
+                )
             else:
                 return f"(error: {execution_result.error})"
         except Exception as e:
@@ -254,34 +487,23 @@ class RoundTableOrchestrator(Orchestrator):
 
     @staticmethod
     def _extract_json(text: str) -> Optional[Dict[str, Any]]:
-        """
-        从文本中提取 JSON 对象。
-
-        兼容 LLM 响应中前后有多余文本、markdown 代码块等情况。
-        优先查找包含 "should_conclude" 键的 JSON，再回退到任意 JSON。
-        """
-        import json
-        import re
-
-        # 优先找包含 should_conclude 的 JSON
+        """从文本中提取 JSON 对象"""
         m = re.search(
             r'\{(?:[^{}]|\n)*"should_conclude"(?:[^{}]|\n)*\}',
-            text, re.DOTALL,
+            text,
+            re.DOTALL,
         )
         if m:
             try:
                 return json.loads(m.group())
             except (json.JSONDecodeError, TypeError):
                 pass
-
-        # 回退：找任意 JSON 对象
         m = re.search(r'\{(?:[^{}]|\n)*\}', text, re.DOTALL)
         if m:
             try:
                 return json.loads(m.group())
             except (json.JSONDecodeError, TypeError):
                 pass
-
         return None
 
     async def _evaluate_by_moderator(
@@ -291,14 +513,11 @@ class RoundTableOrchestrator(Orchestrator):
         max_rounds: int,
     ) -> Dict[str, Any]:
         """Moderator 评估是否应结束讨论"""
-        # 最后一轮自动结束
         if round_num >= max_rounds:
             return {"should_conclude": True, "summary": "Max rounds reached."}
 
-        # 简化实现：由 Moderator Agent 判断
         moderator = self.moderator
         if moderator is None:
-            # 无 Moderator 时，3 轮后自动结束
             return {
                 "should_conclude": round_num >= 3,
                 "summary": "Discussion completed." if round_num >= 3 else "",
@@ -317,9 +536,9 @@ class RoundTableOrchestrator(Orchestrator):
             from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=prompt)
-            execution_result = await moderator.run(trigger_message, from_agent=True)
+            exec_result = await moderator.run(trigger_message, from_agent=True)
 
-            if execution_result.status == ExecutionStatus.COMPLETED:
+            if exec_result.status == ExecutionStatus.COMPLETED:
                 response = moderator.context.get_latest_assistant_message() or ""
                 result = self._extract_json(response)
                 if result is not None:

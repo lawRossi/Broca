@@ -14,6 +14,10 @@ description: "AI Agent 圆桌辩论：AI 对人类社会的利与弊"
 orchestrator:
   type: round-table
   max_rounds: 2  # 辩论轮数
+  extras:
+    moderator_opening: true    # 主持人开场语
+    moderator_closing: true    # 主持人结束语
+    speaker_order: moderator   # 发言顺序: fixed | random | moderator
 
 agents:
   - role: moderator

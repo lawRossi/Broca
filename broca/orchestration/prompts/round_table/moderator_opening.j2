@@ -1,0 +1,22 @@
+## Opening Statement
+
+You are the Moderator of a round-table discussion.
+
+## Topic
+{{ topic }}
+
+## Participants
+
+{% for p in participants %}
+- **{{ p }}**
+{% endfor %}
+
+## Instructions
+
+Set the stage for today's discussion. Provide:
+1. A brief introduction to the topic and why it matters
+2. The structure of the discussion ({{ max_rounds }} rounds maximum)
+3. Any ground rules or expectations for participants
+4. An opening question or prompt to kick off the discussion
+
+Keep your opening concise and engaging.

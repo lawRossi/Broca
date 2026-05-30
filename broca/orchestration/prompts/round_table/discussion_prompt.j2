@@ -6,5 +6,17 @@
 You are arguing from the **{{ stance }}** perspective.
 {% endif %}
 
+{% if history %}
+## Discussion History
+{% for entry in history[-6:] %}
+- **{{ entry.agent }}** (Round {{ entry.round }}): {{ entry.content | string | truncate(300) }}
+{% endfor %}
+{% endif %}
+
 ## Your Turn (Round {{ round_num }})
-Please provide your perspective on the topic. You can agree, disagree, or build upon previous speakers' points.
+
+{% if speaker_order_info %}
+Speaking order this round: {{ speaker_order_info }}
+{% endif %}
+
+Please provide your perspective on the topic. You can agree, disagree, or build upon previous speakers' points. Be specific and constructive.

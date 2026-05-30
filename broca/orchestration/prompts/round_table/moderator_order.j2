@@ -1,0 +1,36 @@
+## Determine Speaking Order
+
+You are the Moderator of a round-table discussion.
+
+## Topic
+{{ topic }}
+
+## Participants
+
+{% for p in participants %}
+- **{{ p }}**
+{% endfor %}
+
+## Round {{ round_num }}
+
+{% if history %}
+### Discussion So Far
+{% for entry in history %}
+- {{ entry.agent }}: {{ entry.content | string | truncate(200) }}
+{% endfor %}
+{% endif %}
+
+## Your Task
+
+Decide the speaking order for this round. Consider:
+- Who hasn't spoken much yet
+- Who might have the most relevant expertise
+- Creating a logical flow of ideas
+- Giving everyone a fair chance to contribute
+
+Reply with a JSON array of participant names in the order they should speak:
+```json
+["participant1", "participant2", "participant3"]
+```
+
+Use exactly the participant names as listed above.
