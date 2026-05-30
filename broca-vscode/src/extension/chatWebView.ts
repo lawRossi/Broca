@@ -783,6 +783,23 @@ export class ChatWebViewManager {
       case 'confirmAction':
         await this.handleConfirmAction(panel, message.payload)
         break
+
+      // ==================== Agent Config handlers ====================
+      case 'fetchAgentConfig':
+        await this.handleFetchAgentConfig(sessionId, panel, message.payload)
+        break
+
+      case 'updateAgentConfig':
+        await this.handleUpdateAgentConfig(sessionId, panel, message.payload)
+        break
+
+      case 'fetchLLMProviders':
+        await this.handleFetchLLMProviders(panel)
+        break
+
+      case 'fetchLLMModels':
+        await this.handleFetchLLMModels(panel, message.payload)
+        break
     }
   }
 
@@ -1668,6 +1685,68 @@ export class ChatWebViewManager {
   <p>${message}</p>
 </body>
 </html>`
+  }
+
+  // ==================== Agent Config Handler Methods ====================
+
+  private async handleFetchAgentConfig(sessionId: string, panel: vscode.WebviewPanel, payload: { agentId: string }) {
+    try {
+      const config = await this.apiClient.getAgentConfig(sessionId, payload.agentId)
+      this.postToPanel(panel, {
+        type: 'agentConfig',
+        payload: config,
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, {
+        type: 'error',
+        payload: { message: extractErrorMessage(error) },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleUpdateAgentConfig(sessionId: string, panel: vscode.WebviewPanel, payload: { agentId: string; config_content: Record<string, any> }) {
+    try {
+      const config = await this.apiClient.updateAgentConfig(sessionId, payload.agentId, payload.config_content)
+      this.postToPanel(panel, {
+        type: 'agentConfigSaved',
+        payload: config,
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, {
+        type: 'error',
+        payload: { message: extractErrorMessage(error) },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchLLMProviders(panel: vscode.WebviewPanel) {
+    try {
+      const providers = await this.apiClient.getLLMProviders()
+      this.postToPanel(panel, {
+        type: 'providers',
+        payload: providers,
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, {
+        type: 'error',
+        payload: { message: extractErrorMessage(error) },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchLLMModels(panel: vscode.WebviewPanel, payload: { provider: string }) {
+    try {
+      const models = await this.apiClient.getLLMModels(payload.provider)
+      this.postToPanel(panel, {
+        type: 'models',
+        payload: models,
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, {
+        type: 'error',
+        payload: { message: extractErrorMessage(error) },
+      } as ExtensionToWebView)
+    }
   }
 
   dispose() {

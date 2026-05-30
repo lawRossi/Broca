@@ -426,6 +426,77 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
+@router.put("/{session_id}/agents/{agent_id}/config", response_model=ApiResponse)
+async def update_agent_config(session_id: str, agent_id: str, request: Request) -> ApiResponse:
+    """更新指定Agent的配置信息"""
+    try:
+        import json
+        from pathlib import Path
+
+        # 获取请求体
+        body = await request.json()
+        config_content = body.get("config_content")
+
+        if not config_content:
+            raise HTTPException(status_code=400, detail="config_content is required")
+
+        # 验证会话是否存在
+        session_service = get_session_service()
+        session = await session_service.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        # 获取Agent信息
+        agent_service = get_agent_service()
+        agent = await agent_service.get(agent_id)
+        if not agent:
+            raise HTTPException(status_code=404, detail="Agent not found")
+
+        # 验证Agent是否属于该会话
+        if agent.session_id != session_id:
+            raise HTTPException(status_code=400, detail="Agent does not belong to this session")
+
+        # 获取Agent配置
+        agent_config_service = get_agent_config_service()
+        agent_config = await agent_config_service.get(agent.config_id)
+        if not agent_config:
+            raise HTTPException(status_code=404, detail="Agent config not found")
+
+        # 更新配置内容到数据库
+        updated_config_content = json.dumps(config_content, ensure_ascii=False, indent=4)
+        await agent_config_service.update(agent_config.config_id, config_content=updated_config_content)
+
+        # 更新 workspace 下的 agent 配置缓存文件
+        # session 加载时优先读取该缓存文件 (AgentManager.restore_agent)
+        workspace = config_content.get("workspace") or session.workspace
+        agent_name = config_content.get("name") or agent.name
+        if workspace:
+            cache_path = Path(workspace) / ".broca" / session_id / "agents" / f"{agent_name}.json"
+            cache_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(cache_path, "w", encoding="utf-8") as f:
+                f.write(updated_config_content)
+            logger.info(f"Updated agent config cache file: {cache_path}")
+
+        # 返回更新后的配置
+        config_data = {
+            "agent_id": agent.agent_id,
+            "agent_name": agent.name,
+            "agent_role": agent.role,
+            "config_id": agent_config.config_id,
+            "config_name": agent_config.name,
+            "config_content": config_content,
+            "created_at": agent_config.created_at.isoformat() if agent_config.created_at else None,
+        }
+
+        return ApiResponse.success(config_data, msg="Agent config updated successfully")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error updating agent config")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
 @router.get("/{session_id}/stats", response_model=ApiResponse)
 async def get_session_stats(session_id: str) -> ApiResponse:
     """获取会话的统计信息"""

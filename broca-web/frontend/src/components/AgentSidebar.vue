@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
 import { useChatStore, useAgentStore } from '@/stores'
 import type { Agent } from '@/stores/agent'
-import { ElIcon, ElTooltip, ElTag, ElButton, ElDialog } from 'element-plus'
+import { ElIcon, ElTooltip, ElTag, ElButton, ElDialog, ElSelect, ElOption, ElMessage, ElInput } from 'element-plus'
 import {
   User,
   Document,
@@ -30,6 +30,14 @@ const loading = ref(false)
 const selectedAgent = ref<Agent | null>(null)
 const autoRefreshInterval = ref<number | null>(null)
 const lastRefreshTime = ref<Date>(new Date())
+
+// LLM 配置编辑相关
+const editableConfigContent = ref<string>('')
+const selectedProvider = ref<string>('')
+const selectedModel = ref<string>('')
+const availableProviders = ref<{ id: string; name: string }[]>([])
+const availableModels = ref<{ id: string; name: string }[]>([])
+const saving = ref(false)
 
 // 使用 computed 从 agentStore 获取 agents 列表
 const agents = computed(() => agentStore.agents)
@@ -134,33 +142,119 @@ const stopAutoRefresh = () => {
   }
 }
 
-const handleAgentClick = (agent: Agent) => {
+// 刷新配置
+const refreshConfig = async () => {
+  if (!selectedAgent.value || !chatStore.sessionId) return
+  const config = await agentStore.fetchAgentConfig(chatStore.sessionId, selectedAgent.value.agent_id)
+  if (config) {
+    agentStore.selectedAgentConfig = config
+  }
+  initConfigEdit()
+}
+
+// 初始化配置编辑状态
+const initConfigEdit = async () => {
+  if (!selectedAgentConfig.value?.config_content) return
+
+  // 设置可编辑的配置内容
+  editableConfigContent.value = JSON.stringify(selectedAgentConfig.value.config_content, null, 2)
+
+  // 加载 LLM 提供商列表
+  await agentStore.fetchLLMProviders()
+  availableProviders.value = agentStore.llmProviders
+
+  // 从当前配置中提取 provider 和 model
+  const config = selectedAgentConfig.value.config_content
+  selectedProvider.value = config.provider || ''
+  selectedModel.value = config.model || ''
+
+  // 如果已有 provider，加载对应的 models
+  if (selectedProvider.value) {
+    await agentStore.fetchLLMModels(selectedProvider.value)
+    availableModels.value = agentStore.llmModels
+  }
+}
+
+// 当提供商改变时，更新模型列表
+const handleProviderChange = async (provider: string) => {
+  selectedProvider.value = provider
+  selectedModel.value = ''
+  if (provider) {
+    await agentStore.fetchLLMModels(provider)
+    availableModels.value = agentStore.llmModels
+  } else {
+    availableModels.value = []
+  }
+}
+
+// 保存配置
+const saveConfig = async () => {
+  if (!selectedAgent.value || !chatStore.sessionId || !selectedAgentConfig.value) return
+
+  saving.value = true
+  try {
+    // 解析当前编辑的配置内容
+    let configContent: Record<string, any>
+    try {
+      configContent = JSON.parse(editableConfigContent.value)
+    } catch (e) {
+      ElMessage.error('配置内容 JSON 格式有误，请检查后重试')
+      return
+    }
+
+    // 更新 provider 和 model
+    if (selectedProvider.value) {
+      configContent.provider = selectedProvider.value
+    }
+    if (selectedModel.value) {
+      configContent.model = selectedModel.value
+    }
+
+    // 保存到后端
+    const success = await agentStore.saveAgentConfig(
+      chatStore.sessionId,
+      selectedAgent.value.agent_id,
+      configContent,
+    )
+
+    if (success) {
+      ElMessage.success({
+        message: '配置保存成功！请重启 session 进程以使更改生效。',
+        duration: 6000,
+      })
+      // 刷新配置信息，显示更新后的值
+      await refreshConfig()
+    }
+  } finally {
+    saving.value = false
+  }
+}
+
+// 点击查看 Agent 配置
+const handleAgentClick = async (agent: Agent) => {
+  // 打开配置弹窗时暂停自动刷新，避免覆盖用户编辑
+  stopAutoRefresh()
   selectedAgent.value = agent
   // 使用 agentStore 的 selectAgent 方法来获取配置
   if (chatStore.sessionId) {
-    agentStore.selectAgent(agent.agent_id, chatStore.sessionId)
+    await agentStore.selectAgent(agent.agent_id, chatStore.sessionId)
+    await initConfigEdit()
   }
   showConfigDialog.value = true
 }
 
+// 关闭配置弹窗
 const closeConfigDialog = () => {
   showConfigDialog.value = false
   selectedAgent.value = null
   agentStore.selectedAgentConfig = null
-}
-
-// 刷新配置
-const refreshConfig = async () => {
-  if (!selectedAgent.value || !chatStore.sessionId) return
-  await agentStore.fetchAgentConfig(chatStore.sessionId, selectedAgent.value.agent_id)
-}
-
-// 发送消息给选中的 Agent
-const sendMessageToAgent = () => {
-  if (!selectedAgent.value) return
-  const agentName = selectedAgent.value.name || selectedAgent.value.agent_id?.slice(0, 8) || 'agent'
-  chatStore.input = `@${agentName} `
-  closeConfigDialog()
+  editableConfigContent.value = ''
+  selectedProvider.value = ''
+  selectedModel.value = ''
+  // 关闭弹窗后恢复自动刷新
+  if (chatStore.sessionId) {
+    startAutoRefresh(10000)
+  }
 }
 
 // 监听 session 变化，自动刷新 agents
@@ -399,57 +493,67 @@ onUnmounted(() => {
 
     <!-- JSON配置信息展示 -->
     <div v-else-if="selectedAgentConfig" class="space-y-4 max-h-[60vh] overflow-y-auto">
-      <!-- 配置内容（核心部分） -->
+      <!-- LLM 提供商和模型选择 -->
+      <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
+        <div class="flex items-center gap-2 mb-3">
+          <el-icon :size="16" class="text-purple-500">
+            <Setting />
+          </el-icon>
+          <span class="text-sm font-medium text-gray-700">LLM 配置</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Provider</label>
+            <el-select
+              v-model="selectedProvider"
+              placeholder="选择 LLM 提供商"
+              size="small"
+              style="width: 100%"
+              @change="handleProviderChange"
+            >
+              <el-option
+                v-for="p in availableProviders"
+                :key="p.id"
+                :label="p.name"
+                :value="p.id"
+              />
+            </el-select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Model</label>
+            <el-select
+              v-model="selectedModel"
+              placeholder="选择模型"
+              size="small"
+              style="width: 100%"
+              :disabled="!selectedProvider"
+            >
+              <el-option
+                v-for="m in availableModels"
+                :key="m.id"
+                :label="m.name"
+                :value="m.id"
+              />
+            </el-select>
+          </div>
+        </div>
+      </div>
+
+      <!-- 配置内容（可编辑） -->
       <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
         <div class="flex items-center gap-2 mb-2">
           <el-icon :size="16" class="text-blue-500">
             <Document />
           </el-icon>
-          <span class="text-sm font-medium text-gray-700">配置内容 (config_content)</span>
+          <span class="text-sm font-medium text-gray-700">配置内容 (config_content) <span class="text-xs text-gray-400 font-normal">- 可编辑 JSON</span></span>
         </div>
-        <div class="bg-white p-3 rounded border">
-          <pre class="text-sm font-mono text-gray-800 max-h-48 overflow-y-auto whitespace-pre-wrap break-all">{{
-            JSON.stringify(selectedAgentConfig.config_content, null, 2)
-          }}</pre>
-        </div>
-      </div>
-
-      <!-- 配置内容摘要 -->
-      <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
-        <div class="flex items-center gap-2 mb-2">
-          <el-icon :size="16" class="text-orange-500">
-            <Setting />
-          </el-icon>
-          <span class="text-sm font-medium text-gray-700">配置内容摘要</span>
-        </div>
-        <div class="space-y-2">
-          <div v-if="selectedAgentConfig.config_content.name" class="flex justify-between items-center text-sm">
-            <span class="text-gray-600">配置名称:</span>
-            <span class="font-medium text-gray-800">{{ selectedAgentConfig.config_content.name }}</span>
-          </div>
-          <div v-if="selectedAgentConfig.config_content.role" class="flex justify-between items-center text-sm">
-            <span class="text-gray-600">角色:</span>
-            <span class="font-medium text-gray-800">{{ selectedAgentConfig.config_content.role }}</span>
-          </div>
-          <div
-            v-if="selectedAgentConfig.config_content.llm_config_name"
-            class="flex justify-between items-center text-sm"
-          >
-            <span class="text-gray-600">LLM配置:</span>
-            <span class="font-medium text-gray-800">{{ selectedAgentConfig.config_content.llm_config_name }}</span>
-          </div>
-          <div
-            v-if="selectedAgentConfig.config_content.tools && selectedAgentConfig.config_content.tools.length > 0"
-            class="flex justify-between items-center text-sm"
-          >
-            <span class="text-gray-600">工具数量:</span>
-            <span class="font-medium text-gray-800">{{ selectedAgentConfig.config_content.tools.length }}</span>
-          </div>
-          <div v-if="selectedAgentConfig.config_content.workspace" class="flex justify-between items-center text-sm">
-            <span class="text-gray-600">工作空间:</span>
-            <span class="font-medium text-gray-800 truncate">{{ selectedAgentConfig.config_content.workspace }}</span>
-          </div>
-        </div>
+        <el-input
+          v-model="editableConfigContent"
+          type="textarea"
+          :rows="12"
+          class="config-editor"
+          placeholder="在此编辑配置 JSON..."
+        />
       </div>
     </div>
 
@@ -466,7 +570,15 @@ onUnmounted(() => {
     <template #footer>
       <div class="flex justify-end gap-2">
         <el-button size="small" @click="closeConfigDialog"> 关闭 </el-button>
-        <el-button type="primary" size="small" @click="sendMessageToAgent"> 发送消息给此Agent </el-button>
+        <el-button
+          type="primary"
+          size="small"
+          :loading="saving"
+          :disabled="!selectedAgentConfig"
+          @click="saveConfig"
+        >
+          保存
+        </el-button>
       </div>
     </template>
   </el-dialog>
@@ -556,5 +668,30 @@ onUnmounted(() => {
     font-size: 12px;
     line-height: 1.4;
   }
+}
+
+/* 配置编辑器样式 */
+.config-editor :deep(.el-textarea__inner) {
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.6;
+  min-height: 200px;
+  background-color: #1e1e2e;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  padding: 12px;
+  tab-size: 2;
+}
+
+.config-editor :deep(.el-textarea__inner:focus) {
+  border-color: #89b4fa;
+  box-shadow: 0 0 0 1px #89b4fa;
+}
+
+/* 下拉选择框样式 */
+:deep(.el-select) {
+  --el-select-border-color-hover: #89b4fa;
+  --el-select-input-focus-border-color: #89b4fa;
 }
 </style>

@@ -3,6 +3,7 @@ import { ref } from 'vue'
 import { ElMessage } from 'element-plus'
 import { agentApi, type AgentConfig as ApiAgentConfig } from '@/api/agent'
 import { sessionApi, type Agent as SessionAgent } from '@/api/session'
+import { configApi } from '@/api/config'
 
 // 使用API中的AgentConfig类型
 export type AgentConfig = ApiAgentConfig
@@ -193,15 +194,16 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
-  const selectAgent = (agentId: string, sessionId?: string) => {
+  const selectAgent = async (agentId: string, sessionId?: string) => {
     selectedAgentId.value = agentId
     selectedAgent.value = agents.value.find((agent) => agent.agent_id === agentId) || null
 
     // 如果提供了sessionId，尝试获取agent配置
     if (selectedAgent.value && sessionId) {
-      fetchAgentConfig(sessionId, agentId).then((config) => {
+      const config = await fetchAgentConfig(sessionId, agentId)
+      if (config) {
         selectedAgentConfig.value = config
-      })
+      }
     } else {
       selectedAgentConfig.value = null
     }
@@ -273,6 +275,60 @@ export const useAgentStore = defineStore('agent', () => {
     return typeColors[type] || 'gray'
   }
 
+  /**
+   * 保存Agent配置
+   */
+  const saveAgentConfig = async (sessionId: string, agentId: string, configContent: Record<string, any>): Promise<boolean> => {
+    try {
+      await agentApi.updateAgentConfig({
+        sessionId,
+        agentId,
+        config_content: configContent,
+      })
+      // 更新本地缓存
+      const cachedKey = `${sessionId}_${agentId}`
+      const cachedConfig = agentConfigs.value.get(cachedKey)
+      if (cachedConfig) {
+        agentConfigs.value.set(cachedKey, {
+          ...cachedConfig,
+          config_content: configContent,
+        })
+      }
+      selectedAgentConfig.value = {
+        ...(selectedAgentConfig.value || {} as AgentConfig),
+        config_content: configContent,
+      } as AgentConfig
+      return true
+    } catch (err: any) {
+      console.error('保存Agent配置失败:', err)
+      ElMessage.error('保存配置失败: ' + (err.message || '未知错误'))
+      return false
+    }
+  }
+
+  /**
+   * 获取所有可用的LLM提供商
+   */
+  const llmProviders = ref<{ id: string; name: string }[]>([])
+  const llmModels = ref<{ id: string; name: string }[]>([])
+
+  const fetchLLMProviders = async () => {
+    try {
+      llmProviders.value = await configApi.getLLMProviders()
+    } catch (err: any) {
+      console.error('获取LLM提供商列表失败:', err)
+    }
+  }
+
+  const fetchLLMModels = async (provider: string) => {
+    try {
+      llmModels.value = await configApi.getLLMModels(provider)
+    } catch (err: any) {
+      console.error('获取LLM模型列表失败:', err)
+      llmModels.value = []
+    }
+  }
+
   // 清除缓存
   const clearCache = () => {
     agentConfigs.value.clear()
@@ -303,6 +359,11 @@ export const useAgentStore = defineStore('agent', () => {
     fetchAgentConfig,
     fetchAgentConfigs,
     selectAgent,
+    saveAgentConfig,
+    fetchLLMProviders,
+    fetchLLMModels,
+    llmProviders,
+    llmModels,
     getAgentById,
     getAgentConfigById,
     updateAgentStatus,

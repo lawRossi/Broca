@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useChatStore } from '../stores/chat'
-import { postMessage } from '../api/vscode'
+import { postMessage, onMessage } from '../api/vscode'
 
 const chatStore = useChatStore()
 
@@ -52,22 +52,167 @@ function handleAbort(agentId: string) {
 const showConfigDialog = ref(false)
 const selectedAgent = ref<any>(null)
 
+// Agent 配置数据
+const agentConfig = ref<any>(null)
+const configLoading = ref(false)
+
+// LLM 配置编辑相关
+const editableConfigContent = ref<string>('')
+const selectedProvider = ref<string>('')
+const selectedModel = ref<string>('')
+const availableProviders = ref<{ id: string; name: string }[]>([])
+const availableModels = ref<{ id: string; name: string }[]>([])
+const saving = ref(false)
+
 function handleAgentClick(agent: any) {
+  // 打开配置弹窗时暂停自动刷新，避免覆盖用户编辑
+  stopAutoRefresh()
   selectedAgent.value = agent
   showConfigDialog.value = true
+  configLoading.value = true
+  agentConfig.value = null
+
+  // 请求获取 Agent 配置
+  postMessage({
+    type: 'fetchAgentConfig',
+    payload: { agentId: agent.agent_id },
+  })
 }
 
 function closeConfigDialog() {
   showConfigDialog.value = false
   selectedAgent.value = null
+  agentConfig.value = null
+  editableConfigContent.value = ''
+  selectedProvider.value = ''
+  selectedModel.value = ''
+  // 关闭弹窗后恢复自动刷新
+  if (chatStore.sessionId) {
+    startAutoRefresh(30000)
+  }
 }
 
-function sendMessageToAgent() {
+function refreshConfig() {
   if (!selectedAgent.value) return
-  const agentName = selectedAgent.value.name || selectedAgent.value.agent_id
-  chatStore.inputText = `@${agentName} `
-  closeConfigDialog()
+  configLoading.value = true
+  postMessage({
+    type: 'fetchAgentConfig',
+    payload: { agentId: selectedAgent.value.agent_id },
+  })
 }
+
+function fetchLLMProviders() {
+  postMessage({ type: 'fetchLLMProviders' })
+}
+
+function fetchLLMModels(provider: string) {
+  postMessage({ type: 'fetchLLMModels', payload: { provider } })
+}
+
+function initConfigEdit() {
+  if (!agentConfig.value?.config_content) return
+
+  editableConfigContent.value = JSON.stringify(agentConfig.value.config_content, null, 2)
+
+  const config = agentConfig.value.config_content
+  selectedProvider.value = config.provider || ''
+  selectedModel.value = config.model || ''
+
+  fetchLLMProviders()
+
+  if (selectedProvider.value) {
+    fetchLLMModels(selectedProvider.value)
+  }
+}
+
+function handleProviderChange(provider: string) {
+  selectedProvider.value = provider
+  selectedModel.value = ''
+  if (provider) {
+    fetchLLMModels(provider)
+  } else {
+    availableModels.value = []
+  }
+}
+
+function saveConfig() {
+  if (!selectedAgent.value || !agentConfig.value) return
+
+  saving.value = true
+  try {
+    let configContent: Record<string, any>
+    try {
+      configContent = JSON.parse(editableConfigContent.value)
+    } catch (e) {
+      chatStore.showError('配置内容 JSON 格式有误，请检查后重试', 'error')
+      return
+    }
+
+    if (selectedProvider.value) {
+      configContent.provider = selectedProvider.value
+    }
+    if (selectedModel.value) {
+      configContent.model = selectedModel.value
+    }
+
+    postMessage({
+      type: 'updateAgentConfig',
+      payload: {
+        agentId: selectedAgent.value.agent_id,
+        config_content: configContent,
+      },
+    })
+  } finally {
+    saving.value = false
+  }
+}
+
+// ==================== 监听来自 Extension 的消息 ====================
+const unsubMessage = ref<(() => void) | null>(null)
+
+onMounted(() => {
+  unsubMessage.value = onMessage((data: any) => {
+    switch (data.type) {
+      case 'agentConfig':
+        agentConfig.value = data.payload
+        configLoading.value = false
+        // 等待下一个 tick 确保 DOM 更新后再初始化编辑
+        setTimeout(() => initConfigEdit(), 0)
+        break
+
+      case 'agentConfigSaved':
+        agentConfig.value = data.payload
+        configLoading.value = false
+        saving.value = false
+        chatStore.showError('配置保存成功！请重启 session 进程以使更改生效。', 'info', 6000)
+        // 刷新配置信息，显示更新后的值
+        setTimeout(() => initConfigEdit(), 0)
+        break
+
+      case 'providers':
+        availableProviders.value = data.payload || []
+        break
+
+      case 'models':
+        availableModels.value = data.payload || []
+        break
+
+      case 'error':
+        configLoading.value = false
+        saving.value = false
+        break
+    }
+  })
+
+  if (chatStore.sessionId) startAutoRefresh(30000)
+})
+
+onUnmounted(() => {
+  stopAutoRefresh()
+  if (unsubMessage.value) {
+    unsubMessage.value()
+  }
+})
 
 // ==================== 自动刷新 ====================
 const autoRefreshInterval = ref<number | null>(null)
@@ -105,14 +250,6 @@ watch(
     else stopAutoRefresh()
   }
 )
-
-onMounted(() => {
-  if (chatStore.sessionId) startAutoRefresh(30000)
-})
-
-onUnmounted(() => {
-  stopAutoRefresh()
-})
 
 // ==================== 侧栏状态 ====================
 const isOpen = computed(() => chatStore.showLeftSidebar)
@@ -225,20 +362,76 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
             <button class="close-btn" @click="closeConfigDialog">✕</button>
           </div>
           <div class="dialog-body">
-            <div v-if="selectedAgent" class="config-content">
-              <div class="config-row"><span class="config-label">Agent ID</span><span class="config-value mono">{{ selectedAgent.agent_id }}</span></div>
-              <div class="config-row"><span class="config-label">名称</span><span class="config-value">{{ selectedAgent.name }}</span></div>
-              <div class="config-row"><span class="config-label">角色</span><span class="config-value">{{ selectedAgent.role || '未指定' }}</span></div>
-              <div class="config-row"><span class="config-label">类型</span><span class="config-value">{{ selectedAgent.type || 'assistant' }}</span></div>
-              <div class="config-row"><span class="config-label">描述</span><span class="config-value">{{ selectedAgent.description || '暂无描述' }}</span></div>
-              <div class="config-row"><span class="config-label">调用次数</span><span class="config-value">{{ selectedAgent.total_llm_calls || 0 }}</span></div>
-              <div class="config-row"><span class="config-label">输入 Token</span><span class="config-value">{{ (selectedAgent.total_input_tokens || 0).toLocaleString() }}</span></div>
-              <div class="config-row"><span class="config-label">输出 Token</span><span class="config-value">{{ (selectedAgent.total_output_tokens || 0).toLocaleString() }}</span></div>
+            <!-- 刷新配置按钮 -->
+            <div class="config-toolbar">
+              <button class="btn btn-secondary btn-small" @click="refreshConfig" :disabled="configLoading">
+                🔄 刷新配置
+              </button>
+              <span v-if="agentConfig" class="loaded-badge">已加载</span>
+            </div>
+
+            <!-- 加载状态 -->
+            <div v-if="configLoading" class="loading-state">
+              <p>正在获取配置信息...</p>
+              <p class="hint">请稍候</p>
+            </div>
+
+            <!-- 配置内容 -->
+            <div v-else-if="agentConfig" class="config-edit-area">
+              <!-- LLM 提供商和模型选择 -->
+              <div class="section-box">
+                <div class="section-title">
+                  <span>⚙️ LLM 配置</span>
+                </div>
+                <div class="llm-grid">
+                  <div class="field">
+                    <label>Provider</label>
+                    <select v-model="selectedProvider" @change="handleProviderChange(selectedProvider)">
+                      <option value="" disabled>选择 LLM 提供商</option>
+                      <option v-for="p in availableProviders" :key="p.id" :value="p.id">{{ p.name }}</option>
+                    </select>
+                  </div>
+                  <div class="field">
+                    <label>Model</label>
+                    <select v-model="selectedModel" :disabled="!selectedProvider">
+                      <option value="" disabled>选择模型</option>
+                      <option v-for="m in availableModels" :key="m.id" :value="m.id">{{ m.name }}</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 可编辑的配置内容 -->
+              <div class="section-box">
+                <div class="section-title">
+                  <span>📄 配置内容 (config_content)</span>
+                  <span class="hint">- 可编辑 JSON</span>
+                </div>
+                <textarea
+                  v-model="editableConfigContent"
+                  class="config-textarea"
+                  rows="12"
+                  placeholder="在此编辑配置 JSON..."
+                  spellcheck="false"
+                ></textarea>
+              </div>
+            </div>
+
+            <!-- 无配置信息提示 -->
+            <div v-else class="empty-state">
+              <p>暂无配置信息</p>
+              <p class="hint">请选择一个 Agent 查看配置</p>
             </div>
           </div>
           <div class="dialog-footer">
             <button class="btn btn-secondary" @click="closeConfigDialog">关闭</button>
-            <button class="btn btn-primary" @click="sendMessageToAgent">发送消息给此 Agent</button>
+            <button
+              class="btn btn-primary"
+              :disabled="!agentConfig || saving"
+              @click="saveConfig"
+            >
+              {{ saving ? '保存中...' : '保存' }}
+            </button>
           </div>
         </div>
       </div>
@@ -563,6 +756,140 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
 .btn-primary { background: var(--button-bg); color: var(--button-text); }
 .btn-primary:hover { background: var(--button-hover-bg); }
 
+/* ==================== 配置弹窗新样式 ==================== */
+
+.config-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.loaded-badge {
+  font-size: 10px;
+  padding: 1px 8px;
+  border-radius: 10px;
+  background: rgba(34, 197, 94, 0.12);
+  color: var(--success-fg);
+  font-weight: 500;
+}
+
+.loading-state {
+  text-align: center;
+  padding: 24px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.loading-state .hint {
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 24px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.empty-state .hint {
+  font-size: 11px;
+  margin-top: 4px;
+  opacity: 0.7;
+}
+
+.config-edit-area {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.section-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-primary);
+  margin-bottom: 10px;
+}
+
+.section-title .hint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--text-secondary);
+  opacity: 0.7;
+}
+
+.llm-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.field label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  font-weight: 500;
+}
+
+.field select {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--input-background, var(--bg-primary));
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+  cursor: pointer;
+}
+
+.field select:focus {
+  border-color: var(--focus-border);
+}
+
+.field select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.config-textarea {
+  width: 100%;
+  min-height: 180px;
+  padding: 10px 12px;
+  background: #1e1e2e;
+  color: #cdd6f4;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  font-family: 'Menlo', 'Monaco', 'Courier New', monospace;
+  font-size: 11px;
+  line-height: 1.6;
+  resize: vertical;
+  tab-size: 2;
+  outline: none;
+}
+
+.config-textarea:focus {
+  border-color: var(--focus-border);
+}
+
+.btn-small {
+  padding: 4px 10px;
+  font-size: 11px;
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
   .agent-sidebar {
@@ -576,6 +903,15 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   }
   .agent-sidebar.open { left: 0; }
   .close-btn { display: block; }
-  .config-dialog { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; }
+  .config-dialog {
+    width: 100vw;
+    max-width: 100vw;
+    height: 100vh;
+    max-height: 100vh;
+    border-radius: 0;
+  }
+  .llm-grid {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

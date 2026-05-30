@@ -44,6 +44,12 @@ export interface UpdateAgentStatusParams {
   status: AgentStatus['status']
 }
 
+export interface UpdateAgentConfigParams {
+  sessionId: string
+  agentId: string
+  config_content: Record<string, any>
+}
+
 export const agentApi = {
   /**
    * 获取Agent配置信息
@@ -59,6 +65,14 @@ export const agentApi = {
   async updateAgentStatus(params: UpdateAgentStatusParams): Promise<void> {
     const { sessionId, agentId, status } = params
     return request.put(`/session/${sessionId}/agents/${agentId}/status`, { status })
+  },
+
+  /**
+   * 更新Agent配置
+   */
+  async updateAgentConfig(params: UpdateAgentConfigParams): Promise<AgentConfig> {
+    const { sessionId, agentId, config_content } = params
+    return request.put(`/session/${sessionId}/agents/${agentId}/config`, { config_content })
   },
 
   /**

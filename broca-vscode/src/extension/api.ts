@@ -8,6 +8,7 @@ import type {
   UpdateSessionParams,
   RunnerInfo,
   Agent,
+  AgentConfig,
   SessionStats,
   MessagesResponse,
   LLMProvider,
@@ -119,6 +120,16 @@ export class ApiClient {
 
   async getSessionAgents(sessionId: string): Promise<Agent[]> {
     const response = await this.client.get(`/session/${sessionId}/agents`)
+    return response.data
+  }
+
+  async getAgentConfig(sessionId: string, agentId: string): Promise<AgentConfig> {
+    const response = await this.client.get(`/session/${sessionId}/agents/${agentId}/config`)
+    return response.data
+  }
+
+  async updateAgentConfig(sessionId: string, agentId: string, configContent: Record<string, any>): Promise<AgentConfig> {
+    const response = await this.client.put(`/session/${sessionId}/agents/${agentId}/config`, { config_content: configContent })
     return response.data
   }
 
