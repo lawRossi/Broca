@@ -20,6 +20,10 @@ const jobCount = ref(0)
 const taskCount = ref(0)
 const jobTaskLoading = ref(false)
 
+// Workspace
+const workspace = ref('')
+const workspaceLoading = ref(false)
+
 // 获取统计数据
 const fetchStats = async () => {
   if (!chatStore.sessionId) {
@@ -66,6 +70,25 @@ const fetchJobAndTaskStats = async () => {
     // 静默失败，不影响其他功能
   } finally {
     jobTaskLoading.value = false
+  }
+}
+
+// 获取 Workspace
+const fetchWorkspace = async () => {
+  if (!chatStore.sessionId) {
+    workspace.value = ''
+    return
+  }
+
+  try {
+    workspaceLoading.value = true
+    const data = await sessionApi.getSession(chatStore.sessionId)
+    workspace.value = data.workspace || ''
+  } catch (error) {
+    console.error('Failed to fetch workspace:', error)
+    workspace.value = ''
+  } finally {
+    workspaceLoading.value = false
   }
 }
 
@@ -125,6 +148,7 @@ onMounted(() => {
   if (chatStore.sessionId) {
     fetchStats()
     fetchJobAndTaskStats()
+    fetchWorkspace()
     startStatsPolling()
   }
 })
@@ -225,6 +249,12 @@ const getRunnerConfig = (status: string | undefined) => {
           <span class="text-gray-700">Session ID:</span>
           <span class="font-mono text-xs truncate max-w-[150px] text-gray-800" :title="chatStore.sessionId">
             {{ chatStore.sessionId || '未设置' }}
+          </span>
+        </div>
+        <div class="flex justify-between">
+          <span class="text-gray-700">Workspace:</span>
+          <span class="font-mono text-xs truncate max-w-[150px] text-gray-800" :title="workspace">
+            {{ workspace || '未设置' }}
           </span>
         </div>
         <div
