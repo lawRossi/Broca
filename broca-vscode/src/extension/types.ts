@@ -186,12 +186,12 @@ export interface WebViewMessage {
 
 // Extension → WebView messages
 export interface ExtensionToWebView {
-  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'sessionStats' | 'sessionCreated' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted' | 'crewExecutions' | 'crewDetail' | 'crewEvent' | 'crewConfigs' | 'crewConfigDetail'
+  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'sessionStats' | 'session' | 'sessionCreated' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted' | 'crewExecutions' | 'crewDetail' | 'crewEvent' | 'crewConfigs' | 'crewConfigDetail'
   payload: any
 }
 
 // WebView → Extension messages
 export interface WebViewToExtension {
-  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile' | 'runnerAction' | 'fetchRunnerStatus' | 'fetchSessionStats' | 'fetchAgents' | 'openFile' | 'fetchTasks' | 'fetchTaskDetail' | 'createTask' | 'updateTask' | 'deleteTask' | 'addTaskComment' | 'fetchJobs' | 'fetchJobDetail' | 'executeJob' | 'pauseJob' | 'resumeJob' | 'deleteJob' | 'fetchCrewExecutions' | 'fetchCrewDetail' | 'submitCrew' | 'abortCrew' | 'deleteCrew' | 'fetchCrewConfigs' | 'fetchCrewConfigDetail' | 'saveCrewConfig' | 'openCrewConfigFile'
+  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile' | 'runnerAction' | 'fetchRunnerStatus' | 'fetchSessionStats' | 'getSession' | 'fetchAgents' | 'openFile' | 'fetchTasks' | 'fetchTaskDetail' | 'createTask' | 'updateTask' | 'deleteTask' | 'addTaskComment' | 'fetchJobs' | 'fetchJobDetail' | 'executeJob' | 'pauseJob' | 'resumeJob' | 'deleteJob' | 'fetchCrewExecutions' | 'fetchCrewDetail' | 'submitCrew' | 'abortCrew' | 'deleteCrew' | 'fetchCrewConfigs' | 'fetchCrewConfigDetail' | 'saveCrewConfig' | 'openCrewConfigFile'
   payload?: any
 }

@@ -17,6 +17,10 @@ const taskCount = ref<number | null>(null)
 const jobCount = ref<number | null>(null)
 const countLoading = ref(false)
 
+// ==================== Workspace ====================
+const workspace = ref('')
+const workspaceLoading = ref(false)
+
 async function fetchCounts() {
   const sessionId = chatStore.sessionId
   if (!sessionId) return
@@ -35,6 +39,20 @@ async function fetchCounts() {
   } finally {
     countLoading.value = false
   }
+}
+
+async function fetchWorkspace() {
+  const sessionId = chatStore.sessionId
+  if (!sessionId) {
+    workspace.value = ''
+    return
+  }
+
+  workspaceLoading.value = true
+  postMessage({
+    type: 'getSession',
+    payload: { sessionId },
+  })
 }
 
 // ==================== Session 统计（通过 API 获取，与 Web 版一致） ====================
@@ -185,17 +203,21 @@ const isOpen = computed(() => chatStore.showRightSidebar)
 onMounted(() => {
   fetchCounts()
 
-  // 监听 sessionStats 响应
+  // 监听 sessionStats 和 session 响应
   removeMessageListener = onMessage((data: any) => {
     if (data.type === 'sessionStats') {
       stats.value = data.payload
       statsLoading.value = false
+    } else if (data.type === 'session') {
+      workspace.value = data.payload?.workspace || ''
+      workspaceLoading.value = false
     }
   })
 
   // 初始获取统计
   if (chatStore.sessionId) {
     fetchStats()
+    fetchWorkspace()
     startStatsPolling()
   }
 })
@@ -227,6 +249,10 @@ onUnmounted(() => {
               <span class="session-id-text mono" :title="chatStore.sessionId">{{ chatStore.sessionId }}</span>
               <button class="copy-btn" :class="{ 'copied': copyFeedback }" @click="copySessionId" :title="copyFeedback ? '已复制' : '复制 Session ID'">{{ copyFeedback ? '✓' : '📋' }}</button>
             </div>
+          </div>
+          <div class="info-row">
+            <span class="info-label">Workspace</span>
+            <span class="info-value mono" :title="workspace">{{ workspace || '未设置' }}</span>
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">
             <span>📋</span>

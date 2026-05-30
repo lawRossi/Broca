@@ -675,6 +675,10 @@ export class ChatWebViewManager {
         await this.handleFetchSessionStats(sessionId, panel)
         break
 
+      case 'getSession':
+        await this.handleGetSession(sessionId, panel)
+        break
+
       case 'fetchAgents':
         await this.handleFetchAgents(sessionId, panel)
         break
@@ -1042,6 +1046,15 @@ export class ChatWebViewManager {
       this.postToPanel(panel, { type: 'sessionStats', payload: stats } as ExtensionToWebView)
     } catch (error: any) {
       console.error('Failed to fetch session stats:', error)
+    }
+  }
+
+  private async handleGetSession(sessionId: string, panel: vscode.WebviewPanel) {
+    try {
+      const session = await this.apiClient.getSession(sessionId)
+      this.postToPanel(panel, { type: 'session', payload: session } as ExtensionToWebView)
+    } catch (error: any) {
+      console.error('Failed to fetch session:', error)
     }
   }
 
