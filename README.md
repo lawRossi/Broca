@@ -35,6 +35,7 @@
   - [8. 快照与撤销系统](#8-快照与撤销系统)
   - [9. 多智能体协作](#9-多智能体协作)
   - [10. Skill 系统](#10-skill-系统)
+  - [11. 命令系统](#11-命令系统)
 - [前端与客户端](#前端与客户端)
   - [Web 前端](#web-前端)
   - [Web 后端](#web-后端)
@@ -320,6 +321,107 @@ Skill 是可复用的能力单元，以 Markdown 文件定义：
 - **加载路径**: 全局 (`~/.agents/skills/`) 或项目内 (`skills/`, `.agents/skills/`)
 - **Workspace 覆盖**: 工作区技能可扩展全局技能
 
+### 11. 命令系统
+
+**核心文件**: `broca/commands/`
+
+命令系统提供了一种通过聊天的 `/` 触发快捷操作的方式，类似 Claude Code 的命令设计。
+
+#### 命令类型
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| **LocalCommand** | 在 Agent 进程内本地执行，不涉及 LLM 调用 | `/help`, `/abort`, `/undo`, `/redo` |
+| **PromptCommand** | 构造提示词后调用 LLM 执行，可生成流式回复 | `/ask`, `/plan`, `/init` |
+
+#### 架构
+
+```
+命令输入 (/help)
+     │
+     ▼
+parse_command_input() ── 解析 / 前缀
+     │
+     ▼
+CommandRegistry ── 查找命令定义
+     │
+     ▼
+dispatch_command()
+     ├── LocalCommand  →  execute() 本地执行
+     └── PromptCommand →  build_prompt() → agent.run() LLM 执行
+```
+
+- **CommandBase**: 所有命令的基类，定义 `name`、`description`、`type`、`is_hidden`、`is_enabled`、`show_result` 等元属性
+- **CommandRegistry**: 命令注册中心，按名称注册/查找/列出命令
+- **CommandLoader**: 自动扫描 `broca/commands/` 目录加载命令（每个命令一个子目录，含 `command.md` 和 `__init__.py`）
+- **CommandManager**: 集成注册、加载、分发，挂载在 Agent 上
+
+#### 命令定义规范
+
+每个命令定义在一个子目录中，包含两个文件：
+
+**`command.md`** — YAML 头部 + Markdown 正文（PromptCommand 的提示词模板）：
+
+```yaml
+---
+name: help
+description: Show available commands
+argument_hint: "[command_name]"
+type: local
+is_hidden: false
+is_enabled: true
+show_result: true
+---
+```
+
+**`__init__.py`** — 命令实现类：
+
+```python
+from broca.commands.base import LocalCommand, CommandContext, CommandResult
+
+class HelpCommand(LocalCommand):
+    async def execute(self, args: str, ctx: CommandContext) -> CommandResult:
+        ...
+        return CommandResult(type="text", value="## Available Commands\n...")
+```
+
+#### 可用命令
+
+| 命令 | 类型 | 说明 |
+|------|------|------|
+| `/help` | local | 显示可用命令列表或某个命令的详细信息 |
+| `/abort` | local | 中止当前 Agent 执行（隐藏，不显示在补全中） |
+| `/undo` | local | 撤销上一步操作（隐藏） |
+| `/redo` | local | 重做上一次撤销的操作（隐藏） |
+| `/ask` | prompt | 回答问题模式，不做任何文件修改 |
+| `/init` | prompt | 初始化项目，扫描工作区并生成 `.agents/AGENTS.md` 概要 |
+| `/plan` | prompt | 根据用户目标制定进化计划并形成文档，不执行 |
+
+#### 前端集成
+
+Web 前端和 VS Code 扩展均支持 `/` 命令补全：
+
+- 输入 `/` 自动弹出命令建议列表
+- 支持前缀匹配（`/pl` → `plan`）
+- 通过 `↑↓` 导航、`Enter` 选择、`Esc` 关闭
+- 每个命令项显示名称、描述和类型标签（local/prompt）
+- 命令列表优先从后端 API `GET /api/commands` 获取，API 不可用时使用静态列表兜底
+
+#### 自定义命令
+
+在工作区 `.broca/commands/` 目录下创建命令子目录即可自动加载：
+
+```
+your-project/
+└── .broca/
+    └── commands/
+        └── deploy/
+            ├── command.md
+            └── __init__.py
+```
+
+自定义命令不会覆盖内置命令，且支持所有标准元属性配置。
+
 ---
 
 ## 前端与客户端
@@ -536,6 +638,14 @@ broca/
 │   ├── agent_configs.py            # Agent 配置
 │   ├── agent_crew.py               # 多 Agent 协作
 │   ├── agent_manager.py            # Agent 工厂
+│   ├── commands/                   # 命令系统
+│   │   ├── base.py                 # 命令基类（CommandBase/LocalCommand/PromptCommand）
+│   │   ├── registry.py             # 命令注册中心
+│   │   ├── loader.py               # 命令自动加载器
+│   │   ├── dispatcher.py           # 命令分发器
+│   │   ├── manager.py              # 命令管理器
+│   │   ├── builtin/                # 内置本地命令（help/abort/undo/redo）
+│   │   └── prompt/                 # 内置提示命令（init/plan/ask）
 │   ├── execution_engine.py         # 执行引擎
 │   ├── context.py                  # 上下文管理
 │   ├── context_compressor.py       # 上下文压缩
