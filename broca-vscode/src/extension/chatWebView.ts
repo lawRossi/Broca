@@ -1012,13 +1012,11 @@ export class ChatWebViewManager {
         await this.apiClient.restartRunner(sessionId)
         vscode.window.showInformationMessage('Runner restarting...')
       }
-      // Refresh status after a short delay
-      setTimeout(async () => {
-        try {
-          const status = await this.apiClient.getRunnerStatus(sessionId)
-          this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
-        } catch {}
-      }, 2000)
+      // Immediately refresh status
+      try {
+        const status = await this.apiClient.getRunnerStatus(sessionId)
+        this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
+      } catch {}
       this.postToPanel(panel, { type: 'runnerActionResult', payload: { success: true } } as ExtensionToWebView)
     } catch (error: any) {
       showErrorNotification(error, 'Runner action failed')
