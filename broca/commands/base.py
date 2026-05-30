@@ -31,6 +31,7 @@ class CommandBase:
     loaded_from: str = "builtin"  # Source: builtin / custom
     is_hidden: bool = False  # Whether to hide from help list
     is_enabled: bool = True  # Whether the command is enabled
+    show_result: bool = False  # Whether to send result back to the frontend
 
 
 @dataclass

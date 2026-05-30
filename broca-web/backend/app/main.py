@@ -20,12 +20,19 @@ WHITE_LIST = {
     "/api/auth/login",
     "/api/health",
 }
+WHITE_LIST_PREFIXES = {
+    "/api/commands",
+}
 security = HTTPBearer(auto_error=False)
 
 
 def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(security)) -> None:
-    if req.url.path in WHITE_LIST:
+    path = req.url.path
+    if path in WHITE_LIST:
         return
+    for prefix in WHITE_LIST_PREFIXES:
+        if path.startswith(prefix):
+            return
     if not cred:
         raise HTTPException(401, "Unauthorized")
     try:

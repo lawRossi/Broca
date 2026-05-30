@@ -87,6 +87,9 @@ def _build_command_from_md(cmd_dir: Path) -> Optional[CommandBase]:
     instance.description = header.get("description", instance.description)
     instance.argument_hint = header.get("argument_hint", instance.argument_hint)
     instance.type = header.get("type", instance.type)
+    instance.is_hidden = header.get("is_hidden", instance.is_hidden)
+    instance.is_enabled = header.get("is_enabled", instance.is_enabled)
+    instance.show_result = header.get("show_result", instance.show_result)
 
     # PromptCommand-specific attributes
     if isinstance(instance, PromptCommand):

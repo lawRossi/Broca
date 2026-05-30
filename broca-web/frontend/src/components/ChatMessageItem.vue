@@ -152,6 +152,11 @@ const getContent = (message: Message) => {
     return message.data?.tool_name || 'unknown_tool'
   }
 
+  // command_result 消息内容在 data.result 中
+  if (message.message_type === 'command_result') {
+    return message.data?.result || message.data?.message || ''
+  }
+
   if (message.data?.raw_input !== undefined) {
     return message.data.raw_input
   }

@@ -16,12 +16,87 @@ const mentionSearch = ref('')
 const selectedMentionIndex = ref(-1)
 const justSelectedMention = ref(false)
 
-// 监听输入变化，检测 @mention
+// ==================== /command 智能提示 ====================
+interface CommandInfo {
+  name: string
+  description: string
+  type: string
+  argument_hint: string
+}
+
+const allCommands: CommandInfo[] = [
+  { name: 'help', description: 'Show available commands', type: 'local', argument_hint: '[command_name]' },
+  { name: 'ask', description: 'Answer questions only, no modifications', type: 'prompt', argument_hint: '<your question>' },
+  { name: 'init', description: 'Initialize project and generate summary', type: 'prompt', argument_hint: '' },
+  { name: 'plan', description: 'Create a plan document without executing', type: 'prompt', argument_hint: '<your goal>' },
+]
+
+const showCommandSuggestions = ref(false)
+const commandSuggestions = ref<CommandInfo[]>([])
+const commandSearch = ref('')
+const selectedCommandIndex = ref(-1)
+const commandSuggestionsRef = ref<HTMLElement>()
+const justSelectedCommand = ref(false)
+
+// 监听输入变化，检测 @mention 和 /command
 watch(
   () => chatStore.inputText,
   (newValue) => {
-    if (justSelectedMention.value) return
+    if (justSelectedMention.value || justSelectedCommand.value) return
 
+    // ---- 检测 /command ----
+    const slashIndex = newValue.lastIndexOf('/')
+    if (slashIndex !== -1 && (slashIndex === 0 || newValue[slashIndex - 1] === ' ')) {
+      const afterSlash = newValue.substring(slashIndex + 1)
+      const spaceIndex = afterSlash.indexOf(' ')
+
+      if (spaceIndex === -1) {
+        // /后面还没有空格
+        if (afterSlash.length > 0) {
+          const searchTerm = afterSlash
+          commandSearch.value = searchTerm
+          commandSuggestions.value = allCommands.filter(
+            (cmd) => cmd.name.toLowerCase().startsWith(searchTerm.toLowerCase())
+          )
+          if (commandSuggestions.value.length > 0) {
+            showMentionSuggestions.value = false
+            showCommandSuggestions.value = true
+            selectedCommandIndex.value = 0
+          } else {
+            showCommandSuggestions.value = false
+          }
+        } else {
+          // 只输入了 /，显示所有命令
+          commandSearch.value = ''
+          commandSuggestions.value = allCommands
+          if (commandSuggestions.value.length > 0) {
+            showMentionSuggestions.value = false
+            showCommandSuggestions.value = true
+            selectedCommandIndex.value = 0
+          } else {
+            showCommandSuggestions.value = false
+          }
+        }
+        return // /command 优先，跳过 @mention
+      } else if (spaceIndex > 0) {
+        // /后面有内容后有空格，检查精确匹配
+        const searchTerm = afterSlash.substring(0, spaceIndex)
+        const isExactMatch = allCommands.some(
+          (cmd) => cmd.name.toLowerCase() === searchTerm.toLowerCase()
+        )
+        if (isExactMatch) {
+          showCommandSuggestions.value = false
+        } else {
+          showCommandSuggestions.value = false
+        }
+      } else {
+        showCommandSuggestions.value = false
+      }
+    } else {
+      showCommandSuggestions.value = false
+    }
+
+    // ---- 检测 @mention ----
     const lastAt = newValue.lastIndexOf('@')
     if (lastAt !== -1) {
       const afterAt = newValue.substring(lastAt + 1)
@@ -99,17 +174,62 @@ function selectMention(agentId: string, agentName: string) {
   }
 }
 
+function selectCommand(commandName: string) {
+  const input = chatStore.inputText
+  const slashIndex = input.lastIndexOf('/')
+  if (slashIndex !== -1) {
+    const beforeSlash = input.substring(0, slashIndex)
+    const afterSlash = input.substring(slashIndex)
+    const spaceIndex = afterSlash.indexOf(' ')
+
+    let replacement = ''
+    if (spaceIndex === -1) {
+      replacement = `${beforeSlash}/${commandName} `
+    } else {
+      replacement = `${beforeSlash}/${commandName}${afterSlash.substring(spaceIndex)}`
+    }
+
+    justSelectedCommand.value = true
+    showCommandSuggestions.value = false
+    commandSearch.value = ''
+    selectedCommandIndex.value = -1
+    chatStore.inputText = replacement
+
+    setTimeout(() => {
+      justSelectedCommand.value = false
+    }, 100)
+  } else {
+    showCommandSuggestions.value = false
+    commandSearch.value = ''
+    selectedCommandIndex.value = -1
+  }
+}
+
+function handleCommandClick(event: MouseEvent, commandName: string) {
+  event.stopPropagation()
+  selectCommand(commandName)
+}
+
 function handleMentionClick(event: MouseEvent, agentId: string, agentName: string) {
   event.stopPropagation()
   selectMention(agentId, agentName)
 }
 
-// 点击外部关闭 mention 列表
+// 点击外部关闭 mention/command 列表
 function handleClickOutside(event: MouseEvent) {
-  if (!showMentionSuggestions.value) return
   const target = event.target as HTMLElement
   const mentionList = mentionListRef.value
-  if (mentionList && !mentionList.contains(target)) {
+  const cmdList = commandSuggestionsRef.value
+
+  // 关闭 command 列表
+  if (showCommandSuggestions.value && cmdList && !cmdList.contains(target)) {
+    showCommandSuggestions.value = false
+    commandSearch.value = ''
+    selectedCommandIndex.value = -1
+  }
+
+  // 关闭 mention 列表
+  if (showMentionSuggestions.value && mentionList && !mentionList.contains(target)) {
     showMentionSuggestions.value = false
     mentionSearch.value = ''
     selectedMentionIndex.value = -1
@@ -219,6 +339,11 @@ async function uploadPendingFiles() {
 
 // ==================== 发送消息 ====================
 function handleSend() {
+  // 如果刚选择了命令或mention，跳过发送
+  if (justSelectedCommand.value || justSelectedMention.value) {
+    return
+  }
+
   const text = chatStore.inputText.trim()
   console.log('[ChatInput] handleSend called, text:', JSON.stringify(text), 'runnerAlive:', chatStore.runnerAlive)
 
@@ -275,6 +400,35 @@ function handleSend() {
 }
 
 function handleKeydown(event: KeyboardEvent) {
+  // /command 列表导航（优先于 @mention）
+  if (showCommandSuggestions.value && commandSuggestions.value.length > 0) {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        selectedCommandIndex.value = Math.min(selectedCommandIndex.value + 1, commandSuggestions.value.length - 1)
+        return
+      case 'ArrowUp':
+        event.preventDefault()
+        selectedCommandIndex.value = Math.max(selectedCommandIndex.value - 1, 0)
+        return
+      case 'Enter':
+        if (selectedCommandIndex.value >= 0 && selectedCommandIndex.value < commandSuggestions.value.length) {
+          event.preventDefault()
+          const suggestion = commandSuggestions.value[selectedCommandIndex.value]
+          if (suggestion) {
+            selectCommand(suggestion.name)
+          }
+          return
+        }
+        break
+      case 'Escape':
+        showCommandSuggestions.value = false
+        commandSearch.value = ''
+        selectedCommandIndex.value = -1
+        return
+    }
+  }
+
   // @mention 列表导航
   if (showMentionSuggestions.value) {
     switch (event.key) {
@@ -388,6 +542,31 @@ const targetAgentDisplay = computed(() => {
           @keydown="handleKeydown"
           :disabled="!chatStore.runnerAlive"
         ></textarea>
+
+        <!-- /command 建议列表 -->
+        <div
+          v-if="showCommandSuggestions && commandSuggestions.length > 0"
+          ref="commandSuggestionsRef"
+          class="command-suggestions"
+        >
+          <div
+            v-for="(suggestion, index) in commandSuggestions"
+            :key="suggestion.name"
+            class="command-item"
+            :class="{ 'command-selected': index === selectedCommandIndex }"
+            @click="handleCommandClick($event, suggestion.name)"
+          >
+            <span class="command-prefix">/</span>
+            <div class="command-info">
+              <span class="command-name">{{ suggestion.name }}</span>
+              <span class="command-desc">{{ suggestion.description }}</span>
+            </div>
+            <span
+              class="command-type"
+              :class="suggestion.type === 'local' ? 'type-local' : 'type-prompt'"
+            >{{ suggestion.type }}</span>
+          </div>
+        </div>
 
         <!-- @mention 建议列表 -->
         <div
@@ -572,6 +751,89 @@ const targetAgentDisplay = computed(() => {
 
 .chat-input::placeholder {
   color: var(--text-secondary);
+}
+
+/* ==================== /command 建议列表 ==================== */
+.command-suggestions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.2);
+  max-height: 200px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.command-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.command-item:last-child {
+  border-bottom: none;
+}
+
+.command-item:hover,
+.command-selected {
+  background: var(--bg-tertiary);
+}
+
+.command-prefix {
+  color: var(--button-bg);
+  font-weight: 700;
+  font-family: monospace;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.command-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.command-name {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-family: monospace;
+}
+
+.command-desc {
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.command-type {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  font-weight: 500;
+}
+
+.type-local {
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--text-link);
+}
+
+.type-prompt {
+  background: rgba(139, 92, 246, 0.15);
+  color: #a78bfa;
 }
 
 /* ==================== @mention 建议列表 ==================== */

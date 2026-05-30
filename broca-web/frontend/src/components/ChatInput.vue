@@ -2,6 +2,7 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore, useAgentStore, useSocketStore } from '@/stores'
 import { uploadFile, isStorageConfigured } from '@/utils/upload'
+import { commandsApi, type CommandInfo } from '@/api/commands'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -35,15 +36,103 @@ const selectedMentionIndex = ref(-1)
 const mentionSuggestionsRef = ref<HTMLElement>()
 const justSelectedMention = ref(false)
 
-// 监听输入变化，检测@mention
+// 所有可用命令列表（从后端获取）
+const allCommands = ref<CommandInfo[]>([])
+const showCommandSuggestions = ref(false)
+const commandSuggestions = ref<CommandInfo[]>([])
+const commandSearch = ref('')
+const selectedCommandIndex = ref(-1)
+const commandSuggestionsRef = ref<HTMLElement>()
+const justSelectedCommand = ref(false)
+
+// 获取命令列表
+const fetchCommands = async () => {
+  try {
+    const res = await commandsApi.getCommands()
+    allCommands.value = res.commands || []
+  } catch (e) {
+    console.warn('获取命令列表失败:', e)
+    // 后端不可用时使用静态命令列表
+    allCommands.value = [
+      { name: 'help', description: 'Show available commands', type: 'local', argument_hint: '[command_name]' },
+      { name: 'ask', description: 'Answer questions only, no modifications', type: 'prompt', argument_hint: '<your question>' },
+      { name: 'init', description: 'Initialize project and generate summary', type: 'prompt', argument_hint: '' },
+      { name: 'plan', description: 'Create a plan document without executing', type: 'prompt', argument_hint: '<your goal>' },
+    ]
+  }
+}
+
+// 监听输入变化，检测@mention 和 /command
 watch(
   () => chatStore.input,
   (newValue) => {
-    // 如果刚刚选择了mention，跳过检测
-    if (justSelectedMention.value) {
+    // 如果刚刚选择了mention或command，跳过检测
+    if (justSelectedMention.value || justSelectedCommand.value) {
       return
     }
 
+    // ---- 检测 /command ----
+    // 只在行首或空格后检测 / 命令
+    const slashIndex = newValue.lastIndexOf('/')
+    if (slashIndex !== -1 && (slashIndex === 0 || newValue[slashIndex - 1] === ' ')) {
+      const afterSlash = newValue.substring(slashIndex + 1)
+      const spaceIndex = afterSlash.indexOf(' ')
+
+      // 只有 / 后面还没出现空格，或者 / 后面有内容时才显示建议
+      if (spaceIndex === -1) {
+        // 如果 / 是输入的第一个字符且后面跟着空格，不显示建议
+        if (afterSlash.length > 0) {
+          const searchTerm = afterSlash
+          commandSearch.value = searchTerm
+
+          // 过滤命令
+          commandSuggestions.value = allCommands.value.filter(
+            (cmd) =>
+              cmd.name.toLowerCase().startsWith(searchTerm.toLowerCase())
+          )
+
+          if (commandSuggestions.value.length > 0) {
+            // 如果命令列表显示，关闭mention
+            showMentionSuggestions.value = false
+            showCommandSuggestions.value = true
+            selectedCommandIndex.value = 0
+          } else {
+            showCommandSuggestions.value = false
+          }
+        } else {
+          // 只输入了 /，显示所有命令
+          commandSearch.value = ''
+          commandSuggestions.value = allCommands.value
+
+          if (commandSuggestions.value.length > 0) {
+            showMentionSuggestions.value = false
+            showCommandSuggestions.value = true
+            selectedCommandIndex.value = 0
+          } else {
+            showCommandSuggestions.value = false
+          }
+        }
+        return // /command 检测优先，跳过后续 @mention 检测
+      } else if (spaceIndex > 0) {
+        // / 后面有内容后有空格，检查是否是精确匹配
+        const searchTerm = afterSlash.substring(0, spaceIndex)
+        const isExactMatch = allCommands.value.some(
+          (cmd) => cmd.name.toLowerCase() === searchTerm.toLowerCase()
+        )
+        if (isExactMatch) {
+          showCommandSuggestions.value = false
+          // 命令已完整，继续检测 @mention
+        } else {
+          showCommandSuggestions.value = false
+        }
+      } else {
+        showCommandSuggestions.value = false
+      }
+    } else {
+      showCommandSuggestions.value = false
+    }
+
+    // ---- 检测 @mention ----
     const lastAt = newValue.lastIndexOf('@')
     if (lastAt !== -1) {
       const afterAt = newValue.substring(lastAt + 1)
@@ -131,43 +220,120 @@ const selectMention = (_agentId: string, agentName: string) => {
   }
 }
 
-// 处理键盘事件
-const handleKeyDown = (event: KeyboardEvent) => {
-  if (!showMentionSuggestions.value) return
+// 选择命令
+const selectCommand = (commandName: string) => {
+  const input = chatStore.input
+  const slashIndex = input.lastIndexOf('/')
+  if (slashIndex !== -1) {
+    const beforeSlash = input.substring(0, slashIndex)
+    const afterSlash = input.substring(slashIndex)
+    const spaceIndex = afterSlash.indexOf(' ')
 
-  switch (event.key) {
-    case 'ArrowDown':
-      event.preventDefault()
-      selectedMentionIndex.value = Math.min(selectedMentionIndex.value + 1, mentionSuggestions.value.length - 1)
-      break
-    case 'ArrowUp':
-      event.preventDefault()
-      selectedMentionIndex.value = Math.max(selectedMentionIndex.value - 1, 0)
-      break
-    case 'Enter':
-      if (selectedMentionIndex.value >= 0 && selectedMentionIndex.value < mentionSuggestions.value.length) {
-        event.preventDefault()
-        const suggestion = mentionSuggestions.value[selectedMentionIndex.value]
-        if (suggestion) {
-          selectMention(suggestion.id, suggestion.name)
-        }
-      }
-      break
-    case 'Escape':
-      showMentionSuggestions.value = false
-      break
+    let replacement = ''
+    if (spaceIndex === -1) {
+      replacement = `${beforeSlash}/${commandName} `
+    } else {
+      replacement = `${beforeSlash}/${commandName}${afterSlash.substring(spaceIndex)}`
+    }
+
+    // 设置标志，表示刚刚选择了command
+    justSelectedCommand.value = true
+
+    // 先关闭command列表
+    showCommandSuggestions.value = false
+    commandSearch.value = ''
+    selectedCommandIndex.value = -1
+
+    // 设置输入值
+    chatStore.input = replacement
+
+    // 100ms后重置标志
+    setTimeout(() => {
+      justSelectedCommand.value = false
+    }, 100)
+  } else {
+    showCommandSuggestions.value = false
+    commandSearch.value = ''
+    selectedCommandIndex.value = -1
   }
 }
 
-// 点击外部关闭mention列表
-const handleClickOutside = (event: MouseEvent) => {
-  if (!showMentionSuggestions.value) return
+// 处理键盘事件
+const handleKeyDown = (event: KeyboardEvent) => {
+  // 优先处理命令建议
+  if (showCommandSuggestions.value && commandSuggestions.value.length > 0) {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        selectedCommandIndex.value = Math.min(selectedCommandIndex.value + 1, commandSuggestions.value.length - 1)
+        return
+      case 'ArrowUp':
+        event.preventDefault()
+        selectedCommandIndex.value = Math.max(selectedCommandIndex.value - 1, 0)
+        return
+      case 'Enter':
+        event.preventDefault()
+        if (selectedCommandIndex.value >= 0 && selectedCommandIndex.value < commandSuggestions.value.length) {
+          const suggestion = commandSuggestions.value[selectedCommandIndex.value]
+          if (suggestion) {
+            selectCommand(suggestion.name)
+          }
+        }
+        return
+      case 'Escape':
+        showCommandSuggestions.value = false
+        return
+    }
+  }
 
+  // 处理mention建议
+  if (showMentionSuggestions.value && mentionSuggestions.value.length > 0) {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        selectedMentionIndex.value = Math.min(selectedMentionIndex.value + 1, mentionSuggestions.value.length - 1)
+        return
+      case 'ArrowUp':
+        event.preventDefault()
+        selectedMentionIndex.value = Math.max(selectedMentionIndex.value - 1, 0)
+        return
+      case 'Enter':
+        event.preventDefault()
+        if (selectedMentionIndex.value >= 0 && selectedMentionIndex.value < mentionSuggestions.value.length) {
+          const suggestion = mentionSuggestions.value[selectedMentionIndex.value]
+          if (suggestion) {
+            selectMention(suggestion.id, suggestion.name)
+          }
+        }
+        return
+      case 'Escape':
+        showMentionSuggestions.value = false
+        return
+    }
+  }
+
+  // 没有建议列表显示时，Enter 发送消息
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault()
+    handleSendMessage()
+  }
+}
+
+// 点击外部关闭mention/command列表
+const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
   const mentionList = mentionSuggestionsRef.value
+  const cmdList = commandSuggestionsRef.value
 
-  // 如果点击的不是mention列表本身，则关闭列表
-  if (mentionList && !mentionList.contains(target)) {
+  // 检查是否点击在command列表外部
+  if (showCommandSuggestions.value && cmdList && !cmdList.contains(target)) {
+    showCommandSuggestions.value = false
+    commandSearch.value = ''
+    selectedCommandIndex.value = -1
+  }
+
+  // 检查是否点击在mention列表外部
+  if (showMentionSuggestions.value && mentionList && !mentionList.contains(target)) {
     showMentionSuggestions.value = false
     mentionSearch.value = ''
     selectedMentionIndex.value = -1
@@ -178,6 +344,12 @@ const handleClickOutside = (event: MouseEvent) => {
 const handleMentionClick = (event: MouseEvent, agentId: string, agentName: string) => {
   event.stopPropagation()
   selectMention(agentId, agentName)
+}
+
+// 处理command列表点击事件，阻止事件冒泡
+const handleCommandClick = (event: MouseEvent, commandName: string) => {
+  event.stopPropagation()
+  selectCommand(commandName)
 }
 
 // 当前目标agent显示
@@ -209,6 +381,8 @@ const canSendMessage = computed(() => {
 // 添加和移除全局点击事件监听器
 onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
+  // 获取命令列表
+  await fetchCommands()
 })
 
 onUnmounted(() => {
@@ -379,6 +553,11 @@ const isAnyUploading = computed(() => {
 
 // 处理发送消息（包含文件上传）
 const handleSendMessage = async () => {
+  // 如果刚选择了命令或mention，跳过发送
+  if (justSelectedCommand.value || justSelectedMention.value) {
+    return
+  }
+
   const text = chatStore.input.trim()
   const { targetAgentId, cleanText } = chatStore.parseMention(text)
 
@@ -493,13 +672,42 @@ const handleSendMessage = async () => {
 
         <el-input
           v-model="chatStore.input"
-          :placeholder="chatStore.runnerAlive ? 'Type message... 使用 @ 指定agent' : '进程未运行，无法发送消息'"
+          :placeholder="chatStore.runnerAlive ? 'Type message... 使用 / 执行命令，@ 指定agent' : '进程未运行，无法发送消息'"
           :disabled="!chatStore.runnerAlive || isUploading"
           size="default"
           clearable
-          @keyup.enter="handleSendMessage"
           @keydown="handleKeyDown"
         />
+
+        <!-- /command 建议列表 -->
+        <div
+          v-if="showCommandSuggestions && commandSuggestions.length > 0"
+          ref="commandSuggestionsRef"
+          class="absolute bottom-full left-0 right-0 mb-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto"
+          @click.stop
+        >
+          <div
+            v-for="(suggestion, index) in commandSuggestions"
+            :key="suggestion.name"
+            class="px-3 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+            :class="{ 'bg-blue-50': index === selectedCommandIndex }"
+            @click="handleCommandClick($event, suggestion.name)"
+          >
+            <div class="flex items-center gap-2">
+              <span class="text-green-600 font-mono font-bold">/</span>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-gray-900 font-mono">{{ suggestion.name }}</div>
+                <div class="text-xs text-gray-500 truncate">{{ suggestion.description }}</div>
+              </div>
+              <span
+                class="text-xs px-1.5 py-0.5 rounded"
+                :class="suggestion.type === 'local' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'"
+              >
+                {{ suggestion.type }}
+              </span>
+            </div>
+          </div>
+        </div>
 
         <!-- @mention 建议列表 -->
         <div

@@ -34,7 +34,7 @@ const previewFileUrl = ref('')
 
 // ==================== 消息类型判断 ====================
 const isUser = computed(() => props.message.message_type === 'user_message' || props.message.role === 'user')
-const isSystem = computed(() => props.message.message_type === 'system_message' || props.message.role === 'agent_system')
+const isSystem = computed(() => props.message.message_type === 'system_message' || props.message.message_type === 'command_result' || props.message.role === 'agent_system' || props.message.role === 'system')
 const isToolCall = computed(() => props.message.message_type === 'tool_call')
 const isAgentResponse = computed(() => props.message.message_type === 'agent_response' || props.message.role === 'assistant')
 const isError = computed(() => props.message.message_type === 'error' || props.message.message_type === 'agent_error')
@@ -117,6 +117,11 @@ function formatTime(date: Date): string {
 function getContent(message: Message): string {
   if (message.message_type === 'tool_call') {
     return message.data?.tool_name || 'unknown_tool'
+  }
+
+  // command_result 消息内容在 data.result 中
+  if (message.message_type === 'command_result') {
+    return message.data?.result || message.data?.message || ''
   }
 
   if (message.data?.raw_input !== undefined) {
@@ -408,7 +413,7 @@ function toggleToolParams() {
 
     <!-- ==================== 系统消息 ==================== -->
     <div v-if="isSystem" class="system-content">
-      {{ props.message.data?.content }}
+      <pre class="system-text">{{ getContent(props.message) }}</pre>
     </div>
 
     <!-- ==================== 用户消息 ==================== -->

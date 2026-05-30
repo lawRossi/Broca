@@ -434,6 +434,18 @@ class Agent:
             await self.communicator.send_error(
                 result.value, subscription=self.session_id
             )
+        else:
+            # Send successful command result back to the client for display commands.
+            # Local commands with show_result=True (e.g., help) send their output
+            # to the frontend. Action commands (abort, undo, redo) default to
+            # show_result=False and do not send extra messages.
+            cmd = self.command_manager.registry.get(name)
+            if cmd is not None and getattr(cmd, "show_result", False):
+                await self.communicator.send_command_result(
+                    command=name,
+                    result=result.value,
+                    subscription=self.session_id,
+                )
 
         return ExecutionResult(
             status=ExecutionStatus.COMPLETED,
