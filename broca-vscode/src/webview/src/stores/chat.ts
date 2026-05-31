@@ -7,6 +7,38 @@ export const useChatStore = defineStore('chat', () => {
   const sessionId = ref(getInitialData()?.sessionId || '')
   const connected = ref(false)
   const messages = ref<Message[]>([])
+
+  // Agent 消息可见性过滤
+  const visibleAgentIds = ref<Set<string>>(new Set())
+
+  function initVisibleAgents() {
+    visibleAgentIds.value = new Set(agents.value.map((a) => a.agent_id))
+  }
+
+  function toggleAgentVisibility(agentId: string) {
+    const newSet = new Set(visibleAgentIds.value)
+    if (newSet.has(agentId)) newSet.delete(agentId)
+    else newSet.add(agentId)
+    visibleAgentIds.value = newSet
+  }
+
+  function setVisibleAgents(agentIds: string[]) {
+    visibleAgentIds.value = new Set(agentIds)
+  }
+
+  const filteredMessages = computed(() => {
+    const visibleIds = visibleAgentIds.value
+    if (visibleIds.size === 0) return messages.value
+
+    return messages.value.filter((m) => {
+      if (m.role === 'user') return true
+      if (m.role === 'system' || m.message_type === 'system_message') return true
+      if (m.sender_id && visibleIds.has(m.sender_id)) return true
+      if (m.agent_id && visibleIds.has(m.agent_id)) return true
+      return false
+    })
+  })
+
   const loading = ref(false)
   const loadingMore = ref(false)
   const hasMoreHistory = ref(true)
@@ -211,6 +243,8 @@ export const useChatStore = defineStore('chat', () => {
             last_context_length: a.last_context_length,
           }))
           agents.value = agentList
+          // 初始化可见 Agent（默认全部可见）
+          initVisibleAgents()
           // Initialize agent statuses to 'idle' for all known agents
           const initialStatuses: Record<string, AgentStatus> = {}
           for (const agent of agentList) {
@@ -628,6 +662,11 @@ export const useChatStore = defineStore('chat', () => {
     sessionId,
     connected,
     messages,
+    filteredMessages,
+    visibleAgentIds,
+    initVisibleAgents,
+    toggleAgentVisibility,
+    setVisibleAgents,
     loading,
     loadingMore,
     hasMoreHistory,

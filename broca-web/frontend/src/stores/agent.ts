@@ -59,6 +59,9 @@ export const useAgentStore = defineStore('agent', () => {
         type: agent.type || 'assistant',
       }))
 
+      // 初始化可见 Agent（默认全部可见）
+      initVisibleAgents()
+
       const mainAgent = agents.value.find((agent) => agent.role === 'main_agent' || agent.role === 'main-agent')
       if (mainAgent) {
         currentAgentId.value = mainAgent.agent_id
@@ -329,6 +332,30 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
+  // Agent 消息可见性过滤
+  const visibleAgentIds = ref<Set<string>>(new Set())
+
+  // 初始化可见 Agent（默认全部可见）
+  const initVisibleAgents = () => {
+    visibleAgentIds.value = new Set(agents.value.map((a) => a.agent_id))
+  }
+
+  // 切换单个 Agent 可见性
+  const toggleAgentVisibility = (agentId: string) => {
+    const newSet = new Set(visibleAgentIds.value)
+    if (newSet.has(agentId)) {
+      newSet.delete(agentId)
+    } else {
+      newSet.add(agentId)
+    }
+    visibleAgentIds.value = newSet
+  }
+
+  // 设置仅显示指定 Agent
+  const setVisibleAgents = (agentIds: string[]) => {
+    visibleAgentIds.value = new Set(agentIds)
+  }
+
   // 清除缓存
   const clearCache = () => {
     agentConfigs.value.clear()
@@ -363,6 +390,11 @@ export const useAgentStore = defineStore('agent', () => {
     fetchLLMProviders,
     fetchLLMModels,
     llmProviders,
+    llmModels,
+    visibleAgentIds,
+    initVisibleAgents,
+    toggleAgentVisibility,
+    setVisibleAgents,
     llmModels,
     getAgentById,
     getAgentConfigById,

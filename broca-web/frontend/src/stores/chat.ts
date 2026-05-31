@@ -131,6 +131,23 @@ export const useChatStore = defineStore('chat', () => {
   )
   const pendingChunks = ref<Map<string, Message[]>>(new Map())
 
+  // 根据 Agent 可见性过滤消息
+  const filteredMessages = computed(() => {
+    const visibleIds = agentStore.visibleAgentIds
+    if (visibleIds.size === 0) return messages.value
+
+    return messages.value.filter((m) => {
+      // 用户消息始终显示
+      if (m.role === 'user') return true
+      // 系统消息始终显示
+      if (m.role === 'system' || m.message_type === 'system_message') return true
+      // 根据 sender_id 或 agent_id 过滤
+      if (m.sender_id && visibleIds.has(m.sender_id)) return true
+      if (m.agent_id && visibleIds.has(m.agent_id)) return true
+      return false
+    })
+  })
+
   const mergeAgentResponseChunks = (chunks: Message[]) => {
     const parsedChunks: Array<{ content: string; reasoning_content: string; index: number }> = []
 
@@ -811,6 +828,7 @@ export const useChatStore = defineStore('chat', () => {
     permissionDialog,
     agentQueryDialog,
     messages,
+    filteredMessages,
     messageStates,
     pendingChunks,
     statusText,

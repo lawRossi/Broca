@@ -79,6 +79,21 @@ function handleAgentClick(agent: any) {
   })
 }
 
+// ==================== Agent 消息可见性过滤 ====================
+const showFilterDropdown = ref(false)
+
+const allVisible = computed(() => {
+  return chatStore.agents.length > 0 && chatStore.agents.every((a) => chatStore.visibleAgentIds.has(a.agent_id))
+})
+
+function toggleAll() {
+  if (allVisible.value) {
+    chatStore.setVisibleAgents([])
+  } else {
+    chatStore.setVisibleAgents(chatStore.agents.map((a) => a.agent_id))
+  }
+}
+
 function closeConfigDialog() {
   showConfigDialog.value = false
   selectedAgent.value = null
@@ -170,7 +185,15 @@ function saveConfig() {
 // ==================== 监听来自 Extension 的消息 ====================
 const unsubMessage = ref<(() => void) | null>(null)
 
+function handleDocumentClick(e: MouseEvent) {
+  const target = e.target as HTMLElement
+  if (!target.closest('.filter-dropdown')) {
+    showFilterDropdown.value = false
+  }
+}
+
 onMounted(() => {
+  document.addEventListener('click', handleDocumentClick)
   unsubMessage.value = onMessage((data: any) => {
     switch (data.type) {
       case 'agentConfig':
@@ -209,6 +232,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopAutoRefresh()
+  document.removeEventListener('click', handleDocumentClick)
   if (unsubMessage.value) {
     unsubMessage.value()
   }
@@ -267,6 +291,25 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
         </span>
       </div>
       <div class="header-actions">
+        <!-- Agent 消息过滤 -->
+        <div class="filter-dropdown" v-if="chatStore.agents.length > 0">
+          <button class="icon-btn filter-btn" title="过滤Agent消息" @click="showFilterDropdown = !showFilterDropdown">👁️</button>
+          <div v-if="showFilterDropdown" class="filter-menu" @click.stop>
+            <label class="filter-item" @click="toggleAll">
+              <input type="checkbox" :checked="allVisible" />
+              <span>全部</span>
+            </label>
+            <label
+              v-for="agent in chatStore.agents"
+              :key="agent.agent_id"
+              class="filter-item"
+              @click="chatStore.toggleAgentVisibility(agent.agent_id)"
+            >
+              <input type="checkbox" :checked="chatStore.visibleAgentIds.has(agent.agent_id)" />
+              <span class="truncate" :title="agent.name">{{ agent.name }}</span>
+            </label>
+          </div>
+        </div>
         <button class="icon-btn" :disabled="loading" @click="refreshAgents">🔄</button>
         <button class="close-btn" @click="chatStore.toggleLeftSidebar()">✕</button>
       </div>
@@ -888,6 +931,60 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
 .btn-small {
   padding: 4px 10px;
   font-size: 11px;
+}
+
+/* ==================== Agent 消息过滤下拉 ==================== */
+.filter-dropdown {
+  position: relative;
+}
+
+.filter-btn {
+  font-size: 14px;
+}
+
+.filter-menu {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--bg-primary, #252526);
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  z-index: 200;
+  padding: 4px 0;
+}
+
+.filter-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  color: var(--text-primary, #cccccc);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.filter-item:hover {
+  background: var(--list-hover-background, rgba(255, 255, 255, 0.06));
+}
+
+.filter-item input[type="checkbox"] {
+  flex-shrink: 0;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--focus-border, #007fd4);
+}
+
+.filter-item .truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 120px;
 }
 
 /* Mobile responsive */

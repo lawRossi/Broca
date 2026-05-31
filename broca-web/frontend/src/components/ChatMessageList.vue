@@ -48,7 +48,7 @@ const scrollToBottom = () => {
 }
 
 watch(
-  () => chatStore.messages.length,
+  () => chatStore.filteredMessages.length,
   () => {
     if (isRestoringScroll.value) return
 
@@ -106,20 +106,20 @@ const handleRedo = () => {
       <span class="mr-2">加载中...</span>
     </div>
     <div
-      v-else-if="!chatStore.hasMoreHistory && chatStore.messages.length > 0"
+      v-else-if="!chatStore.hasMoreHistory && chatStore.filteredMessages.length > 0"
       class="flex items-center justify-center py-2 text-gray-400 text-sm"
     >
       <span>没有更多历史消息了</span>
     </div>
 
-    <div v-if="!chatStore.messages.length" class="flex flex-col items-center justify-center h-full text-gray-400">
+    <div v-if="!chatStore.filteredMessages.length" class="flex flex-col items-center justify-center h-full text-gray-400">
       <div class="text-4xl mb-2">💬</div>
       <div v-if="chatStore.urlSessionId && !chatStore.connected" class="text-sm">正在自动连接...</div>
       <div v-else-if="chatStore.urlSessionId && chatStore.connected" class="text-sm">已连接，等待消息...</div>
       <div v-else class="text-sm">未设置session_id。请手动输入或通过URL参数传入。</div>
     </div>
 
-    <ChatMessageItem v-for="m in chatStore.messages" :key="m.message_id" :message="m" />
+    <ChatMessageItem v-for="m in chatStore.filteredMessages" :key="m.message_id" :message="m" />
 
     <!-- 重做按钮 - 撤销成功后显示（编排会话禁用） -->
     <div

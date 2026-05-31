@@ -49,7 +49,7 @@ const scrollToBottom = () => {
 
 // ==================== 自动滚动 ====================
 watch(
-  () => chatStore.messages.length,
+  () => chatStore.filteredMessages.length,
   () => {
     if (isRestoringScroll.value) return
     if (!chatStore.loadingMore) {
@@ -108,14 +108,13 @@ onUnmounted(() => {
       <span>加载中...</span>
     </div>
     <div
-      v-else-if="!chatStore.hasMoreHistory && chatStore.messages.length > 0"
-      class="load-more-indicator"
+      v-else-if="!chatStore.hasMoreHistory && chatStore.filteredMessages.length > 0"
+      class="flex items-center justify-center py-2 text-gray-400 text-sm"
     >
-      <span class="end-text">没有更多历史消息了</span>
+      <span>没有更多历史消息了</span>
     </div>
 
-    <!-- Empty state -->
-    <div v-if="chatStore.messages.length === 0 && !chatStore.loading" class="empty-state">
+    <div v-if="chatStore.filteredMessages.length === 0 && !chatStore.loading" class="empty-state">
       <div class="empty-icon">💬</div>
       <div v-if="chatStore.sessionId && !chatStore.connected" class="empty-text">正在自动连接...</div>
       <div v-else-if="chatStore.sessionId && chatStore.connected" class="empty-text">已连接，等待消息...</div>
@@ -123,7 +122,7 @@ onUnmounted(() => {
     </div>
 
     <!-- Message list -->
-    <div v-for="m in chatStore.messages" :key="m.message_id" class="message-wrapper">
+    <div v-for="m in chatStore.filteredMessages" :key="m.message_id" class="message-wrapper">
       <ChatMessageItem :message="m" />
     </div>
 

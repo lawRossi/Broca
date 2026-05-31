@@ -2,7 +2,7 @@
 import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
 import { useChatStore, useAgentStore } from '@/stores'
 import type { Agent } from '@/stores/agent'
-import { ElIcon, ElTooltip, ElTag, ElButton, ElDialog, ElSelect, ElOption, ElMessage, ElInput } from 'element-plus'
+import { ElIcon, ElTooltip, ElTag, ElButton, ElDialog, ElSelect, ElOption, ElMessage, ElInput, ElCheckbox, ElDropdown, ElDropdownMenu, ElDropdownItem } from 'element-plus'
 import {
   User,
   Document,
@@ -45,6 +45,25 @@ const agents = computed(() => agentStore.agents)
 // 使用 computed 从 agentStore 获取选中的 agent 配置
 const selectedAgentConfig = computed(() => agentStore.selectedAgentConfig)
 const configLoading = computed(() => agentStore.loading)
+
+// Agent 消息过滤相关
+const allVisible = computed(() => {
+  return agents.value.length > 0 && agents.value.every((a) => agentStore.visibleAgentIds.has(a.agent_id))
+})
+
+const handleFilterCommand = (command: string) => {
+  if (command === 'selectAll') {
+    toggleAll()
+  }
+}
+
+const toggleAll = () => {
+  if (allVisible.value) {
+    agentStore.setVisibleAgents([])
+  } else {
+    agentStore.setVisibleAgents(agents.value.map((a) => a.agent_id))
+  }
+}
 
 const statusColors: Record<string, string> = {
   idle: 'success',
@@ -311,21 +330,49 @@ onUnmounted(() => {
             <InfoFilled />
           </el-icon>
         </el-tooltip>
-        <el-tooltip v-if="autoRefreshInterval" content="自动刷新已开启 (30秒)" placement="top">
+        <el-tooltip v-if="autoRefreshInterval" content="自动刷新已开启 (10秒)" placement="top">
           <div class="flex items-center gap-1">
             <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
             <span class="text-[10px] text-gray-500">自动</span>
           </div>
         </el-tooltip>
       </div>
-      <el-button
-        size="small"
-        :icon="Refresh"
-        :loading="loading"
-        class="!p-1 !h-6 !w-6"
-        :disabled="!chatStore.sessionId"
-        @click="refreshAgents"
-      />
+      <div class="flex items-center gap-1">
+        <!-- Agent 消息过滤下拉 -->
+        <el-dropdown trigger="click" @command="handleFilterCommand">
+          <el-button size="small" class="!p-1 !h-6 !w-6" :disabled="!agents.length">
+            <el-icon :size="14"><Setting /></el-icon>
+          </el-button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="selectAll">
+                <el-checkbox :model-value="allVisible" size="small" @click.stop="toggleAll" />
+                <span class="ml-1">全部</span>
+              </el-dropdown-item>
+              <el-dropdown-item
+                v-for="agent in agents"
+                :key="agent.agent_id"
+                :command="agent.agent_id"
+              >
+                <el-checkbox
+                  :model-value="agentStore.visibleAgentIds.has(agent.agent_id)"
+                  size="small"
+                  @click.stop="agentStore.toggleAgentVisibility(agent.agent_id)"
+                />
+                <span class="ml-1 truncate" :title="agent.name">{{ agent.name }}</span>
+              </el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+        <el-button
+          size="small"
+          :icon="Refresh"
+          :loading="loading"
+          class="!p-1 !h-6 !w-6"
+          :disabled="!chatStore.sessionId"
+          @click="refreshAgents"
+        />
+      </div>
     </div>
 
     <!-- Agent列表 -->
