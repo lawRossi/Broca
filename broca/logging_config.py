@@ -78,9 +78,9 @@ class LoggingConfig:
         logger.add(
             log_file,
             format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
-            level="DEBUG",
+            level=log_level,
             rotation="10 MB",
-            retention="30 days",
+            retention="3 days",
             compression="zip",
             encoding="utf-8",
             backtrace=True,
