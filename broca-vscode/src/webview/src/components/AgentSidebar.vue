@@ -83,7 +83,7 @@ function handleAgentClick(agent: any) {
 const showFilterDropdown = ref(false)
 
 const allVisible = computed(() => {
-  return chatStore.agents.length > 0 && chatStore.agents.every((a) => chatStore.visibleAgentIds.has(a.agent_id))
+  return chatStore.agents.length > 0 && chatStore.agents.every((a) => chatStore.visibleAgentIds.includes(a.agent_id))
 })
 
 function toggleAll() {
@@ -293,7 +293,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
       <div class="header-actions">
         <!-- Agent 消息过滤 -->
         <div class="filter-dropdown" v-if="chatStore.agents.length > 0">
-          <button class="icon-btn filter-btn" title="过滤Agent消息" @click="showFilterDropdown = !showFilterDropdown">👁️</button>
+          <button class="icon-btn filter-btn" title="过滤Agent消息" @click="showFilterDropdown = !showFilterDropdown">⚙️</button>
           <div v-if="showFilterDropdown" class="filter-menu" @click.stop>
             <label class="filter-item" @click="toggleAll">
               <input type="checkbox" :checked="allVisible" />
@@ -305,7 +305,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
               class="filter-item"
               @click="chatStore.toggleAgentVisibility(agent.agent_id)"
             >
-              <input type="checkbox" :checked="chatStore.visibleAgentIds.has(agent.agent_id)" />
+              <input type="checkbox" :checked="chatStore.visibleAgentIds.includes(agent.agent_id)" />
               <span class="truncate" :title="agent.name">{{ agent.name }}</span>
             </label>
           </div>

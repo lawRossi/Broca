@@ -48,7 +48,7 @@ const configLoading = computed(() => agentStore.loading)
 
 // Agent 消息过滤相关
 const allVisible = computed(() => {
-  return agents.value.length > 0 && agents.value.every((a) => agentStore.visibleAgentIds.has(a.agent_id))
+  return agents.value.length > 0 && agents.value.every((a) => agentStore.visibleAgentIds.includes(a.agent_id))
 })
 
 const handleFilterCommand = (command: string) => {
@@ -312,15 +312,6 @@ onUnmounted(() => {
         chatStore.isMobile && chatStore.showLeftSidebar,
     }"
   >
-    <!-- 移动端标题 -->
-    <div
-      v-if="chatStore.isMobile && chatStore.showLeftSidebar"
-      class="flex justify-between items-center lg:hidden mb-4"
-    >
-      <span class="text-sm font-semibold text-gray-700">Session Agents</span>
-      <el-button size="small" @click="chatStore.showLeftSidebar = false"> ✕ </el-button>
-    </div>
-
     <!-- Agent面板标题 -->
     <div class="flex items-center justify-between mb-2">
       <div class="flex items-center gap-2">
@@ -355,7 +346,7 @@ onUnmounted(() => {
                 :command="agent.agent_id"
               >
                 <el-checkbox
-                  :model-value="agentStore.visibleAgentIds.has(agent.agent_id)"
+                  :model-value="agentStore.visibleAgentIds.includes(agent.agent_id)"
                   size="small"
                   @click.stop="agentStore.toggleAgentVisibility(agent.agent_id)"
                 />

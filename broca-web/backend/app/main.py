@@ -1,18 +1,17 @@
 import os
 from datetime import datetime
 
+# 初始化日志（stderr + 文件），必须在任何 import 之后、app 创建之前
+from broca.logging_config import init_logging
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from loguru import logger
 
 from app.api import api_router
-from app.core.exception_handlers import http_exception_handler, general_exception_handler
+from app.core.exception_handlers import general_exception_handler, http_exception_handler
 from app.core.socketio_runtime import SocketIOServerConfig, SocketIOServerRuntime
 from app.services.auth_service import AuthService
-
-# 初始化日志（stderr + 文件），必须在任何 import 之后、app 创建之前
-from broca.logging_config import init_logging
 
 init_logging()
 
@@ -84,6 +83,7 @@ async def setup() -> None:
 
         # 注册编排事件处理器（接收 Runner 发回的进度/完成事件）
         from app.services.crew_service import get_crew_service, set_socketio_server
+
         crew_service = get_crew_service()
         runner_manager.on("crew_event", crew_service.handle_crew_event)
         # 注入 SocketIO 服务器引用，用于实时推送编排进度到前端

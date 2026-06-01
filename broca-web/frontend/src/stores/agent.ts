@@ -59,8 +59,11 @@ export const useAgentStore = defineStore('agent', () => {
         type: agent.type || 'assistant',
       }))
 
-      // 初始化可见 Agent（默认全部可见）
-      initVisibleAgents()
+      // 仅在首次加载时初始化可见列表（全部可见），后续自动刷新不再触碰用户筛选
+      if (!_filterInitialized) {
+        _filterInitialized = true
+        visibleAgentIds.value = agents.value.map((a) => a.agent_id)
+      }
 
       const mainAgent = agents.value.find((agent) => agent.role === 'main_agent' || agent.role === 'main-agent')
       if (mainAgent) {
@@ -333,27 +336,22 @@ export const useAgentStore = defineStore('agent', () => {
   }
 
   // Agent 消息可见性过滤
-  const visibleAgentIds = ref<Set<string>>(new Set())
-
-  // 初始化可见 Agent（默认全部可见）
-  const initVisibleAgents = () => {
-    visibleAgentIds.value = new Set(agents.value.map((a) => a.agent_id))
-  }
+  const visibleAgentIds = ref<string[]>([])
+  let _filterInitialized = false
 
   // 切换单个 Agent 可见性
   const toggleAgentVisibility = (agentId: string) => {
-    const newSet = new Set(visibleAgentIds.value)
-    if (newSet.has(agentId)) {
-      newSet.delete(agentId)
+    const idx = visibleAgentIds.value.indexOf(agentId)
+    if (idx !== -1) {
+      visibleAgentIds.value = visibleAgentIds.value.filter((id) => id !== agentId)
     } else {
-      newSet.add(agentId)
+      visibleAgentIds.value = [...visibleAgentIds.value, agentId]
     }
-    visibleAgentIds.value = newSet
   }
 
   // 设置仅显示指定 Agent
   const setVisibleAgents = (agentIds: string[]) => {
-    visibleAgentIds.value = new Set(agentIds)
+    visibleAgentIds.value = agentIds
   }
 
   // 清除缓存
@@ -363,6 +361,8 @@ export const useAgentStore = defineStore('agent', () => {
     selectedAgentId.value = ''
     selectedAgent.value = null
     selectedAgentConfig.value = null
+    visibleAgentIds.value = []
+    _filterInitialized = false
   }
 
   return {
@@ -392,7 +392,6 @@ export const useAgentStore = defineStore('agent', () => {
     llmProviders,
     llmModels,
     visibleAgentIds,
-    initVisibleAgents,
     toggleAgentVisibility,
     setVisibleAgents,
     llmModels,
