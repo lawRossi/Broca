@@ -20,7 +20,6 @@ Pipeline 流水线拓扑编排器
 
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
@@ -28,20 +27,19 @@ from typing import Any, Dict, List, Optional
 
 from broca.logging_config import get_logger
 from broca.orchestration.crew import (
-    AgentRole,
     CrewConfig,
-    SubCrewConfig,
+    OnResultConfig,
 )
 from broca.orchestration.orchestrator import (
     CrewContext,
     ExecutionStatus,
     OrchestrationResult,
-    Orchestrator,
-    OrchestratorFactory,
     OrchestrationStopRequest,
+    Orchestrator,
     PhaseResult,
     PhaseStatus,
     check_blackboard_for_stop,
+    evaluate_condition,
 )
 from broca.orchestration.prompt_loader import PromptLoader
 from broca.session import MessageProtocol
@@ -73,21 +71,18 @@ class PipelineStepType(str, Enum):
 class BranchDefinition:
     """分支定义（fan-out / condition / switch 的子步骤）
 
-    支持两种执行模式：
-    - Agent 模式: 指定 agent + task，由单个 Agent 执行
-    - Crew 模式: 指定 crew，运行一个子编排器
+    每个分支由单个 Agent 执行。
+    如需子编排器，请在 Composite 层面组合，而非在 Pipeline 步骤内嵌套。
     """
 
     name: str
     """分支名称"""
     agent: Optional[str] = None
-    """执行 Agent（Agent 模式）"""
+    """执行 Agent"""
     task: Optional[str] = None
-    """任务描述（Agent 模式）"""
+    """任务描述"""
     context: Optional[str] = None
-    """额外上下文（Agent 模式）"""
-    crew: Optional[SubCrewConfig] = None
-    """子 Crew 配置（Crew 模式）"""
+    """额外上下文"""
 
     def to_dict(self) -> Dict[str, Any]:
         result: Dict[str, Any] = {"name": self.name}
@@ -96,18 +91,10 @@ class BranchDefinition:
             result["task"] = self.task or ""
             if self.context:
                 result["context"] = self.context
-        if self.crew:
-            result["crew"] = self.crew.to_dict()
         return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "BranchDefinition":
-        crew_data = data.get("crew")
-        if crew_data:
-            return cls(
-                name=data["name"],
-                crew=SubCrewConfig.from_dict(crew_data),
-            )
         return cls(
             name=data["name"],
             agent=data.get("agent"),
@@ -168,6 +155,10 @@ class PipelineStep:
     """黑板中用于匹配的字段路径"""
     default_branch: Optional[str] = None
     """无匹配时的默认分支名称"""
+
+    # === 条件跳转 ===
+    on_result: Optional[OnResultConfig] = None
+    """执行后条件跳转（流程图循环/分支），跳转到指定 name 的步骤"""
 
     # === 额外信息 ===
     extras: Dict[str, Any] = field(default_factory=dict)
@@ -230,12 +221,20 @@ class PipelineStep:
         if self.extras:
             result["extras"] = self.extras
 
+        # on_result
+        if self.on_result:
+            result["on_result"] = self.on_result.to_dict()
+
         return result
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PipelineStep":
         # 兼容旧格式：无 type 字段视为 TASK
         step_type = PipelineStepType(data.get("type", "task"))
+
+        on_result = (
+            OnResultConfig.from_dict(data["on_result"]) if "on_result" in data else None
+        )
 
         if step_type == PipelineStepType.TASK:
             return cls(
@@ -245,6 +244,7 @@ class PipelineStep:
                 task=data.get("task"),
                 context=data.get("context"),
                 extras=data.get("extras", {}),
+                on_result=on_result,
             )
 
         branches = None
@@ -257,6 +257,7 @@ class PipelineStep:
                 name=data.get("name"),
                 branches=branches,
                 extras=data.get("extras", {}),
+                on_result=on_result,
             )
 
         if step_type == PipelineStepType.FAN_IN:
@@ -268,10 +269,10 @@ class PipelineStep:
                 aggregation_strategy=data.get("aggregation_strategy", "concat"),
                 sources=data.get("sources"),
                 extras=data.get("extras", {}),
+                on_result=on_result,
             )
 
         if step_type == PipelineStepType.CONDITION:
-            # Agent 评估模式 vs 静态比较模式
             evaluator = data.get("evaluator")
             if evaluator:
                 return cls(
@@ -282,6 +283,7 @@ class PipelineStep:
                     evaluation_prompt=data.get("evaluation_prompt"),
                     default_branch=data.get("default_branch"),
                     extras=data.get("extras", {}),
+                    on_result=on_result,
                 )
             return cls(
                 type=step_type,
@@ -292,6 +294,7 @@ class PipelineStep:
                 condition_value=data.get("condition_value"),
                 default_branch=data.get("default_branch"),
                 extras=data.get("extras", {}),
+                on_result=on_result,
             )
 
         if step_type == PipelineStepType.SWITCH:
@@ -305,6 +308,7 @@ class PipelineStep:
                     evaluation_prompt=data.get("evaluation_prompt"),
                     default_branch=data.get("default_branch"),
                     extras=data.get("extras", {}),
+                    on_result=on_result,
                 )
             return cls(
                 type=step_type,
@@ -313,54 +317,10 @@ class PipelineStep:
                 switch_field=data.get("switch_field"),
                 default_branch=data.get("default_branch"),
                 extras=data.get("extras", {}),
+                on_result=on_result,
             )
 
         raise ValueError(f"Unknown PipelineStepType: {step_type}")
-
-
-# ============================================================================
-# 条件表达式求值
-# ============================================================================
-
-
-def _evaluate_condition(
-    actual_value: Any,
-    operator: str,
-    target_value: Any,
-) -> bool:
-    """
-    求值条件表达式
-
-    Args:
-        actual_value: 实际值（从黑板读取）
-        operator: 比较运算符
-        target_value: 目标值
-
-    Returns:
-        是否满足条件
-    """
-    ops = {
-        "eq": lambda a, b: a == b,
-        "ne": lambda a, b: a != b,
-        "gt": lambda a, b: (a is not None and b is not None) and a > b,
-        "gte": lambda a, b: (a is not None and b is not None) and a >= b,
-        "lt": lambda a, b: (a is not None and b is not None) and a < b,
-        "lte": lambda a, b: (a is not None and b is not None) and a <= b,
-        "contains": lambda a, b: b in (a or ""),
-        "startswith": lambda a, b: str(a or "").startswith(str(b)),
-        "endswith": lambda a, b: str(a or "").endswith(str(b)),
-    }
-
-    op_fn = ops.get(operator)
-    if op_fn is None:
-        logger.warning(f"Unknown condition operator '{operator}', falling back to eq")
-        return ops["eq"](actual_value, target_value)
-
-    try:
-        return bool(op_fn(actual_value, target_value))
-    except (TypeError, ValueError) as e:
-        logger.warning(f"Condition evaluation error ({operator}): {e}")
-        return False
 
 
 def _match_switch(
@@ -377,7 +337,7 @@ def _match_switch(
         匹配的分支名称，无匹配返回 default_branch
     """
     str_value = str(actual_value) if actual_value is not None else ""
-    for branch in (branches or []):
+    for branch in branches or []:
         if branch.name == str_value:
             return branch.name
     return default_branch
@@ -413,34 +373,18 @@ class PipelineOrchestrator(Orchestrator):
         2. agents 列表（按 role=worker 顺序，兼容旧配置）
         """
         steps_data = self.crew.orchestrator.extras.get("steps", [])
-        if steps_data:
-            return [
-                PipelineStep.from_dict(s) if isinstance(s, dict) else s
-                for s in steps_data
-            ]
+        if not steps_data:
+            return []
 
-        # 回退：按 agents 列表中的 worker 顺序（兼容旧配置）
-        steps = []
-        for agent_cfg in self.crew.agents:
-            if agent_cfg.role in (AgentRole.WORKER, AgentRole.PARTICIPANT):
-                steps.append(
-                    PipelineStep(
-                        type=PipelineStepType.TASK,
-                        agent=agent_cfg.name,
-                        task=f"Execute your role as {agent_cfg.name}",
-                    )
-                )
-        return steps
+        return [
+            PipelineStep.from_dict(s) if isinstance(s, dict) else s for s in steps_data
+        ]
 
     # ── 步骤名称辅助 ──
 
-    def _step_name(self, step: PipelineStep, index: int) -> str:
+    def _phase_name(self, step: PipelineStep, index: int) -> str:
         """获取步骤显示名称"""
-        if step.name:
-            return step.name
-        if step.type == PipelineStepType.TASK:
-            return f"step_{index + 1}: {step.agent or 'unknown'}"
-        return f"step_{index + 1}: {step.type.value}"
+        return f"pipeline_{self.name}_step_{index + 1}: {step.name}"
 
     # ── 主执行流程 ──
 
@@ -460,12 +404,37 @@ class PipelineOrchestrator(Orchestrator):
 
         accumulated_context: Dict[str, Any] = {}
 
-        for i, step in enumerate(self.steps):
+        # 建立名称→索引映射（用于 goto 跳转）
+        name_to_index: Dict[str, int] = {}
+        for idx, step in enumerate(self.steps):
+            step_name = step.name
+            name_to_index[step_name] = idx
+
+        visit_count: Dict[str, int] = {}
+        step_counter = 0
+        i = 0
+
+        while i < len(self.steps):
             if self._check_aborted():
                 result.status = ExecutionStatus.ABORTED
                 break
 
-            phase_name = self._step_name(step, i)
+            step = self.steps[i]
+            step_name = step.name
+            visit_count[step_name] = visit_count.get(step_name, 0) + 1
+            step_counter += 1
+
+            # 防无限循环
+            if step.on_result and step.on_result.max_iterations > 0:
+                if visit_count[step_name] > step.on_result.max_iterations:
+                    logger.warning(
+                        f"Step '{step_name}' exceeded max_iterations "
+                        f"({step.on_result.max_iterations}), stopping loop"
+                    )
+                    i += 1
+                    continue
+
+            phase_name = self._phase_name(step, step_counter - 1)
             phase = PhaseResult(
                 name=phase_name,
                 status=PhaseStatus.RUNNING,
@@ -489,7 +458,7 @@ class PipelineOrchestrator(Orchestrator):
                     phase.error = "Execution aborted"
                     phase.completed_at = datetime.now(timezone.utc)
                     result.status = ExecutionStatus.ABORTED
-                    result.error = f"Aborted after step {i + 1} ('{phase_name}')"
+                    result.error = f"Aborted after step '{phase_name}'"
                     break
 
                 # 记录结果
@@ -503,7 +472,7 @@ class PipelineOrchestrator(Orchestrator):
 
                 # 结果写入黑板
                 await self.context.blackboard.set(
-                    f"pipeline.step_{i + 1}",
+                    phase_name,
                     {
                         "name": phase_name,
                         "type": step.type.value,
@@ -512,10 +481,43 @@ class PipelineOrchestrator(Orchestrator):
                     producer="pipeline_orchestrator",
                 )
 
+                # ── on_result 条件跳转 ──
+                if step.on_result:
+                    oc = step.on_result
+                    actual_value = await self.context.blackboard.get(oc.condition_field)
+                    matched = evaluate_condition(
+                        actual_value, oc.condition_operator, oc.condition_value
+                    )
+
+                    logger.info(
+                        f"on_result for step '{step_name}': "
+                        f"field='{oc.condition_field}', actual={actual_value}, "
+                        f"matched={matched}, "
+                        f"goto={oc.goto if matched else oc.else_goto}"
+                    )
+
+                    if matched and oc.goto and oc.goto in name_to_index:
+                        if oc.goto_context:
+                            for key, value in oc.goto_context.items():
+                                await self.context.blackboard.set(
+                                    key, value, producer=f"goto:{step_name}"
+                                )
+                        i = name_to_index[oc.goto]
+                        continue
+                    elif not matched and oc.else_goto and oc.else_goto in name_to_index:
+                        if oc.else_goto_context:
+                            for key, value in oc.else_goto_context.items():
+                                await self.context.blackboard.set(
+                                    key, value, producer=f"goto:{step_name}"
+                                )
+                        i = name_to_index[oc.else_goto]
+                        continue
+                else:
+                    i += 1
+
             except OrchestrationStopRequest as stop_req:
                 logger.warning(
-                    f"Pipeline step {i + 1} ('{phase_name}') requested stop: "
-                    f"{stop_req}"
+                    f"Pipeline step {i + 1} ('{phase_name}') requested stop: {stop_req}"
                 )
                 phase.status = PhaseStatus.FAILED
                 phase.error = str(stop_req)
@@ -711,16 +713,12 @@ class PipelineOrchestrator(Orchestrator):
 
         from broca.orchestration.orchestrator import execute_agents_in_parallel
 
-        # 区分 Agent 分支和 Crew 分支
-        agent_branches = [b for b in step.branches if not b.crew]
-        crew_branches = [b for b in step.branches if b.crew]
-
         result_dict: Dict[str, Any] = {}
 
-        # Agent 分支：通过共享并行执行器
-        if agent_branches:
+        # 所有分支均为 Agent 模式并行执行
+        if step.branches:
             tasks = []
-            for branch in agent_branches:
+            for branch in step.branches:
                 branch_context = PromptLoader.render(
                     "pipeline",
                     "fan_out_branch.j2",
@@ -733,21 +731,6 @@ class PipelineOrchestrator(Orchestrator):
                 tasks.append((branch.agent, branch_context))
             agent_results = await execute_agents_in_parallel(self.context, tasks)
             result_dict.update(agent_results)
-
-        # Crew 分支：通过子编排器并行执行
-        if crew_branches:
-            async def run_crew_branch(branch: BranchDefinition) -> tuple:
-                try:
-                    output = await self._execute_branch_crew(branch)
-                    return (branch.name, output)
-                except Exception as e:
-                    logger.error(f"Crew branch '{branch.name}' failed: {e}")
-                    return (branch.name, f"Error: {e}")
-
-            crew_results = await asyncio.gather(
-                *[run_crew_branch(b) for b in crew_branches]
-            )
-            result_dict.update(dict(crew_results))
 
         # 记录到黑板
         for branch_name, output in result_dict.items():
@@ -787,9 +770,7 @@ class PipelineOrchestrator(Orchestrator):
         if sources:
             # 从黑板读取指定分支的结果
             for src in sources:
-                val = await self.context.blackboard.get(
-                    f"pipeline.fan_out.{src}"
-                )
+                val = await self.context.blackboard.get(f"pipeline.fan_out.{src}")
                 if val is None:
                     # 也尝试从 accumulated 查找
                     val = accumulated.get(src)
@@ -806,7 +787,7 @@ class PipelineOrchestrator(Orchestrator):
 
         if not source_data:
             logger.warning(
-                f"FAN-IN step '{self._step_name(step, index)}': "
+                f"FAN-IN step '{self._phase_name(step, index)}': "
                 f"no source data found, using empty dict"
             )
 
@@ -834,7 +815,8 @@ class PipelineOrchestrator(Orchestrator):
                 "pipeline",
                 "fan_in_agent.j2",
                 input_text=input_text,
-                task=step.task or "Synthesize the above results into a coherent output.",
+                task=step.task
+                or "Synthesize the above results into a coherent output.",
             )
             return await self._execute_agent(step.aggregator, fan_in_prompt)
 
@@ -884,7 +866,7 @@ class PipelineOrchestrator(Orchestrator):
             f"target={step.condition_value}"
         )
 
-        matched = _evaluate_condition(
+        matched = evaluate_condition(
             actual_value, step.condition_operator, step.condition_value
         )
 
@@ -892,7 +874,7 @@ class PipelineOrchestrator(Orchestrator):
 
         if selected_branch is None:
             logger.warning(
-                f"CONDITION step '{self._step_name(step, index)}': "
+                f"CONDITION step '{self._phase_name(step, index)}': "
                 f"no branch matched, skipping"
             )
             return {"branch": None, "output": None, "matched": matched}
@@ -959,8 +941,8 @@ class PipelineOrchestrator(Orchestrator):
         )
 
         # 调用 evaluator Agent 做判断
-        from broca.session import MessageProtocol
         from broca.execution_engine import ExecutionStatus as ES
+        from broca.session import MessageProtocol
 
         trigger_message = MessageProtocol.create_user_message(content=prompt)
         exec_result = await evaluator_agent.run(trigger_message, from_agent=True)
@@ -969,22 +951,22 @@ class PipelineOrchestrator(Orchestrator):
         if exec_result.status == ES.COMPLETED:
             response = evaluator_agent.context.get_latest_assistant_message() or ""
             # 从响应中提取分支名（按顺序匹配）
-            for b in (step.branches or []):
+            for b in step.branches or []:
                 if b.name in response:
                     branch_name = b.name
                     break
 
         if branch_name is None:
             logger.warning(
-                f"Evaluator Agent didn't return a valid branch name, "
-                f"falling back to default"
+                "Evaluator Agent didn't return a valid branch name, "
+                "falling back to default"
             )
             selected_branch = self._pick_branch(step, matched=False)
             if selected_branch is None:
                 return {"branch": None, "output": None, "error": "no branch selected"}
         else:
             selected_branch = None
-            for b in (step.branches or []):
+            for b in step.branches or []:
                 if b.name == branch_name:
                     selected_branch = b
                     break
@@ -1028,7 +1010,7 @@ class PipelineOrchestrator(Orchestrator):
         if not matched and step.branches and len(step.branches) > 1:
             return step.branches[1]
         if step.default_branch:
-            for b in (step.branches or []):
+            for b in step.branches or []:
                 if b.name == step.default_branch:
                     return b
         return None
@@ -1038,9 +1020,7 @@ class PipelineOrchestrator(Orchestrator):
         branch: BranchDefinition,
         accumulated: Dict[str, Any],
     ) -> str:
-        """执行选中的分支（支持 Agent 模式或 Crew 模式）"""
-        if branch.crew:
-            return await self._execute_branch_crew(branch)
+        """执行选中的分支（仅支持 Agent 模式）"""
         previous_output = self._get_previous_output(accumulated)
         branch_context = PromptLoader.render(
             "pipeline",
@@ -1052,40 +1032,6 @@ class PipelineOrchestrator(Orchestrator):
             accumulated=accumulated,
         )
         return await self._execute_agent(branch.agent, branch_context)
-
-    async def _execute_branch_crew(self, branch: BranchDefinition) -> str:
-        """以子 Crew 模式执行分支"""
-        crew = branch.crew
-        sub_config = CrewConfig(
-            name=crew.name or branch.name,
-            description=f"Branch: {branch.name}",
-            orchestrator=crew.orchestrator,
-            agents=crew.agents or [],
-        )
-        sub_context = CrewContext(
-            crew_config=sub_config,
-            blackboard=self.context.blackboard,
-            agent_factory=self.context.agent_factory,
-            session_manager=self.context.session_manager,
-        )
-        if crew.agents:
-            for agent_cfg in crew.agents:
-                agent = self.context.get_agent(agent_cfg.name)
-                if agent:
-                    sub_context.register_agent(agent_cfg.name, agent)
-        if (
-            crew.orchestrator.type == OrchestratorType.PIPELINE
-            and crew.steps
-        ):
-            sub_config.orchestrator.extras["steps"] = [
-                s.to_dict() for s in crew.steps
-            ]
-
-        orchestrator = OrchestratorFactory.create(sub_config, sub_context)
-        sub_result = await orchestrator.run()
-
-        result = sub_result.final_output or {}
-        return str(result)
 
     # ═══════════════════════════════════════════════
     # SWITCH 类型
@@ -1125,19 +1071,17 @@ class PipelineOrchestrator(Orchestrator):
             f"actual={actual_value}, branches={[b.name for b in step.branches]}"
         )
 
-        matched_name = _match_switch(
-            actual_value, step.branches, step.default_branch
-        )
+        matched_name = _match_switch(actual_value, step.branches, step.default_branch)
 
         selected_branch: Optional[BranchDefinition] = None
-        for b in (step.branches or []):
+        for b in step.branches or []:
             if b.name == matched_name:
                 selected_branch = b
                 break
 
         if selected_branch is None:
             logger.warning(
-                f"SWITCH step '{self._step_name(step, index)}': "
+                f"SWITCH step '{self._phase_name(step, index)}': "
                 f"no branch matched and no default, skipping"
             )
             return {"branch": None, "output": None, "matched_value": actual_value}

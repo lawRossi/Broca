@@ -6,14 +6,8 @@ Additional context:
 {% endif %}
 
 {% if accumulated %}
-Previous steps results:
-{% for agent_name, output in accumulated.items() %}
-  [{{ agent_name }}]:
-    {{ output | string | truncate(500) }}
+Previous steps:
+{% for phase_name in accumulated.keys() %}
+  {{phase_name}}
 {% endfor %}
-{% endif %}
-
-{% if previous_output is not none %}
-Immediately previous step output:
-{{ previous_output | string | truncate(300) }}
 {% endif %}

@@ -1,7 +1,7 @@
 ---
 role: worker
 name: 数据分析师
-tools: read_blackboard,list_blackboard,blackboard_changes
+tools: read_blackboard,list_blackboard,blackboard_changes,write_blackboard,task_management
 ---
 
 ## Role
@@ -35,5 +35,4 @@ tools: read_blackboard,list_blackboard,blackboard_changes
 - `read_blackboard("objective")` — 了解研究目标
 - `list_blackboard()` — 查看主管的计划和团队工作进展
 - `blackboard_changes(since_version=X)` — 查看最新更新
-
-你的最终回复会被自动记录为本步骤的输出。
+- `write_blackboard("key", "value")` — 写入调研结果

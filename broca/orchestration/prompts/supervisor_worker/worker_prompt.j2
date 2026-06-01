@@ -10,4 +10,5 @@ Your task ID has been recorded in the blackboard under `task_assignments.{{ agen
 2. **Use task_management** with action `get` and your task ID to read the full task details
 3. If no task is found, use **write_blackboard** to set key `orchestration.stop` with value `{"reason": "no task assigned for {{ agent_name }}"}` — this will stop the entire orchestration
 4. Execute the assigned work thoroughly
-5. After completing, use **task_management** with action `update` to mark the task as completed
+5. Check if the dependencies of your task are all finished, just report it and stop your work.
+6. After completing, use **task_management** with action `update` to mark the task as completed and write the report.

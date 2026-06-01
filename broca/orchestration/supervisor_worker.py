@@ -15,6 +15,7 @@ Supervisor-Worker 主管-工人拓扑编排器
 
 from __future__ import annotations
 
+import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
@@ -24,12 +25,11 @@ from broca.orchestration.orchestrator import (
     CrewContext,
     ExecutionStatus,
     OrchestrationResult,
-    Orchestrator,
     OrchestrationStopRequest,
+    Orchestrator,
     PhaseResult,
     PhaseStatus,
     execute_agents_in_parallel,
-    check_blackboard_for_stop,
 )
 from broca.orchestration.prompt_loader import PromptLoader
 
@@ -47,6 +47,8 @@ class SupervisorWorkerOrchestrator(Orchestrator):
 
     def __init__(self, crew_config: CrewConfig, context: Optional[CrewContext] = None):
         super().__init__(crew_config, context)
+        self.progress_check_key = f"{self.crew.name}_objective_met"
+        self.completed_tasks = set()
 
     @property
     def supervisor(self) -> Optional[Any]:
@@ -70,10 +72,11 @@ class SupervisorWorkerOrchestrator(Orchestrator):
     @property
     def worker_names(self) -> List[str]:
         return [
-            a_cfg.name
-            for a_cfg in self.crew.agents
-            if a_cfg.role == AgentRole.WORKER
+            a_cfg.name for a_cfg in self.crew.agents if a_cfg.role == AgentRole.WORKER
         ]
+
+    def _phase_name(self, attempt_index: int) -> str:
+        return f"{self.crew.name}_iteration_{attempt_index + 1}"
 
     async def run(self) -> OrchestrationResult:
         """执行 Supervisor-Worker 编排"""
@@ -99,7 +102,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                 result.status = ExecutionStatus.ABORTED
                 break
 
-            phase_name = f"iteration_{attempt + 1}"
+            phase_name = self._phase_name(attempt)
             phase = PhaseResult(
                 name=phase_name,
                 status=PhaseStatus.RUNNING,
@@ -126,10 +129,14 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                 # Phase B: Worker 并行执行
                 # ═══════════════════════════════════════
                 worker_results = await self._execute_workers(sub_tasks)
-                accumulated_results[f"iteration_{attempt + 1}"] = worker_results
+
+                for sub_task in sub_tasks:
+                    self.completed_tasks.add(sub_task["task_id"])
+
+                accumulated_results[phase_name] = worker_results
 
                 await self.context.blackboard.set(
-                    f"worker_results_iteration_{attempt + 1}",
+                    phase_name,
                     worker_results,
                     producer="supervisor",
                 )
@@ -137,19 +144,19 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                 # ═══════════════════════════════════════
                 # Phase C: Supervisor 质量检查
                 # ═══════════════════════════════════════
-                is_acceptable = await self._quality_check(
+                is_done = await self._check_progress(
                     objective, worker_results, attempt, max_rounds
                 )
 
                 phase.output = {
                     "worker_results": worker_results,
-                    "is_acceptable": is_acceptable,
+                    "is_done": is_done,
                 }
                 phase.status = PhaseStatus.COMPLETED
                 self.notify_progress(result.phases, max_rounds)
                 phase.completed_at = datetime.now(timezone.utc)
 
-                if is_acceptable:
+                if is_done:
                     if self._check_aborted():
                         phase.status = PhaseStatus.FAILED
                         phase.error = "Execution aborted"
@@ -159,13 +166,17 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                         break
 
                     # 合成最终结果
-                    synthesis = await self._synthesize(objective, accumulated_results)
-                    result.status = ExecutionStatus.COMPLETED
-                    result.final_output = {
-                        "iterations_completed": attempt + 1,
-                        "synthesis": synthesis,
-                        "accumulated": accumulated_results,
-                    }
+                    if self.crew.extras.get("do_synthesis", False):
+                        synthesis = await self._synthesize(
+                            objective, accumulated_results
+                        )
+                        result.status = ExecutionStatus.COMPLETED
+                        result.final_output = {
+                            "iterations_completed": attempt + 1,
+                            "synthesis": synthesis,
+                            "accumulated": accumulated_results,
+                        }
+
                     break
 
             except OrchestrationStopRequest as stop_req:
@@ -182,9 +193,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                 break
 
             except Exception as e:
-                logger.error(
-                    f"Supervisor-Worker iteration {attempt + 1} failed: {e}"
-                )
+                logger.error(f"Supervisor-Worker iteration {attempt + 1} failed: {e}")
                 phase.status = PhaseStatus.FAILED
                 phase.error = str(e)
                 phase.completed_at = datetime.now(timezone.utc)
@@ -207,7 +216,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             if self._check_aborted():
                 result.status = ExecutionStatus.ABORTED
                 result.error = "Aborted during execution"
-            else:
+            elif self.crew.extras.get("do_synthesis", False):
                 synthesis = await self._synthesize(objective, accumulated_results)
                 result.status = ExecutionStatus.COMPLETED
                 result.final_output = {
@@ -256,8 +265,8 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             previous_summary=prev_summary,
         )
 
-        from broca.session import MessageProtocol
         from broca.execution_engine import ExecutionStatus as ES
+        from broca.session import MessageProtocol
 
         trigger_message = MessageProtocol.create_user_message(content=prompt)
         exec_result = await supervisor_agent.run(trigger_message, from_agent=True)
@@ -268,30 +277,34 @@ class SupervisorWorkerOrchestrator(Orchestrator):
     async def _read_task_assignments(self) -> List[Dict[str, str]]:
         """从黑板读取 Supervisor 写入的任务分配"""
         assignments = await self.context.blackboard.get("task_assignments")
-        if not assignments or not isinstance(assignments, dict):
+        if not assignments:
             raise RuntimeError(
                 "Supervisor completed but no task assignments found "
                 "in blackboard key 'task_assignments'"
             )
 
+        if isinstance(assignments, str):
+            assignments = json.loads(assignments)
+
         sub_tasks = []
         for worker_name in self.worker_names:
             task_id = assignments.get(worker_name)
-            if task_id:
+            if task_id and task_id not in self.completed_tasks:
                 sub_tasks.append({"agent": worker_name, "task_id": task_id})
-            else:
-                logger.warning(
-                    f"Worker '{worker_name}' has no task assignment"
-                )
+
+        if not sub_tasks:
+            raise RuntimeError(
+                "Supervisor completed but no new task assignments found "
+                "in blackboard key 'task_assignments'"
+            )
+
         return sub_tasks
 
     # ═══════════════════════════════════════════════
     # Phase B: Worker 并行执行
     # ═══════════════════════════════════════════════
 
-    async def _execute_workers(
-        self, sub_tasks: List[Dict[str, str]]
-    ) -> Dict[str, str]:
+    async def _execute_workers(self, sub_tasks: List[Dict[str, str]]) -> Dict[str, str]:
         """
         Worker 通过黑板 + task_management 自主拉取任务并执行。
         """
@@ -309,7 +322,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
     # Phase C: Supervisor 质量检查
     # ═══════════════════════════════════════════════
 
-    async def _quality_check(
+    async def _check_progress(
         self,
         objective: str,
         worker_results: Dict[str, str],
@@ -326,37 +339,32 @@ class SupervisorWorkerOrchestrator(Orchestrator):
         supervisor_agent = self.supervisor
         if supervisor_agent is None:
             # 无 Supervisor 时简单检查错误
-            return not any(
-                r.startswith("Error:") for r in worker_results.values()
-            )
+            return not any(r.startswith("Error:") for r in worker_results.values())
 
         prompt = PromptLoader.render(
             "supervisor_worker",
-            "supervisor_quality_check.j2",
+            "supervisor_progress_check.j2",
             objective=objective,
+            progress_check_key=self.progress_check_key,
             worker_results=worker_results,
             attempt=attempt + 1,
             max_rounds=max_rounds,
         )
 
-        from broca.session import MessageProtocol
         from broca.execution_engine import ExecutionStatus as ES
+        from broca.session import MessageProtocol
 
         trigger_message = MessageProtocol.create_user_message(content=prompt)
         exec_result = await supervisor_agent.run(trigger_message, from_agent=True)
 
         if exec_result.status != ES.COMPLETED:
             logger.warning(
-                f"Quality check failed: {exec_result.error}, "
-                f"assuming acceptable"
+                f"Quality check failed: {exec_result.error}, assuming acceptable"
             )
             return True
 
-        response = (
-            supervisor_agent.context.get_latest_assistant_message() or ""
-        ).strip().upper()
-
-        return "PASS" in response
+        progress_tag = self.blackboard.get(self.progress_check_key)
+        return str(progress_tag).lower() == "true"
 
     # ═══════════════════════════════════════════════
     # Synthesis: Supervisor 合成最终结果
@@ -387,8 +395,8 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             accumulated=accumulated_results,
         )
 
-        from broca.session import MessageProtocol
         from broca.execution_engine import ExecutionStatus as ES
+        from broca.session import MessageProtocol
 
         trigger_message = MessageProtocol.create_user_message(content=prompt)
         exec_result = await supervisor_agent.run(trigger_message, from_agent=True)
@@ -400,8 +408,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             )
         else:
             logger.warning(
-                f"Synthesis failed: {exec_result.error}, "
-                f"falling back to concatenation"
+                f"Synthesis failed: {exec_result.error}, falling back to concatenation"
             )
             parts = []
             for iter_name, results in accumulated_results.items():

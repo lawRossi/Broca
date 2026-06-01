@@ -160,23 +160,6 @@ class CrewContext:
     def all_agents(self) -> Dict[str, Any]:
         return dict(self._agents)
 
-    async def initialize_agents(self) -> None:
-        """
-        初始化所有 Agent 实例。
-
-        通过 AgentFactory 创建 Agent，注入 Blackboard 上下文。
-        """
-        if not self.agent_factory:
-            logger.warning("No agent_factory provided, skipping agent initialization")
-            return
-
-        for agent_cfg in self.crew_config.agents:
-            # 加载 Agent 配置
-            config_path = agent_cfg.config
-            # TODO: 从配置路径加载 Agent，通过 agent_factory 创建
-            logger.info(f"Would initialize agent: {agent_cfg.name} from {config_path}")
-            # self.register_agent(agent_cfg.name, agent)
-
 
 class Orchestrator(ABC):
     """
@@ -341,6 +324,51 @@ async def execute_agents_in_parallel(
     return dict(results)
 
 
+# ============================================================================
+# 条件表达式求值（Pipeline condition 和 Composite branch 共用）
+# ============================================================================
+
+
+def evaluate_condition(
+    actual_value: Any,
+    operator: str,
+    target_value: Any,
+) -> bool:
+    """
+    求值条件表达式
+
+    Args:
+        actual_value: 实际值（从黑板读取）
+        operator: 比较运算符 (eq, ne, gt, gte, lt, lte, contains, startswith, endswith)
+        target_value: 目标值
+
+    Returns:
+        是否满足条件
+    """
+    ops = {
+        "eq": lambda a, b: a == b,
+        "ne": lambda a, b: a != b,
+        "gt": lambda a, b: (a is not None and b is not None) and a > b,
+        "gte": lambda a, b: (a is not None and b is not None) and a >= b,
+        "lt": lambda a, b: (a is not None and b is not None) and a < b,
+        "lte": lambda a, b: (a is not None and b is not None) and a <= b,
+        "contains": lambda a, b: b in (a or ""),
+        "startswith": lambda a, b: str(a or "").startswith(str(b)),
+        "endswith": lambda a, b: str(a or "").endswith(str(b)),
+    }
+
+    op_fn = ops.get(operator)
+    if op_fn is None:
+        logger.warning(f"Unknown condition operator '{operator}', falling back to eq")
+        return ops["eq"](actual_value, target_value)
+
+    try:
+        return bool(op_fn(actual_value, target_value))
+    except (TypeError, ValueError) as e:
+        logger.warning(f"Condition evaluation error ({operator}): {e}")
+        return False
+
+
 class OrchestratorFactory:
     """
     编排器工厂
@@ -370,6 +398,10 @@ class OrchestratorFactory:
             "ConsensusOrchestrator",
         ),
         OrchestratorType.COMPOSITE: (
+            "broca.orchestration.composite",
+            "CompositeOrchestrator",
+        ),
+        OrchestratorType.BRANCH: (
             "broca.orchestration.composite",
             "CompositeOrchestrator",
         ),

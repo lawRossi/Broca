@@ -56,6 +56,8 @@ class RoundTableOrchestrator(Orchestrator):
         self.speaker_order = extras.get("speaker_order", self.ORDER_FIXED)
         self.moderator_opening = extras.get("moderator_opening", False)
         self.moderator_closing = extras.get("moderator_closing", False)
+        self.rounds_config = extras.get("rounds", None)
+        """每轮自定义配置，未设置则沿用原有的 max_rounds 循环"""
 
     @property
     def moderator(self) -> Optional[Any]:
@@ -141,6 +143,95 @@ class RoundTableOrchestrator(Orchestrator):
 
         return self.participant_names
 
+    async def _resolve_round_speakers(
+        self, round_config: Dict[str, Any], round_num: int = 1,
+        discussion_history: Optional[List[Dict[str, Any]]] = None,
+    ) -> List[str]:
+        """
+        根据 round 配置解析本轮发言人列表及顺序。
+
+        round_config 支持字段：
+        - speakers: [name, ...]  按 agent 名称指定发言人和顺序
+        - roles: [role, ...]     按角色筛选发言人
+        - order: fixed | random | moderator
+          fixed:    保持列表顺序
+          random:   随机打乱
+          moderator:由 Moderator Agent 决定顺序（需提供 discussion_history）
+
+        Returns:
+            Agent 名称列表（按发言顺序）
+        """
+        speakers = round_config.get("speakers")
+        roles = round_config.get("roles")
+        order = round_config.get("order", "fixed")
+
+        # 确定候选人
+        candidates: List[str] = []
+        if speakers:
+            for name in speakers:
+                if name in self.participant_names:
+                    candidates.append(name)
+        elif roles:
+            role_set = set(roles)
+            for p in self.participants:
+                if p["config"].role.value in role_set:
+                    candidates.append(p["config"].name)
+        else:
+            candidates = list(self.participant_names)
+
+        if order == "random":
+            random.shuffle(candidates)
+        elif order == "moderator" and self.moderator:
+            candidates = await self._get_moderator_order_for(
+                round_num, candidates, discussion_history or []
+            )
+
+        return candidates
+
+    async def _get_moderator_order_for(
+        self,
+        round_num: int,
+        candidates: List[str],
+        discussion_history: List[Dict[str, Any]],
+    ) -> List[str]:
+        """Moderator Agent 为指定候选人列表决定发言顺序"""
+        moderator_agent = self.moderator
+        if moderator_agent is None:
+            return candidates
+
+        prompt = PromptLoader.render(
+            "round_table",
+            "moderator_order.j2",
+            topic=await self.context.blackboard.get("topic", ""),
+            participants=candidates,
+            round_num=round_num,
+            history=discussion_history,
+        )
+
+        try:
+            from broca.session import MessageProtocol
+            from broca.execution_engine import ExecutionStatus as ES
+
+            trigger_message = MessageProtocol.create_user_message(content=prompt)
+            exec_result = await moderator_agent.run(trigger_message, from_agent=True)
+
+            if exec_result.status == ES.COMPLETED:
+                response = (
+                    moderator_agent.context.get_latest_assistant_message() or ""
+                )
+                order = self._parse_json_list(response)
+                if order and isinstance(order, list):
+                    valid = [n for n in order if n in candidates]
+                    if valid:
+                        for n in candidates:
+                            if n not in valid:
+                                valid.append(n)
+                        return valid
+        except Exception as e:
+            logger.warning(f"Moderator order failed: {e}")
+
+        return candidates
+
     @staticmethod
     def _parse_json_list(text: str) -> Optional[list]:
         """从 LLM 响应中解析 JSON 数组"""
@@ -216,119 +307,144 @@ class RoundTableOrchestrator(Orchestrator):
             # ═══════════════════════════════════════════
             # Discussion Rounds
             # ═══════════════════════════════════════════
-            for round_num in range(1, max_rounds + 1):
-                if self._check_aborted():
-                    result.status = ExecutionStatus.ABORTED
-                    break
-
-                phase_name = f"round_{round_num}"
-                phase = PhaseResult(
-                    name=phase_name,
-                    status=PhaseStatus.RUNNING,
-                    agents=self.participant_names,
-                    started_at=datetime.now(timezone.utc),
-                )
-                result.phases.append(phase)
-
-                logger.info(
-                    f"Round-Table round {round_num}/{max_rounds}: "
-                    f"topic='{topic[:50]}...'"
-                )
-
-                # 确定本轮发言顺序
-                if (
-                    self.speaker_order == self.ORDER_MODERATOR
-                    and self.moderator
-                ):
-                    order = await self._get_moderator_order(
-                        round_num, discussion_history
-                    )
-                else:
-                    order = self._get_speaker_order(round_num)
-
-                logger.info(
-                    f"Round {round_num} speaker order: {order}"
-                )
-
-                # 本轮发言
-                round_entries = []
-                for agent_name in order:
+            if self.rounds_config:
+                # ── 自定义每轮配置模式 ──
+                for round_idx, round_config in enumerate(self.rounds_config):
                     if self._check_aborted():
-                        phase.status = PhaseStatus.FAILED
-                        phase.error = "Execution aborted during round"
-                        phase.completed_at = datetime.now(timezone.utc)
                         result.status = ExecutionStatus.ABORTED
-                        result.error = (
-                            f"Aborted during round {round_num}"
-                        )
                         break
 
-                    # 查找 participant
-                    participant = None
-                    for p in self.participants:
-                        if p["config"].name == agent_name:
-                            participant = p
-                            break
-                    if participant is None:
+                    round_num = round_idx + 1
+                    phase_name = round_config.get("name", f"round_{round_num}")
+
+                    # 解析本轮发言人和顺序
+                    order = await self._resolve_round_speakers(
+                        round_config,
+                        round_num=round_num,
+                        discussion_history=discussion_history,
+                    )
+                    if not order:
+                        logger.warning(
+                            f"Round {round_num} has no speakers, skipping"
+                        )
                         continue
 
-                    agent = participant["agent"]
-                    agent_cfg = participant["config"]
+                    phase = PhaseResult(
+                        name=phase_name,
+                        status=PhaseStatus.RUNNING,
+                        agents=order,
+                        started_at=datetime.now(timezone.utc),
+                    )
+                    result.phases.append(phase)
 
-                    prompt = self._build_discussion_prompt(
-                        topic=topic,
-                        round_num=round_num,
-                        agent_name=agent_cfg.name,
-                        extras=agent_cfg.extras,
-                        history=discussion_history,
-                        order_info=order,
+                    logger.info(
+                        f"Round-Table round {round_num}: "
+                        f"topic='{topic[:50]}...', speakers={order}"
                     )
 
-                    response = await self._get_agent_response(agent, prompt)
-                    round_entries.append({
-                        "agent": agent_cfg.name,
-                        "content": response,
-                        "round": round_num,
-                        "extras": agent_cfg.extras,
-                    })
+                    round_entries = await self._run_round(
+                        round_num=round_num,
+                        order=order,
+                        topic=topic,
+                        discussion_history=discussion_history,
+                        phase=phase,
+                        result=result,
+                    )
 
+                    if result.status == ExecutionStatus.ABORTED:
+                        break
+
+                    discussion_history.extend(round_entries)
                     await self.context.blackboard.set(
-                        f"round_{round_num}_{agent_cfg.name}",
-                        response,
+                        "discussion_history",
+                        discussion_history,
                         producer="round_table",
                     )
 
-                if result.status == ExecutionStatus.ABORTED:
-                    break
+                    phase.status = PhaseStatus.COMPLETED
+                    self.notify_progress(result.phases, len(self.rounds_config) + 2)
+                    phase.output = {
+                        "round": round_num,
+                        "entries_count": len(round_entries),
+                        "speaker_order": order,
+                    }
+                    phase.completed_at = datetime.now(timezone.utc)
 
-                # 记录本轮
-                discussion_history.extend(round_entries)
-                await self.context.blackboard.set(
-                    "discussion_history",
-                    discussion_history,
-                    producer="round_table",
-                )
-
-                phase.status = PhaseStatus.COMPLETED
-                self.notify_progress(result.phases, max_rounds + 2)
-                phase.output = {
-                    "round": round_num,
-                    "entries_count": len(round_entries),
-                    "speaker_order": order,
-                }
-                phase.completed_at = datetime.now(timezone.utc)
-
-                # Moderator 评估是否结束
-                if self.moderator:
-                    verdict = await self._evaluate_by_moderator(
-                        discussion_history, round_num, max_rounds
-                    )
-                    if verdict.get("should_conclude", False):
-                        concluded = True
-                        conclusion = verdict.get(
-                            "summary", "Discussion concluded."
-                        )
+            else:
+                # ── 原有 max_rounds 循环（向后兼容） ──
+                for round_num in range(1, max_rounds + 1):
+                    if self._check_aborted():
+                        result.status = ExecutionStatus.ABORTED
                         break
+
+                    phase_name = f"round_{round_num}"
+                    phase = PhaseResult(
+                        name=phase_name,
+                        status=PhaseStatus.RUNNING,
+                        agents=self.participant_names,
+                        started_at=datetime.now(timezone.utc),
+                    )
+                    result.phases.append(phase)
+
+                    logger.info(
+                        f"Round-Table round {round_num}/{max_rounds}: "
+                        f"topic='{topic[:50]}...'"
+                    )
+
+                    # 确定本轮发言顺序
+                    if (
+                        self.speaker_order == self.ORDER_MODERATOR
+                        and self.moderator
+                    ):
+                        order = await self._get_moderator_order(
+                            round_num, discussion_history
+                        )
+                    else:
+                        order = self._get_speaker_order(round_num)
+
+                    logger.info(
+                        f"Round {round_num} speaker order: {order}"
+                    )
+
+                    round_entries = await self._run_round(
+                        round_num=round_num,
+                        order=order,
+                        topic=topic,
+                        discussion_history=discussion_history,
+                        phase=phase,
+                        result=result,
+                    )
+
+                    if result.status == ExecutionStatus.ABORTED:
+                        break
+
+                    discussion_history.extend(round_entries)
+                    await self.context.blackboard.set(
+                        "discussion_history",
+                        discussion_history,
+                        producer="round_table",
+                    )
+
+                    phase.status = PhaseStatus.COMPLETED
+                    self.notify_progress(result.phases, max_rounds + 2)
+                    phase.output = {
+                        "round": round_num,
+                        "entries_count": len(round_entries),
+                        "speaker_order": order,
+                    }
+                    phase.completed_at = datetime.now(timezone.utc)
+
+                    # Moderator 评估是否结束
+                    if self.moderator:
+                        verdict = await self._evaluate_by_moderator(
+                            discussion_history, round_num, max_rounds
+                        )
+                        if verdict.get("should_conclude", False):
+                            concluded = True
+                            conclusion = verdict.get(
+                                "summary", "Discussion concluded."
+                            )
+                            break
 
             # ═══════════════════════════════════════════
             # Closing: Moderator 结束语
@@ -418,6 +534,60 @@ class RoundTableOrchestrator(Orchestrator):
         return result
 
     # ── 辅助方法 ──
+
+    async def _run_round(
+        self,
+        round_num: int,
+        order: List[str],
+        topic: str,
+        discussion_history: List[Dict[str, Any]],
+        phase: PhaseResult,
+        result: OrchestrationResult,
+    ) -> List[Dict[str, Any]]:
+        """执行一轮发言，返回本轮发言记录列表"""
+        round_entries = []
+        for agent_name in order:
+            if self._check_aborted():
+                phase.status = PhaseStatus.FAILED
+                phase.error = "Execution aborted during round"
+                phase.completed_at = datetime.now(timezone.utc)
+                result.status = ExecutionStatus.ABORTED
+                break
+
+            participant = None
+            for p in self.participants:
+                if p["config"].name == agent_name:
+                    participant = p
+                    break
+            if participant is None:
+                continue
+
+            agent = participant["agent"]
+            agent_cfg = participant["config"]
+
+            prompt = self._build_discussion_prompt(
+                topic=topic,
+                round_num=round_num,
+                agent_name=agent_cfg.name,
+                extras=agent_cfg.extras,
+                history=discussion_history,
+                order_info=order,
+            )
+
+            response = await self._get_agent_response(agent, prompt)
+            round_entries.append({
+                "agent": agent_cfg.name,
+                "content": response,
+                "round": round_num,
+                "extras": agent_cfg.extras,
+            })
+
+            await self.context.blackboard.set(
+                f"round_{round_num}_{agent_cfg.name}",
+                response,
+                producer="round_table",
+            )
+        return round_entries
 
     def moderator_name(self) -> str:
         for agent_cfg in self.crew.agents:

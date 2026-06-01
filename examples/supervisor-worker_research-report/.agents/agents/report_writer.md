@@ -1,7 +1,7 @@
 ---
 role: worker
 name: 报告撰写人
-tools: read_blackboard,list_blackboard,blackboard_changes
+tools: read_blackboard,list_blackboard,blackboard_changes,write_blackboard,task_management
 ---
 
 ## Role
@@ -44,5 +44,3 @@ tools: read_blackboard,list_blackboard,blackboard_changes
 - `read_blackboard("objective")` — 了解研究目标
 - `list_blackboard()` — 查看所有可用信息
 - `blackboard_changes(since_version=X)` — 查看最新更新的内容
-
-你的最终回复会被自动记录为本步骤的输出。

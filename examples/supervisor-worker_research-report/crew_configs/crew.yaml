@@ -7,11 +7,13 @@
 #   3. 或通过 API 提交
 
 name: "研究报告生成"
-description: "AI Agent 团队协作：生成 AI 在医疗领域应用的研究报告"
+description: "AI Agent 团队协作：生成AI在医疗领域应用的研究报告"
 
 orchestrator:
   type: supervisor-worker
-  max_rounds: 2  # 迭代轮数
+  max_rounds: 4  # 迭代轮数
+  extras:
+    do_synthesis: false
 
 agents:
   - role: supervisor
@@ -37,13 +39,13 @@ blackboard:
         撰写一份关于「人工智能在医疗领域的应用现状与未来趋势」的深度研究报告。
         
         需要覆盖的方面：
-        1. AI 在医学影像诊断中的应用（如 X 光、CT、MRI 的 AI 辅助诊断）
+        1. AI 在医学影像诊断中的应用（如 X光、CT、MRI的AI辅助诊断）
         2. AI 在药物研发中的作用（分子筛选、临床试验优化）
         3. AI 在医疗健康管理中的应用（个性化医疗、健康监测）
         4. 当前面临的技术挑战和伦理问题
-        5. 未来 3-5 年的发展趋势预测
+        5. 未来3-5年的发展趋势预测
         
         报告要求：
-        - 总字数 3000-5000 字
+        - 总字数1000-2000字
         - 包含数据引用和案例
         - 结构清晰，包含摘要、正文、结论和建议
