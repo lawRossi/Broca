@@ -58,9 +58,11 @@ class ExecuteCode(Tool):
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         code = arguments["code"]
-        if not self._validate_code(code):
+        is_safe, reason, snippet = self._validate_code(code)
+        if not is_safe:
             agent = context.agent
-            if not await agent.ask_for_permission("Run potentially dangerous code"):
+            permission_message = f"Run potentially dangerous code: {reason}\n\n```bash\n{snippet}\n```"
+            if not await agent.ask_for_permission(permission_message):
                 return ToolResult(
                     status=ToolStatus.ERROR,
                     content="User refused to run potentially dangerous code",
@@ -96,8 +98,13 @@ class ExecuteCode(Tool):
 
         return False
 
-    def _validate_code(self, code: str) -> bool:
-        """Validate code using tree-sitter for better parsing, with regex fallback"""
+    def _validate_code(self, code: str) -> tuple[bool, str, str]:
+        """Validate code using tree-sitter for better parsing, with regex fallback.
+        
+        Returns:
+            tuple[bool, str, str]: (is_safe, reason, snippet) where reason describes why the code is 
+            flagged as dangerous, and snippet is the relevant code fragment that triggered the flag.
+        """
         if self.tree_sitter_available and self._is_shell_command(code):
             return self._validate_with_tree_sitter(code)
         else:
@@ -125,8 +132,13 @@ class ExecuteCode(Tool):
                 return True
         return False
 
-    def _validate_with_tree_sitter(self, code: str) -> bool:
-        """Validate shell commands using tree-sitter for better accuracy"""
+    def _validate_with_tree_sitter(self, code: str) -> tuple[bool, str, str]:
+        """Validate shell commands using tree-sitter for better accuracy
+        
+        Returns:
+            tuple[bool, str, str]: (is_safe, reason, snippet) where reason describes why the code is 
+            flagged as dangerous, and snippet is the relevant code fragment.
+        """
         try:
             tree = self.parser.parse(bytes(code, "utf8"))
             root_node = tree.root_node
@@ -162,7 +174,8 @@ class ExecuteCode(Tool):
                             logger.warning(
                                 f"Dangerous command detected: {command_name}"
                             )
-                            return False
+                            snippet = code[node.start_byte:node.end_byte].strip()
+                            return (False, f"Command '{command_name}' is flagged as dangerous", snippet)
 
                     # Check for dangerous flags with rm
                     if command_node and command_node.type == "word":
@@ -181,7 +194,8 @@ class ExecuteCode(Tool):
                                         logger.warning(
                                             f"Dangerous rm flag detected: {flag}"
                                         )
-                                        return False
+                                        snippet = code[node.start_byte:node.end_byte].strip()
+                                        return (False, f"'rm' with dangerous flag '{flag}' may cause destructive file deletion", snippet)
 
                 # Check for shell injection patterns
                 if node.type == "string" and (
@@ -189,14 +203,16 @@ class ExecuteCode(Tool):
                     or "$(" in code[node.start_byte : node.end_byte]
                 ):
                     logger.warning("Shell injection pattern detected")
-                    return False
+                    snippet = code[node.start_byte:node.end_byte].strip()
+                    return (False, "Shell injection pattern detected (backtick or $() substitution)", snippet)
 
                 # Recursively check children
                 for child in node.children:
-                    if not check_node(child):
-                        return False
+                    result = check_node(child)
+                    if isinstance(result, tuple) and not result[0]:
+                        return result
 
-                return True
+                return (True, "", "")
 
             return check_node(root_node)
 
@@ -206,49 +222,61 @@ class ExecuteCode(Tool):
             )
             return self._validate_with_regex(code)
 
-    def _validate_with_regex(self, code: str) -> bool:
-        """Fallback validation using regex patterns"""
+    def _validate_with_regex(self, code: str) -> tuple[bool, str, str]:
+        """Fallback validation using regex patterns
+        
+        Returns:
+            tuple[bool, str, str]: (is_safe, reason, snippet) where reason describes why the code is 
+            flagged as dangerous, and snippet is the relevant code fragment.
+        """
         dangerous_patterns = [
             # File system destruction commands
-            r"^\s*rm\s+(-rf|-r|-f)?\s+",  # rm with force/recursive flags
-            r"^\s*del\s+",  # Windows delete
-            r"^\s*rd\s+",  # Windows remove directory
-            r"^\s*format\s+",  # Disk formatting
+            (r"^\s*rm\s+(-rf|-r|-f)?\s+", "File deletion with 'rm' command"),
+            (r"^\s*del\s+", "File deletion with 'del' command"),
+            (r"^\s*rd\s+", "Directory removal with 'rd' command"),
+            (r"^\s*format\s+", "Disk formatting with 'format' command"),
             # System shutdown/reboot commands
-            r"^\s*shutdown$|^\s*shutdown\s+|^\s*shutdown\s+now|"
-            r"^\s*reboot$|^\s*reboot\s+",
-            r"^\s*halt\s+",
-            r"^\s*poweroff\s+|^\s*poweroff$",
-            r"^\s*init\s+[06]",  # init 0 or init 6 (shutdown/reboot)
+            (r"^\s*shutdown(?:\s+|$)", "System shutdown"),
+            (r"^\s*reboot(?:\s+|$)", "System reboot"),
+            (r"^\s*halt(?:\s+|$)", "System halt"),
+            (r"^\s*poweroff(?:\s+|$)", "System poweroff"),
+            (r"^\s*init\s+[06]", "System shutdown/reboot via init"),
             # Network disruption commands
-            r"^\s*iptables\s+",  # Firewall manipulation
-            r"^\s*chmod\s+[0-7]{3,4}\s+",  # Dangerous permission changes
-            r"^\s*chown\s+",  # Ownership changes
+            (r"^\s*iptables\s+", "Firewall manipulation with 'iptables'"),
+            (r"^\s*chmod\s+[0-7]{3,4}\s+", "Dangerous permission changes with 'chmod'"),
+            (r"^\s*chown\s+", "Ownership changes with 'chown'"),
             # Data destruction commands
-            r"^\s*dd\s+",  # Disk duplication/copy
-            r"^\s*mkfs\s+",  # Filesystem creation
-            r"^\s*fdisk\s+",  # Partition manipulation
+            (r"^\s*dd\s+", "Disk data operation with 'dd'"),
+            (r"^\s*mkfs\s+", "Filesystem creation with 'mkfs'"),
+            (r"^\s*fdisk\s+", "Partition manipulation with 'fdisk'"),
             # Privilege escalation
-            r"^\s*sudo\s+",  # Sudo usage
-            r"^\s*su\s+",  # Switch user
+            (r"^\s*sudo\s+", "Privilege escalation with 'sudo'"),
+            (r"^\s*su\s+", "User switching with 'su'"),
             # Shell injection patterns
-            r"\$\s*\(",  # $(command) substitution
+            (r"\$\s*\(", "Shell command substitution '$('"),
             # os.system() usage
-            r"^\s*os\.system\s*\(",
+            (r"^\s*os\.system\s*\(", "Python os.system() call"),
             # subprocess.call() usage
-            r"^\s*subprocess\.call\s*\(",
+            (r"^\s*subprocess\.call\s*\(", "Python subprocess.call()"),
             # git dangerous command
-            r"^\s*git\s+rm\s+",
-            r"^\s*git\s+reset\s+",
-            r"^\s*git\s+restore\s+",
+            (r"^\s*git\s+rm\s+", "Git file removal"),
+            (r"^\s*git\s+reset\s+", "Git reset operation"),
+            (r"^\s*git\s+restore\s+", "Git restore operation"),
         ]
 
-        for pattern in dangerous_patterns:
-            if re.search(pattern, code, re.MULTILINE | re.IGNORECASE):
+        for pattern, description in dangerous_patterns:
+            match = re.search(pattern, code, re.MULTILINE | re.IGNORECASE)
+            if match:
                 logger.warning(f"Dangerous command pattern detected: {pattern}")
-                return False
+                # Extract the matching line as snippet
+                line_start = code.rfind("\n", 0, match.start()) + 1
+                line_end = code.find("\n", match.end())
+                if line_end == -1:
+                    line_end = len(code)
+                snippet = code[line_start:line_end].strip()
+                return (False, f"{description} detected", snippet)
 
-        return True
+        return (True, "", "")
 
     async def _run_code_async(self, code: str, timeout: int = 300) -> ToolResult:
         """异步执行代码"""
