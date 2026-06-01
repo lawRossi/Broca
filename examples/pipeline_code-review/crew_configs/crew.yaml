@@ -1,51 +1,184 @@
-# 代码审查流水线 Demo
-# Pipeline 编排：多个 Agent 按顺序依次执行
+# 代码审查流水线 Demo — 完整 Pipeline 特性演示
 #
-# 使用方法:
-#   1. 创建 Agent 编排会话，工作目录指向本目录
-#   2. 在编排管理页面提交此 YAML
-#   3. 或通过 API 提交
+# 使用的 Pipeline 特性：
+# - task:      单 Agent 顺序任务
+# - fan-out:   并行分发到多个 Agent
+# - fan-in:    汇聚多个并行结果
+# - on_result: 条件跳转实现循环（流程图 goto）
+# - goto_context: 跳转时写入黑板上下文
+# - step names: 命名的步骤用于 goto 引用
 
 name: "代码审查流水线"
-description: "AI Agent 流水线：自动化代码审查与质量评估"
+description: >
+  演示 Pipeline 全部编排能力：
+  1. 代码审查员初步审查
+  2. 扇出: 安全审计 + 性能评估（并行）
+  3. 扇入: 质量管理员汇聚结果
+  4. 质量评分检查（不达标则循环修复）
+  5. 最终批准
 
 orchestrator:
   type: pipeline
   extras:
     steps:
-      - agent: "代码审查员"
+      # ═══════════════════════════════════════════
+      # Step 1: 静态代码审查
+      # ═══════════════════════════════════════════
+      - name: static_analysis
+        agent: "代码审查员"
         task: |
-          对以下代码进行全面的静态代码审查。请检查：
-          1. 代码规范与风格
+          对代码进行全面的静态代码审查：
+
+          ## 检查清单
+          1. 代码规范与风格一致性
           2. 逻辑错误与潜在 bug
           3. 代码可读性与维护性
           4. 设计模式和架构合理性
-          
-          请给出详细的审查报告，包括问题位置、严重程度和修改建议。
-        context: "这是流水线的第一步，请重点关注代码本身的正确性和规范性。"
+          5. 异常处理完整性
+          6. 重复代码和冗余逻辑
 
-      - agent: "安全审计员"
-        task: |
-          对代码进行安全审查。请检查：
-          1. SQL/NoSQL 注入风险
-          2. XSS 跨站脚本攻击
-          3. 敏感信息硬编码
-          4. 认证授权缺陷
-          5. 依赖库安全漏洞
-          
-          请列出所有安全问题及其风险等级（高危/中危/低危）。
-        context: "这是流水线的第二步，你可以参考代码审查员的输出。"
+          ## 输出格式
+          请按以下格式输出审查结果(控制在300字以内）：
+          - 总分（1-10）
+          - 问题列表（每个问题标注：位置、严重程度【高危/中危/低危】、修改建议）
+          - 代码规范评分
+          - 总体评价
 
-      - agent: "质量管理员"
+      # ═══════════════════════════════════════════
+      # Step 2: 扇出 — 安全审查 + 性能审查 并行
+      # ═══════════════════════════════════════════
+      - type: fan-out
+        name: parallel_reviews
+        branches:
+          - name: security_audit
+            agent: "安全审计员"
+            task: |
+              对代码进行安全审查：
+
+              ## 检查清单
+              1. SQL/NoSQL 注入风险
+              2. XSS 跨站脚本攻击
+              3. 敏感信息硬编码
+              4. 认证授权缺陷
+              5. 依赖库安全漏洞
+              6. 输入验证完整性
+              7. 数据加密合规性
+
+              ## 输出格式
+              请按格式输出（控制在300字以内）：
+              - 安全总分（1-10）
+              - 安全问题列表（风险等级：高危/中危/低危）
+              - 每个问题的修复建议
+              - 安全合规结论
+
+          - name: performance_review
+            agent: "性能工程师"
+            task: |
+              对代码进行性能审查（控制在300字以内）：
+
+              ## 检查清单
+              1. 算法复杂度分析
+              2. 数据库查询效率
+              3. 内存使用和泄漏风险
+              4. 缓存使用合理性
+              5. 并发处理正确性
+              6. 资源释放完整性
+              7. 热点代码识别
+
+              ## 输出格式
+              请按格式输出：
+              - 性能总分（1-10）
+              - 性能问题列表（优先级：P0/P1/P2/P3）
+              - 每个问题的优化建议
+              - 预期优化效果
+
+      # ═══════════════════════════════════════════
+      # Step 3: 扇入 — 汇聚所有审查结果
+      # ═══════════════════════════════════════════
+      - type: fan-in
+        name: aggregation
+        aggregation_strategy: agent
+        aggregator: "质量管理员"
         task: |
-          综合前两步的审查结果，给出最终的质量评估报告：
-          1. 总体质量评分（1-10分）
-          2. 代码规范得分
-          3. 安全性得分
-          4. 主要问题汇总
-          5. 改进优先级排序
-          6. 建议的操作步骤
-        context: "这是流水线的最后一步，请综合所有信息给出最终结论。"
+          综合前面所有审查结果，完成以下工作：
+
+          1. 汇总代码审查、安全审计、性能评估的报告
+          2. 识别跨领域的交叉问题
+          3. 给出综合质量评分（1-10分），精确到小数点后一位
+          4. 对黑板 key 'quality_score' 写入综合评分（数字）
+          5. 列出必须修复的关键问题（按优先级排序）
+          6. 评估整体发布风险
+
+          输出格式要求（控制在300字以内）：
+          - 综合质量评分: X.X
+          - 各维度得分: {规范, 安全, 性能}
+          - 关键问题列表
+          - 修复建议
+          - 风险等级
+
+      # ═══════════════════════════════════════════
+      # Step 4: 质量检查 + 条件跳转
+      # ═══════════════════════════════════════════
+      - name: quality_gate
+        agent: "审批员"
+        task: |
+          基于黑板中的 quality_score，判断代码质量是否达标。
+
+          如果质量达标，将 blackboard key 'gate_passed' 设为 true。
+          如果质量不达标，将 'gate_passed' 设为 false，
+          并在黑板的 'fix_feedback' 中写入需要重点修复的问题方向（控制在100字以内）。
+        on_result:
+          condition_field: "gate_passed"
+          condition_operator: "eq"
+          condition_value: true
+          goto: final_approval
+          goto_context:
+            loop_phase: "passed"
+            gate_result: "approved"
+          else_goto: fix_issues
+          else_goto_context:
+            loop_phase: "rework"
+            gate_result: "rejected"
+          max_iterations: 3
+
+      # ═══════════════════════════════════════════
+      # Step 5: 修复问题（循环回到 Step 1）
+      # ═══════════════════════════════════════════
+      - name: fix_issues
+        agent: "程序员"
+        task: |
+          根据黑板中最近的审查反馈，修复代码问题。
+
+          黑板中有以下有用信息：
+          - fix_feedback: 需要修复的问题方向
+          - quality_score: 上次评分
+          - 历史审查记录
+
+          请在修复时：
+          1. 更新代码片段展示修复后的代码
+          2. 标注每个问题的修复状态（已修复/部分修复/无法修复）
+        on_result:
+          condition_field: "loop_phase"
+          condition_operator: "eq"
+          condition_value: "rework"
+          goto: static_analysis
+          goto_context:
+            iteration: "{{ visit_count }}"
+            loop_type: "rework_loop"
+
+      # ═══════════════════════════════════════════
+      # Step 6: 最终批准
+      # ═══════════════════════════════════════════
+      - name: final_approval
+        agent: "审批员"
+        task: |
+          代码已通过所有审查阶段，请输出最终的批准报告：
+
+          1. 审查结论（通过/需观察）
+          2. 最终质量评分
+          3. 审查迭代次数
+          4. 遗留问题（如有）
+          5. 合并建议
 
 agents:
   - role: worker
@@ -57,8 +190,20 @@ agents:
     config: security_auditor.md
 
   - role: worker
+    name: "性能工程师"
+    config: performance_engineer.md
+
+  - role: worker
     name: "质量管理员"
     config: quality_manager.md
+
+  - role: worker
+    name: "审批员"
+    config: approver.md
+  
+  - role: worker
+    name: "程序员"
+    config: coder.md
 
 blackboard:
   initial_entries:
@@ -68,20 +213,32 @@ blackboard:
             import sqlite3
             conn = sqlite3.connect('users.db')
             cursor = conn.cursor()
-            
+
             # 直接拼接 SQL 查询
             query = f"SELECT * FROM users WHERE name = '{data['name']}' AND age > {data['age']}"
             cursor.execute(query)
-            
+
             # 直接 eval 用户输入
             result = eval(data.get('calc', '1+1'))
-            
+
             # 硬编码密钥
             API_KEY = "sk-1234567890abcdef"
-            
+
             # 密码明文存储
             password = data.get('password')
             cursor.execute(f"INSERT INTO users (name, password) VALUES ('{data[\"name\"]}', '{password}')")
-            
+
             conn.commit()
             return result
+
+    - key: quality_score
+      value: 0
+
+    - key: gate_passed
+      value: false
+
+    - key: loop_phase
+      value: "start"
+
+    - key: fix_feedback
+      value: ""
