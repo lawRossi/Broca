@@ -65,17 +65,12 @@ class CompositeOrchestrator(Orchestrator):
 
         try:
             main_type = self.crew.orchestrator.type
-
-            if main_type == OrchestratorType.SUPERVISOR_WORKER:
-                await self._run_supervisor_worker_with_sub_crews(result)
-            elif main_type == OrchestratorType.PIPELINE:
-                await self._run_sequential(result, phase_template="pipeline_step_{i+1}: {name}")
+            if main_type == OrchestratorType.PIPELINE:
+                await self._run_sequential(
+                    result, phase_template="pipeline_step_{i+1}: {name}"
+                )
             elif main_type == OrchestratorType.BRANCH:
                 await self._run_branch(result)
-            elif main_type == OrchestratorType.CONSENSUS:
-                await self._run_consensus(result)
-            else:
-                await self._run_sequential(result, phase_template="sub_crew_{i+1}: {name}")
 
             if result.status == ExecutionStatus.RUNNING:
                 if self._check_aborted():
@@ -197,9 +192,7 @@ class CompositeOrchestrator(Orchestrator):
                     i += 1
                     continue
 
-            phase_name = phase_template.format(
-                i=step_counter, name=sub_crew.name
-            )
+            phase_name = phase_template.format(i=step_counter, name=sub_crew.name)
             phase = PhaseResult(
                 name=phase_name,
                 status=PhaseStatus.RUNNING,
@@ -222,9 +215,7 @@ class CompositeOrchestrator(Orchestrator):
                 # ── on_result 条件跳转 ──
                 if sub_crew.on_result:
                     oc = sub_crew.on_result
-                    actual_value = await self.context.blackboard.get(
-                        oc.condition_field
-                    )
+                    actual_value = await self.context.blackboard.get(oc.condition_field)
                     matched = evaluate_condition(
                         actual_value, oc.condition_operator, oc.condition_value
                     )
@@ -268,59 +259,6 @@ class CompositeOrchestrator(Orchestrator):
                 raise
 
             i += 1
-
-    async def _run_supervisor_worker_with_sub_crews(
-        self, result: OrchestrationResult
-    ) -> None:
-        """Supervisor-Worker 主流程，Worker 阶段嵌入子 Crew"""
-        main_phase = PhaseResult(
-            name="main_supervisor",
-            status=PhaseStatus.RUNNING,
-            agents=[a.name for a in self.crew.agents],
-            started_at=datetime.now(timezone.utc),
-        )
-        result.phases.append(main_phase)
-
-        for i, sub_crew in enumerate(self.sub_crews):
-            if self._check_aborted():
-                return
-
-            sub_phase = PhaseResult(
-                name=f"sub_crew_{i + 1}: {sub_crew.name}",
-                status=PhaseStatus.RUNNING,
-                agents=[a.name for a in (sub_crew.agents or [])]
-                if sub_crew.agents
-                else [],
-                started_at=datetime.now(timezone.utc),
-            )
-            result.phases.append(sub_phase)
-
-            try:
-                sub_result = await self._run_and_check_sub_crew(sub_crew, sub_phase)
-                if sub_result is None:
-                    result.status = ExecutionStatus.ABORTED
-                    result.error = (
-                        f"Aborted after sub-crew '{sub_crew.name}'"
-                    )
-                    return
-
-                self.notify_progress(result.phases, len(self.sub_crews))
-
-            except OrchestrationStopRequest:
-                result.status = ExecutionStatus.ABORTED
-                result.error = f"Stop during sub-crew '{sub_crew.name}'"
-                return
-
-            except Exception as e:
-                sub_phase.status = PhaseStatus.FAILED
-                sub_phase.error = str(e)
-                sub_phase.completed_at = datetime.now(timezone.utc)
-                raise
-
-        self.notify_progress(result.phases, len(self.sub_crews))
-        main_phase.status = PhaseStatus.COMPLETED
-        main_phase.output = {"sub_crews_count": len(self.sub_crews)}
-        main_phase.completed_at = datetime.now(timezone.utc)
 
     # ── Branch 拓扑 ──
 
@@ -385,18 +323,16 @@ class CompositeOrchestrator(Orchestrator):
                 phase.completed_at = datetime.now(timezone.utc)
                 return False
 
-        par_results = await asyncio.gather(*[
-            run_one(sc, ph) for sc, ph in zip(self.sub_crews, phases)
-        ])
+        par_results = await asyncio.gather(
+            *[run_one(sc, ph) for sc, ph in zip(self.sub_crews, phases)]
+        )
 
         self.notify_progress(result.phases, len(self.sub_crews))
 
         if not all(par_results):
             await self.abort()
             result.status = ExecutionStatus.ABORTED
-            failed = [
-                s.name for s, ok in zip(self.sub_crews, par_results) if not ok
-            ]
+            failed = [s.name for s, ok in zip(self.sub_crews, par_results) if not ok]
             result.error = f"One or more branch sub-crews failed/aborted: {failed}"
             return
 
@@ -434,14 +370,14 @@ class CompositeOrchestrator(Orchestrator):
         )
 
         # 条件判断
-        matched = evaluate_condition(
-            actual_value, condition_operator, condition_value
-        )
+        matched = evaluate_condition(actual_value, condition_operator, condition_value)
 
         # 选择分支：matched=True → 第一个分支, matched=False → 第二个分支(如有)
         branch_names = list(branches_data.keys())
-        selected_branch_name = branch_names[0] if matched else (
-            branch_names[1] if len(branch_names) > 1 else None
+        selected_branch_name = (
+            branch_names[0]
+            if matched
+            else (branch_names[1] if len(branch_names) > 1 else None)
         )
 
         if selected_branch_name is None:
@@ -450,21 +386,16 @@ class CompositeOrchestrator(Orchestrator):
 
         # 通过名称引用 sub_crews
         sub_crew_name = branches_data[selected_branch_name]
-        sub_crew = next(
-            (sc for sc in self.sub_crews if sc.name == sub_crew_name), None
-        )
+        sub_crew = next((sc for sc in self.sub_crews if sc.name == sub_crew_name), None)
         if sub_crew is None:
             raise ValueError(
-                f"CONDITION branch references unknown sub_crew "
-                f"'{sub_crew_name}'"
+                f"CONDITION branch references unknown sub_crew '{sub_crew_name}'"
             )
 
         phase = PhaseResult(
             name=f"condition: {selected_branch_name}",
             status=PhaseStatus.RUNNING,
-            agents=[a.name for a in (sub_crew.agents or [])]
-            if sub_crew.agents
-            else [],
+            agents=[a.name for a in (sub_crew.agents or [])] if sub_crew.agents else [],
             started_at=datetime.now(timezone.utc),
         )
         result.phases.append(phase)
@@ -473,7 +404,9 @@ class CompositeOrchestrator(Orchestrator):
             sub_result = await self._run_and_check_sub_crew(sub_crew, phase)
             if sub_result is None:
                 result.status = ExecutionStatus.ABORTED
-                result.error = f"Aborted during condition branch '{selected_branch_name}'"
+                result.error = (
+                    f"Aborted during condition branch '{selected_branch_name}'"
+                )
                 return
             self.notify_progress(result.phases, 1)
         except OrchestrationStopRequest:
@@ -508,7 +441,9 @@ class CompositeOrchestrator(Orchestrator):
             actual_value = await self.context.blackboard.get(switch_field)
 
         str_value = str(actual_value) if actual_value is not None else ""
-        selected_branch_name = str_value if str_value in branches_data else default_branch
+        selected_branch_name = (
+            str_value if str_value in branches_data else default_branch
+        )
 
         logger.info(
             f"SWITCH branch matching: field='{switch_field}', "
@@ -516,28 +451,21 @@ class CompositeOrchestrator(Orchestrator):
         )
 
         if selected_branch_name is None or selected_branch_name not in branches_data:
-            logger.warning(
-                f"SWITCH branch: no match for '{actual_value}', skipping"
-            )
+            logger.warning(f"SWITCH branch: no match for '{actual_value}', skipping")
             return
 
         # 通过名称引用 sub_crews
         sub_crew_name = branches_data[selected_branch_name]
-        sub_crew = next(
-            (sc for sc in self.sub_crews if sc.name == sub_crew_name), None
-        )
+        sub_crew = next((sc for sc in self.sub_crews if sc.name == sub_crew_name), None)
         if sub_crew is None:
             raise ValueError(
-                f"SWITCH branch references unknown sub_crew "
-                f"'{sub_crew_name}'"
+                f"SWITCH branch references unknown sub_crew '{sub_crew_name}'"
             )
 
         phase = PhaseResult(
             name=f"switch: {selected_branch_name}",
             status=PhaseStatus.RUNNING,
-            agents=[a.name for a in (sub_crew.agents or [])]
-            if sub_crew.agents
-            else [],
+            agents=[a.name for a in (sub_crew.agents or [])] if sub_crew.agents else [],
             started_at=datetime.now(timezone.utc),
         )
         result.phases.append(phase)
@@ -559,251 +487,6 @@ class CompositeOrchestrator(Orchestrator):
             phase.completed_at = datetime.now(timezone.utc)
             raise
 
-    # ── Consensus 拓扑 ──
-
-    async def _run_consensus(self, result: OrchestrationResult) -> None:
-        """
-        共识拓扑执行。
-
-        所有 sub_crews 并行执行后，按策略汇聚结果达成共识。
-        配置位于 orchestrator.extras：
-        - strategy: average | majority | unanimous | weighted
-        - threshold: 通过阈值 (0.0 ~ 1.0)
-        - weights: {sub_crew_name: weight} (weighted 策略用)
-        - adjudicator: 可选，LLM 综合评议 Agent 名称
-        - adjudicator_prompt: 可选，评议指令
-        """
-        if not self.sub_crews:
-            return
-
-        extras = self.crew.orchestrator.extras
-        strategy = extras.get("strategy", "average")
-        threshold = extras.get("threshold", 0.7)
-        weights = extras.get("weights", {})
-
-        # ── Phase 1: 并行执行所有 sub_crews ──
-        phase1 = PhaseResult(
-            name="consensus_execution",
-            status=PhaseStatus.RUNNING,
-            agents=[sc.name for sc in self.sub_crews],
-            started_at=datetime.now(timezone.utc),
-        )
-        result.phases.append(phase1)
-
-        phases = []
-        for sub_crew in self.sub_crews:
-            phase = PhaseResult(
-                name=f"consensus: {sub_crew.name}",
-                status=PhaseStatus.RUNNING,
-                agents=[a.name for a in (sub_crew.agents or [])]
-                if sub_crew.agents
-                else [],
-                started_at=datetime.now(timezone.utc),
-            )
-            phases.append(phase)
-            result.phases.append(phase)
-
-        async def run_one(sub_crew: SubCrewConfig, phase: PhaseResult) -> bool:
-            try:
-                sub_result = await self._run_and_check_sub_crew(sub_crew, phase)
-                return sub_result is not None
-            except OrchestrationStopRequest:
-                return False
-            except Exception as e:
-                logger.error(f"Consensus sub-crew '{sub_crew.name}' failed: {e}")
-                phase.status = PhaseStatus.FAILED
-                phase.error = str(e)
-                phase.completed_at = datetime.now(timezone.utc)
-                return False
-
-        par_results = await asyncio.gather(*[
-            run_one(sc, ph) for sc, ph in zip(self.sub_crews, phases)
-        ])
-        self.notify_progress(result.phases, len(self.sub_crews) + 1)
-
-        phase1.status = PhaseStatus.COMPLETED
-        phase1.completed_at = datetime.now(timezone.utc)
-
-        if not all(par_results):
-            await self.abort()
-            result.status = ExecutionStatus.ABORTED
-            failed = [
-                s.name for s, ok in zip(self.sub_crews, par_results) if not ok
-            ]
-            result.error = f"One or more consensus sub-crews failed: {failed}"
-            return
-
-        # ── Phase 2: 共识汇聚 ──
-        phase2 = PhaseResult(
-            name="consensus_aggregation",
-            status=PhaseStatus.RUNNING,
-            agents=["consensus_engine"],
-            started_at=datetime.now(timezone.utc),
-        )
-        result.phases.append(phase2)
-
-        consensus = await self._run_consensus_aggregate(
-            strategy, threshold, weights
-        )
-
-        await self.context.blackboard.set(
-            "consensus_result", consensus, producer="composite_consensus"
-        )
-
-        phase2.status = PhaseStatus.COMPLETED
-        phase2.output = consensus
-        phase2.completed_at = datetime.now(timezone.utc)
-        self.notify_progress(result.phases, len(self.sub_crews) + 1)
-
-        # ── Phase 3: 可选 Adjudicator LLM 综合评议 ──
-        adjudicator_name = extras.get("adjudicator")
-        if adjudicator_name:
-            await self._run_consensus_adjudication(
-                result, adjudicator_name, extras, consensus
-            )
-
-    async def _run_consensus_aggregate(
-        self,
-        strategy: str,
-        threshold: float,
-        weights: Dict[str, float],
-    ) -> Dict[str, Any]:
-        """共识汇聚：收集 sub_crew 结果并按策略聚合"""
-        reviews_data = []
-        for sub_crew in self.sub_crews:
-            output = await self.context.blackboard.get(
-                f"sub_crew_{sub_crew.name}"
-            )
-            passed = output is not None
-            score = 1.0 if passed else 0.0
-            reviews_data.append({
-                "name": sub_crew.name,
-                "score": score,
-                "passed": passed,
-                "output": output,
-            })
-
-        if not reviews_data:
-            return {"strategy": strategy, "passed": False, "error": "No results"}
-
-        if strategy == "average":
-            scores = [r["score"] for r in reviews_data]
-            avg = sum(scores) / len(scores)
-            return {
-                "strategy": strategy,
-                "average_score": round(avg, 3),
-                "passed": avg >= threshold,
-                "threshold": threshold,
-                "sub_crew_scores": {r["name"]: r["score"] for r in reviews_data},
-                "details": {r["name"]: r["output"] for r in reviews_data if r["output"]},
-            }
-
-        elif strategy == "majority":
-            passed_count = sum(1 for r in reviews_data if r["passed"])
-            return {
-                "strategy": strategy,
-                "passed_count": passed_count,
-                "total": len(reviews_data),
-                "passed": passed_count > len(reviews_data) / 2,
-                "threshold": threshold,
-                "sub_crew_scores": {r["name"]: r["score"] for r in reviews_data},
-            }
-
-        elif strategy == "unanimous":
-            all_passed = all(r["passed"] for r in reviews_data)
-            return {
-                "strategy": strategy,
-                "passed": all_passed,
-                "threshold": threshold,
-                "sub_crew_scores": {r["name"]: r["score"] for r in reviews_data},
-            }
-
-        elif strategy == "weighted":
-            total_weight = sum(weights.get(r["name"], 1.0) for r in reviews_data)
-            if total_weight == 0:
-                total_weight = 1.0
-            weighted_score = sum(
-                r["score"] * weights.get(r["name"], 1.0) for r in reviews_data
-            ) / total_weight
-            return {
-                "strategy": strategy,
-                "weighted_score": round(weighted_score, 3),
-                "passed": weighted_score >= threshold,
-                "threshold": threshold,
-                "weights": weights,
-                "sub_crew_scores": {r["name"]: r["score"] for r in reviews_data},
-            }
-
-        return {
-            "strategy": strategy,
-            "passed": False,
-            "error": f"Unknown strategy: {strategy}",
-        }
-
-    async def _run_consensus_adjudication(
-        self,
-        result: OrchestrationResult,
-        adjudicator_name: str,
-        extras: Dict[str, Any],
-        consensus: Dict[str, Any],
-    ) -> None:
-        """Adjudicator LLM 综合评议"""
-        agent = self.context.get_agent(adjudicator_name)
-        if agent is None:
-            logger.warning(
-                f"Adjudicator '{adjudicator_name}' not found, skipping"
-            )
-            return
-
-        phase = PhaseResult(
-            name="consensus_adjudication",
-            status=PhaseStatus.RUNNING,
-            agents=[adjudicator_name],
-            started_at=datetime.now(timezone.utc),
-        )
-        result.phases.append(phase)
-
-        # 收集各 sub_crew 的输出
-        sub_results = {}
-        for sub_crew in self.sub_crews:
-            val = await self.context.blackboard.get(
-                f"sub_crew_{sub_crew.name}"
-            )
-            if val:
-                sub_results[sub_crew.name] = val
-
-        adjudicator_prompt = extras.get(
-            "adjudicator_prompt",
-            "Review the outputs from all sub-crews and provide a final synthesis.",
-        )
-
-        prompt = PromptLoader.render(
-            "composite",
-            "aggregator_prompt.j2",
-            prompt=adjudicator_prompt,
-            results=sub_results,
-        )
-
-        from broca.execution_engine import ExecutionStatus as ES
-
-        trigger_message = MessageProtocol.create_user_message(content=prompt)
-        exec_result = await agent.run(trigger_message, from_agent=True)
-
-        if exec_result.status == ES.COMPLETED:
-            synthesis = agent.context.get_latest_assistant_message() or ""
-            phase.status = PhaseStatus.COMPLETED
-            phase.output = {"synthesis": synthesis}
-            await self.context.blackboard.set(
-                "consensus_synthesis", synthesis, producer="adjudicator"
-            )
-        else:
-            logger.warning(f"Adjudicator failed: {exec_result.error}")
-            phase.status = PhaseStatus.FAILED
-            phase.error = exec_result.error
-
-        phase.completed_at = datetime.now(timezone.utc)
-        self.notify_progress(result.phases, len(self.sub_crews) + 1)
-
     async def _run_aggregator(
         self,
         result: OrchestrationResult,
@@ -814,9 +497,7 @@ class CompositeOrchestrator(Orchestrator):
         # 收集所有子 Crew 的结果
         sub_results = {}
         for sub_crew in self.sub_crews:
-            val = await self.context.blackboard.get(
-                f"sub_crew_{sub_crew.name}"
-            )
+            val = await self.context.blackboard.get(f"sub_crew_{sub_crew.name}")
             if val:
                 sub_results[sub_crew.name] = val
 
@@ -891,10 +572,7 @@ class CompositeOrchestrator(Orchestrator):
                 if agent:
                     sub_context.register_agent(agent_cfg.name, agent)
 
-        if (
-            sub_crew.orchestrator.type == OrchestratorType.PIPELINE
-            and sub_crew.steps
-        ):
+        if sub_crew.orchestrator.type == OrchestratorType.PIPELINE and sub_crew.steps:
             sub_config.orchestrator.extras["steps"] = [
                 s.to_dict() for s in sub_crew.steps
             ]

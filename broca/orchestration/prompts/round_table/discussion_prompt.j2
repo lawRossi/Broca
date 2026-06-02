@@ -6,13 +6,6 @@
 You are arguing from the **{{ stance }}** perspective.
 {% endif %}
 
-{% if history %}
-## Discussion History
-{% for entry in history[-6:] %}
-- **{{ entry.agent }}** (Round {{ entry.round }}): {{ entry.content | string | truncate(300) }}
-{% endfor %}
-{% endif %}
-
 ## Your Turn (Round {{ round_num }})
 
 {% if speaker_order_info %}

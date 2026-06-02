@@ -363,7 +363,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             )
             return True
 
-        progress_tag = self.blackboard.get(self.progress_check_key)
+        progress_tag = await self.blackboard.get(self.progress_check_key)
         return str(progress_tag).lower() == "true"
 
     # ═══════════════════════════════════════════════

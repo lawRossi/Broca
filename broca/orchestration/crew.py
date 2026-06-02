@@ -23,8 +23,6 @@ class OrchestratorType(str, Enum):
     PIPELINE = "pipeline"
     SUPERVISOR_WORKER = "supervisor-worker"
     ROUND_TABLE = "round-table"
-    BROADCAST = "broadcast"
-    CONSENSUS = "consensus"
     COMPOSITE = "composite"
     BRANCH = "branch"
 

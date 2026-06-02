@@ -197,6 +197,10 @@ class Orchestrator(ABC):
     def orchestrator_type(self) -> OrchestratorType:
         return self.crew.orchestrator.type
 
+    @property
+    def blackboard(self) -> Blackboard:
+        return self.context.blackboard
+
     @abstractmethod
     async def run(self) -> OrchestrationResult:
         """
@@ -388,14 +392,6 @@ class OrchestratorFactory:
         OrchestratorType.ROUND_TABLE: (
             "broca.orchestration.round_table",
             "RoundTableOrchestrator",
-        ),
-        OrchestratorType.BROADCAST: (
-            "broca.orchestration.broadcast",
-            "BroadcastOrchestrator",
-        ),
-        OrchestratorType.CONSENSUS: (
-            "broca.orchestration.consensus",
-            "ConsensusOrchestrator",
         ),
         OrchestratorType.COMPOSITE: (
             "broca.orchestration.composite",
