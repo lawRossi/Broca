@@ -10,9 +10,10 @@ export const useChatStore = defineStore('chat', () => {
 
   // Agent 消息可见性过滤
   const visibleAgentIds = ref<string[]>([])
-  let _filterInitialized = false
+  let _userModified = false
 
   function toggleAgentVisibility(agentId: string) {
+    _userModified = true
     const idx = visibleAgentIds.value.indexOf(agentId)
     if (idx !== -1) {
       visibleAgentIds.value = visibleAgentIds.value.filter((id) => id !== agentId)
@@ -22,6 +23,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function setVisibleAgents(agentIds: string[]) {
+    _userModified = true
     visibleAgentIds.value = agentIds
   }
 
@@ -246,9 +248,8 @@ export const useChatStore = defineStore('chat', () => {
             last_context_length: a.last_context_length,
           }))
           agents.value = agentList
-          // 仅在首次加载时初始化可见列表（全部可见），后续自动刷新不再触碰
-          if (!_filterInitialized) {
-            _filterInitialized = true
+          // 用户未手动筛选过时，默认全部可见
+          if (!_userModified) {
             visibleAgentIds.value = agentList.map((a: any) => a.agent_id)
           }
           // Initialize agent statuses to 'idle' for all known agents
