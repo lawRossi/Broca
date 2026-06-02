@@ -60,15 +60,3 @@ static_analysis ─→ fan-out ─→ fan-in ─→ quality_gate ──passed─
 
 修改 `quality_gate` 步骤的 `on_result` 条件，或调整 agent 配置中的审查要求。
 
-## 文件结构
-
-```
-examples/pipeline_code-review/
-├── README.md
-└── crew_configs/
-    ├── crew.yaml                  # 编排配置（主入口）
-    ├── code_reviewer.md           # 代码审查员 Agent 配置
-    ├── security_auditor.md        # 安全审计员 Agent 配置
-    ├── performance_engineer.md    # 性能工程师 Agent 配置
-    ├── quality_manager.md         # 质量管理员 Agent 配置
-    └── approver.md                # 审批员 Agent 配置

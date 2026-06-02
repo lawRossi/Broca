@@ -28,23 +28,6 @@
 5. 选择预置模板「研究报告生成」或直接使用 `crew.yaml`
 6. 提交执行
 
-### 方式二：通过 API 提交
-
-```bash
-curl -X POST http://localhost:9000/api/crews \
-  -H "Content-Type: application/json" \
-  -d '{
-    "yaml_path": "/path/to/examples/supervisor-worker/crew.yaml",
-    "session_id": "<your-session-id>"
-  }'
-```
-
-### 方式三：直接校验配置
-
-```bash
-broca run ./examples/supervisor-worker/crew.yaml --validate
-```
-
 ## 自定义
 
 ### 修改研究主题
@@ -65,7 +48,7 @@ broca run ./examples/supervisor-worker/crew.yaml --validate
 examples/supervisor-worker/
 ├── README.md                               # 本文件
 ├── crew.yaml                               # 编排配置（主入口）
-└── .broca/agents/
+└── .agents/agents/
     ├── research_director.md                # 研究主管 Agent
     ├── literature_researcher.md            # 文献研究员 Agent
     ├── data_analyst.md                     # 数据分析师 Agent
