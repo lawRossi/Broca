@@ -1,54 +1,97 @@
-# 圆桌辩论 Demo
-# 多 Agent 围绕议题进行多轮辩论
+# 标准辩论赛 Demo
+# 使用 Round-Table 每轮自定义配置实现标准辩论流程
 #
-# 使用方法:
-#   1. 创建 Agent 编排会话，工作目录指向本目录
-#   2. 在编排管理页面提交此 YAML
-#   3. 或通过 API 提交
-#
-# 前提: 会话必须包含以下 Agent（已在 .broca/agents/ 中定义）
+# 辩论流程：
+#   主持人开场 → 正方立论 → 反方立论
+#   → 自由辩论(双方交替) → 正方总结 → 反方总结
+#   → 评委评分 → 主持人总结
 
-name: "圆桌辩论"
-description: "AI Agent 圆桌辩论：AI 对人类社会的利与弊"
+name: "标准辩论赛"
+description: "AI Agent 标准辩论赛：正反双方分阶段辩论，评委打分"
 
 orchestrator:
   type: round-table
-  max_rounds: 2  # 辩论轮数
+  max_rounds: 4
   extras:
-    moderator_opening: true    # 主持人开场语
-    moderator_closing: true    # 主持人结束语
-    speaker_order: moderator   # 发言顺序: fixed | random | moderator
+    moderator_opening: true
+    moderator_closing: true
+    speaker_order: moderator
 
 agents:
   - role: moderator
     name: "主持人"
     config: moderator.md
-    use_history: false      # 每次辩论开始清空历史，从干净状态开始
+    use_history: false
 
   - role: participant
-    name: "正方"
-    config: pro.md
+    name: "正方一辩"
+    config: pro1.md
     use_history: false
     extras:
-      stance: pro          # 支持立场
+      stance: pro
 
   - role: participant
-    name: "反方"
-    config: con.md
+    name: "正方二辩"
+    config: pro2.md
     use_history: false
     extras:
-      stance: con          # 反对立场
+      stance: pro
+  
+  - role: participant
+    name: "正方三辩"
+    config: pro3.md
+    use_history: false
+    extras:
+      stance: pro
+  
+  - role: participant
+    name: "正方四辩"
+    config: pro4.md
+    use_history: false
+    extras:
+      stance: pro
 
   - role: participant
-    name: "中立评估员"
-    config: analyst.md
+    name: "反方一辩"
+    config: con1.md
     use_history: false
     extras:
-      stance: neutral      # 中立立场
+      stance: con
+    
+  - role: participant
+    name: "反方二辩"
+    config: con2.md
+    use_history: false
+    extras:
+      stance: con
+  
+  - role: participant
+    name: "反方三辩"
+    config: con3.md
+    use_history: false
+    extras:
+      stance: con
+    
+  - role: participant
+    name: "反方四辩"
+    config: con4.md
+    use_history: false
+    extras:
+      stance: con
+
+  - role: participant
+    name: "评委"
+    config: judge.md
+    use_history: false
 
 blackboard:
   initial_entries:
     - key: topic
-      value: "人工智能对人类社会究竟是利大于弊还是弊大于利?"
-    - key: debate-rules
-      value: "辩论只进行两轮，各方每轮发言不能超过500字"
+      value: "人工智能对人类社会究竟是利大于弊还是弊大于利？"
+    - key: debate_rules
+      value: |
+        辩论规则：
+        1. 立论阶段：每方各发言一轮，阐述核心论点（控制在200字以内）
+        2. 攻辩阶段：双方交替发言，可互相反驳（没人发言控制在200字以内）
+        3. 总结陈词：每方总结核心观点（控制在200字以内）
+        4. 保持理性和建设性的辩论态度
