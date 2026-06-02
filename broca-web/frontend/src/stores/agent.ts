@@ -59,9 +59,8 @@ export const useAgentStore = defineStore('agent', () => {
         type: agent.type || 'assistant',
       }))
 
-      // 仅在首次加载时初始化可见列表（全部可见），后续自动刷新不再触碰用户筛选
-      if (!_filterInitialized) {
-        _filterInitialized = true
+      // 用户未手动筛选过时，默认全部可见
+      if (!_userModified) {
         visibleAgentIds.value = agents.value.map((a) => a.agent_id)
       }
 
@@ -337,10 +336,12 @@ export const useAgentStore = defineStore('agent', () => {
 
   // Agent 消息可见性过滤
   const visibleAgentIds = ref<string[]>([])
-  let _filterInitialized = false
+  // 标记用户是否手动操作过筛选，clearCache 时重置
+  let _userModified = false
 
   // 切换单个 Agent 可见性
   const toggleAgentVisibility = (agentId: string) => {
+    _userModified = true
     const idx = visibleAgentIds.value.indexOf(agentId)
     if (idx !== -1) {
       visibleAgentIds.value = visibleAgentIds.value.filter((id) => id !== agentId)
@@ -351,10 +352,11 @@ export const useAgentStore = defineStore('agent', () => {
 
   // 设置仅显示指定 Agent
   const setVisibleAgents = (agentIds: string[]) => {
+    _userModified = true
     visibleAgentIds.value = agentIds
   }
 
-  // 清除缓存
+  // 清除缓存（切换 session 时调用）
   const clearCache = () => {
     agentConfigs.value.clear()
     agents.value = []
@@ -362,7 +364,7 @@ export const useAgentStore = defineStore('agent', () => {
     selectedAgent.value = null
     selectedAgentConfig.value = null
     visibleAgentIds.value = []
-    _filterInitialized = false
+    _userModified = false
   }
 
   return {
@@ -394,7 +396,6 @@ export const useAgentStore = defineStore('agent', () => {
     visibleAgentIds,
     toggleAgentVisibility,
     setVisibleAgents,
-    llmModels,
     getAgentById,
     getAgentConfigById,
     updateAgentStatus,

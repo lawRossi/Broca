@@ -743,7 +743,7 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
     messageStates.value.clear()
     pendingChunks.value.clear()
-    agentStore.agents = []
+    agentStore.clearCache()
     // 清理 Runner 状态
     stopRunnerPolling()
     runnerInfo.value = null
