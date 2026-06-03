@@ -67,12 +67,12 @@ async def get_llm_models(provider: str) -> ApiResponse:
 
         provider_config = config[provider]
 
-        # 提取模型配置（排除base_url和api_key）
+        # 提取模型配置（从 models 字段中读取）
+        models_config = provider_config.get("models", {})
         models = []
-        for model_id, model_config in provider_config.items():
-            if model_id not in ["base_url", "api_key"] and isinstance(model_config, dict):
-                model_name = model_id
-                models.append({"id": model_id, "name": model_name})
+        for model_id, model_config in models_config.items():
+            if isinstance(model_config, dict):
+                models.append({"id": model_id, "name": model_id})
 
         return ApiResponse.success(models, msg=f"Models for provider '{provider}' retrieved successfully")
     except Exception as e:

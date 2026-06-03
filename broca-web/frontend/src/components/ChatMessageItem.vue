@@ -1212,6 +1212,18 @@ const handleUndoToHere = async () => {
 /* ========== 暗色模式 ========== */
 @media (prefers-color-scheme: dark) {
   /* Markdown 内容 - 容器背景色(bg-green-50)在暗色下仍是浅色，所以文字保持深色，不改背景避免黑色块 */
+
+  /* 标题保持深色以在浅色背景上可读 */
+  :deep(.markdown-content h1),
+  :deep(.markdown-content h2),
+  :deep(.markdown-content h3),
+  :deep(.markdown-content h4),
+  :deep(.markdown-content h5),
+  :deep(.markdown-content h6) {
+    color: #0f172a;
+    border-bottom-color: #cbd5e1;
+  }
+
   :deep(.markdown-content blockquote) {
     color: #334155;
     border-left-color: #64748b;
@@ -1244,7 +1256,7 @@ const handleUndoToHere = async () => {
   }
 
   .params-todo-name {
-    color: #e2e8f0;
+    color: #1e293b;
   }
 
   .params-question {
