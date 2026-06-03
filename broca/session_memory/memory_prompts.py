@@ -5,34 +5,40 @@ Session Memory Prompt 模板
 
 # 默认模板（启动时写入文件）
 DEFAULT_MEMORY_TEMPLATE = """# Session Title
-_A short and distinctive 5-10 word descriptive title for the session._ (DO NOT DELETE THIS LINE)
+_A short and distinctive 5-10 word descriptive title for the session._
+{session title}
 
 # Current State
-_What is actively being worked on right now? Pending tasks not yet completed._ (DO NOT DELETE THIS LINE)
+_What is actively being worked on right now? Pending tasks not yet completed._
+{current state}
 
 # Task Specification
-_What did the user ask to do? Design decisions and context._ (DO NOT DELETE THIS LINE)
+_What did the user ask to do? What is the design decisions and context._
+{task specification}
 
 # Files and Functions
-_Important files and their purposes._ (DO NOT DELETE THIS LINE)
+_Important files and their purposes._
+{important files}
 
-# Workflow
-_Commands and their execution order._ (DO NOT DELETE THIS LINE)
+# Important History
+_Important history information for later steps._
+{important history}
 
 # Errors & Corrections
-_Errors encountered and how they were fixed, what did the user correct/feedback?._ (DO NOT DELETE THIS LINE)
-
-# Project Documentation
-_Important project components/modules and their purposes._ (DO NOT DELETE THIS LINE)
+_Errors encountered and how they were fixed, what did the user correct/feedback?._
+{errors/corrections}
 
 # Learnings
-_What has worked well? What has not?_ (DO NOT DELETE THIS LINE)
+_What has worked well? What has not?_
+{learnings}
 
 # Key Results
-_Specific outputs requested by the user._ (DO NOT DELETE THIS LINE)
+_Specific outputs requested by the user._
+{key results}
 
 # Worklog
-_Step by step actions taken. Very terse summary for each step_ (DO NOT DELETE THIS LINE)
+_Step by step actions taken. Very terse summary for each step_
+{worklog}
 """
 
 
@@ -55,5 +61,5 @@ Critical Rules for Editing:
 7. Always update "Current State" to reflect the most recent work
 8. You ONLY have access to edit_file tool
 
-REMEMBER: Make all edits in one step and stop. Do not continue after the edits. 
+REMEMBER: Make all parallel edits in one step and stop. Do not continue after the edits. 
 """.format(memory_path=memory_path, current_content=current_content)

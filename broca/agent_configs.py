@@ -6,9 +6,9 @@ from dataclasses import asdict, dataclass
 class SessionMemoryConfig:
     """Session Memory 配置"""
 
-    minimum_messages_to_init: int = 50
-    minimum_messages_between_update: int = 20
-    steps_between_updates: int = 10
+    minimum_messages_to_init: int = 100
+    minimum_messages_between_update: int = 30
+    steps_between_updates: int = 30
 
 
 DEFAULT_SESSION_MEMORY_CONFIG = SessionMemoryConfig()
@@ -20,14 +20,16 @@ class ContextCompactConfig:
 
     # 策略A：过期工具结果清理
     enable_stale_tool_cleanup: bool = True
-    stale_tool_cleanup_token_threshold: int = 30000  # 触发清理的 token 阈值
-    min_stale_messages: int = 20  # 超过多少条消息视为过期
-    min_recent_tool_results_to_keep: int = 5  # 至少保留最近几条工具结果
+    stale_cleanup_threshold: int = 50000  # 触发清理的 token 阈值
+    stale_cleanup_percentage: float = 0.3  # 上下文窗口百分比
+    min_stale_messages: int = 30  # 超过多少条消息视为过期
+    min_recent_tool_results_to_keep: int = 10  # 至少保留最近几条工具结果
     min_stale_tokens: int = 5000
 
     # 策略B：Session Memory 截断
     enable_session_memory_truncation: bool = True
-    session_memory_truncation_token_threshold: int = 200000  # 触发截断的 token 阈值
+    session_trunc_threshold: int = 500000  # 触发截断的 token 阈值
+    session_trunc_percentage: float = 0.8  # 上下文窗口百分比
 
 
 DEFAULT_COMPACT_CONFIG = ContextCompactConfig()

@@ -84,10 +84,10 @@ class LLMClient:
 
         if provider not in self.config:
             raise ValueError(f"Unknown provider: {provider}")
-        if model not in self.config[provider]:
+        if model not in self.config[provider].get("models", {}):
             raise ValueError(f"Unknown model: {model}")
 
-        modality = self.config[provider][model]["modality"]
+        modality = self.config[provider]["models"][model]["meta"]["modality"]
         raw_input = None
         if message.message_type == MessageType.USER_MESSAGE:
             text_content = message.data.get("content", "")
@@ -154,10 +154,10 @@ class LLMClient:
     ) -> AsyncGenerator[dict, None]:
         if provider not in self.config:
             raise ValueError(f"Unknown provider: {provider}")
-        if model not in self.config[provider]:
+        if model not in self.config[provider].get("models", {}):
             raise ValueError(f"Unknown model: {model}")
-        args = copy.deepcopy(self.config[provider][model])
-        del args["modality"]
+        args = copy.deepcopy(self.config[provider]["models"][model])
+        del args["meta"]
 
         response = await acompletion(
             base_url=self.config[provider]["base_url"],

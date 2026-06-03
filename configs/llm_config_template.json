@@ -2,46 +2,67 @@
     "z-ai": {
         "base_url": "https://open.bigmodel.cn/api/paas/v4",
         "api_key": "",
-        "glm-4.7" : {
-            "model": "openai/glm-4.7-flash",
-            "temperature": 0.5,
-            "modality": {"text": ""}
+        "models": {
+            "glm-4.7": {
+                "model": "openai/glm-4.7-flash",
+                "temperature": 0.5,
+                "meta": {
+                    "modality": {"text": ""},
+                    "context_window": 131072
+                }
+            }
         }
     },
     "deepseek": {
         "base_url": "https://api.deepseek.com/v1",
         "api_key": "",
-        "deepseek-v4-flash-thinking": {
-            "model": "openai/deepseek-v4-flash",
-            "temperature": 0.5,
-            "max_tokens": 15000,
-            "extra_body": {"thinking": {"type": "enabled"}},
-            "reasoning_effort": "high",
-            "allowed_openai_params": ["reasoning_effort"],
-            "modality": {"text": ""}
-        },
-        "deepseek-v4-flash": {
-            "model": "openai/deepseek-v4-flash",
-            "temperature": 0.5,
-            "max_tokens": 15000,
-            "extra_body": {"thinking": {"type": "disabled"}},
-            "modality": {"text": ""}
+        "models": {
+            "deepseek-v4-flash-thinking": {
+                "model": "openai/deepseek-v4-flash",
+                "temperature": 0.5,
+                "max_tokens": 15000,
+                "extra_body": {"thinking": {"type": "enabled"}},
+                "reasoning_effort": "high",
+                "allowed_openai_params": ["reasoning_effort"],
+                "meta": {
+                    "modality": {"text": ""},
+                    "context_window": 65536
+                }
+            },
+            "deepseek-v4-flash": {
+                "model": "openai/deepseek-v4-flash",
+                "temperature": 0.5,
+                "max_tokens": 15000,
+                "extra_body": {"thinking": {"type": "disabled"}},
+                "meta": {
+                    "modality": {"text": ""},
+                    "context_window": 65536
+                }
+            }
         }
     },
     "openrouter": {
         "base_url": "https://openrouter.ai/api/v1",
         "api_key": "",
-        "minimax": {
-            "model": "openai/minimax/minimax-m2.5:free",
-            "temperature": 0.5,
-            "extra_body": {"reasoning": {"enabled": true}},
-            "modality": {"text": ""}
-        },
-        "hy3-preview": {
-            "model": "openai/tencent/hy3-preview:free",
-            "temperature": 0.5,
-            "extra_body": {"reasoning": {"enabled": true}},
-            "modality": {"text": ""}
+        "models": {
+            "minimax": {
+                "model": "openai/minimax/minimax-m2.5:free",
+                "temperature": 0.5,
+                "extra_body": {"reasoning": {"enabled": true}},
+                "meta": {
+                    "modality": {"text": ""},
+                    "context_window": 131072
+                }
+            },
+            "hy3-preview": {
+                "model": "openai/tencent/hy3-preview:free",
+                "temperature": 0.5,
+                "extra_body": {"reasoning": {"enabled": true}},
+                "meta": {
+                    "modality": {"text": ""},
+                    "context_window": 131072
+                }
+            }
         }
     }
 }

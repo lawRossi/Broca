@@ -260,7 +260,7 @@ class SessionRevertService:
             if collecting:
                 message_ids_to_revert.add(msg.message_id)
 
-        logger.info(f"标记消息为已撤销: {message_ids_to_revert}")
+        logger.debug(f"标记消息为已撤销: {message_ids_to_revert}")
 
         # 更新消息状态
         for message_id in message_ids_to_revert:

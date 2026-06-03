@@ -24,12 +24,12 @@ class ToolManager:
         "web_fetch",
         "web_search",
         "ask_user",
+        "assign_task",
         "task_management",
         "todo_management",
         "cron",
         "read_blackboard",
         "list_blackboard",
-        "write_blackboard",
         "blackboard_changes",
     }
 

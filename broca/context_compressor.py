@@ -8,8 +8,11 @@
 根据设计文档 docs/context-compression-design.md 实现。
 """
 
+import json
+import os
 from collections import defaultdict
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import List, Optional
 
 from broca.agent_configs import ContextCompactConfig
@@ -48,6 +51,51 @@ class ContextCompressor:
 
     def __init__(self):
         self.stats = CompressionStats()
+        self._llm_config: Optional[dict] = None
+
+    def _get_llm_config(self) -> dict:
+        """加载并缓存 LLM 配置"""
+        if self._llm_config is None:
+            config_path = os.getenv("BROCA_LLM_CONFIG")
+            if not config_path:
+                config_path = Path(__file__).parent.parent / "configs" / "llm_config.json"
+            with open(config_path) as f:
+                self._llm_config = json.load(f)
+        return self._llm_config
+
+    def _get_effective_threshold(
+        self, absolute_threshold: int, percentage: float, agent: "Agent"
+    ) -> int:
+        """
+        计算有效触发阈值。
+
+        有效阈值 = min(绝对阈值, context_window * percentage)
+
+        Args:
+            absolute_threshold: 配置文件中的绝对 token 阈值
+            percentage: 上下文窗口百分比（自动钳位到 [0.05, 1.0]）
+            agent: Agent 实例（用于获取 provider 和 model）
+
+        Returns:
+            较小的有效阈值
+        """
+        percentage = max(0.05, min(1.0, percentage))
+
+        llm_config = self._get_llm_config()
+        provider = agent.config.provider
+        model = agent.config.model
+
+        # 尝试从 LLM 配置中获取模型对应的 context_window
+        if provider in llm_config and "models" in llm_config[provider]:
+            if model in llm_config[provider]["models"]:
+                meta = llm_config[provider]["models"][model].get("meta", {})
+                context_window = meta.get("context_window")
+                if context_window is not None:
+                    percentage_threshold = int(context_window * percentage)
+                    return min(absolute_threshold, percentage_threshold)
+
+        # 如果取不到 context_window，回退使用绝对阈值
+        return absolute_threshold
 
     async def check_and_compress(
         self, context, execution_engine, agent: "Agent"
@@ -74,7 +122,12 @@ class ContextCompressor:
 
         # 策略A：清理过期工具调用结果
         if compact_config.enable_stale_tool_cleanup:
-            if total_tokens > compact_config.stale_tool_cleanup_token_threshold:
+            effective_threshold = self._get_effective_threshold(
+                compact_config.stale_cleanup_threshold,
+                compact_config.stale_cleanup_percentage,
+                agent,
+            )
+            if total_tokens > effective_threshold:
                 await self._cleanup_stale_tool_results(
                     context=context,
                     execution_engine=execution_engine,
@@ -83,7 +136,12 @@ class ContextCompressor:
 
         # 策略B：Session Memory 截断
         if compact_config.enable_session_memory_truncation:
-            if total_tokens > compact_config.session_memory_truncation_token_threshold:
+            effective_threshold = self._get_effective_threshold(
+                compact_config.session_trunc_threshold,
+                compact_config.session_trunc_percentage,
+                agent,
+            )
+            if total_tokens > effective_threshold:
                 await self._try_session_memory_truncation(
                     context=context,
                     execution_engine=execution_engine,
@@ -216,35 +274,6 @@ class ContextCompressor:
         判断工具调用结果是否被清除。
         """
         return msg.get("content") == Context.STALE_TOOL_RESULT_PLACEHOLDER
-
-    def _get_msg_step(self, msg: dict) -> Optional[int]:
-        """
-        从工具调用消息中提取 step 号。
-
-        工具结果消息在 context 中存储为 dict，格式如：
-        {"role": "tool", "tool_call_id": "...", "content": "..."}
-
-        如果消息包含 _meta 字段（由 _cleanup_stale_tool_results 在标记时附加），
-        则从中提取 step 号。否则返回 None。
-        """
-        meta = msg.get("_meta")
-        if isinstance(meta, dict):
-            return meta.get("step")
-        return None
-
-    def _get_msg_timestamp(self, msg: dict) -> Optional[float]:
-        """
-        从工具调用消息中提取时间戳。
-
-        如果消息包含 _meta 字段，则从中提取时间戳。
-        否则返回 None。
-        """
-        meta = msg.get("_meta")
-        if isinstance(meta, dict):
-            ts = meta.get("timestamp")
-            if ts is not None:
-                return float(ts)
-        return None
 
     async def _update_expired_in_db(self, session_manager: SessionManager):
         """批量更新数据库中的 is_expired 字段"""
