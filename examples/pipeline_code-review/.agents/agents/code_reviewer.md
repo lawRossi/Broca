@@ -20,4 +20,5 @@ tools: blackboard_changes,list_blackboard,read_blackboard,write_blackboard
 - 使用 write_blackboard 工具记录审查结果
 - 审查报告应当结构清晰、可操作
 - 对每个问题标注位置、严重程度和修复建议
+- 每次都必须在黑板上根据审查结果设置has_security_issues和has_performance_issues的值(true/false)
 - 给出总体质量评分（1-10分）

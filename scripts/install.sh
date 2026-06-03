@@ -636,20 +636,15 @@ if [[ -d "$VSCODE_DIR" ]]; then
     if ! BUILD_OUTPUT=$(npm install 2>&1); then
         warn "npm install 失败: $BUILD_OUTPUT"
     else
-        info "构建 VS Code 插件..."
-        if ! BUILD_OUTPUT=$(npm run build 2>&1); then
-            warn "VS Code 插件构建失败: $BUILD_OUTPUT"
+        info "打包 VS Code 插件..."
+        if ! BUILD_OUTPUT=$(npm run package 2>&1); then
+            warn "VS Code 插件打包失败: $BUILD_OUTPUT"
         else
-            info "打包 VS Code 插件..."
-            if ! BUILD_OUTPUT=$(npm run package 2>&1); then
-                warn "VS Code 插件打包失败: $BUILD_OUTPUT"
+            VSIX_FILE=$(ls -t "$VSCODE_DIR"/*.vsix 2>/dev/null | head -1 || true)
+            if [[ -n "$VSIX_FILE" ]]; then
+                info "VS Code 插件已打包: $VSIX_FILE"
             else
-                VSIX_FILE=$(ls -t "$VSCODE_DIR"/*.vsix 2>/dev/null | head -1 || true)
-                if [[ -n "$VSIX_FILE" ]]; then
-                    info "VS Code 插件已打包: $VSIX_FILE"
-                else
-                    warn "未找到生成的 .vsix 文件"
-                fi
+                warn "未找到生成的 .vsix 文件"
             fi
         fi
     fi

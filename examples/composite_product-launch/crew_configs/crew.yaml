@@ -1,25 +1,91 @@
 # 产品发布决策 Demo
-# Composite 编排：Supervisor-Worker 主流程 + Broadcast/Consensus 子流程
+# Composite 有向图编排：TASK 节点 + CREW 节点（子编排）
 #
-# 使用方法:
-#   1. 创建 Agent 编排会话，工作目录指向本目录
-#   2. 在编排管理页面提交此 YAML
-#   3. 或通过 API 提交
+# 流程：
+#   1. 发布协调员启动调研（TASK）
+#   2. 市场调研分析（CREW → pipeline 子编排）
+#   3. 发布决策评审（CREW → pipeline 子编排）
+#   4. 发布协调员撰写最终报告（TASK）
 
 name: "产品发布决策"
 description: "AI Agent 组合编排：产品发布前的全面评估与决策"
 
 orchestrator:
-  type: supervisor-worker
-  max_rounds: 1
+  type: composite
+  extras:
+    graph:
+      entry: start
+      nodes:
+        # ═══════════════════════════════════════════
+        # 入口
+        # ═══════════════════════════════════════════
+        start:
+          edges:
+            - target: kickoff
+
+        # ═══════════════════════════════════════════
+        # Step 1: 发布协调员启动调研（TASK）
+        # ═══════════════════════════════════════════
+        kickoff:
+          agent: "发布协调员"
+          task: |
+            启动产品发布评估流程。你的任务是：
+
+            1. 读取 product_info 了解产品概况
+            2. 制定评估计划，明确需要调研的维度
+            3. 将评估计划写入黑板 key 'assessment_plan'
+
+            请输出评估计划，包括：
+            - 市场分析要点
+            - 用户研究重点
+            - 技术评估范围
+            - 风险关注领域
+          edges:
+            - target: market_research
+
+        # ═══════════════════════════════════════════
+        # Step 2: 市场调研分析（CREW）
+        # ═══════════════════════════════════════════
+        market_research:
+          type: crew
+          crew_ref: "市场调研分析"
+          context:
+            plan: "{{ blackboard.assessment_plan }}"
+          edges:
+            - target: decision_review
+
+        # ═══════════════════════════════════════════
+        # Step 3: 发布决策评审（CREW）
+        # ═══════════════════════════════════════════
+        decision_review:
+          type: crew
+          crew_ref: "发布决策评审"
+          context:
+            research_results: "{{ blackboard.market_research }}"
+          edges:
+            - target: final_report
+
+        # ═══════════════════════════════════════════
+        # Step 4: 发布协调员撰写最终报告（TASK）
+        # ═══════════════════════════════════════════
+        final_report:
+          agent: "发布协调员"
+          task: |
+            综合所有调研和评审结果，撰写最终的产品发布决策报告。
+
+            报告应包括：
+            1. 市场分析结论
+            2. 技术评估结论
+            3. 风险等级评估
+            4. 综合发布建议（批准/暂缓/拒绝）
+            5. 如批准，列出发布 checklist
+            6. 如暂缓，列出必须解决的问题和 Timeline
 
 agents:
-  # Supervisor - 发布协调员
-  - role: supervisor
+  - role: worker
     name: "发布协调员"
     config: launch_coordinator.md
 
-  # Broadcast 子流程的 Workers
   - role: worker
     name: "市场研究员"
     config: market_researcher.md
@@ -32,27 +98,62 @@ agents:
     name: "技术评估员"
     config: tech_assessor.md
 
-  # Consensus 子流程的 Reviewers
-  - role: reviewer
+  - role: worker
     name: "业务负责人"
     config: business_director.md
 
-  - role: reviewer
+  - role: worker
     name: "质量经理"
     config: quality_manager.md
 
-  - role: reviewer
+  - role: worker
     name: "风险管理员"
     config: risk_manager.md
 
 sub_crews:
+  # ── Pipeline 子流程：市场调研分析 ──
   - name: "市场调研分析"
     orchestrator:
-      type: broadcast
+      type: pipeline
+      extras:
+        graph:
+          entry: start
+          nodes:
+            start:
+              edges:
+                - target: market
+            market:
+              agent: "市场研究员"
+              task: |
+                分析产品市场前景：
+                - 市场规模与增长趋势
+                - 竞品分析与差异化优势
+                - 目标用户群体定位
+                - 定价策略建议
+                输出分析报告。
+              edges:
+                - target: user
+            user:
+              agent: "用户研究员"
+              task: |
+                进行用户研究分析：
+                - 用户需求与痛点
+                - 用户画像分析
+                - 用户体验评估
+                - 用户反馈总结
+                输出用户研究报告。
+              edges:
+                - target: tech
+            tech:
+              agent: "技术评估员"
+              task: |
+                进行技术评估：
+                - 技术架构评估
+                - 性能指标分析
+                - 安全隐患排查
+                - 技术债务评估
+                输出技术评估报告。
     agents:
-      - role: dispatcher
-        name: "发布协调员"
-        config: launch_coordinator.md
       - role: worker
         name: "市场研究员"
         config: market_researcher.md
@@ -62,27 +163,57 @@ sub_crews:
       - role: worker
         name: "技术评估员"
         config: tech_assessor.md
-      - role: aggregator
-        name: "发布协调员"
-        config: launch_coordinator.md
 
+  # ── Pipeline 子流程：发布决策评审 ──
   - name: "发布决策评审"
     orchestrator:
-      type: consensus
-      strategy: weighted
-      threshold: 0.7
-      weights:
-        "业务负责人": 1.5
-        "质量经理": 1.0
-        "风险管理员": 1.2
+      type: pipeline
+      extras:
+        graph:
+          entry: start
+          nodes:
+            start:
+              edges:
+                - target: business_review
+            business_review:
+              agent: "业务负责人"
+              task: |
+                从业务角度评审产品发布准备情况：
+                - 商业价值评估
+                - 市场时机判断
+                - 投资回报分析
+                - 战略契合度
+                输出业务评审意见和评分（1-10分）。
+              edges:
+                - target: quality_review
+            quality_review:
+              agent: "质量经理"
+              task: |
+                从质量角度评审产品发布准备情况：
+                - 产品质量评估
+                - 测试覆盖度分析
+                - 缺陷严重程度评估
+                - 发布标准符合度
+                输出质量评审意见和评分（1-10分）。
+              edges:
+                - target: risk_review
+            risk_review:
+              agent: "风险管理员"
+              task: |
+                从风险角度评审产品发布准备情况：
+                - 风险评估矩阵
+                - 风险缓解措施
+                - 应急预案评估
+                - 合规性检查
+                输出风险评审意见和评分（1-10分）。
     agents:
-      - role: reviewer
+      - role: worker
         name: "业务负责人"
         config: business_director.md
-      - role: reviewer
+      - role: worker
         name: "质量经理"
         config: quality_manager.md
-      - role: reviewer
+      - role: worker
         name: "风险管理员"
         config: risk_manager.md
 
@@ -95,11 +226,11 @@ blackboard:
     - key: product_info
       value: |
         # 智能健康手环 Pro - 产品信息
-        
+
         ## 产品概述
         新一代旗舰智能健康手环，面向运动爱好者和健康管理人群。
         建议零售价：599 元
-        
+
         ## 核心功能
         1. 医疗级心率监测（已通过 FDA 认证）
         2. 血氧饱和度监测（SpO2）
@@ -109,19 +240,19 @@ blackboard:
         6. 14 天超长续航
         7. 蓝牙 5.3 + NFC 支付
         8. 配套 App（iOS/Android）
-        
+
         ## 开发状态
         - 硬件：已通过量产验证，良品率 97%
         - 固件：v2.0 已完成内部测试
         - App：v3.0 已完成测试
         - 配件：已与 5 家供应商签约
         - 库存：首批 50,000 台已入库
-        
+
         ## 市场情况
         - 预约量：15 万人（开启预约 7 天）
         - 竞品动态：主要竞品预计 2 个月后发布新品
         - 最佳发布窗口：下个月中旬（开学季/健身旺季）
-        
+
         ## 待解决问题
         1. NFC 支付在部分城市存在兼容性问题
         2. App 用户反馈部分功能操作路径过长

@@ -1,0 +1,15 @@
+你需要向用户提出以下问题，并根据用户的回复告诉我结果。
+
+## 问题
+{{ question }}{% if context_str %}
+{{ context_str }}{% endif %}
+
+## 可选项
+{% if options_text %}{{ options_text }}{% else %}（用户可以自由输入答案）{% endif %}
+
+## 任务
+1. 使用 ask_user 工具向用户提出上述问题，附带可选项
+2. 获取用户的回复
+3. 将用户的回复原文返回给我
+
+请直接使用 ask_user 工具提问，然后回复我用户的回答内容。

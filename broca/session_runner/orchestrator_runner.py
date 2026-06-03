@@ -91,6 +91,7 @@ class CrewOrchestratorRunner:
             self.session_manager.current_execution_id = execution_id
 
         # 1. 创建 Blackboard 并注册
+        namespace = crew_config.name
         blackboard = Blackboard()
         if crew_config.blackboard:
             initial = crew_config.blackboard.get("initial_entries", [])
@@ -99,9 +100,10 @@ class CrewOrchestratorRunner:
                     key = entry.get("key")
                     value = entry.get("value")
                     if key is not None:
-                        await blackboard.set(key, value, producer="init")
+                        # 用 namespace 前缀存储，使 Agent 通过工具能正确读到
+                        await blackboard.set(f"{namespace}.{key}", value, producer="init")
 
-        set_blackboard(self.session_id, blackboard)
+        set_blackboard(self.session_id, self._execution_id, blackboard)
 
         # 2. 创建 CrewContext 并注册 Agent
         context = CrewContext(
@@ -112,6 +114,9 @@ class CrewOrchestratorRunner:
         )
         for name, agent in agent_refs.items():
             context.register_agent(name, agent)
+            # 注入 execution_id，使黑板工具能正确定位黑板实例
+            if hasattr(agent, 'execution_engine') and self._execution_id:
+                agent.execution_engine.execution_id = self._execution_id
 
         # 2.5 根据 use_history 配置清空 Agent 上下文历史
         #    默认不清历史，让 agent 每次执行从干净状态开始
@@ -212,7 +217,7 @@ class CrewOrchestratorRunner:
 
         finally:
             self._running = False
-            remove_blackboard(self.session_id)
+            remove_blackboard(self.session_id, self._execution_id)
             self._orchestrator = None
             self._task = None
             # 清除 execution_id

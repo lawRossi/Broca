@@ -53,6 +53,7 @@ class RoundTableOrchestrator(Orchestrator):
 
     def __init__(self, crew_config: CrewConfig, context: Optional[CrewContext] = None):
         super().__init__(crew_config, context)
+        self.namespace = crew_config.name
         extras = self.crew.orchestrator.extras
         self.speaker_order = extras.get("speaker_order", self.ORDER_FIXED)
         self.moderator_opening = extras.get("moderator_opening", False)
@@ -63,6 +64,9 @@ class RoundTableOrchestrator(Orchestrator):
             self.total_rounds += 1
         if self.moderator_closing:
             self.total_rounds += 1
+
+    def _ns(self, key: str) -> str:
+        return f"{self.namespace}.{key}" if self.namespace else key
 
     @property
     def moderator(self) -> Optional[Any]:
@@ -102,7 +106,7 @@ class RoundTableOrchestrator(Orchestrator):
         prompt = PromptLoader.render(
             "round_table",
             "moderator_order.j2",
-            topic=await self.context.blackboard.get("topic", ""),
+            topic=await self.context.blackboard.get(self._ns("topic"), ""),
             participants=self.participant_names,
             round_num=round_num,
             order_rule=order_rule,
@@ -113,10 +117,14 @@ class RoundTableOrchestrator(Orchestrator):
             from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=prompt)
-            exec_result = await moderator_agent.run(trigger_message, from_agent=True)
+            exec_result = await moderator_agent.run(
+                trigger_message, from_agent=True, namespace=self.namespace
+            )
 
             if exec_result.status == ES.COMPLETED:
-                speaker_order = await self.blackboard.get(self.SPEAKER_ORDER_KEY, [])
+                speaker_order = await self.blackboard.get(
+                    self._ns(self.SPEAKER_ORDER_KEY), []
+                )
                 if not isinstance(speaker_order, list):
                     speaker_order = json.loads(speaker_order)
                 return speaker_order
@@ -187,7 +195,7 @@ class RoundTableOrchestrator(Orchestrator):
         )
 
         max_rounds = self.crew.orchestrator.max_rounds
-        topic = await self.context.blackboard.get("topic", "")
+        topic = await self.context.blackboard.get(self._ns("topic"), "")
         if not topic:
             result.status = ExecutionStatus.FAILED
             result.error = "No 'topic' found in Blackboard"
@@ -224,7 +232,7 @@ class RoundTableOrchestrator(Orchestrator):
                         "type": "opening",
                     }
                 )
-                self.blackboard.set("opening", opening)
+                self.blackboard.set(self._ns("opening"), opening)
                 opening_phase.status = PhaseStatus.COMPLETED
                 opening_phase.output = {"statement": opening}
                 opening_phase.completed_at = datetime.now(timezone.utc)
@@ -279,7 +287,7 @@ class RoundTableOrchestrator(Orchestrator):
 
                 discussion_history.extend(round_entries)
                 await self.context.blackboard.set(
-                    "discussion_history",
+                    self._ns("discussion_history"),
                     discussion_history,
                     producer="round_table",
                 )
@@ -440,7 +448,7 @@ class RoundTableOrchestrator(Orchestrator):
             )
 
             await self.context.blackboard.set(
-                f"round_{round_num}_{agent_cfg.name}",
+                self._ns(f"round_{round_num}_{agent_cfg.name}"),
                 response,
                 producer="round_table",
             )
@@ -464,7 +472,9 @@ class RoundTableOrchestrator(Orchestrator):
         from broca.session import MessageProtocol
 
         trigger_message = MessageProtocol.create_user_message(content=prompt)
-        exec_result = await moderator_agent.run(trigger_message, from_agent=True)
+        exec_result = await moderator_agent.run(
+            trigger_message, from_agent=True, namespace=self.namespace
+        )
 
         if exec_result.status == ES.COMPLETED:
             return (
@@ -498,7 +508,9 @@ class RoundTableOrchestrator(Orchestrator):
             from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=prompt)
-            execution_result = await agent.run(trigger_message, from_agent=True)
+            execution_result = await agent.run(
+                trigger_message, from_agent=True, namespace=self.namespace
+            )
 
             if execution_result.status == ExecutionStatus.COMPLETED:
                 return agent.context.get_latest_assistant_message() or "(no response)"
@@ -538,7 +550,9 @@ class RoundTableOrchestrator(Orchestrator):
             from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=prompt)
-            exec_result = await moderator.run(trigger_message, from_agent=True)
+            exec_result = await moderator.run(
+                trigger_message, from_agent=True, namespace=self.namespace
+            )
 
             if exec_result.status == ExecutionStatus.COMPLETED:
                 response = moderator.context.get_latest_assistant_message() or ""

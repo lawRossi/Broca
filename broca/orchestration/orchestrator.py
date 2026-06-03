@@ -280,6 +280,7 @@ async def check_blackboard_for_stop(blackboard) -> None:
 async def execute_agents_in_parallel(
     context: CrewContext,
     tasks: List[Tuple[str, str]],
+    namespace: Optional[str] = None,
 ) -> Dict[str, str]:
     """
     并行执行多个 Agent 任务（共享工具，供 fan-out / Broadcast 共用）
@@ -290,6 +291,7 @@ async def execute_agents_in_parallel(
     Args:
         context: Crew 上下文（通过 get_agent 获取 Agent 实例）
         tasks: (agent_name, task_prompt) 列表
+        namespace: 可选命名空间，传递给 agent.run() 以便工具正确读写黑板
 
     Returns:
         {agent_name: output} 字典，每个 Agent 的输出或错误信息
@@ -303,7 +305,9 @@ async def execute_agents_in_parallel(
 
         try:
             trigger_message = MessageProtocol.create_user_message(content=prompt)
-            execution_result = await agent.run(trigger_message, from_agent=True)
+            execution_result = await agent.run(
+                trigger_message, from_agent=True, namespace=namespace
+            )
 
             from broca.execution_engine import ExecutionStatus as ES
 
@@ -397,10 +401,7 @@ class OrchestratorFactory:
             "broca.orchestration.composite",
             "CompositeOrchestrator",
         ),
-        OrchestratorType.BRANCH: (
-            "broca.orchestration.composite",
-            "CompositeOrchestrator",
-        ),
+
     }
 
     @staticmethod

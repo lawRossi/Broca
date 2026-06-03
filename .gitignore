@@ -566,8 +566,6 @@ tramp
 *.woff2
 *.eot
 
-.agents
-
 alembic/versions
 
 # Worktrees

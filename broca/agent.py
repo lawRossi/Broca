@@ -352,6 +352,7 @@ class Agent:
         max_steps: Optional[int] = None,
         from_agent: Optional[bool] = False,
         allowed_tools: Optional[List[str]] = None,
+        namespace: Optional[str] = None,
     ) -> ExecutionResult:
         """
         Run agent in async mode (replaces command-line interaction)
@@ -387,8 +388,9 @@ class Agent:
         # Clear undo meta info
         self.revert_service.undo_meta_info = {}
 
-        # Set allowed_tools on execution engine before execution
+        # Set execution context before execution
         self.execution_engine.allowed_tools = allowed_tools
+        self.execution_engine.namespace = namespace
 
         try:
             return await self.execution_engine.execute(message, max_steps, from_agent)

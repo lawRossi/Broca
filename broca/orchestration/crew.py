@@ -24,7 +24,6 @@ class OrchestratorType(str, Enum):
     SUPERVISOR_WORKER = "supervisor-worker"
     ROUND_TABLE = "round-table"
     COMPOSITE = "composite"
-    BRANCH = "branch"
 
 
 class AgentRole(str, Enum):
@@ -116,59 +115,6 @@ class BlackboardEntry:
 
 
 @dataclass
-class OnResultConfig:
-    """子 Crew 执行后的条件跳转配置（用于顺序流程图的循环/分支）"""
-
-    condition_field: str
-    """黑板中用于条件判断的字段路径"""
-    condition_operator: str = "eq"
-    """比较运算符: eq | ne | gt | gte | lt | lte | contains | startswith | endswith"""
-    condition_value: Any = None
-    """比较目标值"""
-    goto: Optional[str] = None
-    """条件满足时跳转到的 sub_crew 名称"""
-    goto_context: Optional[Dict[str, Any]] = None
-    """跳转前写入黑板的上下文键值对"""
-    else_goto: Optional[str] = None
-    """条件不满足时跳转到的 sub_crew 名称"""
-    else_goto_context: Optional[Dict[str, Any]] = None
-    """不满足跳转前写入黑板的上下文键值对"""
-    max_iterations: int = 0
-    """最大迭代次数，0 表示不限制"""
-
-    def to_dict(self) -> Dict[str, Any]:
-        result = {
-            "condition_field": self.condition_field,
-            "condition_operator": self.condition_operator,
-            "condition_value": self.condition_value,
-        }
-        if self.goto:
-            result["goto"] = self.goto
-        if self.goto_context:
-            result["goto_context"] = self.goto_context
-        if self.else_goto:
-            result["else_goto"] = self.else_goto
-        if self.else_goto_context:
-            result["else_goto_context"] = self.else_goto_context
-        if self.max_iterations:
-            result["max_iterations"] = self.max_iterations
-        return result
-
-    @classmethod
-    def from_dict(cls, data: Dict[str, Any]) -> "OnResultConfig":
-        return cls(
-            condition_field=data["condition_field"],
-            condition_operator=data.get("condition_operator", "eq"),
-            condition_value=data.get("condition_value"),
-            goto=data.get("goto"),
-            goto_context=data.get("goto_context"),
-            else_goto=data.get("else_goto"),
-            else_goto_context=data.get("else_goto_context"),
-            max_iterations=data.get("max_iterations", 0),
-        )
-
-
-@dataclass
 class SubCrewConfig:
     """子 Crew 配置（用于组合嵌套）"""
 
@@ -176,7 +122,6 @@ class SubCrewConfig:
     orchestrator: OrchestratorConfig
     steps: Optional[List[TaskDefinition]] = None
     agents: Optional[List["AgentRoleConfig"]] = None
-    on_result: Optional[OnResultConfig] = None
 
     def to_dict(self) -> Dict[str, Any]:
         result = {
@@ -187,8 +132,6 @@ class SubCrewConfig:
             result["steps"] = [s.to_dict() for s in self.steps]
         if self.agents:
             result["agents"] = [a.to_dict() for a in self.agents]
-        if self.on_result:
-            result["on_result"] = self.on_result.to_dict()
         return result
 
     @classmethod
@@ -201,16 +144,11 @@ class SubCrewConfig:
         if "agents" in data:
             agents = [AgentRoleConfig.from_dict(a) for a in data["agents"]]
 
-        on_result = None
-        if "on_result" in data:
-            on_result = OnResultConfig.from_dict(data["on_result"])
-
         return cls(
             name=data["name"],
             orchestrator=OrchestratorConfig.from_dict(data["orchestrator"]),
             steps=steps,
             agents=agents,
-            on_result=on_result,
         )
 
 

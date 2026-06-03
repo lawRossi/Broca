@@ -139,6 +139,8 @@ class ExecutionEngine:
         self.session_id = session_manager.session_id
         self.turn_id: str | None = None
         self.step_id: str | None = None
+        self.namespace: Optional[str] = None
+        self.execution_id: Optional[str] = None
 
         self.step_max_errors = step_max_errors
         self.llm_retry_delay = llm_retry_delay
@@ -456,6 +458,8 @@ class ExecutionEngine:
         context.agent = self.agent
         context.workspace = self.config.workspace
         context.session_id = self.session_id
+        context.execution_id = self.execution_id
+        context.namespace = self.namespace
 
         for tool_call in tool_calls:
             if self.abort_event.is_set():

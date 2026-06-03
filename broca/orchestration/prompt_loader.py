@@ -27,7 +27,7 @@ class PromptLoader:
     按编排类型分组加载 Jinja2 模板，支持传入上下文变量渲染。
 
     用法:
-        prompt = PromptLoader.render("pipeline", "task_context.j2", step=..., ...)
+        prompt = PromptLoader.render("graph", "task_context.j2", step=..., ...)
     """
 
     # Jinja2 环境缓存（按类型），避免重复创建

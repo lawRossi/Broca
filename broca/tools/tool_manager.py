@@ -27,6 +27,10 @@ class ToolManager:
         "task_management",
         "todo_management",
         "cron",
+        "read_blackboard",
+        "list_blackboard",
+        "write_blackboard",
+        "blackboard_changes",
     }
 
     MODIFY_TOOLS = {"edit_file", "write_file"}

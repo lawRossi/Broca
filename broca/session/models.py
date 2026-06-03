@@ -11,13 +11,14 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-# 统一的 UTC 时间工厂函数（确保所有模型使用 timezone-aware datetime）
-def utc_now() -> datetime:
-    return datetime.now(timezone.utc)
-
 from pydantic import ConfigDict
 from sqlalchemy import JSON, Column, Float, Integer, String
 from sqlmodel import Field, Relationship, SQLModel
+
+
+# 统一的 UTC 时间工厂函数（确保所有模型使用 timezone-aware datetime）
+def utc_now() -> datetime:
+    return datetime.now(timezone.utc)
 
 
 class MessageRole(str, Enum):

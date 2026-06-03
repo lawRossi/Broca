@@ -1,0 +1,43 @@
+## Combined Quality Check & Plan Update
+
+As the Supervisor, your job is twofold:
+1. **Check progress** — evaluate whether the objective is met based on worker results
+2. **If NOT met** — create new/updated tasks for the next iteration
+
+This is iteration {{ attempt }}. At most {{ max_rounds }} iterations are allowed.
+
+## Objective
+{{ objective }}
+
+
+## Step 1: Quality Check
+
+Evaluate whether the results sufficiently address the objective:
+- Are all aspects of the objective addressed?
+- Are there any errors or critical issues?
+- Is the quality acceptable?
+
+Then use **write_blackboard** to set key `{{ progress_check_key }}` to `true` (objective met) or `false` (needs more work).
+
+## Step 2: If Not Done, Update Plan
+
+If the objective is **NOT** yet met (you set `{{ progress_check_key }}` to `false`):
+
+Use the **task_management** tool to create each sub-task for the next iteration:
+- `action`: "create"
+- `name`: A clear name for the sub-task
+- `description`: Detailed instructions for the worker, including context from previous results
+- `dependencies`: The tasks that this task depends on
+- `assignee`: The worker's name
+- `priority`: Based on importance (high/medium/low)
+
+Then use the **write_blackboard** tool to record:
+- `key`: "task_assignments"
+- `value`: A JSON object mapping the worker name to their task ID
+
+**Critical Rules**:
+- You can create *only one* task for each worker in each iteration.
+- When a task has unfinished dependencies, you *must not* include it in your task_assignments. Assign it in later iteration when appropriate.
+- Do not include finished tasks in your task_assignments.
+- Write task_assignments only once (if needed).
+- If the objective IS met, skip Step 2 entirely.

@@ -2,6 +2,7 @@ import json
 import uuid
 from enum import Enum
 from pathlib import Path
+from typing import Optional
 
 from broca.logging_config import get_logger
 
@@ -27,6 +28,8 @@ class ToolCallContext:
         self.agent = None
         self.workspace = None
         self.session_id = None
+        self.execution_id: Optional[str] = None
+        self.namespace: Optional[str] = None
 
 
 class Tool:

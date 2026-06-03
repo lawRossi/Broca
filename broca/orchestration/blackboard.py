@@ -237,7 +237,7 @@ class Blackboard:
             )
 
         # 锁外通知
-        event = self._notify(key, old_value, value, producer, event_type)
+        self._notify(key, old_value, value, producer, event_type)
         return BlackboardEvent(
             key=key,
             old_value=old_value,
