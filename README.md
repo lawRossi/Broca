@@ -78,7 +78,7 @@ Broca 是一个用 Python 构建的Agent系统，核心设计理念是 **模块�
 | pnpm　　| 任意版本 | Web 前端构建（可降级 npm） |
 | Node.js | ≥ 18　　 | 前端构建　　　　　　　　　 |
 | nginx　 | 任意版本 | 部署前端需要　　　　　　　 |
-### 一键安装（生产环境）
+### 一键安装
 
 ```bash
 # 克隆项目
@@ -130,7 +130,7 @@ sh scripts/install.sh
 └── nginx-broca.conf              # nginx 配置
 ```
 
-*注意*: 首次安装需要将~/.broca/configs/llm_config_template.json改成llm_config.json，并填写相关api key。
+**注意**: 首次安装需要将~/.broca/configs/llm_config_template.json改成llm_config.json，并填写相关api key。
 
 ### 服务管理
 
