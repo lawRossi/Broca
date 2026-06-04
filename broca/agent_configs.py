@@ -7,7 +7,7 @@ class SessionMemoryConfig:
     """Session Memory 配置"""
 
     minimum_messages_to_init: int = 100
-    minimum_messages_between_update: int = 30
+    minimum_messages_between_update: int = 50
     steps_between_updates: int = 30
 
 
