@@ -963,14 +963,65 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
 }
 JSONEOF
 
+# 创建 broca 命令软链接到 PATH 中的目录
+BROCA_BIN="$BROCA_VENV/bin/broca"
+BROCA_LINK_CREATED=false
+
+# 优先选择可写入且已在 PATH 中的目录
+for link_dir in "${HOME}/.local/bin" "${HOME}/bin"; do
+    if [[ ":$PATH:" == *":$link_dir:"* ]] && [[ -d "$link_dir" ]]; then
+        if ln -sf "$BROCA_BIN" "$link_dir/broca" 2>/dev/null; then
+            info "broca 命令已链接到: $link_dir/broca"
+            BROCA_LINK_CREATED=true
+            break
+        fi
+    fi
+done
+
+# 如果 ~/.local/bin 不在 PATH 但 macOS 上常见 Homebrew 路径在 PATH 中
+# 则创建 ~/.local/bin 并提示用户添加到 shell 配置
+if ! $BROCA_LINK_CREATED; then
+    LOCAL_BIN="${HOME}/.local/bin"
+    mkdir -p "$LOCAL_BIN"
+    if ln -sf "$BROCA_BIN" "$LOCAL_BIN/broca" 2>/dev/null; then
+        if [[ ":$PATH:" == *":$LOCAL_BIN:"* ]]; then
+            info "broca 命令已链接到: $LOCAL_BIN/broca"
+            BROCA_LINK_CREATED=true
+        else
+            warn "broca 命令已安装到 $LOCAL_BIN/broca，但该目录不在 PATH 中"
+            echo "  请将该目录添加到 PATH："
+            if $IS_MACOS; then
+                echo "    echo 'export PATH=\"\$PATH:$LOCAL_BIN\"' >> ~/.zshrc"
+                echo "    source ~/.zshrc"
+            else
+                echo "    echo 'export PATH=\"\$PATH:$LOCAL_BIN\"' >> ~/.bashrc"
+                echo "    source ~/.bashrc"
+            fi
+            echo ""
+            echo "  或者直接使用完整路径运行: $BROCA_BIN"
+            BROCA_LINK_CREATED=true  # 文件已创建，只是不在 PATH 中
+        fi
+    fi
+fi
+
+if ! $BROCA_LINK_CREATED; then
+    warn "无法创建 broca 软链接，请手动添加到 PATH"
+    echo "  请执行以下命令之一:"
+    echo "    export PATH=\"\$PATH:$BROCA_VENV/bin\"    # 临时生效"
+    if $IS_MACOS; then
+        echo "    echo 'export PATH=\"\$PATH:$BROCA_VENV/bin\"' >> ~/.zshrc  # 永久生效"
+    else
+        echo "    echo 'export PATH=\"\$PATH:$BROCA_VENV/bin\"' >> ~/.bashrc  # 永久生效"
+    fi
+fi
+
 echo ""
 echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}  Broca 安装完成！${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
-echo "  项目目录:   $PROJECT_ROOT"
-echo "  配置目录:   $BROCA_HOME"
 echo "  虚拟环境:   $BROCA_VENV"
+echo "  broca 命令: $BROCA_VENV/bin/broca"
 echo "  日志目录:   $LOG_DIR"
 echo "  前端模式:   nginx"
 if [[ -f "$ENV_FILE" ]] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" 2>/dev/null; then
