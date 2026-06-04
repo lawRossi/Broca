@@ -116,7 +116,15 @@ export class AuthManager {
       this.onDidChangeEvent.fire()
       return true
     } catch (error: any) {
-      const msg = error?.response?.data?.detail || error.message || '登录失败'
+      // Extract meaningful error message from various response formats
+      const respData = error?.response?.data
+      const msg =
+        respData?.detail ||
+        respData?.msg ||
+        respData?.message ||
+        (typeof respData === 'string' ? respData : null) ||
+        error.message ||
+        '登录失败'
       vscode.window.showErrorMessage(`登录失败: ${msg}`)
       return false
     }

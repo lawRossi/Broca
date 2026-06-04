@@ -64,9 +64,16 @@ export class ApiClient {
       },
       (error) => {
         if (error.response?.status === 401) {
-          console.error('Authentication failed: token may be expired, triggering auto-logout')
-          // Call the auth error handler if set — will clear session and show login prompt
-          this.onAuthError?.()
+          const requestUrl = error.config?.url || ''
+          // Skip onAuthError for login endpoint — 401 there means wrong credentials, not expired token
+          const isLoginRequest = requestUrl.endsWith('/auth/login')
+          if (isLoginRequest) {
+            console.error('Login failed: invalid credentials (401)')
+          } else {
+            console.error('Authentication failed: token may be expired, triggering auto-logout')
+            // Call the auth error handler — will clear session and show login prompt
+            this.onAuthError?.()
+          }
         }
         return Promise.reject(error)
       }
