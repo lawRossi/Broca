@@ -41,7 +41,7 @@ onMounted(async () => {
         <div class="card-header">
           <h2 class="text-3xl font-bold text-center text-gray-900 dark:text-gray-100">Broca</h2>
           <p class="text-center text-gray-500 dark:text-gray-400 text-sm mt-2">
-            账户由管理员在安装时创建，请联系管理员获取登录凭据
+            账户在安装时创建
           </p>
         </div>
 
