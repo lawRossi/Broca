@@ -143,6 +143,7 @@ fi
 
 # --- nginx 检测 ---
 NGINX_CONF_DIR=""
+SKIP_FRONTEND=false
 if command -v nginx &>/dev/null; then
     info "nginx: $(nginx -v 2>&1)"
 
@@ -157,35 +158,53 @@ if command -v nginx &>/dev/null; then
 
     if [[ -z "$NGINX_CONF_DIR" ]]; then
         if $IS_MACOS; then
-            error "已检测到 nginx 但未找到配置目录。"
-            error "请先确保 nginx 已正确安装: brew info nginx"
+            warn "已检测到 nginx 但未找到配置目录。"
+            warn "请先确保 nginx 已正确安装: brew info nginx"
         else
-            error "已检测到 nginx 但未找到配置目录（已安装但未运行？）。"
-            error "请先启动 nginx: sudo systemctl start nginx"
+            warn "已检测到 nginx 但未找到配置目录（已安装但未运行？）。"
+            warn "请先启动 nginx: sudo systemctl start nginx"
         fi
-        exit 1
-    fi
-
-    info "nginx 配置目录: $NGINX_CONF_DIR"
-    # 确保 sites-enabled 目录存在
-    if $IS_MACOS && [[ ! -d "$NGINX_SITES_DIR" ]]; then
-        mkdir -p "$NGINX_SITES_DIR"
-        # 如果 nginx.conf 没有引入 sites-enabled，尝试引入
-        if ! grep -q "sites-enabled" "$NGINX_CONF_DIR/nginx.conf" 2>/dev/null; then
-            warn "nginx.conf 未包含 sites-enabled 目录，自动添加..."
-            sed_inplace -e '/^http {/a\
+        echo ""
+        prompt "nginx 配置不完整，是否跳过前端部署，仅安装后端？(Y/n) "
+        read -r skip_frontend_input
+        if [[ ! "${skip_frontend_input:-y}" =~ ^[Nn]([Oo])?$ ]]; then
+            SKIP_FRONTEND=true
+            warn "将跳过前端部署，仅安装后端"
+        else
+            error "请修复 nginx 后重新运行安装脚本"
+            exit 1
+        fi
+    else
+        info "nginx 配置目录: $NGINX_CONF_DIR"
+        # 确保 sites-enabled 目录存在
+        if $IS_MACOS && [[ ! -d "$NGINX_SITES_DIR" ]]; then
+            mkdir -p "$NGINX_SITES_DIR"
+            # 如果 nginx.conf 没有引入 sites-enabled，尝试引入
+            if ! grep -q "sites-enabled" "$NGINX_CONF_DIR/nginx.conf" 2>/dev/null; then
+                warn "nginx.conf 未包含 sites-enabled 目录，自动添加..."
+                sed_inplace -e '/^http {/a\
     include '"$NGINX_SITES_DIR"'/*.conf;' "$NGINX_CONF_DIR/nginx.conf" 2>/dev/null || \
-            warn "无法自动修改 nginx.conf，请手动添加: include $NGINX_SITES_DIR/*.conf;"
+                warn "无法自动修改 nginx.conf，请手动添加: include $NGINX_SITES_DIR/*.conf;"
+            fi
         fi
     fi
 else
-    if $IS_MACOS; then
-        error "未检测到 nginx，请先安装: brew install nginx"
+    echo ""
+    warn "未检测到 nginx，无法部署前端页面。"
+    prompt "是否跳过前端，仅安装后端？(Y/n) "
+    read -r skip_frontend_input
+    if [[ ! "${skip_frontend_input:-y}" =~ ^[Nn]([Oo])?$ ]]; then
+        SKIP_FRONTEND=true
+        warn "将跳过前端部署，仅安装后端"
+        echo "  提示: 安装完成后可使用 VS Code 插件连接后端服务"
     else
-        error "未检测到 nginx，生产部署需要 nginx。"
-        error "请先安装 nginx: sudo apt install nginx"
+        if $IS_MACOS; then
+            error "请先安装 nginx: brew install nginx"
+        else
+            error "请先安装 nginx: sudo apt install nginx"
+        fi
+        exit 1
     fi
-    exit 1
 fi
 
 # ============================================================================
@@ -431,13 +450,9 @@ AGENTS_SRC="$PROJECT_ROOT/configs/agents"
 AGENTS_DST="$BROCA_HOME/configs/agents"
 
 if [[ -d "$AGENTS_SRC" ]]; then
-    if [[ ! -d "$AGENTS_DST" ]]; then
-        mkdir -p "$AGENTS_DST"
-        cp -r "$AGENTS_SRC/"* "$AGENTS_DST/" 2>/dev/null
-        info "已创建 Agent 配置: $AGENTS_DST"
-    else
-        info "Agent 配置已存在: ${AGENTS_DST}（跳过）"
-    fi
+    mkdir -p "$AGENTS_DST"
+    cp -r "$AGENTS_SRC/"* "$AGENTS_DST/" 2>/dev/null
+    info "Agent 配置已更新: $AGENTS_DST"
 else
     warn "未找到 Agent 配置目录: $AGENTS_SRC"
 fi
@@ -494,8 +509,12 @@ fi
 echo ""
 
 # ============================================================================
-# Step 4: 配置文件上传存储 (交互式)
+# Step 5: 配置文件上传存储 (交互式)
 # ============================================================================
+if $SKIP_FRONTEND; then
+    info "跳过前端配置（未部署 nginx）"
+    echo ""
+else
 step "Step 5/10: 配置文件上传存储..."
 
 FRONTEND_DIR="$BROCA_WEB_DIR/frontend"
@@ -680,13 +699,14 @@ sed_inplace -e '/^VITE_BROCA_SOCKET_SERVER_URL=/d' "$ENV_FILE"
 echo "# VITE_BROCA_SOCKET_SERVER_URL=" >> "$ENV_FILE"
 
 echo ""
-
-# ============================================================================
-# Step 5: 安装前端依赖并构建
+fi  # SKIP_FRONTEND
 
 # ============================================================================
 # Step 6: 安装前端依赖并构建
 # ============================================================================
+if $SKIP_FRONTEND; then
+    info "跳过前端构建（未部署 nginx）"
+else
 step "Step 6/10: 安装前端依赖并构建..."
 
 if [[ ! -d "$FRONTEND_DIR" ]]; then
@@ -745,6 +765,7 @@ if ! BUILD_OUTPUT=$(npx vite build 2>&1); then
 fi
 echo "$BUILD_OUTPUT" | tail -10
 info "前端构建完成: $FRONTEND_DIR/dist"
+fi  # SKIP_FRONTEND
 
 # ============================================================================
 # Step 7: 打包 VS Code 插件
@@ -777,6 +798,11 @@ fi
 # ============================================================================
 # Step 8: 部署前端
 # ============================================================================
+if $SKIP_FRONTEND; then
+    info "跳过前端部署（未安装 nginx）"
+    echo "  提示: 可使用 VS Code 插件连接后端服务"
+    echo "  后端服务端口: 9000"
+else
 step "Step 8/10: 配置前端部署方式..."
 
 mkdir -p "$BROCA_HOME"
@@ -880,6 +906,7 @@ NGINXEOF
     echo "  可用命令:"
     echo "    broca service start      # 创建 symlink + reload nginx，启用前端"
     echo "    broca service stop       # 删除 symlink + reload nginx，停用前端"
+fi  # SKIP_FRONTEND
 
 # ============================================================================
 # Step 9: 创建 supervisor 配置
@@ -969,7 +996,8 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
   "nginx_dist_dir": "$NGINX_DIST_DIR",
   "storage_configured": $([ -f "$ENV_FILE" ] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" && echo "true" || echo "false"),
   "backend_port": 9000,
-  "frontend_port": 5166
+  "frontend_port": 5166,
+  "skip_frontend": $SKIP_FRONTEND
 }
 JSONEOF
 
@@ -1033,23 +1061,41 @@ echo ""
 echo "  虚拟环境:   $BROCA_VENV"
 echo "  broca 命令: $BROCA_VENV/bin/broca"
 echo "  日志目录:   $LOG_DIR"
-echo "  前端模式:   nginx"
-if [[ -f "$ENV_FILE" ]] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" 2>/dev/null; then
-    echo "  文件存储:   ✅ 已配置"
+
+if $SKIP_FRONTEND; then
+    echo "  前端:       未部署（可安装 VS Code 插件访问后端）"
+    echo "  后端端口:   9000"
+    echo ""
+    echo "  快速开始:"
+    echo "    broca service start      # 启动后端服务"
+    echo "    broca service stop       # 停止后端服务"
+    echo "    broca service status     # 查看服务状态"
+    echo ""
+    echo "  访问后端 API: http://localhost:9000"
+    echo "  如需前端页面，请安装 VS Code 插件或重新安装 nginx 后运行:"
+    echo "    sudo apt install nginx   # Ubuntu"
+    echo "    brew install nginx       # macOS"
+    echo "    broca service install    # 重新安装以启用前端"
 else
-    echo -e "  文件存储:   ${YELLOW}⚠ 未配置${NC} (编辑 ${ENV_FILE} 后重新构建)"
+    echo "  前端模式:   nginx"
+    if [[ -f "$ENV_FILE" ]] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" 2>/dev/null; then
+        echo "  文件存储:   ✅ 已配置"
+    else
+        echo -e "  文件存储:   ${YELLOW}⚠ 未配置${NC} (编辑 ${ENV_FILE} 后重新构建)"
+    fi
+    echo ""
+    echo "  nginx 前端配置文件已就绪: $NGINX_SITE_CONF"
+    echo ""
+    echo "  快速开始:"
+    echo "    broca service start      # 启动所有服务（后端 + 启用前端站点）"
+    echo "    broca service stop       # 停止所有服务"
+    echo "    broca service status     # 查看服务状态"
+    echo "    broca web                # 启动开发模式 (前后端同时启动)"
+    echo ""
+    echo "  broca service start 后访问: http://localhost:5166"
 fi
-echo ""
-echo "  nginx 前端配置文件已就绪: $NGINX_SITE_CONF"
-echo ""
-echo "  快速开始:"
-echo "    broca service start      # 启动所有服务（后端 + 启用前端站点）"
-echo "    broca service stop       # 停止所有服务"
-echo "    broca service status     # 查看服务状态"
-echo "    broca web                # 启动开发模式 (前后端同时启动)"
+
 echo ""
 echo "  如需手动激活虚拟环境:"
 echo "    source $BROCA_VENV/bin/activate"
-echo ""
-echo "  broca service start 后访问: http://localhost:5166"
 echo ""
