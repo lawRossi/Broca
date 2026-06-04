@@ -291,6 +291,16 @@ PIP_OUTPUT=$($BROCA_PIP install supervisor 2>&1) || {
 }
 echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already" || true; }
 
+# 安装后端（broca-web/backend）依赖到虚拟环境
+info "安装后端依赖..."
+if PIP_OUTPUT=$($BROCA_PIP install "$PROJECT_ROOT/broca-web/backend" 2>&1); then
+    echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already|poetry.core" || true; }
+    info "后端依赖安装完成"
+else
+    echo "$PIP_OUTPUT" | tail -10
+    warn "后端依赖安装失败，可之后手动执行: $BROCA_PIP install $PROJECT_ROOT/broca-web/backend"
+fi
+
 # 将后续所有 $PYTHON 指向（虚拟环境的）Python
 PYTHON="$BROCA_PYTHON"
 
@@ -464,15 +474,6 @@ if [[ -d "$PROJECT_ROOT/broca-web/backend" ]]; then
     rsync -a --delete "$PROJECT_ROOT/broca-web/backend/" "$BROCA_WEB_DIR/backend/" 2>/dev/null || \
         cp -r "$PROJECT_ROOT/broca-web/backend" "$BROCA_WEB_DIR/"
     info "后端代码已部署: $BROCA_WEB_DIR/backend/"
-    # 安装后端依赖到虚拟环境
-    info "安装后端依赖..."
-    if PIP_OUTPUT=$($BROCA_PIP install "$BROCA_WEB_DIR/backend" 2>&1); then
-        echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already|poetry.core" || true; }
-        info "后端依赖安装完成"
-    else
-        echo "$PIP_OUTPUT" | tail -10
-        warn "后端依赖安装失败，可之后手动执行: $BROCA_PIP install $BROCA_WEB_DIR/backend"
-    fi
 else
     error "后端代码目录不存在: $PROJECT_ROOT/broca-web/backend"
     exit 1
