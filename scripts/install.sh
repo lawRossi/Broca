@@ -815,10 +815,15 @@ mkdir -p "$BROCA_HOME"
 info "配置 nginx 站点..."
 
 if $IS_MACOS; then
-    # macOS: Homebrew nginx 以当前用户运行，可直接读取 ~/.broca/
+    # macOS: Homebrew nginx 以 _www 用户运行，家目录默认不可读
+    # 需要设置权限让 nginx 能访问前端静态文件
     NGINX_DIST_DIR="$BROCA_HOME/frontend-dist"
     mkdir -p "$NGINX_DIST_DIR"
     cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
+    # 让 _www 用户可以读取前端文件（o+x 可遍历目录，o+r 可读文件）
+    chmod o+x "$HOME"
+    chmod o+x "$BROCA_HOME" 2>/dev/null || true
+    chmod -R o+rX "$NGINX_DIST_DIR"
     info "前端静态文件已部署到: $NGINX_DIST_DIR"
 else
     # Linux: nginx 以 www-data 运行，家目录不可读，放到系统路径

@@ -642,6 +642,12 @@ def _get_frontend_status() -> Dict[str, Any]:
     }
 
 
+def _is_frontend_skipped() -> bool:
+    """检查安装时是否跳过了前端部署（从 install.json 读取）"""
+    install_info = _load_install_info()
+    return install_info.get("skip_frontend", False)
+
+
 # ==================== 公开 API ====================
 
 
@@ -707,19 +713,22 @@ def status_services() -> Dict[str, Any]:
 
     result["services"] = services
 
-    # 添加 nginx 前端服务状态
-    nginx_status = _get_frontend_status()
-    result["nginx"] = nginx_status
-    if nginx_status.get("available"):
-        result["services"].append(
-            {
-                "name": "frontend (nginx)",
-                "status": "ENABLED" if nginx_status["enabled"] else "DISABLED",
-                "pid": None,
-                "uptime": None,
-                "detail": nginx_status.get("version", ""),
-            }
-        )
+    # 添加 nginx 前端服务状态（仅当安装时未跳过前端）
+    if not _is_frontend_skipped():
+        nginx_status = _get_frontend_status()
+        result["nginx"] = nginx_status
+        if nginx_status.get("available"):
+            result["services"].append(
+                {
+                    "name": "frontend (nginx)",
+                    "status": "ENABLED" if nginx_status["enabled"] else "DISABLED",
+                    "pid": None,
+                    "uptime": None,
+                    "detail": nginx_status.get("version", ""),
+                }
+            )
+    else:
+        result["nginx"] = {"available": False, "enabled": False, "note": "安装时跳过了前端部署"}
 
     return result
 
@@ -792,11 +801,14 @@ def start_services(wait: bool = True) -> Dict[str, Any]:
             "stdout": stdout,
         }
 
-    # Step 4: 启动 nginx 前端
-    logger.info("Starting nginx frontend...")
-    nginx_ok, nginx_msg = _enable_broca_site()
-    if not nginx_ok:
-        logger.warning("nginx 启动失败: %s", nginx_msg)
+    # Step 4: 启动 nginx 前端（仅当安装时未跳过前端）
+    if not _is_frontend_skipped():
+        logger.info("Starting nginx frontend...")
+        nginx_ok, nginx_msg = _enable_broca_site()
+        if not nginx_ok:
+            logger.warning("nginx 启动失败: %s", nginx_msg)
+    else:
+        nginx_ok, nginx_msg = True, "前端已跳过（未安装 nginx）"
 
     return {
         "success": True,
@@ -820,10 +832,13 @@ def stop_services() -> Dict[str, Any]:
     nginx_ok = True
     nginx_msg = ""
 
-    # 先停止 nginx 前端（依赖关系：nginx→backend）
-    if _broca_site_enabled():
-        logger.info("Disabling broca nginx site...")
-        nginx_ok, nginx_msg = _disable_broca_site()
+    # 先停止 nginx 前端（仅当安装时未跳过前端）
+    if not _is_frontend_skipped():
+        if _broca_site_enabled():
+            logger.info("Disabling broca nginx site...")
+            nginx_ok, nginx_msg = _disable_broca_site()
+    else:
+        nginx_msg = "前端已跳过（未安装 nginx）"
 
     if not _is_supervisord_running():
         return {
