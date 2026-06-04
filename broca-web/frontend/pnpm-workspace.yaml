@@ -1,5 +1,4 @@
-ignoredBuiltDependencies:
-  - msw
-
-onlyBuiltDependencies:
-  - supabase
+allowBuilds:
+  esbuild: true
+  msw: true
+  vue-demi: true

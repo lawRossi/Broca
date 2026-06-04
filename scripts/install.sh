@@ -64,7 +64,27 @@ sed_inplace() {
     "${SED_INPLACE[@]}" "$@"
 }
 
-# ---- 项目根目录 ----
+# ---- 工具函数 ----
+# 根据 pnpm 版本生成 build 权限配置（v10: .npmrc, v11+: pnpm-workspace.yaml）
+write_pnpm_build_config() {
+    local dir="$1"
+    local major="${2:-0}"
+    if [[ "$major" -ge 11 ]]; then
+        cat > "$dir/pnpm-workspace.yaml" << 'YAMLEOF'
+allowBuilds:
+  esbuild: true
+  msw: true
+  vue-demi: true
+YAMLEOF
+    else
+        # pnpm v10 及以下使用 .npmrc
+        cat > "$dir/.npmrc" << 'NPMEOF'
+onlyBuiltDependencies[]=esbuild
+onlyBuiltDependencies[]=msw
+onlyBuiltDependencies[]=vue-demi
+NPMEOF
+    fi
+}
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BROCA_HOME="${HOME}/.broca"
@@ -109,9 +129,11 @@ info "pip: $($PYTHON -m pip --version | awk '{print $2}')"
 
 # --- Node.js / pnpm ---
 USE_PNPM=false
+PNPM_MAJOR_VERSION=0
 if command -v pnpm &>/dev/null; then
     USE_PNPM=true
-    info "pnpm: $(pnpm --version)"
+    PNPM_MAJOR_VERSION=$(pnpm --version | cut -d. -f1)
+    info "pnpm: $(pnpm --version) (major v$PNPM_MAJOR_VERSION)"
 elif command -v npm &>/dev/null; then
     info "npm: $(npm --version) — 将使用 npm 代替 pnpm"
 else
@@ -665,14 +687,10 @@ fi
 cd "$FRONTEND_DIR"
 
 if $USE_PNPM; then
-    info "使用 pnpm 安装前端依赖..."
-    # pnpm v10+ 默认阻止 build 脚本，放行项目所需的包
-    cat > ".npmrc" << 'NPMEOF'
-onlyBuiltDependencies[]=esbuild
-onlyBuiltDependencies[]=msw
-onlyBuiltDependencies[]=vue-demi
-NPMEOF
-    # 删除旧的 lockfile，让 pnpm 重新解析依赖并应用 build 权限
+    info "使用 pnpm v$PNPM_MAJOR_VERSION 安装前端依赖..."
+    # 根据 pnpm 版本写入对应的 build 权限配置
+    write_pnpm_build_config "$FRONTEND_DIR" "$PNPM_MAJOR_VERSION"
+    # 删除旧锁文件，确保 pnpm 重新解析并应用 build 权限配置
     rm -f pnpm-lock.yaml
     if ! BUILD_OUTPUT=$(pnpm install 2>&1); then
         error "pnpm install 失败"
@@ -685,14 +703,11 @@ else
     info "正在安装 pnpm (项目依赖 pnpm 管理)..."
     if BUILD_OUTPUT=$(npm install -g pnpm 2>&1); then
         USE_PNPM=true
-        info "pnpm 安装成功，使用 pnpm 安装前端依赖..."
-        # pnpm v10+ 默认阻止 build 脚本，放行项目所需的包
-        cat > ".npmrc" << 'NPMEOF'
-onlyBuiltDependencies[]=esbuild
-onlyBuiltDependencies[]=msw
-onlyBuiltDependencies[]=vue-demi
-NPMEOF
-        # 删除旧的 lockfile，让 pnpm 重新解析依赖并应用 build 权限
+        PNPM_MAJOR_VERSION=$(pnpm --version | cut -d. -f1)
+        info "pnpm v$PNPM_MAJOR_VERSION 安装成功，使用 pnpm 安装前端依赖..."
+        # 根据 pnpm 版本写入对应的 build 权限配置
+        write_pnpm_build_config "$FRONTEND_DIR" "$PNPM_MAJOR_VERSION"
+        # 删除旧锁文件，确保 pnpm 重新解析并应用 build 权限配置
         rm -f pnpm-lock.yaml
         if ! BUILD_OUTPUT=$(pnpm install 2>&1); then
             error "pnpm install 失败"
