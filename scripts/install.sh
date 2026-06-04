@@ -672,8 +672,9 @@ onlyBuiltDependencies[]=esbuild
 onlyBuiltDependencies[]=msw
 onlyBuiltDependencies[]=vue-demi
 NPMEOF
-    # 允许 pnpm 更新 lockfile 以应用 build 权限配置
-    if ! BUILD_OUTPUT=$(pnpm install --no-frozen-lockfile 2>&1); then
+    # 删除旧的 lockfile，让 pnpm 重新解析依赖并应用 build 权限
+    rm -f pnpm-lock.yaml
+    if ! BUILD_OUTPUT=$(pnpm install 2>&1); then
         error "pnpm install 失败"
         echo "$BUILD_OUTPUT"
         exit 1
@@ -691,8 +692,9 @@ onlyBuiltDependencies[]=esbuild
 onlyBuiltDependencies[]=msw
 onlyBuiltDependencies[]=vue-demi
 NPMEOF
-        # 允许 pnpm 更新 lockfile 以应用 build 权限配置
-        if ! BUILD_OUTPUT=$(pnpm install --no-frozen-lockfile 2>&1); then
+        # 删除旧的 lockfile，让 pnpm 重新解析依赖并应用 build 权限
+        rm -f pnpm-lock.yaml
+        if ! BUILD_OUTPUT=$(pnpm install 2>&1); then
             error "pnpm install 失败"
             echo "$BUILD_OUTPUT"
             exit 1
