@@ -22,6 +22,13 @@
 ## 目录
 
 - [概述](#概述)
+- [快速开始](#快速开始)
+  - [环境要求](#环境要求)
+  - [一键安装](#一键安装)
+  - [服务管理](#服务管理)
+  - [部署架构](#部署架构)
+  - [访问](#访问)
+  - [VS Code 扩展安装](#vs-code-扩展安装)
 - [核心架构](#核心架构)
 - [技术栈](#技术栈)
 - [模块详解](#模块详解)
@@ -33,7 +40,7 @@
   - [6. Session Runner](#6-session-runner)
   - [7. 上下文与记忆](#7-上下文与记忆)
   - [8. 快照与撤销系统](#8-快照与撤销系统)
-  - [9. 多智能体协作](#9-多智能体协作)
+  - [9. 多智能体编排](#9-多智能体编排)
   - [10. Skill 系统](#10-skill-系统)
   - [11. 命令系统](#11-命令系统)
 - [前端与客户端](#前端与客户端)
@@ -41,7 +48,6 @@
   - [Web 后端](#web-后端)
   - [VS Code 扩展](#vs-code-扩展)
 - [配置](#配置)
-- [快速开始](#快速开始)
 - [项目结构](#项目结构)
 
 ---
@@ -56,8 +62,129 @@ Broca 是一个用 Python 构建的Agent系统，核心设计理念是 **模块�
 - **快照与撤销**：基于Git的文件系统快照，实现操作级撤销/重做
 - **上下文压缩**：智能管理长对话上下文，自动压缩过期内容
 - **Skill插件系统**：通过 Markdown 文件定义可复用的技能
-- **多客户端**：Web界面、CLI、VS Code 扩展
+- **多客户端**：Web界面、VS Code 扩展
+- **多智能体编排**：4 种拓扑（Pipeline/Supervisor-Worker/Round-Table/Composite），基于有向图（Graph）驱动，共享黑板通信，支持 static/agent 路由、并行扇出/汇聚、条件跳转、循环控制、人在环路（HITL）
 - **一键安装**：通过安装脚本一键安装，支持supervisor进行服务管理
+
+---
+
+## 快速开始
+
+### 环境要求
+
+| 依赖　　| 最低版本 | 说明　　　　　　　　　　　 |
+| ---------| :--------:| ----------------------------|
+| Python　| ≥ 3.12　 | 主语言　　　　　　　　　　 |
+| pnpm　　| 任意版本 | Web 前端构建（可降级 npm） |
+| Node.js | ≥ 18　　 | 前端构建　　　　　　　　　 |
+| nginx　 | 任意版本 | 部署前端需要　　　　　　　 |
+### 一键安装（生产环境）
+
+```bash
+# 克隆项目
+git clone <repo-url> && cd broca
+
+# 一键安装
+sh scripts/install.sh
+```
+
+安装脚本会依次执行：
+
+| 步骤 | 内容 |
+|:----:|------|
+| 1/10 | 检查系统依赖（Python ≥3.12、pnpm、nginx） |
+| 2/10 | 安装 broca Python 模块 + supervisor |
+| 3/10 | 数据库迁移（broca 主数据库 + 后端数据库） |
+| 4/10 | 创建管理员账户（交互式） |
+| 5/10 | 配置文件上传存储（可选，支持 Cloudflare R2 / Supabase S3） |
+| 6/10 | 安装前端依赖并构建 |
+| 7/10 | 打包 VS Code 插件 |
+| 8/10 | 配置 nginx 站点（生成代理配置 + 部署静态文件） |
+| 9/10 | 创建 supervisor 进程管理配置 |
+| 10/10 | 完成安装 |
+
+安装目录结构：
+
+```
+~/.broca/
+├── configs/
+│   ├── configs.json              # 全局配置
+│   ├── llm_config_template.json           # LLM 配置
+│   ├── tool_permission_config.json # 工具权限配置
+│   └── agents/                   # Agent 角色配置
+├── data/
+│   ├── sessions.db               # broca 主数据库（会话、消息、Agent）
+│   └── backend.db                # 后端数据库（用户、认证）
+├── web/
+│   ├── backend/                  # FastAPI 后端代码
+│   └── frontend/                 # Vue 3 前端源码
+├── logs/
+│   ├── supervisord.log
+│   ├── backend.out.log
+│   └── frontend.out.log
+├── supervisor/
+│   └── supervisord.conf          # supervisor 配置
+├── run/
+│   └── supervisord.pid
+├── install.json                  # 安装信息
+└── nginx-broca.conf              # nginx 配置
+```
+
+*注意*: 首次安装需要将~/.broca/configs/llm_config_template.json改成llm_config.json，并填写相关api key。
+
+### 服务管理
+
+```bash
+# 启动所有生产服务
+broca service start
+
+# 查看服务状态
+broca service status
+
+# 重启服务
+broca service restart
+
+# 停止服务
+broca service stop
+```
+
+
+### 部署架构
+
+```
+浏览器 ──→ nginx(:5166) ──proxy──→ FastAPI(:9000)    REST API
+                        ──proxy──→ Socket.IO(:6868)  实时通信
+                        ──static──→ /var/www/broca/frontend/  前端静态文件
+```
+
+**单端口访问**，只需放行 5166 端口。WebSocket 代理自动处理跨域。
+
+### 访问
+
+- Web 界面：`http://localhost:5166`
+- REST API：`http://localhost:9000/api/`
+- Socket.IO：`http://localhost:6868`
+
+### VS Code 扩展安装
+
+安装脚本会自动打包 VS Code 插件，生成 `.vsix` 文件。安装方式如下：
+
+**方式一：通过 VS Code 界面安装（推荐）**
+
+1. 打开 VS Code
+2. 点击左侧活动栏的 **Extensions** 图标（或按 `Ctrl+Shift+X`）
+3. 点击扩展面板右上角的 `...` 菜单，选择 **Install from VSIX...**
+4. 选择 `broca-vscode/broca-chat-0.1.0.vsix` 文件
+
+**方式二：通过命令行安装**
+
+```bash
+code --install-extension broca-vscode/broca-chat-0.1.0.vsix
+```
+
+安装完成后，VS Code 左侧活动栏会出现 Broca 图标，点击即可使用。
+
+**配置连接**：安装后需要配置 Broca 后端地址（默认为 `http://localhost:8000`）和 WebSocket 地址（默认为 `http://localhost:6868`），可在 VS Code 设置中搜索 `broca` 进行配置。
 
 ---
 
@@ -124,7 +251,7 @@ Broca 是一个用 Python 构建的Agent系统，核心设计理念是 **模块�
 | [aiosqlite](https://github.com/omnilib/aiosqlite) | 异步 SQLite |
 | [python-socketio](https://python-socketio.readthedocs.io/) | 实时通信 |
 | [aiohttp](https://docs.aiohttp.org/) | 异步 HTTP | ≥ 3.11.0 |
-| [Jinja2](https://jinja.palletsprojects.com/) | 模板渲染 |
+| [Jinja2](https://jinja.palletsprojects.com/) | 模板渲染（编排提示词模板） |
 | [APScheduler](https://apscheduler.readthedocs.io/) | 任务调度 |
 | [GitPython](https://gitpython.readthedocs.io/) | Git 操作 |
 | [Playwright](https://playwright.dev/python/) | Web 抓取 |
@@ -310,145 +437,234 @@ SocketIOServer 是一个多端通信服务器，支持：
 
 **核心文件**: `broca/orchestration/`
 
-Broca 提供 6 种编排拓扑，支持将多个 Agent 组合为复杂工作流。编排器通过 **共享黑板（Blackboard）** 实现 Agent 间状态共享，Agent 通过内置工具（`task_management`、`write_blackboard`）自主协作，无需编排器"推送"任务。
+Broca 提供 4 种编排拓扑，支持将多个 Agent 组合为复杂工作流。编排器通过 **共享黑板（Blackboard）** 实现 Agent 间状态共享，Agent 通过内置工具（`task_management`、`write_blackboard`）自主协作，无需编排器"推送"任务。
 
-#### 9.1 拓扑总览
+#### 9.1 架构概览
 
-| 拓扑 | 说明 | 适用场景 |
-|------|------|----------|
-| **Pipeline** | 流水线顺序执行，支持 5 种步骤类型 | 有明确步骤的工作流 |
-| **Supervisor-Worker** | 主管分解任务，工人执行，主管检查/迭代 | 需要分工协作和质量把控 |
-| **Round-Table** | 多轮圆桌讨论，Moderator 控制节奏 | 头脑风暴、辩论、集体决策 |
-| **Broadcast** | Dispatcher 分解任务，Worker 并行执行，Aggregator 汇聚 | 多角度分析同一问题 |
-| **Consensus** | 多个 Reviewer 独立评分，按策略聚合 | 代码审查、方案评估 |
-| **Composite** | 组合嵌套多种拓扑 | 复杂工作流编排 |
+编排系统基于 **有向图（Graph）** 模型重新设计，Pipeline 和 Composite 共享 `GraphOrchestrator` 基类。图遍历、路由选择、并行执行、循环控制等通用逻辑由基类统一实现。
 
-#### 9.2 核心概念
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Orchestrator (ABC)                        │
+│  ┌─────────────┐  ┌──────────────┐  ┌───────────────────┐  │
+│  │ CrewContext  │  │ Blackboard   │  │ OrchestrationResult│  │
+│  └─────────────┘  └──────────────┘  └───────────────────┘  │
+└─────────────────────────┬───────────────────────────────────┘
+                          │
+          ┌───────────────┴───────────────┐
+          │                               │
+┌─────────▼──────────┐         ┌──────────▼─────────┐
+│  GraphOrchestrator  │         │  RoundTable         │
+│  (图遍历基类)        │         │  (自定义流程)        │
+└──┬───────────────┬──┘         └─────────────────────┘
+   │               │
+   ▼               ▼
+┌──────┐     ┌──────────┐
+│Pipeline│   │Composite │
+└───────┘    └──────────┘
 
-**共享黑板（Blackboard）**
-所有编排器共享同一个 Blackboard 实例，Agent 通过 `write_blackboard` / `read_blackboard` 工具读写。黑板支持：
+┌─────────────────────────────────────────────────────────────┐
+│                   SupervisorWorker                           │
+│              (独立实现，非图驱动)                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+#### 9.2 拓扑总览
+
+| 拓扑 | 说明 | 适用场景 | 状态 |
+|------|------|----------|:----:|
+| **Pipeline** | 有向图流水线，支持 TASK/HUMAN 节点，static/agent 路由，并行扇出/汇聚，条件跳转与循环 | 有明确步骤的工作流 | ✅ |
+| **Supervisor-Worker** | 主管分解任务，工人执行，主管检查/迭代 | 需要分工协作和质量把控 | ✅ |
+| **Round-Table** | 多轮圆桌讨论，Moderator 控制节奏，支持每轮自定义配置 | 头脑风暴、辩论、集体决策 | ✅ |
+| **Composite** | 有向图组合嵌套，支持 TASK/HUMAN/CREW 三种节点类型 | 复杂工作流编排 | ✅ |
+
+#### 9.3 核心概念
+
+##### 有向图模型（Graph Model）
+
+所有编排以有向图（Graph）定义，包含节点（Node）和边（Edge）：
+
+**节点类型**：
+
+| 类型 | 说明 | 字段 |
+|------|------|------|
+| `TASK` | 单 Agent 执行任务 | `agent`, `task`, `context` |
+| `HUMAN` | 人在环路（HITL），通过 Agent 向用户提问 | `question`, `response_field`, `timeout` |
+| `CREW` | 子编排（仅 Composite 使用） | `crew_ref` |
+
+**边（Edge）**：定义节点间的有向连接，支持条件路由：
+
+```python
+@dataclass
+class Edge:
+    target: str                    # 目标节点名称
+    description: str = ""          # 描述
+    field: Optional[str] = None    # 黑板字段名（条件路由用）
+    operator: str = "eq"           # 比较运算符
+    value: Any = None              # 目标值
+    context: Optional[Dict] = None # 路由时写入黑板的上下文
+```
+
+**路由器（Router）**：控制出边选择策略：
+
+| 模式 | 说明 |
+|------|------|
+| `static` | 基于黑板值条件匹配，支持多选（并行扇出） |
+| `agent` | 由指定的 Evaluator Agent 通过 LLM 决策 |
+| `static_then_agent` | 先尝试 static 匹配，失败则回退到 agent 决策 |
+
+**图校验（compile）**：`Graph.compile()` 自动校验：
+- 入口存在性
+- 所有 edge.target 指向存在的节点
+- 所有节点从入口可达（无孤立节点）
+- Fan-out 汇聚约束（并行分支必须汇聚到同一节点）
+- Human 节点完整性
+- Router 完整性
+- 循环检测与 max_loop 继承
+
+##### 共享黑板（Blackboard）
+
+所有编排器共享同一个 `Blackboard` 实例，Agent 通过 `write_blackboard` / `read_blackboard` 工具读写。黑板支持：
 - 嵌套路径（`pipeline.step_1.output`）
-- 版本化管理（每次写入生成新版本）
-- 变更事件通知
+- 版本化管理（每次写入生成新版本号）
+- 变更事件通知（subscribe）
+- 变更日志（get_changes）
+- 序列化/反序列化（持久化支持）
+- 线程安全（asyncio.Lock）
 
-**工具驱动（Tool-Driven）**
-编排器通过 Agent 的内置工具（`task_management`、`write_blackboard`）驱动协作，而非解析 LLM 的文本输出：
-- 调度者（Dispatcher/Supervisor）通过 `task_management.create` 创建任务
-- 将 `{worker_name: task_id}` 映射通过 `write_blackboard` 写入黑板
-- Worker 自主从黑板读取 task_id，用 `task_management.get` 获取详情后执行
-- 执行完成后通过 `task_management.update` 标记完成
+##### 命名空间（Namespace）
 
-**停止约定（Stop Convention）**
+每个编排器实例拥有独立命名空间（默认为 Crew 名称），黑板 key 自动以 `{namespace}.` 为前缀，确保多级编排间黑板数据隔离。
+
+##### 停止约定（Stop Convention）
+
 Agent 通过黑板约定请求停止整个编排：
-- Agent 调用 `write_blackboard(key="orchestration.stop", value={"reason": "..."})`
-- 编排器在每个 Agent 执行完毕后检查黑板，发现信号则调用 `abort()` 优雅终止
+- Agent 调用 `write_blackboard(key="orchestration.stop", value={"agent": "...", "reason": "..."})`
+- 编排器在每个 Agent 执行完毕后检查黑板，发现信号则抛出 `OrchestrationStopRequest` 异常
 - 信号自动清除，防止重复触发
 
-**共享并行执行器**
+##### 共享并行执行器
+
 所有编排器共用 `execute_agents_in_parallel()` 函数，通过 `asyncio.gather` 并行执行 Agent 任务，每个 Agent 独立容错。
 
-#### 9.3 Pipeline 流水线
+##### Prompt 模板系统（PromptLoader）
 
-Pipeline 是最灵活的拓扑，支持 5 种步骤类型，可在一个 YAML 中表达复杂工作流。
+所有编排器的提示词通过 Jinja2 模板管理，实现提示词与代码分离。模板按拓扑类型分组存放在 `broca/orchestration/prompts/` 目录下：
 
-**步骤类型**：
+```
+prompts/
+├── graph/                  # 图编排通用模板（task_context, execute_step, fan_in_agent, human_node, agent_route）
+├── supervisor_worker/      # Supervisor-Worker 模板（plan, check_and_plan, synthesize, worker_prompt）
+├── round_table/            # Round-Table 模板（discussion, moderator_*）
+```
+　　　　　　　　　　　　　　　　 |
 
-| 类型 | 说明 | 执行方式 |
-|------|------|----------|
-| `task` | 单 Agent 顺序执行 | 串行 |
-| `fan-out` | 扇出并行分发到多个 Agent 或子 Crew | `asyncio.gather` |
-| `fan-in` | 汇聚多个分支结果 | concat / merge / agent |
-| `condition` | 条件分支判断 | 静态比较 / Agent 评估 |
-| `switch` | 多路分支匹配 | 静态匹配 / Agent 评估 |
+##### CrewOrchestratorRunner
 
-**YAML 示例**：
+`broca/session_runner/orchestrator_runner.py` — 在 Session Runner 子进程中管理编排生命周期：
+- 创建 Blackboard 并注入 Agent 工具
+- 注册 Agent 实例到 CrewContext
+- 根据 `use_history` 配置清空 Agent 上下文历史
+- 设置进度回调，阶段完成时通过 IPC 推送实时进度
+- 黑板事件订阅，推送实时进度更新
+- 发送编排生命周期事件（start/complete/error/progress）
+
+#### 9.4 Pipeline 流水线（有向图版）
+
+Pipeline 基于有向图驱动，节点类型为 TASK（单 Agent 任务）和 HUMAN（人在环路）。图遍历逻辑继承自 `GraphOrchestrator`。
+
+**YAML 示例**（完整代码审查流水线）：
 
 ```yaml
+name: "代码审查流水线"
+description: "演示 Pipeline 有向图编排能力"
+
 orchestrator:
   type: pipeline
   extras:
-    steps:
-      # 普通任务
-      - agent: "代码审查员"
-        task: "审查代码质量"
+    graph:
+      entry: start
+      nodes:
+        # 入口
+        start:
+          edges:
+            - target: static_analysis
 
-      # 扇出：三个维度并行分析
-      - type: fan-out
-        name: "并行分析"
-        branches:
-          - name: "安全审计"
-            agent: "安全审计员"
-            task: "检查安全漏洞"
-          - name: "性能分析"
-            agent: "性能分析员"
-            task: "分析性能瓶颈"
-          - name: "风格检查"
-            crew:                         # 分支也可运行子编排器
-              type: pipeline
-              steps:
-                - agent: "风格检查员"
-                  task: "检查代码风格"
-                - agent: "质量管理员"
-                  task: "汇总质量报告"
+        # Step 1: 静态代码审查
+        static_analysis:
+          agent: "代码审查员"
+          task: "对代码进行全面的静态代码审查..."
+          edges:
+            - target: triage_reviews
 
-      # 扇入：汇聚所有结果
-      - type: fan-in
-        name: "结果汇聚"
-        aggregation_strategy: agent
-        aggregator: "质量管理员"
-        task: "综合各维度分析结果"
+        # Step 2: 路由 — 扇出到安全审查 + 性能审查
+        triage_reviews:
+          router:
+            mode: static
+          edges:
+            - target: security_audit
+              field: has_security_issues
+              operator: eq
+              value: true
+            - target: performance_review
+              field: has_performance_issues
+              operator: eq
+              value: true
+            - target: aggregation
+              # 无条件兜底
 
-      # 条件分支：Agent 评估决策
-      - type: condition
-        name: "决策分支"
-        evaluator: "质量管理员"
-        evaluation_prompt: |
-          根据审查结果判断是否可以自动批准。
-          考虑：安全风险、代码质量、缺陷严重性。
-        branches:
-          - name: "自动批准"
-            agent: "集成管理员"
-            task: "执行自动合并"
-          - name: "需人工处理"
-            agent: "集成管理员"
-            task: "通知开发人员"
+        # 安全审查（并行分支）
+        security_audit:
+          agent: "安全审计员"
+          task: "对代码进行安全审查..."
+          edges:
+            - target: aggregation
 
-      # Switch 多路分支
-      - type: switch
-        name: "优先级处理"
-        evaluator: "项目经理"
-        evaluation_prompt: "根据结果决定处理优先级"
-        branches:
-          - name: "紧急"
-            agent: "通知代理"
-            task: "发送紧急通知"
-          - name: "普通"
-            agent: "通知代理"
-            task: "记录到 Sprint Backlog"
-          - name: "低优先级"
-            agent: "通知代理"
-            task: "记录到技术债务"
-        default_branch: "普通"
+        # 性能审查（并行分支）
+        performance_review:
+          agent: "性能工程师"
+          task: "对代码进行性能审查..."
+          edges:
+            - target: aggregation
+
+        # Step 3: 汇聚 — Agent 汇聚策略
+        aggregation:
+          agent: "质量管理员"
+          task: "综合所有审查结果..."
+          extras:
+            aggregation_strategy: agent
+          edges:
+            - target: quality_gate
+
+        # Step 4: 质量检查 + 条件路由（循环控制）
+        quality_gate:
+          agent: "审批员"
+          task: "判断代码质量是否达标..."
+          max_loop: 3
+          router:
+            mode: static
+          edges:
+            - target: final_approval
+              field: gate_passed
+              operator: eq
+              value: true
+            - target: fix_issues
+
+        # Step 5: 修复问题（循环回到 static_analysis）
+        fix_issues:
+          agent: "程序员"
+          task: "根据审查反馈修复代码问题..."
+          max_loop: 3
+          edges:
+            - target: static_analysis
+
+        # Step 6: 最终批准
+        final_approval:
+          agent: "审批员"
+          task: "输出最终批准报告..."
 ```
 
-**Condition 评估模式**：
-
-```yaml
-# Agent 评估模式（推荐）：LLM 根据上下文判断
-- type: condition
-  evaluator: "质量管理员"
-  evaluation_prompt: "判断代码质量是否达标"
-
-# 静态比较模式：简单的值比较
-- type: condition
-  condition_field: "score"
-  condition_operator: "gte"
-  condition_value: 0.7
-```
-
-支持运算符：`eq` / `ne` / `gt` / `gte` / `lt` / `lte` / `contains` / `startswith` / `endswith`
-
-**Fan-in 汇聚策略**：
+**汇聚策略（Aggregation）**：
 
 | 策略 | 说明 |
 |------|------|
@@ -456,9 +672,23 @@ orchestrator:
 | `merge` | 合并为一个 dict |
 | `agent` | 由指定的 Aggregator Agent 调用 LLM 汇聚 |
 
-#### 9.4 Supervisor-Worker 主管-工人
+**执行流程**：
+```
+static_analysis → triage_reviews (static路由)
+  ├──→ security_audit ──┐
+  ├──→ performance_review ─┤
+  └──→ (无条件兜底) ──────┘
+                          ↓
+                     aggregation (agent汇聚)
+                          ↓
+                     quality_gate (条件路由)
+                       ├── gate_passed=true → final_approval
+                       └── gate_passed=false → fix_issues → static_analysis (循环)
+```
 
-Supervisor Agent 通过工具创建子任务，Worker 自主拉取，Supervisor 做质量检查和最终合成。
+#### 9.5 Supervisor-Worker 主管-工人
+
+Supervisor Agent 通过 `task_management` 工具创建子任务，Worker 自主从黑板拉取任务详情并执行，Supervisor 做质量检查（LLM 评估）和最终结果合成。
 
 ```yaml
 orchestrator:
@@ -478,44 +708,73 @@ agents:
   - role: worker
     name: "报告撰写人"
     config: writer.md
-```
+
+额外选项（orchestrator.extras）：
+- `do_synthesis: true/false` — 是否在达标后由 Supervisor LLM 合成最终报告（默认 false）
 
 执行流程：
 ```
-Supervisor (task_management.create + write_blackboard)
-  → Worker 自主拉取任务并执行
-    → Supervisor LLM 质量检查 (PASS/FAIL)
-      → 达标 → Supervisor LLM 合成最终报告
-      → 不达标 → 下一轮迭代
+1. Supervisor Agent 通过 task_management.create 创建子任务
+2. Supervisor 将 {worker_name: task_id} 映射写入黑板 key 'task_assignments'
+3. Worker 自主从黑板读取 task_id，用 task_management.get 获取详情后执行
+4. Supervisor LLM 一次性完成：质量检查 + 计划更新（合并步骤）
+   - 达标 → [可选] Supervisor LLM 合成最终报告
+   - 不达标 → 读取新任务分配，继续下一轮迭代
 ```
 
-#### 9.5 Round-Table 圆桌讨论
+**关键特性**：
+- 质量检查与计划更新合并为一次 LLM 调用（`supervisor_check_and_plan.j2`），减少交互轮次
+- Worker 通过 `use_history: false` 配置每次从干净状态开始执行
+- 支持 `do_synthesis` 开关控制是否合成最终报告
+
+#### 9.6 Round-Table 圆桌讨论
 
 多个参与者围绕议题进行多轮发言，支持三种发言顺序和可选的主持人开场/结束语。
+
+**新增特性：每轮自定义配置（rounds_config）**
+
+支持为每一轮单独配置发言人和顺序，实现复杂的辩论流程：
 
 ```yaml
 orchestrator:
   type: round-table
-  max_rounds: 3
+  max_rounds: 4
   extras:
     moderator_opening: true      # 主持人开场语
     moderator_closing: true      # 主持人结束语
-    speaker_order: moderator     # 发言顺序
+    speaker_order: moderator     # 默认发言顺序
+    rounds:                      # 每轮自定义配置
+      - name: "立论"             # 第一轮：正方立论
+        speakers: ["正方一辩", "正方二辩", "正方三辩"]
+        order: fixed
+      - name: "攻辩"             # 第二轮：双方交替攻辩
+        speakers: ["正方二辩", "反方二辩", "正方三辩", "反方三辩"]
+        order: fixed
+      - name: "自由辩论"         # 第三轮：自由辩论
+        order: moderator
+        order_rule: "交替发言，每人限时"
+      - name: "总结"             # 第四轮：总结陈词
+        speakers: ["正方四辩", "反方四辩"]
+        order: fixed
 
 agents:
   - role: moderator
     name: "主持人"
     config: moderator.md
+    use_history: false
   - role: participant
-    name: "正方"
-    config: pro.md
+    name: "正方一辩"
+    config: pro1.md
+    use_history: false
     extras:
       stance: pro
   - role: participant
-    name: "反方"
-    config: con.md
+    name: "反方一辩"
+    config: con1.md
+    use_history: false
     extras:
       stance: con
+  # ... 更多参与者
 ```
 
 **发言顺序模式**：
@@ -526,176 +785,183 @@ agents:
 | `random` | 每轮随机打乱 |
 | `moderator` | Moderator Agent 根据讨论进展决定每轮顺序 |
 
-#### 9.6 Broadcast 广播
+**每轮配置字段**：
 
-Dispatcher Agent 通过工具创建子任务，Worker 自主拉取执行，Aggregator 汇聚结果。
-
-```yaml
-orchestrator:
-  type: broadcast
-
-agents:
-  - role: dispatcher
-    name: "分析主管"
-    config: dispatcher.md
-  - role: worker
-    name: "市场分析师"
-    config: market_analyst.md
-  - role: worker
-    name: "技术评估员"
-    config: tech_evaluator.md
-  - role: aggregator
-    name: "报告撰写员"
-    config: aggregator.md
-```
-
-执行流程：
-```
-Dispatcher (task_management.create + write_blackboard)
-  → Worker 自主拉取任务并执行
-    → Aggregator LLM 汇聚结果
-```
-
-#### 9.7 Consensus 共识
-
-多个 Reviewer 独立评分，按策略聚合，可选 Adjudicator LLM 综合评议。
-
-```yaml
-orchestrator:
-  type: consensus
-  strategy: average        # average / majority / unanimous / weighted
-  threshold: 0.7           # 通过阈值
-  weights:                 # weighted 策略的权重
-    reviewer_a: 1.5
-    reviewer_b: 1.0
-
-agents:
-  - role: reviewer
-    name: "评审员A"
-    config: reviewer.md
-  - role: reviewer
-    name: "评审员B"
-    config: reviewer.md
-  - role: adjudicator       # 可选：LLM 综合评议
-    name: "决策者"
-    config: adjudicator.md
-```
-
-**聚合策略**：
-
-| 策略 | 算法 |
+| 字段 | 说明 |
 |------|------|
-| `average` | 平均分 >= 阈值 |
-| `majority` | 超过半数通过 |
-| `unanimous` | 全部通过 |
-| `weighted` | 加权平均 >= 阈值 |
+| `name` | 轮次名称（如"立论"、"攻辩"） |
+| `speakers` | 指定本轮发言的参与者列表 |
+| `roles` | 按角色筛选发言人 |
+| `order` | 本轮发言顺序（覆盖全局设置） |
+| `order_rule` | 发言顺序规则说明（moderator 模式时使用） |
 
-#### 9.8 Composite 组合嵌套
+#### 9.7 Composite 组合嵌套（有向图版）
 
-Composite 可以将其他拓扑组合使用，支持四种执行模式：
+Composite 基于有向图驱动，支持三种节点类型：TASK（单 Agent 任务）、HUMAN（人在环路）、CREW（子编排）。图遍历逻辑继承自 `GraphOrchestrator`。
+
+**YAML 示例**（产品发布决策流程）：
 
 ```yaml
+name: "产品发布决策"
+description: "AI Agent 组合编排：产品发布前的全面评估与决策"
+
 orchestrator:
   type: composite
-
-  # 子 Crew 执行方式由 type 决定
-  # pipeline:          串行执行所有子 Crew
-  # supervisor-worker: 串行 + supervisor phase
-  # broadcast:         并行执行所有子 Crew
-  # (其他):            串行
-
   extras:
-    # broadcast 模式专用：
-    aggregator: "项目经理"          # 扇入汇聚（并行完成后执行）
-    aggregator_prompt: "综合结果"
-    follow_up:                      # 后续串行步骤
-      - name: "最终决策"
-        orchestrator:
-          type: consensus
-        agents: [...]
+    graph:
+      entry: start
+      nodes:
+        start:
+          edges:
+            - target: kickoff
+
+        # Step 1: TASK 节点 — 发布协调员启动调研
+        kickoff:
+          agent: "发布协调员"
+          task: "启动产品发布评估流程..."
+          edges:
+            - target: market_research
+
+        # Step 2: CREW 节点 — 市场调研分析（子编排）
+        market_research:
+          type: crew
+          crew_ref: "市场调研分析"
+          context:
+            plan: "{{ blackboard.assessment_plan }}"
+          edges:
+            - target: decision_review
+
+        # Step 3: CREW 节点 — 发布决策评审（子编排）
+        decision_review:
+          type: crew
+          crew_ref: "发布决策评审"
+          context:
+            research_results: "{{ blackboard.market_research }}"
+          edges:
+            - target: final_report
+
+        # Step 4: TASK 节点 — 发布协调员撰写最终报告
+        final_report:
+          agent: "发布协调员"
+          task: "综合所有调研和评审结果，撰写最终报告..."
 
 sub_crews:
-  - name: "市场分析"
+  # 子 Crew 1: 市场调研分析（Pipeline）
+  - name: "市场调研分析"
     orchestrator:
       type: pipeline
+      extras:
+        graph:
+          entry: start
+          nodes:
+            start:
+              edges:
+                - target: market
+            market:
+              agent: "市场研究员"
+              task: "分析产品市场前景..."
+              edges:
+                - target: user
+            user:
+              agent: "用户研究员"
+              task: "进行用户研究分析..."
+              edges:
+                - target: tech
+            tech:
+              agent: "技术评估员"
+              task: "进行技术评估..."
     agents:
       - role: worker
         name: "市场研究员"
-        config: researcher.md
-    steps:
-      - agent: "市场研究员"
-        task: "分析市场趋势"
-
-  - name: "技术评估"
-    orchestrator:
-      type: pipeline
-    agents:
+        config: market_researcher.md
+      - role: worker
+        name: "用户研究员"
+        config: user_researcher.md
       - role: worker
         name: "技术评估员"
-        config: evaluator.md
-    steps:
-      - agent: "技术评估员"
-        task: "评估技术可行性"
+        config: tech_assessor.md
+
+  # 子 Crew 2: 发布决策评审（Pipeline）
+  - name: "发布决策评审"
+    orchestrator:
+      type: pipeline
+      extras:
+        graph:
+          entry: start
+          nodes:
+            start:
+              edges:
+                - target: business_review
+            business_review:
+              agent: "业务负责人"
+              task: "从业务角度评审..."
+              edges:
+                - target: quality_review
+            quality_review:
+              agent: "质量经理"
+              task: "从质量角度评审..."
+              edges:
+                - target: risk_review
+            risk_review:
+              agent: "风险管理员"
+              task: "从风险角度评审..."
+    agents:
+      - role: worker
+        name: "业务负责人"
+        config: business_director.md
+      - role: worker
+        name: "质量经理"
+        config: quality_manager.md
+      - role: worker
+        name: "风险管理员"
+        config: risk_manager.md
 ```
 
-#### 9.9 完整工作流示例
+**子 Crew 配置字段**：
 
-以下示例展示 6 种拓扑组合的复杂编排：
+| 字段 | 说明 |
+|------|------|
+| `name` | 子 Crew 名称，用于 `crew_ref` 引用 |
+| `orchestrator` | 子 Crew 编排器配置（支持 pipeline/round-table/supervisor-worker） |
+| `agents` | 子 Crew 的 Agent 角色配置 |
+| `graph` | 子 Crew 的有向图定义（Pipeline 类型使用） |
 
-```yaml
-name: "产品发布决策全流程"
-orchestrator:
-  type: pipeline
-  extras:
-    steps:
-      # Step 1-2: 顺序准备
-      - agent: "数据工程师"
-        task: "准备数据"
-      - agent: "分析师"
-        task: "初步分析"
-
-      # Step 3: 扇出 — 市场和技术并行分析
-      - type: fan-out
-        name: "并行分析"
-        branches:
-          - name: "市场分析"
-            crew:
-              type: pipeline
-              steps:
-                - agent: "市场研究员"
-                  task: "分析市场趋势"
-                - agent: "竞品分析师"
-                  task: "分析竞争对手"
-          - name: "技术评估"
-            crew:
-              type: pipeline
-              steps:
-                - agent: "技术评估员"
-                  task: "技术可行性评估"
-                - agent: "安全审计员"
-                  task: "安全风险评估"
-
-      # Step 4: 扇入 — 汇聚
-      - type: fan-in
-        aggregation_strategy: agent
-        aggregator: "项目经理"
-        task: "综合双方分析结果"
-
-      # Step 5-6: 顺序后续
-      - agent: "决策者"
-        task: "做出最终决策"
-      - agent: "报告撰写员"
-        task: "撰写综合报告"
+**执行流程**：
+```
+kickoff (TASK: 发布协调员)
+  → market_research (CREW: 市场调研分析 Pipeline)
+    → market → user → tech
+  → decision_review (CREW: 发布决策评审 Pipeline)
+    → business_review → quality_review → risk_review
+  → final_report (TASK: 发布协调员)
 ```
 
-完整执行流程：
-```
-数据准备 → 初步分析
-  → [并行] 市场分析(pipeline) ─┐
-  → [并行] 技术评估(pipeline) ─┤
-                               ├─→ 项目经理汇聚
-                                  → 决策者决策 → 撰写报告
-```
+#### 9.8 图校验与循环控制
+
+**图校验（Graph.compile()）**：自动执行以下校验：
+1. 入口节点存在性
+2. 所有 edge.target 指向存在的节点
+3. 所有节点从入口可达（无孤立节点）
+4. Fan-out 汇聚约束（并行分支必须汇聚到同一节点）
+5. Human 节点完整性（必须有 question 和 response_field）
+6. Router 完整性（agent 模式必须有 evaluator）
+7. 循环检测与 max_loop 继承
+
+**循环控制**：
+- `max_loop`：节点最大执行次数，防止无限循环
+- 循环检测：Tarjan 算法自动识别强连通分量（SCC）
+- max_loop 继承：循环中未显式设置 max_loop 的节点自动继承同环中其他节点的值
+
+#### 9.9 完整 Demo 示例
+
+项目提供 4 个完整的编排 Demo：
+
+| Demo | 拓扑 | 说明 |
+|------|------|------|
+| `examples/pipeline_code-review/` | Pipeline | 代码审查流水线：审查→扇出→汇聚→质量门禁→修复循环→批准 |
+| `examples/supervisor-worker_research-report/` | Supervisor-Worker | 研究报告生成：主管分解→工人执行→检查迭代 |
+| `examples/round-table_ai-debate/` | Round-Table | AI 辩论赛：多角色辩论，每轮自定义配置 |
+| `examples/composite_product-launch/` | Composite | 产品发布决策：TASK + CREW 节点组合 |
 
 
 ### 10. Skill 系统
@@ -884,100 +1150,6 @@ skills: all
 
 ---
 
-## 快速开始
-
-### 环境要求
-
-| 依赖 | 最低版本 | 说明 |
-|------|:--------:|------|
-| Python | ≥ 3.12 | 主语言 |
-| pnpm | 任意版本 | Web 前端构建（可降级 npm） |
-| Node.js | ≥ 18 | 前端构建 |
-| nginx | 任意版本 | **可选** — 生产环境推荐 |
-
-### 一键安装（生产环境）
-
-```bash
-# 克隆项目
-git clone <repo-url> && cd broca
-
-# 一键安装
-sh scripts/install.sh
-```
-
-安装脚本会依次执行：
-
-| 步骤 | 内容 |
-|:----:|------|
-| 1/8 | 检查系统依赖（Python、pnpm、nginx） |
-| 2/8 | 安装 broca Python 模块 + supervisor |
-| 3/8 | 创建数据库并执行迁移（`~/.broca/data/`） |
-| 4/8 | 配置文件上传存储（可选，支持 Cloudflare R2 / Supabase S3） |
-| 5/8 | 安装前端依赖并构建 |
-| 6/8 | 配置 nginx 站点（生成代理配置 + 部署静态文件） |
-| 7/8 | 生成 supervisor 进程管理配置 |
-| 8/8 | 完成安装 |
-
-安装目录结构：
-
-```
-~/.broca/
-├── data/
-│   ├── sessions.db        # broca 主数据库（会话、消息、Agent）
-│   └── backend.db         # 后端数据库（用户、认证）
-├── logs/
-│   ├── supervisord.log
-│   ├── backend.out.log
-│   └── frontend.out.log
-├── supervisor/
-│   └── supervisord.conf   # supervisor 配置
-├── run/
-│   └── supervisord.pid
-├── install.json           # 安装信息
-└── nginx-broca.conf       # nginx 配置
-```
-
-### 服务管理
-
-```bash
-# 启动所有生产服务
-broca service start
-
-# 查看服务状态
-broca service status
-
-# 重启服务
-broca service restart
-
-# 停止服务
-broca service stop
-```
-
-### 开发模式
-
-```bash
-# 同时启动前端 + 后端（热重载）
-broca web
-```
-
-### 部署架构
-
-```
-浏览器 ──→ nginx(:5166) ──proxy──→ FastAPI(:9000)    REST API
-                        ──proxy──→ Socket.IO(:6868)  实时通信
-                        ──static──→ /var/www/broca/frontend/  前端静态文件
-```
-
-**单端口访问**，只需放行 5166 端口。WebSocket 代理自动处理跨域。
-
-### 访问
-
-- Web 界面：`http://localhost:5166`
-- REST API：`http://localhost:9000/api/`
-- Socket.IO：`http://localhost:6868`
-
----
-
 ## 项目结构
 
 ```
@@ -1002,6 +1174,7 @@ broca/
 │   ├── session_runner/             # 子进程 Runner
 │   │   ├── manager.py              # 进程管理器
 │   │   ├── runner.py               # 子进程入口
+│   │   ├── orchestrator_runner.py  # 编排运行器（管理编排生命周期/进度推送）
 │   │   ├── ipc.py                  # 进程间通信
 │   │   ├── models.py               # 数据结构
 │   │   └── heartbeat.py            # 心跳监控
@@ -1023,20 +1196,23 @@ broca/
 │   │   └── ...                     # 其他工具
 │   ├── agent.py                    # Agent 类
 │   ├── agent_configs.py            # Agent 配置
-│   ├── agent_crew.py               # 多 Agent 协作
+│   ├── agent_crew.py               # [遗留] 旧的 Agent 编排（已迁移至 orchestration/）
 │   ├── agent_manager.py            # Agent 工厂
 │   ├── orchestration/              # 多 Agent 编排系统
-│   │   ├── orchestrator.py         # 编排器基类 + 共享执行器
-│   │   ├── crew.py                 # 编排数据结构 (CrewConfig/拓扑/角色)
-│   │   ├── pipeline.py             # Pipeline 流水线（5 种步骤类型）
-│   │   ├── supervisor_worker.py    # Supervisor-Worker 主管-工人
-│   │   ├── round_table.py          # Round-Table 圆桌讨论
-│   │   ├── broadcast.py            # Broadcast 广播分发
-│   │   ├── consensus.py            # Consensus 共识评估
-│   │   ├── composite.py            # Composite 组合嵌套
-│   │   ├── blackboard.py           # 共享黑板
+│   │   ├── orchestrator.py         # 编排器基类 + 共享并行执行器 + 工厂 + 条件求值
+│   │   ├── crew.py                 # 编排数据结构 (CrewConfig/OrchestratorType/角色/校验器)
+│   │   ├── blackboard.py           # 共享黑板（版本化、事件通知、变更日志）
+│   │   ├── graph_model.py          # 有向图数据模型 (Node/Edge/Router/Graph/GraphBuilder)
+│   │   ├── graph_orchestrator.py   # 有向图编排基类（图遍历/路由/并行/汇聚/HITL）
+│   │   ├── pipeline.py             # Pipeline 流水线（有向图版，继承 GraphOrchestrator）
+│   │   ├── supervisor_worker.py    # Supervisor-Worker 主管-工人拓扑（独立实现）
+│   │   ├── round_table.py          # Round-Table 圆桌讨论拓扑（独立实现，支持每轮自定义配置）
+│   │   ├── composite.py            # Composite 组合嵌套（有向图版，继承 GraphOrchestrator，支持 CREW 节点）
 │   │   ├── prompt_loader.py        # Jinja2 提示词模板加载器
-│   │   └── prompts/                # 按拓扑分组的提示词模板
+│   │   └── prompts/                # 按拓扑分组的 Jinja2 提示词模板
+│   │       ├── graph/              #   图编排通用模板（task_context, execute_step, fan_in_agent, human_node, agent_route）
+│   │       ├── supervisor_worker/  #   supervisor-worker 模板（plan, check_and_plan, synthesize）
+│   │       ├── round_table/        #   round-table 模板（discussion, moderator_*）
 │   ├── execution_engine.py         # 执行引擎
 │   ├── commands/                   # 命令系统
 │   │   ├── base.py                 # 命令基类（CommandBase/LocalCommand/PromptCommand）
@@ -1099,6 +1275,9 @@ broca/
 | **策略 (Strategy)**　　 | 插件式工具系统、LLM 多提供商抽象　　　　　　　　　　　　　　　　　　　　　　 |
 | **工厂 (Factory)**　　　| AgentFactory 创建/恢复 Agent　　　　　　　　　　　　　　　　　　　　　　　　 |
 | **代理 (Proxy)**　　　　| IPC 子进程管理　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
-| **模板方法 (Template)** | 执行步骤生命周期 (capture → LLM → tool → compress)　　　　　　　　　　　　　 |
+| **模板方法 (Template)** | 执行步骤生命周期 (capture → LLM → tool → compress)；编排器基类 run() / GraphOrchestrator._run_main_loop() 流程　　　　　 |
+| **组合 (Composite)**　　| Composite 编排器嵌套子编排器（CREW 节点），子编排器共享父编排器的黑板和 Agent 实例　　　　　　　　　　　　　　　　　　　 |
+| **桥接 (Bridge)**　　　　| GraphOrchestrator 抽象图遍历逻辑，子类 PipelineOrchestrator / CompositeOrchestrator 实现 _execute_node() 分发　　　　　　|
+| **黑板（Blackboard）** | agent crew数据共享｜
 
 ---
