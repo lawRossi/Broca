@@ -65,8 +65,6 @@ const getIcon = (message: Message) => {
     } else {
       return '🔧'
     }
-  } else if (message.message_type === 'system_message' || message.role === 'system') {
-    return '💬'
   }
   return '💬'
 }
@@ -98,7 +96,7 @@ const getSenderName = (message: Message, agentName: string) => {
       return `@${senderName} - Tool`
     }
     return ''
-  } else if (message.message_type === 'system_message' || message.role === 'system') {
+  } else if (message.message_type === 'agent_system_message' || message.role === 'agent_system') {
     return 'System'
   }
   return 'Unknown'
@@ -113,7 +111,7 @@ const getHeaderColor = (message: Message) => {
     return 'text-red-700'
   } else if (message.message_type === 'tool_call') {
     return 'text-purple-700'
-  } else if (message.message_type === 'system_message' || message.role === 'system') {
+  } else if (message.message_type === 'agent_system_message' || message.role === 'agent_system') {
     return 'text-gray-700'
   }
   return 'text-gray-700'
@@ -124,7 +122,7 @@ const getBgClass = (message: Message) => {
     return 'bg-blue-50 border-l-4 border-blue-500 ml-4 sm:ml-8'
   } else if (message.message_type === 'agent_response' || message.role === 'assistant') {
     return 'bg-green-50 border-l-4 border-green-500 mr-4 sm:mr-8'
-  } else if (message.message_type === 'system_message' || message.role === 'system') {
+  } else if (message.message_type === 'agent_system_message' || message.role === 'agent_system') {
     return 'bg-gray-100 border border-gray-200 text-center text-gray-600 text-xs sm:text-sm'
   } else if (message.message_type === 'error' || message.message_type === 'agent_error') {
     return 'bg-red-50 border-l-4 border-red-500 text-red-800'
@@ -139,7 +137,7 @@ const getContentClass = (message: Message) => {
     return 'text-gray-800'
   } else if (message.message_type === 'agent_response' || message.role === 'assistant') {
     return 'text-gray-800'
-  } else if (message.message_type === 'system_message' || message.role === 'system') {
+  } else if (message.message_type === 'agent_system_message' || message.role === 'agent_system') {
     return 'font-mono'
   } else if (message.message_type === 'tool_call') {
     return 'text-purple-800'
