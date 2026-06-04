@@ -196,10 +196,39 @@ if $IS_IN_VENV; then
     info "直接使用当前虚拟环境: $($BROCA_PYTHON --version)"
     info "虚拟环境路径: $BROCA_VENV"
 elif [[ -f "$BROCA_VENV/bin/python" ]]; then
-    # 已有 broca 专属虚拟环境（来自之前的安装）
-    info "复用已有的 broca 虚拟环境: $BROCA_VENV"
-    BROCA_PYTHON="$BROCA_VENV/bin/python"
-    BROCA_PIP="$BROCA_PYTHON -m pip"
+    # 已有 broca 专属虚拟环境 — 验证其有效性
+    info "检测到已有的 broca 虚拟环境: $BROCA_VENV"
+    VENV_VALID=true
+
+    # 检查 1: Python 可执行
+    if ! "$BROCA_VENV/bin/python" --version &>/dev/null; then
+        warn "虚拟环境 Python 不可执行"
+        VENV_VALID=false
+    fi
+
+    # 检查 2: pip 可用
+    if $VENV_VALID && ! "$BROCA_VENV/bin/python" -m pip --version &>/dev/null; then
+        warn "虚拟环境中 pip 不可用 (venv 可能不完整)"
+        VENV_VALID=false
+    fi
+
+    if $VENV_VALID; then
+        info "虚拟环境有效，复用: $BROCA_VENV"
+        BROCA_PYTHON="$BROCA_VENV/bin/python"
+        BROCA_PIP="$BROCA_PYTHON -m pip"
+    else
+        warn "虚拟环境不完整，将重新创建..."
+        rm -rf "$BROCA_VENV"
+        info "创建 broca 专属虚拟环境: $BROCA_VENV"
+        $PYTHON -m venv "$BROCA_VENV" || {
+            error "虚拟环境创建失败"
+            exit 1
+        }
+        info "虚拟环境创建成功"
+        BROCA_PYTHON="$BROCA_VENV/bin/python"
+        BROCA_PIP="$BROCA_PYTHON -m pip"
+        info "使用虚拟环境 Python: $($BROCA_PYTHON --version)"
+    fi
 else
     # 创建 broca 专属虚拟环境
     info "创建 broca 专属虚拟环境: $BROCA_VENV"
