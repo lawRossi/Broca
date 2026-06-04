@@ -144,6 +144,10 @@ fi
 
 # --- nginx 检测 ---
 NGINX_CONF_DIR=""
+NGINX_DIST_DIR=""
+NGINX_SITE_CONF=""
+FRONTEND_DIR=""
+ENV_FILE=""
 SKIP_FRONTEND=false
 if command -v nginx &>/dev/null; then
     info "nginx: $(nginx -v 2>&1)"
