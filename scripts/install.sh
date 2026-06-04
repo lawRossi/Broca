@@ -41,12 +41,13 @@ case "$OS" in
             HOMEBREW_NGINX_DIR="/usr/local"
         fi
         if [[ -z "$HOMEBREW_NGINX_DIR" ]]; then
-            error "未找到 Homebrew nginx 配置目录"
-            error "请确保 nginx 已安装: brew install nginx"
-            exit 1
+            # macOS 上 nginx 是可选的，后续会询问是否跳过前端
+            NGINX_SITES_DIR="/opt/homebrew/etc/nginx/sites-enabled"
+            NGINX_CONF_BASE="/opt/homebrew/etc/nginx"
+        else
+            NGINX_SITES_DIR="${HOMEBREW_NGINX_DIR}/etc/nginx/sites-enabled"
+            NGINX_CONF_BASE="${HOMEBREW_NGINX_DIR}/etc/nginx"
         fi
-        NGINX_SITES_DIR="${HOMEBREW_NGINX_DIR}/etc/nginx/sites-enabled"
-        NGINX_CONF_BASE="${HOMEBREW_NGINX_DIR}/etc/nginx"
         NGINX_USER="_www"
         SED_INPLACE=("sed" "-i" "")
         ;;
