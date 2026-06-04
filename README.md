@@ -90,18 +90,18 @@ sh scripts/install.sh
 
 安装脚本会依次执行：
 
-| 步骤 | 内容 |
-|:----:|------|
-| 1/10 | 检查系统依赖（Python ≥3.12、pnpm、nginx） |
-| 2/10 | 安装 broca Python 模块 + supervisor |
-| 3/10 | 数据库迁移（broca 主数据库 + 后端数据库） |
-| 4/10 | 创建管理员账户（交互式） |
-| 5/10 | 配置文件上传存储（可选，支持 Cloudflare R2 / Supabase S3） |
-| 6/10 | 安装前端依赖并构建 |
-| 7/10 | 打包 VS Code 插件 |
-| 8/10 | 配置 nginx 站点（生成代理配置 + 部署静态文件） |
-| 9/10 | 创建 supervisor 进程管理配置 |
-| 10/10 | 完成安装 |
+| 步骤　| 内容　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
+| :-----:| ------------------------------------------------------------|
+| 1/10　| 检查系统依赖（Python ≥3.12、pnpm、nginx）　　　　　　　　　|
+| 2/10　| 安装 broca Python 模块 + supervisor　　　　　　　　　　　　|
+| 3/10　| 数据库迁移（broca 主数据库 + 后端数据库）　　　　　　　　　|
+| 4/10　| 创建管理员账户（交互式）　　　　　　　　　　　　　　　　　 |
+| 5/10　| 配置文件上传存储（可选，支持 Cloudflare R2 / Supabase S3） |
+| 6/10　| 安装前端依赖并构建　　　　　　　　　　　　　　　　　　　　 |
+| 7/10　| 打包 VS Code 插件　　　　　　　　　　　　　　　　　　　　　|
+| 8/10　| 配置 nginx 站点（生成代理配置 + 部署静态文件）　　　　　　 |
+| 9/10　| 创建 supervisor 进程管理配置　　　　　　　　　　　　　　　 |
+| 10/10 | 完成安装　　　　　　　　　　　　　　　　　　　　　　　　　 |
 
 安装目录结构：
 
@@ -197,18 +197,18 @@ code --install-extension broca-vscode/broca-chat-0.1.0.vsix
 
 ### 后端核心
 
-| 技术 | 用途 |
-|------|------|
-| Python | 主语言 |
-| [litellm](https://github.com/BerriAI/litellm) | 统一 LLM API 接入 |
-| [SQLModel](https://sqlmodel.tiangolo.com/) | ORM + 数据建模 |
-| [aiosqlite](https://github.com/omnilib/aiosqlite) | 异步 SQLite |
-| [python-socketio](https://python-socketio.readthedocs.io/) | 实时通信 |
-| [aiohttp](https://docs.aiohttp.org/) | 异步 HTTP | ≥ 3.11.0 |
-| [Jinja2](https://jinja.palletsprojects.com/) | 模板渲染（编排提示词模板） |
-| [APScheduler](https://apscheduler.readthedocs.io/) | 任务调度 |
-| [GitPython](https://gitpython.readthedocs.io/) | Git 操作 |
-| [Playwright](https://playwright.dev/python/) | Web 抓取 |
+| 技术　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 用途　　　　　　　　　　　 |          |
+| ------------------------------------------------------------| ----------------------------| ----------|
+| Python　　　　　　　　　　　　　　　　　　　　　　　　　　 | 主语言　　　　　　　　　　 |          |
+| [litellm](https://github.com/BerriAI/litellm)　　　　　　　| 统一 LLM API 接入　　　　　|          |
+| [SQLModel](https://sqlmodel.tiangolo.com/)　　　　　　　　 | ORM + 数据建模　　　　　　 |          |
+| [aiosqlite](https://github.com/omnilib/aiosqlite)　　　　　| 异步 SQLite　　　　　　　　|          |
+| [python-socketio](https://python-socketio.readthedocs.io/) | 实时通信　　　　　　　　　 |          |
+| [aiohttp](https://docs.aiohttp.org/)　　　　　　　　　　　 | 异步 HTTP　　　　　　　　　| ≥ 3.11.0 |
+| [Jinja2](https://jinja.palletsprojects.com/)　　　　　　　 | 模板渲染（编排提示词模板） |          |
+| [APScheduler](https://apscheduler.readthedocs.io/)　　　　 | 任务调度　　　　　　　　　 |          |
+| [GitPython](https://gitpython.readthedocs.io/)　　　　　　 | Git 操作　　　　　　　　　 |          |
+| [Playwright](https://playwright.dev/python/)　　　　　　　 | Web 抓取　　　　　　　　　 |          |
 
 ### Web 后端
 
@@ -511,14 +511,14 @@ prompts/
 ├── supervisor_worker/      # Supervisor-Worker 模板（plan, check_and_plan, synthesize, worker_prompt）
 ├── round_table/            # Round-Table 模板（discussion, moderator_*）
 ```
-　　　　　　　　　　　　　　　　 |
+
 
 ##### CrewOrchestratorRunner
 
 `broca/session_runner/orchestrator_runner.py` — 在 Session Runner 子进程中管理编排生命周期：
 - 创建 Blackboard 并注入 Agent 工具
 - 注册 Agent 实例到 CrewContext
-- 根据 `use_history` 配置清空 Agent 上下文历史
+- 根据 `use_history` 配置每次执行前清空 Agent 上下文历史
 - 设置进度回调，阶段完成时通过 IPC 推送实时进度
 - 黑板事件订阅，推送实时进度更新
 - 发送编排生命周期事件（start/complete/error/progress）
@@ -678,25 +678,102 @@ agents:
 
 **关键特性**：
 - 质量检查与计划更新合并为一次 LLM 调用（`supervisor_check_and_plan.j2`），减少交互轮次
-- Worker 通过 `use_history: false` 配置每次从干净状态开始执行
 - 支持 `do_synthesis` 开关控制是否合成最终报告
 
 #### 9.6 Round-Table 圆桌讨论
 
-多个参与者围绕议题进行多轮发言，支持三种发言顺序和可选的主持人开场/结束语。
+多个参与者围绕议题进行多轮发言，支持三种发言顺序和可选的主持人开场/结束语。参与者通过共享讨论历史互相引用/反驳，Moderator 控制讨论节奏。
 
-**新增特性：每轮自定义配置（rounds_config）**
+**完整示例**（标准辩论赛，来自 `examples/round-table_ai-debate/`）：
 
-支持为每一轮单独配置发言人和顺序，实现复杂的辩论流程：
+```yaml
+name: "标准辩论赛"
+description: "AI Agent 标准辩论赛：正反双方分阶段辩论，评委打分"
+
+orchestrator:
+  type: round-table
+  max_rounds: 4
+  extras:
+    moderator_opening: true       # 主持人开场语
+    moderator_closing: true       # 主持人结束语
+    speaker_order: moderator      # Moderator 动态决定每轮发言顺序
+
+agents:
+  - role: moderator
+    name: "主持人"
+    config: moderator.md
+
+  - role: participant
+    name: "正方一辩"
+    config: pro1.md
+    extras:
+      stance: pro                # 立场标记，注入讨论提示词
+
+  - role: participant
+    name: "正方二辩"
+    config: pro2.md
+    extras:
+      stance: pro
+
+  - role: participant
+    name: "反方一辩"
+    config: con1.md
+    extras:
+      stance: con
+
+  - role: participant
+    name: "反方二辩"
+    config: con2.md
+    extras:
+      stance: con
+
+  - role: participant
+    name: "评委"
+    config: judge.md
+
+blackboard:
+  initial_entries:
+    - key: topic                  # 讨论议题（必填）
+      value: "人工智能对人类社会究竟是利大于弊还是弊大于利？"
+    - key: debate_rules           # 讨论规则（可选）
+      value: |
+        辩论规则：
+        1. 立论阶段：每方各发言一轮，阐述核心论点（控制在200字以内）
+        2. 攻辩阶段：双方交替发言，可互相反驳（每人发言控制在200字以内）
+        3. 总结陈词：每方总结核心观点（控制在200字以内）
+        4. 保持理性和建设性的辩论态度
+```
+
+**执行流程**：
+
+```
+主持人开场语（moderator_opening）
+  → 第1轮讨论（Moderator 决定发言顺序）
+    → 第2轮讨论
+      → ...
+        → 主持人结束语（moderator_closing）
+```
+
+**发言顺序模式**：
+
+| 模式 | 说明 |
+|------|------|
+| `fixed` | 按 agents 配置顺序发言（默认） |
+| `random` | 每轮随机打乱参与者顺序 |
+| `moderator` | Moderator Agent 根据讨论进展动态决定每轮顺序（通过 `moderator_order.j2` 模板） |
+
+**高级特性：每轮自定义配置（rounds）**
+
+通过 `extras.rounds` 可为每一轮单独配置发言人和顺序，实现复杂的多阶段辩论流程（如立论→攻辩→自由辩论→总结）：
 
 ```yaml
 orchestrator:
   type: round-table
   max_rounds: 4
   extras:
-    moderator_opening: true      # 主持人开场语
-    moderator_closing: true      # 主持人结束语
-    speaker_order: moderator     # 默认发言顺序
+    moderator_opening: true
+    moderator_closing: true
+    speaker_order: moderator
     rounds:                      # 每轮自定义配置
       - name: "立论"             # 第一轮：正方立论
         speakers: ["正方一辩", "正方二辩", "正方三辩"]
@@ -710,44 +787,17 @@ orchestrator:
       - name: "总结"             # 第四轮：总结陈词
         speakers: ["正方四辩", "反方四辩"]
         order: fixed
-
-agents:
-  - role: moderator
-    name: "主持人"
-    config: moderator.md
-    use_history: false
-  - role: participant
-    name: "正方一辩"
-    config: pro1.md
-    use_history: false
-    extras:
-      stance: pro
-  - role: participant
-    name: "反方一辩"
-    config: con1.md
-    use_history: false
-    extras:
-      stance: con
-  # ... 更多参与者
 ```
-
-**发言顺序模式**：
-
-| 模式 | 说明 |
-|------|------|
-| `fixed` | 按配置顺序发言（默认） |
-| `random` | 每轮随机打乱 |
-| `moderator` | Moderator Agent 根据讨论进展决定每轮顺序 |
 
 **每轮配置字段**：
 
 | 字段 | 说明 |
 |------|------|
-| `name` | 轮次名称（如"立论"、"攻辩"） |
-| `speakers` | 指定本轮发言的参与者列表 |
+| `name` | 轮次名称（如"立论"、"攻辩"），作为 phase 名称 |
+| `speakers` | 指定本轮发言的参与者列表（按名称） |
 | `roles` | 按角色筛选发言人 |
-| `order` | 本轮发言顺序（覆盖全局设置） |
-| `order_rule` | 发言顺序规则说明（moderator 模式时使用） |
+| `order` | 本轮发言顺序（覆盖全局 `speaker_order` 设置） |
+| `order_rule` | 发言顺序规则说明（moderator 模式时传递给 Moderator Agent） |
 
 #### 9.7 Composite 组合嵌套（有向图版）
 
