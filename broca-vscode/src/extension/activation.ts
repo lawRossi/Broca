@@ -19,16 +19,20 @@ export async function activate(context: vscode.ExtensionContext) {
   configManager = new ConfigManager()
   authManager = new AuthManager(context, configManager)
 
+  // Shared auth error handler: when any 401 is detected, auto-logout and show login prompt
+  const handleAuthError = () => { authManager.handleAuthError() }
+
   // Initialize session tree provider
-  sessionTreeProvider = new SessionTreeProvider(authManager, configManager)
+  sessionTreeProvider = new SessionTreeProvider(authManager, configManager, handleAuthError)
   const treeView = vscode.window.createTreeView('broca.sessionManager', {
     treeDataProvider: sessionTreeProvider,
     showCollapseAll: false,
   })
 
   // Initialize Chat WebView manager
-  chatWebViewManager = new ChatWebViewManager(context, authManager, configManager)
+  chatWebViewManager = new ChatWebViewManager(context, authManager, configManager, handleAuthError)
   apiClient = new ApiClient(configManager, () => authManager.token)
+  apiClient.onAuthError = handleAuthError
 
   // Register commands
   context.subscriptions.push(

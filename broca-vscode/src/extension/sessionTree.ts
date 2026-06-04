@@ -87,9 +87,11 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
 
   constructor(
     private authManager: AuthManager,
-    private configManager: ConfigManager
+    private configManager: ConfigManager,
+    onAuthError?: () => void
   ) {
     this.apiClient = new ApiClient(configManager, () => authManager.token)
+    this.apiClient.onAuthError = onAuthError ?? null
 
     // Auto-refresh every 30 seconds
     this.refreshInterval = setInterval(() => this.refresh(), 30000)

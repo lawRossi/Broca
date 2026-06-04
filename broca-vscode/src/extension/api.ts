@@ -22,6 +22,12 @@ export class ApiClient {
   public client: AxiosInstance
   private getToken: () => string | null
 
+  /**
+   * Callback invoked when a 401 (Unauthorized) response is received.
+   * Typically wired to AuthManager.handleAuthError() for automatic logout + login prompt.
+   */
+  onAuthError: (() => void) | null = null
+
   constructor(configManager: ConfigManager, getToken: () => string | null) {
     this.getToken = getToken
     this.client = axios.create({
@@ -58,7 +64,9 @@ export class ApiClient {
       },
       (error) => {
         if (error.response?.status === 401) {
-          console.error('Authentication failed: token may be expired')
+          console.error('Authentication failed: token may be expired, triggering auto-logout')
+          // Call the auth error handler if set — will clear session and show login prompt
+          this.onAuthError?.()
         }
         return Promise.reject(error)
       }

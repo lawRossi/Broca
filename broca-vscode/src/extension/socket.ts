@@ -33,6 +33,12 @@ export class SocketClient {
     this.clientId = `vscode_${Math.random().toString(16).slice(2)}`
   }
 
+  /**
+   * Callback invoked when an authentication error (401-like) occurs during connection.
+   * Typically wired to AuthManager.handleAuthError() for automatic logout + login prompt.
+   */
+  onAuthError: (() => void) | null = null
+
   /** 获取事件对应的 Map（非空，因为初始化时已定义所有 key） */
   private _getHandlerMap<K extends keyof SocketEventHandler>(event: K): Map<string, NonNullable<SocketEventHandler[K]>> {
     return this._handlers[event]!
@@ -102,6 +108,17 @@ export class SocketClient {
 
     this.socket.on('connect_error', (error) => {
       console.error('Socket connection error:', error)
+
+      // Detect authentication errors (401 or auth-related messages)
+      const isAuthError =
+        (error as any)?.data?.status === 401 ||
+        /401|unauthorized|authentication|jwt|token/i.test(error.message || '')
+
+      if (isAuthError) {
+        console.error('[Socket] Authentication error detected, triggering auto-logout')
+        this.onAuthError?.()
+      }
+
       this._getHandlerMap('onError').forEach(h => h(error))
     })
 

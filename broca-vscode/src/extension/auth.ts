@@ -134,6 +134,41 @@ export class AuthManager {
     this.onDidChangeEvent.fire()
   }
 
+  /**
+   * Handle 401 (Unauthorized) error — automatically log out and prompt re-login.
+   *
+   * This is called by ApiClient/SocketClient when a 401 response is received,
+   * indicating the token has expired or is invalid. The method:
+   * 1. Clears the stored session
+   * 2. Fires auth state change event (so UI refreshes)
+   * 3. Shows an error notification with a "Login" action for quick re-authentication
+   */
+  async handleAuthError(): Promise<void> {
+    // 1. Clear session silently (no "已登出" toast — confusing in error scenario)
+    const wasLoggedIn = this._isLoggedIn
+    this._isLoggedIn = false
+    this._token = null
+    this._userId = null
+    this._username = null
+    this.clearSession()
+
+    if (wasLoggedIn) {
+      // Fire state change so UI knows we're logged out
+      this.onDidChangeEvent.fire()
+    }
+
+    // 2. Show error notification with "Login" action button for quick re-auth
+    const action = await vscode.window.showErrorMessage(
+      '登录已过期或未经授权，请重新登录',
+      { modal: false },
+      '登录'
+    )
+
+    if (action === '登录') {
+      await this.login()
+    }
+  }
+
   dispose() {
     this.onDidChangeEvent.dispose()
   }

@@ -19,10 +19,15 @@ export class ChatWebViewManager {
   constructor(
     private context: vscode.ExtensionContext,
     private authManager: AuthManager,
-    private configManager: ConfigManager
+    private configManager: ConfigManager,
+    onAuthError?: () => void
   ) {
     this.apiClient = new ApiClient(configManager, () => authManager.token)
+    this.apiClient.onAuthError = onAuthError ?? null
+    this._onAuthError = onAuthError ?? null
   }
+
+  private _onAuthError: (() => void) | null = null
 
   /**
    * Close all panels (chat + crew) associated with a session.
@@ -246,6 +251,7 @@ export class ChatWebViewManager {
   private async initializeCrewSocket(sessionId: string, panel: vscode.WebviewPanel) {
     try {
       const socketClient = new SocketClient(this.configManager, () => this.authManager.token)
+      socketClient.onAuthError = this._onAuthError
       this.socketClients.set(sessionId, socketClient)
 
       socketClient.setEventHandlers({
@@ -830,6 +836,7 @@ export class ChatWebViewManager {
 
       // Create socket client
       const socketClient = new SocketClient(this.configManager, () => this.authManager.token)
+      socketClient.onAuthError = this._onAuthError
       this.socketClients.set(sessionId, socketClient)
 
       // Set up socket event handlers
