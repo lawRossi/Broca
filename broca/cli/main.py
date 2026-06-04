@@ -663,6 +663,13 @@ examples:
 
 def main():
     """Main entry point"""
+    # 自动将当前 Python 所在目录（即虚拟环境的 bin/）加入 PATH
+    # 这样子进程（如 uvicorn、supervisord 等）无需手动激活虚拟环境即可找到
+    venv_bin = str(Path(sys.executable).parent)
+    current_path = os.environ.get("PATH", "")
+    if venv_bin not in current_path.split(os.pathsep):
+        os.environ["PATH"] = f"{venv_bin}{os.pathsep}{current_path}"
+
     parser = create_parser()
     args = parser.parse_args()
 
