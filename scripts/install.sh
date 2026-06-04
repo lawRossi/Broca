@@ -167,15 +167,52 @@ else
 fi
 
 # ============================================================================
-# Step 2: 安装 broca Python 模块
+# Step 2: 安装 broca Python 模块（虚拟环境感知）
 # ============================================================================
 step "Step 2/10: 安装 broca Python 模块..."
 
+BROCA_VENV="$BROCA_HOME/venv"
 cd "$PROJECT_ROOT"
 
-# 先安装 build 依赖
-PIP_OUTPUT=$($PYTHON -m pip install --upgrade pip setuptools wheel build 2>&1) || {
-    error "pip 依赖安装失败"
+# 检测是否已在虚拟环境中
+IS_IN_VENV=false
+if [[ -n "$VIRTUAL_ENV" ]]; then
+    IS_IN_VENV=true
+    info "检测到已激活的虚拟环境: $VIRTUAL_ENV"
+elif $PYTHON -c "import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)" 2>/dev/null; then
+    IS_IN_VENV=true
+    info "检测到当前 Python 已在虚拟环境中"
+fi
+
+if $IS_IN_VENV; then
+    # 已在虚拟环境中 — 直接使用当前 Python，无需再创建
+    info "直接使用当前虚拟环境: $($PYTHON --version)"
+    BROCA_PYTHON="$PYTHON"
+    BROCA_PIP="$PYTHON -m pip"
+    # 在 install.json 中记录当前 venv 路径
+    BROCA_VENV="$VIRTUAL_ENV"
+elif [[ -f "$BROCA_VENV/bin/python" ]]; then
+    # 已有 broca 专属虚拟环境（来自之前的安装）
+    info "复用已有的 broca 虚拟环境: $BROCA_VENV"
+    BROCA_PYTHON="$BROCA_VENV/bin/python"
+    BROCA_PIP="$BROCA_VENV/bin/pip"
+else
+    # 创建 broca 专属虚拟环境
+    info "创建 broca 专属虚拟环境: $BROCA_VENV"
+    $PYTHON -m venv "$BROCA_VENV" || {
+        error "虚拟环境创建失败"
+        exit 1
+    }
+    info "虚拟环境创建成功"
+    BROCA_PYTHON="$BROCA_VENV/bin/python"
+    BROCA_PIP="$BROCA_VENV/bin/pip"
+    info "使用虚拟环境 Python: $($BROCA_PYTHON --version)"
+fi
+
+# 升级 pip
+info "升级 pip..."
+PIP_OUTPUT=$($BROCA_PIP install --upgrade pip setuptools wheel build 2>&1) || {
+    error "pip 升级失败"
     echo "$PIP_OUTPUT"
     exit 1
 }
@@ -183,7 +220,7 @@ echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already" || true; }
 
 # 安装 broca 模块
 info "安装 broca 模块..."
-PIP_OUTPUT=$($PYTHON -m pip install "$PROJECT_ROOT" 2>&1) || {
+PIP_OUTPUT=$($BROCA_PIP install "$PROJECT_ROOT" 2>&1) || {
     error "broca 模块安装失败"
     echo "$PIP_OUTPUT"
     exit 1
@@ -192,12 +229,15 @@ echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already" || true; }
 
 # 安装 supervisor (用于进程管理)
 info "安装 supervisor..."
-PIP_OUTPUT=$($PYTHON -m pip install supervisor 2>&1) || {
+PIP_OUTPUT=$($BROCA_PIP install supervisor 2>&1) || {
     error "supervisor 安装失败"
     echo "$PIP_OUTPUT"
     exit 1
 }
 echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already" || true; }
+
+# 将后续所有 $PYTHON 指向（虚拟环境的）Python
+PYTHON="$BROCA_PYTHON"
 
 info "broca 模块安装完成。"
 
@@ -803,7 +843,7 @@ serverurl=unix://$SUPERVISOR_DIR/supervisor.sock
 ; Backend (FastAPI / Uvicorn)
 ; ====================
 [program:backend]
-command=uvicorn app.main:app --host $BACKEND_HOST --port 9000 --log-level info
+command=$BROCA_VENV/bin/uvicorn app.main:app --host $BACKEND_HOST --port 9000 --log-level info
 directory=$BROCA_WEB_DIR/backend
 user=$USER
 autostart=true
@@ -813,7 +853,7 @@ stderr_logfile=$LOG_DIR/backend.err.log
 stdout_logfile=$LOG_DIR/backend.out.log
 stdout_logfile_maxbytes=20MB
 stderr_logfile_maxbytes=20MB
-environment=PYTHONPATH="$BROCA_WEB_DIR/backend:\$PYTHONPATH",BROCA_CONFIG="$BROCA_HOME/configs/configs.json",BROCA_DATABASE_DIR="$BROCA_HOME/data",BROCA_LLM_CONFIG="$BROCA_HOME/configs/llm_config.json",BROCA_AGENTS_CONFIG_DIR="$BROCA_HOME/configs/agents",BROCA_LOG_DIR="$BROCA_HOME/logs",SQLITE_DATABASE_PATH="sqlite:///${BROCA_HOME}/data/backend.db"
+environment=PYTHONPATH="$BROCA_WEB_DIR/backend",BROCA_CONFIG="$BROCA_HOME/configs/configs.json",BROCA_DATABASE_DIR="$BROCA_HOME/data",BROCA_LLM_CONFIG="$BROCA_HOME/configs/llm_config.json",BROCA_AGENTS_CONFIG_DIR="$BROCA_HOME/configs/agents",BROCA_LOG_DIR="$BROCA_HOME/logs",SQLITE_DATABASE_PATH="sqlite:///${BROCA_HOME}/data/backend.db"
 stopasgroup=true
 killasgroup=true
 SUPEOF
@@ -839,7 +879,8 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
   "version": "0.1.0",
   "installed_at": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
   "python": "$($PYTHON --version 2>&1)",
-  "python_path": "$(which $PYTHON)",
+  "python_path": "$BROCA_PYTHON",
+  "venv_path": "$BROCA_VENV",
   "project_root": "$PROJECT_ROOT",
   "frontend_mode": "nginx",
   "frontend_dist": "$FRONTEND_DIR/dist",
@@ -855,14 +896,15 @@ echo -e "${GREEN}============================================${NC}"
 echo -e "${GREEN}  Broca 安装完成！${NC}"
 echo -e "${GREEN}============================================${NC}"
 echo ""
-echo "  项目目录: $PROJECT_ROOT"
-echo "  配置目录: $BROCA_HOME"
-echo "  日志目录: $LOG_DIR"
-echo "  前端模式: nginx"
+echo "  项目目录:   $PROJECT_ROOT"
+echo "  配置目录:   $BROCA_HOME"
+echo "  虚拟环境:   $BROCA_VENV"
+echo "  日志目录:   $LOG_DIR"
+echo "  前端模式:   nginx"
 if [[ -f "$ENV_FILE" ]] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" 2>/dev/null; then
-    echo "  文件存储: ✅ 已配置"
+    echo "  文件存储:   ✅ 已配置"
 else
-    echo -e "  文件存储: ${YELLOW}⚠ 未配置${NC} (编辑 ${ENV_FILE} 后重新构建)"
+    echo -e "  文件存储:   ${YELLOW}⚠ 未配置${NC} (编辑 ${ENV_FILE} 后重新构建)"
 fi
 echo ""
 echo "  nginx 前端配置文件已就绪: $NGINX_SITE_CONF"
@@ -872,6 +914,9 @@ echo "    broca service start      # 启动所有服务（后端 + 启用前端�
 echo "    broca service stop       # 停止所有服务"
 echo "    broca service status     # 查看服务状态"
 echo "    broca web                # 启动开发模式 (前后端同时启动)"
+echo ""
+echo "  如需手动激活虚拟环境:"
+echo "    source $BROCA_VENV/bin/activate"
 echo ""
 echo "  broca service start 后访问: http://localhost:5166"
 echo ""

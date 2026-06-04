@@ -900,6 +900,23 @@ def _generate_supervisor_config(
     """
     user = os.environ.get("USER", "root")
 
+    # 检测 uvicorn 路径（优先级: install.json 记录的 venv > ~/.broca/venv/ > 系统路径）
+    install_info = _load_install_info()
+    uvicorn_cmd = "uvicorn"  # 默认
+
+    # 方案1: 从 install.json 中读取 venv_path
+    venv_path_str = install_info.get("venv_path", "")
+    if venv_path_str:
+        candidate = Path(venv_path_str) / "bin" / "uvicorn"
+        if candidate.exists():
+            uvicorn_cmd = str(candidate)
+
+    # 方案2: 检查 ~/.broca/venv/
+    if uvicorn_cmd == "uvicorn":
+        candidate = BROCA_HOME / "venv" / "bin" / "uvicorn"
+        if candidate.exists():
+            uvicorn_cmd = str(candidate)
+
     lines = [
         "; Broca - Supervisor 配置",
         f"; 安装目录: {BROCA_HOME}",
@@ -928,7 +945,7 @@ def _generate_supervisor_config(
         "; Backend (FastAPI / Uvicorn)",
         "; ====================",
         "[program:backend]",
-        f"command=uvicorn app.main:app --host 127.0.0.1 --port {backend_port} --log-level info",
+        f"command={uvicorn_cmd} app.main:app --host 127.0.0.1 --port {backend_port} --log-level info",
         f"directory={BROCA_HOME}/web/backend",
         f"user={user}",
         "autostart=true",
