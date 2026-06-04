@@ -666,6 +666,12 @@ cd "$FRONTEND_DIR"
 
 if $USE_PNPM; then
     info "使用 pnpm 安装前端依赖..."
+    # pnpm v10+ 默认阻止 build 脚本，放行项目所需的包
+    cat > ".npmrc" << 'NPMEOF'
+onlyBuiltDependencies[]=esbuild
+onlyBuiltDependencies[]=msw
+onlyBuiltDependencies[]=vue-demi
+NPMEOF
     if ! BUILD_OUTPUT=$(pnpm install 2>&1); then
         error "pnpm install 失败"
         echo "$BUILD_OUTPUT"
@@ -678,6 +684,12 @@ else
     if BUILD_OUTPUT=$(npm install -g pnpm 2>&1); then
         USE_PNPM=true
         info "pnpm 安装成功，使用 pnpm 安装前端依赖..."
+        # pnpm v10+ 默认阻止 build 脚本，放行项目所需的包
+        cat > ".npmrc" << 'NPMEOF'
+onlyBuiltDependencies[]=esbuild
+onlyBuiltDependencies[]=msw
+onlyBuiltDependencies[]=vue-demi
+NPMEOF
         if ! BUILD_OUTPUT=$(pnpm install 2>&1); then
             error "pnpm install 失败"
             echo "$BUILD_OUTPUT"

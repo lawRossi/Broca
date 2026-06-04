@@ -57,8 +57,5 @@
     "workerDirectory": [
       "public"
     ]
-  },
-  "pnpm": {
-    "onlyBuiltDependencies": ["esbuild", "msw", "vue-demi"]
   }
 }
