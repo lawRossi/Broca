@@ -13,7 +13,6 @@ from typing import Any, Dict, Optional
 
 from broca.logging_config import get_logger
 from broca.orchestration.blackboard import Blackboard
-from broca.tools.blackboard import set_blackboard, remove_blackboard
 from broca.orchestration.crew import CrewConfig
 from broca.orchestration.orchestrator import (
     CrewContext,
@@ -27,6 +26,7 @@ from broca.session_runner.ipc import (
     create_ipc_message,
 )
 from broca.session_runner.models import IPCMessageType
+from broca.tools.blackboard import remove_blackboard, set_blackboard
 
 logger = get_logger(__name__)
 
@@ -101,7 +101,9 @@ class CrewOrchestratorRunner:
                     value = entry.get("value")
                     if key is not None:
                         # 用 namespace 前缀存储，使 Agent 通过工具能正确读到
-                        await blackboard.set(f"{namespace}.{key}", value, producer="init")
+                        await blackboard.set(
+                            f"{namespace}.{key}", value, producer="init"
+                        )
 
         set_blackboard(self.session_id, self._execution_id, blackboard)
 
@@ -115,11 +117,11 @@ class CrewOrchestratorRunner:
         for name, agent in agent_refs.items():
             context.register_agent(name, agent)
             # 注入 execution_id，使黑板工具能正确定位黑板实例
-            if hasattr(agent, 'execution_engine') and self._execution_id:
+            if hasattr(agent, "execution_engine") and self._execution_id:
                 agent.execution_engine.execution_id = self._execution_id
 
         # 2.5 根据 use_history 配置清空 Agent 上下文历史
-        #    默认不清历史，让 agent 每次执行从干净状态开始
+        #    默认清历史，让 agent 每次执行从干净状态开始
         for agent_cfg in crew_config.agents:
             agent = agent_refs.get(agent_cfg.name)
             if agent and not agent_cfg.use_history:
@@ -284,10 +286,15 @@ class CrewOrchestratorRunner:
         # 当一轮讨论完成时，推送进度
         if event.key.startswith("round_") and event.event_type.value == "created":
             import re
+
             match = re.match(r"round_(\d+)", event.key)
             if match:
                 current_round = int(match.group(1))
-                max_rounds = self._orchestrator.crew.orchestrator.max_rounds if hasattr(self._orchestrator, 'crew') else 1
+                max_rounds = (
+                    self._orchestrator.crew.orchestrator.max_rounds
+                    if hasattr(self._orchestrator, "crew")
+                    else 1
+                )
                 progress = current_round / max_rounds
                 self._send_crew_event(
                     IPCMessageType.EVT_CREW_PROGRESS,

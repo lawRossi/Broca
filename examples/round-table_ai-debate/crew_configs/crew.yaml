@@ -21,68 +21,58 @@ agents:
   - role: moderator
     name: "主持人"
     config: moderator.md
-    use_history: false
 
   - role: participant
     name: "正方一辩"
     config: pro1.md
-    use_history: false
     extras:
       stance: pro
 
   - role: participant
     name: "正方二辩"
     config: pro2.md
-    use_history: false
     extras:
       stance: pro
   
   - role: participant
     name: "正方三辩"
     config: pro3.md
-    use_history: false
     extras:
       stance: pro
   
   - role: participant
     name: "正方四辩"
     config: pro4.md
-    use_history: false
     extras:
       stance: pro
 
   - role: participant
     name: "反方一辩"
     config: con1.md
-    use_history: false
     extras:
       stance: con
     
   - role: participant
     name: "反方二辩"
     config: con2.md
-    use_history: false
     extras:
       stance: con
   
   - role: participant
     name: "反方三辩"
     config: con3.md
-    use_history: false
     extras:
       stance: con
     
   - role: participant
     name: "反方四辩"
     config: con4.md
-    use_history: false
     extras:
       stance: con
 
   - role: participant
     name: "评委"
     config: judge.md
-    use_history: false
 
 blackboard:
   initial_entries:
