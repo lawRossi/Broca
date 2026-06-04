@@ -115,6 +115,12 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
     if (!this.authManager.isLoggedIn) {
       this.sessions = []
       this._onDidChangeTreeData.fire()
+      // 未登录时给用户明确的提示，引导登录
+      vscode.window.showInformationMessage('请先登录以查看会话列表', '登录').then((action) => {
+        if (action === '登录') {
+          vscode.commands.executeCommand('broca.login')
+        }
+      })
       return
     }
 

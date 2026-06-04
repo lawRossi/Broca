@@ -152,12 +152,11 @@ export class AuthManager {
     this._username = null
     this.clearSession()
 
-    if (wasLoggedIn) {
-      // Fire state change so UI knows we're logged out
-      this.onDidChangeEvent.fire()
-    }
+    // Fire state change so UI knows we're logged out (regardless of whether we were logged in before)
+    this.onDidChangeEvent.fire()
 
     // 2. Show error notification with "Login" action button for quick re-auth
+    //    Always show the prompt — even if wasLoggedIn was false (edge case where token is invalid)
     const action = await vscode.window.showErrorMessage(
       '登录已过期或未经授权，请重新登录',
       { modal: false },
