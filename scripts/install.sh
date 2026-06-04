@@ -672,29 +672,37 @@ if $USE_PNPM; then
         exit 1
     fi
     echo "$BUILD_OUTPUT" | tail -5
-    info "构建前端 (production mode, 加载 .env.production)..."
-    if ! BUILD_OUTPUT=$(npx vite build 2>&1); then
-        error "前端构建失败"
-        echo "$BUILD_OUTPUT"
-        exit 1
-    fi
-    echo "$BUILD_OUTPUT" | tail -10
 else
-    info "使用 npm 安装前端依赖 (如项目需要 pnpm，请先安装: npm install -g pnpm)..."
-    if ! BUILD_OUTPUT=$(npm install 2>&1); then
-        error "npm install 失败"
-        echo "$BUILD_OUTPUT"
-        exit 1
+    # 尝试安装 pnpm（项目使用 pnpm-lock.yaml，npm 可能无法正确解析依赖树）
+    info "正在安装 pnpm (项目依赖 pnpm 管理)..."
+    if BUILD_OUTPUT=$(npm install -g pnpm 2>&1); then
+        USE_PNPM=true
+        info "pnpm 安装成功，使用 pnpm 安装前端依赖..."
+        if ! BUILD_OUTPUT=$(pnpm install 2>&1); then
+            error "pnpm install 失败"
+            echo "$BUILD_OUTPUT"
+            exit 1
+        fi
+        echo "$BUILD_OUTPUT" | tail -5
+    else
+        warn "pnpm 安装失败，回退到 npm (使用 --legacy-peer-deps)..."
+        echo "$BUILD_OUTPUT" | tail -3
+        if ! BUILD_OUTPUT=$(npm install --legacy-peer-deps 2>&1); then
+            error "npm install 失败"
+            echo "$BUILD_OUTPUT"
+            exit 1
+        fi
+        echo "$BUILD_OUTPUT" | tail -5
     fi
-    echo "$BUILD_OUTPUT" | tail -5
-    info "构建前端 (production mode, 加载 .env.production)..."
-    if ! BUILD_OUTPUT=$(npx vite build 2>&1); then
-        error "前端构建失败"
-        echo "$BUILD_OUTPUT"
-        exit 1
-    fi
-    echo "$BUILD_OUTPUT" | tail -10
 fi
+
+info "构建前端 (production mode, 加载 .env.production)..."
+if ! BUILD_OUTPUT=$(npx vite build 2>&1); then
+    error "前端构建失败"
+    echo "$BUILD_OUTPUT"
+    exit 1
+fi
+echo "$BUILD_OUTPUT" | tail -10
 info "前端构建完成: $FRONTEND_DIR/dist"
 
 # ============================================================================
