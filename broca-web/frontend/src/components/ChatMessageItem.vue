@@ -1242,8 +1242,8 @@ const handleUndoToHere = async () => {
 
   /* 工具参数 */
   .params-container {
-    background-color: rgba(88, 28, 135, 0.2);
-    border-color: #6b21a8;
+    background-color: transparent;
+    border-color: #475569;
   }
 
   .params-label {
@@ -1251,7 +1251,7 @@ const handleUndoToHere = async () => {
   }
 
   .params-inner {
-    background-color: transparent;
+    background-color: #f1f5f9;
     border-color: rgba(255, 255, 255, 0.1);
   }
 
@@ -1307,12 +1307,12 @@ const handleUndoToHere = async () => {
   }
 
   .diff-header {
-    background-color: rgba(88, 28, 135, 0.25);
-    border-color: #6b21a8;
+    background-color: transparent;
+    border-color: #475569;
   }
 
   .diff-path {
-    color: #c084fc;
+    color: #9333ea;
   }
 
   .diff-line {
