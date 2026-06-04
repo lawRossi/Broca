@@ -176,7 +176,7 @@ cd "$PROJECT_ROOT"
 
 # 检测是否已在虚拟环境中
 IS_IN_VENV=false
-if [[ -n "$VIRTUAL_ENV" ]]; then
+if [[ -n "${VIRTUAL_ENV:-}" ]]; then
     IS_IN_VENV=true
     info "检测到已激活的虚拟环境: $VIRTUAL_ENV"
 elif $PYTHON -c "import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)" 2>/dev/null; then
@@ -185,17 +185,21 @@ elif $PYTHON -c "import sys; sys.exit(0 if sys.prefix != sys.base_prefix else 1)
 fi
 
 if $IS_IN_VENV; then
-    # 已在虚拟环境中 — 直接使用当前 Python，无需再创建
-    info "直接使用当前虚拟环境: $($PYTHON --version)"
-    BROCA_PYTHON="$PYTHON"
-    BROCA_PIP="$PYTHON -m pip"
-    # 在 install.json 中记录当前 venv 路径
-    BROCA_VENV="$VIRTUAL_ENV"
+    # 已在虚拟环境中 — 从 venv 路径获取正确的 Python，而非 Step 1 检测的
+    if [[ -n "${VIRTUAL_ENV:-}" ]]; then
+        BROCA_VENV="$VIRTUAL_ENV"
+    else
+        BROCA_VENV=$($PYTHON -c "import sys; print(sys.prefix)")
+    fi
+    BROCA_PYTHON="$BROCA_VENV/bin/python"
+    BROCA_PIP="$BROCA_PYTHON -m pip"
+    info "直接使用当前虚拟环境: $($BROCA_PYTHON --version)"
+    info "虚拟环境路径: $BROCA_VENV"
 elif [[ -f "$BROCA_VENV/bin/python" ]]; then
     # 已有 broca 专属虚拟环境（来自之前的安装）
     info "复用已有的 broca 虚拟环境: $BROCA_VENV"
     BROCA_PYTHON="$BROCA_VENV/bin/python"
-    BROCA_PIP="$BROCA_VENV/bin/pip"
+    BROCA_PIP="$BROCA_PYTHON -m pip"
 else
     # 创建 broca 专属虚拟环境
     info "创建 broca 专属虚拟环境: $BROCA_VENV"
@@ -205,7 +209,7 @@ else
     }
     info "虚拟环境创建成功"
     BROCA_PYTHON="$BROCA_VENV/bin/python"
-    BROCA_PIP="$BROCA_VENV/bin/pip"
+    BROCA_PIP="$BROCA_PYTHON -m pip"
     info "使用虚拟环境 Python: $($BROCA_PYTHON --version)"
 fi
 
