@@ -28,6 +28,7 @@ class TodoManagement(Tool):
             "properties": {
                 "action": {
                     "type": "string",
+                    "enum": ["create", "read", "update"],
                     "description": "The action to perform: create, read, update",
                 },
                 "todo_id": {
@@ -89,14 +90,8 @@ class TodoManagement(Tool):
             return self._read_todos(arguments)
         elif action == "update":
             return self._update_todos(arguments)
-        else:
-            return ToolResult(
-                status=ToolStatus.ERROR, content=f"Unknown action: {action}"
-            )
 
     def _validate_todos(self, todos):
-        if not isinstance(todos, list):
-            return "todos must be an array"
         for item in todos:
             if not isinstance(item, dict):
                 return "each todo must be an object"

@@ -103,9 +103,7 @@ class WebFetch(Tool):
             return text
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
-        url = arguments.get("url")
-        if not url:
-            return ToolResult(status=ToolStatus.ERROR, content="Error: URL is required")
+        url = arguments["url"]
 
         if not await self._init_playwright():
             return ToolResult(
@@ -243,11 +241,7 @@ class WebSearch(Tool):
                 content="Error: Tavily client not initialized. Please provide a valid API key.",
             )
 
-        query = arguments.get("query")
-        if not query:
-            return ToolResult(
-                status=ToolStatus.ERROR, content="Error: Query is required"
-            )
+        query = arguments["query"]
         try:
             # Build search parameters
             search_params = {

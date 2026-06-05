@@ -315,12 +315,6 @@ class MemoryTool(Tool):
             content = parameters.get("content")
             old_text = parameters.get("old_text")
 
-            if target not in ("memory", "user"):
-                return ToolResult(
-                    status=ToolStatus.ERROR,
-                    content=f"invalid target '{target}', should be 'memory' or 'user'",
-                )
-
             store = _get_store()
 
             if action == "add":
@@ -349,11 +343,6 @@ class MemoryTool(Tool):
                         content="content is required for 'remove' action.",
                     )
                 result = store.remove(target, content)
-            else:
-                return ToolResult(
-                    status=ToolStatus.ERROR,
-                    content=f"unknown action: {action}",
-                )
 
             return ToolResult(
                 status=ToolStatus.SUCCESS,

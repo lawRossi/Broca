@@ -78,14 +78,90 @@ class Tool:
 
         return result
 
+    def validate_arguments(self, args_dict: dict) -> Optional[str]:
+        """Validate arguments against the tool's parameter schema.
+
+        Checks:
+        - Required parameters are present
+        - Parameter types match schema (basic type checking)
+        - Enum values are valid
+
+        Returns:
+            An error message string if validation fails, or None if valid.
+        """
+        schema = self.parameters
+
+        properties = schema.get("properties", {})
+        required = schema.get("required", [])
+
+        # Check required parameters
+        for param in required:
+            if param not in args_dict or args_dict[param] is None:
+                return f"Missing required parameter: '{param}'"
+
+        # Check parameter types and enum values
+        for param, value in args_dict.items():
+            if param not in properties:
+                continue
+
+            prop_schema = properties[param]
+
+            # Check enum values
+            if "enum" in prop_schema and value not in prop_schema["enum"]:
+                valid_values = ", ".join(repr(v) for v in prop_schema["enum"])
+                return (
+                    f"Invalid value for parameter '{param}': {value!r}. "
+                    f"Must be one of: {valid_values}"
+                )
+
+            # Basic type checking
+            expected_type = prop_schema.get("type")
+            if expected_type and value is not None:
+                if not self._check_type(value, expected_type):
+                    return (
+                        f"Invalid type for parameter '{param}': expected {expected_type}, "
+                        f"got {type(value).__name__} ({value!r})"
+                    )
+
+        return None
+
+    @staticmethod
+    def _check_type(value, expected_type: str) -> bool:
+        """Check if a value matches the expected JSON Schema type."""
+        type_map = {
+            "string": str,
+            "integer": int,
+            "number": (int, float),
+            "boolean": bool,
+            "array": list,
+            "object": dict,
+        }
+        py_type = type_map.get(expected_type)
+        if py_type is None:
+            return True  # Unknown type, skip check
+        return isinstance(value, py_type)
+
     async def execute(self, arguments: str, context: ToolCallContext) -> ToolResult:
         try:
             args_dict = json.loads(arguments)
-            result = await self._execute(args_dict, context)
-            return self._post_process_result(result)
         except json.JSONDecodeError:
             logger.error("Invalid JSON arguments")
             return ToolResult(status=ToolStatus.ERROR, content="Invalid JSON arguments")
+
+        # Unified parameter validation
+        validation_error = self.validate_arguments(args_dict)
+        if validation_error:
+            logger.error(
+                f"Argument validation failed for {self.name}: {validation_error}"
+            )
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Parameter validation error: {validation_error}",
+            )
+
+        try:
+            result = await self._execute(args_dict, context)
+            return self._post_process_result(result)
         except Exception as e:
             logger.error(f"Error executing tool: {e}")
             return ToolResult(

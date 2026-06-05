@@ -64,6 +64,7 @@ class Agent:
 
         self._abort_task: Optional[asyncio.Task] = None
         self.running = False
+        self._run_lock: asyncio.Lock = asyncio.Lock()
 
         asyncio.create_task(self.load_stats(session_manager))
 
@@ -371,7 +372,7 @@ class Agent:
         Returns:
             ExecutionResult: Result of the execution with status and details
         """
-        # ═══ Command interception ═══
+        # ═══ Command interception (outside lock — may re-enter run()) ═══
         if not from_agent and message.message_type == MessageType.USER_MESSAGE:
             content = message.data.get("content", "")
             if content and hasattr(self, "command_manager") and self.command_manager:
@@ -379,36 +380,42 @@ class Agent:
                 if parsed:
                     name, args = parsed
                     return await self._handle_command(name, args, message)
-        # ════════════════════════════
+        # ════════════════════════════════════════════════════════════════
 
-        # Store the current execution task for potential cancellation
-        self._abort_task = asyncio.current_task()
-        await self._set_status(self.STATUS_RUNNING)
+        # ═══ Serial execution lock ═══
+        # Prevent concurrent execution of the run() method from multiple call paths
+        # (e.g., start() message loop vs. direct run() calls)
+        async with self._run_lock:
+            # Store the current execution task for potential cancellation
+            self._abort_task = asyncio.current_task()
+            await self._set_status(self.STATUS_RUNNING)
 
-        # Clear undo meta info
-        self.revert_service.undo_meta_info = {}
+            # Clear undo meta info
+            self.revert_service.undo_meta_info = {}
 
-        # Set execution context before execution
-        self.execution_engine.allowed_tools = allowed_tools
-        self.execution_engine.namespace = namespace
+            # Set execution context before execution
+            self.execution_engine.allowed_tools = allowed_tools
+            self.execution_engine.namespace = namespace
 
-        try:
-            return await self.execution_engine.execute(message, max_steps, from_agent)
-        except Exception as e:
-            logger.error(f"Error in run: {e}")
-            return ExecutionResult(
-                status=ExecutionStatus.ERROR,
-                message=f"Failed to start execution: {e}",
-                error=str(e),
-            )
-        finally:
-            # Reset allowed_tools to avoid affecting subsequent runs
-            self.execution_engine.allowed_tools = None
-            # Clean up
-            if not self.config.save_history:
-                await self.reset()
-            self._abort_task = None
-            await self._set_status(self.STATUS_IDEL)
+            try:
+                return await self.execution_engine.execute(
+                    message, max_steps, from_agent
+                )
+            except Exception as e:
+                logger.error(f"Error in run: {e}")
+                return ExecutionResult(
+                    status=ExecutionStatus.ERROR,
+                    message=f"Failed to start execution: {e}",
+                    error=str(e),
+                )
+            finally:
+                # Reset allowed_tools to avoid affecting subsequent runs
+                self.execution_engine.allowed_tools = None
+                # Clean up
+                if not self.config.save_history:
+                    await self.reset()
+                self._abort_task = None
+                await self._set_status(self.STATUS_IDEL)
 
     async def _handle_command(
         self, name: str, args: str, original_message: Message
@@ -546,7 +553,6 @@ class Agent:
                 logger.error(f"Failed to cancel execution task: {e}")
             finally:
                 self._abort_task = None
-        await self._set_status(self.STATUS_IDEL)
 
     async def _on_command(self, message: Message):
         """
