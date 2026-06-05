@@ -5,7 +5,7 @@ type: prompt
 use_sub_agent: false
 argument_hint: "<你的目标或想法描述>"
 ---
-# 任务：制定计划
+# 制定计划
 
 用户的输入是：{{ args }}
 
