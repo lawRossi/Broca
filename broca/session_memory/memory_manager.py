@@ -252,7 +252,9 @@ class SessionMemoryManager:
         trigger_message = MessageProtocol.create_user_message(
             content=user_prompt,
         )
-        result = await sub_agent.run(trigger_message, from_agent=True, allowed_tools=["edit_file"])
+        result = await sub_agent.run(
+            trigger_message, from_agent=True, allowed_tools=["edit_file"]
+        )
 
         if result.status != ExecutionStatus.COMPLETED:
             logger.warning(
@@ -267,8 +269,9 @@ class SessionMemoryManager:
         else:
             end = time.time()
             logger.info("Session memory updated successfully via sub-agent")
+            time_used = int(end - start)
             await self.agent.communicator.send_agent_system_message(
-                content=f"Session memory updated successfully in {end - start} seconds",
+                content=f"Session memory updated successfully in {time_used} seconds",
                 subscription=self.agent.session_id,
             )
             self.state.last_message_index = len(context.history) - 1
