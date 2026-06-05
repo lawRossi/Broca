@@ -15,6 +15,8 @@ import abc
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
+from jinja2 import Template
+
 if TYPE_CHECKING:
     from broca.agent import Agent
     from broca.context import Context
@@ -71,8 +73,18 @@ class PromptCommand(CommandBase):
     prompt_template: str = ""  # Prompt template with {args} placeholder
 
     async def build_prompt(self, args: str, ctx: CommandContext) -> str:
-        """Render the prompt template with the given arguments"""
-        return self.prompt_template.replace("{args}", args)
+        """Render the prompt template with Jinja2, passing args and ctx data as variables.
+
+        Supports both Jinja2 ({{ args }}) and legacy {args} placeholder syntax.
+        """
+        template_str = self.prompt_template.replace("{args}", "{{ args }}")
+        return Template(template_str).render(
+            args=args,
+            session_id=ctx.session_id,
+            agent_id=ctx.agent_id,
+            workspace=ctx.workspace,
+            raw_input=ctx.raw_input,
+        )
 
 
 @dataclass
