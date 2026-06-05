@@ -38,7 +38,7 @@ class ExecuteCode(Tool):
                 },
                 "background": {
                     "type": "boolean",
-                    "description": "whether to run in background (default: false)",
+                    "description": "Run in background via scheduler. Use for long-running commands or when user explicitly requests background execution. When true, returns immediately with a job ID for tracking instead of waiting for completion.",
                 },
             },
             "required": ["code"],
