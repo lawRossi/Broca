@@ -1,10 +1,13 @@
 import asyncio
 import re
+from datetime import datetime
 
 from jinja2 import Template
 from tree_sitter import Language, Parser
 
 from broca.logging_config import get_logger
+from broca.scheduler import Scheduler
+from broca.session.models import JobType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 logger = get_logger(__name__)
@@ -32,7 +35,11 @@ class ExecuteCode(Tool):
                 "code": {
                     "type": "string",
                     "description": "the code to run",
-                }
+                },
+                "background": {
+                    "type": "boolean",
+                    "description": "whether to run in background (default: false)",
+                },
             },
             "required": ["code"],
         }
@@ -58,10 +65,17 @@ class ExecuteCode(Tool):
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         code = arguments["code"]
+        background = arguments.get("background", False)
+
+        if background:
+            return await self._run_background(code, context)
+
         is_safe, reason, snippet = self._validate_code(code)
         if not is_safe:
             agent = context.agent
-            permission_message = f"Run potentially dangerous code: {reason}\n\n```bash\n{snippet}\n```"
+            permission_message = (
+                f"Run potentially dangerous code: {reason}\n\n```bash\n{snippet}\n```"
+            )
             if not await agent.ask_for_permission(permission_message):
                 return ToolResult(
                     status=ToolStatus.ERROR,
@@ -72,9 +86,9 @@ class ExecuteCode(Tool):
 
     def _validate_code(self, code: str) -> tuple[bool, str, str]:
         """Validate code using tree-sitter for better parsing, with regex fallback.
-        
+
         Returns:
-            tuple[bool, str, str]: (is_safe, reason, snippet) where reason describes why the code is 
+            tuple[bool, str, str]: (is_safe, reason, snippet) where reason describes why the code is
             flagged as dangerous, and snippet is the relevant code fragment that triggered the flag.
         """
         if self.tree_sitter_available and self._is_shell_command(code):
@@ -110,8 +124,20 @@ class ExecuteCode(Tool):
             root_node = tree.root_node
 
             dangerous_commands = {
-                "rm", "del", "rd", "format", "shutdown", "reboot",
-                "halt", "poweroff", "iptables", "dd", "mkfs", "fdisk", "sudo", "su",
+                "rm",
+                "del",
+                "rd",
+                "format",
+                "shutdown",
+                "reboot",
+                "halt",
+                "poweroff",
+                "iptables",
+                "dd",
+                "mkfs",
+                "fdisk",
+                "sudo",
+                "su",
             }
 
             def check_node(node):
@@ -122,22 +148,35 @@ class ExecuteCode(Tool):
                             command_node.start_byte : command_node.end_byte
                         ]
                         if command_name in dangerous_commands:
-                            snippet = code[node.start_byte:node.end_byte].strip()
-                            return (False, f"Command '{command_name}' is flagged as dangerous", snippet)
+                            snippet = code[node.start_byte : node.end_byte].strip()
+                            return (
+                                False,
+                                f"Command '{command_name}' is flagged as dangerous",
+                                snippet,
+                            )
 
                         if command_name == "rm":
                             for child in node.children:
-                                if child.type == "word" and child.start_byte < child.end_byte:
+                                if (
+                                    child.type == "word"
+                                    and child.start_byte < child.end_byte
+                                ):
                                     flag = code[child.start_byte : child.end_byte]
                                     if flag in ["-rf", "-r", "-f", "-fr"]:
-                                        snippet = code[node.start_byte:node.end_byte].strip()
-                                        return (False, f"'rm' with dangerous flag '{flag}'", snippet)
+                                        snippet = code[
+                                            node.start_byte : node.end_byte
+                                        ].strip()
+                                        return (
+                                            False,
+                                            f"'rm' with dangerous flag '{flag}'",
+                                            snippet,
+                                        )
 
                 if node.type == "string" and (
                     "`" in code[node.start_byte : node.end_byte]
                     or "$(" in code[node.start_byte : node.end_byte]
                 ):
-                    snippet = code[node.start_byte:node.end_byte].strip()
+                    snippet = code[node.start_byte : node.end_byte].strip()
                     return (False, "Shell injection pattern detected", snippet)
 
                 for child in node.children:
@@ -148,7 +187,9 @@ class ExecuteCode(Tool):
 
             return check_node(root_node)
         except Exception as e:
-            logger.warning(f"Tree-sitter validation failed: {e}. Falling back to regex.")
+            logger.warning(
+                f"Tree-sitter validation failed: {e}. Falling back to regex."
+            )
             return self._validate_with_regex(code)
 
     def _validate_with_regex(self, code: str) -> tuple[bool, str, str]:
@@ -190,6 +231,32 @@ class ExecuteCode(Tool):
                 return (False, f"{description} detected", snippet)
 
         return (True, "", "")
+
+    async def _run_background(self, code: str, context: ToolCallContext) -> ToolResult:
+        """Schedule code execution via the scheduler for background running."""
+        try:
+            scheduler = Scheduler()
+            if not scheduler.apscheduler.running:
+                await scheduler.start()
+            job_id = await scheduler.add_job(
+                session_id=context.session_id,
+                name=f"bg_code_{datetime.now().strftime('%H%M%S_%f')}",
+                job_type=JobType.COMMAND,
+                trigger_type="date",
+                trigger_config={"run_date": datetime.utcnow().isoformat() + "Z"},
+                content=code,
+                agent_id=context.agent.agent_id,
+            )
+            return ToolResult(
+                status=ToolStatus.SUCCESS,
+                content=f"Code scheduled for background execution\nJob ID: {job_id}\nUse `cron` tool with `get_job` action to check execution result.",
+            )
+        except Exception as e:
+            logger.error(f"Failed to schedule background execution: {e}")
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Failed to schedule background execution: {e}",
+            )
 
     async def _run_code_async(self, code: str, timeout: int = 300) -> ToolResult:
         """异步执行代码"""
