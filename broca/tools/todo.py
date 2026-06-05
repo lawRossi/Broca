@@ -90,6 +90,8 @@ class TodoManagement(Tool):
             return self._read_todos(arguments)
         elif action == "update":
             return self._update_todos(arguments)
+        # Action is validated by base class enum check, fallback for type checker
+        return ToolResult(status=ToolStatus.ERROR, content=f"Unknown action: {action}")
 
     def _validate_todos(self, todos):
         for item in todos:

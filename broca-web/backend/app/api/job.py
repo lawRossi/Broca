@@ -144,8 +144,6 @@ async def get_job_executions(
 ) -> ApiResponse:
     """获取任务的执行记录，支持分页和按成功/失败筛选"""
     try:
-        execution_service = get_job_execution_service()
-
         # 先验证任务是否存在
         job_service = get_job_service()
         job = await job_service.get(job_id)

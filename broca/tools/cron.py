@@ -137,7 +137,8 @@ class CronTool(Tool):
         """初始化调度器"""
         if self.scheduler is None:
             self.scheduler = Scheduler()
-            await self.scheduler.start()
+            if not self.scheduler.running:
+                await self.scheduler.start()
             logger.info("CronTool scheduler initialized")
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:

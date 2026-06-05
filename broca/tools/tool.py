@@ -128,7 +128,7 @@ class Tool:
     @staticmethod
     def _check_type(value, expected_type: str) -> bool:
         """Check if a value matches the expected JSON Schema type."""
-        type_map = {
+        type_map: dict[str, type | tuple[type, ...]] = {
             "string": str,
             "integer": int,
             "number": (int, float),

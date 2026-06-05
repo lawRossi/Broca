@@ -39,6 +39,10 @@ class Scheduler:
             self.execution_service = get_job_execution_service()
             logger.info("Scheduler initialized")
 
+    @property
+    def running(self):
+        return self.apscheduler.running
+
     def _serialize_trigger_config(
         self, trigger_config: Dict[str, Any]
     ) -> Dict[str, Any]:
@@ -234,7 +238,9 @@ class Scheduler:
             try:
                 self.apscheduler.remove_job(job_id)
             except Exception as e:
-                logger.warning(f"Job not found in scheduler or remove failed: {job_id}, {e}")
+                logger.warning(
+                    f"Job not found in scheduler or remove failed: {job_id}, {e}"
+                )
 
             # 从数据库删除
             success = await self.job_service.delete(job_id)

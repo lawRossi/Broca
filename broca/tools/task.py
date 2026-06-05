@@ -26,11 +26,18 @@ class TaskManagement(Tool):
                 "action": {
                     "type": "string",
                     "enum": [
-                        "create", "get", "get_all", "get_by_status",
-                        "get_by_assignee", "update", "delete",
-                        "add_comment", "get_children", "search", "write_report",
+                        "create",
+                        "get",
+                        "get_all",
+                        "get_by_status",
+                        "get_by_assignee",
+                        "update",
+                        "delete",
+                        "add_comment",
+                        "get_children",
+                        "search",
                     ],
-                    "description": "The action to perform: create, get, get_all, get_by_status, get_by_assignee, update, delete, add_comment, get_children, search",
+                    "description": "The action to perform",
                 },
                 "task_id": {
                     "type": "string",
@@ -130,8 +137,10 @@ class TaskManagement(Tool):
                 return await self._get_child_tasks(arguments, task_manager)
             elif action == "search":
                 return await self._search_tasks(arguments, task_manager)
-            elif action == "write_report":
-                return await self._write_report(arguments, task_manager)
+            # Action is validated by base class enum check, fallback for type checker
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Unknown action: {action}"
+            )
         except Exception as e:
             return ToolResult(
                 status=ToolStatus.ERROR,

@@ -236,7 +236,7 @@ class ExecuteCode(Tool):
         """Schedule code execution via the scheduler for background running."""
         try:
             scheduler = Scheduler()
-            if not scheduler.apscheduler.running:
+            if not scheduler.running:
                 await scheduler.start()
             job_id = await scheduler.add_job(
                 session_id=context.session_id,
