@@ -51,6 +51,9 @@ export const useAgentStore = defineStore('agent', () => {
         return
       }
 
+      // 切换 session 前，保存当前 session 的筛选状态
+      _persistVisibility()
+
       const sessionAgents = await sessionApi.getSessionAgents(sessionId)
 
       agents.value = sessionAgents.map((agent) => ({
@@ -59,8 +62,17 @@ export const useAgentStore = defineStore('agent', () => {
         type: agent.type || 'assistant',
       }))
 
-      // 用户未手动筛选过时，默认全部可见
-      if (!_userModified) {
+      // 更新当前 session key
+      _currentSessionKey = sessionId
+
+      // 恢复该 session 之前保存的筛选状态（如果有）
+      const savedVisible = _visibleAgentIdsMap.get(sessionId)
+      if (savedVisible) {
+        // 只保留当前 session 中仍存在的 agent ID（过滤掉已删除的）
+        const currentIds = new Set(agents.value.map((a) => a.agent_id))
+        visibleAgentIds.value = savedVisible.filter((id) => currentIds.has(id))
+      } else {
+        // 首次进入该 session，默认全部可见
         visibleAgentIds.value = agents.value.map((a) => a.agent_id)
       }
 
@@ -334,14 +346,26 @@ export const useAgentStore = defineStore('agent', () => {
     }
   }
 
-  // Agent 消息可见性过滤
+  // === Agent 消息可见性过滤（按 session 独立保存） ===
   const visibleAgentIds = ref<string[]>([])
-  // 标记用户是否手动操作过筛选，clearCache 时重置
-  let _userModified = false
+  // 按 sessionId 保存每个 session 的可见性设置
+  const _visibleAgentIdsMap = new Map<string, string[]>()
+  // 按 sessionId 保存每个 session 的用户手动标记
+  const _userModifiedMap = new Map<string, boolean>()
+  // 当前会话的 sessionId（用于持久化筛选状态）
+  let _currentSessionKey = ''
+
+  // 保存当前 session 的筛选状态到 Map
+  const _persistVisibility = () => {
+    if (_currentSessionKey) {
+      _visibleAgentIdsMap.set(_currentSessionKey, [...visibleAgentIds.value])
+      _userModifiedMap.set(_currentSessionKey, true)
+    }
+  }
 
   // 切换单个 Agent 可见性
   const toggleAgentVisibility = (agentId: string) => {
-    _userModified = true
+    _persistVisibility()
     const idx = visibleAgentIds.value.indexOf(agentId)
     if (idx !== -1) {
       visibleAgentIds.value = visibleAgentIds.value.filter((id) => id !== agentId)
@@ -352,19 +376,20 @@ export const useAgentStore = defineStore('agent', () => {
 
   // 设置仅显示指定 Agent
   const setVisibleAgents = (agentIds: string[]) => {
-    _userModified = true
+    _persistVisibility()
     visibleAgentIds.value = agentIds
   }
 
   // 清除缓存（切换 session 时调用）
   const clearCache = () => {
+    // 切换前保存当前 session 的筛选状态
+    _persistVisibility()
     agentConfigs.value.clear()
     agents.value = []
     selectedAgentId.value = ''
     selectedAgent.value = null
     selectedAgentConfig.value = null
-    visibleAgentIds.value = []
-    _userModified = false
+    // 不重置 visibleAgentIds 和 _currentSessionKey — 由后续 fetchAgents 按新 session 恢复
   }
 
   return {

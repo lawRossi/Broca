@@ -31,11 +31,22 @@ export const useChatStore = defineStore('chat', () => {
     const visibleIds = visibleAgentIds.value
     if (visibleIds.length === 0) return messages.value
 
+    // 判断是否处于筛选状态：visibleIds 不等于全部 Agent 数量
+    const isAllSelected = agents.value.length > 0 && visibleIds.length >= agents.value.length
+
     return messages.value.filter((m) => {
-      // 用户消息：发给可见 Agent 或无特定接收对象时显示
+      // 用户消息
       if (m.role === 'user') {
-        if (!m.receiver_id) return true
-        return visibleIds.includes(m.receiver_id)
+        // 优先按 receiver_id 过滤（用户通过 @mention 指定的接收者）
+        if (m.receiver_id) {
+          return visibleIds.includes(m.receiver_id)
+        }
+        // 无 receiver_id 时，按 agent_id 过滤（消息所属的 Agent）
+        if (m.agent_id) {
+          return visibleIds.includes(m.agent_id)
+        }
+        // 两者都没有 → 仅全部可见时才显示
+        return isAllSelected
       }
       if (m.role === 'system' || m.message_type === 'system_message') return true
       if (m.sender_id && visibleIds.includes(m.sender_id)) return true
