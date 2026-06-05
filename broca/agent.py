@@ -10,7 +10,7 @@ import uuid
 from typing import Any, Dict, List, Optional, Tuple
 
 from broca.agent_configs import AgentConfig
-from broca.comm.agent_communicator import AgentCommunicator
+from broca.communication.agent_communicator import AgentCommunicator
 from broca.context import Context
 from broca.error_handler import ErrorHandler
 from broca.execution_engine import ExecutionEngine, ExecutionResult, ExecutionStatus

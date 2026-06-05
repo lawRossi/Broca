@@ -7,7 +7,7 @@ replacing command-line interaction with multi-endpoint communication.
 
 import asyncio
 
-from broca.comm.socketio_client import SocketIOClient
+from broca.communication.socketio_client import SocketIOClient
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)

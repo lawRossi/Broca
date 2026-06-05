@@ -527,7 +527,7 @@ class Scheduler:
             server_url = os.getenv("BROCA_SERVER_URL", "http://localhost:6868")
 
             # 创建临时socketio客户端
-            from broca.comm.socketio_client import SocketIOClient
+            from broca.communication.socketio_client import SocketIOClient
 
             client = SocketIOClient(
                 server_url=server_url,

@@ -15,7 +15,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 
-from broca.comm.socketio_server import SocketIOServer
+from broca.communication.socketio_server import SocketIOServer
 
 logger = logging.getLogger(__name__)
 
