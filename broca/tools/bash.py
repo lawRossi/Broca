@@ -243,13 +243,13 @@ class ExecuteCode(Tool):
                 name=f"bg_code_{datetime.now().strftime('%H%M%S_%f')}",
                 job_type=JobType.COMMAND,
                 trigger_type="date",
-                trigger_config={"run_date": datetime.utcnow().isoformat() + "Z"},
+                trigger_config={},
                 content=code,
                 agent_id=context.agent.agent_id,
             )
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                content=f"Code scheduled for background execution\nJob ID: {job_id}\nUse `cron` tool with `get_job` action to check execution result.",
+                content=f"Code scheduled for background execution\nJob ID: {job_id}\nYou'll be notified when it's done. You can also use `cron` tool with `get_job` action to check execution result.",
             )
         except Exception as e:
             logger.error(f"Failed to schedule background execution: {e}")
