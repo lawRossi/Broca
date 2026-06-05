@@ -244,9 +244,16 @@ class Context:
         message_content = json.loads(message.data.get("content"))
         if message.is_expired:
             message_content["content"] = self.STALE_TOOL_RESULT_PLACEHOLDER
+        arguments = message.data.get("arguments", {})
+        if not isinstance(arguments, dict):
+            try:
+                arguments = json.loads(arguments)
+            except Exception as e:
+                logger.warning(f"Failed to parse arguments: {e}")
+                arguments = {}
         message_content["meta"] = {
             "tool_name": message.data.get("tool_name", ""),
-            "arguments": message.data.get("arguments", {}),
+            "arguments": arguments,
             "status": message.data.get("status", ""),
         }
         return message_content
