@@ -16,6 +16,7 @@ import type {
   CrewExecution,
   CrewConfigFile,
   CrewConfigDetail,
+  CommandInfo,
 } from './types'
 
 export class ApiClient {
@@ -185,6 +186,13 @@ export class ApiClient {
   async getLLMModels(provider: string): Promise<LLMModel[]> {
     const response = await this.client.get(`/config/llm/models/${provider}`)
     return response.data
+  }
+
+  // ==================== Commands API ====================
+
+  async getCommands(): Promise<CommandInfo[]> {
+    const response = await this.client.get('/commands')
+    return response.data.commands || response.data
   }
 
   // ==================== Crew (Orchestration) API ====================

@@ -806,6 +806,11 @@ export class ChatWebViewManager {
       case 'fetchLLMModels':
         await this.handleFetchLLMModels(panel, message.payload)
         break
+
+      // ==================== Commands handlers ====================
+      case 'fetchCommands':
+        await this.handleFetchCommands(panel)
+        break
     }
   }
 
@@ -1752,6 +1757,22 @@ export class ChatWebViewManager {
       this.postToPanel(panel, {
         type: 'error',
         payload: { message: extractErrorMessage(error) },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchCommands(panel: vscode.WebviewPanel) {
+    try {
+      const commands = await this.apiClient.getCommands()
+      this.postToPanel(panel, {
+        type: 'commands',
+        payload: { commands },
+      } as ExtensionToWebView)
+    } catch {
+      // Silently fail — webview has a fallback
+      this.postToPanel(panel, {
+        type: 'commands',
+        payload: { commands: [] },
       } as ExtensionToWebView)
     }
   }

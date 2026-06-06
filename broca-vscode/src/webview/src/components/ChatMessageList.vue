@@ -109,7 +109,7 @@ onUnmounted(() => {
     </div>
     <div
       v-else-if="!chatStore.hasMoreHistory && chatStore.filteredMessages.length > 0"
-      class="flex items-center justify-center py-2 text-gray-400 text-sm"
+      class="end-of-history-marker"
     >
       <span>没有更多历史消息了</span>
     </div>
@@ -147,6 +147,16 @@ onUnmounted(() => {
   padding: 8px;
   color: var(--text-secondary);
   font-size: 12px;
+}
+
+.end-of-history-marker {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 8px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  opacity: 0.5;
 }
 
 .end-text {

@@ -24,12 +24,38 @@ interface CommandInfo {
   argument_hint: string
 }
 
-const allCommands: CommandInfo[] = [
+const allCommands = ref<CommandInfo[]>([])
+
+// Fallback commands when backend is not available
+const fallbackCommands: CommandInfo[] = [
   { name: 'help', description: 'Show available commands', type: 'local', argument_hint: '[command_name]' },
+  { name: 'abort', description: 'Abort current operation', type: 'local', argument_hint: '' },
+  { name: 'undo', description: 'Undo last change', type: 'local', argument_hint: '' },
+  { name: 'redo', description: 'Redo last undone change', type: 'local', argument_hint: '' },
   { name: 'ask', description: 'Answer questions only, no modifications', type: 'prompt', argument_hint: '<your question>' },
   { name: 'init', description: 'Initialize project and generate summary', type: 'prompt', argument_hint: '' },
   { name: 'plan', description: 'Create a plan document without executing', type: 'prompt', argument_hint: '<your goal>' },
+  { name: 'execute-plan', description: 'Execute a plan document', type: 'prompt', argument_hint: '' },
 ]
+
+// Fetch commands from the backend via extension host
+function fetchCommands() {
+  postMessage({ type: 'fetchCommands' })
+  // Fallback timeout: use static list if backend doesn't respond within 3s
+  setTimeout(() => {
+    if (allCommands.value.length === 0) {
+      allCommands.value = fallbackCommands
+    }
+  }, 3000)
+}
+
+// Listen for commands response
+onMessage((data: any) => {
+  if (data.type === 'commands') {
+    const cmds = data.payload.commands || data.payload || []
+    allCommands.value = Array.isArray(cmds) ? cmds : fallbackCommands
+  }
+})
 
 const showCommandSuggestions = ref(false)
 const commandSuggestions = ref<CommandInfo[]>([])
@@ -55,7 +81,7 @@ watch(
         if (afterSlash.length > 0) {
           const searchTerm = afterSlash
           commandSearch.value = searchTerm
-          commandSuggestions.value = allCommands.filter(
+          commandSuggestions.value = allCommands.value.filter(
             (cmd) => cmd.name.toLowerCase().startsWith(searchTerm.toLowerCase())
           )
           if (commandSuggestions.value.length > 0) {
@@ -68,7 +94,7 @@ watch(
         } else {
           // 只输入了 /，显示所有命令
           commandSearch.value = ''
-          commandSuggestions.value = allCommands
+          commandSuggestions.value = allCommands.value
           if (commandSuggestions.value.length > 0) {
             showMentionSuggestions.value = false
             showCommandSuggestions.value = true
@@ -81,7 +107,7 @@ watch(
       } else if (spaceIndex > 0) {
         // /后面有内容后有空格，检查精确匹配
         const searchTerm = afterSlash.substring(0, spaceIndex)
-        const isExactMatch = allCommands.some(
+        const isExactMatch = allCommands.value.some(
           (cmd) => cmd.name.toLowerCase() === searchTerm.toLowerCase()
         )
         if (isExactMatch) {
@@ -238,6 +264,9 @@ function handleClickOutside(event: MouseEvent) {
 
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
+
+  // Fetch available commands for autocomplete
+  fetchCommands()
 
   // 监听文件上传错误（统一 upload 模块不再需要监听 fileUploaded，通过 Promise 处理）
   onMessage((data: any) => {

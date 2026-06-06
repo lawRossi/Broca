@@ -178,6 +178,19 @@ export interface CrewConfigDetail {
   modified_time: number
 }
 
+// ==================== Command Types ====================
+
+export interface CommandInfo {
+  name: string
+  description: string
+  type: string
+  argument_hint: string
+}
+
+export interface CommandsResponse {
+  commands: CommandInfo[]
+}
+
 // WebView ↔ Extension Host communication protocol
 export interface WebViewMessage {
   type: string
@@ -186,7 +199,7 @@ export interface WebViewMessage {
 
 // Extension → WebView messages
 export interface ExtensionToWebView {
-  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'sessionStats' | 'session' | 'sessionCreated' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted' | 'crewExecutions' | 'crewDetail' | 'crewEvent' | 'crewConfigs' | 'crewConfigDetail' | 'agentConfig' | 'agentConfigSaved'
+  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'sessionStats' | 'session' | 'sessionCreated' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'commands' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted' | 'crewExecutions' | 'crewDetail' | 'crewEvent' | 'crewConfigs' | 'crewConfigDetail' | 'agentConfig' | 'agentConfigSaved'
   payload: any
 }
 
@@ -203,6 +216,6 @@ export interface AgentConfig {
 
 // WebView → Extension messages
 export interface WebViewToExtension {
-  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile' | 'runnerAction' | 'fetchRunnerStatus' | 'fetchSessionStats' | 'getSession' | 'fetchAgents' | 'openFile' | 'fetchTasks' | 'fetchTaskDetail' | 'createTask' | 'updateTask' | 'deleteTask' | 'addTaskComment' | 'fetchJobs' | 'fetchJobDetail' | 'executeJob' | 'pauseJob' | 'resumeJob' | 'deleteJob' | 'fetchCrewExecutions' | 'fetchCrewDetail' | 'submitCrew' | 'abortCrew' | 'deleteCrew' | 'fetchCrewConfigs' | 'fetchCrewConfigDetail' | 'saveCrewConfig' | 'openCrewConfigFile' | 'fetchAgentConfig' | 'updateAgentConfig' | 'fetchLLMProviders' | 'fetchLLMModels'
+  type: 'ready' | 'getConfig' | 'sendMessage' | 'loadHistory' | 'respondPermission' | 'respondAgentQuery' | 'redo' | 'abort' | 'undo' | 'uploadFile' | 'runnerAction' | 'fetchRunnerStatus' | 'fetchSessionStats' | 'getSession' | 'fetchAgents' | 'openFile' | 'fetchCommands' | 'fetchTasks' | 'fetchTaskDetail' | 'createTask' | 'updateTask' | 'deleteTask' | 'addTaskComment' | 'fetchJobs' | 'fetchJobDetail' | 'executeJob' | 'pauseJob' | 'resumeJob' | 'deleteJob' | 'fetchCrewExecutions' | 'fetchCrewDetail' | 'submitCrew' | 'abortCrew' | 'deleteCrew' | 'fetchCrewConfigs' | 'fetchCrewConfigDetail' | 'saveCrewConfig' | 'openCrewConfigFile' | 'fetchAgentConfig' | 'updateAgentConfig' | 'fetchLLMProviders' | 'fetchLLMModels'
   payload?: any
 }
