@@ -1,5 +1,5 @@
 ---
-name: execute_plan
+name: execute-plan
 description: execute a plan with builtin skills.
 type: prompt
 use_sub_agent: false
@@ -15,7 +15,8 @@ argument_hint: "<你的计划文件>"
 
 ### 1. 深入理解与思考
 
-仔细阅读计划文件，充分理解计划内容
+1. 仔细阅读计划文件，充分理解计划内容
+2. 如果存在需要澄清的问题或决策点，你可以提供建设性建议，但仍需要和用户确认（使用ask_user）
 
 ### 2. 规划任务
 
@@ -23,7 +24,8 @@ argument_hint: "<你的计划文件>"
 
 ### 3. 完成任务
 
-使用execute—tasks技能，按正确顺序一个个完成任务。
+1. 使用execute—tasks技能，按正确顺序一个个完成任务。
+2. 完成任务后需要进行细致的检查，如果是开发任务，需要有详细测试。
 
 ### 4. 向用户报告
 
