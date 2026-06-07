@@ -6,9 +6,9 @@ from dataclasses import asdict, dataclass
 class SessionMemoryConfig:
     """Session Memory 配置"""
 
-    minimum_messages_to_init: int = 100
-    minimum_messages_between_update: int = 50
-    steps_between_updates: int = 30
+    minimum_messages_to_init: int = 200
+    minimum_messages_between_update: int = 100
+    steps_between_updates: int = 50
 
 
 DEFAULT_SESSION_MEMORY_CONFIG = SessionMemoryConfig()
@@ -22,13 +22,13 @@ class ContextCompactConfig:
     enable_stale_tool_cleanup: bool = True
     stale_cleanup_threshold: int = 50000  # 触发清理的 token 阈值
     stale_cleanup_percentage: float = 0.3  # 上下文窗口百分比
-    min_stale_messages: int = 30  # 超过多少条消息视为过期
+    min_stale_messages: int = 40  # 超过多少条消息视为过期
     min_recent_tool_results_to_keep: int = 10  # 至少保留最近几条工具结果
-    min_stale_tokens: int = 5000
+    min_stale_tokens: int = 8000
 
     # 策略B：Session Memory 截断
     enable_session_memory_truncation: bool = True
-    session_trunc_threshold: int = 500000  # 触发截断的 token 阈值
+    session_trunc_threshold: int = 600000  # 触发截断的 token 阈值
     session_trunc_percentage: float = 0.8  # 上下文窗口百分比
 
 
