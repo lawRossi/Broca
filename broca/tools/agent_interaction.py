@@ -119,7 +119,7 @@ class AskUser(Tool):
     def description(self):
         return (
             "Use this tool to ask the user a question. Always use this tool to clearify user's intent, "
-            "collect user's feedback, provide proposals or suggestions."
+            "collect user's feedback, provide proposals or suggestions(put your most recommended option first and mark it)."
         )
 
     @property
