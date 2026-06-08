@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
 import { Connection } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores'
@@ -12,9 +12,19 @@ import ChatInfoSidebar from '@/components/ChatInfoSidebar.vue'
 import LoadingOverlay from '@/components/LoadingOverlay.vue'
 import PermissionDialog from '@/components/PermissionDialog.vue'
 import AgentQueryDialog from '@/components/AgentQueryDialog.vue'
+import ChatSearchDialog from '@/components/ChatSearchDialog.vue'
 
 const chatStore = useChatStore()
 const route = useRoute()
+
+// 搜索弹框
+const searchDialogVisible = ref(false)
+const searchDialogRef = ref<InstanceType<typeof ChatSearchDialog>>()
+
+const handleSearch = () => {
+  searchDialogVisible.value = true
+  nextTick(() => searchDialogRef.value?.open())
+}
 
 // 当前会话信息（用于判断分类）
 const currentSession = ref<Session | null>(null)
@@ -70,7 +80,7 @@ onUnmounted(() => {
 <template>
   <div class="h-[100dvh] bg-gray-50 flex flex-col overflow-hidden">
     <LoadingOverlay :visible="chatStore.loading" />
-    <ChatHeader />
+    <ChatHeader @search="handleSearch" />
 
     <div class="flex-1 mx-auto max-w-7xl w-full px-2 sm:px-2 py-2 sm:py-2 overflow-hidden">
       <div class="grid grid-cols-12 gap-2 sm:gap-4 h-full relative">
@@ -102,6 +112,7 @@ onUnmounted(() => {
 
     <PermissionDialog />
     <AgentQueryDialog />
+    <ChatSearchDialog ref="searchDialogRef" v-model:visible="searchDialogVisible" @close="searchDialogVisible = false" />
   </div>
 </template>
 

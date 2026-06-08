@@ -279,6 +279,84 @@ async def get_session_messages(
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
+@router.get("/{session_id}/messages/search", response_model=ApiResponse)
+async def search_session_messages(
+    session_id: str,
+    keyword: str | None = None,
+    message_type: str | None = None,
+    sender_id: str | None = None,
+    tool_name: str | None = None,
+    order: str = "desc",
+    skip: int = 0,
+    limit: int = 50,
+) -> ApiResponse:
+    """搜索会话中的消息，支持关键词和多个字段筛选
+
+    Args:
+        session_id: 会话ID
+        keyword: 搜索关键词，匹配 data 字段中的文本内容
+        message_type: 按消息类型过滤（如 user_message, agent_response, tool_call）
+        sender_id: 按发送者ID过滤
+        tool_name: 按工具名称过滤（仅 tool_call 消息）
+        order: 排序方向，desc（最新在前）或 asc（最早在前）
+        skip: 分页偏移
+        limit: 每页数量（最大 200）
+    """
+    try:
+        session_service = get_session_service()
+        session = await session_service.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        limit = min(limit, 200)
+
+        message_service = get_message_service()
+        messages, total = await message_service.search_messages(
+            session_id=session_id,
+            keyword=keyword,
+            message_type=message_type,
+            sender_id=sender_id,
+            tool_name=tool_name,
+            order=order,
+            skip=skip,
+            limit=limit,
+        )
+
+        return ApiResponse.success({
+            "messages": messages,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error searching session messages")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.get("/{session_id}/messages/search/filters", response_model=ApiResponse)
+async def get_search_filters(session_id: str) -> ApiResponse:
+    """获取搜索筛选选项（可用的消息类型、工具名称等）"""
+    try:
+        session_service = get_session_service()
+        session = await session_service.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        message_service = get_message_service()
+        tool_names = await message_service.get_distinct_tool_names(session_id)
+
+        return ApiResponse.success({
+            "tool_names": tool_names,
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting search filters")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
 @router.delete("/sessions", response_model=ApiResponse)
 async def delete_sessions(request: dict) -> ApiResponse:
     """批量删除会话"""

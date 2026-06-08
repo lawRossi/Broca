@@ -7,9 +7,9 @@ Service类实现模块
 
 import uuid
 from datetime import datetime
-from typing import Any, Dict, Generic, List, Optional, Type, TypeVar
+from typing import Any, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
-from sqlalchemy import desc, func, select
+from sqlalchemy import String, and_, cast, desc, func, or_, select, text
 from sqlalchemy import update as sql_update
 from sqlmodel import SQLModel, and_
 
@@ -465,6 +465,95 @@ class MessageService(BaseService[Message]):
             更新后的消息，如果消息不存在则返回None
         """
         return await self.update(message_id, **updates)
+
+    async def search_messages(
+        self,
+        session_id: str,
+        keyword: Optional[str] = None,
+        message_type: Optional[str] = None,
+        sender_id: Optional[str] = None,
+        tool_name: Optional[str] = None,
+        order: str = "desc",
+        skip: int = 0,
+        limit: int = 50,
+        ignore_reverted: bool = True,
+    ) -> Tuple[List[Message], int]:
+        """搜索会话中的消息，支持关键词和多个字段筛选
+
+        Args:
+            session_id: 会话ID（必填）
+            keyword: 搜索关键词，匹配 data 字段中的内容
+            message_type: 按消息类型过滤
+            sender_id: 按发送者ID过滤
+            tool_name: 按工具名称过滤（匹配 data->>'tool_name'）
+            skip: 分页偏移
+            limit: 每页数量
+            ignore_reverted: 是否忽略已回滚的消息
+
+        Returns:
+            (消息列表, 总数)
+        """
+        async with db_manager.get_session() as session:
+            stmt = select(Message).where(Message.session_id == session_id)
+
+            if ignore_reverted:
+                stmt = stmt.where(Message.reverted == False)
+
+            if message_type:
+                stmt = stmt.where(Message.message_type == message_type)
+
+            if sender_id:
+                stmt = stmt.where(
+                    or_(Message.sender_id == sender_id, Message.agent_id == sender_id)
+                )
+
+            # 关键词搜索：将 data 字段转为文本后 LIKE 匹配
+            if keyword:
+                keyword_like = f"%{keyword}%"
+                stmt = stmt.where(
+                    or_(
+                        cast(Message.data, String).ilike(keyword_like),
+                        Message.message_type.ilike(keyword_like),
+                        Message.sender_id.ilike(keyword_like),
+                        Message.agent_id.ilike(keyword_like),
+                    )
+                )
+
+            # 工具名称搜索：SQLite JSON1 扩展
+            if tool_name:
+                tool_like = f"%{tool_name}%"
+                stmt = stmt.where(
+                    func.json_extract(Message.data, "$.tool_name").ilike(tool_like)
+                )
+
+            # 总数
+            count_stmt = select(func.count()).select_from(stmt.subquery())
+            total_result = await session.execute(count_stmt)
+            total = total_result.scalar() or 0
+
+            # 排序 & 分页
+            sort_expr = "sequence_number asc" if order == "asc" else "sequence_number desc"
+            stmt = stmt.order_by(text(sort_expr))
+            stmt = stmt.offset(skip).limit(limit)
+
+            result = await session.execute(stmt)
+            messages = list(result.scalars().all())
+
+            return messages, total
+
+    async def get_distinct_tool_names(self, session_id: str) -> List[str]:
+        """获取会话中所有不同的工具名称"""
+        async with db_manager.get_session() as session:
+            stmt = (
+                select(func.distinct(func.json_extract(Message.data, "$.tool_name")))
+                .where(Message.session_id == session_id)
+                .where(Message.message_type == MessageType.TOOL_CALL)
+                .where(Message.reverted == False)
+                .where(func.json_extract(Message.data, "$.tool_name").isnot(None))
+            )
+            result = await session.execute(stmt)
+            names = [row[0] for row in result.all() if row[0]]
+            return sorted(names)
 
 
 class AgentConfigService(BaseService[AgentConfig]):

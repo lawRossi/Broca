@@ -1,7 +1,12 @@
 <script setup lang="ts">
+import { Search } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores'
 
 const chatStore = useChatStore()
+
+const emit = defineEmits<{
+  (e: 'search'): void
+}>()
 </script>
 
 <template>
@@ -28,6 +33,15 @@ const chatStore = useChatStore()
         </div>
 
         <div class="flex items-center gap-2">
+          <!-- 搜索按钮 -->
+          <el-button
+            size="small"
+            class="!px-2"
+            @click="emit('search')"
+          >
+            <el-icon><Search /></el-icon>
+          </el-button>
+
           <div class="lg:hidden flex items-center gap-1">
             <el-button
               :type="chatStore.showLeftSidebar ? 'primary' : 'default'"

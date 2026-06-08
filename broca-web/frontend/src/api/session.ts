@@ -141,6 +141,31 @@ export const sessionApi = {
   },
 
   /**
+   * 搜索会话中的消息
+   */
+  async searchSessionMessages(
+    sessionId: string,
+    params: {
+      keyword?: string
+      message_type?: string
+      sender_id?: string
+      tool_name?: string
+      order?: string
+      skip?: number
+      limit?: number
+    } = {}
+  ): Promise<MessagesResponse> {
+    return request.get(`/session/${sessionId}/messages/search`, { params })
+  },
+
+  /**
+   * 获取搜索筛选选项
+   */
+  async getSearchFilters(sessionId: string): Promise<{ tool_names: string[] }> {
+    return request.get(`/session/${sessionId}/messages/search/filters`)
+  },
+
+  /**
    * 创建新会话
    */
   async createSession(params: CreateSessionParams = {}, silent = false): Promise<CreateSessionResponse> {
