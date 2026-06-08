@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch } from 'vue'
+import { computed, onMounted, ref, watch} from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessageBox } from 'element-plus'
 import { useUserStore } from '@/stores'
@@ -24,6 +24,13 @@ const total = computed(() => taskStore.total)
 const currentPage = computed(() => taskStore.currentPage)
 const pageSize = computed(() => taskStore.pageSize)
 const searchKeyword = computed(() => taskStore.searchKeyword)
+// 搜索框使用本地 ref，避免每次按键都触发 API 搜索
+const localSearchKeyword = ref('')
+
+// 同步 store 的 searchKeyword 到本地 ref（如路由恢复时）
+watch(searchKeyword, (val) => {
+  localSearchKeyword.value = val
+})
 const statusFilter = computed(() => taskStore.statusFilter)
 const priorityFilter = computed(() => taskStore.priorityFilter)
 const assigneeFilter = computed(() => taskStore.assigneeFilter)
@@ -53,8 +60,12 @@ const priorityOptions = computed(() => [
 const isLoggedIn = computed(() => userStore.isLoggedIn)
 
 // 搜索
-const handleSearch = (keyword: string) => {
-  taskStore.setSearchKeyword(keyword)
+const handleSearch = () => {
+  taskStore.setSearchKeyword(localSearchKeyword.value)
+}
+const handleClearSearch = () => {
+  localSearchKeyword.value = ''
+  taskStore.setSearchKeyword('')
 }
 
 // 状态筛选
@@ -251,12 +262,12 @@ onMounted(async () => {
         <div class="flex flex-wrap gap-4 items-center">
           <!-- 搜索框 -->
           <el-input
-            v-model="searchKeyword"
+            v-model="localSearchKeyword"
             placeholder="搜索任务名称、ID或描述"
             clearable
             style="width: 300px"
-            @clear="handleSearch('')"
-            @keyup.enter="handleSearch(searchKeyword)"
+            @clear="handleClearSearch"
+            @keyup.enter="handleSearch"
           >
             <template #prefix>
               <el-icon

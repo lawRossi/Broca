@@ -53,7 +53,6 @@ const editForm = ref({
   name: '',
   description: '',
   details: '',
-  report: '',
 })
 
 // Confirm dialog
@@ -156,7 +155,6 @@ async function openDetail(taskId: string) {
       name: detail.task.name,
       description: detail.task.description,
       details: detail.task.details || '',
-      report: detail.task.report || '',
     }
   } catch (e: any) {
     console.error('Failed to fetch task detail:', e)
@@ -358,7 +356,6 @@ watch(() => props.sessionId, () => {
                 <input v-model="editForm.name" class="dialog-input" placeholder="任务名称" />
                 <textarea v-model="editForm.description" class="dialog-textarea" placeholder="任务描述" rows="2"></textarea>
                 <textarea v-model="editForm.details" class="dialog-textarea" placeholder="详细描述" rows="4"></textarea>
-                <textarea v-model="editForm.report" class="dialog-textarea" placeholder="任务报告" rows="3"></textarea>
                 <div class="edit-actions">
                   <button class="btn btn-primary" @click="handleSaveEdit">保存</button>
                   <button class="btn btn-secondary" @click="editing = false">取消</button>

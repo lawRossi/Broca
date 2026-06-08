@@ -35,7 +35,6 @@ const editForm = ref({
   context_files: [] as string[],
   context_links: [] as string[],
   context_notes: '',
-  report: '',
 })
 
 // 移动端适配
@@ -156,7 +155,6 @@ const handleEdit = () => {
     context_files: task.value.context_files || [],
     context_links: task.value.context_links || [],
     context_notes: task.value.context_notes || '',
-    report: task.value.report || '',
   }
 }
 
