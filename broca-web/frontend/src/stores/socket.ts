@@ -96,6 +96,15 @@ export const useSocketStore = defineStore('socket', () => {
         connected.value = true
         connecting.value = false
         onConnect.value?.()
+
+        // 重连后重新订阅所有此前已订阅的频道。
+        // 服务端在 disconnect 时会清除客户端的订阅状态，
+        // 因此 Socket.IO 自动重连后必须显式重新订阅，否则服务端无法将消息推送回来。
+        for (const [channel] of _subscriptionRefCounts) {
+          client!.subscribe(channel).catch((err) => {
+            console.error(`重连后重新订阅失败 ${channel}:`, err)
+          })
+        }
       })
       client.on('disconnect', () => {
         connected.value = false

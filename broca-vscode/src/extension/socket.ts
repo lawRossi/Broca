@@ -99,6 +99,15 @@ export class SocketClient {
     this.socket.on('connect', () => {
       console.log('Socket connected')
       this._getHandlerMap('onConnect').forEach(h => h())
+
+      // 重连后重新订阅所有此前已订阅的频道。
+      // 服务端在 disconnect 时会清除客户端的订阅状态，
+      // 因此 Socket.IO 自动重连后必须显式重新订阅。
+      for (const [channel] of this._subscriptionRefCounts) {
+        this._doSubscribe(channel).catch((err) => {
+          console.error(`重连后重新订阅失败 ${channel}:`, err)
+        })
+      }
     })
 
     this.socket.on('disconnect', (reason) => {
