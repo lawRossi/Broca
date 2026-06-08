@@ -1170,7 +1170,7 @@ const handleUndoToHere = async () => {
 }
 
 .result-label {
-  color: #15803d;
+  color: #2563eb;
 }
 
 .result-inner {
@@ -1258,11 +1258,11 @@ const handleUndoToHere = async () => {
   }
 
   .params-question {
-    color: #e2e8f0;
+    color: #1e293b;
   }
 
   .params-option {
-    color: #94a3b8;
+    color: #475569;
   }
 
   .params-bullet {
@@ -1270,7 +1270,7 @@ const handleUndoToHere = async () => {
   }
 
   .params-desc {
-    color: #64748b;
+    color: #334155;
   }
 
   /* 结果展示 */
@@ -1280,22 +1280,22 @@ const handleUndoToHere = async () => {
   }
 
   .result-label {
-    color: #4ade80;
+    color: #60a5fa;
   }
 
   .result-inner {
-    background-color: #1e293b;
-    border-color: #475569;
+    background-color: #f1f5f9;
+    border-color: #d9dce0;
   }
 
   .result-text {
-    color: #e2e8f0;
+    color: #1e293b;
   }
 
   .result-pre {
-    background-color: #1e293b;
-    color: #4ade80;
-    border-color: #475569;
+    background-color: #f1f5f9;
+    color: #60a5fa;
+    border-color: #d9dce0;
   }
 
   /* Diff */
