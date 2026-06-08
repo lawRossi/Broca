@@ -74,8 +74,8 @@ class CronTool(Tool):
                     "enum": ["cron", "interval", "date"],
                 },
                 "trigger": {
-                    "type": ["string", "object"],
-                    "description": "trigger configuration, either a cron expression，or interval/date object",
+                    "type": "string",
+                    "description": "trigger configuration, either a cron expression，or interval/date",
                 },
                 "job_id": {
                     "type": "string",
