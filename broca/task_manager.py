@@ -166,6 +166,7 @@ class TaskManager:
         details: Optional[str] = None,
         context: Optional[TaskContext] = None,
         acceptance_criteria: Optional[List[str]] = None,
+        report: Optional[str] = None,
     ) -> Optional[Task]:
         """
         更新现有任务。
@@ -207,6 +208,7 @@ class TaskManager:
             context_links=context_links,
             context_notes=context_notes,
             acceptance_criteria=acceptance_criteria,
+            report=report,
         )
 
     async def delete_task(self, task_id: str) -> bool:

@@ -291,6 +291,7 @@ class TaskManagement(Tool):
                 details=arguments.get("details"),
                 context=task_context,
                 acceptance_criteria=arguments.get("acceptance_criteria"),
+                report=arguments.get("report"),
             )
 
             if task:
