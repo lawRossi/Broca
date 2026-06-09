@@ -101,8 +101,8 @@ function closeConfigDialog() {
   editableConfigContent.value = ''
   selectedProvider.value = ''
   selectedModel.value = ''
-  // 关闭弹窗后恢复自动刷新
-  if (chatStore.sessionId) {
+  // 关闭弹窗后，仅在 runner 运行时恢复自动刷新
+  if (chatStore.sessionId && chatStore.runnerAlive) {
     startAutoRefresh(30000)
   }
 }
@@ -230,6 +230,19 @@ onMounted(() => {
   if (chatStore.sessionId) startAutoRefresh(30000)
 })
 
+// 监听 Runner 状态变化，控制自动刷新启停
+watch(
+  () => chatStore.runnerAlive,
+  (isAlive) => {
+    if (isAlive && chatStore.sessionId) {
+      startAutoRefresh(30000)
+    } else {
+      stopAutoRefresh()
+    }
+  },
+  { immediate: true }
+)
+
 onUnmounted(() => {
   stopAutoRefresh()
   document.removeEventListener('click', handleDocumentClick)
@@ -270,7 +283,7 @@ function stopAutoRefresh() {
 watch(
   () => chatStore.sessionId,
   (newId) => {
-    if (newId) startAutoRefresh(30000)
+    if (newId && chatStore.runnerAlive) startAutoRefresh(30000)
     else stopAutoRefresh()
   }
 )

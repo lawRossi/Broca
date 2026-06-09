@@ -98,8 +98,11 @@ const startStatsPolling = () => {
     clearInterval(statsPollingInterval)
   }
   statsPollingInterval = window.setInterval(() => {
-    fetchStats()
-    fetchJobAndTaskStats()
+    // 仅在 runner 进程运行时才拉取数据
+    if (chatStore.runnerAlive) {
+      fetchStats()
+      fetchJobAndTaskStats()
+    }
   }, 10000)
 }
 
@@ -144,12 +147,25 @@ watch(
   { immediate: true }
 )
 
+// 监听 Runner 状态变化，控制轮询启停
+watch(
+  () => chatStore.runnerInfo?.status,
+  (newStatus) => {
+    if (newStatus === 'alive') {
+      startStatsPolling()
+    } else {
+      stopStatsPolling()
+    }
+  },
+  { immediate: true }
+)
+
 onMounted(() => {
   if (chatStore.sessionId) {
     fetchStats()
     fetchJobAndTaskStats()
     fetchWorkspace()
-    startStatsPolling()
+    // 轮询由 runner 状态 watcher 控制启停
   }
 })
 

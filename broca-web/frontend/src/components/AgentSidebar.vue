@@ -270,28 +270,39 @@ const closeConfigDialog = () => {
   editableConfigContent.value = ''
   selectedProvider.value = ''
   selectedModel.value = ''
-  // 关闭弹窗后恢复自动刷新
-  if (chatStore.sessionId) {
+  // 关闭弹窗后，仅在 runner 运行时恢复自动刷新
+  if (chatStore.sessionId && chatStore.runnerAlive) {
     startAutoRefresh(10000)
   }
 }
 
-// 监听 session 变化，自动刷新 agents
+// 监听 Runner 状态变化，控制自动刷新启停
 watch(
-  () => chatStore.sessionId,
-  (newSessionId) => {
-    if (newSessionId) {
-      // 启动自动刷新（10秒间隔）
+  () => chatStore.runnerAlive,
+  (isAlive) => {
+    if (isAlive && chatStore.sessionId) {
       startAutoRefresh(10000)
     } else {
-      // 停止自动刷新
+      stopAutoRefresh()
+    }
+  },
+  { immediate: true }
+)
+
+// 监听 session 变化，当 runner 运行时自动刷新 agents
+watch(
+  () => chatStore.sessionId,
+  (newSessionId, oldSessionId) => {
+    if (newSessionId && newSessionId !== oldSessionId && chatStore.runnerAlive) {
+      startAutoRefresh(10000)
+    } else if (!newSessionId) {
       stopAutoRefresh()
     }
   }
 )
 
 onMounted(() => {
-  if (chatStore.sessionId) {
+  if (chatStore.sessionId && chatStore.runnerAlive) {
     // 启动自动刷新（10秒间隔）
     startAutoRefresh(10000)
   }

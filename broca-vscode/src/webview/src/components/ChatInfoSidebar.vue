@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { postMessage, onMessage } from '../api/vscode'
 import { taskApi, jobApi } from '../utils/api'
@@ -76,9 +76,11 @@ async function fetchStats() {
 
 function startStatsPolling() {
   stopStatsPolling()
-  // 每 30 秒轮询一次
+  // 每 30 秒轮询一次，仅在 runner 运行时才拉取数据
   statsPollingTimer = setInterval(() => {
-    fetchStats()
+    if (chatStore.runnerAlive) {
+      fetchStats()
+    }
   }, 30000)
 }
 
@@ -92,7 +94,9 @@ function stopStatsPolling() {
 function startCountsPolling() {
   stopCountsPolling()
   countsPollingTimer = setInterval(() => {
-    fetchCounts()
+    if (chatStore.runnerAlive) {
+      fetchCounts()
+    }
   }, 30000)
 }
 
@@ -234,9 +238,22 @@ onMounted(() => {
   if (chatStore.sessionId) {
     fetchStats()
     fetchWorkspace()
-    startStatsPolling()
+    // stats 轮询由 runner 状态 watcher 控制启停
   }
 })
+
+// 监听 Runner 状态变化，控制 stats 轮询启停
+watch(
+  () => chatStore.runnerInfo?.status,
+  (newStatus) => {
+    if (newStatus === 'alive') {
+      startStatsPolling()
+    } else {
+      stopStatsPolling()
+    }
+  },
+  { immediate: true }
+)
 
 onUnmounted(() => {
   stopStatsPolling()
