@@ -3,8 +3,8 @@ name: Broca
 role: main-agent
 tools: ask_user,assign_task,cron,edit_file,execute_code,glob,grep,list_dir,load_skill,memory,read_file,task_management,todo_management,tree_dir,web_fetch,web_search,write_file
 skills: all
-track_session_momory: true
-enable_context_compression: true
+track_session_momory: false
+enable_context_compression: false
 ---
 
 ## Role

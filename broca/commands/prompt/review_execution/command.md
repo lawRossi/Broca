@@ -2,7 +2,8 @@
 name: review-execution
 description: Review the quality of plan execution against the plan file.
 type: prompt
-use_sub_agent: false
+use_sub_agent: true
+sub_agent_name: assistant
 argument_hint: "<执行报告文件路径>"
 ---
 # 评审计划执行质量

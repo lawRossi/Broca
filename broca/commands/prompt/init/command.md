@@ -3,7 +3,7 @@ name: init
 description: Initialize project by reading workspace files and writing a summary to ./agents/AGENTS.md
 type: prompt
 use_sub_agent: true
-sub_agent_name: sub-agent
+sub_agent_name: assistant
 ---
 请对当前 workspace 进行初始化扫描，了解项目概要情况,编写.agents/AGENTS.md。
 
