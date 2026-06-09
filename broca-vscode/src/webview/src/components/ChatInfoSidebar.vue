@@ -59,6 +59,7 @@ async function fetchWorkspace() {
 const stats = ref<SessionStats | null>(null)
 const statsLoading = ref(false)
 let statsPollingTimer: ReturnType<typeof setInterval> | null = null
+let countsPollingTimer: ReturnType<typeof setInterval> | null = null
 let removeMessageListener: (() => void) | null = null
 
 async function fetchStats() {
@@ -85,6 +86,20 @@ function stopStatsPolling() {
   if (statsPollingTimer) {
     clearInterval(statsPollingTimer)
     statsPollingTimer = null
+  }
+}
+
+function startCountsPolling() {
+  stopCountsPolling()
+  countsPollingTimer = setInterval(() => {
+    fetchCounts()
+  }, 30000)
+}
+
+function stopCountsPolling() {
+  if (countsPollingTimer) {
+    clearInterval(countsPollingTimer)
+    countsPollingTimer = null
   }
 }
 
@@ -202,6 +217,7 @@ const isOpen = computed(() => chatStore.showRightSidebar)
 
 onMounted(() => {
   fetchCounts()
+  startCountsPolling()
 
   // 监听 sessionStats 和 session 响应
   removeMessageListener = onMessage((data: any) => {
@@ -224,6 +240,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopStatsPolling()
+  stopCountsPolling()
   if (removeMessageListener) {
     removeMessageListener()
     removeMessageListener = null
