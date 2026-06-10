@@ -7,7 +7,18 @@ const chatStore = useChatStore()
 const socketStore = useSocketStore()
 const containerRef = ref<HTMLElement>()
 const isRestoringScroll = ref(false)
-const scrollTimeout = ref<number | null>(null)
+
+// 防抖定时器（分开管理，避免互相干扰）
+const loadMoreTimer = ref<number | null>(null)
+const restoreTimer = ref<number | null>(null)
+const contentScrollTimer = ref<number | null>(null)
+
+// 判断用户是否在底部附近（阈值 150px）
+const isNearBottom = () => {
+  if (!containerRef.value) return true
+  const container = containerRef.value
+  return container.scrollHeight - container.scrollTop - container.clientHeight < 150
+}
 
 const saveScrollState = () => {
   if (!containerRef.value) return null
@@ -29,16 +40,18 @@ const restoreScrollState = (prevState: any) => {
 
     container.scrollTop = prevState.scrollTop + heightDiff
 
-    if (scrollTimeout.value) clearTimeout(scrollTimeout.value)
-    scrollTimeout.value = setTimeout(() => {
+    if (restoreTimer.value) clearTimeout(restoreTimer.value)
+    restoreTimer.value = window.setTimeout(() => {
       isRestoringScroll.value = false
-      scrollTimeout.value = null
-    }, 150) as unknown as number
+      restoreTimer.value = null
+    }, 150)
   })
 }
 
 const scrollToBottom = () => {
   if (isRestoringScroll.value) return
+  // 用户已上滑查看历史时，不强制滚动
+  if (!isNearBottom()) return
 
   nextTick(() => {
     if (containerRef.value) {
@@ -51,19 +64,30 @@ watch(
   () => chatStore.filteredMessages.length,
   () => {
     if (isRestoringScroll.value) return
-
     if (!chatStore.loadingMore) {
       scrollToBottom()
     }
   }
 )
 
+// 监听流式内容更新，加防抖避免高频 chunk 导致页面抖动
+watch(
+  () => chatStore.filteredMessages.map(m => m.data?.content).join(''),
+  () => {
+    if (isRestoringScroll.value) return
+    if (contentScrollTimer.value) clearTimeout(contentScrollTimer.value)
+    contentScrollTimer.value = window.setTimeout(() => {
+      scrollToBottom()
+    }, 50)
+  }
+)
+
 const handleScroll = (event: Event) => {
   const target = event.target as HTMLElement
 
-  if (scrollTimeout.value) clearTimeout(scrollTimeout.value)
+  if (loadMoreTimer.value) clearTimeout(loadMoreTimer.value)
 
-  scrollTimeout.value = setTimeout(() => {
+  loadMoreTimer.value = window.setTimeout(() => {
     if (target.scrollTop < 50 && !chatStore.loadingMore && chatStore.hasMoreHistory) {
       const scrollState = saveScrollState()
 
@@ -77,13 +101,13 @@ const handleScroll = (event: Event) => {
           isRestoringScroll.value = false
         })
     }
-  }, 200) as unknown as number
+  }, 200)
 }
 
 onUnmounted(() => {
-  if (scrollTimeout.value) {
-    clearTimeout(scrollTimeout.value)
-  }
+  if (loadMoreTimer.value) clearTimeout(loadMoreTimer.value)
+  if (restoreTimer.value) clearTimeout(restoreTimer.value)
+  if (contentScrollTimer.value) clearTimeout(contentScrollTimer.value)
 })
 
 // 发送重做命令

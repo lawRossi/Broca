@@ -227,7 +227,7 @@ onMounted(() => {
     }
   })
 
-  if (chatStore.sessionId) startAutoRefresh(30000)
+  if (chatStore.sessionId && chatStore.runnerAlive) startAutoRefresh(30000)
 })
 
 // 监听 Runner 状态变化，控制自动刷新启停

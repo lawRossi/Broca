@@ -5,8 +5,21 @@ import ChatMessageItem from './ChatMessageItem.vue'
 
 const chatStore = useChatStore()
 const containerRef = ref<HTMLElement>()
-const scrollTimeout = ref<number | null>(null)
+
+// 防抖定时器（分开管理，避免互相干扰）
+const loadMoreTimer = ref<number | null>(null)
+const restoreTimer = ref<number | null>(null)
+const contentScrollTimer = ref<number | null>(null)
+
+// 是否正在恢复滚动位置（加载更多历史后）
 const isRestoringScroll = ref(false)
+
+// 判断用户是否在底部附近（阈值 150px）
+function isNearBottom(): boolean {
+  if (!containerRef.value) return true
+  const container = containerRef.value
+  return container.scrollHeight - container.scrollTop - container.clientHeight < 150
+}
 
 // ==================== 滚动位置保持 ====================
 function saveScrollState() {
@@ -29,21 +42,27 @@ function restoreScrollState(prevState: any) {
 
     container.scrollTop = prevState.scrollTop + heightDiff
 
-    if (scrollTimeout.value) clearTimeout(scrollTimeout.value)
-    scrollTimeout.value = window.setTimeout(() => {
+    if (restoreTimer.value) clearTimeout(restoreTimer.value)
+    restoreTimer.value = window.setTimeout(() => {
       isRestoringScroll.value = false
-      scrollTimeout.value = null
+      restoreTimer.value = null
     }, 150)
   })
 }
 
+const scrollToBottomImmediate = () => {
+  if (containerRef.value) {
+    containerRef.value.scrollTop = containerRef.value.scrollHeight
+  }
+}
+
 const scrollToBottom = () => {
   if (isRestoringScroll.value) return
+  // 用户已上滑查看历史时，不强制滚动
+  if (!isNearBottom()) return
 
   nextTick(() => {
-    if (containerRef.value) {
-      containerRef.value.scrollTop = containerRef.value.scrollHeight
-    }
+    scrollToBottomImmediate()
   })
 }
 
@@ -59,11 +78,15 @@ watch(
 )
 
 // Also watch for agent_response content changes (streaming updates)
+// 加防抖避免高频 chunk 导致页面抖动
 watch(
-  () => chatStore.messages.map(m => m.data?.content).join(''),
+  () => chatStore.filteredMessages.map(m => m.data?.content).join(''),
   () => {
     if (isRestoringScroll.value) return
-    scrollToBottom()
+    if (contentScrollTimer.value) clearTimeout(contentScrollTimer.value)
+    contentScrollTimer.value = window.setTimeout(() => {
+      scrollToBottom()
+    }, 50)
   }
 )
 
@@ -72,12 +95,15 @@ const handleScroll = () => {
   const container = containerRef.value
   if (!container) return
 
-  if (scrollTimeout.value) clearTimeout(scrollTimeout.value)
+  if (loadMoreTimer.value) clearTimeout(loadMoreTimer.value)
 
-  scrollTimeout.value = window.setTimeout(() => {
+  loadMoreTimer.value = window.setTimeout(() => {
     if (container.scrollTop < 50 && !chatStore.loadingMore && chatStore.hasMoreHistory) {
       const scrollState = saveScrollState()
       chatStore.loadMoreHistory()
+      // 立即封锁自动滚动，避免在等待历史数据回来的窗口期内
+      // 流式内容更新将用户拉到最底部
+      isRestoringScroll.value = true
 
       // Try to restore scroll position after a short delay
       setTimeout(() => {
@@ -93,7 +119,9 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
-  if (scrollTimeout.value) clearTimeout(scrollTimeout.value)
+  if (loadMoreTimer.value) clearTimeout(loadMoreTimer.value)
+  if (restoreTimer.value) clearTimeout(restoreTimer.value)
+  if (contentScrollTimer.value) clearTimeout(contentScrollTimer.value)
 })
 </script>
 
