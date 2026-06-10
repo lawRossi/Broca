@@ -11,8 +11,6 @@ import {
   PieChart,
   QuestionFilled,
   Loading,
-  CircleCheck,
-  CircleClose,
   Refresh,
   Setting,
   InfoFilled,
@@ -86,21 +84,6 @@ const typeColors: Record<string, string> = {
   research_assistant: 'orange',
   task_manager: 'purple',
   data_analyst: 'cyan',
-}
-
-const getStatusIcon = (status: string) => {
-  switch (status) {
-    case 'idle':
-      return CircleCheck
-    case 'running':
-      return Loading
-    case 'connecting':
-      return Loading
-    case 'disconnected':
-      return CircleClose
-    default:
-      return QuestionFilled
-  }
 }
 
 const getStatusText = (status: string) => {
@@ -420,16 +403,12 @@ onUnmounted(() => {
               :type="(agent.status ? statusColors[agent.status] : 'info') as any"
               class="!text-xs !px-2 !py-0 !h-5"
             >
-              <el-icon v-if="agent.status && agent.status !== 'disconnected'" :size="10" class="mr-1 animate-pulse">
-                <component :is="getStatusIcon(agent.status)" />
-              </el-icon>
               {{ getStatusText(agent.status || 'disconnected') }}
             </el-tag>
             <el-tooltip v-if="agent.status === 'running'" content="中断此Agent" placement="top" :show-after="300">
               <el-button
                 type="danger"
                 size="small"
-                :icon="CircleClose"
                 class="!px-2 !py-1 !h-7 !w-auto min-w-[32px] border-0 bg-red-500 hover:bg-red-600 text-white shadow-sm hover:shadow transition-all duration-200 transform hover:scale-105 active:scale-95"
                 title="中断此Agent"
                 @click.stop="chatStore.sendAbort(agent.agent_id)"
