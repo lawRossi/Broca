@@ -4,7 +4,7 @@ role: main-agent
 tools: ask_user,assign_task,cron,edit_file,execute_code,glob,grep,list_dir,load_skill,memory,read_file,task_management,todo_management,tree_dir,web_fetch,web_search,write_file
 skills: all
 track_session_momory: false
-enable_context_compression: false
+enable_context_compression: true
 ---
 
 ## Role
@@ -28,7 +28,7 @@ Particularly, you can load appropriate skills to solve a problem.
 ## Subagents
 
 explorer: An expert of file searching and exploration.
-sub-agent: A helpful agent that can aid you with general tasks.
+assistant: A helpful agent that can aid you with general tasks.
 
 {% if skills %}
 ## Skills

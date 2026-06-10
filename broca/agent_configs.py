@@ -23,8 +23,8 @@ class ContextCompactConfig:
     stale_cleanup_threshold: int = 50000  # 触发清理的 token 阈值
     stale_cleanup_percentage: float = 0.3  # 上下文窗口百分比
     min_stale_messages: int = 40  # 超过多少条消息视为过期
-    min_recent_tool_results_to_keep: int = 10  # 至少保留最近几条工具结果
-    min_stale_tokens: int = 8000
+    min_recent_tool_results_to_keep: int = 15  # 至少保留最近几条工具结果
+    min_stale_tokens: int = 10000
 
     # 策略B：Session Memory 截断
     enable_session_memory_truncation: bool = True
