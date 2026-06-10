@@ -1,3 +1,4 @@
+import datetime
 import re
 from pathlib import Path
 from typing import Generator, List, Optional
@@ -621,7 +622,12 @@ class ListDir(Tool):
         return {
             "type": "object",
             "properties": {
-                "path": {"type": "string", "description": "The directory path to list"}
+                "path": {"type": "string", "description": "The directory path to list"},
+                "show_mtime": {
+                    "type": "boolean",
+                    "description": "Whether to show last modification time of each item",
+                    "default": False,
+                },
             },
             "required": ["path"],
         }
@@ -640,10 +646,20 @@ class ListDir(Tool):
                     status=ToolStatus.ERROR, content=f"Error: Not a directory: {path}"
                 )
 
+            show_mtime = parameters.get("show_mtime", False)
             items = []
             for item in sorted(dir_path.iterdir()):
                 prefix = "📁 " if item.is_dir() else "📄 "
-                items.append(f"{prefix}{item.name}")
+                if show_mtime:
+                    try:
+                        mtime = datetime.datetime.fromtimestamp(
+                            item.stat().st_mtime
+                        ).strftime("%Y-%m-%d %H:%M:%S")
+                        items.append(f"{prefix}{item.name}  ({mtime})")
+                    except Exception:
+                        items.append(f"{prefix}{item.name}  (N/A)")
+                else:
+                    items.append(f"{prefix}{item.name}")
 
             if not items:
                 return ToolResult(
@@ -733,6 +749,11 @@ class TreeDir(Tool):
                     "description": "Whether to show files or only directories",
                     "default": True,
                 },
+                "show_mtime": {
+                    "type": "boolean",
+                    "description": "Whether to show last modification time of each item",
+                    "default": False,
+                },
             },
             "required": ["path"],
         }
@@ -757,6 +778,7 @@ class TreeDir(Tool):
             )
             show_hidden = parameters.get("show_hidden", False)
             show_files = parameters.get("show_files", True)
+            show_mtime = parameters.get("show_mtime", False)
 
             # Build the tree structure
             tree_lines: list = []
@@ -770,6 +792,7 @@ class TreeDir(Tool):
                 ignore_patterns=ignore_patterns,
                 show_hidden=show_hidden,
                 show_files=show_files,
+                show_mtime=show_mtime,
             )
 
             if not tree_lines:
@@ -781,12 +804,13 @@ class TreeDir(Tool):
             # Add header
             header = f"Directory tree for: {path}\n"
             if ignore_patterns:
-                header += f"Ignored patterns: {', '.join(sorted(ignore_patterns)[:5])}"
-                header += f"Ignored patterns: {', '.join(ignore_patterns[:5])}"
+                ignored_str = ", ".join(sorted(ignore_patterns)[:5])
                 if len(ignore_patterns) > 5:
-                    header += f" and {len(ignore_patterns) - 5} more"
-                header += "\n"
+                    ignored_str += f" and {len(ignore_patterns) - 5} more"
+                header += f"Ignored patterns: {ignored_str}\n"
             header += "max_depth: " + str(max_depth) + "\n"
+            if show_mtime:
+                header += "show_mtime: True\n"
             header += "=" * 50 + "\n"
 
             return ToolResult(
@@ -812,6 +836,7 @@ class TreeDir(Tool):
         ignore_patterns: list,
         show_hidden: bool,
         show_files: bool,
+        show_mtime: bool = False,
     ) -> None:
         """Recursively build tree structure."""
         if depth >= max_depth:
@@ -854,7 +879,16 @@ class TreeDir(Tool):
             icon = "📁 " if item.is_dir() else "📄 "
 
             # Add the current item
-            tree_lines.append(f"{prefix}{connector}{icon}{item.name}")
+            if show_mtime:
+                try:
+                    mtime = datetime.datetime.fromtimestamp(
+                        item.stat().st_mtime
+                    ).strftime("%Y-%m-%d %H:%M:%S")
+                    tree_lines.append(f"{prefix}{connector}{icon}{item.name}  ({mtime})")
+                except Exception:
+                    tree_lines.append(f"{prefix}{connector}{icon}{item.name}  (N/A)")
+            else:
+                tree_lines.append(f"{prefix}{connector}{icon}{item.name}")
 
             # If it's a directory, recurse
             if item.is_dir():
@@ -869,4 +903,85 @@ class TreeDir(Tool):
                     ignore_patterns=ignore_patterns,
                     show_hidden=show_hidden,
                     show_files=show_files,
+                    show_mtime=show_mtime,
                 )
+
+
+class FileMtime(Tool):
+    """Tool to view last modification times of specified files."""
+
+    @property
+    def name(self) -> str:
+        return "file_mtime"
+
+    @property
+    def description(self) -> str:
+        return """View the last modification time of specified files.
+Accepts a list of file paths and returns each file's last modified timestamp.
+Useful for checking which files were recently changed."""
+
+    @property
+    def parameters(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "paths": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of file paths to check modification times for",
+                },
+            },
+            "required": ["paths"],
+        }
+
+    async def _execute(self, parameters: dict, context: ToolCallContext) -> ToolResult:
+        try:
+            paths = parameters["paths"]
+            if not paths:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content="Error: No file paths provided",
+                )
+
+            results = []
+            for path in paths:
+                file_path = Path(path).expanduser()
+                if not file_path.exists():
+                    results.append(f"❌ {path}  —  Not found")
+                    continue
+                try:
+                    stat = file_path.stat()
+                    mtime = datetime.datetime.fromtimestamp(stat.st_mtime).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
+                    size = stat.st_size
+                    if file_path.is_dir():
+                        results.append(
+                            f"📁 {path}  —  {mtime}  ({_format_size(size)})"
+                        )
+                    else:
+                        results.append(
+                            f"📄 {path}  —  {mtime}  ({_format_size(size)})"
+                        )
+                except PermissionError:
+                    results.append(f"🔒 {path}  —  Permission denied")
+                except Exception as e:
+                    results.append(f"⚠️  {path}  —  Error: {e}")
+
+            return ToolResult(
+                status=ToolStatus.SUCCESS, content="\n".join(results)
+            )
+        except Exception as e:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Error checking file modification times: {str(e)}",
+            )
+
+
+def _format_size(size: int) -> str:
+    """Format file size in human-readable format."""
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if size < 1024:
+            return f"{size:.1f} {unit}" if unit != "B" else f"{size} B"
+        size /= 1024
+    return f"{size:.1f} PB"

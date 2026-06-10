@@ -1,4 +1,5 @@
 import asyncio
+import datetime
 import os
 from pathlib import Path
 
@@ -35,6 +36,11 @@ class GlobTool(Tool):
                 "path": {
                     "type": "string",
                     "description": "The directory to search in. If not specified, the current working directory will be used.",
+                },
+                "show_mtime": {
+                    "type": "boolean",
+                    "description": "Whether to show last modification time of each file",
+                    "default": False,
                 },
             },
             "required": ["pattern"],
@@ -121,7 +127,25 @@ class GlobTool(Tool):
                     files = [f[1] for f in sorted_files]
                     truncated = len(files) > self.limit
                     files = files[: self.limit]
-                    output_lines = files
+
+                    show_mtime = parameters.get("show_mtime", False)
+                    if show_mtime:
+                        output_lines = []
+                        for f in files:
+                            try:
+                                full_path = Path(f)
+                                if full_path.exists():
+                                    mtime = datetime.datetime.fromtimestamp(
+                                        full_path.stat().st_mtime
+                                    ).strftime("%Y-%m-%d %H:%M:%S")
+                                    output_lines.append(f"{f}  ({mtime})")
+                                else:
+                                    output_lines.append(f)
+                            except Exception:
+                                output_lines.append(f)
+                    else:
+                        output_lines = list(files)
+
                     if truncated:
                         output_lines.append("")
                         output_lines.append(
