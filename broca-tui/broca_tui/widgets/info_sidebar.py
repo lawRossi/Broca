@@ -3,8 +3,16 @@ InfoSidebar Widget
 
 Right info panel with:
 - Session Info (ID, workspace)
-- Runner Status (status, PID, uptime, start/stop buttons, auto-polling)
+- Runner Status (status, PID, uptime, start/stop toggle, auto-polling)
 - Message Statistics (counts by type with colored indicators)
+
+References broca-web ChatInfoSidebar pattern:
+- Single toggle button instead of two separate start/stop buttons
+- Button text/action changes based on runner status:
+  - alive    → "⏹ 停止进程"  (stop)
+  - error    → "🔄 重启进程"  (restart)
+  - dead     → "▶ 启动进程"  (start/restart)
+  - starting → disabled + "◐ 启动中"
 """
 
 from __future__ import annotations
@@ -14,7 +22,6 @@ from typing import Any, Dict, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical, ScrollableContainer
-from textual.message import Message
 from textual.reactive import reactive
 from textual.widgets import Button, Label, Static
 from textual.widget import Widget
@@ -24,24 +31,20 @@ from broca_tui.stores.chat_store import ChatStore
 
 
 class InfoSidebar(Widget):
-    """Right info panel showing session details and runner status."""
+    """Right info panel showing session details and runner status.
+
+    References broca-web ChatInfoSidebar pattern:
+    - Single toggle button instead of two separate start/stop buttons
+    - Button text/action changes based on runner status:
+      - alive    → "⏹ 停止进程"  (stop)
+      - error    → "🔄 重启进程"  (restart)
+      - dead     → "▶ 启动进程"  (start/restart)
+      - starting → disabled + "◐ 启动中"
+    """
 
     runner_status = reactive("unknown")
     runner_uptime = reactive("")
-
-    class StartRunner(Message, bubble=True):
-        """Message posted when user wants to start the runner."""
-
-        def __init__(self, session_id: str = "") -> None:
-            super().__init__()
-            self.session_id = session_id
-
-    class StopRunner(Message, bubble=True):
-        """Message posted when user wants to stop the runner."""
-
-        def __init__(self, session_id: str = "") -> None:
-            super().__init__()
-            self.session_id = session_id
+    runner_action_loading = reactive(False)
 
     def __init__(
         self,
@@ -53,7 +56,7 @@ class InfoSidebar(Widget):
 
         Args:
             session_id: Current session ID
-            chat_store: ChatStore instance for runner polling
+            chat_store: ChatStore instance for runner actions
         """
         super().__init__(**kwargs)
         self._session_id = session_id
@@ -64,7 +67,7 @@ class InfoSidebar(Widget):
 
     def compose(self) -> ComposeResult:
         """Create the sidebar layout."""
-        with Vertical(classes="sidebar sidebar-right"):
+        with Vertical():
             # Session Info Section
             with Vertical(classes="info-section"):
                 yield Label("Session Info", classes="section-title")
@@ -77,9 +80,8 @@ class InfoSidebar(Widget):
                 yield Label("Status: ● unknown", classes="info-row", id="runner-status")
                 yield Label("PID: -", classes="info-row", id="runner-pid")
                 yield Label("Uptime: -", classes="info-row", id="runner-uptime")
-                with Horizontal(classes="runner-actions"):
-                    yield Button("▶ 启动", id="btn-start-runner", classes="runner-btn")
-                    yield Button("⏹ 停止", id="btn-stop-runner", classes="runner-btn")
+                # Single toggle button (broca-web pattern)
+                yield Button("▶ 启动进程", id="btn-toggle-runner", classes="runner-btn")
 
             # Message Statistics Section
             with Vertical(classes="info-section"):
@@ -117,7 +119,7 @@ class InfoSidebar(Widget):
         self.query_one("#info-workspace", Label).update(f"Workspace: {workspace or '-'}")
 
     def watch_runner_status(self, status: str):
-        """Update runner status display.
+        """Update runner status display and toggle button.
 
         Args:
             status: 'alive', 'starting', 'error', 'dead', or 'unknown'
@@ -133,19 +135,29 @@ class InfoSidebar(Widget):
         display = color_map.get(status, f"● {status}")
         status_label.update(f"Status: {display}")
 
-        # Update button states
-        start_btn = self.query_one("#btn-start-runner", Button)
-        stop_btn = self.query_one("#btn-stop-runner", Button)
+        # Update toggle button (single button, broca-web pattern)
+        toggle_btn = self.query_one("#btn-toggle-runner", Button)
 
         if status == "alive":
-            start_btn.disabled = True
-            stop_btn.disabled = False
-        elif status in ("dead", "error", "unknown"):
-            start_btn.disabled = False
-            stop_btn.disabled = True
-        else:
-            start_btn.disabled = True
-            stop_btn.disabled = True
+            toggle_btn.label = "⏹ 停止进程"
+            toggle_btn.disabled = self.runner_action_loading
+        elif status == "starting":
+            toggle_btn.label = "◐ 启动中"
+            toggle_btn.disabled = True
+        elif status == "error":
+            toggle_btn.label = "🔄 重启进程"
+            toggle_btn.disabled = self.runner_action_loading
+        else:  # dead, unknown
+            toggle_btn.label = "▶ 启动进程"
+            toggle_btn.disabled = self.runner_action_loading
+
+    def watch_runner_action_loading(self, loading: bool):
+        """Sync loading state with button disabled state."""
+        try:
+            btn = self.query_one("#btn-toggle-runner", Button)
+            btn.disabled = loading
+        except Exception:
+            pass
 
     def update_runner_stats(self, pid: Optional[int], uptime: Optional[str]):
         """Update runner PID and uptime.
@@ -219,16 +231,73 @@ class InfoSidebar(Widget):
             self.runner_status = "unknown"
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button presses.
+        """Handle toggle button press — starts or stops the runner.
 
-        Args:
-            event: Button pressed event
+        broca-web pattern: single button that switches between start/stop.
         """
-        button_id = event.button.id
-        if button_id == "btn-start-runner":
-            self.post_message(self.StartRunner(session_id=self._session_id))
-        elif button_id == "btn-stop-runner":
-            self.post_message(self.StopRunner(session_id=self._session_id))
+        if event.button.id != "btn-toggle-runner":
+            return
+
+        status = self.runner_status
+        session_id = self._session_id
+        if not session_id:
+            return
+
+        if status == "alive":
+            self.runner_action_loading = True
+            self.run_worker(self._do_stop_runner(session_id))
+        else:
+            self.runner_action_loading = True
+            self.run_worker(self._do_start_runner(session_id))
+
+    async def _do_start_runner(self, session_id: str):
+        """Start (or restart) the runner."""
+        try:
+            self.runner_status = "starting"
+            if self._chat_store:
+                await self._chat_store.restart_runner()
+            else:
+                await self._api.restart_runner(session_id)
+            # Poll until runner is alive (or timeout)
+            for _ in range(12):  # 12 * 5 = 60 seconds max
+                await self._sleep(5)
+                try:
+                    info = await self._api.get_runner_status(session_id)
+                    s = info.get("status", "unknown")
+                    self.runner_status = s
+                    self.update_runner_stats(
+                        pid=info.get("pid"),
+                        uptime=str(info.get("uptime_seconds", "")),
+                    )
+                    if s == "alive":
+                        break
+                    if s == "error":
+                        break
+                except Exception:
+                    pass
+        except Exception:
+            self.runner_status = "error"
+        finally:
+            self.runner_action_loading = False
+
+    async def _do_stop_runner(self, session_id: str):
+        """Stop the runner."""
+        try:
+            if self._chat_store:
+                await self._chat_store.stop_runner()
+            else:
+                await self._api.stop_runner(session_id)
+            self.runner_status = "dead"
+            self.update_runner_stats(pid=None, uptime=None)
+        except Exception:
+            pass  # Keep current status on failure
+        finally:
+            self.runner_action_loading = False
+
+    async def _sleep(self, seconds: float):
+        """Async sleep helper."""
+        import asyncio
+        await asyncio.sleep(seconds)
 
     def on_unmount(self) -> None:
         """Clean up on unmount."""

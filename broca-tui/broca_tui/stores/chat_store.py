@@ -157,9 +157,6 @@ class ChatStore:
             # Subscribe to session channel
             await self._socket.subscribe(session_id)
 
-            # Load history
-            await self.load_history()
-
             # Start Runner polling
             await self._fetch_runner_status()
 

@@ -70,6 +70,8 @@ async def test_chat_screen_layout_sizes():
         # Check message list
         ml = screen.query_one("#message-list", MessageList)
         print(f"message-list: size={ml.size}, region={ml.region}")
+        print(f"  CSS: width={ml.styles.width}, height={ml.styles.height}")
+        print(f"  DEFAULT_CSS: [{repr(MessageList.DEFAULT_CSS[:100])}]")
         for child in ml.children:
             print(f"  message-list child: type={type(child).__name__}, size={child.size}, region={child.region}, classes={child.classes}")
 

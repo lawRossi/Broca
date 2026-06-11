@@ -20,6 +20,7 @@ from rich.markdown import Markdown
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.events import Click
 from textual.widgets import Button, Label, Static
 from textual.widget import Widget
 
@@ -67,6 +68,12 @@ def _parse_arguments(arguments: Any) -> Dict[str, Any]:
 class MessageItem(Widget):
     """A single message item in the chat."""
 
+    DEFAULT_CSS = """
+    MessageItem {
+        height: auto;   /* 防止在 ScrollableContainer 中被 1fr 拉伸 */
+    }
+    """
+
     def __init__(self, message: Dict[str, Any], **kwargs):
         """Initialize message item.
 
@@ -79,6 +86,25 @@ class MessageItem(Widget):
         self._show_params = False
         self._show_result = False
         self._show_reasoning = False
+
+    def on_mount(self) -> None:
+        """Collapse all collapsible sections by default on mount.
+
+        Content containers (.params-content, .result-content, etc.) are
+        mounted visible by default; this hides them so the initial "▶" icon
+        correctly represents the collapsed state.
+        """
+        for selector in (
+            ".params-content",
+            ".result-content",
+            ".reasoning-content",
+            ".preview-content",
+        ):
+            try:
+                for child in self.query(selector):
+                    child.display = False
+            except Exception:
+                pass
 
     def compose(self) -> ComposeResult:
         """Create the message layout based on type."""
@@ -191,7 +217,7 @@ class MessageItem(Widget):
     def _render_user_message(self, data: Dict[str, Any]):
         """Render user message content."""
         content = data.get("content", data.get("message", ""))
-        yield Static(content, classes="msg-content plain-text")
+        yield Static(content, classes="msg-content plain-text", markup=False)
 
     def _render_agent_response(self, data: Dict[str, Any]):
         """Render agent response with Markdown."""
@@ -215,7 +241,7 @@ class MessageItem(Widget):
             reasoning_content_id = f"reasoning-content-{self._msg_id}"
             yield Label("💭 Reasoning", classes="reasoning-toggle", id=reasoning_toggle_id)
             with Vertical(classes="reasoning-content", id=reasoning_content_id):
-                yield Static(reasoning, classes="msg-content reasoning-text")
+                yield Static(reasoning, classes="msg-content reasoning-text", markup=False)
 
         # Render main content with Markdown — FIX: use Static instead of RichLog
         if content:
@@ -223,7 +249,7 @@ class MessageItem(Widget):
                 md = Markdown(content)
                 yield Static(md, classes="msg-content markdown-content")
             except Exception:
-                yield Static(content, classes="msg-content plain-text")
+                yield Static(content, classes="msg-content plain-text", markup=False)
 
     def _render_tool_call(self, data: Dict[str, Any]):
         """Render tool call with collapsible params and results."""
@@ -250,7 +276,7 @@ class MessageItem(Widget):
                 yield Label("▶ Parameters", classes="collapsible-toggle", id=params_toggle_id)
                 with Vertical(classes="params-content", id=params_content_id):
                     formatted = _format_json(arguments)
-                    yield Static(formatted, classes="json-display")
+                    yield Static(formatted, classes="json-display", markup=False)
 
             # Result (collapsible) — dynamic ID
             result_toggle_id = f"result-toggle-{self._msg_id}"
@@ -258,7 +284,7 @@ class MessageItem(Widget):
             if result is not None:
                 yield Label("▶ Result", classes="collapsible-toggle", id=result_toggle_id)
                 with Vertical(classes="result-content", id=result_content_id):
-                    yield Static(str(result), classes="result-display")
+                    yield Static(str(result), classes="result-display", markup=False)
 
     def _render_edit_file(self, arguments: Any):
         """Render edit_file tool with diff display."""
@@ -289,7 +315,7 @@ class MessageItem(Widget):
                     else:
                         yield Label(line_content, classes="diff-line diff-unchanged")
         else:
-            yield Static(_format_json(args), classes="json-display")
+            yield Static(_format_json(args), classes="json-display", markup=False)
 
     def _render_write_file(self, arguments: Any):
         """Render write_file tool with file content."""
@@ -299,7 +325,7 @@ class MessageItem(Widget):
 
         yield Label(f"📄 Writing: {path}", classes="tool-header")
         if content:
-            yield Static(content.strip(), classes="file-content")
+            yield Static(content.strip(), classes="file-content", markup=False)
 
     def _render_read_file(self, arguments: Any, result: Any):
         """Render read_file tool."""
@@ -312,7 +338,7 @@ class MessageItem(Widget):
             preview_content_id = f"preview-content-{self._msg_id}"
             yield Label("▶ Preview", classes="collapsible-toggle", id=preview_toggle_id)
             with Vertical(classes="preview-content", id=preview_content_id):
-                yield Static(str(result)[:2000], classes="file-content")
+                yield Static(str(result)[:2000], classes="file-content", markup=False)
 
     def _render_todo_management(self, arguments: Any):
         """Render todo_management tool."""
@@ -332,7 +358,7 @@ class MessageItem(Widget):
                 icon = "✅" if status == "completed" else ("⏳" if status == "in_progress" else "⬜")
                 yield Label(f"{icon}  {name}", classes="todo-item")
         else:
-            yield Static(_format_json(todos or args), classes="json-display")
+            yield Static(_format_json(todos or args), classes="json-display", markup=False)
 
     def _render_ask_user(self, arguments: Any, result: Any):
         """Render ask_user tool with question and options."""
@@ -342,7 +368,7 @@ class MessageItem(Widget):
 
         yield Label("❓ Question", classes="tool-header")
         if question:
-            yield Static(question, classes="ask-question")
+            yield Static(question, classes="ask-question", markup=False)
 
         if options:
             for opt in options:
@@ -355,7 +381,7 @@ class MessageItem(Widget):
 
         if result is not None:
             yield Label("Answer:", classes="result-label")
-            yield Static(str(result), classes="result-text")
+            yield Static(str(result), classes="result-text", markup=False)
 
     def _render_error(self, data: Dict[str, Any]):
         """Render error message."""
@@ -369,4 +395,47 @@ class MessageItem(Widget):
 
     def _render_fallback(self, data: Dict[str, Any]):
         """Render fallback for unknown message types."""
-        yield Static(str(data), classes="plain-text")
+        yield Static(str(data), classes="plain-text", markup=False)
+
+    # ── Collapsible toggle click handler ──
+
+    def on_click(self, event: Click) -> None:
+        """Toggle collapsible sections when a toggle Label is clicked.
+
+        Naming convention:
+          - params-toggle-{msg_id}  <->  params-content-{msg_id}
+          - result-toggle-{msg_id}  <->  result-content-{msg_id}
+          - reasoning-toggle-{msg_id}  <->  reasoning-content-{msg_id}
+          - preview-toggle-{msg_id}  <->  preview-content-{msg_id}
+        """
+        widget = event.widget
+        if widget is None:
+            return
+
+        widget_id = widget.id or ""
+        suffix = "-toggle-"
+        idx = widget_id.find(suffix)
+        if idx == -1:
+            return
+
+        # Derive content ID from toggle ID
+        # e.g. "params-toggle-xxx" → "params-content-xxx"
+        content_id = widget_id[:idx] + "-content-" + widget_id[idx + len(suffix):]
+
+        try:
+            content = self.query_one(f"#{content_id}")
+        except Exception:
+            return
+
+        # Toggle display: visible ↔ hidden
+        content.display = not content.display
+        is_visible = content.display
+
+        # Update toggle icon: ▶ collapsed / ▼ expanded
+        icon = "▼" if is_visible else "▶"
+        if isinstance(widget, Label):
+            current = widget.content or ""
+            for prefix in ("▶", "▼"):
+                if current.startswith(prefix):
+                    widget.update(current.replace(prefix, icon, 1))
+                    break

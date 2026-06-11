@@ -191,6 +191,12 @@ class AgentConfigDialog(ModalScreen):
 class AgentCard(Widget):
     """A single agent card in the sidebar. Click to open config dialog."""
 
+    DEFAULT_CSS = """
+    AgentCard {
+        height: auto;   /* 防止在 ScrollableContainer 中被 1fr 拉伸 */
+    }
+    """
+
     class Clicked(Message, bubble=True):
         """Message posted when agent card is clicked."""
 
@@ -212,7 +218,7 @@ class AgentCard(Widget):
         agent = self._agent
         name = agent.get("name", "Unknown")
         role = agent.get("role", "")
-        status = agent.get("agent_status", "disconnected")
+        status = agent.get("agent_status", "idle")
         description = agent.get("description", "")
 
         # Icon based on type
@@ -295,7 +301,10 @@ class AgentSidebar(Widget):
 
     def compose(self) -> ComposeResult:
         """Create the sidebar layout."""
-        with Vertical(classes="sidebar"):
+        # NOTE: sidebar width is controlled by the outer Widget's .sidebar class in TCSS.
+        # The inner Vertical must NOT carry the .sidebar class, otherwise it gets
+        # width: 25% of the outer 25%, becoming only 6.25% of the screen.
+        with Vertical():
             # Title bar
             with Horizontal(classes="sidebar-title-bar"):
                 yield Label("Session Agents", classes="sidebar-title")

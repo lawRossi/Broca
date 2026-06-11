@@ -23,8 +23,17 @@ from textual.widget import Widget
 from broca_tui.widgets.message_item import MessageItem
 
 
-class MessageList(Widget):
+class MessageList(Vertical):
     """Scrollable message list with auto-scroll and history loading."""
+
+    DEFAULT_CSS = """
+    MessageList {
+        width: 1fr;
+        height: 1fr;
+        layout: vertical;
+        overflow: hidden hidden;
+    }
+    """
 
     auto_scroll = reactive(True)
     loading = reactive(False)

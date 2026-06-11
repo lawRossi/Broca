@@ -259,6 +259,7 @@ Label {
     border: solid $gray-200;
     margin: 0 1 1 1;
     padding: 1;
+    height: auto;   /* 切断 1fr 链路 — 否则 Vertical 默认 height: 1fr 撑满父容器 */
 }
 
 .agent-card:hover {
@@ -267,6 +268,7 @@ Label {
 
 .agent-card-header {
     align: left middle;
+    height: auto;   /* 切断 1fr 链路 — 否则 Horizontal 默认 height: 1fr 撑满父卡片 */
 }
 
 .agent-name {
@@ -329,10 +331,7 @@ Label {
 /* ============================================================
    MESSAGE LIST
    ============================================================ */
-#message-list {
-    width: 100%;
-    height: 1fr;
-}
+/* MessageList extends Vertical, which provides default width: 1fr; height: 1fr; */
 
 .message-list-container {
     width: 1fr;
@@ -355,6 +354,7 @@ Label {
 .redo-container {
     align: center middle;
     padding: 0 1;
+    height: auto;       /* 切断 1fr 链路 */
 }
 
 .redo-button {
@@ -374,6 +374,7 @@ Label {
 .message-item {
     margin: 0 1 1 1;
     padding: 1 2;
+    height: auto;       /* 切断 1fr 链路 */
 }
 
 .message-item:hover {
@@ -413,6 +414,12 @@ Label {
 
 .message-header-row {
     margin-bottom: 1;
+    height: auto;       /* 切断 1fr 链路 */
+}
+
+/* Message content area — must use height:auto to avoid 1fr chain */
+.message-content-area {
+    height: auto;
 }
 
 .message-sender {
@@ -449,7 +456,15 @@ Label {
 
 .reasoning-toggle {
     color: $warning;
-    text-style: italic;
+    background: #fffbeb;
+    border: solid $gray-200;
+    padding: 1;
+    margin: 1 0;
+    height: auto;
+}
+
+.reasoning-content {
+    height: auto;
 }
 
 .reasoning-content {
@@ -485,6 +500,7 @@ Label {
     border: solid $gray-200;
     padding: 1;
     margin: 1 0;
+    height: auto;       /* 切断 1fr 链路 */
 }
 
 .result-content {
@@ -492,6 +508,7 @@ Label {
     border: solid $gray-200;
     padding: 1;
     margin: 1 0;
+    height: auto;       /* 切断 1fr 链路 */
 }
 
 .json-display {
@@ -518,6 +535,7 @@ Label {
     background: white;
     border: solid $gray-200;
     margin: 1 0;
+    height: auto;       /* 切断 1fr 链路 */
 }
 
 .diff-line {
@@ -552,6 +570,11 @@ Label {
     margin: 1 0;
 }
 
+/* Preview content (read_file) */
+.preview-content {
+    height: auto;
+}
+
 /* Todo list */
 .todo-item {
     padding: 0 2;
@@ -574,6 +597,7 @@ Label {
 .hover-actions {
     align: right middle;
     visibility: hidden;
+    height: auto;       /* 切断 1fr 链路 */
 }
 
 .message-item:hover .hover-actions {
@@ -583,6 +607,10 @@ Label {
 /* ============================================================
    CHAT INPUT
    ============================================================ */
+#chat-input {
+    height: auto;
+}
+
 .chat-input-container {
     border-top: solid $gray-200;
     padding: 1;
@@ -613,6 +641,8 @@ Label {
     background: white;
     border: solid $primary-500;
     margin-bottom: 0;
+    height: auto;
+    max-height: 10;
 }
 
 /* ============================================================

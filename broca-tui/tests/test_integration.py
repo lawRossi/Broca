@@ -300,7 +300,7 @@ class TestChatScreenStoreIntegration:
         screen = ChatScreen(session_id="test-session")
         assert screen._chat_store is not None
         assert screen._agent_store is not None
-        assert screen._last_message_count == 0
+        assert screen._last_message_count == -1  # -1 ensures first render always fires
 
     def test_chat_screen_with_execution_filter(self):
         """Test ChatScreen with execution filter."""
@@ -310,7 +310,7 @@ class TestChatScreenStoreIntegration:
     def test_message_throttle_logic(self):
         """Test message count throttle prevents unnecessary updates."""
         screen = ChatScreen(session_id="test-session")
-        assert screen._last_message_count == 0
+        assert screen._last_message_count == -1  # -1 ensures first render always fires
 
         # Simulate adding messages to store
         msg = {"message_id": "m1", "data": {}}

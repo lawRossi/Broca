@@ -87,7 +87,7 @@ class TestChatScreen:
     def test_message_throttle_initialized(self):
         """Test that message count throttle is initialized."""
         screen = ChatScreen(session_id="test-session")
-        assert screen._last_message_count == 0
+        assert screen._last_message_count == -1  # -1 ensures first render always fires
 
     def test_bindings_defined(self):
         """Test that keyboard bindings include navigation and sidebar toggles."""

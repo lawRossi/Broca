@@ -32,8 +32,17 @@ AVAILABLE_COMMANDS = [
 ]
 
 
-class ChatInput(Widget):
+class ChatInput(Vertical):
     """Input widget with autocomplete support."""
+
+    DEFAULT_CSS = """
+    ChatInput {
+        width: 1fr;
+        height: auto;
+        layout: vertical;
+        overflow: hidden hidden;
+    }
+    """
 
     disabled = reactive(False)
     target_agent = reactive("")
