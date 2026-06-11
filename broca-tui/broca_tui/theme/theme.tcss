@@ -58,7 +58,7 @@ $msg-error-text: #991b1b;
 
 /* ===== Layout ===== */
 $header-height: 3;
-$sidebar-width: 25%;
+$sidebar-width: 20%;
 $input-height: 3;
 
 /* ===== Spacing ===== */

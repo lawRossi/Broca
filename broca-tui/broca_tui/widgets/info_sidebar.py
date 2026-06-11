@@ -80,6 +80,8 @@ class InfoSidebar(Widget):
                 yield Label("Status: ● unknown", classes="info-row", id="runner-status")
                 yield Label("PID: -", classes="info-row", id="runner-pid")
                 yield Label("Uptime: -", classes="info-row", id="runner-uptime")
+                yield Label("CPU: -", classes="info-row", id="runner-cpu")
+                yield Label("Memory: -", classes="info-row", id="runner-memory")
                 # Single toggle button (broca-web pattern)
                 yield Button("▶ 启动进程", id="btn-toggle-runner", classes="runner-btn")
 
@@ -108,7 +110,7 @@ class InfoSidebar(Widget):
             self._start_polling()
 
     def set_session(self, session_id: str, workspace: str = ""):
-        """Set session information.
+        """Set session information and start polling.
 
         Args:
             session_id: Session ID
@@ -117,6 +119,7 @@ class InfoSidebar(Widget):
         self._session_id = session_id
         self.query_one("#info-session-id", Label).update(f"ID: {session_id[:16]}...")
         self.query_one("#info-workspace", Label).update(f"Workspace: {workspace or '-'}")
+        self._start_polling()
 
     def watch_runner_status(self, status: str):
         """Update runner status display and toggle button.
@@ -159,16 +162,33 @@ class InfoSidebar(Widget):
         except Exception:
             pass
 
-    def update_runner_stats(self, pid: Optional[int], uptime: Optional[str]):
-        """Update runner PID and uptime.
+    def update_runner_stats(self, pid: Optional[int], uptime: Optional[str],
+                             cpu: Optional[float] = None, memory_mb: Optional[float] = None):
+        """Update runner PID, uptime, CPU, and memory.
 
         Args:
             pid: Process ID
             uptime: Uptime string
+            cpu: CPU usage percentage
+            memory_mb: Memory usage in MB
         """
         self.query_one("#runner-pid", Label).update(f"PID: {pid if pid else '-'}")
         uptime_str = uptime or "-"
         self.query_one("#runner-uptime", Label).update(f"Uptime: {uptime_str}")
+
+        # CPU display
+        cpu_str = f"CPU: {cpu:.1f}%" if cpu is not None else "CPU: -"
+        self.query_one("#runner-cpu", Label).update(cpu_str)
+
+        # Memory display (>1024MB → GB)
+        if memory_mb is not None:
+            if memory_mb > 1024:
+                memory_str = f"Memory: {memory_mb / 1024:.1f} GB"
+            else:
+                memory_str = f"Memory: {memory_mb:.0f} MB"
+        else:
+            memory_str = "Memory: -"
+        self.query_one("#runner-memory", Label).update(memory_str)
 
     def update_message_stats(self, messages: list):
         """Update message statistics from messages list.
@@ -198,11 +218,11 @@ class InfoSidebar(Widget):
         self.query_one("#stat-errors", Label).update(f"Errors: {counts['error']}")
 
     def _start_polling(self):
-        """Start periodic runner status polling."""
+        """Start periodic runner status polling (20s interval, aligning with AgentSidebar)."""
         if self._polling:
             return
         self._polling = True
-        self._poll_timer = self.set_interval(10, self._poll_runner_status)
+        self._poll_timer = self.set_interval(20, self._poll_runner_status)
 
     def _stop_polling(self):
         """Stop runner status polling."""
@@ -215,18 +235,37 @@ class InfoSidebar(Widget):
             self._poll_timer = None
 
     async def _poll_runner_status(self):
-        """Poll runner status from API."""
+        """Poll runner status from API — extended to include Session Info + Message Stats."""
         if not self._session_id:
             return
         try:
+            # 1. Runner status
             info = await self._api.get_runner_status(self._session_id)
             status = info.get("status", "unknown")
             self.runner_status = status
             self.runner_uptime = str(info.get("uptime_seconds", ""))
+            resource = info.get("resource_usage", {}) or {}
             self.update_runner_stats(
                 pid=info.get("pid"),
                 uptime=self.runner_uptime,
+                cpu=resource.get("cpu_percent"),
+                memory_mb=resource.get("memory_rss_mb"),
             )
+
+            # 2. Session Info refresh (workspace may change)
+            try:
+                session_info = await self._api.get_session(self._session_id)
+                workspace = session_info.get("workspace", "") or ""
+                self.query_one("#info-workspace", Label).update(
+                    f"Workspace: {workspace or '-'}"
+                )
+            except Exception:
+                pass
+
+            # 3. Message Statistics refresh (from ChatStore if available)
+            if self._chat_store and self._chat_store.messages:
+                self.update_message_stats(self._chat_store.messages)
+
         except Exception:
             self.runner_status = "unknown"
 
@@ -302,3 +341,11 @@ class InfoSidebar(Widget):
     def on_unmount(self) -> None:
         """Clean up on unmount."""
         self._stop_polling()
+        self.call_later(self._cleanup_api)
+
+    async def _cleanup_api(self):
+        """Close the API session."""
+        try:
+            await self._api.close()
+        except Exception:
+            pass

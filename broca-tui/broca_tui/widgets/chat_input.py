@@ -3,7 +3,7 @@ ChatInput Widget
 
 Input box with:
 - Send target indicator ("Sending to: AgentName")
-- /command autocomplete (filtered command list above input)
+- /command autocomplete (dynamically loaded from API, with fallback)
 - @mention autocomplete (filtered agent list above input)
 - Enter to send, Shift+Enter for newline
 - Disabled when Runner is not running
@@ -11,7 +11,7 @@ Input box with:
 
 from __future__ import annotations
 
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -19,9 +19,11 @@ from textual.reactive import reactive
 from textual.widgets import Button, Input, Label, ListView, ListItem
 from textual.widget import Widget
 
+from broca_tui.api.session import SessionAPI
 
-# Commands available for autocomplete
-AVAILABLE_COMMANDS = [
+
+# Fallback commands (used when API call fails)
+FALLBACK_COMMANDS: List[Tuple[str, str, str]] = [
     ("/help", "显示帮助信息", "local"),
     ("/abort", "中止当前操作", "local"),
     ("/undo", "撤销上一步操作", "local"),
@@ -30,6 +32,25 @@ AVAILABLE_COMMANDS = [
     ("/ask", "询问问题", "prompt"),
     ("/init", "初始化项目", "prompt"),
 ]
+
+
+def _format_command_tuple(cmd: Dict[str, str]) -> Tuple[str, str, str]:
+    """Convert API command dict to (name, description, type) tuple.
+
+    Args:
+        cmd: Command dict from API
+
+    Returns:
+        Tuple of (name, description, type)
+    """
+    name = cmd.get("name", "/unknown")
+    if not name.startswith("/"):
+        name = f"/{name}"
+    return (
+        name,
+        cmd.get("description", ""),
+        cmd.get("type", "local"),
+    )
 
 
 class ChatInput(Vertical):
@@ -60,6 +81,8 @@ class ChatInput(Vertical):
         super().__init__(**kwargs)
         self._placeholder = placeholder
         self._agents: List[Dict[str, Any]] = []
+        self._main_agent_id: str = ""
+        self._commands: List[Tuple[str, str, str]] = list(FALLBACK_COMMANDS)
         self._autocomplete_type: Optional[str] = None  # "command" or "mention"
         self._filtered_items: List[Any] = []
         self._selected_index: int = 0
@@ -84,13 +107,16 @@ class ChatInput(Vertical):
                 )
                 yield Button("发送", id="btn-send", variant="primary", classes="send-button")
 
-    def set_agents(self, agents: List[Dict[str, Any]]):
-        """Set available agents for @mention.
+    def set_agents(self, agents: List[Dict[str, Any]], main_agent_id: str = ""):
+        """Set available agents for @mention, and optionally set the main agent ID.
 
         Args:
-            agents: List of agent dicts with 'name' and 'agent_id'
+            agents: List of agent dicts
+            main_agent_id: ID of the main agent (used as default target when no @mention)
         """
         self._agents = agents
+        if main_agent_id:
+            self._main_agent_id = main_agent_id
 
     def set_on_send(self, callback: Callable):
         """Set callback for message send.
@@ -120,6 +146,21 @@ class ChatInput(Vertical):
             input_field.placeholder = "Runner 未运行，无法发送消息..."
         else:
             input_field.placeholder = self._placeholder
+
+    async def load_commands(self):
+        """Load commands from API with fallback to hardcoded list.
+
+        Called on mount to populate command autocomplete.
+        Web: uses commandStore.fetchCommands() with get_commands API.
+        """
+        try:
+            api = SessionAPI()
+            api_commands = await api.get_commands()
+            await api.close()
+            if api_commands:
+                self._commands = [_format_command_tuple(cmd) for cmd in api_commands]
+        except Exception:
+            self._commands = list(FALLBACK_COMMANDS)
 
     def watch_target_agent(self, agent_name: str):
         """Update target indicator.
@@ -194,13 +235,13 @@ class ChatInput(Vertical):
             self._hide_autocomplete()
             return
 
-        # Command autocomplete (/ at start)
+        # Command autocomplete (/ at start) — uses dynamically loaded commands
         if value.startswith("/"):
             parts = value.split(" ")
             if len(parts) == 1:
                 cmd_prefix = parts[0].lower()
                 matches = [
-                    cmd for cmd in AVAILABLE_COMMANDS
+                    cmd for cmd in self._commands
                     if cmd[0].startswith(cmd_prefix)
                 ]
                 self._show_autocomplete(matches, "command")
@@ -289,6 +330,10 @@ class ChatInput(Vertical):
                         target_agent_id = agent_id
                         break
 
+        # Default to main agent when no @mention
+        if target_agent_id is None and self._main_agent_id:
+            target_agent_id = self._main_agent_id
+
         if self._on_send:
             self._on_send(clean_text, target_agent_id)
 
@@ -333,6 +378,7 @@ class ChatInput(Vertical):
         self._select_autocomplete()
 
     def on_mount(self) -> None:
-        """Focus input on mount."""
+        """Focus input on mount and load commands from API."""
         self._hide_autocomplete()
         self._focus_input()
+        self.run_worker(self.load_commands())

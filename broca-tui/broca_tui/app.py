@@ -6,8 +6,15 @@ Main application entry point using the Textual framework.
 
 import asyncio
 import logging
+import warnings
 from pathlib import Path
 from typing import Optional
+
+# Suppress aiohttp resource warnings on app exit.
+# We close sessions cleanly in _quit(), but some short-lived or leftover sessions
+# can trigger "Unclosed client session/connector" during GC.
+# These are harmless since the process is terminating.
+warnings.filterwarnings("ignore", category=ResourceWarning, message=".*[Uu]nclosed.*", append=False)
 
 from textual.app import App
 from textual.binding import Binding
@@ -139,6 +146,8 @@ class BrocaTUIApp(App):
         logger = logging.getLogger(__name__)
 
         current_screen = self.screen
+
+        # 1. Stop runner
         if hasattr(current_screen, 'stop_runner'):
             try:
                 self._runner_stopped = True
@@ -146,11 +155,26 @@ class BrocaTUIApp(App):
             except Exception as e:
                 logger.warning(f"停止 Runner 失败: {e}")
 
+        # 2. Disconnect Socket.IO
         if hasattr(current_screen, 'disconnect_all'):
             try:
                 await current_screen.disconnect_all()
             except Exception as e:
                 logger.warning(f"断开 Socket 连接失败: {e}")
+
+        # 3. Close all API sessions — check all possible store/API attribute names
+        # (avoids "Unclosed client session" warnings on exit)
+        stores_to_close = []
+        for attr_name in ('_chat_store', '_agent_store', '_store', '_session_store', '_crew_store', '_api'):
+            obj = getattr(current_screen, attr_name, None)
+            if obj and hasattr(obj, 'close'):
+                stores_to_close.append(obj)
+
+        for store in stores_to_close:
+            try:
+                await store.close()
+            except Exception as e:
+                logger.warning(f"关闭 {type(store).__name__} API 失败: {e}")
 
         self.exit()
 

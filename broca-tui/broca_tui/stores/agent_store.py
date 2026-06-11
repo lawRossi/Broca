@@ -26,10 +26,15 @@ class AgentStore:
         self.current_agent_id: Optional[str] = None
         self.visible_agent_ids: List[str] = []
         self.loading: bool = False
+        self._current_session_id: str = ""
+
+        # Session-level visibility persistence (matching Web's _visibleAgentIdsMap)
+        self._visible_agent_ids_map: Dict[str, List[str]] = {}
 
         # Callbacks
         self._on_change: Optional[Callable[[], None]] = None
         self._on_error: Optional[Callable[[str], None]] = None
+        self._on_visibility_change: Optional[Callable[[], None]] = None
 
     def on_change(self, callback: Callable[[], None]):
         """Register callback for state changes."""
@@ -39,15 +44,54 @@ class AgentStore:
         """Register callback for errors."""
         self._on_error = callback
 
+    def on_visibility_change(self, callback: Callable[[], None]):
+        """Register callback for visibility changes."""
+        self._on_visibility_change = callback
+
     def _notify_change(self):
         """Notify UI of state change."""
         if self._on_change:
             self._on_change()
 
+    def _notify_visibility_change(self):
+        """Notify UI of visibility state change."""
+        if self._on_visibility_change:
+            self._on_visibility_change()
+
     def _notify_error(self, message: str):
         """Notify UI of error."""
         if self._on_error:
             self._on_error(message)
+
+    def set_visible_agent_ids(self, ids: List[str]):
+        """Set visible agent IDs and notify both change and visibility listeners.
+
+        Args:
+            ids: List of visible agent IDs
+        """
+        self.visible_agent_ids = ids
+        self._save_visibility_state()
+        self._notify_change()
+        self._notify_visibility_change()
+
+    def _save_visibility_state(self):
+        """Save current visibility state for the active session (Web: _visibleAgentIdsMap)."""
+        if self._current_session_id:
+            self._visible_agent_ids_map[self._current_session_id] = list(self.visible_agent_ids)
+
+    def _restore_visibility_state(self, session_id: str) -> bool:
+        """Restore visibility state for a session (Web: _visibleAgentIdsMap).
+
+        Args:
+            session_id: Session ID to restore
+
+        Returns:
+            True if state was restored, False if no saved state
+        """
+        if session_id in self._visible_agent_ids_map:
+            self.visible_agent_ids = list(self._visible_agent_ids_map[session_id])
+            return True
+        return False
 
     async def fetch_agents(self, session_id: str):
         """Fetch agents for a session.
@@ -59,14 +103,17 @@ class AgentStore:
             return
 
         self.loading = True
+        self._current_session_id = session_id
         self._notify_change()
 
         try:
             agents = await self._api.get_session_agents(session_id)
             self.agents = agents
 
-            # Set all agents visible by default
-            self.visible_agent_ids = [a.get("agent_id") for a in agents if a.get("agent_id")]
+            # Try to restore visibility from saved state first
+            if not self._restore_visibility_state(session_id):
+                # No saved state: set all agents visible by default
+                self.visible_agent_ids = [a.get("agent_id") for a in agents if a.get("agent_id")]
 
             # Set first agent as current
             if agents and not self.current_agent_id:

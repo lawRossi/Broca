@@ -3,23 +3,87 @@ AgentQueryDialog (ModalScreen)
 
 Handles agent queries/questions to the user:
 - Displays question text with ❓ icon
-- Preset option cards (clickable)
+- Preset option cards (clickable via on_click)
 - Custom input box (Ctrl+Enter to submit)
 - Cancel / Submit buttons
 """
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Dict, List, Optional
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Static
+from textual.widgets import Button, Input, Label
 
 
 class AgentQueryDialog(ModalScreen):
     """Modal dialog for agent queries."""
+
+    DEFAULT_CSS = """
+    AgentQueryDialog {
+        align: center middle;
+    }
+
+    AgentQueryDialog > .dialog {
+        width: 60;
+        height: auto;
+        max-height: 80%;
+        background: $surface;
+        border: thick $primary;
+        padding: 1 2;
+        overflow-y: auto;
+    }
+
+    AgentQueryDialog .dialog-title {
+        text-style: bold;
+        text-align: center;
+        padding: 0 0 1 0;
+    }
+
+    AgentQueryDialog .dialog-content {
+        height: 1fr;
+    }
+
+    AgentQueryDialog .query-question {
+        padding: 0 0 1 0;
+    }
+
+    AgentQueryDialog .query-options-label {
+        color: $text-muted;
+        padding: 0 0 1 0;
+    }
+
+    AgentQueryDialog .option-btn {
+        width: 1fr;
+        height: 3;
+        padding: 0 1;
+        background: transparent;
+        border: solid $border;
+        text-align: left;
+        margin: 0 0 1 0;
+    }
+
+    AgentQueryDialog .option-btn:hover {
+        background: $accent 20%;
+    }
+
+    AgentQueryDialog .query-input-label {
+        color: $text-muted;
+        padding: 1 0 1 0;
+    }
+
+    AgentQueryDialog .query-input {
+        margin: 0 0 1 0;
+    }
+
+    AgentQueryDialog .dialog-actions {
+        align: center middle;
+        height: auto;
+        margin: 1 0 0 0;
+    }
+    """
 
     def __init__(
         self,
@@ -44,24 +108,24 @@ class AgentQueryDialog(ModalScreen):
         self._sender_id = sender_id
 
     def compose(self) -> ComposeResult:
-        """Create the dialog layout."""
-        with Vertical(classes="dialog query-dialog"):
+        """Create the dialog layout (compact with scrollable content)."""
+        with Vertical(classes="dialog"):
             yield Label("❓ Agent 提问", classes="dialog-title")
 
             with ScrollableContainer(classes="dialog-content"):
                 # Question text
                 yield Label(self._question, classes="query-question")
 
-                # Preset options as clickable cards
+                # Preset options as clickable buttons (reliable click handling)
                 if self._options:
                     yield Label("快捷回答:", classes="query-options-label")
                     for i, opt in enumerate(self._options):
                         name = opt.get("name", "")
                         desc = opt.get("description", "")
-                        with Vertical(classes="option-card", id=f"option-{i}"):
-                            yield Label(name, classes="option-name")
-                            if desc:
-                                yield Label(desc, classes="option-desc")
+                        label = f"● {name}"
+                        if desc:
+                            label += f" — {desc}"
+                        yield Button(label, id=f"opt-{i}", classes="option-btn")
 
                 # Custom input
                 yield Label("自定义回答:", classes="query-input-label")
@@ -73,23 +137,36 @@ class AgentQueryDialog(ModalScreen):
 
             # Action buttons
             with Horizontal(classes="dialog-actions"):
-                yield Button("✅ 提交", id="btn-submit", variant="primary")
-                yield Button("❌ 取消", id="btn-cancel", variant="error")
+                yield Button("取消", id="btn-cancel")
+                yield Button("提交", id="btn-submit", variant="primary")
 
     def on_mount(self) -> None:
         """Focus input on mount."""
         self.query_one("#query-input", Input).focus()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button presses.
+        """Handle button presses: options + submit/cancel.
 
         Args:
             event: Button pressed event
         """
-        if event.button.id == "btn-submit":
+        btn_id = event.button.id or ""
+
+        if btn_id == "btn-submit":
             self._submit_answer()
-        elif event.button.id == "btn-cancel":
+        elif btn_id == "btn-cancel":
             self.dismiss({"action": "cancel"})
+        elif btn_id.startswith("opt-"):
+            # Option button clicked → fill input and submit
+            try:
+                idx = int(btn_id.replace("opt-", ""))
+                if 0 <= idx < len(self._options):
+                    selected_name = self._options[idx].get("name", "")
+                    input_field = self.query_one("#query-input", Input)
+                    input_field.value = selected_name
+                    self._submit_answer()
+            except (ValueError, IndexError):
+                pass
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         """Handle Ctrl+Enter (or Enter in input) to submit.
@@ -104,35 +181,12 @@ class AgentQueryDialog(ModalScreen):
         """Submit the current answer."""
         input_field = self.query_one("#query-input", Input)
         answer = input_field.value.strip()
-
         if not answer:
-            # Don't submit empty answers
             return
-
-        self.dismiss({
-            "action": "user_answer",
-            "answer": answer,
-            "request_id": self._request_id,
-        })
-
-    def on_static_click(self, event: Static.Click) -> None:
-        """Handle clicking on option cards.
-
-        Walks up the widget tree to find the option-card container,
-        since the click may be captured by a child Label.
-
-        Args:
-            event: Click event
-        """
-        # Walk up the widget tree to find option-card
-        widget = event.widget
-        while widget is not None:
-            if hasattr(widget, "id") and widget.id and widget.id.startswith("option-"):
-                idx = int(widget.id.replace("option-", ""))
-                if 0 <= idx < len(self._options):
-                    selected_name = self._options[idx].get("name", "")
-                    input_field = self.query_one("#query-input", Input)
-                    input_field.value = selected_name
-                    self._submit_answer()
-                    return
-            widget = widget.parent
+        self.dismiss(
+            {
+                "action": "user_answer",
+                "answer": answer,
+                "request_id": self._request_id,
+            }
+        )

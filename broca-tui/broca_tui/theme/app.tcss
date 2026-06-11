@@ -61,7 +61,7 @@ $msg-error-text: #991b1b;
 
 /* ===== Layout ===== */
 $header-height: 3;
-$sidebar-width: 25%;
+$sidebar-width: 20%;
 $input-height: 3;
 
 /* ===== Spacing ===== */
@@ -216,13 +216,13 @@ Label {
    SIDEBARS
    ============================================================ */
 .sidebar {
-    width: 25%;
+    width: $sidebar-width;
     background: $gray-100;
     border-right: solid $gray-200;
 }
 
 .sidebar-right {
-    width: 25%;
+    width: $sidebar-width;
     background: $gray-100;
     border-left: solid $gray-200;
 }
@@ -314,6 +314,7 @@ Label {
 .stat-item {
     color: $gray-500;
     width: 1fr;
+    padding: 0 0 0 1;
 }
 
 .abort-button {
@@ -344,6 +345,14 @@ Label {
     text-style: italic;
     text-align: center;
     padding: 1;
+}
+
+/* Empty state message (aligned with Web's text-center text-gray-400) */
+.empty-message {
+    color: $gray-400;
+    text-style: italic;
+    text-align: center;
+    height: 100%;
 }
 
 .message-scroll {
@@ -378,17 +387,39 @@ Label {
 }
 
 .message-item:hover {
-    background: rgba(0, 0, 0, 0.02);
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.message-item.msg-user:hover {
+    border-left: solid $msg-user-border;
+    border-right: solid $msg-user-border;
+}
+
+.message-item.msg-agent:hover {
+    border-left: solid $msg-agent-border;
+    border-right: solid $msg-agent-border;
+}
+
+.message-item.msg-tool:hover {
+    border-left: solid $msg-tool-border;
+    border-right: solid $msg-tool-border;
+}
+
+.message-item.msg-error:hover {
+    border-left: solid $msg-error-border;
+    border-right: solid $msg-error-border;
 }
 
 .message-item.msg-user {
     border-left: solid $msg-user-border;
     background: $msg-user-bg;
+    margin-left: 4;
 }
 
 .message-item.msg-agent {
     border-left: solid $msg-agent-border;
     background: $msg-agent-bg;
+    margin-right: 4;
 }
 
 .message-item.msg-tool {
@@ -427,6 +458,31 @@ Label {
     width: 1fr;
 }
 
+/* Header text colors aligning with Web getHeaderColor */
+.message-sender.header-user {
+    color: $msg-user-border;
+}
+
+.message-sender.header-agent {
+    color: $msg-agent-border;
+}
+
+.message-sender.header-tool {
+    color: $msg-tool-border;
+}
+
+.message-sender.header-error {
+    color: $msg-error-border;
+}
+
+.message-sender.header-system {
+    color: $gray-500;
+}
+
+.message-sender.header-default {
+    color: $text;
+}
+
 .message-timestamp {
     color: $gray-400;
 }
@@ -450,17 +506,16 @@ Label {
     text-style: bold;
 }
 
-.markdown-content {
-    color: $gray-800;
+/* Diff path header (Web: diff-path) */
+.diff-path {
+    color: $msg-tool-border;
+    text-style: bold;
+    height: auto;
+    padding: 0 0 1 0;
 }
 
-.reasoning-toggle {
-    color: $warning;
-    background: #fffbeb;
-    border: solid $gray-200;
-    padding: 1;
-    margin: 1 0;
-    height: auto;
+.markdown-content {
+    color: $gray-800;
 }
 
 .reasoning-content {
@@ -581,6 +636,12 @@ Label {
     color: $gray-700;
 }
 
+/* Parameters label (ask_user: "问题:") (Web: params-label) */
+.params-label {
+    color: $msg-tool-border;
+    text-style: bold;
+}
+
 /* Ask user */
 .ask-question {
     color: $gray-800;
@@ -593,15 +654,39 @@ Label {
     padding: 0 2;
 }
 
-/* Hover actions */
-.hover-actions {
-    align: right middle;
-    visibility: hidden;
-    height: auto;       /* 切断 1fr 链路 */
+/* Undo button — always clickable, subtle by default, prominent on hover */
+.undo-button {
+    min-width: 8;
+    border: none;
+    padding: 0 1;
+    background: transparent;
+    color: $gray-400;
+    dock: right;
 }
 
-.message-item:hover .hover-actions {
-    visibility: visible;
+.undo-button:hover {
+    text-style: bold;
+    color: $gray-600;
+}
+
+.msg-user .undo-button {
+    color: $gray-400;
+}
+
+.msg-user .undo-button:hover {
+    color: $msg-user-border;
+}
+
+.msg-agent .undo-button:hover {
+    color: $msg-agent-border;
+}
+
+.msg-tool .undo-button:hover {
+    color: $msg-tool-border;
+}
+
+.msg-error .undo-button:hover {
+    color: $msg-error-border;
 }
 
 /* ============================================================
@@ -613,7 +698,7 @@ Label {
 
 .chat-input-container {
     border-top: solid $gray-200;
-    padding: 1;
+    padding: 0 1 1 1;
     height: auto;
 }
 

@@ -145,6 +145,21 @@ class SessionAPI:
         """Get available models for a provider."""
         return await self._client.get(f"/config/llm/models/{provider}")
 
+    async def get_commands(self) -> List[Dict[str, str]]:
+        """Get available commands from API.
+
+        Returns:
+            List of command dicts with 'name', 'description', 'type' keys.
+            Each command: {"name": str, "description": str, "type": str}
+        """
+        try:
+            response = await self._client.get("/commands")
+            if isinstance(response, dict) and "commands" in response:
+                return response["commands"]
+            return []
+        except Exception:
+            return []
+
     async def close(self):
         """Close the underlying HTTP client."""
         await self._client.close()

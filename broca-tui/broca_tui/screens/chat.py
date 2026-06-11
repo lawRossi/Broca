@@ -139,10 +139,7 @@ class ChatScreen(Screen):
             self._chat_store._on_error = original_error_cb
             header.connection_status = "connected" if self._chat_store.connected else "disconnected"
 
-        # ── Path 2: Load messages via HTTP (always, regardless of Socket.IO) ──
-        await self._chat_store.load_history()
-
-        # ── Path 3: Load agents via HTTP ──
+        # ── Path 2: Load agents FIRST (so agent_name_map is ready when messages arrive) ──
         await self._agent_store.fetch_agents(self._session_id)
 
         # Default loaded agents to "idle"
@@ -151,8 +148,14 @@ class ChatScreen(Screen):
                 agent["agent_status"] = "idle"
         self._agent_store._notify_change()
 
-        chat_input.set_agents(self._agent_store.agents)
+        chat_input.set_agents(
+            self._agent_store.agents,
+            main_agent_id=self._agent_store.current_agent_id or "",
+        )
         await agent_sidebar.load_agents(self._session_id)
+
+        # ── Path 3: Load messages via HTTP (agents already loaded → correct sender names) ──
+        await self._chat_store.load_history()
 
     def _setup_connections(self):
         """Connect stores to widgets and register callbacks."""
@@ -179,8 +182,19 @@ class ChatScreen(Screen):
         message_list.set_on_load_more(
             lambda: self.run_worker(self._load_more_history())
         )
+        message_list.set_on_undo(
+            lambda msg_id: self.run_worker(self._handle_undo(msg_id))
+        )
         message_list.set_on_redo(
-            lambda: self.run_worker(self._chat_store.send_user_message("/redo"))
+            lambda: self.run_worker(self._chat_store.send_redo(
+                target_agent_id=self._agent_store.current_agent_id or "",
+            ))
+        )
+
+        # Agent store → re-render messages when agent list/visibility changes
+        self._agent_store.on_change(lambda: self._on_chat_change())
+        self._agent_store.on_visibility_change(
+            lambda: self._on_visibility_changed()
         )
 
         # ChatInput callbacks
@@ -188,8 +202,11 @@ class ChatScreen(Screen):
             lambda text, target: self.run_worker(self._send_message(text, target))
         )
 
-        # Set agents for @mention
-        chat_input.set_agents(self._agent_store.agents)
+        # Set agents for @mention, with main agent as default target
+        chat_input.set_agents(
+            self._agent_store.agents,
+            main_agent_id=self._agent_store.current_agent_id or "",
+        )
 
     # ==================== Event Handlers ====================
 
@@ -208,13 +225,34 @@ class ChatScreen(Screen):
         # Sync loading state from chat store to message list
         message_list.loading = self._chat_store.loading
 
-        # Throttled message list update: only replace when count changes.
-        # _last_message_count starts at -1 so the first call always renders,
-        # even when the API returns 0 messages (showing "等待消息..." empty state).
-        current_count = len(self._chat_store.messages)
-        if current_count != self._last_message_count:
-            message_list.set_messages(self._chat_store.messages)
-            self._last_message_count = current_count
+        # Pass current agent info to message list (for cross-agent sender name display)
+        agent_id = self._agent_store.current_agent_id or ""
+        agent_name = self._agent_store.get_agent_name(agent_id) if agent_id else ""
+        # Build agent_id → display_name map (matching Web: agentStore.agents with name lookup)
+        agent_name_map = {
+            a.get("agent_id", ""): a.get("name", a.get("agent_id", ""))
+            for a in self._agent_store.agents if a.get("agent_id")
+        }
+        # Update message list with agent info (agents loaded first, so map is ready)
+        message_list.set_current_agent(
+            agent_id=agent_id,
+            agent_name=agent_name,
+            agent_name_map=agent_name_map,
+            force_rerender=True,
+        )
+
+        # Streaming message update: in-place content update (no full re-render)
+        updated_id = self._chat_store.last_updated_message_id
+        if updated_id:
+            # Find the updated message and apply in-place update
+            for msg in self._chat_store.messages:
+                if msg.get("message_id") == updated_id:
+                    message_list.update_streaming_message(msg)
+                    break
+            self._chat_store.last_updated_message_id = None
+        else:
+            # Throttled full update: only when message count changes
+            self._update_filtered_messages(message_list)
 
         # Update connection status
         if self._chat_store.connected:
@@ -227,16 +265,79 @@ class ChatScreen(Screen):
         # Update redo button
         message_list.show_redo = self._chat_store.show_redo_button
 
-        # Update runner status
+        # Update runner status from ChatStore (never override polling "alive" with stale data).
+        # InfoSidebar's own polling (every 20s) is the primary source of truth.
+        # _on_chat_change fires frequently during init and can race with polling.
         if self._chat_store.runner_alive:
             info_sidebar.runner_status = "alive"
             chat_input.disabled = False
-        else:
+        elif info_sidebar.runner_status == "alive":
+            # Polling just reported "alive" — don't override with ChatStore data
+            chat_input.disabled = False
+        elif self._chat_store.runner_info:
+            # runner_info was fetched and runner is not alive → confirmed dead
             info_sidebar.runner_status = "dead"
             chat_input.disabled = True
+        # else: runner_info not fetched yet → don't override polling result ("unknown")
 
         # Update message stats
         info_sidebar.update_message_stats(self._chat_store.messages)
+
+    async def _handle_undo(self, msg_id: str):
+        """Handle undo for a specific message, targeting the correct agent.
+
+        Web alignment: sends structured command via Socket.IO (not a text message).
+        - user_message: target = receiver_id || agent_id, level = 'turn'
+        - other: target = agent_id || sender_id, level = 'step'
+
+        Args:
+            msg_id: ID of the message to undo
+        """
+        # Find the message from chat_store to determine target agent and undo level
+        target_agent_id = None
+        level = "step"
+        for msg in self._chat_store.messages:
+            if msg.get("message_id") == msg_id:
+                data = msg.get("data", {}) or {}
+                if msg.get("message_type") == "user_message":
+                    target_agent_id = msg.get("receiver_id") or msg.get("agent_id") or data.get("agent_id")
+                    level = "turn"  # Web: user_message → undo entire turn
+                else:
+                    target_agent_id = msg.get("agent_id") or msg.get("sender_id") or data.get("agent_id")
+                    level = "step"  # Web: other messages → undo single step
+                break
+
+        await self._chat_store.send_undo(
+            target_message_id=msg_id,
+            target_agent_id=target_agent_id,
+            level=level,
+        )
+
+    def _update_filtered_messages(self, message_list: MessageList):
+        """Update message list with agent-visibility-filtered messages.
+
+        Computes filtered messages from ChatStore using AgentStore visibility settings,
+        then throttles updates based on count changes.
+
+        Args:
+            message_list: MessageList widget to update
+        """
+        visible_ids = self._agent_store.visible_agent_ids
+        all_ids = [a.get("agent_id", "") for a in self._agent_store.agents if a.get("agent_id")]
+        filtered = self._chat_store.get_filtered_messages(visible_ids, all_ids)
+
+        current_count = len(filtered)
+        if current_count != self._last_message_count:
+            message_list.set_messages(filtered)
+            self._last_message_count = current_count
+
+    def _on_visibility_changed(self):
+        """React to agent visibility changes — immediately refresh message list."""
+        try:
+            message_list = self.query_one("#message-list", MessageList)
+        except Exception:
+            return
+        self._update_filtered_messages(message_list)
 
     def _on_message_received(self, msg: Dict[str, Any]):
         """Handle new message from Socket.IO.
@@ -373,6 +474,14 @@ class ChatScreen(Screen):
         await self._chat_store.disconnect()
 
     def on_unmount(self) -> None:
-        """Clean up on unmount."""
-        self.run_worker(self._chat_store.close())
-        self.run_worker(self._agent_store.close())
+        """Clean up on unmount — use call_later to ensure completion."""
+        # Use call_later instead of run_worker for more reliable cleanup
+        self.call_later(self._cleanup_api)
+
+    async def _cleanup_api(self):
+        """Close API sessions synchronously."""
+        for store in (self._chat_store, self._agent_store):
+            try:
+                await store.close()
+            except Exception:
+                pass

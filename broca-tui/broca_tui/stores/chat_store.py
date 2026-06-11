@@ -43,6 +43,13 @@ class ChatStore:
         self.pending_chunks: Dict[str, List[Dict[str, Any]]] = {}  # message_id -> [chunks]
         self.show_redo_button: bool = False
         self.redo_receiver_id: Optional[str] = None
+        self._preserve_redo: bool = False  # Prevent redo from being cleared after undo
+
+        # Streaming debounce: batch rapid _notify_change calls during streaming
+        self._debounce_timer: Optional[asyncio.TimerHandle] = None
+        self._debounce_delay: float = 0.2  # 200ms
+        # Tracks which message was updated last (for in-place streaming updates)
+        self.last_updated_message_id: Optional[str] = None
 
         # Loading state
         self.loading: bool = False
@@ -108,8 +115,46 @@ class ChatStore:
         """Register callback for connection state changes."""
         self._on_connection_change = callback
 
-    def _notify_change(self):
-        """Notify UI of state change."""
+    def _notify_change(self, force: bool = False):
+        """Notify UI of state change, with debounce for streaming.
+
+        During streaming (pending_chunks active), rapid _notify_change calls
+        are debounced to avoid re-rendering on every chunk. Use force=True
+        for critical updates (e.g., complete message, error).
+
+        Args:
+            force: If True, fire immediately regardless of debounce state
+        """
+        if force:
+            self._cancel_debounce()
+            if self._on_change:
+                self._on_change()
+            return
+
+        # Debounce: batch rapid changes during streaming
+        if self.pending_chunks:
+            import asyncio
+            loop = asyncio.get_event_loop()
+            self._cancel_debounce()
+            self._debounce_timer = loop.call_later(
+                self._debounce_delay, self._fire_notify
+            )
+        else:
+            if self._on_change:
+                self._on_change()
+
+    def _cancel_debounce(self):
+        """Cancel pending debounce timer."""
+        if self._debounce_timer is not None:
+            try:
+                self._debounce_timer.cancel()
+            except Exception:
+                pass
+            self._debounce_timer = None
+
+    def _fire_notify(self):
+        """Fire pending notification (called by debounce timer)."""
+        self._debounce_timer = None
         if self._on_change:
             self._on_change()
 
@@ -236,6 +281,8 @@ class ChatStore:
         # Skip filtered message types
         filtered_types = {
             "turn_start", "turn_end", "command",
+            "permission_request", "permission_response",
+            "agent_query", "user_answer",
             "subscribe", "unsubscribe", "connect", "disconnect",
             "ping", "pong", "task_start", "task_complete", "task_error",
             "step_start", "step_end",
@@ -256,16 +303,18 @@ class ChatStore:
                     if command == "undo":
                         self.show_redo_button = True
                         self.redo_receiver_id = msg_dict.get("sender_id")
+                        self._preserve_redo = True  # Don't clear redo during reload
                     else:
                         self.show_redo_button = False
                         self.redo_receiver_id = None
+                        self._preserve_redo = False
                     # Reload history (we're in an async event loop context)
                     import asyncio
                     asyncio.ensure_future(self.load_history())
                 return
 
-        # Clear redo state on new messages
-        if msg_dict.get("message_type") != "command_result":
+        # Clear redo state on new messages (but not immediately after undo)
+        if msg_dict.get("message_type") != "command_result" and not self._preserve_redo:
             self.show_redo_button = False
             self.redo_receiver_id = None
 
@@ -280,6 +329,43 @@ class ChatStore:
         """
         msg_type = message.get("message_type")
 
+        # ===== Web-aligned filtering (processMessage) =====
+        # 1. Filtered types — never displayed
+        filtered_types = {
+            "turn_start", "turn_end", "command",
+            "permission_request", "permission_response",
+            "agent_query", "user_answer",
+            "subscribe", "unsubscribe", "connect", "disconnect",
+            "ping", "pong", "task_start", "task_complete", "task_error",
+            "step_start", "step_end",
+        }
+        if msg_type in filtered_types:
+            return
+
+        # 2. User messages from agents (e.g., permission granted echoes)
+        data = message.get("data") or {}
+        if msg_type == "user_message" and data.get("from_agent"):
+            return
+
+        # 3. Agent responses with empty content after JSON parsing
+        if msg_type == "agent_response":
+            content_str = data.get("content", "")
+            if isinstance(content_str, str) and content_str.strip():
+                try:
+                    parsed = json.loads(content_str)
+                    if isinstance(parsed, dict):
+                        has_content = bool(parsed.get("content"))
+                        has_reasoning = bool(parsed.get("reasoning_content"))
+                        if not has_content and not has_reasoning:
+                            return
+                except (json.JSONDecodeError, TypeError):
+                    pass
+
+        # 4. Connection/subscription status messages
+        content_str = str(data.get("content", ""))
+        if any(keyword in content_str.lower() for keyword in ("connected to", "subscribed to")):
+            return
+
         if msg_type == "tool_call":
             tool_call_id = message.get("data", {}).get("tool_call_id")
             if tool_call_id:
@@ -289,6 +375,7 @@ class ChatStore:
                             and existing.get("data", {}).get("tool_call_id") == tool_call_id):
                         # Merge data
                         existing["data"] = {**existing.get("data", {}), **message.get("data", {})}
+                        self.last_updated_message_id = existing.get("message_id", "")
                         self._notify_change()
                         return
 
@@ -314,6 +401,7 @@ class ChatStore:
                         **existing.get("data", {}),
                         "content": json.dumps(merged, ensure_ascii=False),
                     }
+                    self.last_updated_message_id = msg_id
                     self._notify_change()
                     return
 
@@ -446,6 +534,9 @@ class ChatStore:
         if not content.strip() or not self._socket or not self.session_id:
             return
 
+        # Reset redo preservation when user sends a new message
+        self._preserve_redo = False
+
         # Optimistic update
         msg_id = f"msg_{id(content)}_{hash(content)}"
         optimistic_msg = {
@@ -486,6 +577,69 @@ class ChatStore:
         except Exception as e:
             self._notify_error(f"中止失败: {e}")
 
+    async def send_undo(self, target_message_id: str, target_agent_id: Optional[str] = None,
+                         level: str = "step"):
+        """Send undo command (matching Web's sendUndo command).
+
+        Web reference:
+        ```javascript
+        client.sendCommand({
+          command: 'undo',
+          arguments: { target_message_id, level },
+          subscription,
+          receiverId,
+        })
+        ```
+
+        Args:
+            target_message_id: ID of the message to undo
+            target_agent_id: Target agent (receiverId)
+            level: Undo level ('turn' or 'step')
+        """
+        if not self._socket:
+            self._notify_error("Socket 未连接，无法撤销")
+            return
+        try:
+            await self._socket.send_command(
+                command="undo",
+                arguments={
+                    "target_message_id": target_message_id,
+                    "level": level,
+                },
+                subscription=self.session_id,
+                receiver_id=target_agent_id,
+            )
+        except Exception as e:
+            self._notify_error(f"撤销失败: {e}")
+
+    async def send_redo(self, target_agent_id: Optional[str] = None):
+        """Send redo command (matching Web's sendRedo command).
+
+        Web reference:
+        ```javascript
+        client.sendCommand({
+          command: 'redo',
+          arguments: {},
+          receiverId,
+        })
+        ```
+
+        Args:
+            target_agent_id: Target agent (receiverId)
+        """
+        if not self._socket:
+            self._notify_error("Socket 未连接，无法重做")
+            return
+        try:
+            await self._socket.send_command(
+                command="redo",
+                arguments={},
+                subscription=self.session_id,
+                receiver_id=target_agent_id,
+            )
+        except Exception as e:
+            self._notify_error(f"重做失败: {e}")
+
     async def respond_permission(self, granted: bool, session_action: Optional[str] = None):
         """Respond to a permission request.
 
@@ -511,7 +665,16 @@ class ChatStore:
             self._notify_change()
 
     async def respond_user_answer(self, answer: str):
-        """Respond to an agent query.
+        """Respond to an agent query (Web alignment: sendUserAnswer).
+
+        Web reference:
+        ```javascript
+        socketStore.sendUserAnswer({
+          answer,        // string
+          requestId,     // string
+          receiverId,    // string
+        })
+        ```
 
         Args:
             answer: User's answer text
@@ -520,14 +683,19 @@ class ChatStore:
             return
 
         dialog = self.agent_query_dialog
+        target_agent_id = dialog.get("sender_id") or ""
         try:
+            # Send user_answer matching Web's format: {answer, request_id, receiver_id}
+            from broca_tui.api.session import MessageProtocol
             msg = MessageProtocol.create_user_message(
                 content=answer,
                 sender_id="user",
-                receiver_id=dialog["sender_id"] or "",
+                receiver_id=target_agent_id,
             )
             msg.message_type = "user_answer"
-            msg.data["request_id"] = dialog["request_id"]
+            # Backend handle_user_answer expects data.answer + data.request_id
+            msg.data["answer"] = answer
+            msg.data["request_id"] = dialog.get("request_id", "")
             msg.subscription = self.session_id
             await self._socket.send_message(msg)
         except Exception as e:
@@ -597,6 +765,49 @@ class ChatStore:
             self._notify_change()
 
     # ==================== Cleanup ====================
+
+    def get_filtered_messages(self, visible_agent_ids: List[str], all_agent_ids: List[str]) -> List[Dict[str, Any]]:
+        """Get messages filtered by agent visibility (matching Web's filteredMessages).
+
+        Web reference logic:
+        - user_message: filter by receiver_id → agent_id (no target → only show when all visible)
+        - system_message: always visible
+        - other: filter by sender_id → agent_id
+        - If visible_agent_ids empty or equals all agents: no filtering
+
+        Args:
+            visible_agent_ids: Currently visible agent IDs
+            all_agent_ids: All agent IDs in the session
+
+        Returns:
+            Filtered message list
+        """
+        if not visible_agent_ids or len(visible_agent_ids) >= len(all_agent_ids):
+            return list(self.messages)
+
+        result = []
+        for msg in self.messages:
+            msg_type = msg.get("message_type", "")
+            role = msg.get("role", "")
+
+            if msg_type in ("user_message",) or role == "user":
+                target_id = msg.get("receiver_id") or msg.get("agent_id")
+                if not target_id:
+                    # No target → only show when ALL agents are visible
+                    if len(visible_agent_ids) >= len(all_agent_ids):
+                        result.append(msg)
+                elif target_id in visible_agent_ids:
+                    result.append(msg)
+            elif msg_type in ("agent_system_message", "system_message") or role == "agent_system":
+                # System messages always visible (Web alignment)
+                result.append(msg)
+            else:
+                # agent_response, tool_call, error: filter by sender_id
+                sender_id = msg.get("sender_id") or msg.get("agent_id")
+                if not sender_id or sender_id in visible_agent_ids:
+                    result.append(msg)
+
+        return result
 
     def clear_messages(self):
         """Clear all messages and state."""

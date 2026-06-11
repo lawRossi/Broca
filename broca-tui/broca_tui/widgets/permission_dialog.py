@@ -8,12 +8,12 @@ Handles permission requests from agents:
 
 from __future__ import annotations
 
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, Grid
+from textual.containers import Grid, Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, Static
+from textual.widgets import Button, Label
 
 
 class PermissionDialog(ModalScreen):
@@ -53,10 +53,24 @@ class PermissionDialog(ModalScreen):
             # Action buttons based on type
             if self._request_type == "tool":
                 yield Grid(
-                    Button("✅ 单次允许", id="btn-allow-once", classes="permission-btn allow"),
-                    Button("❌ 单次拒绝", id="btn-deny-once", classes="permission-btn deny"),
-                    Button("🔓 本Session允许", id="btn-allow-session", classes="permission-btn allow-session"),
-                    Button("🔒 本Session拒绝", id="btn-deny-session", classes="permission-btn deny-session"),
+                    Button(
+                        "✅ 单次允许",
+                        id="btn-allow-once",
+                        classes="permission-btn allow",
+                    ),
+                    Button(
+                        "❌ 单次拒绝", id="btn-deny-once", classes="permission-btn deny"
+                    ),
+                    Button(
+                        "🔓 本Session允许",
+                        id="btn-allow-session",
+                        classes="permission-btn allow-session",
+                    ),
+                    Button(
+                        "🔒 本Session拒绝",
+                        id="btn-deny-session",
+                        classes="permission-btn deny-session",
+                    ),
                     classes="permission-grid",
                 )
             else:
@@ -73,42 +87,54 @@ class PermissionDialog(ModalScreen):
         btn_id = event.button.id
 
         if btn_id == "btn-allow-once":
-            self.dismiss({
-                "action": "permission_response",
-                "granted": True,
-                "request_id": self._request_id,
-                "session_action": None,
-            })
+            self.dismiss(
+                {
+                    "action": "permission_response",
+                    "granted": True,
+                    "request_id": self._request_id,
+                    "session_action": None,
+                }
+            )
         elif btn_id == "btn-deny-once":
-            self.dismiss({
-                "action": "permission_response",
-                "granted": False,
-                "request_id": self._request_id,
-                "session_action": None,
-            })
+            self.dismiss(
+                {
+                    "action": "permission_response",
+                    "granted": False,
+                    "request_id": self._request_id,
+                    "session_action": None,
+                }
+            )
         elif btn_id == "btn-allow-session":
-            self.dismiss({
-                "action": "permission_response",
-                "granted": True,
-                "request_id": self._request_id,
-                "session_action": "allow",
-            })
+            self.dismiss(
+                {
+                    "action": "permission_response",
+                    "granted": True,
+                    "request_id": self._request_id,
+                    "session_action": "allow",
+                }
+            )
         elif btn_id == "btn-deny-session":
-            self.dismiss({
-                "action": "permission_response",
-                "granted": False,
-                "request_id": self._request_id,
-                "session_action": "deny",
-            })
+            self.dismiss(
+                {
+                    "action": "permission_response",
+                    "granted": False,
+                    "request_id": self._request_id,
+                    "session_action": "deny",
+                }
+            )
         elif btn_id == "btn-allow":
-            self.dismiss({
-                "action": "permission_response",
-                "granted": True,
-                "request_id": self._request_id,
-            })
+            self.dismiss(
+                {
+                    "action": "permission_response",
+                    "granted": True,
+                    "request_id": self._request_id,
+                }
+            )
         elif btn_id == "btn-deny":
-            self.dismiss({
-                "action": "permission_response",
-                "granted": False,
-                "request_id": self._request_id,
-            })
+            self.dismiss(
+                {
+                    "action": "permission_response",
+                    "granted": False,
+                    "request_id": self._request_id,
+                }
+            )

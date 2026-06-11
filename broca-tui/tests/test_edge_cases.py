@@ -373,10 +373,10 @@ class TestMessageTypeEdgeCases:
         """Test tool call without a tool name."""
         msg = {"message_id": "x3", "message_type": "tool_call", "data": {"arguments": {}, "tool_call_id": "x"}}
         item = MessageItem(msg)
-        # With empty arguments, generic tool renders nothing
-        # (no params to toggle, no result to show)
+        # With empty arguments, generic tool renders just the header
+        # (no params to toggle, no result to show, but always shows a tool header)
         result = list(item._render_message_content("tool_call", msg["data"]))
-        assert len(result) == 0  # Nothing to render for empty tool call
+        assert len(result) >= 1  # At least the tool header is rendered
 
     def test_mixed_type_and_role(self):
         """Test message with non-standard type/role combination."""
@@ -385,3 +385,69 @@ class TestMessageTypeEdgeCases:
         # Should still render as user message (message_type takes priority)
         border = item._get_border_class("user_message", "assistant")
         assert border == "msg-user"
+
+    # ==================== Phase 2: get_filtered_messages tests ====================
+
+    def test_filter_no_agents(self):
+        """Test get_filtered_messages with empty visible list returns all."""
+        store = ChatStore()
+        store.messages = [
+            {"message_id": "m1", "message_type": "user_message", "sender_id": "user"},
+            {"message_id": "m2", "message_type": "agent_response", "sender_id": "agent-1"},
+        ]
+        result = store.get_filtered_messages([], ["agent-1", "agent-2"])
+        assert len(result) == 2
+
+    def test_filter_all_visible(self):
+        """Test get_filtered_messages with all agents visible returns all."""
+        store = ChatStore()
+        store.messages = [
+            {"message_id": "m1", "message_type": "user_message", "sender_id": "user"},
+            {"message_id": "m2", "message_type": "agent_response", "sender_id": "agent-1"},
+        ]
+        result = store.get_filtered_messages(["agent-1", "agent-2"], ["agent-1", "agent-2"])
+        assert len(result) == 2
+
+    def test_filter_hides_agent(self):
+        """Test get_filtered_messages hides messages from filtered-out agent."""
+        store = ChatStore()
+        store.messages = [
+            {"message_id": "m1", "message_type": "user_message", "sender_id": "user",
+             "receiver_id": "agent-2"},
+            {"message_id": "m2", "message_type": "agent_response", "sender_id": "agent-1"},
+            {"message_id": "m3", "message_type": "agent_response", "sender_id": "agent-2"},
+        ]
+        # Only agent-1 visible
+        result = store.get_filtered_messages(["agent-1"], ["agent-1", "agent-2"])
+        # m1: receiver_id is agent-2 (hidden)
+        # m2: sender_id is agent-1 (visible)
+        # m3: sender_id is agent-2 (hidden)
+        assert len(result) == 1
+        assert result[0]["message_id"] == "m2"
+
+    def test_filter_user_message_no_target(self):
+        """Test user_message without target is hidden when not all agents visible."""
+        store = ChatStore()
+        store.messages = [
+            {"message_id": "m1", "message_type": "user_message", "sender_id": "user"},
+        ]
+        result = store.get_filtered_messages(["agent-1"], ["agent-1", "agent-2"])
+        assert len(result) == 0
+
+    def test_filter_system_always_visible(self):
+        """Test system messages are always visible regardless of filter."""
+        store = ChatStore()
+        store.messages = [
+            {"message_id": "m1", "message_type": "agent_system_message", "data": {}},
+        ]
+        result = store.get_filtered_messages(["agent-1"], ["agent-1", "agent-2"])
+        assert len(result) == 1
+
+    def test_filter_no_sender_id(self):
+        """Test messages without sender_id are visible when not all agents shown."""
+        store = ChatStore()
+        store.messages = [
+            {"message_id": "m1", "message_type": "agent_response"},  # No sender_id
+        ]
+        result = store.get_filtered_messages(["agent-1"], ["agent-1", "agent-2"])
+        assert len(result) == 1  # No sender_id → visible
