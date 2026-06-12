@@ -240,7 +240,7 @@ const handleRedo = () => {
 
       <ChatMessageItem v-for="m in chatStore.filteredMessages" :key="m.message_id" :message="m" />
 
-      <!-- 重做按钮 - 撤销成功后显示（编排会话禁用，简洁模式禁用） -->
+      <!-- 重做按钮 - 撤销成功后显示（仅编排会话禁用） -->
       <div
         v-if="chatStore.showRedoButton && !chatStore.isAgentOrchestration"
         class="flex justify-center py-2"

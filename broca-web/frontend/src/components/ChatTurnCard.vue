@@ -1,6 +1,11 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { ElMessageBox } from 'element-plus'
+import { useChatStore, useSocketStore } from '@/stores'
 import { renderMarkdown } from '@/utils/markdown'
+
+const chatStore = useChatStore()
+const socketStore = useSocketStore()
 
 interface ToolCallStat {
   toolName: string
@@ -30,6 +35,7 @@ interface TurnSummary {
   isActive: boolean
   startedAt: number
   createdAt: string
+  lastMessageId: string | null
 }
 
 const props = defineProps<{
@@ -39,6 +45,8 @@ const props = defineProps<{
 
 // 折叠状态：推理内容
 const showReasoning = ref(false)
+// 悬停显示操作按钮
+const showActions = ref(false)
 
 // ====== 状态简化：只显示 进行中 / 已完成 / 中断 ======
 
@@ -99,6 +107,25 @@ const formattedDuration = computed(() => {
   return `${mins}分${secs}秒`
 })
 
+// 格式化完成时刻（对已完成的 turn，用 startedAt + totalDuration 算出结束时间）
+const formattedCompletionTime = computed(() => {
+  if (props.turn.status !== 'completed') return ''
+  const endMs = props.turn.startedAt + props.turn.totalDuration * 1000
+  const d = new Date(endMs)
+  const now = new Date()
+  const pad = (n: number) => n.toString().padStart(2, '0')
+  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+  // 非当天显示完整日期
+  if (
+    d.getFullYear() !== now.getFullYear() ||
+    d.getMonth() !== now.getMonth() ||
+    d.getDate() !== now.getDate()
+  ) {
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`
+  }
+  return time
+})
+
 // 当前调用工具名
 const currentToolText = computed(() => {
   return props.turn.currentTool || ''
@@ -137,6 +164,51 @@ const showResponse = computed(() => {
 const hasReasoning = computed(() => {
   return props.turn.reasoningContent.length > 0
 })
+
+// ====== 撤销功能 ======
+
+// 是否可撤销
+const canUndo = computed(() => {
+  return (
+    chatStore.connected &&
+    chatStore.sessionId &&
+    chatStore.runnerAlive &&
+    !chatStore.isAgentOrchestration &&
+    props.turn.status === 'completed' &&
+    props.turn.lastMessageId
+  )
+})
+
+// 确认撤销
+const confirmUndo = () => {
+  ElMessageBox.confirm(
+    `确定要撤销"第${props.turn.sequenceNumber}轮"操作吗？`,
+    '确认撤销',
+    {
+      confirmButtonText: '确定',
+      cancelButtonText: '取消',
+      type: 'warning',
+    }
+  )
+    .then(() => handleUndo())
+    .catch(() => {})
+}
+
+// 执行撤销
+const handleUndo = async () => {
+  if (!canUndo.value || !chatStore.sessionId || !props.turn.lastMessageId) return
+
+  try {
+    await socketStore.sendUndo({
+      targetMessageId: props.turn.lastMessageId,
+      level: 'turn',
+      subscription: chatStore.sessionId,
+      receiverId: props.turn.agentId,
+    })
+  } catch (error) {
+    console.error('撤销失败:', error)
+  }
+}
 </script>
 
 <template>
@@ -147,6 +219,8 @@ const hasReasoning = computed(() => {
       consecutiveAgent ? 'mt-1' : 'mt-3',
     ]"
     style="border-left-width: 4px;"
+    @mouseenter="showActions = true"
+    @mouseleave="showActions = false"
   >
     <!-- 标题栏 -->
     <div class="flex items-center justify-between gap-2 mb-2">
@@ -155,8 +229,9 @@ const hasReasoning = computed(() => {
         <span class="font-semibold text-sm" :class="headerTextClass">{{ turn.agentName }}</span>
         <span class="text-xs text-gray-400">第{{ turn.sequenceNumber }}轮</span>
       </div>
-      <div class="flex items-center gap-2 text-xs text-gray-500 opacity-70">
-        ⏱️ {{ formattedDuration }}
+      <div class="flex items-center gap-2 text-xs">
+        <span v-if="formattedCompletionTime" class="text-gray-400" :title="'完成于 ' + formattedCompletionTime">🕐 {{ formattedCompletionTime }}</span>
+        <span class="text-gray-500 opacity-70">⏱️ {{ formattedDuration }}</span>
       </div>
     </div>
 
@@ -189,7 +264,7 @@ const hasReasoning = computed(() => {
         </div>
         <div v-if="showFilePath" class="flex items-center gap-2">
           <span class="text-gray-400 w-16 flex-shrink-0">📁 文件</span>
-          <span class="text-gray-700 truncate max-w-[200px]" :title="turn.currentFilePath!">{{ turn.currentFilePath }}</span>
+          <span class="text-gray-700 truncate max-w-full" :title="turn.currentFilePath!">{{ turn.currentFilePath }}</span>
         </div>
         <div v-if="showTodoList" class="pt-1">
           <div class="flex items-center gap-2 mb-1">
@@ -238,6 +313,19 @@ const hasReasoning = computed(() => {
       <div v-if="showReasoning" class="mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
         <pre class="text-xs font-mono text-amber-800 whitespace-pre-wrap break-words leading-relaxed">{{ turn.reasoningContent }}</pre>
       </div>
+    </div>
+
+    <!-- 悬停撤销按钮（底部右对齐） -->
+    <div v-if="showActions && canUndo" class="flex justify-end pt-1">
+      <el-button
+        size="small"
+        link
+        @click.stop="confirmUndo"
+        title="撤销此轮操作"
+        class="!p-1 !min-h-0 !h-auto undo-button"
+      >
+        <span class="text-xs">↩️ 撤销</span>
+      </el-button>
     </div>
   </div>
 </template>
@@ -496,8 +584,23 @@ const hasReasoning = computed(() => {
 }
 </style>
 
-
 <style scoped>
+/* ========== 撤销按钮 ========== */
+.undo-button {
+  color: #f56c6c !important;
+  font-size: 12px !important;
+  padding: 2px 6px !important;
+  border-radius: 4px !important;
+  background: rgba(245, 108, 108, 0.1) !important;
+  border: 1px solid rgba(245, 108, 108, 0.2) !important;
+}
+
+.undo-button:hover {
+  background: rgba(245, 108, 108, 0.2) !important;
+  color: #f56c6c !important;
+  border-color: rgba(245, 108, 108, 0.3) !important;
+}
+
 /* ========== Markdown 样式（与 ChatMessageItem 严格一致） ========== */
 
 :deep(.markdown-content) {

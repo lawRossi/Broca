@@ -555,6 +555,11 @@ class SessionManager:
         service = self.message_service
         return await service.update_batch(message_ids, **kwargs) == len(message_ids)
 
+    async def batch_update_turns(self, turn_ids, **kwargs) -> bool:
+        """批量更新 turn 状态"""
+        service = self.turn_service
+        return await service.update_batch(turn_ids, **kwargs) == len(turn_ids)
+
     async def mark_messages_as_truncated(
         self, agent_id: str, pivot_message_id: str
     ) -> int:

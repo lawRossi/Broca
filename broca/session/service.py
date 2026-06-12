@@ -5,9 +5,9 @@ Service类实现模块
 实现CRUD操作和业务逻辑。
 """
 
-import uuid
 import json
-from datetime import datetime
+import uuid
+from datetime import datetime, timezone
 from typing import Any, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
 from sqlalchemy import String, and_, cast, desc, func, or_, select, text
@@ -105,13 +105,9 @@ class BaseService(Generic[T]):
                     if hasattr(self.model_class, key):
                         if isinstance(value, list):
                             # list 值使用 IN 查询
-                            conditions.append(
-                                getattr(self.model_class, key).in_(value)
-                            )
+                            conditions.append(getattr(self.model_class, key).in_(value))
                         else:
-                            conditions.append(
-                                getattr(self.model_class, key) == value
-                            )
+                            conditions.append(getattr(self.model_class, key) == value)
                 if conditions:
                     statement = statement.where(and_(*conditions))
             if order_by:
@@ -160,9 +156,11 @@ class BaseService(Generic[T]):
             return 0
 
         async with db_manager.get_session() as session:
-            statement = sql_update(self.model_class).where(
-                getattr(self.model_class, self.id_field).in_(ids)
-            ).values(**kwargs)
+            statement = (
+                sql_update(self.model_class)
+                .where(getattr(self.model_class, self.id_field).in_(ids))
+                .values(**kwargs)
+            )
 
             result = await session.exec(statement)
             count = result.rowcount
@@ -216,13 +214,9 @@ class BaseService(Generic[T]):
                     if hasattr(self.model_class, key):
                         if isinstance(value, list):
                             # list 值使用 IN 查询
-                            conditions.append(
-                                getattr(self.model_class, key).in_(value)
-                            )
+                            conditions.append(getattr(self.model_class, key).in_(value))
                         else:
-                            conditions.append(
-                                getattr(self.model_class, key) == value
-                            )
+                            conditions.append(getattr(self.model_class, key) == value)
                 if conditions:
                     statement = statement.where(and_(*conditions))
 
@@ -247,14 +241,14 @@ class SessionService(BaseService[Session]):
             session_id=session_id,
             description=description,
             workspace=workspace,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
 
     async def close_session(self, session_id: str) -> Optional[Session]:
         """关闭会话"""
         return await self.update(
             session_id,
-            finished_at=datetime.utcnow(),
+            finished_at=datetime.now(timezone.utc),
         )
 
 
@@ -279,7 +273,7 @@ class TurnService(BaseService[Turn]):
             agent_id=agent_id,
             sequence_number=sequence_number,
             turn_description=turn_description,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
 
     async def get_latest_turn(self, session_id: str) -> Optional[Turn]:
@@ -310,7 +304,7 @@ class TurnService(BaseService[Turn]):
     ) -> List[Turn]:
         """获取会话的 turn 列表"""
         return await self.get_batch(
-            filters={"session_id": session_id},
+            filters={"session_id": session_id, "reverted": False},
             order_by=order_by,
             skip=skip,
             limit=limit,
@@ -339,9 +333,7 @@ class TurnService(BaseService[Turn]):
                 end_time = m.timestamp
         return start_time, end_time
 
-    async def get_turn_stats(
-        self, turn_id: str
-    ) -> Dict[str, Any]:
+    async def get_turn_stats(self, turn_id: str) -> Dict[str, Any]:
         """获取指定 turn 的统计信息
 
         返回：
@@ -369,6 +361,7 @@ class TurnService(BaseService[Turn]):
             "current_file_path": None,
             "current_todo_list": [],
             "final_response": "",
+            "last_message_id": None,
         }
 
         tool_call_counter: Dict[str, int] = {}
@@ -379,6 +372,8 @@ class TurnService(BaseService[Turn]):
             if m.reverted:
                 continue
             active_count += 1
+            # 记录最后一个非撤销消息的 message_id（用于 turn 级撤销定位）
+            stats["last_message_id"] = m.message_id
 
             if m.message_type == MessageType.USER_MESSAGE:
                 raw = m.data.get("content") if m.data else None
@@ -429,16 +424,14 @@ class TurnService(BaseService[Turn]):
 
         stats["tool_call_stats"] = [
             {"tool_name": name, "count": count}
-            for name, count in sorted(
-                tool_call_counter.items(), key=lambda x: -x[1]
-            )
+            for name, count in sorted(tool_call_counter.items(), key=lambda x: -x[1])
         ]
-        stats["is_reverted"] = (active_count == 0)
+        stats["is_reverted"] = active_count == 0
         return stats
 
     async def count_turns_by_session(self, session_id: str) -> int:
         """统计会话的 turn 总数"""
-        return await self.count({"session_id": session_id})
+        return await self.count({"session_id": session_id, "reverted": False})
 
 
 class MessageService(BaseService[Message]):
@@ -474,7 +467,7 @@ class MessageService(BaseService[Message]):
             role=role,
             message_type=message_type,
             sequence_number=sequence_number,
-            timestamp=datetime.utcnow(),
+            timestamp=datetime.now(timezone.utc),
             data=message_data,
         )
         # 仅编排消息设置 execution_id（普通会话为 None，不影响）
@@ -495,6 +488,7 @@ class MessageService(BaseService[Message]):
         """根据会话ID获取消息"""
         if execution_id:
             from sqlalchemy import text
+
             async with db_manager.get_session() as session:
                 stmt = (
                     select(Message)
@@ -526,6 +520,7 @@ class MessageService(BaseService[Message]):
     ) -> int:
         """统计编排执行相关的消息总数"""
         from sqlalchemy import func
+
         async with db_manager.get_session() as session:
             stmt = (
                 select(func.count(Message.message_id))
@@ -688,7 +683,9 @@ class MessageService(BaseService[Message]):
             total = total_result.scalar() or 0
 
             # 排序 & 分页
-            sort_expr = "sequence_number asc" if order == "asc" else "sequence_number desc"
+            sort_expr = (
+                "sequence_number asc" if order == "asc" else "sequence_number desc"
+            )
             stmt = stmt.order_by(text(sort_expr))
             stmt = stmt.offset(skip).limit(limit)
 

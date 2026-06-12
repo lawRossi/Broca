@@ -95,6 +95,7 @@ export interface TurnSummaryData {
   current_todo_list: Array<{ name: string; status: string }>
   final_response: string
   is_reverted: boolean
+  last_message_id: string | null
 }
 
 export interface TurnsResponse {

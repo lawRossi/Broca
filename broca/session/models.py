@@ -100,6 +100,13 @@ class Turn(SQLModel, table=True):
     turn_description: Optional[str] = Field(default=None, description="轮次描述")
     sequence_number: int = Field(description="轮次序号")
 
+    # 撤销状态（用于undo/redo）
+    reverted: bool = Field(
+        default=False,
+        sa_column=Column(Integer, server_default="0", nullable=False),
+        description="是否已回滚",
+    )
+
     # 关联关系
     agent: "Agent" = Relationship(back_populates="turns")
     session: "Session" = Relationship(back_populates="turns")

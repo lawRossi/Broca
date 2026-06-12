@@ -32,9 +32,10 @@ interface TurnSummary {
   finalResponse: string
   reasoningContent: string
   isActive: boolean
-  isReverted: boolean
   startedAt: number
   createdAt: string
+  /** 该 turn 最后一个非撤销消息的 message_id，用于 turn 级撤销定位 */
+  lastMessageId: string | null
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -411,6 +412,19 @@ export const useChatStore = defineStore('chat', () => {
     return message
   }
 
+  /**
+   * 将 ISO 字符串解析为 UTC 时间戳（ms）。
+   * 处理服务端返回的无时区 ISO 字符串（如 "2024-01-15T10:30:00.123456"），
+   * 将其视为 UTC 时间而非本地时间。
+   */
+  const parseISODate = (iso: string | null | undefined): number | null => {
+    if (!iso) return null
+    // 如果字符串不包含时区信息（不以 Z 结尾，不包含 +/-），追加 Z 标记为 UTC
+    const normalized = /[Z+-]\d{2}:\d{2}$/.test(iso) ? iso : iso + 'Z'
+    const ms = new Date(normalized).getTime()
+    return isNaN(ms) ? null : ms
+  }
+
   // ========== 简洁模式：TurnSummary 更新方法 ==========
 
   /** 记录每个 turn 最后一次 agent_response 的 message_id，用于在 finalResponse 中插入分隔符 */
@@ -582,6 +596,7 @@ export const useChatStore = defineStore('chat', () => {
       isReverted: false,
       startedAt: Date.now(),
       createdAt: new Date().toISOString(),
+      lastMessageId: null,
     }
 
     turnSummaries.value.push(newSummary)
@@ -605,6 +620,11 @@ export const useChatStore = defineStore('chat', () => {
     if (activeTurnIndex.value === idx) {
       activeTurnIndex.value = -1
       stopDurationTimer()
+    }
+    // 保存该 turn 最后一条消息的 ID（用于撤销定位），再清理追踪 map
+    const lastMsgId = _turnLastResponseMsgId.get(turnId)
+    if (lastMsgId) {
+      turn.lastMessageId = lastMsgId
     }
     _turnLastResponseMsgId.delete(turnId)
     _turnContentMsgId.delete(turnId)
@@ -893,9 +913,9 @@ export const useChatStore = defineStore('chat', () => {
           finalResponse: t.final_response || '',
           reasoningContent: '',
           isActive: !t.ended_at,
-          isReverted: false,
-          startedAt: t.started_at ? new Date(t.started_at).getTime() : Date.now(),
+          startedAt: parseISODate(t.started_at) ?? Date.now(),
           createdAt: t.created_at || '',
+          lastMessageId: t.last_message_id || null,
         }))
 
       if (isLoadMore) {

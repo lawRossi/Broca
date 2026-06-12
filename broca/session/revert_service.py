@@ -246,11 +246,21 @@ class SessionRevertService:
     async def _mark_messages_as_reverted(
         self, messages: List[Message], pivot_message_id: str | None
     ) -> None:
-        """标记消息为已撤销"""
+        """标记消息和关联轮次为已撤销
 
-        # 收集需要标记的消息ID
+        轮次标记规则：仅当该轮次中所有消息都被撤销时，才标记轮次为已撤销。
+        """
+
+        # 按 turn 分组所有消息
+        turn_message_map: dict[str, set[str]] = {}
+        for msg in messages:
+            if msg.turn_id:
+                if msg.turn_id not in turn_message_map:
+                    turn_message_map[msg.turn_id] = set()
+                turn_message_map[msg.turn_id].add(msg.message_id)
+
+        # 收集从 pivot 开始需要撤销的消息
         message_ids_to_revert = set()
-
         collecting = False
         for msg in messages:
             if msg.message_id == pivot_message_id:
@@ -262,31 +272,60 @@ class SessionRevertService:
 
         logger.debug(f"标记消息为已撤销: {message_ids_to_revert}")
 
-        # 更新消息状态（批量一次完成）
+        # 更新消息状态
         if message_ids_to_revert:
             await self.session_manager.batch_update_messages(
                 message_ids_to_revert, reverted=True)
 
+        # 标记轮次：仅当该轮次的所有消息都被撤销时才标记
+        turn_ids_to_revert = set()
+        for turn_id, msg_ids in turn_message_map.items():
+            if msg_ids.issubset(message_ids_to_revert):
+                turn_ids_to_revert.add(turn_id)
+
+        if turn_ids_to_revert:
+            logger.debug(f"标记轮次为已撤销（全部消息已撤销）: {turn_ids_to_revert}")
+            await self.session_manager.batch_update_turns(
+                turn_ids_to_revert, reverted=True)
+
     async def _mark_messages_as_redone(
         self, agent_id: str, undo_meta_info: dict
     ) -> None:
-        """标记消息为已重做"""
+        """标记消息和轮次为已重做
+
+        轮次标记规则：只要轮次中有任一消息被恢复未撤销，该轮次即标记为未撤销。
+        """
         pivot_message_id = undo_meta_info.get("pivot_message_id")
+
         messages = await self.session_manager.get_messages(
             agent_id, ignore_reverted=False
         )
 
-        message_ids_to_mark = []
+        # 收集从 pivot 开始需要恢复的消息
+        message_ids_to_mark = set()
+        turn_ids_to_redone = set()
         collecting = False
         for msg in messages:
             if msg.message_id == pivot_message_id:
-                message_ids_to_mark.append(msg.message_id)
+                message_ids_to_mark.add(msg.message_id)
+                if msg.turn_id:
+                    turn_ids_to_redone.add(msg.turn_id)
                 collecting = True
                 continue
-
             if collecting:
-                message_ids_to_mark.append(msg.message_id)
+                message_ids_to_mark.add(msg.message_id)
+                if msg.turn_id:
+                    turn_ids_to_redone.add(msg.turn_id)
+
+        if not message_ids_to_mark:
+            return
 
         await self.session_manager.batch_update_messages(
             message_ids_to_mark, reverted=False
         )
+
+        if turn_ids_to_redone:
+            logger.debug(f"标记轮次为已重做: {turn_ids_to_redone}")
+            await self.session_manager.batch_update_turns(
+                turn_ids_to_redone, reverted=False
+            )
