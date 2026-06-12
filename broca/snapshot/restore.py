@@ -41,11 +41,11 @@ class SnapshotRestorer:
         self.git_manager.ensure_initialized()
 
         try:
-            # 使用 --reset 选项先重置索引，再读取树对象
-            await self.git_manager._run_git_command("read-tree", "--reset", tree_hash)
-
-            # 检出索引到工作区
-            await self.git_manager._run_git_command("checkout-index", "-a", "-f")
+            # 使用 checkout 直接恢复整个树到工作区
+            # 与 read-tree --reset + checkout-index -a -f 不同，
+            # checkout tree_hash -- . 会删除目标树中不存在的文件（如果它们曾被跟踪），
+            # 避免"孤儿文件"残留（如 undo 恢复了一个文件，redo 本应删除它但没删）。
+            await self.git_manager._run_git_command("checkout", tree_hash, "--", ".")
         except git.GitCommandError as e:
             logger.error(f"恢复快照失败: {e}")
             raise

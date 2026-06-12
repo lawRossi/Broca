@@ -128,7 +128,7 @@ class SnapshotTracker:
                 )
             ).strip()
             if diff_files:
-                changed_files.extend(diff_files.split("\x00"))
+                changed_files.extend(f for f in diff_files.split("\x00") if f)
         except git.GitCommandError:
             pass
 
@@ -140,7 +140,7 @@ class SnapshotTracker:
                 )
             ).strip()
             if untracked_files:
-                changed_files.extend(untracked_files.split("\x00"))
+                changed_files.extend(f for f in untracked_files.split("\x00") if f)
         except git.GitCommandError:
             pass
 
@@ -187,9 +187,9 @@ class SnapshotTracker:
         try:
             # 检查临时文件是否为空
             if os.path.getsize(temp_file) > 0:
-                # 使用临时文件进行稀疏添加
+                # 使用临时文件进行添加
                 await self.git_manager._run_git_command(
-                    "add", "--all", "--sparse", f"--pathspec-from-file={temp_file}"
+                    "add", "--all", f"--pathspec-from-file={temp_file}"
                 )
                 return True
             else:

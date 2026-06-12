@@ -84,7 +84,6 @@ class GitManager:
             config.set_value("core", "longpaths", "true")
             config.set_value("core", "symlinks", "true")
             config.set_value("core", "fsmonitor", "false")
-            config.set_value("core", "sparseCheckout", "true")
 
     def ensure_initialized(self) -> None:
         """确保 Git 仓库已初始化"""
