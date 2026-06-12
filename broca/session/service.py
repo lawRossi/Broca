@@ -6,6 +6,7 @@ Service类实现模块
 """
 
 import uuid
+import json
 from datetime import datetime
 from typing import Any, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
@@ -102,7 +103,15 @@ class BaseService(Generic[T]):
                 conditions = []
                 for key, value in filters.items():
                     if hasattr(self.model_class, key):
-                        conditions.append(getattr(self.model_class, key) == value)
+                        if isinstance(value, list):
+                            # list 值使用 IN 查询
+                            conditions.append(
+                                getattr(self.model_class, key).in_(value)
+                            )
+                        else:
+                            conditions.append(
+                                getattr(self.model_class, key) == value
+                            )
                 if conditions:
                     statement = statement.where(and_(*conditions))
             if order_by:
@@ -205,7 +214,15 @@ class BaseService(Generic[T]):
                 conditions = []
                 for key, value in filters.items():
                     if hasattr(self.model_class, key):
-                        conditions.append(getattr(self.model_class, key) == value)
+                        if isinstance(value, list):
+                            # list 值使用 IN 查询
+                            conditions.append(
+                                getattr(self.model_class, key).in_(value)
+                            )
+                        else:
+                            conditions.append(
+                                getattr(self.model_class, key) == value
+                            )
                 if conditions:
                     statement = statement.where(and_(*conditions))
 
@@ -283,6 +300,145 @@ class TurnService(BaseService[Turn]):
         if latest_turn:
             return latest_turn.sequence_number + 1
         return 1
+
+    async def get_turns_by_session(
+        self,
+        session_id: str,
+        order_by: str = "sequence_number desc",
+        skip: int = 0,
+        limit: int = 20,
+    ) -> List[Turn]:
+        """获取会话的 turn 列表"""
+        return await self.get_batch(
+            filters={"session_id": session_id},
+            order_by=order_by,
+            skip=skip,
+            limit=limit,
+        )
+
+    async def get_turn_time_range(
+        self, turn_id: str
+    ) -> Tuple[Optional[datetime], Optional[datetime]]:
+        """获取指定 turn 的 TURN_START 和 TURN_END 时间戳"""
+        from broca.session.service import get_message_service
+
+        msg_service = get_message_service()
+        messages = await msg_service.get_batch(
+            filters={
+                "turn_id": turn_id,
+                "message_type": [MessageType.TURN_START, MessageType.TURN_END],
+            },
+            order_by="timestamp asc",
+        )
+        start_time = None
+        end_time = None
+        for m in messages:
+            if m.message_type == MessageType.TURN_START:
+                start_time = m.timestamp
+            elif m.message_type == MessageType.TURN_END:
+                end_time = m.timestamp
+        return start_time, end_time
+
+    async def get_turn_stats(
+        self, turn_id: str
+    ) -> Dict[str, Any]:
+        """获取指定 turn 的统计信息
+
+        返回：
+            is_reverted: 该 turn 的所有消息是否都已撤销
+            user_message: 用户问题原文或 None
+            total_steps: step_start 消息数量
+            tool_call_stats: [{tool_name, count}, ...]
+            current_file_path: 最后一个 read_file/edit_file/write_file 的 path
+            current_todo_list: [{name, status}, ...] 或空列表
+            final_response: 拼接后的 agent_response 内容
+        """
+        from broca.session.service import get_message_service
+
+        msg_service = get_message_service()
+        messages = await msg_service.get_batch(
+            filters={"turn_id": turn_id},
+            order_by="timestamp asc",
+        )
+
+        stats: Dict[str, Any] = {
+            "is_reverted": True,
+            "user_message": None,
+            "total_steps": 0,
+            "tool_call_stats": [],
+            "current_file_path": None,
+            "current_todo_list": [],
+            "final_response": "",
+        }
+
+        tool_call_counter: Dict[str, int] = {}
+
+        active_count = 0
+        for m in messages:
+            # 跳过已撤销的消息
+            if m.reverted:
+                continue
+            active_count += 1
+
+            if m.message_type == MessageType.USER_MESSAGE:
+                raw = m.data.get("content") if m.data else None
+                if raw and stats["user_message"] is None:
+                    # data["content"] 是 json.dumps({"content": "用户消息", ...})
+                    try:
+                        parsed = json.loads(raw) if isinstance(raw, str) else raw
+                        if isinstance(parsed, dict):
+                            stats["user_message"] = parsed.get("content", str(parsed))
+                        else:
+                            stats["user_message"] = str(parsed)
+                    except (json.JSONDecodeError, TypeError):
+                        stats["user_message"] = str(raw)
+
+            elif m.message_type == MessageType.STEP_START:
+                stats["total_steps"] += 1
+
+            elif m.message_type == MessageType.TOOL_CALL:
+                tool_name = m.data.get("tool_name") if m.data else None
+                if tool_name:
+                    tool_call_counter[tool_name] = (
+                        tool_call_counter.get(tool_name, 0) + 1
+                    )
+                    # 提取文件路径
+                    if tool_name in ("read_file", "edit_file", "write_file"):
+                        args = m.data.get("arguments")
+                        if args:
+                            parsed = json.loads(args) if isinstance(args, str) else args
+                            if isinstance(parsed, dict) and parsed.get("path"):
+                                stats["current_file_path"] = parsed["path"]
+                    # 提取 TODO 列表
+                    if tool_name == "todo_management":
+                        args = m.data.get("arguments")
+                        if args:
+                            parsed = json.loads(args) if isinstance(args, str) else args
+                            if isinstance(parsed, dict) and parsed.get("todos"):
+                                stats["current_todo_list"] = parsed["todos"]
+
+            elif m.message_type == MessageType.AGENT_RESPONSE:
+                content = m.data.get("content") if m.data else None
+                if content:
+                    try:
+                        parsed = json.loads(content)
+                        if isinstance(parsed, dict) and parsed.get("content"):
+                            stats["final_response"] += parsed["content"]
+                    except (json.JSONDecodeError, TypeError):
+                        stats["final_response"] += str(content)
+
+        stats["tool_call_stats"] = [
+            {"tool_name": name, "count": count}
+            for name, count in sorted(
+                tool_call_counter.items(), key=lambda x: -x[1]
+            )
+        ]
+        stats["is_reverted"] = (active_count == 0)
+        return stats
+
+    async def count_turns_by_session(self, session_id: str) -> int:
+        """统计会话的 turn 总数"""
+        return await self.count({"session_id": session_id})
 
 
 class MessageService(BaseService[Message]):

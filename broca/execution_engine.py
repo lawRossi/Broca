@@ -404,6 +404,8 @@ class ExecutionEngine:
                         content=content,
                         reasoning_content=reasoning_content,
                         index=index,
+                        turn_id=self.turn_id,
+                        agent_id=self.agent_id,
                         message_id=message_id,
                         subscription=self.session_id,
                     )
@@ -425,6 +427,8 @@ class ExecutionEngine:
                                 tool_name=tool_name,
                                 arguments=None,
                                 tool_call_id=tool_call_id,
+                                turn_id=self.turn_id,
+                                agent_id=self.agent_id,
                                 subscription=self.session_id,
                             )
                         sent.add(tool_call_id)
@@ -473,6 +477,8 @@ class ExecutionEngine:
                     tool_name=tool_name,
                     arguments=arguments,
                     tool_call_id=tool_call.id,
+                    turn_id=self.turn_id,
+                    agent_id=self.agent_id,
                     subscription=self.session_id,
                 )
 
@@ -676,6 +682,8 @@ class ExecutionEngine:
                 tool_call_id=tool_call.id,
                 result=tool_result.content,
                 status=tool_result.status,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
                 subscription=self.session_id,
                 message_id=message_id,
             )
@@ -895,6 +903,20 @@ class ExecutionEngine:
                 message_id=message_id,
             ):
                 return False
+
+            # 广播用户消息（带 turn_id/agent_id）到当前 session 的所有订阅者
+            if self.config.interactive and not from_agent and message.message_id:
+                broadcast_msg = MessageProtocol.create_user_message(
+                    content=user_message.get("content", ""),
+                    sender_id=message.sender_id,
+                    subscription=self.session_id,
+                    turn_id=turn_id,
+                    agent_id=self.agent_id,
+                    message_id=message.message_id,
+                )
+                if message.data and message.data.get("files"):
+                    broadcast_msg.data["files"] = message.data["files"]
+                await self.communicator.send_message(broadcast_msg)
 
             await self.context.add_message(user_message, message_id)
             return True

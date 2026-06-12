@@ -477,11 +477,17 @@ class SocketIOClient:
         content: str,
         reasoning_content: Optional[str] = None,
         index: int = 0,
+        turn_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
         callback: Optional[Callable] = None,
         **kwargs,
     ) -> str:
         """Send agent response"""
         kwargs["sender_id"] = self.client_id
+        if turn_id is not None:
+            kwargs["turn_id"] = turn_id
+        if agent_id is not None:
+            kwargs["agent_id"] = agent_id
         message = MessageProtocol.create_agent_response(
             content=content, reasoning_content=reasoning_content, index=index, **kwargs
         )
@@ -494,6 +500,8 @@ class SocketIOClient:
         tool_call_id: str,
         result: Optional[str] = None,
         status: Optional[bool] = None,
+        turn_id: Optional[str] = None,
+        agent_id: Optional[str] = None,
         receiver_id: Optional[str] = None,
         room: Optional[str] = None,
         subscription: Optional[str] = None,
@@ -508,6 +516,8 @@ class SocketIOClient:
             result=result,
             status=status,
             sender_id=self.client_id,
+            turn_id=turn_id,
+            agent_id=agent_id,
             receiver_id=receiver_id,
             room=room,
             subscription=subscription,

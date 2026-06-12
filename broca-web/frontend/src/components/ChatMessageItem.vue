@@ -7,6 +7,7 @@ import { ref, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import FilePreview from './FilePreview.vue'
 import { diffLines } from 'diff'
+import { renderMarkdown } from '@/utils/markdown'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -19,23 +20,6 @@ const previewFileUrl = ref<string>('')
 
 // 显示/隐藏撤销按钮
 const showActions = ref(false)
-
-// 配置 marked 选项
-marked.setOptions({
-  breaks: true, // 将换行符转换为 <br>
-  gfm: true, // 启用 GitHub 风格 Markdown
-})
-
-// 渲染 Markdown 内容
-const renderMarkdown = (content: string): string => {
-  if (!content) return ''
-  try {
-    return marked(content, { async: false }) as string
-  } catch (e) {
-    console.error('Markdown rendering error:', e)
-    return content
-  }
-}
 
 const props = defineProps<{
   message: Message
@@ -648,7 +632,7 @@ const handleUndoToHere = async () => {
       <!-- agent_response 使用 markdown 渲染 -->
       <div
         v-else-if="message.message_type === 'agent_response' || message.role === 'assistant'"
-        class="markdown-content text-xs sm:text-sm leading-relaxed mb-2"
+        class="markdown-content text-xs sm:text-sm leading-relaxed mb-2 overflow-x-auto"
         :class="getContentClass(message)"
         v-html="renderMarkdown(getContent(message))"
       ></div>
@@ -656,7 +640,7 @@ const handleUndoToHere = async () => {
       <!-- command_result 使用 markdown 渲染（如 /help 输出的标题、列表等） -->
       <div
         v-else-if="message.message_type === 'command_result'"
-        class="markdown-content text-xs sm:text-sm leading-relaxed mb-2"
+        class="markdown-content text-xs sm:text-sm leading-relaxed mb-2 overflow-x-auto"
         v-html="renderMarkdown(getContent(message))"
       ></div>
 

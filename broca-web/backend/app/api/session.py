@@ -14,6 +14,7 @@ from broca.session.service import (
     get_agent_service,
     get_message_service,
     get_session_service,
+    get_turn_service,
 )
 from broca.session_runner import RunnerManager
 from broca.session_runner.manager import RunnerManagerError
@@ -600,4 +601,76 @@ async def get_session_stats(session_id: str) -> ApiResponse:
     except Exception as e:
         logger.exception("Error getting session stats")
 
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.get("/{session_id}/turns", response_model=ApiResponse)
+async def get_session_turns(
+    session_id: str,
+    skip: int = 0,
+    limit: int = 20,
+) -> ApiResponse:
+    """
+    获取会话的 turn 摘要列表（简洁模式使用）。
+    按 sequence_number desc 排序（最新的 turn 在前），
+    返回时反转（最早的在前）。
+
+    每个 turn 带有 is_reverted 标记，前端自行过滤已撤销的 turn。
+    """
+    try:
+        session_service = get_session_service()
+        session = await session_service.get(session_id)
+        if not session:
+            raise HTTPException(status_code=404, detail="Session not found")
+
+        turn_service = get_turn_service()
+        agent_service = get_agent_service()
+
+        total = await turn_service.count_turns_by_session(session_id)
+        turns = await turn_service.get_turns_by_session(
+            session_id, order_by="sequence_number desc",
+            skip=skip, limit=limit,
+        )
+
+        turn_list = []
+        for t in turns:
+            start_time, end_time = await turn_service.get_turn_time_range(t.turn_id)
+            duration = None
+            if start_time and end_time:
+                duration = (end_time - start_time).total_seconds()
+
+            agent = await agent_service.get(t.agent_id) if t.agent_id else None
+            stats = await turn_service.get_turn_stats(t.turn_id)
+
+            turn_list.append({
+                "turn_id": t.turn_id,
+                "sequence_number": t.sequence_number,
+                "agent_id": t.agent_id,
+                "agent_name": agent.name if agent else None,
+                "started_at": start_time.isoformat() if start_time else None,
+                "ended_at": end_time.isoformat() if end_time else None,
+                "duration_seconds": round(duration, 1) if duration else None,
+                "created_at": t.created_at.isoformat() if t.created_at else None,
+                # 统计数据
+                "is_reverted": stats.get("is_reverted", False),
+                "user_message": stats["user_message"],
+                "total_steps": stats["total_steps"],
+                "tool_call_stats": stats["tool_call_stats"],
+                "current_file_path": stats["current_file_path"],
+                "current_todo_list": stats["current_todo_list"],
+                "final_response": stats["final_response"],
+            })
+
+        turn_list.reverse()
+
+        return ApiResponse.success({
+            "turns": turn_list,
+            "total": total,
+            "skip": skip,
+            "limit": limit,
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting session turns")
         raise HTTPException(500, f"Internal server error: {e!s}") from e

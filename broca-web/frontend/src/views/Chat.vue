@@ -63,6 +63,7 @@ watch(executionId, (newExecId, oldExecId) => {
   if (newExecId && newExecId !== oldExecId && chatStore.sessionId) {
     chatStore.executionId = newExecId as string
     chatStore.loadHistory(chatStore.sessionId, false, newExecId)
+    chatStore.loadTurnHistory(chatStore.sessionId, false)
   }
 })
 

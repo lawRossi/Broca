@@ -7,6 +7,10 @@ const chatStore = useChatStore()
 const emit = defineEmits<{
   (e: 'search'): void
 }>()
+
+const handleConciseToggle = (val: boolean) => {
+  chatStore.toggleDisplayMode()
+}
 </script>
 
 <template>
@@ -33,6 +37,15 @@ const emit = defineEmits<{
         </div>
 
         <div class="flex items-center gap-2">
+          <!-- 简洁/明细模式切换 -->
+          <el-switch
+            :model-value="chatStore.displayMode === 'concise'"
+            active-text="📊"
+            inactive-text="📋"
+            @change="handleConciseToggle"
+            size="small"
+          />
+
           <!-- 搜索按钮 -->
           <el-button
             size="small"

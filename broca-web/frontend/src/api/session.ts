@@ -78,6 +78,32 @@ export interface SessionStats {
   tool_call_errors: number
 }
 
+export interface TurnSummaryData {
+  turn_id: string
+  sequence_number: number
+  agent_id: string
+  agent_name: string | null
+  started_at: string | null
+  ended_at: string | null
+  duration_seconds: number | null
+  created_at: string | null
+  // 后端计算的统计数据
+  user_message: string | null
+  total_steps: number
+  tool_call_stats: Array<{ tool_name: string; count: number }>
+  current_file_path: string | null
+  current_todo_list: Array<{ name: string; status: string }>
+  final_response: string
+  is_reverted: boolean
+}
+
+export interface TurnsResponse {
+  turns: TurnSummaryData[]
+  total: number
+  skip: number
+  limit: number
+}
+
 // 新增：Runner 状态接口
 export interface RunnerInfo {
   session_id: string
@@ -199,6 +225,18 @@ export const sessionApi = {
    */
   async getSessionStats(sessionId: string): Promise<SessionStats> {
     return request.get(`/session/${sessionId}/stats`)
+  },
+
+  /**
+   * 获取会话的 turn 摘要列表（简洁模式使用）
+   */
+  async getSessionTurns(
+    sessionId: string,
+    skip: number = 0,
+    limit: number = 20
+  ): Promise<TurnsResponse> {
+    const params: Record<string, any> = { skip, limit }
+    return request.get(`/session/${sessionId}/turns`, { params })
   },
 
   // ==================== Runner 管理 API ====================
