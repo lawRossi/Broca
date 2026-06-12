@@ -197,9 +197,10 @@ class ExecutionEngine:
             step_start_msg.session_id = self.session_id
             step_start_msg.turn_id = self.turn_id
             step_start_msg.agent_id = self.agent_id
+            step_start_msg.subscription = self.session_id
 
-            # 保存消息
-            return await self.session_manager.save_message(
+            # 保存消息到数据库
+            saved = await self.session_manager.save_message(
                 role=step_start_msg.role,
                 content=None,
                 message_type=step_start_msg.message_type,
@@ -207,6 +208,15 @@ class ExecutionEngine:
                 agent_id=self.agent_id,
                 data=step_start_msg.data,
             )
+
+            # 广播 step_start 消息到前端（简洁模式依赖此消息更新步骤数）
+            if self.config.interactive:
+                try:
+                    await self.communicator.send_message(step_start_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to broadcast step_start: {e}")
+
+            return saved
         except Exception as e:
             logger.error(f"Error capturing step start: {e}")
             return False
@@ -245,9 +255,10 @@ class ExecutionEngine:
             step_end_msg.session_id = self.session_id
             step_end_msg.turn_id = self.turn_id
             step_end_msg.agent_id = self.agent_id
+            step_end_msg.subscription = self.session_id
 
-            # 保存消息
-            return await self.session_manager.save_message(
+            # 保存消息到数据库
+            saved = await self.session_manager.save_message(
                 role=step_end_msg.role,
                 content=None,
                 message_type=step_end_msg.message_type,
@@ -255,6 +266,15 @@ class ExecutionEngine:
                 agent_id=self.agent_id,
                 data=step_end_msg.data,
             )
+
+            # 广播 step_end 消息到前端
+            if self.config.interactive:
+                try:
+                    await self.communicator.send_message(step_end_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to broadcast step_end: {e}")
+
+            return saved
         except Exception as e:
             logger.error(f"Error capturing step end: {e}")
             return False

@@ -415,6 +415,8 @@ export const useChatStore = defineStore('chat', () => {
 
   /** 记录每个 turn 最后一次 agent_response 的 message_id，用于在 finalResponse 中插入分隔符 */
   const _turnLastResponseMsgId = new Map<string, string>()
+  /** 记录每个 turn 已追加过 content 的 message_id（与 reasoning 分开追踪，避免 reasoning-only chunk 消耗 isNewResponse） */
+  const _turnContentMsgId = new Map<string, string>()
   /** 记录每个 turn 已统计过的 tool_call_id，去重计数 */
   const _turnSeenToolCallIds = new Map<string, Set<string>>()
 
@@ -508,26 +510,34 @@ export const useChatStore = defineStore('chat', () => {
           const parsed = JSON.parse(content)
           if (parsed.content || parsed.reasoning_content) {
             const lastMsgId = _turnLastResponseMsgId.get(turnId)
-            const isNewResponse = lastMsgId !== undefined && lastMsgId !== message.message_id
+            const isNewResponse = lastMsgId !== message.message_id
 
-            // finalResponse：同一消息累加，不同消息空行分隔
+            // finalResponse：同一 message_id 的 streaming chunks 连续拼接，
+            // 不同 message_id（不同 LLM 调用）之间加空行分隔。
+            // 注意：isNewResponse 可能在 reasoning-only chunk 时已被消耗，
+            // 因此用独立的 _turnContentMsgId 判断是否已对当前 message_id 追加过 content。
             if (parsed.content) {
-              if (isNewResponse) {
+              const prevContentMsgId = _turnContentMsgId.get(turnId)
+              if (prevContentMsgId !== message.message_id && turn.finalResponse.length > 0) {
                 turn.finalResponse += '\n\n'
               }
               turn.finalResponse += parsed.content
+              _turnContentMsgId.set(turnId, message.message_id)
             }
 
-            // reasoningContent：同一消息内累加（streaming chunk）；
-            // 新消息无推内容时清空（表示已结束思考进入回复阶段）
+            // reasoningContent：同一 message_id 内 chunks 累加；
+            // 一旦收到回复内容（content），表示模型已从思考切换到回复阶段，清空 reasoningContent。
+            // 场景：streaming 前几块只有 reasoning_content，后几块切换到 content，
+            // 此时 isNewResponse=false（同 message_id），但需要清空 reasoningContent。
             if (parsed.reasoning_content) {
               if (isNewResponse) {
                 turn.reasoningContent = parsed.reasoning_content  // 新消息，重新开始
               } else {
                 turn.reasoningContent += parsed.reasoning_content  // 同消息，累加
               }
-            } else if (isNewResponse) {
-              // 新消息且无 reasoning_content → 已结束思考，清空
+            }
+            if (parsed.content && turn.reasoningContent.length > 0) {
+              // 收到回复内容 → 思考阶段已结束，清空 reasoningContent
               turn.reasoningContent = ''
             }
 
@@ -597,6 +607,7 @@ export const useChatStore = defineStore('chat', () => {
       stopDurationTimer()
     }
     _turnLastResponseMsgId.delete(turnId)
+    _turnContentMsgId.delete(turnId)
     _turnSeenToolCallIds.delete(turnId)
   }
 
