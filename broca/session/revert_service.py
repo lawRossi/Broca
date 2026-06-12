@@ -262,8 +262,8 @@ class SessionRevertService:
 
         logger.debug(f"标记消息为已撤销: {message_ids_to_revert}")
 
-        # 更新消息状态
-        for message_id in message_ids_to_revert:
+        # 更新消息状态（批量一次完成）
+        if message_ids_to_revert:
             await self.session_manager.batch_update_messages(
                 message_ids_to_revert, reverted=True)
 

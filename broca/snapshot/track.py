@@ -4,8 +4,8 @@
 捕获文件系统快照，生成 Git 树哈希。
 """
 
+import asyncio
 import os
-import threading
 from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
@@ -30,7 +30,7 @@ class SnapshotTracker:
         """
         self.workspace_path = Path(workspace_path).resolve()
         self.git_manager = GitManager(str(self.workspace_path))
-        self.lock = threading.Semaphore(1)  # 并发控制锁
+        self.lock = asyncio.Lock()  # 并发控制锁
 
     async def track(self, ignore_patterns: Optional[list[str]] = None) -> str:
         """
@@ -42,7 +42,7 @@ class SnapshotTracker:
         Returns:
             Git 树哈希
         """
-        with self.lock:
+        async with self.lock:
             return await self._track_snapshot(ignore_patterns)
 
     async def _track_snapshot(self, ignore_patterns: Optional[list[str]] = None) -> str:
