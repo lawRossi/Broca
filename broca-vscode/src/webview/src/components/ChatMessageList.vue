@@ -2,6 +2,7 @@
 import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useChatStore } from '../stores/chat'
 import ChatMessageItem from './ChatMessageItem.vue'
+import ChatTurnCard from './ChatTurnCard.vue'
 
 const chatStore = useChatStore()
 const containerRef = ref<HTMLElement>()
@@ -13,6 +14,17 @@ const contentScrollTimer = ref<number | null>(null)
 
 // 是否正在恢复滚动位置（加载更多历史后）
 const isRestoringScroll = ref(false)
+
+// 模式切换时的滚动位置保留
+const pendingScrollPercentage = ref<number | null>(null)
+
+// 判断两个 turn 是否来自同一个 agent
+function isConsecutiveAgent(turn: any, index: number): boolean {
+  if (index === 0) return false
+  const prevTurn = chatStore.turnSummaries[index - 1]
+  if (!prevTurn) return false
+  return prevTurn.agentId === turn.agentId
+}
 
 // 判断用户是否在底部附近（阈值 150px）
 function isNearBottom(): boolean {
@@ -66,7 +78,7 @@ const scrollToBottom = () => {
   })
 }
 
-// ==================== 自动滚动 ====================
+// ==================== 自动滚动（明细模式） ====================
 watch(
   () => chatStore.filteredMessages.length,
   () => {
@@ -90,7 +102,37 @@ watch(
   }
 )
 
-// ==================== 滚动加载更多 ====================
+// ==================== 模式切换滚动保持 ====================
+watch(
+  () => chatStore.displayMode,
+  (newMode, oldMode) => {
+    if (!oldMode || !containerRef.value) return
+    // 记录切换前的滚动百分比
+    const container = containerRef.value
+    const scrollPct = container.scrollTop / (container.scrollHeight - container.clientHeight)
+    pendingScrollPercentage.value = scrollPct
+
+    nextTick(() => {
+      if (pendingScrollPercentage.value !== null && containerRef.value) {
+        const c = containerRef.value
+        c.scrollTop = pendingScrollPercentage.value * (c.scrollHeight - c.clientHeight)
+        pendingScrollPercentage.value = null
+      }
+    })
+  }
+)
+
+// 简洁模式下，turnSummaries 更新时自动滚动到底部
+watch(
+  () => chatStore.turnSummaries.length,
+  () => {
+    if (chatStore.displayMode !== 'concise') return
+    if (isRestoringScroll.value) return
+    scrollToBottom()
+  }
+)
+
+  // ==================== 滚动加载更多（明细模式 + 简洁模式上滑刷新） ====================
 const handleScroll = () => {
   const container = containerRef.value
   if (!container) return
@@ -98,6 +140,20 @@ const handleScroll = () => {
   if (loadMoreTimer.value) clearTimeout(loadMoreTimer.value)
 
   loadMoreTimer.value = window.setTimeout(() => {
+    // 简洁模式：上滑加载 turn 历史
+    if (chatStore.displayMode === 'concise') {
+      if (container.scrollTop < 50 && !chatStore.loadingMoreTurns && chatStore.hasMoreTurns) {
+        chatStore.loadTurnHistory(chatStore.sessionId, true)
+        // 加载后自动恢复到原位置
+        isRestoringScroll.value = true
+        setTimeout(() => {
+          isRestoringScroll.value = false
+        }, 500)
+      }
+      return
+    }
+
+    // 明细模式：上滑加载消息历史
     if (container.scrollTop < 50 && !chatStore.loadingMore && chatStore.hasMoreHistory) {
       const scrollState = saveScrollState()
       chatStore.loadMoreHistory()
@@ -131,35 +187,76 @@ onUnmounted(() => {
     class="message-list"
     @scroll="handleScroll"
   >
-    <!-- Loading more indicator -->
-    <div v-if="chatStore.loadingMore" class="load-more-indicator">
-      <span>加载中...</span>
-    </div>
-    <div
-      v-else-if="!chatStore.hasMoreHistory && chatStore.filteredMessages.length > 0"
-      class="end-of-history-marker"
-    >
-      <span>没有更多历史消息了</span>
-    </div>
+    <!-- 简洁模式：Turn 摘要视图 -->
+    <template v-if="chatStore.displayMode === 'concise'">
+      <!-- Loading more (turn history) -->
+      <div v-if="chatStore.loadingMoreTurns" class="load-more-indicator">
+        <span>加载中...</span>
+      </div>
+      <div
+        v-else-if="!chatStore.hasMoreTurns && chatStore.turnSummaries.length > 0"
+        class="end-of-history-marker"
+      >
+        <span>没有更多历史轮次了</span>
+      </div>
 
-    <div v-if="chatStore.filteredMessages.length === 0 && !chatStore.loading" class="empty-state">
-      <div class="empty-icon">💬</div>
-      <div v-if="chatStore.sessionId && !chatStore.connected" class="empty-text">正在自动连接...</div>
-      <div v-else-if="chatStore.sessionId && chatStore.connected" class="empty-text">已连接，等待消息...</div>
-      <div v-else class="empty-text">未设置 session_id。请通过 URL 参数传入。</div>
-    </div>
+      <!-- Empty state -->
+      <div v-if="chatStore.turnSummaries.length === 0 && !chatStore.loading" class="empty-state">
+        <div class="empty-icon">📋</div>
+        <div v-if="chatStore.sessionId && !chatStore.connected" class="empty-text">正在自动连接...</div>
+        <div v-else-if="chatStore.sessionId && chatStore.connected" class="empty-text">暂无轮次数据，请先发送消息</div>
+        <div v-else class="empty-text">未设置 session_id。请通过 URL 参数传入。</div>
+      </div>
 
-    <!-- Message list -->
-    <div v-for="m in chatStore.filteredMessages" :key="m.message_id" class="message-wrapper">
-      <ChatMessageItem :message="m" />
-    </div>
+      <!-- Turn cards -->
+      <div
+        v-for="(turn, index) in chatStore.filteredTurnSummaries"
+        :key="turn.turnId"
+        class="message-wrapper"
+      >
+        <ChatTurnCard :turn="turn" :consecutiveAgent="isConsecutiveAgent(turn, index)" />
+      </div>
 
-    <!-- Redo button -->
-    <div v-if="chatStore.showRedoButton" class="redo-container">
-      <button class="redo-button" @click="chatStore.sendRedo()">
-        ↩️ Redo
-      </button>
-    </div>
+      <!-- Redo button (简洁模式) -->
+      <div v-if="chatStore.showRedoButton" class="redo-container">
+        <button class="redo-button" @click="chatStore.sendRedo()">
+          ↩️ Redo
+        </button>
+      </div>
+    </template>
+
+    <!-- 明细模式：逐条消息视图 -->
+    <template v-else>
+      <!-- Loading more indicator -->
+      <div v-if="chatStore.loadingMore" class="load-more-indicator">
+        <span>加载中...</span>
+      </div>
+      <div
+        v-else-if="!chatStore.hasMoreHistory && chatStore.filteredMessages.length > 0"
+        class="end-of-history-marker"
+      >
+        <span>没有更多历史消息了</span>
+      </div>
+
+      <div v-if="chatStore.filteredMessages.length === 0 && !chatStore.loading" class="empty-state">
+        <div class="empty-icon">💬</div>
+        <div v-if="chatStore.sessionId && !chatStore.connected" class="empty-text">正在自动连接...</div>
+        <div v-else-if="chatStore.sessionId && chatStore.connected" class="empty-text">已连接，等待消息...</div>
+        <div v-else class="empty-text">未设置 session_id。请通过 URL 参数传入。</div>
+      </div>
+
+      <!-- Message list -->
+      <div v-for="m in chatStore.filteredMessages" :key="m.message_id" class="message-wrapper">
+        <ChatMessageItem :message="m" />
+      </div>
+
+      <!-- Redo button -->
+      <div v-if="chatStore.showRedoButton" class="redo-container">
+        <button class="redo-button" @click="chatStore.sendRedo()">
+          ↩️ Redo
+        </button>
+      </div>
+    </template>
   </div>
 </template>
 
@@ -233,4 +330,6 @@ onUnmounted(() => {
 .redo-button:hover {
   background: var(--button-hover-bg);
 }
+
+
 </style>

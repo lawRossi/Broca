@@ -466,6 +466,8 @@ export const useChatStore = defineStore('chat', () => {
           turn.userMessage = String(raw)
         }
       }
+      // 记录最后一条消息 ID（用于撤销定位）
+      _turnLastResponseMsgId.set(turnId, message.message_id)
     } else if (message.message_type === 'tool_call') {
       const toolName = message.data?.tool_name
       if (!toolName) return
@@ -515,6 +517,8 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       turn.status = 'calling_tool'
+      // 记录最后一条消息 ID（用于撤销定位）
+      _turnLastResponseMsgId.set(turnId, message.message_id)
     } else if (message.message_type === 'agent_response') {
       // 累加最终回复；同一 message_id 的 streaming chunk 连续拼接，
       // 不同 message_id（不同 LLM 调用）之间加空行分隔。

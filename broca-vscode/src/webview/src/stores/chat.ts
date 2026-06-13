@@ -3,6 +3,39 @@ import { ref, computed } from 'vue'
 import { postMessage, onMessage, getInitialData } from '../api/vscode'
 import type { Message, RunnerInfo } from '../types'
 
+// ========== 简洁模式类型定义 ==========
+interface ToolCallStat {
+  toolName: string
+  count: number
+}
+
+interface TodoItem {
+  name: string
+  status: 'pending' | 'in_progress' | 'completed'
+}
+
+interface TurnSummary {
+  turnId: string
+  sequenceNumber: number
+  agentId: string
+  agentName: string
+  userMessage: string | null
+  status: 'active' | 'completed' | 'error'
+  currentTool: string | null
+  currentFilePath: string | null
+  currentTodoList: TodoItem[]
+  totalDuration: number
+  totalSteps: number
+  toolCallStats: ToolCallStat[]
+  finalResponse: string
+  reasoningContent: string
+  isActive: boolean
+  startedAt: number
+  createdAt: string
+  /** 该 turn 最后一个非撤销消息的 message_id，用于 turn 级撤销定位 */
+  lastMessageId: string | null
+}
+
 export const useChatStore = defineStore('chat', () => {
   const sessionId = ref(getInitialData()?.sessionId || '')
   const connected = ref(false)
@@ -68,6 +101,18 @@ export const useChatStore = defineStore('chat', () => {
   // Agent orchestration session flags
   const isAgentOrchestration = ref(getInitialData()?.category === 'agent-orchestration')
   const executionId = ref<string | undefined>(getInitialData()?.executionId)
+
+  // ==================== 简洁模式状态 ====================
+  const displayMode = ref<'detail' | 'concise'>('detail')
+  const turnSummaries = ref<TurnSummary[]>([])
+  const turnHistorySkip = ref(0)
+  const hasMoreTurns = ref(true)
+  const loadingMoreTurns = ref(false)
+  const activeTurnIndex = ref(-1)
+  const _turnLastResponseMsgId = ref(new Map<string, string>())
+  const _turnContentMsgId = ref(new Map<string, string>())
+  const _turnSeenToolCallIds = ref(new Set<string>())
+  const durationTimer = ref<ReturnType<typeof setInterval> | null>(null)
 
   // ==================== 完整 Agent 数据 ====================
   interface AgentInfo {
@@ -198,6 +243,11 @@ export const useChatStore = defineStore('chat', () => {
 
   const runnerAlive = computed(() => runnerInfo.value?.status === 'alive')
 
+  // ==================== 简洁模式计算属性 ====================
+  const filteredTurnSummaries = computed(() => {
+    return turnSummaries.value.filter(t => !(t.isActive && t.status === 'error'))
+  })
+
   // ==================== 消息处理 ====================
   // 消息合并池：agent_response 的流式 chunk 按 message_id 收集
   const pendingChunks = ref<Map<string, Message[]>>(new Map())
@@ -294,12 +344,23 @@ export const useChatStore = defineStore('chat', () => {
           runnerActionLoading.value = false
           break
 
+        case 'turnsData':
+          // loadTurnHistory 使用 Promise 方式处理，但如果外部收到 turnsData 也做兜底
+          console.log('[ChatStore] turnsData received:', data.payload)
+          break
+
         case 'error':
           console.error('Extension error:', data.payload.message)
           showError(data.payload.message || '操作失败', 'error')
           break
       }
     })
+
+    // 加载简洁模式偏好，若为简洁模式则同时加载 turn 数据
+    const savedMode = loadDisplayMode(sessionId.value)
+    if (savedMode === 'concise' && sessionId.value) {
+      loadTurnHistory(sessionId.value, false)
+    }
 
     // Notify extension that WebView is ready
     postMessage({ type: 'ready' })
@@ -341,23 +402,43 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
-    // ===== Agent 运行状态更新：在 processMessage 之前处理，因为这些消息类型会被过滤掉 =====
+    // ===== Agent 运行状态更新 + 简洁模式 turn 更新：在 processMessage 之前处理 =====
     if (message.message_type === 'turn_start') {
       const targetAgentId = message.sender_id || message.agent_id || defaultAgentId.value
       updateAgentStatus(targetAgentId, 'running')
+      // 简洁模式：创建新的 turn summary
+      handleTurnStartMessage(message)
       return  // turn_start 不需要显示在消息列表中
     }
 
     if (message.message_type === 'turn_end') {
       const targetAgentId = message.sender_id || message.agent_id || defaultAgentId.value
       updateAgentStatus(targetAgentId, 'idle')
+      // 简洁模式：标记 turn 完成
+      handleTurnEndMessage(message)
       return  // turn_end 不需要显示在消息列表中
+    }
+
+    // 简洁模式：step_start / step_end 在 processMessage 过滤前更新 turn 摘���，然后提前返回
+    if (message.message_type === 'step_start' || message.message_type === 'step_end') {
+      updateTurnSummaryOnStepEvent(message)
+      return  // 不显示在消息列表中
     }
 
     // agent_response 和 tool_call 也更新 Agent 状态为 running
     if (message.message_type === 'agent_response' || message.message_type === 'tool_call') {
       const targetAgentId = message.sender_id || message.agent_id || defaultAgentId.value
       updateAgentStatus(targetAgentId, 'running')
+    }
+
+    // 始终更新 turn 摘要（无论当前 displayMode），确保切换模式时数据已就绪
+    if (
+      message.message_type === 'agent_response' ||
+      message.message_type === 'user_message' ||
+      message.message_type === 'tool_call' ||
+      message.message_type === 'reasoning_content'
+    ) {
+      updateTurnSummaryOnMessage(message)
     }
 
     // Process/filter message
@@ -383,11 +464,15 @@ export const useChatStore = defineStore('chat', () => {
         showRedoButton.value = true
         redoReceiverId.value = message.sender_id
         loadHistory(0, 50)
+        // 简洁模式：重新加载 turn 历史，刷新被撤销的 turn
+        if (sessionId.value) loadTurnHistory(sessionId.value, false)
         return
       } else if (message.data?.command === 'redo') {
         showRedoButton.value = false
         redoReceiverId.value = undefined
         loadHistory(0, 50)
+        // 简洁模式：重新加载 turn 历史
+        if (sessionId.value) loadTurnHistory(sessionId.value, false)
         return
       }
     }
@@ -556,6 +641,22 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
 
+    // 用户消息按 message_id 去重：agent 开始处理时会重新广播用户消息
+    if (message.message_type === 'user_message') {
+      const existingUserMsg = messages.value.findIndex(
+        m => m.message_type === 'user_message' && m.message_id === message.message_id
+      )
+      if (existingUserMsg !== -1) {
+        // 更新 data（保留位置不变）
+        messages.value[existingUserMsg] = {
+          ...messages.value[existingUserMsg],
+          data: { ...messages.value[existingUserMsg].data, ...message.data },
+          timestamp: message.timestamp,
+        }
+        return
+      }
+    }
+
     messages.value.push(message)
     getMessageState(message.message_id)
   }
@@ -676,6 +777,395 @@ export const useChatStore = defineStore('chat', () => {
     })
   }
 
+  // ==================== 简洁模式方法 ====================
+
+  function loadDisplayMode(sessionId: string): 'detail' | 'concise' {
+    try {
+      const saved = sessionStorage.getItem(`broca_display_mode_${sessionId}`)
+      if (saved === 'detail' || saved === 'concise') {
+        displayMode.value = saved
+        return saved
+      }
+    } catch {
+      // sessionStorage 可能在隐私模式下不可用
+    }
+    displayMode.value = 'detail'
+    return 'detail'
+  }
+
+  function saveDisplayMode(sessionId: string, mode: 'detail' | 'concise') {
+    try {
+      sessionStorage.setItem(`broca_display_mode_${sessionId}`, mode)
+    } catch {
+      // sessionStorage 不可用时忽略
+    }
+  }
+
+  function toggleDisplayMode() {
+    const newMode = displayMode.value === 'detail' ? 'concise' : 'detail'
+    displayMode.value = newMode
+    saveDisplayMode(sessionId.value, newMode)
+
+    if (newMode === 'concise') {
+      // 切换到简洁模式：如有活跃 turn，启动计时器
+      if (turnSummaries.value.some(t => t.isActive)) {
+        startDurationTimer()
+      }
+      // 首次加载 turn 数据
+      if (turnSummaries.value.length === 0) {
+        loadTurnHistory(sessionId.value, false)
+      }
+    } else {
+      // 切换到明细模式：停止计时器
+      stopDurationTimer()
+    }
+  }
+
+  async function loadTurnHistory(sessionId: string, isLoadMore: boolean) {
+    if (isLoadMore) {
+      if (loadingMoreTurns.value || !hasMoreTurns.value) return
+      loadingMoreTurns.value = true
+    }
+
+    const skip = isLoadMore ? turnHistorySkip.value : 0
+    const limit = 3
+
+    // 使用 Promise 包装 postMessage 请求，等待 extension host 响应
+    const response = await new Promise<any>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup()
+        reject(new Error('fetchTurns timeout'))
+      }, 15000)
+
+      const handler = (data: any) => {
+        if (data.type === 'turnsData' && data.payload) {
+          cleanup()
+          resolve(data.payload)
+        } else if (data.type === 'error') {
+          cleanup()
+          reject(new Error(data.payload?.message || 'fetchTurns failed'))
+        }
+      }
+
+      const cleanup = () => {
+        clearTimeout(timeout)
+        unsub()
+      }
+
+      // Register one-time handler
+      const unsub = onMessage(handler)
+
+      postMessage({
+        type: 'fetchTurns',
+        payload: { sessionId, skip, limit },
+      })
+    })
+
+    try {
+      const { turns, total, skip: responseSkip } = response
+
+      const turnList: TurnSummary[] = (turns || []).map((t: any) => ({
+        turnId: t.turn_id || '',
+        sequenceNumber: t.sequence_number || 0,
+        agentId: t.agent_id || '',
+        agentName: t.agent_name || t.agent_id || '',
+        userMessage: t.user_message || null,
+        status: t.status === 'error' ? 'error' : t.status === 'active' ? 'active' : 'completed',
+        currentTool: t.current_tool || null,
+        currentFilePath: t.current_file_path || null,
+        currentTodoList: (t.current_todo_list || []).map((item: any) => ({
+          name: item.name || '',
+          status: item.status || 'pending',
+        })),
+        totalDuration: t.total_duration || 0,
+        totalSteps: t.total_steps || 0,
+        toolCallStats: (t.tool_call_stats || []).map((stat: any) => ({
+          toolName: stat.tool_name || '',
+          count: stat.count || 0,
+        })),
+        finalResponse: t.final_response || '',
+        reasoningContent: t.reasoning_content || '',
+        isActive: t.is_active || false,
+        startedAt: t.started_at ? new Date(t.started_at).getTime() : Date.now(),
+        createdAt: t.created_at || new Date().toISOString(),
+        lastMessageId: t.last_message_id || null,
+      }))
+
+      if (skip === 0) {
+        // 初始加载时，保留当前活跃 turn（正在通过 socket 实时更新），避免覆盖
+        const activeTurns = turnSummaries.value.filter(t => t.isActive)
+        // 合并 API 数据和活跃 turn，API 数据中已有的 turnId 会被活跃版本替换
+        const mergedTurns = [...turnList]
+        const existingIds = new Set(mergedTurns.map(t => t.turnId))
+        for (const active of activeTurns) {
+          if (existingIds.has(active.turnId)) {
+            // 替换 API 中的对应 turn 为活跃版本
+            const idx = mergedTurns.findIndex(t => t.turnId === active.turnId)
+            if (idx !== -1) mergedTurns[idx] = active
+          } else {
+            // API 中没有此活跃 turn（可能是最新的），追加到末尾
+            mergedTurns.push(active)
+          }
+        }
+        turnSummaries.value = mergedTurns
+      } else {
+        turnSummaries.value = [...turnList, ...turnSummaries.value]
+      }
+
+      turnHistorySkip.value = responseSkip + turnList.length
+      hasMoreTurns.value = turnHistorySkip.value < (total || 0)
+
+      // 降级检测：无 turn 但有消息时自动切回 detail
+      if (turnList.length === 0 && messages.value.length > 0) {
+        displayMode.value = 'detail'
+      }
+    } catch (err: any) {
+      showError(err.message || '加载 turn 历史失败', 'error')
+    } finally {
+      loadingMoreTurns.value = false
+    }
+  }
+
+  function startDurationTimer() {
+    stopDurationTimer()
+    durationTimer.value = setInterval(() => {
+      const activeTurn = turnSummaries.value.find(t => t.isActive)
+      if (activeTurn) {
+        activeTurn.totalDuration = Math.floor((Date.now() - activeTurn.startedAt) / 1000)
+      }
+    }, 500)
+  }
+
+  function stopDurationTimer() {
+    if (durationTimer.value !== null) {
+      clearInterval(durationTimer.value)
+      durationTimer.value = null
+    }
+  }
+
+  function resetTurnData() {
+    displayMode.value = 'detail'
+    turnSummaries.value = []
+    turnHistorySkip.value = 0
+    hasMoreTurns.value = true
+    loadingMoreTurns.value = false
+    activeTurnIndex.value = -1
+    _turnLastResponseMsgId.value = new Map()
+    _turnContentMsgId.value = new Map()
+    _turnSeenToolCallIds.value = new Set()
+    stopDurationTimer()
+  }
+
+  /**
+   * 查找消息所属的 turnId
+   * 
+   * 与 web 版一致：优先用消息自带的 turn_id，但需要验证该 turn 确实存在；
+   * 若不存在则回退到活跃 turn（解决 turn_start 可能无 turn_id 导致 ID 不一致的问题）。
+   */
+  function _turnIdForMessage(message: Message): string | null {
+    // 1. 尝试消息自带的 turn_id，但需验证该 turn 确实存在
+    const msgTurnId = message.turn_id || message.data?.turn_id
+    if (msgTurnId && turnSummaries.value.some(t => t.turnId === msgTurnId)) {
+      return msgTurnId
+    }
+    // 2. 回退到活跃 turn（turn_start 可能无 turn_id 时，后续消息用此兜底）
+    const activeTurn = turnSummaries.value.find(t => t.isActive)
+    if (activeTurn) return activeTurn.turnId
+    // 3. 仍无匹配，尝试通过 timestamp 找最近的 completed turn
+    if (!message.timestamp) return null
+    const msgTime = new Date(message.timestamp).getTime()
+    const recentTurn = [...turnSummaries.value]
+      .reverse()
+      .find(t => !t.isActive && Math.abs(new Date(t.createdAt).getTime() - msgTime) < 60000)
+    return recentTurn?.turnId || null
+  }
+
+  function handleTurnStartMessage(message: Message) {
+    const turnId = message.turn_id || message.data?.turn_id || message.message_id || `turn_${Date.now()}`
+    const agentId = message.sender_id || message.agent_id || defaultAgentId.value || ''
+
+    // 幂等检查：防止重复创建
+    if (turnSummaries.value.some(t => t.turnId === turnId)) return
+
+    const summary: TurnSummary = {
+      turnId,
+      sequenceNumber: turnSummaries.value.length + 1,
+      agentId,
+      agentName: agentNames.value[agentId] || agentId,
+      userMessage: null,
+      status: 'active',
+      currentTool: null,
+      currentFilePath: null,
+      currentTodoList: [],
+      totalDuration: 0,
+      totalSteps: 0,
+      toolCallStats: [],
+      finalResponse: '',
+      reasoningContent: '',
+      isActive: true,
+      startedAt: Date.now(),
+      createdAt: message.timestamp || new Date().toISOString(),
+      lastMessageId: null,
+    }
+
+    turnSummaries.value.push(summary)
+    activeTurnIndex.value = turnSummaries.value.length - 1
+    startDurationTimer()
+  }
+
+  function handleTurnEndMessage(message: Message) {
+    const turnId = message.turn_id || ''
+    const turn = turnSummaries.value.find(t => t.turnId === turnId) ||
+                 turnSummaries.value.find(t => t.isActive)
+
+    if (!turn) return
+
+    turn.isActive = false
+    turn.status = message.data?.error ? 'error' : 'completed'
+    stopDurationTimer()
+
+    // 如果有 lastMessageId，从 _turnLastResponseMsgId 更新
+    if (turn.lastMessageId) {
+      _turnLastResponseMsgId.value.set(turn.turnId, turn.lastMessageId)
+    }
+
+    activeTurnIndex.value = -1
+  }
+
+  function updateTurnSummaryOnStepEvent(message: Message) {
+    const turnId = _turnIdForMessage(message)
+    if (!turnId) return
+    const turn = turnSummaries.value.find(t => t.turnId === turnId)
+    if (!turn) return
+
+    if (message.message_type === 'step_start') {
+      turn.totalSteps++
+      // 注意：不在此设置 currentTool/currentFilePath/currentTodoList，
+      // 这些由 tool_call 消息在 updateTurnSummaryOnMessage 中设置（与 web 版一致）
+    }
+  }
+
+  function updateTurnSummaryOnMessage(message: Message) {
+    const turnId = _turnIdForMessage(message)
+    if (!turnId) return
+    const turn = turnSummaries.value.find(t => t.turnId === turnId)
+    if (!turn) return
+
+    switch (message.message_type) {
+      case 'user_message':
+        if (!turn.userMessage) {
+          // 后端回显的 user_message 可能 JSON 包裹，与 web 版一致处理
+          const raw = message.data?.content
+          if (raw) {
+            try {
+              const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+              turn.userMessage = parsed?.content || String(parsed)
+            } catch {
+              turn.userMessage = String(raw)
+            }
+          }
+        }
+        turn.lastMessageId = message.message_id
+        break
+
+      case 'tool_call': {
+        const toolName = message.data?.tool_name
+        if (!toolName) break
+
+        // 更新当前工具
+        turn.currentTool = toolName
+
+        // 更新工具调用统计（与 web 版一致处理）
+        const existing = turn.toolCallStats.find(s => s.toolName === toolName)
+        if (existing) {
+          existing.count++
+        } else {
+          turn.toolCallStats.push({ toolName, count: 1 })
+        }
+
+        // 提取文件路径（read_file/edit_file/write_file）
+        if (['read_file', 'edit_file', 'write_file'].includes(toolName)) {
+          const args = message.data?.arguments
+          if (args) {
+            try {
+              const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args
+              turn.currentFilePath = parsedArgs.path || null
+            } catch {}
+          }
+        }
+
+        // 提取 TODO 列表（todo_management）
+        if (toolName === 'todo_management') {
+          const args = message.data?.arguments
+          if (args) {
+            try {
+              const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args
+              if (parsedArgs.todos) {
+                turn.currentTodoList = parsedArgs.todos
+              }
+            } catch {}
+          }
+        }
+
+        turn.lastMessageId = message.message_id
+        break
+      }
+
+      case 'agent_response': {
+        // 累加最终回复（与 web 版一致处理 streaming chunks）：
+        // 同一 message_id 的 streaming chunk 连续拼接，
+        // 不同 message_id（不同 LLM 调用）之间加空行分隔。
+        const content = message.data?.content
+        if (content) {
+          try {
+            const parsed = JSON.parse(content)
+            if (parsed.content || parsed.reasoning_content) {
+              const lastMsgId = _turnLastResponseMsgId.value.get(turn.turnId)
+              const isNewResponse = lastMsgId !== message.message_id
+
+              // finalResponse：累加拼接
+              if (parsed.content) {
+                const prevContentMsgId = _turnContentMsgId.value.get(turn.turnId)
+                if (prevContentMsgId !== message.message_id && turn.finalResponse.length > 0) {
+                  turn.finalResponse += '\n\n'
+                }
+                turn.finalResponse += parsed.content
+                _turnContentMsgId.value.set(turn.turnId, message.message_id)
+              }
+
+              // reasoningContent：同一 message_id 内 chunks 累加；
+              // 一旦收到回复内容（content），清空 reasoningContent。
+              if (parsed.reasoning_content) {
+                if (isNewResponse) {
+                  turn.reasoningContent = parsed.reasoning_content
+                } else {
+                  turn.reasoningContent += parsed.reasoning_content
+                }
+              }
+              if (parsed.content && turn.reasoningContent.length > 0) {
+                turn.reasoningContent = ''
+              }
+
+              _turnLastResponseMsgId.value.set(turn.turnId, message.message_id)
+            }
+          } catch {
+            // 非 JSON 格式，直接拼接
+            turn.finalResponse += content
+          }
+        }
+        turn.lastMessageId = message.message_id
+        break
+      }
+
+      case 'reasoning_content':
+        if (message.data?.content) {
+          turn.reasoningContent += message.data.content
+        }
+        turn.lastMessageId = message.message_id
+        break
+    }
+  }
+
   return {
     sessionId,
     connected,
@@ -732,5 +1222,25 @@ export const useChatStore = defineStore('chat', () => {
     sendRedo,
     sendUndo,
     sendAbort,
+    // ==================== 简洁模式状态 ====================
+    displayMode,
+    turnSummaries,
+    filteredTurnSummaries,
+    turnHistorySkip,
+    hasMoreTurns,
+    loadingMoreTurns,
+    activeTurnIndex,
+    // ==================== 简洁模式方法 ====================
+    loadDisplayMode,
+    saveDisplayMode,
+    toggleDisplayMode,
+    loadTurnHistory,
+    startDurationTimer,
+    stopDurationTimer,
+    resetTurnData,
+    handleTurnStartMessage,
+    handleTurnEndMessage,
+    updateTurnSummaryOnStepEvent,
+    updateTurnSummaryOnMessage,
   }
 })

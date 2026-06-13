@@ -1,34 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { ref } from 'vue'
 import { useChatStore } from '../stores/chat'
 import { postMessage } from '../api/vscode'
 
 const chatStore = useChatStore()
 
 const refreshing = ref(false)
-
-const statusText = computed(() => {
-  const info = chatStore.runnerInfo
-  if (!info) return 'Checking...'
-  switch (info.status) {
-    case 'alive': return 'Running'
-    case 'starting': return 'Starting...'
-    case 'error': return `Error`
-    case 'dead': return 'Stopped'
-    default: return info.status
-  }
-})
-
-const statusColor = computed(() => {
-  const info = chatStore.runnerInfo
-  if (!info) return 'var(--warning-fg)'
-  switch (info.status) {
-    case 'alive': return 'var(--success-fg)'
-    case 'starting': return 'var(--warning-fg)'
-    case 'error': return 'var(--error-fg)'
-    default: return 'var(--text-secondary)'
-  }
-})
 
 function handleRefresh() {
   if (refreshing.value) return
@@ -52,12 +29,15 @@ function handleRefresh() {
       </span>
     </div>
     <div class="status-right">
-      <!-- Runner status -->
-      <span
-        class="runner-dot"
-        :style="{ background: statusColor }"
-      ></span>
-      <span class="status-label">{{ statusText }}</span>
+      <!-- Mode toggle -->
+      <button
+        class="mode-toggle-btn"
+        :class="{ active: chatStore.displayMode === 'concise' }"
+        :title="chatStore.displayMode === 'concise' ? '切换到明细模式' : '切换到简洁模式'"
+        @click="chatStore.toggleDisplayMode()"
+      >
+        {{ chatStore.displayMode === 'concise' ? '简洁' : '明细' }}
+      </button>
       <!-- Refresh button -->
       <button
         class="refresh-btn"
@@ -89,8 +69,7 @@ function handleRefresh() {
   gap: 4px;
 }
 
-.connection-dot,
-.runner-dot {
+.connection-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -99,6 +78,31 @@ function handleRefresh() {
 
 .status-label {
   color: var(--text-secondary);
+}
+
+.mode-toggle-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 12px;
+  padding: 0 4px;
+  border-radius: 3px;
+  line-height: 1.5;
+  margin-left: 4px;
+  transition: all 0.2s;
+}
+
+.mode-toggle-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
+}
+
+.mode-toggle-btn.active {
+  background: rgba(59, 130, 246, 0.1);
+  border-color: var(--focus-border, #007acc);
+  color: var(--vscode-textLink-foreground, #006ab1);
 }
 
 .refresh-btn {
@@ -110,7 +114,7 @@ function handleRefresh() {
   padding: 2px 4px;
   border-radius: 3px;
   line-height: 1;
-  margin-left: 8px;
+  margin-left: 4px;
   transition: transform 0.2s;
 }
 

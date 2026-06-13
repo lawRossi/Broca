@@ -811,6 +811,11 @@ export class ChatWebViewManager {
       case 'fetchCommands':
         await this.handleFetchCommands(panel)
         break
+
+      // ==================== Turn summary (concise mode) handlers ====================
+      case 'fetchTurns':
+        await this.handleFetchTurns(panel, message.payload)
+        break
     }
   }
 
@@ -1098,6 +1103,17 @@ export class ChatWebViewManager {
       } as ExtensionToWebView)
     } catch (error: any) {
       console.error('Failed to fetch agents:', error)
+    }
+  }
+
+  private async handleFetchTurns(panel: vscode.WebviewPanel, payload: { sessionId: string; skip: number; limit: number }) {
+    try {
+      const { sessionId, skip, limit } = payload
+      const response = await this.apiClient.getSessionTurns(sessionId, skip, limit)
+      this.postToPanel(panel, { type: 'turnsData', payload: response } as ExtensionToWebView)
+    } catch (error: any) {
+      console.error('Failed to fetch turns:', error)
+      this.postToPanel(panel, { type: 'error', payload: { message: error.message || 'Failed to fetch turns' } } as ExtensionToWebView)
     }
   }
 

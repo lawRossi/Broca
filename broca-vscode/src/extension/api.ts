@@ -11,6 +11,7 @@ import type {
   AgentConfig,
   SessionStats,
   MessagesResponse,
+  TurnsResponse,
   LLMProvider,
   LLMModel,
   CrewExecution,
@@ -164,6 +165,15 @@ export class ApiClient {
       params.execution_id = executionId
     }
     const response = await this.client.get(`/session/${sessionId}/messages`, { params })
+    return response.data
+  }
+
+  // ==================== Turns (Concise Mode) API ====================
+
+  async getSessionTurns(sessionId: string, skip: number = 0, limit: number = 3): Promise<TurnsResponse> {
+    const response = await this.client.get(`/session/${sessionId}/turns`, {
+      params: { skip, limit },
+    })
     return response.data
   }
 

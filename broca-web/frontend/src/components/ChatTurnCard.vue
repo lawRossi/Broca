@@ -263,14 +263,6 @@ const handleUndo = async () => {
           <span class="text-gray-400 w-16 flex-shrink-0">🔄 状态</span>
           <span :class="statusColorClass">{{ statusText }}</span>
         </div>
-        <div v-if="currentToolText" class="flex items-center gap-2">
-          <span class="text-gray-400 w-16 flex-shrink-0">🔧 工具</span>
-          <span class="text-gray-700">{{ currentToolText }}</span>
-        </div>
-        <div v-if="showFilePath" class="flex items-center gap-2">
-          <span class="text-gray-400 w-16 flex-shrink-0">📁 文件</span>
-          <span class="text-gray-700 truncate max-w-full" :title="turn.currentFilePath!">{{ turn.currentFilePath }}</span>
-        </div>
         <div v-if="showTodoList" class="pt-1">
           <div class="flex items-center gap-2 mb-1">
             <span class="text-gray-400 w-16 flex-shrink-0">📝 任务</span>
@@ -310,8 +302,19 @@ const handleUndo = async () => {
       </div>
     </div>
 
-    <!-- 推理内容（可折叠，放在回复之后，样式与明细模式一致） -->
-    <div v-if="hasReasoning" class="pt-2">
+    <!-- 当前调用 / 推理内容 -->
+    <!-- 调用工具时：展示当前调用工具 + 漏斗图标，不展示思考 -->
+    <div v-if="currentToolText && simplifiedStatus === 'active'" class="pt-2">
+      <div class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
+        style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2);">
+        <span class="text-sm animate-pulse">⏳</span>
+        <span class="text-gray-500 font-medium">当前调用</span>
+        <span class="text-gray-700 font-semibold">{{ currentToolText }}</span>
+        <span v-if="showFilePath" class="text-gray-400 ml-1 truncate" style="max-width: 400px;">{{ turn.currentFilePath }}</span>
+      </div>
+    </div>
+    <!-- 未调用工具时：展示思考（可折叠） -->
+    <div v-else-if="hasReasoning" class="pt-2">
       <button
         class="flex items-center gap-1 text-xs !text-amber-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
         @click="showReasoning = !showReasoning"
