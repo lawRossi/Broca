@@ -199,47 +199,46 @@ class TestMessageListNoRegression:
 
         return TestApp()
 
-    async def test_render_messages_multiple_times(self, app):
-        """Multiple set_messages calls should work (regression: #message-area destroyed by remove_children)."""
+    async def test_set_turn_summaries_multiple_times(self, app):
+        """Multiple set_turn_summaries calls should work (regression: turn-scroll destroyed by remove_children)."""
+        from broca_tui.stores.chat_store import TurnSummary
+
         async with app.run_test() as pilot:
             await pilot.pause()
 
             ml = app.query_one("#test-ml", MessageList)
+
+            t1 = TurnSummary(turn_id="t1", sequence_number=1, agent_id="a1", agent_name="A", user_message="Hello")
+            t2 = TurnSummary(turn_id="t2", sequence_number=2, agent_id="a1", agent_name="A", user_message="World")
 
             # First call
-            ml.set_messages([{"role": "user", "content": "Hello"}])
+            ml.set_turn_summaries([t1])
             await pilot.pause()
 
-            # Second call (this was crashing because #message-area was removed)
-            ml.set_messages([{"role": "user", "content": "World"}])
+            # Second call (this was crashing because turn-scroll was removed)
+            ml.set_turn_summaries([t2])
             await pilot.pause()
 
-            # Cycle: empty → messages → empty
-            ml.set_messages([])
+            # Cycle: empty → turns → empty
+            ml.set_turn_summaries([])
             await pilot.pause()
-            ml.set_messages([{"role": "user", "content": "Final"}])
+            ml.set_turn_summaries([t1, t2])
             await pilot.pause()
 
-    async def test_add_message_after_set_messages(self, app):
-        """add_message after set_messages should work."""
+    async def test_add_turn_after_set_turns(self, app):
+        """add_turn_summary after set_turn_summaries should work."""
+        from broca_tui.stores.chat_store import TurnSummary
+
         async with app.run_test() as pilot:
             await pilot.pause()
             ml = app.query_one("#test-ml", MessageList)
 
-            ml.set_messages([{"role": "user", "content": "Hello"}])
-            await pilot.pause()
-            ml.add_message({"role": "assistant", "content": "World"})
-            await pilot.pause()
+            t1 = TurnSummary(turn_id="t1", sequence_number=1, agent_id="a1", agent_name="A", user_message="Hello")
+            t2 = TurnSummary(turn_id="t2", sequence_number=2, agent_id="a1", agent_name="A", user_message="World")
 
-    async def test_append_front_after_set_messages(self, app):
-        """append_messages_front after set_messages should work."""
-        async with app.run_test() as pilot:
+            ml.set_turn_summaries([t1])
             await pilot.pause()
-            ml = app.query_one("#test-ml", MessageList)
-
-            ml.set_messages([{"role": "user", "content": "Hello"}])
-            await pilot.pause()
-            ml.append_messages_front([{"role": "system", "content": "Start"}])
+            ml.add_turn_summary(t2)
             await pilot.pause()
 
     async def test_watch_methods_during_compose(self, app):

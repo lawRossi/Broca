@@ -19,10 +19,9 @@ from broca_tui.app import BrocaTUIApp
 from broca_tui.screens.session_list import SessionListScreen, CreateSessionDialog, DeleteConfirmDialog
 from broca_tui.screens.chat import ChatScreen
 from broca_tui.screens.crew_executions import CrewExecutionsScreen, SubmitExecutionDialog
-from broca_tui.widgets.message_item import MessageItem, _format_json, _parse_arguments
 from broca_tui.widgets.chat_input import ChatInput
 from broca_tui.stores.session_store import SessionStore
-from broca_tui.stores.chat_store import ChatStore
+from broca_tui.stores.chat_store import ChatStore, TurnSummary
 from broca_tui.stores.agent_store import AgentStore
 from broca_tui.stores.crew_store import CrewStore
 
@@ -130,162 +129,94 @@ class TestSessionCrudFlow:
 
 
 # ============================================================================
-# Integration: Message display pipeline
+# Integration: Turn display pipeline (简洁模式)
 # ============================================================================
 
-class TestMessagePipeline:
-    """Test the full message display pipeline: raw message → Store → Widget."""
+class TestTurnCardPipeline:
+    """Test the full turn display pipeline: chat_store → TurnCard rendering."""
 
-    def test_user_message_pipeline(self):
-        """Test user message flows through to MessageItem rendering."""
-        raw_message = {
-            "message_id": "msg-1",
-            "message_type": "user_message",
-            "role": "user",
-            "data": {"content": "hello"},
+    def test_turn_summary_creation(self):
+        """Test TurnSummary creation from raw turn data."""
+        turn_data = {
+            "turn_id": "turn-1",
+            "sequence_number": 1,
+            "agent_id": "agent-1",
+            "agent_name": "Assistant",
+            "user_message": "Hello!",
+            "total_steps": 5,
+            "tool_call_stats": [{"toolName": "read_file", "count": 2}],
+            "current_file_path": "/tmp/test.txt",
+            "final_response": "Here is the result.",
+            "duration_seconds": 12.5,
+            "last_message_id": "msg-5",
+            "is_reverted": False,
+            "created_at": "2024-01-01T00:00:00",
         }
 
-        # Store accepts it
-        store = ChatStore()
-        store._add_message(raw_message)
-        assert len(store.messages) == 1
+        summary = TurnSummary(
+            turn_id=turn_data["turn_id"],
+            sequence_number=turn_data["sequence_number"],
+            agent_id=turn_data["agent_id"],
+            agent_name=turn_data["agent_name"],
+            user_message=turn_data["user_message"],
+            status="completed",
+            current_tool="read_file",
+            current_file_path=turn_data["current_file_path"],
+            current_todo_list=[],
+            total_duration=turn_data["duration_seconds"],
+            total_steps=turn_data["total_steps"],
+            tool_call_stats=turn_data["tool_call_stats"],
+            final_response=turn_data["final_response"],
+            is_active=False,
+            started_at=0,
+            created_at=turn_data["created_at"],
+            last_message_id=turn_data["last_message_id"],
+        )
 
-        # MessageItem can render it
-        item = MessageItem(raw_message)
-        border = item._get_border_class("user_message", "user")
-        assert border == "msg-user"
-        icon = MessageItem._get_icon("user_message", {})
-        assert icon == "👤"
+        assert summary.turn_id == "turn-1"
+        assert summary.agent_name == "Assistant"
+        assert summary.user_message == "Hello!"
+        assert summary.total_steps == 5
+        assert summary.final_response == "Here is the result."
 
-    def test_agent_response_pipeline(self):
-        """Test agent response flows through to MessageItem rendering."""
-        raw_message = {
-            "message_id": "msg-2",
-            "message_type": "agent_response",
-            "role": "assistant",
-            "data": {"content": "Hello! How can I help?"},
-        }
+    def test_turn_summary_real_time_creation(self):
+        """Test TurnSummary creation from real-time events."""
+        from broca_tui.stores.chat_store import TurnSummary
 
-        store = ChatStore()
-        store._add_message(raw_message)
-        assert len(store.messages) == 1
+        # Simulate what create_turn_summary does in ChatStore
+        import time
+        summary = TurnSummary(
+            turn_id="live-turn-1",
+            sequence_number=1,
+            agent_id="agent-1",
+            agent_name="Assistant",
+            is_active=True,
+            status="active",
+            started_at=time.time() * 1000,
+        )
 
-        item = MessageItem(raw_message)
-        border = item._get_border_class("agent_response", "assistant")
-        assert border == "msg-agent"
-        icon = MessageItem._get_icon("agent_response", {})
-        assert icon == "🤖"
+        assert summary.is_active is True
+        assert summary.status == "active"
+        assert summary.total_steps == 0
+        assert summary.final_response == ""
 
-    def test_tool_call_pipeline(self):
-        """Test tool call flows through to MessageItem rendering."""
-        raw_message = {
-            "message_id": "msg-3",
-            "message_type": "tool_call",
-            "data": {
-                "tool_name": "read_file",
-                "arguments": {"path": "/tmp/test.txt"},
-                "tool_call_id": "tc-1",
-            },
-        }
+    def test_turn_card_status_mapping_for_completed_turn(self):
+        """Completed turn maps to 'completed' status in TurnCard."""
+        from broca_tui.stores.chat_store import TurnSummary
+        from broca_tui.widgets.turn_card import TurnCard
 
-        store = ChatStore()
-        store._add_message(raw_message)
-        assert len(store.messages) == 1
+        summary = TurnSummary(
+            turn_id="completed-turn",
+            sequence_number=2,
+            agent_id="agent-1",
+            agent_name="Assistant",
+            status="completed",
+            is_active=False,
+        )
 
-        item = MessageItem(raw_message)
-        border = item._get_border_class("tool_call", "tool")
-        assert border == "msg-tool"
-        icon = MessageItem._get_icon("tool_call", {})
-        assert icon == "🔧⏳"
-
-    def test_tool_call_with_result_pipeline(self):
-        """Test tool call with result merges correctly."""
-        # Two messages with same tool_call_id should merge
-        msg_start = {
-            "message_id": "msg-4",
-            "message_type": "tool_call",
-            "data": {
-                "tool_name": "read_file",
-                "arguments": {"path": "/tmp/test.txt"},
-                "tool_call_id": "tc-2",
-            },
-        }
-        msg_result = {
-            "message_id": "msg-4",
-            "message_type": "tool_call",
-            "data": {
-                "tool_call_id": "tc-2",
-                "result": "file content",
-                "status": True,
-            },
-        }
-
-        store = ChatStore()
-        store._add_message(msg_start)
-        assert len(store.messages) == 1
-        assert "result" not in store.messages[0]["data"]
-
-        store._add_message(msg_result)
-        assert len(store.messages) == 1  # merged, not duplicated
-        assert store.messages[0]["data"]["result"] == "file content"
-        assert store.messages[0]["data"]["status"] is True
-        icon = MessageItem._get_icon("tool_call", store.messages[0]["data"])
-        assert icon == "🔧✅"
-
-    def test_edit_file_pipeline(self):
-        """Test edit_file diff rendering pipeline."""
-        msg = {
-            "message_id": "msg-5",
-            "message_type": "tool_call",
-            "data": {
-                "tool_name": "edit_file",
-                "arguments": {
-                    "path": "/tmp/test.py",
-                    "old_text": "hello world",
-                    "new_text": "hello there",
-                },
-                "tool_call_id": "tc-3",
-            },
-        }
-
-        # Parse arguments correctly
-        args = _parse_arguments(msg["data"]["arguments"])
-        assert args["path"] == "/tmp/test.py"
-        assert args["old_text"] == "hello world"
-        assert args["new_text"] == "hello there"
-
-        # Generate diff
-        import difflib
-        diff = list(difflib.unified_diff(
-            args["old_text"].splitlines(keepends=True),
-            args["new_text"].splitlines(keepends=True),
-        ))
-        assert len(diff) >= 4
-
-    def test_agent_chunk_merging(self):
-        """Test that agent response chunks are merged correctly."""
-        import json
-
-        store = ChatStore()
-        chunks = [
-            {
-                "message_id": "msg-stream",
-                "message_type": "agent_response",
-                "data": {"content": json.dumps({"content": "Hello ", "reasoning_content": "", "index": 0})},
-            },
-            {
-                "message_id": "msg-stream",
-                "message_type": "agent_response",
-                "data": {"content": json.dumps({"content": "World!", "reasoning_content": "", "index": 1})},
-            },
-        ]
-
-        for chunk in chunks:
-            store._add_message(chunk)
-
-        assert len(store.messages) == 1  # merged
-        merged = json.loads(store.messages[0]["data"]["content"])
-        assert merged["content"] == "Hello World!"
+        card = TurnCard(summary)
+        assert card._get_simplified_status() == "completed"
+        assert card._get_status_text() == "已完成"
 
 
 # ============================================================================
@@ -300,23 +231,25 @@ class TestChatScreenStoreIntegration:
         screen = ChatScreen(session_id="test-session")
         assert screen._chat_store is not None
         assert screen._agent_store is not None
-        assert screen._last_message_count == -1  # -1 ensures first render always fires
+        assert screen._last_turn_count == -1  # -1 ensures first render always fires
 
     def test_chat_screen_with_execution_filter(self):
         """Test ChatScreen with execution filter."""
         screen = ChatScreen(session_id="test-session", execution_id="exec-1")
         assert screen._execution_id == "exec-1"
 
-    def test_message_throttle_logic(self):
-        """Test message count throttle prevents unnecessary updates."""
+    def test_turn_throttle_logic(self):
+        """Test turn count throttle prevents unnecessary updates."""
         screen = ChatScreen(session_id="test-session")
-        assert screen._last_message_count == -1  # -1 ensures first render always fires
+        assert screen._last_turn_count == -1  # -1 ensures first render always fires
 
-        # Simulate adding messages to store
-        msg = {"message_id": "m1", "data": {}}
-        screen._chat_store.messages = [msg]
+        # Simulate adding a turn
+        from broca_tui.stores.chat_store import TurnSummary
+        screen._chat_store.turn_summaries = [
+            TurnSummary(turn_id="t1", sequence_number=1, agent_id="a1", agent_name="Agent")
+        ]
         # Throttle should detect count changed: 0 → 1
-        assert len(screen._chat_store.messages) != screen._last_message_count
+        assert len(screen._chat_store.turn_summaries) != screen._last_turn_count
 
 
 # ============================================================================

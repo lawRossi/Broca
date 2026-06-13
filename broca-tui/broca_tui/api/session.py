@@ -121,6 +121,27 @@ class SessionAPI:
         """Get session statistics."""
         return await self._client.get(f"/session/{session_id}/stats")
 
+    async def get_session_turns(
+        self,
+        session_id: str,
+        skip: int = 0,
+        limit: int = 20,
+    ) -> Dict[str, Any]:
+        """获取会话的 turn 摘要列表（简洁模式使用）。
+
+        Args:
+            session_id: Session ID
+            skip: Number of turns to skip
+            limit: Max turns to return
+
+        Returns:
+            Dict with 'turns' list and 'total' count.
+        """
+        params: Dict[str, Any] = {"skip": skip, "limit": limit}
+        return await self._client.get(
+            f"/session/{session_id}/turns", params=params
+        )
+
     # ==================== Runner Management ====================
 
     async def get_runner_status(self, session_id: str) -> Dict[str, Any]:

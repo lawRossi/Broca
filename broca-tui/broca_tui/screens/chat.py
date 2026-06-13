@@ -1,10 +1,10 @@
 """
-ChatScreen — Main chat interface.
+ChatScreen — Main chat interface (简洁模式).
 
 Three-panel layout:
 - Left: AgentSidebar (agent list & management)
-- Center: MessageList + ChatInput
-- Right: InfoSidebar (session info, runner, stats)
+- Center: MessageList (TurnCards) + ChatInput
+- Right: InfoSidebar (session info, runner, stats via API)
 
 Manages Socket.IO lifecycle, event callbacks, and navigation.
 """
@@ -27,9 +27,11 @@ from broca_tui.widgets.info_sidebar import InfoSidebar
 from broca_tui.widgets.message_list import MessageList
 from broca_tui.widgets.permission_dialog import PermissionDialog
 
+from broca_tui.debug_log import log, clear as debug_clear
+
 
 class ChatScreen(Screen):
-    """Main chat interface with three-panel layout."""
+    """Main chat interface with three-panel layout (简洁模式：TurnCard)."""
 
     BINDINGS = [
         ("ctrl+s", "go_to_sessions", "会话列表"),
@@ -59,8 +61,8 @@ class ChatScreen(Screen):
         self._chat_store = ChatStore()
         self._agent_store = AgentStore()
 
-        # Update throttle
-        self._last_message_count = -1  # -1 ensures first _on_chat_change always renders
+        # Update throttle (for filtered turn count)
+        self._last_turn_count = -1
 
     def compose(self) -> ComposeResult:
         """Create the three-panel layout."""
@@ -75,7 +77,7 @@ class ChatScreen(Screen):
                     store=self._agent_store, id="agent-sidebar", classes="sidebar"
                 )
 
-                # Center: Messages + Input
+                # Center: Messages (TurnCards) + Input
                 with Vertical(classes="main-content"):
                     yield MessageList(id="message-list")
                     yield ChatInput(id="chat-input", classes="chat-input-container")
@@ -99,15 +101,7 @@ class ChatScreen(Screen):
         # Connect stores to widgets
         self._setup_connections()
 
-        # Force the initial layout to be computed correctly.
-        # During _setup_connections, widget queries and reactive updates can
-        # cause Textual to compute MessageList size as (0, 0) because the CSS
-        # cascade hasn't completed yet. Updating a widget here forces Textual
-        # to recompute the layout with the correct constraints.
-
-        # Load agents and connect Socket.IO after initial layout refresh.
-        # call_after_refresh defers widget queries until layout is stable,
-        # avoiding MessageList size (0, 0) during mount.
+        # Defer connection to after layout is stable
         self.call_after_refresh(self._deferred_connect)
 
     def _deferred_connect(self):
@@ -127,7 +121,7 @@ class ChatScreen(Screen):
         message_list.set_session(self._session_id)
         info_sidebar.set_session(self._session_id)
 
-        # ── Path 1: Connect Socket.IO (best-effort, independent of message loading) ──
+        # ── Path 1: Connect Socket.IO (best-effort, independent of turn loading) ──
         header.connection_status = "connecting"
         original_error_cb = self._chat_store._on_error
         self._chat_store._on_error = None
@@ -139,23 +133,36 @@ class ChatScreen(Screen):
             self._chat_store._on_error = original_error_cb
             header.connection_status = "connected" if self._chat_store.connected else "disconnected"
 
-        # ── Path 2: Load agents FIRST (so agent_name_map is ready when messages arrive) ──
-        await self._agent_store.fetch_agents(self._session_id)
+        # ── Path 2: Load agents FIRST (so agent_name_map is ready when turns arrive) ──
+        try:
+            await self._agent_store.fetch_agents(self._session_id)
 
-        # Default loaded agents to "idle"
-        for agent in self._agent_store.agents:
-            if agent.get("agent_status") in (None, "", "disconnected"):
-                agent["agent_status"] = "idle"
-        self._agent_store._notify_change()
+            # Default loaded agents to "idle"
+            for agent in self._agent_store.agents:
+                if agent.get("agent_status") in (None, "", "disconnected"):
+                    agent["agent_status"] = "idle"
+            self._agent_store._notify_change()
 
-        chat_input.set_agents(
-            self._agent_store.agents,
-            main_agent_id=self._agent_store.current_agent_id or "",
-        )
-        await agent_sidebar.load_agents(self._session_id)
+            chat_input.set_agents(
+                self._agent_store.agents,
+                main_agent_id=self._agent_store.current_agent_id or "",
+            )
+            await agent_sidebar.load_agents(self._session_id)
+        except Exception as e:
+            self.notify(f"Agent 加载失败: {e}", severity="warning", timeout=5)
 
-        # ── Path 3: Load messages via HTTP (agents already loaded → correct sender names) ──
-        await self._chat_store.load_history()
+        # ── Path 3: Load turn history via HTTP — 即使 agents 加载失败也应继续
+        try:
+            await self._chat_store.load_turn_history()
+        except Exception as e:
+            self.notify(f"加载 Turn 历史失败: {e}", severity="error", timeout=5)
+        finally:
+            # 确保 loading 状态被清除，避免"消息加载中"卡死
+            self._chat_store.loading = False
+            # 确保 agent name 回调可用
+            self._chat_store.on_get_agent_name(
+                lambda agent_id: self._agent_store.get_agent_name(agent_id)
+            )
 
     def _setup_connections(self):
         """Connect stores to widgets and register callbacks."""
@@ -178,12 +185,17 @@ class ChatScreen(Screen):
             lambda connected: self._on_connection_change(connected)
         )
 
-        # MessageList callbacks
-        message_list.set_on_load_more(
-            lambda: self.run_worker(self._load_more_history())
+        # 简洁模式：注入 agent name 查询回调
+        self._chat_store.on_get_agent_name(
+            lambda agent_id: self._agent_store.get_agent_name(agent_id)
+        )
+
+        # MessageList callbacks (turn-based)
+        message_list.set_on_load_more_turns(
+            lambda: self.run_worker(self._load_more_turns())
         )
         message_list.set_on_undo(
-            lambda msg_id: self.run_worker(self._handle_undo(msg_id))
+            lambda turn_id: self.run_worker(self._handle_turn_undo(turn_id))
         )
         message_list.set_on_redo(
             lambda: self.run_worker(self._chat_store.send_redo(
@@ -191,7 +203,7 @@ class ChatScreen(Screen):
             ))
         )
 
-        # Agent store → re-render messages when agent list/visibility changes
+        # Agent store → re-render turns when agent list/visibility changes
         self._agent_store.on_change(lambda: self._on_chat_change())
         self._agent_store.on_visibility_change(
             lambda: self._on_visibility_changed()
@@ -211,48 +223,44 @@ class ChatScreen(Screen):
     # ==================== Event Handlers ====================
 
     def _on_chat_change(self):
-        """React to chat store state changes with throttled message updates."""
-        # Defensive: widget queries may fail if callback fires before screen is fully mounted
+        """React to chat store state changes with throttled turn updates."""
         try:
             message_list = self.query_one("#message-list", MessageList)
             header = self.query_one("#chat-header", ChatHeader)
             info_sidebar = self.query_one("#info-sidebar", InfoSidebar)
             chat_input = self.query_one("#chat-input", ChatInput)
         except Exception:
-            # Widgets not ready yet — skip this update cycle
             return
 
         # Sync loading state from chat store to message list
         message_list.loading = self._chat_store.loading
 
-        # Pass current agent info to message list (for cross-agent sender name display)
-        agent_id = self._agent_store.current_agent_id or ""
-        agent_name = self._agent_store.get_agent_name(agent_id) if agent_id else ""
-        # Build agent_id → display_name map (matching Web: agentStore.agents with name lookup)
+        # Sync has_more so scroll check doesn't keep triggering
+        message_list.has_more = self._chat_store.has_more_turns
+
+        # Build agent_id → display_name map
         agent_name_map = {
             a.get("agent_id", ""): a.get("name", a.get("agent_id", ""))
             for a in self._agent_store.agents if a.get("agent_id")
         }
-        # Update message list with agent info (agents loaded first, so map is ready)
-        message_list.set_current_agent(
-            agent_id=agent_id,
-            agent_name=agent_name,
-            agent_name_map=agent_name_map,
-            force_rerender=True,
-        )
 
-        # Streaming message update: in-place content update (no full re-render)
-        updated_id = self._chat_store.last_updated_message_id
-        if updated_id:
-            # Find the updated message and apply in-place update
-            for msg in self._chat_store.messages:
-                if msg.get("message_id") == updated_id:
-                    message_list.update_streaming_message(msg)
-                    break
-            self._chat_store.last_updated_message_id = None
-        else:
-            # Throttled full update: only when message count changes
-            self._update_filtered_messages(message_list)
+        # Get visible agent IDs
+        visible_ids = self._agent_store.visible_agent_ids
+        all_ids = [a.get("agent_id", "") for a in self._agent_store.agents if a.get("agent_id")]
+
+        # 加载中时只更新 loading 状态，跳过 turn 渲染
+        if not self._chat_store.loading:
+            # Filter turns by agent visibility
+            filtered_turns = self._chat_store.get_filtered_turns(visible_ids, all_ids)
+
+            # 始终更新 turn 数据，不依赖 count throttling：
+            # - 历史加载时 count 变化，需要渲染
+            # - 实时更新时 turn 内部字段变化（tool_call / agent_response / turn_end），
+            #   但 count 不变，仍需要重新渲染以反映最新数据
+            current_count = len(filtered_turns)
+            log(f" _on_chat_change: loading={self._chat_store.loading}, turn_count={current_count}, last_count={self._last_turn_count}, visible_ids={visible_ids}")
+            message_list.set_turn_summaries(filtered_turns, agent_name_map)
+            self._last_turn_count = current_count
 
         # Update connection status
         if self._chat_store.connected:
@@ -265,82 +273,42 @@ class ChatScreen(Screen):
         # Update redo button
         message_list.show_redo = self._chat_store.show_redo_button
 
-        # Update runner status from ChatStore (never override polling "alive" with stale data).
-        # InfoSidebar's own polling (every 20s) is the primary source of truth.
-        # _on_chat_change fires frequently during init and can race with polling.
+        # Update runner status from ChatStore
         if self._chat_store.runner_alive:
             info_sidebar.runner_status = "alive"
             chat_input.disabled = False
         elif info_sidebar.runner_status == "alive":
-            # Polling just reported "alive" — don't override with ChatStore data
             chat_input.disabled = False
         elif self._chat_store.runner_info:
-            # runner_info was fetched and runner is not alive → confirmed dead
             info_sidebar.runner_status = "dead"
             chat_input.disabled = True
-        # else: runner_info not fetched yet → don't override polling result ("unknown")
 
-        # Update message stats
-        info_sidebar.update_message_stats(self._chat_store.messages)
-
-    async def _handle_undo(self, msg_id: str):
-        """Handle undo for a specific message, targeting the correct agent.
-
-        Web alignment: sends structured command via Socket.IO (not a text message).
-        - user_message: target = receiver_id || agent_id, level = 'turn'
-        - other: target = agent_id || sender_id, level = 'step'
-
-        Args:
-            msg_id: ID of the message to undo
-        """
-        # Find the message from chat_store to determine target agent and undo level
-        target_agent_id = None
-        level = "step"
-        for msg in self._chat_store.messages:
-            if msg.get("message_id") == msg_id:
-                data = msg.get("data", {}) or {}
-                if msg.get("message_type") == "user_message":
-                    target_agent_id = msg.get("receiver_id") or msg.get("agent_id") or data.get("agent_id")
-                    level = "turn"  # Web: user_message → undo entire turn
-                else:
-                    target_agent_id = msg.get("agent_id") or msg.get("sender_id") or data.get("agent_id")
-                    level = "step"  # Web: other messages → undo single step
-                break
-
-        await self._chat_store.send_undo(
-            target_message_id=msg_id,
-            target_agent_id=target_agent_id,
-            level=level,
-        )
-
-    def _update_filtered_messages(self, message_list: MessageList):
-        """Update message list with agent-visibility-filtered messages.
-
-        Computes filtered messages from ChatStore using AgentStore visibility settings,
-        then throttles updates based on count changes.
-
-        Args:
-            message_list: MessageList widget to update
-        """
-        visible_ids = self._agent_store.visible_agent_ids
-        all_ids = [a.get("agent_id", "") for a in self._agent_store.agents if a.get("agent_id")]
-        filtered = self._chat_store.get_filtered_messages(visible_ids, all_ids)
-
-        current_count = len(filtered)
-        if current_count != self._last_message_count:
-            message_list.set_messages(filtered)
-            self._last_message_count = current_count
+        # ⚠️ InfoSidebar 消息统计不再通过本地 messages 计算
+        # 改由 InfoSidebar 自己的 _poll_runner_status 中调用
+        # GET /session/{id}/stats API 获取（见 Task 3.3）
 
     def _on_visibility_changed(self):
-        """React to agent visibility changes — immediately refresh message list."""
+        """React to agent visibility changes — immediately refresh turn list."""
         try:
             message_list = self.query_one("#message-list", MessageList)
         except Exception:
             return
-        self._update_filtered_messages(message_list)
+
+        # Build agent_name_map
+        agent_name_map = {
+            a.get("agent_id", ""): a.get("name", a.get("agent_id", ""))
+            for a in self._agent_store.agents if a.get("agent_id")
+        }
+
+        visible_ids = self._agent_store.visible_agent_ids
+        all_ids = [a.get("agent_id", "") for a in self._agent_store.agents if a.get("agent_id")]
+        filtered_turns = self._chat_store.get_filtered_turns(visible_ids, all_ids)
+
+        message_list.set_turn_summaries(filtered_turns, agent_name_map)
+        self._last_turn_count = len(filtered_turns)
 
     def _on_message_received(self, msg: Dict[str, Any]):
-        """Handle new message from Socket.IO.
+        """Handle new message from Socket.IO (agent status updates).
 
         Args:
             msg: Message dict
@@ -361,9 +329,9 @@ class ChatScreen(Screen):
         if connected:
             self.run_worker(self._chat_store._fetch_runner_status())
 
-    async def _load_more_history(self):
-        """Load more message history."""
-        await self._chat_store.load_history(is_load_more=True)
+    async def _load_more_turns(self):
+        """Load more turn history."""
+        await self._chat_store.load_turn_history(is_load_more=True)
 
     async def _send_message(self, text: str, target_agent_id: Optional[str] = None):
         """Send a user message.
@@ -376,6 +344,30 @@ class ChatScreen(Screen):
             content=text,
             target_agent_id=target_agent_id,
         )
+
+    async def _handle_turn_undo(self, turn_id: str):
+        """Handle turn-level undo.
+
+        Finds the target turn from chat_store and sends turn-level undo.
+
+        Args:
+            turn_id: Turn ID to undo
+        """
+        target_agent_id = None
+        last_message_id = None
+
+        for turn in self._chat_store.turn_summaries:
+            if turn.turn_id == turn_id:
+                target_agent_id = turn.agent_id
+                last_message_id = turn.last_message_id
+                break
+
+        if last_message_id:
+            await self._chat_store.send_undo(
+                target_message_id=last_message_id,
+                target_agent_id=target_agent_id,
+                level="turn",
+            )
 
     # ==================== Dialog Handlers ====================
 
@@ -420,7 +412,7 @@ class ChatScreen(Screen):
 
         async def _go():
             await self._chat_store.disconnect()
-            self.app.pop_screen()  # ChatScreen was pushed → pop returns to SessionListScreen
+            self.app.pop_screen()
 
         self.run_worker(_go())
 
@@ -430,7 +422,6 @@ class ChatScreen(Screen):
 
         async def _go():
             await self._chat_store.disconnect()
-            # Pop ChatScreen, then push CrewExecutionsScreen
             self.app.pop_screen()
             crew_screen = CrewExecutionsScreen(session_id=self._session_id)
             self.app.push_screen(crew_screen)
@@ -474,8 +465,7 @@ class ChatScreen(Screen):
         await self._chat_store.disconnect()
 
     def on_unmount(self) -> None:
-        """Clean up on unmount — use call_later to ensure completion."""
-        # Use call_later instead of run_worker for more reliable cleanup
+        """Clean up on unmount."""
         self.call_later(self._cleanup_api)
 
     async def _cleanup_api(self):

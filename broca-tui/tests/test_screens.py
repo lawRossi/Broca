@@ -84,10 +84,10 @@ class TestChatScreen:
         assert screen._chat_store is not None
         assert screen._agent_store is not None
 
-    def test_message_throttle_initialized(self):
-        """Test that message count throttle is initialized."""
+    def test_turn_throttle_initialized(self):
+        """Test that turn count throttle is initialized."""
         screen = ChatScreen(session_id="test-session")
-        assert screen._last_message_count == -1  # -1 ensures first render always fires
+        assert screen._last_turn_count == -1  # -1 ensures first render always fires
 
     def test_bindings_defined(self):
         """Test that keyboard bindings include navigation and sidebar toggles."""

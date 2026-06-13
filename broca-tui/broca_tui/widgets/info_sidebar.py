@@ -191,31 +191,39 @@ class InfoSidebar(Widget):
         self.query_one("#runner-memory", Label).update(memory_str)
 
     def update_message_stats(self, messages: list):
-        """Update message statistics from messages list.
+        """Update message statistics — 当前实现在 _poll_runner_status 中已改为 API 调用。
+
+        此方法保留以兼容旧调用，但实际统计由 _poll_runner_status 中的 API 驱动。
 
         Args:
-            messages: List of message dicts
+            messages: Deprecated, kept for compatibility
         """
-        counts = {"user": 0, "agent": 0, "tool": 0, "system": 0, "error": 0}
+        # 统计已改为通过 _poll_runner_status 中的 API 调用获取
+        pass
 
-        for msg in messages:
-            msg_type = msg.get("message_type", "")
-            if msg_type in ("user_message",):
-                counts["user"] += 1
-            elif msg_type in ("agent_response",):
-                counts["agent"] += 1
-            elif msg_type in ("tool_call",):
-                counts["tool"] += 1
-            elif msg_type in ("agent_system_message", "system_message"):
-                counts["system"] += 1
-            elif msg_type in ("error", "agent_error"):
-                counts["error"] += 1
+    def _update_stats_from_api(self, stats_data: dict):
+        """从 API 响应更新消息统计。
 
-        self.query_one("#stat-user", Label).update(f"User: {counts['user']}")
-        self.query_one("#stat-agent", Label).update(f"Agent: {counts['agent']}")
-        self.query_one("#stat-tools", Label).update(f"Tools: {counts['tool']}")
-        self.query_one("#stat-system", Label).update(f"System: {counts['system']}")
-        self.query_one("#stat-errors", Label).update(f"Errors: {counts['error']}")
+        API 返回格式（GET /session/{id}/stats）：
+        {total, user_count, agent_count, tool_count, system_count, error_count}
+
+        Args:
+            stats_data: API 返回的统计数据
+        """
+        if not stats_data:
+            return
+
+        user_count = stats_data.get("user_count", 0)
+        agent_count = stats_data.get("agent_count", 0)
+        tool_count = stats_data.get("tool_count", 0)
+        system_count = stats_data.get("system_count", 0)
+        error_count = stats_data.get("error_count", 0)
+
+        self.query_one("#stat-user", Label).update(f"User: {user_count}")
+        self.query_one("#stat-agent", Label).update(f"Agent: {agent_count}")
+        self.query_one("#stat-tools", Label).update(f"Tools: {tool_count}")
+        self.query_one("#stat-system", Label).update(f"System: {system_count}")
+        self.query_one("#stat-errors", Label).update(f"Errors: {error_count}")
 
     def _start_polling(self):
         """Start periodic runner status polling (20s interval, aligning with AgentSidebar)."""
@@ -262,9 +270,12 @@ class InfoSidebar(Widget):
             except Exception:
                 pass
 
-            # 3. Message Statistics refresh (from ChatStore if available)
-            if self._chat_store and self._chat_store.messages:
-                self.update_message_stats(self._chat_store.messages)
+            # 3. Message Statistics refresh (via API, not local messages)
+            try:
+                stats_data = await self._api.get_session_stats(self._session_id)
+                self._update_stats_from_api(stats_data)
+            except Exception:
+                pass
 
         except Exception:
             self.runner_status = "unknown"

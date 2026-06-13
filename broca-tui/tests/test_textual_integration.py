@@ -24,7 +24,7 @@ from broca_tui.screens.session_list import SessionListScreen
 from broca_tui.screens.chat import ChatScreen
 from broca_tui.screens.crew_executions import CrewExecutionsScreen
 from broca_tui.widgets.chat_header import ChatHeader
-from broca_tui.widgets.message_item import MessageItem
+from broca_tui.widgets.turn_card import TurnCard
 from broca_tui.widgets.chat_input import ChatInput
 from broca_tui.widgets.info_sidebar import InfoSidebar
 from broca_tui.stores.session_store import SessionStore
@@ -155,43 +155,73 @@ class TestInfoSidebarMount:
 
 
 # ============================================================================
-# MessageItem mount tests
+# TurnCard mount tests (简洁模式)
 # ============================================================================
 
-class TestMessageItemMount:
-    """Test that MessageItem actually mounts for all message types."""
+class TestTurnCardMount:
+    """Test that TurnCard mounts correctly for various turn states."""
 
-    MSG_TYPES = [
-        ("user_message", {"message_id": "u1", "message_type": "user_message", "role": "user", "data": {"content": "hello"}}),
-        ("agent_response", {"message_id": "a1", "message_type": "agent_response", "role": "assistant", "data": {"content": "Hi!"}}),
-        ("tool_call", {"message_id": "t1", "message_type": "tool_call", "data": {"tool_name": "read_file", "arguments": {"path": "/tmp/x"}, "tool_call_id": "tc1"}}),
-        ("tool_edit_file", {"message_id": "t2", "message_type": "tool_call", "data": {"tool_name": "edit_file", "arguments": {"path": "/tmp/x", "old_text": "hello", "new_text": "hi"}, "tool_call_id": "tc2"}}),
-        ("tool_write_file", {"message_id": "t3", "message_type": "tool_call", "data": {"tool_name": "write_file", "arguments": {"path": "/tmp/x", "content": "print('hi')"}, "tool_call_id": "tc3"}}),
-        ("todo", {"message_id": "td1", "message_type": "tool_call", "data": {"tool_name": "todo_management", "arguments": {"todos": [{"name": "Task", "status": "completed"}]}, "tool_call_id": "tc4"}}),
-        ("error", {"message_id": "e1", "message_type": "error", "data": {"content": "Error occurred"}}),
-        ("system", {"message_id": "s1", "message_type": "system_message", "data": {"content": "System note"}}),
+    TURN_STATES = [
+        ("completed", {"turn_id": "t1", "sequence_number": 1, "agent_id": "a1", "agent_name": "Agent", "status": "completed", "user_message": "Hello", "final_response": "Hi there!", "last_message_id": "m1"}),
+        ("active", {"turn_id": "t2", "sequence_number": 2, "agent_id": "a1", "agent_name": "Agent", "status": "active", "user_message": "What?", "final_response": "", "last_message_id": None}),
+        ("error", {"turn_id": "t3", "sequence_number": 3, "agent_id": "a1", "agent_name": "Agent", "status": "error", "user_message": "Do it", "final_response": "", "last_message_id": None}),
+        ("with_tools", {"turn_id": "t4", "sequence_number": 4, "agent_id": "a2", "agent_name": "Coder", "status": "completed", "user_message": "Write code", "final_response": "Done", "current_tool": "read_file", "current_file_path": "/tmp/x.py", "total_steps": 3, "tool_call_stats": [{"toolName": "read_file", "count": 1}], "last_message_id": "m2"}),
+        ("with_reasoning", {"turn_id": "t5", "sequence_number": 5, "agent_id": "a1", "agent_name": "Agent", "status": "completed", "user_message": "Think", "final_response": "Answer", "reasoning_content": "I think we should...", "last_message_id": "m3"}),
+        ("with_todos", {"turn_id": "t6", "sequence_number": 6, "agent_id": "a2", "agent_name": "Coder", "status": "completed", "user_message": "Plan", "final_response": "Done", "current_todo_list": [{"name": "Task A", "status": "completed"}, {"name": "Task B", "status": "pending"}], "last_message_id": "m4"}),
     ]
 
-    @pytest.mark.parametrize("name,msg", MSG_TYPES)
-    async def test_message_type_mounts(self, name, msg):
-        """Test that each message type mounts without error."""
-        item = MessageItem(msg)
-        app = TestWrapperApp(widget=item)
+    @pytest.mark.parametrize("name,kwargs", TURN_STATES)
+    async def test_turn_card_mounts(self, name, kwargs):
+        """Test that TurnCard mounts correctly for each turn state/feature."""
+        from broca_tui.stores.chat_store import TurnSummary
+
+        defaults = {
+            "turn_id": "default",
+            "sequence_number": 0,
+            "agent_id": "default",
+            "agent_name": "Default",
+            "user_message": None,
+            "status": "completed",
+            "current_tool": None,
+            "current_file_path": None,
+            "current_todo_list": [],
+            "total_duration": 0.0,
+            "total_steps": 0,
+            "tool_call_stats": [],
+            "final_response": "",
+            "reasoning_content": "",
+            "is_active": False,
+            "started_at": 0.0,
+            "created_at": "",
+            "last_message_id": None,
+        }
+        defaults.update(kwargs)
+
+        turn = TurnSummary(**defaults)
+        card = TurnCard(turn)
+        app = TestWrapperApp(widget=card)
         async with app.run_test() as pilot:
             await pilot.pause()
-            # If we get here without error, mount succeeded
             assert app is not None
 
-    async def test_multiple_messages_mount(self):
-        """Test mounting multiple MessageItems together."""
+    async def test_consecutive_agent_turn(self):
+        """Test that consecutive agent TurnCards render with reduced spacing."""
+        from broca_tui.stores.chat_store import TurnSummary
+
+        turn1 = TurnSummary(turn_id="t1", sequence_number=1, agent_id="a1", agent_name="Agent")
+        turn2 = TurnSummary(turn_id="t2", sequence_number=2, agent_id="a1", agent_name="Agent")
+
+        card1 = TurnCard(turn1, consecutive_agent=False)
+        card2 = TurnCard(turn2, consecutive_agent=True)
+
         app = TestWrapperApp()
         async with app.run_test() as pilot:
-            # Mount several message items
-            for i in range(5):
-                msg = {"message_id": f"m{i}", "message_type": "user_message", "role": "user", "data": {"content": f"Message {i}"}}
-                item = MessageItem(msg)
-                app.screen.mount(item)
+            app.screen.mount(card1)
+            app.screen.mount(card2)
             await pilot.pause()
+            # consecutive-agent class should be applied
+            assert "consecutive-agent" in card2.classes
+            assert "consecutive-agent" not in card1.classes
             assert app is not None
 
 

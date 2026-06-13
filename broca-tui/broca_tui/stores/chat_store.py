@@ -6,13 +6,43 @@ Each chat page creates its own ChatStore instance.
 """
 
 import json
+import time
+from dataclasses import dataclass, field
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional
 
 from broca.communication.socketio_client import SocketIOClient
 from broca.session.models import Message, MessageProtocol
 
+from broca_tui.debug_log import log, clear as debug_clear
 from broca_tui.api.session import SessionAPI
 from broca_tui.config import get_config
+
+
+@dataclass
+class TurnSummary:
+    """Turn 摘要数据类（简洁模式使用，对齐 Web ChatTurnCard.vue 的 TurnSummary 接口）。
+
+    表示一个 Agent 执行轮次的摘要信息，包含用户输入、工具执行统计、最终回复等。
+    """
+    turn_id: str
+    sequence_number: int
+    agent_id: str
+    agent_name: str
+    user_message: Optional[str] = None
+    status: str = "active"  # active, thinking, calling_tool, completed, error
+    current_tool: Optional[str] = None
+    current_file_path: Optional[str] = None
+    current_todo_list: List[Dict[str, Any]] = field(default_factory=list)
+    total_duration: float = 0.0
+    total_steps: int = 0
+    tool_call_stats: List[Dict[str, Any]] = field(default_factory=list)
+    final_response: str = ""
+    reasoning_content: str = ""
+    is_active: bool = True
+    started_at: float = 0.0  # timestamp in ms
+    created_at: str = ""
+    last_message_id: Optional[str] = None
 
 
 class ChatStore:
@@ -37,26 +67,22 @@ class ChatStore:
         self.execution_id: Optional[str] = None
         self.is_agent_orchestration: bool = False
 
-        # Messages
-        self.messages: List[Dict[str, Any]] = []
-        self.message_states: Dict[str, Dict[str, bool]] = {}  # message_id -> {showParameters, showResult, showReasoning}
-        self.pending_chunks: Dict[str, List[Dict[str, Any]]] = {}  # message_id -> [chunks]
+        # Messages (简洁模式: turn_summaries 替代 messages 用于渲染)
         self.show_redo_button: bool = False
         self.redo_receiver_id: Optional[str] = None
         self._preserve_redo: bool = False  # Prevent redo from being cleared after undo
 
-        # Streaming debounce: batch rapid _notify_change calls during streaming
-        self._debounce_timer: Optional[asyncio.TimerHandle] = None
-        self._debounce_delay: float = 0.2  # 200ms
-        # Tracks which message was updated last (for in-place streaming updates)
-        self.last_updated_message_id: Optional[str] = None
-
         # Loading state
         self.loading: bool = False
-        self.loading_more: bool = False
-        self.has_more_history: bool = True
-        self.history_skip: int = 0
-        self.history_total: int = 0
+
+        # Turn summaries (简洁模式)
+        self.turn_summaries: List[TurnSummary] = []
+        self.turn_history_skip: int = 0
+        self.has_more_turns: bool = True
+        self.loading_more_turns: bool = False
+        self.active_turn_index: int = -1  # 当前活跃 turn 在列表中的索引
+        self._duration_timer = None  # asyncio.TimerHandle
+        self._on_get_agent_name: Optional[Callable[[str], Optional[str]]] = None
 
         # Input state
         self.input_text: str = ""
@@ -115,46 +141,19 @@ class ChatStore:
         """Register callback for connection state changes."""
         self._on_connection_change = callback
 
-    def _notify_change(self, force: bool = False):
-        """Notify UI of state change, with debounce for streaming.
+    def on_get_agent_name(self, callback: Callable[[str], Optional[str]]):
+        """Register callback to get agent display name by ID."""
+        self._on_get_agent_name = callback
 
-        During streaming (pending_chunks active), rapid _notify_change calls
-        are debounced to avoid re-rendering on every chunk. Use force=True
-        for critical updates (e.g., complete message, error).
+    def _notify_change(self, force: bool = False):
+        """Notify UI of state change.
+
+        In 简洁模式, no debounce is needed since turn-based updates
+        are less frequent than per-chunk message updates.
 
         Args:
-            force: If True, fire immediately regardless of debounce state
+            force: Kept for backward compatibility, always fires immediately
         """
-        if force:
-            self._cancel_debounce()
-            if self._on_change:
-                self._on_change()
-            return
-
-        # Debounce: batch rapid changes during streaming
-        if self.pending_chunks:
-            import asyncio
-            loop = asyncio.get_event_loop()
-            self._cancel_debounce()
-            self._debounce_timer = loop.call_later(
-                self._debounce_delay, self._fire_notify
-            )
-        else:
-            if self._on_change:
-                self._on_change()
-
-    def _cancel_debounce(self):
-        """Cancel pending debounce timer."""
-        if self._debounce_timer is not None:
-            try:
-                self._debounce_timer.cancel()
-            except Exception:
-                pass
-            self._debounce_timer = None
-
-    def _fire_notify(self):
-        """Fire pending notification (called by debounce timer)."""
-        self._debounce_timer = None
         if self._on_change:
             self._on_change()
 
@@ -224,6 +223,15 @@ class ChatStore:
         async def handle_turn_start(message: Message):
             # Update agent state to running
             target_id = message.sender_id or message.agent_id
+
+            # 简洁模式：创建 TurnSummary
+            turn_id = message.data.get("turn_id") if message.data else None
+            if turn_id:
+                agent_name = target_id or ""
+                if self._on_get_agent_name:
+                    agent_name = self._on_get_agent_name(target_id) or agent_name
+                self.create_turn_summary(turn_id, target_id or "", agent_name)
+
             if self._on_message:
                 self._on_message({"type": "turn_start", "agent_id": target_id})
 
@@ -231,6 +239,13 @@ class ChatStore:
         async def handle_turn_end(message: Message):
             # Update agent state to idle
             target_id = message.sender_id or message.agent_id
+
+            # 简洁模式：终结 TurnSummary
+            turn_id = message.data.get("turn_id") if message.data else None
+            if turn_id:
+                result = message.data.get("result") if message.data else None
+                self.finalize_turn_summary(turn_id, result)
+
             if self._on_message:
                 self._on_message({"type": "turn_end", "agent_id": target_id})
 
@@ -277,6 +292,27 @@ class ChatStore:
             message: The received Message object
         """
         msg_dict = MessageProtocol.to_dict(message)
+        msg_type = msg_dict.get("message_type", "")
+
+        # ── 简洁模式：step_start 更新 turn 步骤计数 ──
+        if msg_type == "step_start":
+            data = msg_dict.get("data", {}) or {}
+            turn_id = data.get("turn_id") or msg_dict.get("turn_id", "")
+            if turn_id:
+                self.increment_turn_steps(turn_id)
+            return
+
+        # ── 简洁模式：tool_call 更新 turn 工具信息（仍需继续添加为消息） ──
+        if msg_type == "tool_call":
+            turn_id = msg_dict.get("turn_id", "")
+            if turn_id:
+                self.update_turn_on_tool_call(turn_id, msg_dict.get("data", {}))
+
+        # ── 简洁模式：agent_response 更新 turn finalResponse（仍需继续添加为消息） ──
+        if msg_type == "agent_response":
+            turn_id = msg_dict.get("turn_id", "")
+            if turn_id:
+                self.update_turn_on_agent_response(turn_id, msg_dict.get("data", {}))
 
         # Skip filtered message types
         filtered_types = {
@@ -285,9 +321,9 @@ class ChatStore:
             "agent_query", "user_answer",
             "subscribe", "unsubscribe", "connect", "disconnect",
             "ping", "pong", "task_start", "task_complete", "task_error",
-            "step_start", "step_end",
+            "step_end",
         }
-        if msg_dict.get("message_type") in filtered_types:
+        if msg_type in filtered_types:
             return
 
         # Skip reverted messages
@@ -308,9 +344,9 @@ class ChatStore:
                         self.show_redo_button = False
                         self.redo_receiver_id = None
                         self._preserve_redo = False
-                    # Reload history (we're in an async event loop context)
+                    # Reload turn data (简洁模式: turn_summaries 替代 messages)
                     import asyncio
-                    asyncio.ensure_future(self.load_history())
+                    asyncio.ensure_future(self.load_turn_history())
                 return
 
         # Clear redo state on new messages (but not immediately after undo)
@@ -319,204 +355,319 @@ class ChatStore:
             self.redo_receiver_id = None
 
         # Add message
-        self._add_message(msg_dict)
-
-    def _add_message(self, message: Dict[str, Any]):
-        """Add a message to the list, handling chunk merging for agent responses and tool calls.
-
-        Args:
-            message: Message dict
-        """
-        msg_type = message.get("message_type")
-
-        # ===== Web-aligned filtering (processMessage) =====
-        # 1. Filtered types — never displayed
-        filtered_types = {
-            "turn_start", "turn_end", "command",
-            "permission_request", "permission_response",
-            "agent_query", "user_answer",
-            "subscribe", "unsubscribe", "connect", "disconnect",
-            "ping", "pong", "task_start", "task_complete", "task_error",
-            "step_start", "step_end",
-        }
-        if msg_type in filtered_types:
-            return
-
-        # 2. User messages from agents (e.g., permission granted echoes)
-        data = message.get("data") or {}
-        if msg_type == "user_message" and data.get("from_agent"):
-            return
-
-        # 3. Agent responses with empty content after JSON parsing
-        if msg_type == "agent_response":
-            content_str = data.get("content", "")
-            if isinstance(content_str, str) and content_str.strip():
-                try:
-                    parsed = json.loads(content_str)
-                    if isinstance(parsed, dict):
-                        has_content = bool(parsed.get("content"))
-                        has_reasoning = bool(parsed.get("reasoning_content"))
-                        if not has_content and not has_reasoning:
-                            return
-                except (json.JSONDecodeError, TypeError):
-                    pass
-
-        # 4. Connection/subscription status messages
-        content_str = str(data.get("content", ""))
-        if any(keyword in content_str.lower() for keyword in ("connected to", "subscribed to")):
-            return
-
-        if msg_type == "tool_call":
-            tool_call_id = message.get("data", {}).get("tool_call_id")
-            if tool_call_id:
-                # Check for existing tool call with same ID
-                for i, existing in enumerate(self.messages):
-                    if (existing.get("message_type") == "tool_call"
-                            and existing.get("data", {}).get("tool_call_id") == tool_call_id):
-                        # Merge data
-                        existing["data"] = {**existing.get("data", {}), **message.get("data", {})}
-                        self.last_updated_message_id = existing.get("message_id", "")
-                        self._notify_change()
-                        return
-
-            # New tool call
-            self.messages.append(message)
-            self._init_message_state(message["message_id"])
-
-        elif msg_type == "agent_response":
-            msg_id = message.get("message_id")
-
-            # Collect chunks
-            if msg_id not in self.pending_chunks:
-                self.pending_chunks[msg_id] = []
-            self.pending_chunks[msg_id].append(message)
-
-            # Merge chunks
-            merged = self._merge_agent_chunks(self.pending_chunks[msg_id])
-
-            # Check if message already exists
-            for existing in self.messages:
-                if existing.get("message_type") == "agent_response" and existing.get("message_id") == msg_id:
-                    existing["data"] = {
-                        **existing.get("data", {}),
-                        "content": json.dumps(merged, ensure_ascii=False),
-                    }
-                    self.last_updated_message_id = msg_id
-                    self._notify_change()
-                    return
-
-            # New message
-            import copy
-            self.messages.append(copy.deepcopy(message))
-            self._init_message_state(msg_id)
-
-        else:
-            self.messages.append(message)
-            self._init_message_state(message.get("message_id", ""))
-
-        self._notify_change()
-
-    def _merge_agent_chunks(self, chunks: List[Dict[str, Any]]) -> Dict[str, Any]:
-        """Merge agent response chunks.
-
-        Args:
-            chunks: List of agent response message dicts
-
-        Returns:
-            Merged content dict with 'content', 'reasoning_content', 'index'
-        """
-        merged_content = ""
-        merged_reasoning = ""
-
-        for chunk in chunks:
-            try:
-                data_str = chunk.get("data", {}).get("content", "{}")
-                if isinstance(data_str, str):
-                    data = json.loads(data_str)
-                else:
-                    data = data_str
-                merged_content += data.get("content", "")
-                merged_reasoning += data.get("reasoning_content", "")
-            except (json.JSONDecodeError, TypeError):
-                pass
-
-        return {
-            "content": merged_content,
-            "reasoning_content": merged_reasoning,
-            "index": 0,
-        }
-
-    def _init_message_state(self, message_id: str):
-        """Initialize display state for a message."""
-        if message_id and message_id not in self.message_states:
-            self.message_states[message_id] = {
-                "showParameters": False,
-                "showResult": False,
-                "showReasoning": False,
-            }
-
-    # ==================== History Loading ====================
+        # Turn update already handled above for step_start/tool_call/agent_response.
+        # No need to add individual messages — rendering uses turn_summaries.
+        return
 
     async def load_history(self, is_load_more: bool = False):
-        """Load message history.
+        """Load message history (简洁模式: 使用 load_turn_history 替代).
+
+        保留此方法以防向后兼容，但内部不再执行消息级加载。
+        渲染使用 load_turn_history() 加载的 turn_summaries。
 
         Args:
-            is_load_more: If True, loads next page of history
+            is_load_more: Kept for API compatibility, unused
+        """
+        # 简洁模式下消息级历史不再需要，使用 load_turn_history() 替代
+        pass
+
+    # ==================== Turn Management (简洁模式) ====================
+
+    def _find_turn(self, turn_id: str) -> Optional[TurnSummary]:
+        """根据 turn_id 查找 TurnSummary。
+
+        Args:
+            turn_id: Turn ID to find
+
+        Returns:
+            TurnSummary if found, None otherwise
+        """
+        for t in self.turn_summaries:
+            if t.turn_id == turn_id:
+                return t
+        return None
+
+    async def load_turn_history(self, is_load_more: bool = False):
+        """加载 turn 历史（简洁模式）。
+
+        Args:
+            is_load_more: 是否加载更多（滚动到顶部触发）
         """
         if not self.session_id:
+            log("load_turn_history: no session_id")
             return
 
+        log(f" load_turn_history: is_load_more={is_load_more}, loading_more_turns={self.loading_more_turns}, has_more_turns={self.has_more_turns}, skip={self.turn_history_skip}")
+
         if is_load_more:
-            if self.loading_more or not self.has_more_history:
+            if self.loading_more_turns or not self.has_more_turns:
+                log(f" load_turn_history: early return (loading_more={self.loading_more_turns}, has_more={self.has_more_turns})")
                 return
-            self.loading_more = True
+            self.loading_more_turns = True
+            self.loading = True  # 确保 loading 状态同步到 MessageList
         else:
             self.loading = True
-            self.history_skip = 0
-            self.has_more_history = True
+            self.turn_history_skip = 0
+            self.has_more_turns = True
 
         self._notify_change()
 
-        limit = 20
+        limit = 3
 
         try:
-            result = await self._api.get_session_messages(
+            result = await self._api.get_session_turns(
                 self.session_id,
-                skip=self.history_skip,
+                skip=self.turn_history_skip,
                 limit=limit,
-                execution_id=self.execution_id,
             )
 
-            self.history_total = result.get("total", 0)
-            raw_messages = result.get("messages", [])
+            total = result.get("total", 0)
+            raw_turns = result.get("turns", [])
 
-            # Process messages
-            processed = []
-            for msg in raw_messages:
-                msg_type = msg.get("message_type", "")
-                if msg_type in ("turn_start", "turn_end", "command",
-                                "subscribe", "unsubscribe", "connect", "disconnect",
-                                "ping", "pong", "step_start", "step_end"):
+            log(f" load_turn_history: API returned total={total}, turns_count={len(raw_turns)}, skip={self.turn_history_skip}")
+
+            # 将后端数据映射为 TurnSummary
+            new_turns = []
+            for t in raw_turns:
+                # 过滤已撤销的 turn
+                if t.get("is_reverted", False):
                     continue
-                if msg.get("reverted"):
-                    continue
-                processed.append(msg)
-                self._init_message_state(msg.get("message_id", ""))
+
+                summary = TurnSummary(
+                    turn_id=t.get("turn_id", ""),
+                    sequence_number=t.get("sequence_number", 0),
+                    agent_id=t.get("agent_id", ""),
+                    agent_name=t.get("agent_name", ""),
+                    user_message=t.get("user_message"),
+                    status="completed",  # 历史 turn 都是已完成的
+                    current_tool=t.get("current_tool"),
+                    current_file_path=t.get("current_file_path"),
+                    current_todo_list=t.get("current_todo_list", []),
+                    total_duration=t.get("duration_seconds", 0) or 0.0,
+                    total_steps=t.get("total_steps", 0),
+                    tool_call_stats=t.get("tool_call_stats", []),
+                    final_response=t.get("final_response", ""),
+                    is_active=False,
+                    started_at=0,
+                    created_at=t.get("created_at", ""),
+                    last_message_id=t.get("last_message_id"),
+                )
+                new_turns.append(summary)
 
             if is_load_more:
-                self.messages = processed + self.messages
+                self.turn_summaries = new_turns + self.turn_summaries
             else:
-                self.messages = processed
+                self.turn_summaries = new_turns
 
-            self.history_skip += limit
-            self.has_more_history = self.history_skip < self.history_total
+            self.turn_history_skip += limit
+            self.has_more_turns = self.turn_history_skip < total
+
+            log(f" load_turn_history: done, turn_summaries count={len(self.turn_summaries)}, has_more_turns={self.has_more_turns}, loading={self.loading}")
 
         except Exception as e:
-            self._notify_error(f"加载消息历史失败: {e}")
+            log(f" load_turn_history: ERROR {e}")
+            self._notify_error(f"加载 Turn 历史失败: {e}")
         finally:
             self.loading = False
-            self.loading_more = False
+            self.loading_more_turns = False
             self._notify_change()
+
+    def create_turn_summary(self, turn_id: str, agent_id: str, agent_name: str):
+        """创建新的 TurnSummary（turn_start 事件触发）。
+
+        Args:
+            turn_id: Turn ID
+            agent_id: Agent ID
+            agent_name: Agent display name
+        """
+        # 检查是否已存在（避免重复）
+        if any(t.turn_id == turn_id for t in self.turn_summaries):
+            return
+
+        summary = TurnSummary(
+            turn_id=turn_id,
+            sequence_number=len(self.turn_summaries) + 1,
+            agent_id=agent_id,
+            agent_name=agent_name,
+            is_active=True,
+            status="active",
+            started_at=time.time() * 1000,
+            created_at=datetime.now().isoformat(),
+        )
+        self.turn_summaries.append(summary)
+        self.active_turn_index = len(self.turn_summaries) - 1
+        self._start_duration_timer()
+        self._notify_change(force=True)
+
+    def update_turn_on_tool_call(self, turn_id: str, data: Dict[str, Any]):
+        """工具调用消息到达时更新 turn 状态。
+
+        Args:
+            turn_id: Turn ID
+            data: tool_call 消息的 data 字段
+        """
+        turn = self._find_turn(turn_id)
+        if not turn:
+            return
+
+        tool_name = data.get("tool_name", "")
+        if not tool_name:
+            return
+
+        # 更新当前工具
+        turn.current_tool = tool_name
+
+        # 更新工具调用统计
+        found = False
+        for stat in turn.tool_call_stats:
+            if stat.get("toolName") == tool_name:
+                stat["count"] = stat.get("count", 0) + 1
+                found = True
+                break
+        if not found:
+            turn.tool_call_stats.append({"toolName": tool_name, "count": 1})
+
+        # 提取文件路径
+        if tool_name in ("read_file", "edit_file", "write_file"):
+            args = data.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+            if isinstance(args, dict):
+                path = args.get("path")
+                if path:
+                    turn.current_file_path = path
+
+        # 提取 TODO 列表
+        if tool_name == "todo_management":
+            args = data.get("arguments", {})
+            if isinstance(args, str):
+                try:
+                    args = json.loads(args)
+                except (json.JSONDecodeError, TypeError):
+                    args = {}
+            if isinstance(args, dict):
+                todos = args.get("todos", [])
+                if todos:
+                    turn.current_todo_list = todos
+
+        turn.status = "calling_tool"
+        self._notify_change()
+
+    def update_turn_on_agent_response(self, turn_id: str, data: Dict[str, Any]):
+        """Agent 回复消息到达时累加 finalResponse。
+
+        Args:
+            turn_id: Turn ID
+            data: agent_response 消息的 data 字段
+        """
+        turn = self._find_turn(turn_id)
+        if not turn:
+            return
+
+        content_str = data.get("content", "")
+        if isinstance(content_str, str) and content_str.strip():
+            try:
+                parsed = json.loads(content_str)
+                if isinstance(parsed, dict):
+                    content = parsed.get("content", "")
+                    reasoning = parsed.get("reasoning_content", "")
+                    if content:
+                        turn.final_response += content
+                    if reasoning:
+                        turn.reasoning_content += reasoning
+                else:
+                    turn.final_response += content_str
+            except (json.JSONDecodeError, TypeError):
+                turn.final_response += content_str
+
+        turn.status = "thinking"
+        self._notify_change()
+
+    def finalize_turn_summary(self, turn_id: str, result: Optional[Dict] = None):
+        """终结 TurnSummary（turn_end 事件触发）。
+
+        Args:
+            turn_id: Turn ID
+            result: turn_end 消息的 result 数据
+        """
+        turn = self._find_turn(turn_id)
+        if not turn:
+            return
+
+        turn.is_active = False
+        is_error = (result or {}).get("status") == "error" if result else False
+        turn.status = "error" if is_error else "completed"
+        turn.total_duration = (time.time() * 1000 - turn.started_at) / 1000
+
+        # 如果当前活跃的 turn 被终结，停止定时器
+        if self.active_turn_index >= 0:
+            turn_at_index = self.turn_summaries[self.active_turn_index]
+            if turn_at_index.turn_id == turn_id:
+                self.active_turn_index = -1
+                self._stop_duration_timer()
+
+        self._notify_change(force=True)
+
+    def increment_turn_steps(self, turn_id: str):
+        """step_start 消息到达时增加对应 turn 的步骤计数。
+
+        Args:
+            turn_id: Turn ID
+        """
+        turn = self._find_turn(turn_id)
+        if turn:
+            turn.total_steps += 1
+            self._notify_change()
+
+    # ==================== Duration Timer ====================
+
+    def _start_duration_timer(self):
+        """启动活跃 turn 的耗时定时器。"""
+        self._stop_duration_timer()
+        import asyncio
+        loop = asyncio.get_event_loop()
+        self._duration_timer = loop.call_later(1.0, self._on_duration_tick)
+
+    def _stop_duration_timer(self):
+        """停止耗时定时器。"""
+        if self._duration_timer is not None:
+            try:
+                self._duration_timer.cancel()
+            except Exception:
+                pass
+            self._duration_timer = None
+
+    def _on_duration_tick(self):
+        """定时器回调：更新活跃 turn 的耗时。"""
+        if self.active_turn_index >= 0 and self.active_turn_index < len(self.turn_summaries):
+            turn = self.turn_summaries[self.active_turn_index]
+            if turn.is_active:
+                turn.total_duration = (time.time() * 1000 - turn.started_at) / 1000
+                self._notify_change()
+                # 继续计时
+                import asyncio
+                loop = asyncio.get_event_loop()
+                self._duration_timer = loop.call_later(1.0, self._on_duration_tick)
+
+    # ==================== Filtered Turns (简洁模式) ====================
+
+    def get_filtered_turns(self, visible_agent_ids: List[str], all_agent_ids: List[str]) -> List[TurnSummary]:
+        """根据 Agent 可见性过滤 turn。
+
+        Args:
+            visible_agent_ids: Currently visible agent IDs
+            all_agent_ids: All agent IDs in the session
+
+        Returns:
+            Filtered list of TurnSummary
+        """
+        if not visible_agent_ids or len(visible_agent_ids) >= len(all_agent_ids):
+            return list(self.turn_summaries)
+
+        return [t for t in self.turn_summaries if t.agent_id in visible_agent_ids]
 
     # ==================== Sending Messages ====================
 
@@ -537,18 +688,7 @@ class ChatStore:
         # Reset redo preservation when user sends a new message
         self._preserve_redo = False
 
-        # Optimistic update
-        msg_id = f"msg_{id(content)}_{hash(content)}"
-        optimistic_msg = {
-            "message_id": msg_id,
-            "message_type": "user_message",
-            "timestamp": "",
-            "role": "user",
-            "sender_id": "user",
-            "receiver_id": target_agent_id,
-            "data": {"content": content},
-        }
-        self.messages.append(optimistic_msg)
+        # 简洁模式：无需乐观消息，turn_start 事件会创建 TurnSummary
         self._notify_change()
 
         try:
@@ -741,80 +881,17 @@ class ChatStore:
             self._notify_error(f"重启Runner失败: {e}")
             return None
 
-    # ==================== Message Display State ====================
-
-    def toggle_tool_parameters(self, message_id: str):
-        """Toggle display of tool parameters."""
-        state = self.message_states.get(message_id)
-        if state:
-            state["showParameters"] = not state["showParameters"]
-            self._notify_change()
-
-    def toggle_tool_result(self, message_id: str):
-        """Toggle display of tool result."""
-        state = self.message_states.get(message_id)
-        if state:
-            state["showResult"] = not state["showResult"]
-            self._notify_change()
-
-    def toggle_reasoning(self, message_id: str):
-        """Toggle display of reasoning content."""
-        state = self.message_states.get(message_id)
-        if state:
-            state["showReasoning"] = not state["showReasoning"]
-            self._notify_change()
-
     # ==================== Cleanup ====================
 
-    def get_filtered_messages(self, visible_agent_ids: List[str], all_agent_ids: List[str]) -> List[Dict[str, Any]]:
-        """Get messages filtered by agent visibility (matching Web's filteredMessages).
-
-        Web reference logic:
-        - user_message: filter by receiver_id → agent_id (no target → only show when all visible)
-        - system_message: always visible
-        - other: filter by sender_id → agent_id
-        - If visible_agent_ids empty or equals all agents: no filtering
-
-        Args:
-            visible_agent_ids: Currently visible agent IDs
-            all_agent_ids: All agent IDs in the session
-
-        Returns:
-            Filtered message list
-        """
-        if not visible_agent_ids or len(visible_agent_ids) >= len(all_agent_ids):
-            return list(self.messages)
-
-        result = []
-        for msg in self.messages:
-            msg_type = msg.get("message_type", "")
-            role = msg.get("role", "")
-
-            if msg_type in ("user_message",) or role == "user":
-                target_id = msg.get("receiver_id") or msg.get("agent_id")
-                if not target_id:
-                    # No target → only show when ALL agents are visible
-                    if len(visible_agent_ids) >= len(all_agent_ids):
-                        result.append(msg)
-                elif target_id in visible_agent_ids:
-                    result.append(msg)
-            elif msg_type in ("agent_system_message", "system_message") or role == "agent_system":
-                # System messages always visible (Web alignment)
-                result.append(msg)
-            else:
-                # agent_response, tool_call, error: filter by sender_id
-                sender_id = msg.get("sender_id") or msg.get("agent_id")
-                if not sender_id or sender_id in visible_agent_ids:
-                    result.append(msg)
-
-        return result
-
     def clear_messages(self):
-        """Clear all messages and state."""
-        self.messages = []
-        self.message_states.clear()
-        self.pending_chunks.clear()
+        """Clear all turn data and state (简洁模式)."""
         self.show_redo_button = False
+        self.turn_summaries.clear()
+        self.turn_history_skip = 0
+        self.has_more_turns = True
+        self.loading_more_turns = False
+        self.active_turn_index = -1
+        self._stop_duration_timer()
         self._notify_change()
 
     async def disconnect(self):

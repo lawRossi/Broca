@@ -13,7 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from broca_tui.stores.session_store import SessionStore
-from broca_tui.stores.chat_store import ChatStore
+from broca_tui.stores.chat_store import ChatStore, TurnSummary
 from broca_tui.stores.agent_store import AgentStore
 from broca_tui.stores.crew_store import CrewStore
 
@@ -291,183 +291,65 @@ class TestChatStore:
         s._api = AsyncMock()
         return s
 
-    def test_init_message_state(self, store):
-        """Test initializing message display state."""
-        store._init_message_state("msg-1")
-        assert "msg-1" in store.message_states
-        assert store.message_states["msg-1"]["showParameters"] is False
-        assert store.message_states["msg-1"]["showResult"] is False
-        assert store.message_states["msg-1"]["showReasoning"] is False
-
-    def test_init_message_state_empty_id(self, store):
-        """Test init with empty message ID."""
-        store._init_message_state("")
-        assert "" not in store.message_states
-
-    def test_toggle_tool_parameters(self, store):
-        """Test toggling tool parameter display."""
-        store.message_states["msg-1"] = {
-            "showParameters": False,
-            "showResult": False,
-            "showReasoning": False,
-        }
-        store.toggle_tool_parameters("msg-1")
-        assert store.message_states["msg-1"]["showParameters"] is True
-        store.toggle_tool_parameters("msg-1")
-        assert store.message_states["msg-1"]["showParameters"] is False
-
-    def test_toggle_tool_result(self, store):
-        """Test toggling tool result display."""
-        store.message_states["msg-1"] = {
-            "showParameters": False,
-            "showResult": False,
-            "showReasoning": False,
-        }
-        store.toggle_tool_result("msg-1")
-        assert store.message_states["msg-1"]["showResult"] is True
-
-    def test_toggle_reasoning(self, store):
-        """Test toggling reasoning display."""
-        store.message_states["msg-1"] = {
-            "showParameters": False,
-            "showResult": False,
-            "showReasoning": False,
-        }
-        store.toggle_reasoning("msg-1")
-        assert store.message_states["msg-1"]["showReasoning"] is True
-
     def test_clear_messages(self, store):
-        """Test clearing all messages."""
-        store.messages = [{"message_id": "msg-1"}]
-        store.message_states["msg-1"] = {"showParameters": False, "showResult": False, "showReasoning": False}
+        """Test clearing all messages and turn data."""
         store.show_redo_button = True
+        store.turn_summaries = [
+            TurnSummary(turn_id="t1", sequence_number=1, agent_id="a1", agent_name="A"),
+        ]
+        store.turn_history_skip = 20
+        store.has_more_turns = True
+        store.active_turn_index = 0
 
         store.clear_messages()
-        assert len(store.messages) == 0
-        assert len(store.message_states) == 0
-        assert len(store.pending_chunks) == 0
         assert store.show_redo_button is False
+        # Turn data cleanup
+        assert len(store.turn_summaries) == 0
+        assert store.turn_history_skip == 0
+        assert store.has_more_turns is True
+        assert store.active_turn_index == -1
 
-    def test_add_user_message(self, store):
-        """Test adding a user message."""
-        msg = {
-            "message_id": "msg-1",
-            "message_type": "user_message",
-            "role": "user",
-            "data": {"content": "hello"},
-        }
-        store._add_message(msg)
-        assert len(store.messages) == 1
-        assert store.messages[0]["message_type"] == "user_message"
+    def test_send_user_message_does_not_add_message(self, store):
+        """In concise mode, send_user_message does not add an optimistic message to messages."""
+        # messages attribute no longer exists; turn_start event creates TurnSummary
+        assert not hasattr(store, 'messages') or len(getattr(store, 'messages', [])) == 0
 
-    def test_add_tool_call_message(self, store):
-        """Test adding a tool call message."""
-        msg = {
-            "message_id": "msg-2",
-            "message_type": "tool_call",
-            "role": "tool",
-            "data": {
-                "tool_call_id": "tc-1",
-                "tool_name": "read_file",
-                "arguments": {"path": "/tmp/test.txt"},
-            },
-        }
-        store._add_message(msg)
-        assert len(store.messages) == 1
-        assert store.messages[0]["data"]["tool_name"] == "read_file"
+    def test_create_turn_summary(self, store):
+        """Test creating a turn summary (简洁模式)."""
+        assert len(store.turn_summaries) == 0
+        store.create_turn_summary("new-turn", "agent-1", "Assistant")
+        assert len(store.turn_summaries) == 1
+        assert store.turn_summaries[0].turn_id == "new-turn"
+        assert store.turn_summaries[0].agent_name == "Assistant"
+        assert store.turn_summaries[0].is_active is True
 
-    def test_merge_tool_call_updates(self, store):
-        """Test merging tool call updates (same tool_call_id)."""
-        # First message: tool call started
-        msg1 = {
-            "message_id": "msg-2",
-            "message_type": "tool_call",
-            "data": {
-                "tool_call_id": "tc-1",
-                "tool_name": "read_file",
-                "arguments": {"path": "/tmp/test.txt"},
-                # no result yet
-            },
-        }
-        # Second message: tool call completed with result
-        msg2 = {
-            "message_id": "msg-2",
-            "message_type": "tool_call",
-            "data": {
-                "tool_call_id": "tc-1",
-                "result": "file content here",
-                "status": True,
-            },
-        }
+    def test_find_turn(self, store):
+        """Test finding a turn by ID."""
+        store.create_turn_summary("t1", "a1", "Agent 1")
+        store.create_turn_summary("t2", "a2", "Agent 2")
+        found = store._find_turn("t2")
+        assert found is not None
+        assert found.agent_id == "a2"
 
-        store._add_message(msg1)
-        assert len(store.messages) == 1
-        assert "result" not in store.messages[0]["data"]
+    def test_increment_turn_steps(self, store):
+        """Test incrementing turn step count."""
+        store.create_turn_summary("t1", "a1", "Agent")
+        assert store.turn_summaries[0].total_steps == 0
+        store.increment_turn_steps("t1")
+        assert store.turn_summaries[0].total_steps == 1
+        store.increment_turn_steps("t1")
+        assert store.turn_summaries[0].total_steps == 2
 
-        store._add_message(msg2)
-        assert len(store.messages) == 1  # still one message (merged)
-        assert store.messages[0]["data"]["result"] == "file content here"
-        assert store.messages[0]["data"]["status"] is True
+    def test_get_filtered_turns(self, store):
+        """Test filtering turns by agent visibility."""
+        store.create_turn_summary("t1", "a1", "Agent A")
+        store.create_turn_summary("t2", "a2", "Agent B")
+        store.create_turn_summary("t3", "a1", "Agent A")
 
-    def test_merge_agent_chunks(self, store):
-        """Test merging agent response chunks."""
-        chunks = [
-            {
-                "message_id": "msg-3",
-                "message_type": "agent_response",
-                "data": {"content": '{"content": "Hello ", "reasoning_content": "", "index": 0}'},
-            },
-            {
-                "message_id": "msg-3",
-                "message_type": "agent_response",
-                "data": {"content": '{"content": "World!", "reasoning_content": "", "index": 1}'},
-            },
-        ]
-
-        merged = store._merge_agent_chunks(chunks)
-        assert merged["content"] == "Hello World!"
-        assert merged["reasoning_content"] == ""
-
-    def test_merge_agent_chunks_with_reasoning(self, store):
-        """Test merging agent response chunks with reasoning."""
-        chunks = [
-            {
-                "message_id": "msg-4",
-                "message_type": "agent_response",
-                "data": {"content": '{"content": "Answer", "reasoning_content": "Think ", "index": 0}'},
-            },
-            {
-                "message_id": "msg-4",
-                "message_type": "agent_response",
-                "data": {"content": '{"content": "", "reasoning_content": "step by step", "index": 1}'},
-            },
-        ]
-
-        merged = store._merge_agent_chunks(chunks)
-        assert merged["content"] == "Answer"
-        assert merged["reasoning_content"] == "Think step by step"
-
-    def test_agent_response_chunk_merging(self, store):
-        """Test that agent response chunks are merged in the messages list."""
-        msg1 = {
-            "message_id": "msg-3",
-            "message_type": "agent_response",
-            "data": {"content": '{"content": "Hello ", "reasoning_content": "", "index": 0}'},
-        }
-        msg2 = {
-            "message_id": "msg-3",
-            "message_type": "agent_response",
-            "data": {"content": '{"content": "World!", "reasoning_content": "", "index": 1}'},
-        }
-
-        store._add_message(msg1)
-        assert len(store.messages) == 1
-
-        store._add_message(msg2)
-        assert len(store.messages) == 1  # still one message (merged)
-        import json
-        merged_content = json.loads(store.messages[0]["data"]["content"])
-        assert merged_content["content"] == "Hello World!"
+        all_ids = ["a1", "a2"]
+        filtered = store.get_filtered_turns(["a1"], all_ids)
+        assert len(filtered) == 2
+        assert all(t.agent_id == "a1" for t in filtered)
 
 
 # ============================================================================
