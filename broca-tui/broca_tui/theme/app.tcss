@@ -1,0 +1,1430 @@
+/* ============================================================
+   Broca TUI - Theme System + App Level Styles
+   (Merged: Textual 7.5.0 does not support @import or cross-file variables)
+   ============================================================ */
+
+/* ===== Color System ===== */
+
+/* Primary - Light blue */
+$primary-50: #f0f9ff;
+$primary-100: #e0f2fe;
+$primary-200: #bae6fd;
+$primary-300: #7dd3fc;
+$primary-400: #38bdf8;
+$primary-500: #0ea5e9;
+$primary-600: #0284c7;
+$primary-700: #0369a1;
+$primary-800: #075985;
+$primary-900: #0c4a6e;
+
+/* Neutral - Gray */
+$gray-50: #f8fafc;
+$gray-100: #f1f5f9;
+$gray-200: #e2e8f0;
+$gray-300: #cbd5e1;
+$gray-400: #94a3b8;
+$gray-500: #64748b;
+$gray-600: #475569;
+$gray-700: #334155;
+$gray-800: #1e293b;
+$gray-900: #0f172a;
+
+/* Functional colors */
+$success: #10b981;
+$warning: #f59e0b;
+$error: #ef4444;
+$error-darken-1: #dc2626;
+$error-darken-2: #b91c1c;
+$error-darken-3: #991b1b;
+$info: $primary-500;
+
+/* ===== Message Type Colors ===== */
+$msg-user-bg: #eff6ff;
+$msg-user-border: #3b82f6;
+$msg-user-text: #1e40af;
+
+$msg-agent-bg: #f0fdf4;
+$msg-agent-border: #22c55e;
+$msg-agent-text: #166534;
+
+$msg-tool-bg: #faf5ff;
+$msg-tool-border: #a855f7;
+$msg-tool-text: #6b21a8;
+
+$msg-system-bg: $gray-100;
+$msg-system-border: $gray-300;
+$msg-system-text: $gray-500;
+
+$msg-error-bg: #fef2f2;
+$msg-error-border: #ef4444;
+$msg-error-text: #991b1b;
+
+/* ===== Layout ===== */
+$header-height: 3;
+$sidebar-width: 20%;
+$input-height: 3;
+
+/* ===== Spacing ===== */
+$space-1: 1;
+$space-2: 2;
+$space-3: 3;
+$space-4: 4;
+
+/* ===== Typography ===== */
+$text-xs: 10;
+$text-sm: 12;
+$text-base: 14;
+$text-lg: 16;
+$text-xl: 20;
+$text-2xl: 24;
+
+/* ===== Borders ===== */
+$border-radius-sm: 1;
+$border-radius: 2;
+$border-radius-md: 3;
+$border-radius-lg: 4;
+
+/* ============================================================
+   App Level Styles
+   ============================================================ */
+
+/* ===== Screen defaults ===== */
+Screen {
+    background: $gray-50;
+    color: $gray-800;
+}
+
+/* ===== App-level defaults ===== */
+* {
+    scrollbar-size-vertical: 1;
+}
+
+/* ===== Buttons ===== */
+Button {
+    min-width: 8;
+    padding: 0 2;
+}
+
+Button:hover {
+    text-style: bold;
+}
+
+Button:focus {
+    border: solid $primary-500;
+}
+
+/* ===== Input fields ===== */
+Input {
+    border: solid $gray-300;
+    padding: 0 1;
+}
+
+Input:focus {
+    border: solid $primary-500;
+}
+
+/* ===== Labels ===== */
+Label {
+    padding: 0 1;
+}
+
+/* ============================================================
+   CHAT HEADER
+   ============================================================ */
+#chat-header {
+    height: 3;
+}
+
+.chat-header {
+    height: 3;
+    background: $primary-600;
+    padding: 0 2;
+    align: center middle;
+}
+
+.header-left {
+    width: 40%;
+}
+
+.header-brand {
+    color: white;
+    text-style: bold;
+}
+
+.status-dot {
+    margin: 0 0 0 1;
+    text-style: bold;
+}
+
+.status-dot.connected {
+    color: $success;
+}
+
+.status-dot.connecting {
+    color: $warning;
+}
+
+.status-dot.disconnected {
+    color: $gray-400;
+}
+
+.status-text {
+    color: $gray-200;
+}
+
+.status-text.connected {
+    color: #bbf7d0;
+}
+
+.status-text.connecting {
+    color: #fde68a;
+}
+
+.status-text.disconnected {
+    color: $gray-400;
+}
+
+.header-session {
+    color: $gray-200;
+    width: 1fr;
+    text-align: center;
+}
+
+.header-right {
+    width: 40%;
+    align: right middle;
+}
+
+.nav-button {
+    background: transparent;
+    color: white;
+    border: none;
+    min-width: 12;
+    margin: 0 1;
+}
+
+.nav-button:hover {
+    background: $primary-700;
+    text-style: bold;
+}
+
+.crew-button {
+    display: none;
+}
+
+/* ============================================================
+   SIDEBARS
+   ============================================================ */
+.sidebar {
+    width: $sidebar-width;
+    background: $gray-100;
+    border-right: solid $gray-200;
+}
+
+.sidebar-right {
+    width: $sidebar-width;
+    background: $gray-100;
+    border-left: solid $gray-200;
+}
+
+.sidebar-title-bar {
+    padding: 0 1;
+    height: 3;
+    align: center middle;
+    background: $gray-200;
+}
+
+.sidebar-title {
+    text-style: bold;
+    color: $gray-700;
+    width: 1fr;
+}
+
+.icon-button {
+    background: transparent;
+    border: none;
+    min-width: 3;
+    color: $gray-600;
+}
+
+.icon-button:hover {
+    color: $primary-500;
+}
+
+/* ============================================================
+   AGENT SIDEBAR
+   ============================================================ */
+.agent-card {
+    background: white;
+    border: solid $gray-200;
+    margin: 0 1 1 1;
+    padding: 1;
+    height: auto;   /* 切断 1fr 链路 — 否则 Vertical 默认 height: 1fr 撑满父容器 */
+}
+
+.agent-card:hover {
+    border: solid $primary-300;
+}
+
+.agent-card-header {
+    align: left middle;
+    height: auto;   /* 切断 1fr 链路 — 否则 Horizontal 默认 height: 1fr 撑满父卡片 */
+}
+
+.agent-name {
+    text-style: bold;
+    color: $gray-800;
+    width: 1fr;
+}
+
+.agent-role {
+    color: $gray-500;
+    text-style: italic;
+}
+
+.agent-status {
+    text-style: bold;
+}
+
+.agent-status.idle {
+    color: $success;
+}
+
+.agent-status.running {
+    color: $primary-500;
+}
+
+.agent-status.connecting {
+    color: $warning;
+}
+
+.agent-status.disconnected {
+    color: $gray-400;
+}
+
+.agent-description {
+    color: $gray-600;
+}
+
+.agent-stats {
+    height: 1;
+    margin: 0;
+}
+
+.stat-item {
+    color: $gray-500;
+    width: 1fr;
+    padding: 0 0 0 1;
+}
+
+.abort-button {
+    background: $error;
+    color: white;
+    border: none;
+    min-width: 8;
+    margin-top: 1;
+}
+
+.abort-button:hover {
+    background: #dc2626;
+}
+
+/* ============================================================
+   MESSAGE LIST
+   ============================================================ */
+/* MessageList extends Vertical, which provides default width: 1fr; height: 1fr; */
+
+.message-list-container {
+    width: 1fr;
+    height: 1fr;
+}
+
+.loading-indicator {
+    background: $gray-100;
+    color: $gray-500;
+    text-style: italic;
+    text-align: center;
+    padding: 1;
+}
+
+/* Empty state message (aligned with Web's text-center text-gray-400) */
+.empty-message {
+    color: $gray-400;
+    text-style: italic;
+    text-align: center;
+    height: 100%;
+}
+
+.message-scroll {
+    width: 1fr;
+    height: 1fr;
+}
+
+.redo-container {
+    align: center middle;
+    padding: 0 1;
+    height: auto;       /* 切断 1fr 链路 */
+}
+
+.redo-button {
+    background: $warning;
+    color: white;
+    border: none;
+    min-width: 10;
+}
+
+.redo-button:hover {
+    background: #d97706;
+}
+
+/* ============================================================
+   MESSAGE ITEMS
+   ============================================================ */
+.message-item {
+    margin: 0 1 1 1;
+    padding: 1 2;
+    height: auto;       /* 切断 1fr 链路 */
+}
+
+.message-item:hover {
+    background: rgba(0, 0, 0, 0.04);
+}
+
+.message-item.msg-user:hover {
+    border-left: solid $msg-user-border;
+    border-right: solid $msg-user-border;
+}
+
+.message-item.msg-agent:hover {
+    border-left: solid $msg-agent-border;
+    border-right: solid $msg-agent-border;
+}
+
+.message-item.msg-tool:hover {
+    border-left: solid $msg-tool-border;
+    border-right: solid $msg-tool-border;
+}
+
+.message-item.msg-error:hover {
+    border-left: solid $msg-error-border;
+    border-right: solid $msg-error-border;
+}
+
+.message-item.msg-user {
+    border-left: solid $msg-user-border;
+    background: $msg-user-bg;
+    margin-left: 4;
+}
+
+.message-item.msg-agent {
+    border-left: solid $msg-agent-border;
+    background: $msg-agent-bg;
+    margin-right: 4;
+}
+
+.message-item.msg-tool {
+    border-left: solid $msg-tool-border;
+    background: $msg-tool-bg;
+}
+
+.message-item.msg-error {
+    border-left: solid $msg-error-border;
+    background: $msg-error-bg;
+}
+
+.message-item.msg-system {
+    border: solid $gray-200;
+    background: $msg-system-bg;
+    text-align: center;
+}
+
+.message-item.msg-default {
+    border-left: solid $gray-400;
+    background: white;
+}
+
+.message-header-row {
+    margin-bottom: 1;
+    height: auto;       /* 切断 1fr 链路 */
+}
+
+/* Message content area — must use height:auto to avoid 1fr chain */
+.message-content-area {
+    height: auto;
+}
+
+.message-sender {
+    text-style: bold;
+    width: 1fr;
+}
+
+/* Header text colors aligning with Web getHeaderColor */
+.message-sender.header-user {
+    color: $msg-user-border;
+}
+
+.message-sender.header-agent {
+    color: $msg-agent-border;
+}
+
+.message-sender.header-tool {
+    color: $msg-tool-border;
+}
+
+.message-sender.header-error {
+    color: $msg-error-border;
+}
+
+.message-sender.header-system {
+    color: $gray-500;
+}
+
+.message-sender.header-default {
+    color: $text;
+}
+
+.message-timestamp {
+    color: $gray-400;
+}
+
+.msg-content {
+    padding: 0;
+}
+
+.plain-text {
+    color: $gray-800;
+}
+
+.system-text {
+    color: $gray-500;
+    text-style: italic;
+    text-align: center;
+}
+
+.error-text {
+    color: $msg-error-text;
+    text-style: bold;
+}
+
+/* Diff path header (Web: diff-path) */
+.diff-path {
+    color: $msg-tool-border;
+    text-style: bold;
+    height: auto;
+    padding: 0 0 1 0;
+}
+
+.markdown-content {
+    color: $gray-800;
+}
+
+.reasoning-content {
+    height: auto;
+}
+
+.reasoning-content {
+    background: #fffbeb;
+    border: solid $gray-200;
+    padding: 1;
+    margin: 1 0;
+}
+
+.reasoning-text {
+    color: $gray-600;
+    text-style: italic;
+}
+
+/* Tool call specific */
+.tool-header {
+    text-style: bold;
+    color: $msg-tool-text;
+    margin-bottom: 1;
+}
+
+.collapsible-toggle {
+    color: $primary-500;
+    text-style: bold;
+}
+
+.collapsible-toggle:hover {
+    color: $primary-700;
+}
+
+.params-content {
+    background: white;
+    border: solid $gray-200;
+    padding: 1;
+    margin: 1 0;
+    height: auto;       /* 切断 1fr 链路 */
+}
+
+.result-content {
+    background: #f0fdf4;
+    border: solid $gray-200;
+    padding: 1;
+    margin: 1 0;
+    height: auto;       /* 切断 1fr 链路 */
+}
+
+.json-display {
+    color: $gray-700;
+    padding: 1;
+    background: $gray-50;
+}
+
+.result-display {
+    color: $success;
+}
+
+.result-label {
+    color: $primary-500;
+    text-style: bold;
+}
+
+.result-text {
+    color: $gray-800;
+}
+
+/* Diff display */
+.diff-container {
+    background: white;
+    border: solid $gray-200;
+    margin: 1 0;
+    height: auto;       /* 切断 1fr 链路 */
+}
+
+.diff-line {
+    padding: 0 1;
+}
+
+.diff-added {
+    background: #e6ffec;
+    color: #16a34a;
+}
+
+.diff-removed {
+    background: #ffebe9;
+    color: #dc2626;
+}
+
+.diff-unchanged {
+    color: $gray-700;
+}
+
+.diff-header {
+    color: $primary-500;
+    text-style: bold;
+}
+
+/* File content */
+.file-content {
+    color: $msg-tool-text;
+    background: white;
+    border: solid $gray-200;
+    padding: 1;
+    margin: 1 0;
+}
+
+/* Preview content (read_file) */
+.preview-content {
+    height: auto;
+}
+
+/* Todo list */
+.todo-item {
+    padding: 0 2;
+    color: $gray-700;
+}
+
+/* Parameters label (ask_user: "问题:") (Web: params-label) */
+.params-label {
+    color: $msg-tool-border;
+    text-style: bold;
+}
+
+/* Ask user */
+.ask-question {
+    color: $gray-800;
+    text-style: bold;
+    margin: 1 0;
+}
+
+.ask-option {
+    color: $gray-600;
+    padding: 0 2;
+}
+
+/* Undo button — always clickable, subtle by default, prominent on hover */
+.undo-button {
+    min-width: 8;
+    border: none;
+    padding: 0 1;
+    background: transparent;
+    color: $gray-400;
+    dock: right;
+}
+
+.undo-button:hover {
+    text-style: bold;
+    color: $gray-600;
+}
+
+.msg-user .undo-button {
+    color: $gray-400;
+}
+
+.msg-user .undo-button:hover {
+    color: $msg-user-border;
+}
+
+.msg-agent .undo-button:hover {
+    color: $msg-agent-border;
+}
+
+.msg-tool .undo-button:hover {
+    color: $msg-tool-border;
+}
+
+.msg-error .undo-button:hover {
+    color: $msg-error-border;
+}
+
+/* ============================================================
+   CHAT INPUT
+   ============================================================ */
+#chat-input {
+    height: auto;
+}
+
+.chat-input-container {
+    border-top: solid $gray-200;
+    padding: 0 1 1 1;
+    height: auto;
+}
+
+.target-indicator {
+    color: $primary-500;
+    padding: 0 1;
+    margin-bottom: 0;
+}
+
+.input-row {
+    height: auto;
+}
+
+.chat-input-field {
+    width: 1fr;
+}
+
+.send-button {
+    min-width: 8;
+    margin-left: 1;
+}
+
+/* Autocomplete (above input) */
+.autocomplete {
+    background: white;
+    border: solid $primary-500;
+    margin-bottom: 0;
+    height: auto;
+    max-height: 10;
+}
+
+/* ============================================================
+   INFO SIDEBAR
+   ============================================================ */
+.info-section {
+    margin: 1;
+    border-bottom: solid $gray-200;
+    padding-bottom: 1;
+}
+
+.section-title {
+    text-style: bold;
+    color: $gray-700;
+    margin-bottom: 1;
+}
+
+.info-row {
+    color: $gray-600;
+    padding: 0 1;
+}
+
+.runner-actions {
+    margin-top: 1;
+    align: center middle;
+}
+
+.runner-btn {
+    min-width: 8;
+    margin: 0 1;
+}
+
+.stat-row {
+    height: 1;
+    padding: 0 1;
+}
+
+.stat-dot {
+    text-style: bold;
+    margin-right: 1;
+}
+
+.stat-dot.user-dot {
+    color: $msg-user-border;
+}
+
+.stat-dot.agent-dot {
+    color: $msg-agent-border;
+}
+
+.stat-dot.tool-dot {
+    color: $msg-tool-border;
+}
+
+.stat-dot.system-dot {
+    color: $gray-400;
+}
+
+.stat-dot.error-dot {
+    color: $msg-error-border;
+}
+
+.stat-text {
+    color: $gray-600;
+}
+
+/* ============================================================
+   DIALOGS
+   ============================================================ */
+ModalScreen {
+    background: rgba(0, 0, 0, 0.5);
+    align: center middle;
+}
+
+.dialog {
+    background: white;
+    border: solid $gray-300;
+    padding: 2;
+    margin: 4 8;
+    min-width: 40;
+    max-width: 76;
+    height: auto;
+}
+
+.dialog-delete {
+    width: auto;
+    min-width: 48;
+    height: auto;
+    padding: 1 2;
+}
+
+.dialog-title {
+    text-style: bold;
+    margin-bottom: 1;
+    color: $gray-800;
+}
+
+.dialog-content {
+    margin: 1 0;
+}
+
+.dialog-actions {
+    align: center middle;
+    margin-top: 1;
+    height: auto;
+}
+
+.dialog-label {
+    color: $gray-700;
+    text-style: bold;
+    margin-top: 1;
+}
+
+.dialog-select {
+    margin: 0 1;
+}
+
+.dialog-textarea {
+    height: 10;
+    margin: 0 1;
+}
+
+/* Permission dialog */
+.permission-dialog {
+    min-width: 50;
+}
+
+.permission-message {
+    color: $gray-800;
+    padding: 1;
+    background: $gray-50;
+    border: solid $gray-200;
+}
+
+.permission-grid {
+    grid-size: 2;
+    grid-gutter: 1;
+    margin-top: 1;
+}
+
+.permission-btn {
+    min-width: 15;
+}
+
+.permission-btn.allow {
+    background: $success;
+    color: white;
+}
+
+.permission-btn.deny {
+    background: $error;
+    color: white;
+}
+
+.permission-btn.allow-session {
+    background: $primary-500;
+    color: white;
+}
+
+.permission-btn.deny-session {
+    background: $gray-600;
+    color: white;
+}
+
+/* Agent query dialog */
+.query-dialog {
+    min-width: 50;
+}
+
+.query-question {
+    color: $gray-800;
+    text-style: bold;
+    padding: 1;
+    background: $gray-50;
+    border: solid $gray-200;
+    margin-bottom: 1;
+}
+
+.query-options-label {
+    color: $gray-600;
+    text-style: bold;
+    margin: 1 0;
+}
+
+.option-card {
+    background: white;
+    border: solid $gray-200;
+    padding: 1;
+    margin: 0 0 1 0;
+}
+
+.option-card:hover {
+    border: solid $primary-500;
+    background: $primary-50;
+}
+
+.option-name {
+    color: $primary-700;
+    text-style: bold;
+}
+
+.option-desc {
+    color: $gray-500;
+}
+
+.query-input-label {
+    color: $gray-600;
+    text-style: bold;
+    margin: 1 0;
+}
+
+.query-input {
+    margin: 0 1;
+}
+
+/* ===== Execution status colors ===== */
+.exec-pending {
+    color: $warning;
+}
+
+.exec-running {
+    color: $primary-500;
+}
+
+.exec-completed {
+    color: $success;
+}
+
+.exec-failed {
+    color: $error;
+}
+
+.exec-aborted {
+    color: $gray-500;
+}
+
+/* ===== Phase progress ===== */
+.phase-done {
+    color: $success;
+}
+
+.phase-running {
+    color: $primary-500;
+}
+
+.phase-pending {
+    color: $gray-400;
+}
+
+.phase-error {
+    color: $error;
+}
+
+/* ===== Main content area ===== */
+.main-content {
+    width: 1fr;
+    height: 1fr;
+}
+
+/* ===== Scrollable containers ===== */
+.scrollable {
+    overflow-x: auto;
+}
+
+/* ===== Toast / Notification ===== */
+Toast {
+    background: $gray-800;
+    color: white;
+    padding: 1 2;
+}
+
+/* ============================================================
+   VISIBILITY FILTER DIALOG
+   ============================================================ */
+.filter-list {
+    margin: 1;
+}
+
+.filter-item {
+    background: transparent;
+    border: none;
+    text-align: left;
+    padding: 0 1;
+    min-width: 20;
+    color: $gray-700;
+}
+
+.filter-item:hover {
+    background: $primary-100;
+    color: $primary-700;
+}
+
+.filter-actions {
+    align: center middle;
+    margin: 0 1;
+}
+
+.filter-btn {
+    min-width: 10;
+    margin: 0 1;
+}
+
+/* ============================================================
+   SESSION LIST SCREEN
+   ============================================================ */
+.session-list-screen {
+    background: $gray-50;
+}
+
+.session-list-header {
+    height: 5;
+    background: $gray-700;
+    padding: 0 2;
+    align: left middle;
+    min-height: 5;
+}
+
+.screen-title {
+    color: white;
+    text-style: bold;
+    width: auto;
+    margin-right: 1;
+}
+
+.header-spacer {
+    width: 1fr;
+}
+
+.session-count {
+    color: $gray-200;
+}
+
+.create-btn {
+    min-width: 16;
+    background: $primary-500;
+    color: white;
+    border: none;
+    text-style: bold;
+    padding: 0 3;
+    margin-left: 1;
+    height: 3;
+}
+
+.create-btn:hover {
+    background: $primary-600;
+}
+
+.search-bar {
+    margin: 1 2;
+    border: solid $gray-300;
+    background: $gray-100;
+}
+
+.search-bar:focus {
+    border: solid $primary-500;
+}
+
+.session-list {
+    width: 1fr;
+    height: 1fr;
+}
+
+.session-card {
+    background: white;
+    border: solid $gray-200;
+    margin: 0 2 1 2;
+    padding: 1 2;
+    height: auto;
+}
+
+.session-card:hover {
+    border: solid $primary-300;
+}
+
+.session-card-header {
+    margin-bottom: 1;
+    height: auto;
+}
+
+.session-name {
+    text-style: bold;
+    color: $gray-800;
+    width: 1fr;
+}
+
+.session-category {
+    padding: 0 1;
+    text-style: bold;
+    height: auto;
+}
+
+.session-category.category-normal {
+    background: $primary-100;
+    color: $primary-700;
+}
+
+.session-category.category-orch {
+    background: #fef3c7;
+    color: #92400e;
+}
+
+.session-meta {
+    color: $gray-500;
+    width: 1fr;
+}
+
+.session-card-actions {
+    align: left middle;
+    height: auto;
+}
+
+.action-btn {
+    min-width: 8;
+    margin: 0 1;
+}
+
+.enter-btn {
+    background: $primary-500;
+    color: white;
+}
+
+.del-btn {
+    background: $error;
+    color: white;
+}
+
+.del-btn:hover {
+    background: $error-darken-1;
+}
+
+/* Dialog input */
+.dialog-input {
+    margin: 0 1 1 1;
+    background: white;
+    border: solid $gray-300;
+    color: $gray-700;
+}
+
+.dialog-input:focus {
+    border: solid $primary-500;
+}
+
+.dialog-input.selected {
+    border: solid $primary-500;
+    background: $primary-50;
+    color: $primary-700;
+}
+
+/* Dialog type selection row */
+.dialog-type-row {
+    height: auto;
+    margin: 0 1 1 1;
+}
+
+.dialog-type-row > .dialog-input {
+    width: 1fr;
+    margin: 0 1 0 0;
+}
+
+.dialog-type-row > .dialog-input:last-child {
+    margin-right: 0;
+}
+
+/* Dialog select row */
+.dialog-select-row {
+    height: auto;
+    margin: 0 1 1 1;
+}
+
+.dialog-select {
+    width: 1fr;
+    margin: 0 1 0 0;
+}
+
+.dialog-select > SelectCurrent {
+    background: $gray-100;
+    border: solid $gray-300;
+    color: $gray-700;
+}
+
+.dialog-select > SelectCurrent > Static#label {
+    background: $gray-100;
+    color: $gray-700;
+}
+
+.dialog-select > SelectCurrent > .arrow {
+    background: $gray-100;
+    color: $gray-500;
+}
+
+.dialog-select:focus > SelectCurrent {
+    border: solid $primary-500;
+    background: $gray-100;
+}
+
+.dialog-select:last-child {
+    margin-right: 0;
+}
+
+/* Delete dialog action buttons row — equal width for both buttons */
+.dialog-actions-delete {
+    align: center middle;
+    margin-top: 1;
+    height: auto;
+}
+
+.dialog-actions-delete > Button {
+    width: 14;
+    margin: 0 1;
+}
+
+/* Cancel button — higher specificity to override global Button:focus */
+.dialog-actions > Button.cancel-btn,
+.dialog-actions-delete > Button.cancel-btn {
+    background: $gray-200;
+    color: $gray-700;
+    border: solid $gray-300;
+}
+
+.dialog-actions > Button.cancel-btn:hover,
+.dialog-actions-delete > Button.cancel-btn:hover {
+    background: $gray-300;
+    border: solid $gray-400;
+}
+
+.dialog-actions > Button.cancel-btn:focus,
+.dialog-actions-delete > Button.cancel-btn:focus {
+    border: solid $gray-500;
+    background: $gray-300;
+}
+
+/* Delete confirm button — higher specificity to override global Button:focus */
+.dialog-actions-delete > Button.delete-btn {
+    background: $error;
+    color: white;
+    border: solid $error-darken-1;
+}
+
+.dialog-actions-delete > Button.delete-btn:hover {
+    background: $error-darken-2;
+}
+
+.dialog-actions-delete > Button.delete-btn:focus {
+    border: solid $error-darken-2;
+    background: $error-darken-1;
+    text-style: bold;
+}
+
+/* Error state */
+.error-state {
+    color: $error;
+    text-align: center;
+    padding: 2;
+    height: auto;
+}
+
+/* ============================================================
+   CHAT SCREEN
+   ============================================================ */
+.chat-screen {
+    width: 1fr;
+    height: 1fr;
+}
+
+.chat-content {
+    width: 1fr;
+    height: 1fr;
+}
+
+/* ============================================================
+   CREW EXECUTIONS SCREEN
+   ============================================================ */
+.crew-screen {
+    background: $gray-50;
+}
+
+.crew-header {
+    height: 3;
+    background: $primary-600;
+    padding: 0 2;
+    align: left middle;
+}
+
+.filter-bar {
+    margin: 1 2;
+    align: left middle;
+    height: auto;
+}
+
+.status-filter {
+    width: 30%;
+    margin-right: 2;
+}
+
+.submit-btn {
+    min-width: 12;
+}
+
+.execution-list {
+    width: 1fr;
+    height: 1fr;
+}
+
+.execution-card {
+    background: white;
+    border: solid $gray-200;
+    margin: 0 2 1 2;
+    padding: 1 2;
+    height: auto;
+}
+
+.execution-card:hover {
+    border: solid $primary-300;
+}
+
+.exec-card-header {
+    margin-bottom: 1;
+    height: auto;
+}
+
+.exec-name {
+    text-style: bold;
+    color: $gray-800;
+    width: 1fr;
+}
+
+.exec-status {
+    text-style: bold;
+}
+
+.exec-status.exec-pending {
+    color: $warning;
+}
+
+.exec-status.exec-running {
+    color: $primary-500;
+}
+
+.exec-status.exec-completed {
+    color: $success;
+}
+
+.exec-status.exec-failed {
+    color: $error;
+}
+
+.exec-status.exec-aborted {
+    color: $gray-500;
+}
+
+.exec-card-meta {
+    margin-bottom: 1;
+    height: auto;
+}
+
+.exec-meta {
+    color: $gray-500;
+    width: 1fr;
+}
+
+.exec-progress {
+    color: $primary-500;
+    margin-bottom: 1;
+}
+
+.exec-actions {
+    align: right middle;
+    height: auto;
+}
+
+.view-btn {
+    background: $primary-500;
+    color: white;
+}
+
+.abort-btn {
+    background: $error;
+    color: white;
+}
+
+.config-file-btn {
+    background: white;
+    border: solid $gray-200;
+    text-align: left;
+    min-width: 40;
+    height: auto;
+    margin: 0 1 1 1;
+    padding: 1;
+}
+
+.config-file-btn:hover {
+    border: solid $primary-500;
+    background: $primary-50;
+}
+
+.config-file-info {
+    color: $gray-600;
+    padding: 0 1 1 2;
+    height: auto;
+}

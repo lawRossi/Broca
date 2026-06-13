@@ -1,0 +1,489 @@
+"""
+SessionListScreen — Default home screen.
+
+Features:
+- Session cards with name, category tag, timestamps
+- Create/delete sessions
+- Search by keyword
+- Navigation by category (normal → Chat, agent-orchestration → Crew)
+- Ctrl+N create, Ctrl+F search
+"""
+
+from __future__ import annotations
+
+import os
+from typing import Any, Dict, Optional
+
+from textual.app import ComposeResult
+from textual.containers import Horizontal, ScrollableContainer, Vertical
+from textual.screen import ModalScreen, Screen
+from textual.widgets import Button, Input, Label, Select, Static
+
+from broca_tui.api.session import SessionAPI
+from broca_tui.stores.session_store import SessionStore
+
+
+# ============================================================================
+# Create Session Dialog
+# ============================================================================
+
+class CreateSessionDialog(ModalScreen):
+    """Modal dialog for creating a new session.
+
+    Supports:
+    - Optional session name
+    - Workspace defaulting to current working directory
+    - Session type selection (normal / agent-orchestration)
+    - Optional LLM provider and model selection
+    """
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._api = SessionAPI()
+        self._selected_type = "normal"
+
+    def compose(self) -> ComposeResult:
+        """Create the dialog layout."""
+        with Vertical(classes="dialog"):
+            yield Label("创建新会话", classes="dialog-title")
+
+            yield Label("名称:", classes="dialog-label")
+            yield Input(placeholder="会话名称（可选）", id="input-name", classes="dialog-input")
+
+            yield Label("Workspace:", classes="dialog-label")
+            yield Input(
+                placeholder="工作空间路径",
+                value=os.getcwd(),
+                id="input-workspace",
+                classes="dialog-input",
+            )
+
+            yield Label("类型:", classes="dialog-label")
+            with Horizontal(classes="dialog-type-row"):
+                yield Button("📝 普通会话", id="btn-type-normal", classes="dialog-input selected")
+                yield Button("🤖 Agent 编排", id="btn-type-orch", classes="dialog-input")
+
+            yield Label("LLM 配置（可选，不选则使用默认）", classes="dialog-label")
+            with Horizontal(classes="dialog-select-row"):
+                yield Select(
+                    [("加载中...", "")],
+                    id="input-provider",
+                    prompt="选择提供商...",
+                    classes="dialog-select",
+                )
+                yield Select(
+                    [],
+                    id="input-model",
+                    prompt="选择模型...",
+                    disabled=True,
+                    classes="dialog-select",
+                )
+
+            with Horizontal(classes="dialog-actions"):
+                yield Button("取消", id="btn-cancel", classes="cancel-btn")
+                yield Button("创建", id="btn-create", variant="primary")
+
+    async def on_mount(self) -> None:
+        """Fetch available LLM providers on mount."""
+        try:
+            providers = await self._api.get_llm_providers()
+            options: list[tuple[str, str | None]] = [("默认", "")]
+            for p in providers:
+                label = p.get("name", p["id"])
+                options.append((label, p["id"]))
+            provider_select = self.query_one("#input-provider", Select)
+            provider_select.set_options(options)
+        except Exception:
+            # If can't fetch providers, keep the prompt placeholder
+            self.notify("无法加载 LLM 提供商列表", severity="warning", timeout=3)
+
+    async def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle Select changes — provider selection triggers model loading."""
+        if event.select.id == "input-provider":
+            provider = event.value
+            await self._on_provider_selected(provider)
+
+    async def _on_provider_selected(self, provider: str | None) -> None:
+        """Fetch models when a provider is selected.
+
+        Args:
+            provider: The selected provider ID, or empty string for default.
+        """
+        model_select = self.query_one("#input-model", Select)
+
+        if not provider:
+            # "默认" selected — disable model select
+            model_select.disabled = True
+            model_select.set_options([])
+            return
+
+        # Fetch models for the selected provider
+        try:
+            model_select.disabled = True
+            model_select.set_options([("加载中...", "")])
+            models = await self._api.get_llm_models(provider)
+
+            options: list[tuple[str, str | None]] = [("默认", "")]
+            for m in models:
+                label = m.get("name", m["id"])
+                options.append((label, m["id"]))
+            model_select.set_options(options)
+            model_select.disabled = False
+        except Exception:
+            model_select.set_options([("无法加载模型", "")])
+            model_select.disabled = True
+            self.notify(f"无法加载 {provider} 的模型列表", severity="warning", timeout=3)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses."""
+        btn_id = event.button.id or ""
+        if btn_id == "btn-type-normal":
+            self._selected_type = "normal"
+            self.query_one("#btn-type-normal", Button).classes = "dialog-input selected"
+            self.query_one("#btn-type-orch", Button).classes = "dialog-input"
+        elif btn_id == "btn-type-orch":
+            self._selected_type = "agent-orchestration"
+            self.query_one("#btn-type-orch", Button).classes = "dialog-input selected"
+            self.query_one("#btn-type-normal", Button).classes = "dialog-input"
+        elif btn_id == "btn-create":
+            self._do_create()
+        elif btn_id == "btn-cancel":
+            self.dismiss({"action": "cancel"})
+
+    def _do_create(self) -> None:
+        """Collect form values and dismiss with result."""
+        name = self.query_one("#input-name", Input).value.strip()
+        workspace = self.query_one("#input-workspace", Input).value.strip()
+        provider_select = self.query_one("#input-provider", Select)
+        model_select = self.query_one("#input-model", Select)
+
+        # provider/model: 必须显式判断 Select.BLANK，因为 bool(Select.BLANK) 是 True
+        # 空字符串 "" 表示 "使用默认"，Select.BLANK 表示用户未做选择 → 都视为 None
+        provider = (
+            None
+            if provider_select.value is Select.BLANK or not provider_select.value
+            else provider_select.value
+        )
+        model = (
+            None
+            if model_select.value is Select.BLANK or not model_select.value
+            else model_select.value
+        )
+
+        self.dismiss({
+            "action": "create",
+            "description": name or None,
+            "workspace": workspace or None,
+            "category": self._selected_type,
+            "provider": provider,
+            "model": model,
+        })
+
+
+# ============================================================================
+# Delete Confirm Dialog
+# ============================================================================
+
+class DeleteConfirmDialog(ModalScreen):
+    """Confirm dialog for deleting a session."""
+
+    def __init__(self, session_name: str, **kwargs):
+        super().__init__(**kwargs)
+        self._session_name = session_name
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="dialog dialog-delete"):
+            yield Label("⚠️ 确认删除", classes="dialog-title")
+            yield Label("确定要删除该会话吗？此操作不可撤销。", classes="dialog-content")
+            with Horizontal(classes="dialog-actions dialog-actions-delete"):
+                yield Button("取消", id="btn-cancel", classes="cancel-btn")
+                yield Button("删除", id="btn-confirm", classes="delete-btn")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses — dismiss with action result."""
+        btn_id = event.button.id or ""
+        if btn_id == "btn-confirm":
+            self.dismiss({"action": "confirm"})
+        elif btn_id == "btn-cancel":
+            self.dismiss({"action": "cancel"})
+
+
+# ============================================================================
+# SessionListScreen
+# ============================================================================
+
+class SessionListScreen(Screen):
+    """Default home screen for session management."""
+
+    BINDINGS = [
+        ("ctrl+n", "create_session", "新会话"),
+        ("ctrl+f", "focus_search", "搜索"),
+    ]
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        self._store = SessionStore()
+
+    def compose(self) -> ComposeResult:
+        """Create the screen layout."""
+        with Vertical(classes="session-list-screen"):
+            # Top bar
+            with Horizontal(classes="session-list-header"):
+                yield Label("会话管理", classes="screen-title")
+                yield Label("", id="session-count", classes="session-count")
+                yield Static("", classes="header-spacer")
+                yield Button("＋ 新会话", id="btn-create-session", variant="primary", classes="create-btn")
+
+            # Search bar
+            yield Input(
+                placeholder="搜索会话... (Ctrl+F 聚焦)",
+                id="search-input",
+                classes="search-bar",
+            )
+
+            # Session cards list
+            with ScrollableContainer(id="session-list", classes="session-list"):
+                yield Static("加载中...", classes="loading")
+
+    def on_mount(self) -> None:
+        """Load sessions on mount and start scroll detection."""
+        self.run_worker(self._load_sessions())
+        self.set_interval(1 / 3, self._check_scroll_bottom)
+
+    async def _load_sessions(self, keyword: Optional[str] = None):
+        """Load sessions from store."""
+        await self._store.load_sessions(keyword=keyword)
+
+        if self._store.last_error:
+            container = self.query_one("#session-list", ScrollableContainer)
+            count_label = self.query_one("#session-count", Label)
+            await container.remove_children()
+            count_label.update("⚠️ 连接失败")
+            # Strip operation prefix like "加载会话列表失败: " for cleaner display
+            error_detail = self._store.last_error.split(": ", 1)[-1]
+            container.mount(
+                Static("无法连接到后端服务，请确保 API 服务器正在运行。\n"
+                       f"错误: {error_detail}",
+                       classes="empty-state error-state")
+            )
+            self._store.last_error = None
+            return
+
+        await self._render_sessions()
+
+    async def _render_sessions(self):
+        """Render session cards. Must be async because remove_children() returns an AwaitRemove."""
+        container = self.query_one("#session-list", ScrollableContainer)
+        count_label = self.query_one("#session-count", Label)
+        await container.remove_children()
+
+        sessions = self._store.sessions
+        count_label.update(f"共 {self._store.total} 个会话")
+
+        if not sessions:
+            container.mount(Static("暂无会话，点击「＋ 新会话」创建", classes="empty-state"))
+            return
+
+        for session in sessions:
+            card = self._create_session_card(session)
+            container.mount(card)
+
+    def _check_scroll_bottom(self) -> None:
+        """Check if user scrolled near bottom and load more if needed."""
+        try:
+            container = self.query_one("#session-list", ScrollableContainer)
+            if not self._store.has_more or self._store.loading:
+                return
+            # Load more when within one viewport height of the bottom
+            if container.max_scroll_y > 0:
+                distance_from_bottom = container.max_scroll_y - container.scroll_y
+                if distance_from_bottom <= container.container_size.height:
+                    self.run_worker(
+                        self._load_more_sessions(),
+                        group="session-load-more",
+                        exclusive=True,
+                    )
+        except Exception:
+            pass  # Container not ready yet
+
+    async def _load_more_sessions(self) -> None:
+        """Load next page of sessions and append new cards to the list."""
+        old_count = len(self._store.sessions)
+        await self._store.load_more()
+        if self._store.last_error:
+            self._store.last_error = None
+            return
+
+        # Only mount new cards (don't re-render everything)
+        new_sessions = self._store.sessions[old_count:]
+        if not new_sessions:
+            return
+
+        container = self.query_one("#session-list", ScrollableContainer)
+        for session in new_sessions:
+            card = self._create_session_card(session)
+            container.mount(card)
+
+        # Update session count
+        count_label = self.query_one("#session-count", Label)
+        count_label.update(f"共 {self._store.total} 个会话")
+
+    def _create_session_card(self, session: Dict[str, Any]) -> Vertical:
+        """Create a session card with all child widgets.
+
+        Uses widget constructor with positional children arguments instead of
+        mount(), since mount() requires the parent to already be in the DOM.
+
+        Args:
+            session: Session dict
+
+        Returns:
+            Vertical container with card content
+        """
+        session_id = session.get("session_id", "")
+        description = session.get("description") or session_id[:16]
+        category = session.get("category", "normal")
+        created_at = (session.get("created_at", "") or "")[:19]
+        workspace = session.get("workspace", "")
+
+        category_label = "📝 普通" if category == "normal" else "🤖 编排"
+        category_class = "category-normal" if category == "normal" else "category-orch"
+
+        # Build meta labels list
+        meta_labels = [
+            Label(f"ID: {session_id[:12]}...", classes="session-meta"),
+        ]
+        if workspace:
+            meta_labels.append(Label(f"📁 {workspace[:20]}...", classes="session-meta"))
+        meta_labels.append(Label(f"🕐 {created_at}", classes="session-meta"))
+
+        # Build card using constructor positional args (avoids mount() before DOM)
+        card = Vertical(
+            Horizontal(
+                Label(description[:40], classes="session-name"),
+                Label(category_label, classes=f"session-category {category_class}"),
+                classes="session-card-header",
+            ),
+            Horizontal(
+                *meta_labels,
+                Button("▶ 进入", id=f"enter-{session_id}", classes="action-btn enter-btn"),
+                Button("🗑 删除", id=f"delete-{session_id}", classes="action-btn del-btn"),
+                classes="session-card-actions",
+            ),
+            classes="session-card",
+            id=f"session-{session_id}",
+        )
+        return card
+
+    def on_static_click(self, event: Static.Click) -> None:
+        """Handle session card click — delegates to the enter button for consistency.
+
+        Args:
+            event: Click event
+        """
+        widget = event.widget
+        # Walk up to find session card, then trigger "enter" action
+        while widget is not None:
+            if hasattr(widget, "id") and widget.id and widget.id.startswith("session-"):
+                session_id = widget.id.replace("session-", "")
+                session = self._store.get_session(session_id)
+                if session:
+                    category = session.get("category", "normal")
+                    self._navigate_to_session(session_id, category)
+                return
+            widget = widget.parent if hasattr(widget, "parent") else None
+
+    def _navigate_to_session(self, session_id: str, category: str):
+        """Navigate to the appropriate screen based on category.
+
+        Args:
+            session_id: Session ID
+            category: 'normal' or 'agent-orchestration'
+        """
+        from broca_tui.screens.chat import ChatScreen
+        from broca_tui.screens.crew_executions import CrewExecutionsScreen
+
+        if category == "agent-orchestration":
+            screen = CrewExecutionsScreen(session_id=session_id)
+        else:
+            screen = ChatScreen(session_id=session_id)
+        self.app.push_screen(screen)
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Handle search input changes.
+
+        Args:
+            event: Input changed event
+        """
+        if event.input.id == "search-input":
+            keyword = event.value.strip()
+            # Exclusive group ensures previous search worker is cancelled
+            # before starting a new one, preventing concurrent renders that
+            # cause duplicate widget IDs.
+            self.run_worker(
+                self._load_sessions(keyword=keyword or None),
+                group="session-search",
+                exclusive=True,
+            )
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle button presses.
+
+        Args:
+            event: Button pressed event
+        """
+        btn_id = event.button.id or ""
+
+        if btn_id == "btn-create-session":
+            self.run_worker(self.action_create_session())
+        elif btn_id.startswith("delete-"):
+            session_id = btn_id.replace("delete-", "")
+            self.run_worker(self._confirm_delete(session_id))
+        elif btn_id.startswith("enter-"):
+            session_id = btn_id.replace("enter-", "")
+            session = self._store.get_session(session_id)
+            if session:
+                category = session.get("category", "normal")
+                self._navigate_to_session(session_id, category)
+
+    async def action_create_session(self) -> None:
+        """Show create session dialog."""
+        dialog = CreateSessionDialog()
+        result = await self.app.push_screen_wait(dialog)
+        if result and result.get("action") == "create":
+            created = await self._store.create_session(
+                description=result.get("description"),
+                workspace=result.get("workspace"),
+                category=result.get("category"),
+                provider=result.get("provider"),
+                model=result.get("model"),
+            )
+            if created:
+                await self._render_sessions()
+            else:
+                error_msg = self._store.last_error or "创建会话失败"
+                self._store.last_error = None
+                self.notify(error_msg, severity="error", timeout=8)
+
+    async def _confirm_delete(self, session_id: str) -> None:
+        """Show delete confirmation dialog.
+
+        Args:
+            session_id: Session ID to delete
+        """
+        session = self._store.get_session(session_id)
+        name = session.get("description", session_id[:16]) if session else session_id
+        dialog = DeleteConfirmDialog(name)
+        result = await self.app.push_screen_wait(dialog)
+        if result and result.get("action") == "confirm":
+            deleted = await self._store.delete_session(session_id)
+            if deleted:
+                await self._render_sessions()
+            else:
+                error_msg = self._store.last_error or "删除会话失败"
+                self._store.last_error = None
+                self.notify(error_msg, severity="error", timeout=5)
+
+    def action_focus_search(self) -> None:
+        """Focus the search input."""
+        self.query_one("#search-input", Input).focus()
