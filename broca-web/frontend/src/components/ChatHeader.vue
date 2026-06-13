@@ -38,13 +38,13 @@ const handleConciseToggle = (val: boolean) => {
 
         <div class="flex items-center gap-2">
           <!-- 简洁/明细模式切换 -->
-          <el-switch
-            :model-value="chatStore.displayMode === 'concise'"
-            active-text="📊"
-            inactive-text="📋"
-            @change="handleConciseToggle"
+          <el-button
             size="small"
-          />
+            :type="chatStore.displayMode === 'concise' ? 'primary' : 'default'"
+            @click="handleConciseToggle"
+          >
+            <span class="text-xs">{{ chatStore.displayMode === 'concise' ? '简洁模式' : '明细模式' }}</span>
+          </el-button>
 
           <!-- 搜索按钮 -->
           <el-button

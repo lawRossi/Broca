@@ -148,6 +148,11 @@ const showToolStats = computed(() => {
   return props.turn.toolCallStats && props.turn.toolCallStats.length > 0
 })
 
+// 是否有工具执行（无工具执行时隐藏整个执行摘要）
+const hasToolExecution = computed(() => {
+  return showToolStats.value || !!currentToolText.value || showFilePath.value || showTodoList.value
+})
+
 // 工具统计文本
 const toolStatsText = computed(() => {
   return props.turn.toolCallStats
@@ -244,7 +249,7 @@ const handleUndo = async () => {
     </div>
 
     <!-- 执行摘要 -->
-    <div class="py-2 border-b border-gray-100">
+    <div v-if="hasToolExecution" class="py-2 border-b border-gray-100">
       <div class="flex items-center gap-1 mb-1.5 text-xs text-gray-400">
         <span>📊</span>
         <span class="font-medium">执行摘要</span>
@@ -296,8 +301,13 @@ const handleUndo = async () => {
 
     <!-- 回复区域 -->
     <div v-if="showResponse" class="pt-2">
-      <div class="markdown-content text-gray-800 text-xs sm:text-sm leading-relaxed overflow-x-auto"
-        v-html="renderMarkdown(turn.finalResponse)"></div>
+      <div class="flex items-start gap-2">
+        <span class="flex-shrink-0 text-sm mt-0.5">🤖</span>
+        <div class="flex-1 min-w-0">
+          <div class="markdown-content text-gray-800 text-xs sm:text-sm leading-relaxed overflow-x-auto"
+            v-html="renderMarkdown(turn.finalResponse)"></div>
+        </div>
+      </div>
     </div>
 
     <!-- 推理内容（可折叠，放在回复之后，样式与明细模式一致） -->

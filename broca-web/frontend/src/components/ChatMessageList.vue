@@ -239,24 +239,24 @@ const handleRedo = () => {
       </div>
 
       <ChatMessageItem v-for="m in chatStore.filteredMessages" :key="m.message_id" :message="m" />
-
-      <!-- 重做按钮 - 撤销成功后显示（仅编排会话禁用） -->
-      <div
-        v-if="chatStore.showRedoButton && !chatStore.isAgentOrchestration"
-        class="flex justify-center py-2"
-      >
-        <el-button
-          type="warning"
-          size="small"
-          @click="handleRedo"
-          class="!rounded-full !px-4"
-        >
-          <span class="flex items-center gap-1">
-            <span>↪️</span>
-            <span>重做</span>
-          </span>
-        </el-button>
-      </div>
     </template>
+
+    <!-- 重做按钮 - 撤销成功后显示（两种模式共用） -->
+    <div
+      v-if="chatStore.showRedoButton && !chatStore.isAgentOrchestration"
+      class="flex justify-center py-2"
+    >
+      <el-button
+        type="warning"
+        size="small"
+        @click="handleRedo"
+        class="!rounded-full !px-4"
+      >
+        <span class="flex items-center gap-1">
+          <span>↪️</span>
+          <span>Redo</span>
+        </span>
+      </el-button>
+    </div>
   </div>
 </template>
