@@ -211,12 +211,14 @@ const handleRedo = () => {
         <div class="text-sm">暂无轮次数据</div>
       </div>
 
-      <ChatTurnCard
-        v-for="(turn, idx) in chatStore.filteredTurnSummaries"
-        :key="turn.turnId"
-        :turn="turn"
-        :consecutive-agent="idx > 0 && turn.agentId === chatStore.filteredTurnSummaries[idx - 1].agentId"
-      />
+      <div class="space-y-3">
+        <ChatTurnCard
+          v-for="(turn, idx) in chatStore.filteredTurnSummaries"
+          :key="turn.turnId"
+          :turn="turn"
+          :consecutive-agent="idx > 0 && turn.agentId === chatStore.filteredTurnSummaries[idx - 1].agentId"
+        />
+      </div>
     </template>
 
     <!-- 明细模式 -->

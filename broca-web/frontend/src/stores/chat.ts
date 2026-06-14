@@ -1007,14 +1007,36 @@ export const useChatStore = defineStore('chat', () => {
   // 保存 socket 处理器注销函数，在 cleanup 时统一清理
   const _cleanupHandlers: (() => void)[] = []
 
+  // 保存断开前的 agent 状态，用于重连时恢复（避免 running → disconnected → idle 的闪烁）
+  let _preDisconnectStatuses = new Map<string, string>()
+
   const doConnect = async () => {
     socketStore.onConnect = () => {
-      agentStore.agents = agentStore.agents.map((agent) => ({
-        ...agent,
-        status: 'idle',
-      }))
+      if (_preDisconnectStatuses.size > 0) {
+        // === 重连场景：恢复断开前的 agent 状态 ===
+        // 避免 onDisconnect 设置的 'disconnected' 覆盖正在运行的 agent 状态
+        agentStore.agents = agentStore.agents.map((agent) => {
+          const savedStatus = _preDisconnectStatuses.get(agent.agent_id)
+          return {
+            ...agent,
+            status: savedStatus || 'idle',
+          }
+        })
+        _preDisconnectStatuses.clear()
+      } else {
+        // === 首次连接场景：将数据库中读到的 'disconnected' 转为 'idle' ===
+        agentStore.agents = agentStore.agents.map((agent) => ({
+          ...agent,
+          status: agent.status === 'disconnected' ? 'idle' : agent.status,
+        }))
+      }
     }
     socketStore.onDisconnect = () => {
+      // 断开前保存当前 agent 状态，用于重连时恢复
+      _preDisconnectStatuses.clear()
+      agentStore.agents.forEach((agent) => {
+        _preDisconnectStatuses.set(agent.agent_id, agent.status)
+      })
       agentStore.agents = agentStore.agents.map((agent) => ({
         ...agent,
         status: 'disconnected',

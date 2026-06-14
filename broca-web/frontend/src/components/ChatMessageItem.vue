@@ -742,7 +742,7 @@ const handleUndoToHere = async () => {
             <!-- 其他工具显示参数 -->
             <pre
               v-else
-              class="json-display text-xs font-mono text-purple-800 dark:text-purple-300 whitespace-pre-wrap break-words bg-white dark:bg-gray-800 p-2 rounded border dark:border-gray-700 overflow-auto max-h-96"
+              class="json-display text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96"
               v-html="getFormattedJson(message.data.arguments || message.data.parameters)"
             ></pre
             >

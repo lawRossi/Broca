@@ -47,6 +47,14 @@ const props = defineProps<{
 const showReasoning = ref(false)
 // 悬停显示操作按钮
 const showActions = ref(false)
+// 折叠状态：长回复（超过 25 行）
+const showFullResponse = ref(false)
+const MAX_RESPONSE_LINES = 25
+const isLongResponse = computed(() => {
+  const text = props.turn.finalResponse
+  if (!text) return false
+  return text.split('\n').length > MAX_RESPONSE_LINES
+})
 
 // ====== 状态简化：只显示 进行中 / 已完成 / 中断 ======
 
@@ -68,14 +76,14 @@ const statusText = computed(() => {
 const statusBorderClass = computed(() => {
   const map: Record<string, string> = {
     active: 'border-l-blue-400',
-    completed: 'border-l-green-500',
+    completed: 'border-l-gray-400',
     error: 'border-l-red-500',
   }
   return map[simplifiedStatus.value] || 'border-l-gray-400'
 })
 
 const headerTextClass = computed(() => {
-  if (simplifiedStatus.value === 'completed') return 'text-green-700'
+  if (simplifiedStatus.value === 'completed') return 'text-blue-700'
   if (simplifiedStatus.value === 'error') return 'text-red-700'
   return 'text-gray-700'
 })
@@ -92,7 +100,7 @@ const statusColorClass = computed(() => {
 const statusDotClass = computed(() => {
   const map: Record<string, string> = {
     active: 'bg-blue-400 animate-pulse',
-    completed: 'bg-green-500',
+    completed: 'bg-gray-400',
     error: 'bg-red-500',
   }
   return map[simplifiedStatus.value] || 'bg-gray-400'
@@ -297,7 +305,20 @@ const handleUndo = async () => {
         <span class="flex-shrink-0 text-sm mt-0.5">🤖</span>
         <div class="flex-1 min-w-0">
           <div class="markdown-content text-gray-800 text-xs sm:text-sm leading-relaxed overflow-x-auto"
+            :class="{ 'max-h-[calc(1.5em*25)] overflow-hidden relative': isLongResponse && !showFullResponse }"
             v-html="renderMarkdown(turn.finalResponse)"></div>
+          <!-- 渐变遮罩 -->
+          <div v-if="isLongResponse && !showFullResponse"
+            class="h-8 -mt-8 relative z-10"
+            style="background: linear-gradient(transparent, var(--turn-card-bg, #fff)); pointer-events: none;">
+          </div>
+          <button
+            v-if="isLongResponse"
+            class="w-full mt-1 text-xs text-blue-600 hover:text-blue-700 bg-transparent border border-gray-200 rounded py-1 cursor-pointer"
+            @click="showFullResponse = !showFullResponse"
+          >
+            {{ showFullResponse ? '收起 ▲' : '展开 ▼' }}
+          </button>
         </div>
       </div>
     </div>
@@ -548,13 +569,12 @@ const handleUndo = async () => {
   .bg-blue-500 {
     background-color: #3b82f6;
   }
-  .bg-green-500 {
-    background-color: #22c55e;
+  .bg-gray-400 {
+    background-color: #9ca3af;
   }
   .bg-red-500 {
     background-color: #ef4444;
   }
-  .bg-gray-400 {
     background-color: #94a3b8;
   }
 
@@ -582,8 +602,8 @@ const handleUndo = async () => {
   .border-l-4 {
     border-left-width: 4px;
   }
-  .border-green-500 {
-    border-left-color: #22c55e;
+  .border-gray-400 {
+    border-left-color: #9ca3af;
   }
 
   /* --- Todo 列表（与 ChatMessageItem 的 params-inner / params-todo-name 对齐） --- */
@@ -594,7 +614,7 @@ const handleUndo = async () => {
   .params-todo-name {
     color: #1e293b;
   }
-}
+
 </style>
 
 <style scoped>
@@ -817,15 +837,13 @@ const handleUndo = async () => {
   .bg-blue-500 {
     background-color: #3b82f6;
   }
-  .bg-green-500 {
-    background-color: #22c55e;
+  .bg-gray-400 {
+    background-color: #9ca3af;
   }
   .bg-red-500 {
     background-color: #ef4444;
   }
-  .bg-gray-400 {
-    background-color: #94a3b8;
-  }
+
 
   /* --- 推理区域 --- */
   .bg-amber-50 {
@@ -851,8 +869,8 @@ const handleUndo = async () => {
   .border-l-4 {
     border-left-width: 4px;
   }
-  .border-green-500 {
-    border-left-color: #22c55e;
+  .border-gray-400 {
+    border-left-color: #9ca3af;
   }
 
   /* --- Todo 列表（与 ChatMessageItem 的 params-inner / params-todo-name 对齐） --- */

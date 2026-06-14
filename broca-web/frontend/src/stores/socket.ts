@@ -204,7 +204,10 @@ export const useSocketStore = defineStore('socket', () => {
       _subscriptionRefCounts.set(channel, count + 1)
     }
 
-    onConnect.value?.()
+    // 注意：此处不调用 onConnect.value?.()
+    // 1) connect() 中的 'connect' 事件处理器已在连接建立时触发过 onConnect
+    // 2) subscribe() 可能在重连时的重新订阅流程中被调用，再次触发 onConnect
+    //    会错误地重置 agent 状态（如将 running 覆盖为 idle）
 
     // 返回取消订阅函数：引用计数减一，归零时真正取消
     return async () => {

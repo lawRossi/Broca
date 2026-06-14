@@ -336,9 +336,6 @@ export default {
       })
     },
   ],
-  // 暗色模式配置 - 跟随系统偏好
-  darkMode: 'media',
-
   // 重要前缀
   prefix: '',
 
