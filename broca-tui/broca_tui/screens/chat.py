@@ -238,6 +238,15 @@ class ChatScreen(Screen):
         message_list.has_more = self._chat_store.has_more_turns
         message_list.show_redo = self._chat_store.show_redo_button
 
+        # ChatInput disabled state: 需要同时 connected + runner_alive
+        try:
+            chat_input = self.query_one("#chat-input", ChatInput)
+            chat_input.disabled = not (
+                self._chat_store.connected and self._chat_store.runner_alive
+            )
+        except Exception:
+            pass
+
         # Build agent_id → display_name map
         agent_name_map = {
             a.get("agent_id", ""): a.get("name", a.get("agent_id", ""))

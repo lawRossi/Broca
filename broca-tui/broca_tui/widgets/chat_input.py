@@ -142,6 +142,8 @@ class ChatInput(Vertical):
         """
         input_field = self.query_one("#chat-input-field", Input)
         input_field.disabled = is_disabled
+        send_btn = self.query_one("#btn-send", Button)
+        send_btn.disabled = is_disabled
         if is_disabled:
             input_field.placeholder = "Runner 未运行，无法发送消息..."
         else:

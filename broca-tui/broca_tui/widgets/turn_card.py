@@ -18,6 +18,7 @@ TurnCard Widget — 简洁模式 turn 摘要卡片
 from __future__ import annotations
 
 import copy
+import time
 from typing import Any, Dict, Optional
 
 from rich.markdown import Markdown
@@ -190,6 +191,11 @@ class TurnCard(Widget):
         height: auto;
         width: 1fr;
         margin: 1 0 0 0;
+    }
+
+    .turn-current-call-row {
+        height: auto;
+        width: 1fr;
         padding: 1 2;
         background: rgba(59, 130, 246, 0.08);
         border: solid #3b82f6;
@@ -205,9 +211,10 @@ class TurnCard(Widget):
     .turn-current-call-label {
         height: auto;
         width: auto;
-        color: #3b82f6;
+        color: #64748b;
         text-style: bold;
-        margin: 0 1 0 0;
+        margin: 0 0 0 0;
+        padding: 0 1;
     }
 
     .turn-current-call-tool {
@@ -254,7 +261,7 @@ class TurnCard(Widget):
         padding: 0 1;
     }
 
-    .turn-undo-button {
+    Button.turn-undo-button {
         width: auto;
         height: auto;
         min-width: 0;
@@ -267,9 +274,16 @@ class TurnCard(Widget):
         text-style: none;
     }
 
-    .turn-undo-button:hover {
+    Button.turn-undo-button:focus {
+        text-style: none;
+        background: transparent;
+        border: none;
+    }
+
+    Button.turn-undo-button:hover {
         color: #ef4444;
         text-style: bold;
+        background: transparent;
     }
 
     .turn-todo-list {
@@ -307,6 +321,9 @@ class TurnCard(Widget):
         self._consecutive_agent = consecutive_agent
         self._show_reasoning = False
         self._response_expanded = True  # 回复默认展开，过长时可折叠
+        self._last_reasoning_update = 0.0  # 推理内容节流时间戳
+        self._last_response_update = 0.0  # 回复内容节流时间戳
+        self._last_tool_update = 0.0  # 工具调用节流时间戳
 
     def update_turn(self, turn: TurnSummary, agent_name_map: Optional[Dict[str, str]] = None):
         """更新卡片内容（不重建 DOM），用于流式更新避免闪烁。
@@ -342,40 +359,48 @@ class TurnCard(Widget):
         except Exception:
             pass
 
-        # 更新回复内容
+        # 更新回复内容（节流，避免频繁 Markdown 重渲染）
         try:
             resp_text = self.query_one("#response-text", Static)
             if turn.final_response:
-                resp_text.update(Markdown(self._format_response(turn.final_response)))
+                now = time.time()
+                if now - self._last_response_update >= 0.4:
+                    resp_text.update(Markdown(self._format_response(turn.final_response)))
+                    self._last_response_update = now
         except Exception:
             pass
 
-        # 更新推理内容
+        # 更新推理内容（节流：折叠时 ≤0.5Hz，展开时 ≤2.5Hz）
         try:
             reasoning_label = self.query_one("#reasoning-text", Label)
             if turn.reasoning_content:
-                reasoning_label.update(turn.reasoning_content)
+                now = time.time()
+                throttle = 2.0 if not self._show_reasoning else 0.4
+                if now - self._last_reasoning_update < throttle:
+                    # 距上次更新不足节流间隔，跳过本次更新
+                    pass
+                else:
+                    reasoning_label.update(turn.reasoning_content)
+                    self._last_reasoning_update = now
         except Exception:
             pass
 
-        # 更新工具调用统计文本（统计区域已由全量重建创建）
+        # 更新工具调用信息（节流 ≤5Hz）
         try:
-            stats_label = self.query_one(".turn-tool-stats", Label)
-            stats_label.update(self._get_tool_stats_text())
-        except Exception:
-            pass
+            now = time.time()
+            if now - self._last_tool_update >= 0.2:
+                stats_label = self.query_one(".turn-tool-stats", Label)
+                stats_label.update(self._get_tool_stats_text())
 
-        # 更新当前调用工具名称和路径
-        try:
-            tool_label = self.query_one(".turn-current-call-tool", Label)
-            if turn.current_tool:
-                tool_label.update(turn.current_tool)
-        except Exception:
-            pass
-        try:
-            path_label = self.query_one(".turn-current-call-path", Label)
-            if turn.current_file_path:
-                path_label.update(turn.current_file_path)
+                tool_label = self.query_one(".turn-current-call-tool", Label)
+                if turn.current_tool:
+                    tool_label.update(turn.current_tool)
+
+                path_label = self.query_one(".turn-current-call-path", Label)
+                if turn.current_file_path:
+                    path_label.update(turn.current_file_path)
+
+                self._last_tool_update = now
         except Exception:
             pass
 
@@ -394,9 +419,6 @@ class TurnCard(Widget):
         except Exception:
             pass
 
-        # 更新撤销按钮显隐（turn 完成后才显示）
-        self.on_update_turn_undo_visibility()
-
     def _get_simplified_status(self) -> str:
         """获取简化状态（对齐 Web：active/thinking/calling_tool → active）。"""
         if self._turn.status == "completed":
@@ -411,8 +433,15 @@ class TurnCard(Widget):
         return status_map.get(self._get_simplified_status(), "未知")
 
     def _get_formatted_duration(self) -> str:
-        """格式化耗时。"""
-        seconds = round(self._turn.total_duration)
+        """格式化耗时。
+
+        活跃 turn 动态计算（from started_at），已完成 turn 使用缓存的 total_duration。
+        """
+        import time
+        if self._turn.is_active:
+            seconds = round((time.time() * 1000 - self._turn.started_at) / 1000)
+        else:
+            seconds = round(self._turn.total_duration)
         if seconds < 60:
             return f"{seconds}s"
         mins = seconds // 60
@@ -538,16 +567,17 @@ class TurnCard(Widget):
             if self._needs_fold():
                 yield Label("折叠", id="toggle-response", classes="turn-fold-label")
 
-        # ===== 当前调用（仅在 turn 未完成且有当前工具时显示，参考 web 版） =====
+        # ===== 当前调用（参考 web 版，单独一行 label + 一行内容） =====
         # web 版条件：currentTool && status === 'active'
         # turn 结束后 status 变为 completed，即使 current_tool 残留也不显示
         if self._turn.current_tool and self._turn.status != "completed":
-            with Horizontal(classes="turn-current-call"):
-                yield Label("⏳", classes="turn-current-call-icon")
+            with Vertical(classes="turn-current-call"):
                 yield Label("当前调用", classes="turn-current-call-label")
-                yield Label(self._turn.current_tool, classes="turn-current-call-tool")
-                if self._turn.current_file_path:
-                    yield Label(self._turn.current_file_path, classes="turn-current-call-path")
+                with Horizontal(classes="turn-current-call-row"):
+                    yield Label("⏳", classes="turn-current-call-icon")
+                    yield Label(self._turn.current_tool, classes="turn-current-call-tool")
+                    if self._turn.current_file_path:
+                        yield Label(self._turn.current_file_path, classes="turn-current-call-path")
 
         # ===== 推理内容（可折叠，仅在无当前工具或 turn 已完成时显示） =====
         if self._turn.reasoning_content and (self._turn.status == "completed" or not self._turn.current_tool):
@@ -557,16 +587,15 @@ class TurnCard(Widget):
             with Vertical(classes="turn-reasoning-content", id="reasoning-content"):
                 yield Label(self._turn.reasoning_content, classes="turn-reasoning-text", id="reasoning-text")
 
-        # ===== 撤销按钮（hover 显示，右下角） =====
+        # ===== 撤销按钮（始终显示，右下角） =====
         if self._can_undo():
             with Horizontal(classes="turn-undo-container"):
-                yield Static("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-button")
+                yield Button("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-button")
 
     def on_mount(self) -> None:
         """Set up after mount."""
-        # 初始隐藏推理内容和撤销按钮
+        # 初始隐藏推理内容
         self._update_reasoning_visibility()
-        self._hide_undo()
 
         # 回复内容默认展开，如果内容超长且有折叠按钮，默认折叠
         if self._needs_fold():
@@ -607,51 +636,34 @@ class TurnCard(Widget):
             widget_id = getattr(event.widget, 'id', None)
             if widget_id == "reasoning-toggle":
                 self._show_reasoning = not self._show_reasoning
+                # 展开时立即刷最新推理内容（节流期间可能跳过更新）
+                if self._show_reasoning:
+                    try:
+                        label = self.query_one("#reasoning-text", Label)
+                        if self._turn.reasoning_content:
+                            label.update(self._turn.reasoning_content)
+                            self._last_reasoning_update = time.time()
+                    except Exception:
+                        pass
                 self._update_reasoning_visibility()
             elif widget_id == "toggle-response":
                 self._response_expanded = not self._response_expanded
                 self._update_response_visibility()
             elif widget_id and widget_id.startswith("undo-"):
-                # 撤销操作：向上找 MessageList 处理
-                turn_id = widget_id.replace("undo-", "", 1)
-                parent = self.parent
-                while parent is not None:
-                    if hasattr(parent, '_confirm_and_undo'):
-                        parent._confirm_and_undo(turn_id)
-                        break
-                    parent = parent.parent
+                # 撤销按钮已改为 Button，由 on_button_pressed 处理
+                pass
 
-    def _hide_undo(self):
-        """Hide undo button."""
-        try:
-            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Static)
-            if undo_btn:
-                undo_btn.display = False
-        except Exception:
-            pass
-
-    def _show_undo(self):
-        """Show undo button."""
-        try:
-            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Static)
-            if undo_btn:
-                undo_btn.display = True
-        except Exception:
-            pass
-
-    def on_enter(self) -> None:
-        """鼠标进入时显示撤销按钮。"""
-        self._show_actions = True
-        self._show_undo()
-
-    def on_leave(self) -> None:
-        """鼠标离开时隐藏撤销按钮。"""
-        self._show_actions = False
-        self._hide_undo()
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle undo button press."""
+        if event.button.id and event.button.id.startswith("undo-"):
+            turn_id = event.button.id.replace("undo-", "", 1)
+            parent = self.parent
+            while parent is not None:
+                if hasattr(parent, '_confirm_and_undo'):
+                    parent._confirm_and_undo(turn_id)
+                    break
+                parent = parent.parent
 
     def on_update_turn_undo_visibility(self) -> None:
-        """Update undo button visibility after turn data change."""
-        if self._can_undo():
-            self._show_undo()
-        else:
-            self._hide_undo()
+        """撤销按钮始终显示（不需要 hover 触发）。"""
+        pass

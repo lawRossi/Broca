@@ -355,6 +355,16 @@ class AgentCard(Widget):
         if agent_id:
             self.post_message(self.Clicked(agent_id=agent_id))
 
+    def _update_status_display(self):
+        """Update status dot color and label text in-place (no DOM rebuild)."""
+        status = self._agent.get("agent_status", "idle") or "idle"
+        try:
+            label = self.query_one(".agent-status", Label)
+            label.update(self._get_status_display(status))
+            label.classes = f"agent-status {status}"
+        except Exception:
+            pass
+
     @staticmethod
     def _get_status_display(status: str) -> str:
         """Get status display text (Chinese, matching Web alignment)."""
@@ -448,16 +458,31 @@ class AgentSidebar(Widget):
             pass
 
     def _render_agents(self):
-        """Render or update the agent list."""
-        # Defensive: container may not be ready if callback fires during mount
+        """Render or update the agent list.
+
+        Only rebuilds the DOM for structural changes (agent added/removed).
+        For status-only changes, updates the existing AgentCards in-place.
+        """
         try:
             container = self.query_one("#agent-list", ScrollableContainer)
         except Exception:
             return
 
+        agents = self._store.agents
+        existing_cards = list(container.children)
+
+        # If card count matches, update in-place (avoid flickering)
+        if len(existing_cards) == len(agents) and all(
+            isinstance(c, AgentCard) for c in existing_cards
+        ):
+            for card, agent in zip(existing_cards, agents):
+                card._agent = agent  # Update the underlying data
+                card._update_status_display()
+            return
+
+        # Structural change: full rebuild
         container.remove_children()
 
-        agents = self._store.agents
         if not agents:
             container.mount(Static("No agents available", classes="empty-state"))
             return
@@ -502,7 +527,19 @@ class AgentSidebar(Widget):
         Args:
             agent: Agent dict
         """
-        dialog = AgentConfigDialog(agent)
+        # 先从 API 拉取完整配置（agent 列表接口不返回 config_content）
+        from broca_tui.api.session import SessionAPI
+        api = SessionAPI()
+        try:
+            config_data = await api.get_agent_config(self._session_id, agent.get("agent_id", ""))
+            agent_with_config = {**agent, "agent_config": config_data.get("config_content", {})}
+        except Exception:
+            # API 获取失败时使用空配置
+            agent_with_config = {**agent, "agent_config": {}}
+        finally:
+            await api.close()
+
+        dialog = AgentConfigDialog(agent_with_config)
         result = await self.app.push_screen_wait(dialog)
         if result and result.get("action") == "save_config":
             await self._save_agent_config(result)

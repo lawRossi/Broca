@@ -107,7 +107,18 @@ class AgentStore:
         self._notify_change()
 
         try:
+            # 保存当前 agent 状态（API 可能不返回 agent_status，保留实时更新的状态）
+            old_statuses = {a.get("agent_id", ""): a.get("agent_status", "idle")
+                            for a in self.agents if a.get("agent_id")}
+
             agents = await self._api.get_session_agents(session_id)
+
+            # 恢复 API 未提供的 agent 状态
+            for agent in agents:
+                agent_id = agent.get("agent_id", "")
+                if agent.get("agent_status") is None and agent_id in old_statuses:
+                    agent["agent_status"] = old_statuses[agent_id]
+
             self.agents = agents
 
             # Try to restore visibility from saved state first

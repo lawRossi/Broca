@@ -81,7 +81,7 @@ class ChatStore:
         self.has_more_turns: bool = True
         self.loading_more_turns: bool = False
         self.active_turn_index: int = -1  # 当前活跃 turn 在列表中的索引
-        self._duration_timer = None  # asyncio.TimerHandle
+        # 耗时改为消息驱动，不再使用定时器
         self._change_timer = None  # asyncio.TimerHandle: throttle _notify_change
         self._on_get_agent_name: Optional[Callable[[str], Optional[str]]] = None
 
@@ -358,8 +358,13 @@ class ChatStore:
 
         # Notify agent status: tool_call / agent_response → agent is active (running)
         if msg_type in ("tool_call", "agent_response"):
+            # 先从消息中取 sender_id 或 data.agent_id，若没有则从 turn 查
             agent_id = (msg_dict.get("sender_id", "")
                         or msg_dict.get("data", {}).get("agent_id", ""))
+            if not agent_id and turn_id:
+                turn = self._find_turn(turn_id)
+                if turn:
+                    agent_id = turn.agent_id
             if agent_id and self._on_message:
                 self._on_message({"type": "agent_active", "agent_id": agent_id})
             # 收到 agent 任务进展时自动关闭对话框（对齐 Web 行为）
@@ -587,7 +592,7 @@ class ChatStore:
         )
         self.turn_summaries.append(summary)
         self.active_turn_index = len(self.turn_summaries) - 1
-        self._start_duration_timer()
+        # 不再启动 1s 定时器更新耗时，改为消息驱动（tool_call/agent_response/step_start 时计算）
         self._notify_change(force=True)
 
     def update_turn_on_tool_call(self, turn_id: str, data: Dict[str, Any]):
@@ -763,12 +768,11 @@ class ChatStore:
         if turn_id in self._turn_seen_tool_call_ids:
             del self._turn_seen_tool_call_ids[turn_id]
 
-        # 如果当前活跃的 turn 被终结，停止定时器
+        # 终结活跃 turn
         if self.active_turn_index >= 0:
             turn_at_index = self.turn_summaries[self.active_turn_index]
             if turn_at_index.turn_id == turn_id:
                 self.active_turn_index = -1
-                self._stop_duration_timer()
 
         self._notify_change(force=True)
 
@@ -783,24 +787,6 @@ class ChatStore:
             turn.total_steps += 1
             self._notify_change()
 
-    # ==================== Duration Timer ====================
-
-    def _start_duration_timer(self):
-        """启动活跃 turn 的耗时定时器。"""
-        self._stop_duration_timer()
-        import asyncio
-        loop = asyncio.get_event_loop()
-        self._duration_timer = loop.call_later(1.0, self._on_duration_tick)
-
-    def _stop_duration_timer(self):
-        """停止耗时定时器。"""
-        if self._duration_timer is not None:
-            try:
-                self._duration_timer.cancel()
-            except Exception:
-                pass
-            self._duration_timer = None
-
     def _stop_change_timer(self):
         """停止变更节流定时器。"""
         if self._change_timer is not None:
@@ -809,18 +795,6 @@ class ChatStore:
             except Exception:
                 pass
             self._change_timer = None
-
-    def _on_duration_tick(self):
-        """定时器回调：更新活跃 turn 的耗时。"""
-        if self.active_turn_index >= 0 and self.active_turn_index < len(self.turn_summaries):
-            turn = self.turn_summaries[self.active_turn_index]
-            if turn.is_active:
-                turn.total_duration = (time.time() * 1000 - turn.started_at) / 1000
-                self._notify_change()
-                # 继续计时
-                import asyncio
-                loop = asyncio.get_event_loop()
-                self._duration_timer = loop.call_later(1.0, self._on_duration_tick)
 
     # ==================== Filtered Turns (简洁模式) ====================
 
@@ -1061,7 +1035,6 @@ class ChatStore:
         self.has_more_turns = True
         self.loading_more_turns = False
         self.active_turn_index = -1
-        self._stop_duration_timer()
         self._stop_change_timer()
         self._notify_change()
 
