@@ -246,12 +246,22 @@ class TurnCard(Widget):
         text-style: italic;
     }
 
-    .turn-undo-label {
-        dock: right;
+    .turn-undo-container {
+        dock: bottom;
         height: auto;
-        color: #94a3b8;
-        padding: 0 1;
+        align-horizontal: right;
         margin: 0;
+        padding: 0 1;
+    }
+
+    .turn-undo-button {
+        width: auto;
+        height: auto;
+        min-width: 0;
+        padding: 0 1;
+        background: transparent;
+        color: #94a3b8;
+        border: none;
         text-style: none;
     }
 
@@ -346,6 +356,45 @@ class TurnCard(Widget):
                 reasoning_label.update(turn.reasoning_content)
         except Exception:
             pass
+
+        # 更新工具调用统计文本（统计区域已由全量重建创建）
+        try:
+            stats_label = self.query_one(".turn-tool-stats", Label)
+            stats_label.update(self._get_tool_stats_text())
+        except Exception:
+            pass
+
+        # 更新当前调用工具名称和路径
+        try:
+            tool_label = self.query_one(".turn-current-call-tool", Label)
+            if turn.current_tool:
+                tool_label.update(turn.current_tool)
+        except Exception:
+            pass
+        try:
+            path_label = self.query_one(".turn-current-call-path", Label)
+            if turn.current_file_path:
+                path_label.update(turn.current_file_path)
+        except Exception:
+            pass
+
+        # 更新 TODO 列表内容（列表容器已由全量重建创建）
+        try:
+            todo_container = self.query_one(".turn-todo-list", Vertical)
+            if self._show_todo_list():
+                todo_container.remove_children()
+                for todo in turn.current_todo_list:
+                    todo_name = todo.get("name", "")
+                    todo_status = todo.get("status", "pending")
+                    icon = "✅" if todo_status == "completed" else ("⏳" if todo_status == "in_progress" else "⬜️")
+                    h = Horizontal(classes="turn-todo-item")
+                    h.mount(Label(f"{icon} {todo_name}"))
+                    todo_container.mount(h)
+        except Exception:
+            pass
+
+        # 更新撤销按钮显隐（turn 完成后才显示）
+        self.on_update_turn_undo_visibility()
 
     def _get_simplified_status(self) -> str:
         """获取简化状态（对齐 Web：active/thinking/calling_tool → active）。"""
@@ -505,22 +554,19 @@ class TurnCard(Widget):
             yield Label(f"{toggle_icon} 思考", classes="turn-reasoning-toggle", id="reasoning-toggle")
             # 始终包含 content，通过 display 控制显隐
             with Vertical(classes="turn-reasoning-content", id="reasoning-content"):
-                yield Label(self._turn.reasoning_content, classes="turn-reasoning-text")
+                yield Label(self._turn.reasoning_content, classes="turn-reasoning-text", id="reasoning-text")
 
         # ===== 撤销按钮（hover 显示，右下角） =====
         if self._can_undo():
-            yield Label("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-label")
+            with Horizontal(classes="turn-undo-container"):
+                yield Button("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-button")
 
     def on_mount(self) -> None:
         """Set up after mount."""
         # 初始隐藏推理内容和撤销按钮
         self._update_reasoning_visibility()
-        try:
-            undo_label = self.query_one(f"#undo-{self._turn.turn_id}", Label)
-            if undo_label:
-                undo_label.display = False
-        except Exception:
-            pass
+        self._hide_undo()
+
         # 回复内容默认展开，如果内容超长且有折叠按钮，默认折叠
         if self._needs_fold():
             self._response_expanded = False
@@ -555,7 +601,7 @@ class TurnCard(Widget):
             pass
 
     def on_click(self, event) -> None:
-        """处理推理/回复/撤销的点击切换。"""
+        """处理推理/回复的点击切换。"""
         if hasattr(event, 'widget') and event.widget is not None:
             widget_id = getattr(event.widget, 'id', None)
             if widget_id == "reasoning-toggle":
@@ -564,26 +610,38 @@ class TurnCard(Widget):
             elif widget_id == "toggle-response":
                 self._response_expanded = not self._response_expanded
                 self._update_response_visibility()
-            elif widget_id and widget_id.startswith("undo-"):
-                # 撤销操作由 ChatScreen 处理
-                pass
+
+    def _hide_undo(self):
+        """Hide undo button."""
+        try:
+            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Button)
+            if undo_btn:
+                undo_btn.display = False
+        except Exception:
+            pass
+
+    def _show_undo(self):
+        """Show undo button."""
+        try:
+            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Button)
+            if undo_btn:
+                undo_btn.display = True
+        except Exception:
+            pass
 
     def on_enter(self) -> None:
         """鼠标进入时显示撤销按钮。"""
         self._show_actions = True
-        try:
-            undo_label = self.query_one(f"#undo-{self._turn.turn_id}", Label)
-            if undo_label:
-                undo_label.display = True
-        except Exception:
-            pass
+        self._show_undo()
 
     def on_leave(self) -> None:
         """鼠标离开时隐藏撤销按钮。"""
         self._show_actions = False
-        try:
-            undo_label = self.query_one(f"#undo-{self._turn.turn_id}", Label)
-            if undo_label:
-                undo_label.display = False
-        except Exception:
-            pass
+        self._hide_undo()
+
+    def on_update_turn_undo_visibility(self) -> None:
+        """Update undo button visibility after turn data change."""
+        if self._can_undo():
+            self._show_undo()
+        else:
+            self._hide_undo()

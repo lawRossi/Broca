@@ -219,13 +219,27 @@ class MessageList(Vertical):
         # 但如果有条件渲染变化（final_response/reasoning/current_tool 从有到无或从无到有），
         # 必须重建，因为对应的子 widget 不存在或需要移除，update_turn 无法增减它们
         def _conditions_changed(old_turn, new_turn) -> bool:
+            # 只检测需要 DOM 结构变化的场景（增删条件渲染区域），
+            # 纯内容更新（如 final_response streaming 追加）走 update_turn 原地更新免闪烁。
             return (
-                (old_turn.final_response != new_turn.final_response)
-                or (old_turn.reasoning_content != new_turn.reasoning_content)
-                or (old_turn.current_tool != new_turn.current_tool)
-                or (old_turn.tool_call_stats != new_turn.tool_call_stats)
-                or (old_turn.user_message != new_turn.user_message)
-                or (old_turn.status != new_turn.status)
+                # final_response: 从无到有 → 创建响应区域；已有内容时只更新文本，无需重建
+                (not old_turn.final_response and new_turn.final_response)
+                # reasoning_content: 从无到有（创建推理区域），或从有到无（被 content 清空）
+                or (not old_turn.reasoning_content and new_turn.reasoning_content)
+                or (old_turn.reasoning_content and not new_turn.reasoning_content)
+                # current_tool: 从无到有（创建当前调用区域），或从有到无（恢复推理/响应显示）
+                or (not old_turn.current_tool and new_turn.current_tool)
+                or (old_turn.current_tool and not new_turn.current_tool)
+                # tool_call_stats: 从无到有（创建工具统计区域）
+                or (not old_turn.tool_call_stats and new_turn.tool_call_stats)
+                # user_message: 从无到有（创建用户消息区域）
+                or (not old_turn.user_message and new_turn.user_message)
+                # current_todo_list: 从无到有（创建 TODO 列表区域）
+                or (not old_turn.current_todo_list and new_turn.current_todo_list)
+                or (old_turn.current_todo_list and not new_turn.current_todo_list)
+                # status: 完成/未完成切换影响条件渲染（如当前调用区域在 completed 时隐藏）
+                or (old_turn.status != "completed" and new_turn.status == "completed")
+                or (old_turn.status == "completed" and new_turn.status != "completed")
             )
 
         can_update_in_place = (
@@ -250,23 +264,54 @@ class MessageList(Vertical):
                 if i < 3 or i == turn_count - 1:
                     log(f" _render_turn_cards: updated card {i+1}/{turn_count}: turn_id={turn.turn_id}")
         else:
-            # 数量或 id 不匹配 → 全量重建
-            log(f" _render_turn_cards: rebuilding {turn_count} TurnCards (in-place={can_update_in_place})")
-            area.remove_children()
+            # 精准重建：只替换条件变化的卡片，保留其他卡片 DOM 不动
+            log(f" _render_turn_cards: targeted rebuild ({turn_count} cards, {len(existing_cards)} existing)")
+            prev_agent_id = None
+
+            # Step 1: 处理数量差异（末尾追加/移除）
+            existing = list(area.children)
+            if turn_count > len(existing):
+                for i in range(len(existing), turn_count):
+                    turn = self._turn_summaries[i]
+                    consecutive = (turn.agent_id == prev_agent_id)
+                    prev_agent_id = turn.agent_id
+                    card = TurnCard(
+                        turn=copy.deepcopy(turn),
+                        agent_name_map=self._agent_name_map,
+                        consecutive_agent=consecutive,
+                    )
+                    area.mount(card)
+            elif turn_count < len(existing):
+                for card in existing[turn_count:]:
+                    card.remove()
+
+            # Step 2: 逐个卡片检查，仅替换条件变化的（使用最新 DOM 快照）
+            existing = list(area.children)
             prev_agent_id = None
             for i, turn in enumerate(self._turn_summaries):
                 consecutive = (turn.agent_id == prev_agent_id)
-                # ⚠️ 必须深拷贝 turn，否则 card._turn 和 store.turn_summaries[i] 是同一个对象，
-                # _conditions_changed 永远检测不到变化，条件渲染区域（如 #response-text）永不创建
-                card = TurnCard(
-                    turn=copy.deepcopy(turn),
-                    agent_name_map=self._agent_name_map,
-                    consecutive_agent=consecutive,
-                )
-                area.mount(card)
                 prev_agent_id = turn.agent_id
-                if i < 3 or i == turn_count - 1:
-                    log(f" _render_turn_cards: mounted card {i+1}/{turn_count}: turn_id={turn.turn_id}, agent={turn.agent_name}")
+                if i < len(existing):
+                    card = existing[i]
+                    if (isinstance(card, TurnCard) and card._turn.turn_id == turn.turn_id
+                            and not _conditions_changed(card._turn, turn)):
+                        # 条件未变，原地更新（不触碰 DOM）
+                        card._consecutive_agent = consecutive
+                        card.update_turn(turn, self._agent_name_map)
+                    else:
+                        # 条件变化，在 DOM 中替换此卡片
+                        new_card = TurnCard(
+                            turn=copy.deepcopy(turn),
+                            agent_name_map=self._agent_name_map,
+                            consecutive_agent=consecutive,
+                        )
+                        siblings = list(area.children)
+                        card_idx = siblings.index(card) if card in siblings else -1
+                        card.remove()
+                        before = siblings[card_idx + 1] if card_idx >= 0 and card_idx + 1 < len(siblings) else None
+                        area.mount(new_card, before=before)
+                        if i < 3 or i == turn_count - 1:
+                            log(f" _render_turn_cards: replaced card {i+1}/{turn_count}: turn_id={turn.turn_id}, agent={turn.agent_name}")
 
         # Auto-scroll to bottom (仅追加新 turn 时触发，初始加载不滚动)
         if auto_scroll and self.auto_scroll and not self._user_scrolled_up:

@@ -82,6 +82,7 @@ class ChatStore:
         self.loading_more_turns: bool = False
         self.active_turn_index: int = -1  # 当前活跃 turn 在列表中的索引
         self._duration_timer = None  # asyncio.TimerHandle
+        self._change_timer = None  # asyncio.TimerHandle: throttle _notify_change
         self._on_get_agent_name: Optional[Callable[[str], Optional[str]]] = None
 
         # Track last message_id that had content per turn (for agent_response separator logic)
@@ -155,14 +156,33 @@ class ChatStore:
         self._on_get_agent_name = callback
 
     def _notify_change(self, force: bool = False):
-        """Notify UI of state change.
+        """Notify UI of state change, throttled.
 
-        In 简洁模式, no debounce is needed since turn-based updates
-        are less frequent than per-chunk message updates.
+        流式 streaming 场景下每秒可能收到 10+ 个 agent_response 事件，
+        每个都触发全量 _render_turn_cards 会导致页面卡死。
+        使用 80ms throttle 合并短时间内的连续更新。
 
         Args:
-            force: Kept for backward compatibility, always fires immediately
+            force: 如果为 True，立即触发更新（用于 turn_start/turn_end 等关键事件）
         """
+        if force:
+            # 立即触发并取消待处理的节流更新
+            if self._change_timer is not None:
+                self._change_timer.cancel()
+                self._change_timer = None
+            if self._on_change:
+                self._on_change()
+            return
+
+        # 节流：80ms 内多次调用只触发一次
+        if self._change_timer is not None:
+            return  # 已有待处理的更新
+        import asyncio
+        self._change_timer = asyncio.get_event_loop().call_later(0.15, self._flush_change)
+
+    def _flush_change(self):
+        """Flush throttled change notification."""
+        self._change_timer = None
         if self._on_change:
             self._on_change()
 
@@ -338,7 +358,8 @@ class ChatStore:
 
         # Notify agent status: tool_call / agent_response → agent is active (running)
         if msg_type in ("tool_call", "agent_response"):
-            agent_id = msg_dict.get("sender_id", "") or msg_dict.get("turn_id", "")
+            agent_id = (msg_dict.get("sender_id", "")
+                        or msg_dict.get("data", {}).get("agent_id", ""))
             if agent_id and self._on_message:
                 self._on_message({"type": "agent_active", "agent_id": agent_id})
             # 收到 agent 任务进展时自动关闭对话框（对齐 Web 行为）
@@ -584,10 +605,7 @@ class ChatStore:
         if not tool_name:
             return
 
-        # 更新当前工具
-        turn.current_tool = tool_name
-
-        # 更新工具调用统计（去重：同一 tool_call_id 会发送 preview→actual→result 三次）
+        # 更新当前工具（仅第一次更新：同 tool_call_id 会收到 preview→actual→result 三次）
         tool_call_id = data.get("tool_call_id", "")
         is_first_seen = True
         if tool_call_id:
@@ -599,6 +617,8 @@ class ChatStore:
                 self._turn_seen_tool_call_ids[turn_id] = seen_ids
 
         if is_first_seen:
+            turn.current_tool = tool_name
+            # 更新工具调用统计
             found = False
             for stat in turn.tool_call_stats:
                 if stat.get("tool_name") == tool_name:
@@ -686,9 +706,7 @@ class ChatStore:
                         if is_new_response:
                             turn.reasoning_content = reasoning  # 新 LLM 调用，重新开始
                         else:
-                            if turn.reasoning_content:
-                                turn.reasoning_content += "\n\n"
-                            turn.reasoning_content += reasoning  # 同调用流，累加
+                            turn.reasoning_content += reasoning  # 同调用流，连续拼接无分隔符
 
                     # 收到回复内容 → 思考阶段已结束，清空 reasoningContent
                     if content and turn.reasoning_content:
@@ -782,6 +800,15 @@ class ChatStore:
             except Exception:
                 pass
             self._duration_timer = None
+
+    def _stop_change_timer(self):
+        """停止变更节流定时器。"""
+        if self._change_timer is not None:
+            try:
+                self._change_timer.cancel()
+            except Exception:
+                pass
+            self._change_timer = None
 
     def _on_duration_tick(self):
         """定时器回调：更新活跃 turn 的耗时。"""
@@ -1035,6 +1062,7 @@ class ChatStore:
         self.loading_more_turns = False
         self.active_turn_index = -1
         self._stop_duration_timer()
+        self._stop_change_timer()
         self._notify_change()
 
     async def disconnect(self):
