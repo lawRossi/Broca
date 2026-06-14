@@ -433,7 +433,6 @@ export const useChatStore = defineStore('chat', () => {
   const _turnContentMsgId = new Map<string, string>()
   /** 记录每个 turn 已统计过的 tool_call_id，去重计数 */
   const _turnSeenToolCallIds = new Map<string, Set<string>>()
-
   const updateTurnSummaryOnStepEvent = (message: Message) => {
     const turnId = message.turn_id
     if (!turnId) return
@@ -443,6 +442,9 @@ export const useChatStore = defineStore('chat', () => {
 
     if (message.message_type === 'step_start') {
       turnSummaries.value[idx].totalSteps++
+    } else if (message.message_type === 'step_end') {
+      // 步骤结束时清除当前工具，避免 tool_call 结束后到 turn_end 前持续显示"当前调用"
+      turnSummaries.value[idx].currentTool = null
     }
   }
 
@@ -472,8 +474,10 @@ export const useChatStore = defineStore('chat', () => {
       const toolName = message.data?.tool_name
       if (!toolName) return
 
-      // 更新当前工具
-      turn.currentTool = toolName
+      // 只在首次设置 currentTool，同一 step 内后续 tool_call 不覆盖
+      if (!turn.currentTool) {
+        turn.currentTool = toolName
+      }
 
       // 更新工具调用统计（去重：同一 tool_call_id 会发送 preview→actual→result 三次）
       const toolCallId = message.data?.tool_call_id
@@ -610,7 +614,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // 处理 turn_end 消息（终结 TurnSummary）
   const handleTurnEnd = (message: Message) => {
-    const turnId = message.data?.turn_id
+    const turnId = message.turn_id || message.data?.turn_id
     if (!turnId) return
 
     const idx = turnSummaries.value.findIndex(t => t.turnId === turnId)

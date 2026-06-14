@@ -23,33 +23,39 @@ const showActions = ref(false)
 const showUndoConfirm = ref(false)
 
 // ==================== 状态文本与颜色（与 web 版一致） ====================
+const simplifiedStatus = computed(() => {
+  if (props.turn.status === 'completed') return 'completed'
+  if (props.turn.status === 'error') return 'error'
+  return 'active'  // active / thinking / calling_tool 统一为"进行中"
+})
+
 const statusText = computed(() => {
-  if (props.turn.status === 'active') return '进行中'
-  if (props.turn.status === 'error') return '中断'
-  return '已完成'
+  if (simplifiedStatus.value === 'completed') return '已完成'
+  if (simplifiedStatus.value === 'error') return '中断'
+  return '进行中'
 })
 
 const statusBorderClass = computed(() => {
-  if (props.turn.status === 'active') return 'border-l-blue'
-  if (props.turn.status === 'error') return 'border-l-red'
+  if (simplifiedStatus.value === 'active') return 'border-l-blue'
+  if (simplifiedStatus.value === 'error') return 'border-l-red'
   return 'border-l-green'
 })
 
 const headerTextClass = computed(() => {
-  if (props.turn.status === 'completed') return 'text-green'
-  if (props.turn.status === 'error') return 'text-red'
+  if (simplifiedStatus.value === 'completed') return 'text-green'
+  if (simplifiedStatus.value === 'error') return 'text-red'
   return 'text-primary'
 })
 
 const statusColorClass = computed(() => {
-  if (props.turn.status === 'active') return 'text-blue'
-  if (props.turn.status === 'error') return 'text-red'
+  if (simplifiedStatus.value === 'active') return 'text-blue'
+  if (simplifiedStatus.value === 'error') return 'text-red'
   return 'text-green'
 })
 
 const statusDotClass = computed(() => {
-  if (props.turn.status === 'active') return 'dot-blue pulse'
-  if (props.turn.status === 'error') return 'dot-red'
+  if (simplifiedStatus.value === 'active') return 'dot-blue pulse'
+  if (simplifiedStatus.value === 'error') return 'dot-red'
   return 'dot-green'
 })
 
@@ -223,10 +229,10 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 
     <!-- ==================== 当前调用 / 推理内容 ==================== -->
     <!-- 调用工具时：展示当前调用工具 + 漏斗图标，不展示思考 -->
-    <div v-if="currentToolText && turn.status === 'active'" class="tool-calling-section">
+    <div v-if="currentToolText && simplifiedStatus === 'active'" class="tool-calling-section">
+      <div class="tool-calling-label-row">当前调用</div>
       <div class="tool-calling-row">
         <span class="tool-calling-icon">⏳</span>
-        <span class="tool-calling-label">当前调用</span>
         <span class="tool-calling-name">{{ currentToolText }}</span>
         <span v-if="showFilePath" class="tool-calling-file">{{ turn.currentFilePath }}</span>
       </div>
@@ -239,7 +245,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
       >
         <span>{{ showReasoning ? '▼' : '▶' }}</span>
         <span class="reasoning-label">思考</span>
-        <span v-if="!showReasoning && turn.status === 'active'" class="reasoning-dots">...</span>
+        <span v-if="!showReasoning && simplifiedStatus === 'active'" class="reasoning-dots">...</span>
       </button>
       <div v-if="showReasoning" class="reasoning-content">
         <pre class="reasoning-text">{{ turn.reasoningContent }}</pre>
@@ -523,6 +529,13 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   font-size: 12px;
 }
 
+.tool-calling-label-row {
+  color: var(--vscode-descriptionForeground, #808080);
+  font-size: 11px;
+  font-weight: 500;
+  margin-bottom: 2px;
+}
+
 .tool-calling-icon {
   font-size: 13px;
   animation: pulse-spin 1.5s ease-in-out infinite;
@@ -531,11 +544,6 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 @keyframes pulse-spin {
   0%, 100% { opacity: 1; transform: rotate(0deg); }
   50% { opacity: 0.6; transform: rotate(15deg); }
-}
-
-.tool-calling-label {
-  color: var(--vscode-descriptionForeground, #808080);
-  font-weight: 500;
 }
 
 .tool-calling-name {
@@ -550,7 +558,13 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 400px;
+  max-width: 350px;
+}
+
+@media (max-width: 500px) {
+  .tool-calling-file {
+    max-width: 120px;
+  }
 }
 
 .reasoning-section {

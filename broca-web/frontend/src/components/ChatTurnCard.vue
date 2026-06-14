@@ -305,12 +305,12 @@ const handleUndo = async () => {
     <!-- 当前调用 / 推理内容 -->
     <!-- 调用工具时：展示当前调用工具 + 漏斗图标，不展示思考 -->
     <div v-if="currentToolText && simplifiedStatus === 'active'" class="pt-2">
+      <div class="text-xs text-gray-400 font-medium mb-0.5">当前调用</div>
       <div class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
         style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2);">
         <span class="text-sm animate-pulse">⏳</span>
-        <span class="text-gray-500 font-medium">当前调用</span>
         <span class="text-gray-700 font-semibold">{{ currentToolText }}</span>
-        <span v-if="showFilePath" class="text-gray-400 ml-1 truncate" style="max-width: 400px;">{{ turn.currentFilePath }}</span>
+        <span v-if="showFilePath" class="text-gray-400 ml-1 truncate max-sm:max-w-[120px]" style="max-width: 350px;">{{ turn.currentFilePath }}</span>
       </div>
     </div>
     <!-- 未调用工具时：展示思考（可折叠） -->

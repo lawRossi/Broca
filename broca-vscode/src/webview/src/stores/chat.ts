@@ -1040,8 +1040,9 @@ export const useChatStore = defineStore('chat', () => {
 
     if (message.message_type === 'step_start') {
       turn.totalSteps++
-      // 注意：不在此设置 currentTool/currentFilePath/currentTodoList，
-      // 这些由 tool_call 消息在 updateTurnSummaryOnMessage 中设置（与 web 版一致）
+    } else if (message.message_type === 'step_end') {
+      // 步骤结束时清除当前工具
+      turn.currentTool = null
     }
   }
 
@@ -1072,8 +1073,13 @@ export const useChatStore = defineStore('chat', () => {
         const toolName = message.data?.tool_name
         if (!toolName) break
 
-        // 更新当前工具
-        turn.currentTool = toolName
+        // 更新状态（与 web 版一致）
+        turn.status = 'calling_tool'
+
+        // 只在首次设置 currentTool，同一 step 内后续 tool_call 不覆盖
+        if (!turn.currentTool) {
+          turn.currentTool = toolName
+        }
 
         // 更新工具调用统计（与 web 版一致处理）
         const existing = turn.toolCallStats.find(s => s.toolName === toolName)
@@ -1112,6 +1118,9 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       case 'agent_response': {
+        // 更新状态（与 web 版一致）
+        turn.status = 'thinking'
+
         // 累加最终回复（与 web 版一致处理 streaming chunks）：
         // 同一 message_id 的 streaming chunk 连续拼接，
         // 不同 message_id（不同 LLM 调用）之间加空行分隔。

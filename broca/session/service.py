@@ -418,8 +418,15 @@ class TurnService(BaseService[Turn]):
                     try:
                         parsed = json.loads(content)
                         if isinstance(parsed, dict) and parsed.get("content"):
+                            # 不同 message_id（不同 LLM 调用）之间加空行分隔
+                            if stats["final_response"] and stats.get("_last_agent_msg_id") and stats["_last_agent_msg_id"] != m.message_id:
+                                stats["final_response"] += "\n\n"
+                            stats["_last_agent_msg_id"] = m.message_id
                             stats["final_response"] += parsed["content"]
                     except (json.JSONDecodeError, TypeError):
+                        if stats["final_response"] and stats.get("_last_agent_msg_id") and stats["_last_agent_msg_id"] != m.message_id:
+                            stats["final_response"] += "\n\n"
+                        stats["_last_agent_msg_id"] = m.message_id
                         stats["final_response"] += str(content)
 
         stats["tool_call_stats"] = [
