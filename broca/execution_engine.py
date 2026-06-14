@@ -223,34 +223,34 @@ class ExecutionEngine:
 
     async def _capture_step_end(self) -> bool:
         """捕获Step结束快照和patch"""
-        if not self.snapshot_tracker or not self.patch_calculator or not self.step_id:
+        if not self.step_id:
             return False
 
-        if not self.current_snapshot_hash:
-            # 如果没有起始快照，跳过
-            return False
+        # === 快照/patch 计算（仅在有写操作时执行）===
+        snapshot_hash = ""
+        patch: dict = {}
 
-        # 检查是否需要快照（如果没有写操作，跳过）
-        if not self._step_has_write_operations:
-            logger.debug(
-                f"Step {self.step_id} has no write operations, skipping snapshot"
-            )
-            return False
+        if (
+            self.snapshot_tracker
+            and self.patch_calculator
+            and self.current_snapshot_hash
+            and self._step_has_write_operations
+        ):
+            try:
+                end_snapshot_hash = await self.snapshot_tracker.track()
+                snapshot_hash = end_snapshot_hash
+                patch = await self.patch_calculator.calculate_patch(
+                    self.current_snapshot_hash, end_snapshot_hash
+                )
+                if not patch.get("files"):
+                    patch = {}
+            except Exception as e:
+                logger.error(f"Error capturing snapshot/patch at step end: {e}")
 
+        # === step_end 消息创建和广播（无论是否只读，始终发送）===
         try:
-            # 捕获结束快照
-            end_snapshot_hash = await self.snapshot_tracker.track()
-
-            # 计算patch
-            patch = await self.patch_calculator.calculate_patch(
-                self.current_snapshot_hash, end_snapshot_hash
-            )
-            if not patch.get("files"):
-                patch = {}
-
-            # 创建STEP_END消息
             step_end_msg = MessageProtocol.create_step_end(
-                step_id=self.step_id, snapshot_hash=end_snapshot_hash, patch=patch
+                step_id=self.step_id, snapshot_hash=snapshot_hash, patch=patch
             )
             step_end_msg.session_id = self.session_id
             step_end_msg.turn_id = self.turn_id
@@ -276,7 +276,7 @@ class ExecutionEngine:
 
             return saved
         except Exception as e:
-            logger.error(f"Error capturing step end: {e}")
+            logger.error(f"Error sending step end: {e}")
             return False
 
     async def execute_step(self) -> ExecutionStatus:
