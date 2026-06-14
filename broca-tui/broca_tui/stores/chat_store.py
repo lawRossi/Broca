@@ -84,6 +84,15 @@ class ChatStore:
         self._duration_timer = None  # asyncio.TimerHandle
         self._on_get_agent_name: Optional[Callable[[str], Optional[str]]] = None
 
+        # Track last message_id that had content per turn (for agent_response separator logic)
+        self._turn_content_msg_id: Dict[str, str] = {}
+
+        # Track seen tool_call_ids per turn (dedup: backend sends preview→actual→result for same call)
+        self._turn_seen_tool_call_ids: Dict[str, Set[str]] = {}
+
+        # Track last response message_id per turn (for reasoning delimiting and undo targeting)
+        self._turn_last_response_msg_id: Dict[str, str] = {}
+
         # Input state
         self.input_text: str = ""
 
@@ -310,9 +319,63 @@ class ChatStore:
 
         # ── 简洁模式：agent_response 更新 turn finalResponse（仍需继续添加为消息） ──
         if msg_type == "agent_response":
+            # 跳过空响应的 chunk（content + reasoning 皆空，对齐 Web 行为）
+            raw_content = msg_dict.get("data", {}).get("content", "")
+            if isinstance(raw_content, str) and raw_content.strip():
+                try:
+                    parsed = json.loads(raw_content)
+                    if isinstance(parsed, dict):
+                        has_content = bool(parsed.get("content")) or bool(parsed.get("reasoning_content"))
+                        if not has_content:
+                            return  # 跳过空响应
+                except (json.JSONDecodeError, TypeError):
+                    pass  # 非 JSON 内容，继续处理
+
             turn_id = msg_dict.get("turn_id", "")
             if turn_id:
-                self.update_turn_on_agent_response(turn_id, msg_dict.get("data", {}))
+                message_id = msg_dict.get("message_id", "")
+                self.update_turn_on_agent_response(turn_id, msg_dict.get("data", {}), message_id)
+
+        # Notify agent status: tool_call / agent_response → agent is active (running)
+        if msg_type in ("tool_call", "agent_response"):
+            agent_id = msg_dict.get("sender_id", "") or msg_dict.get("turn_id", "")
+            if agent_id and self._on_message:
+                self._on_message({"type": "agent_active", "agent_id": agent_id})
+            # 收到 agent 任务进展时自动关闭对话框（对齐 Web 行为）
+            self.permission_dialog["visible"] = False
+            self.agent_query_dialog["visible"] = False
+
+        # ── 简洁模式：user_message 更新 turn 的用户消息 ──
+        if msg_type == "user_message":
+            # 跳过来自 agent 的用户消息（agent 转发/回显的消息，对齐 Web 行为）
+            if msg_dict.get("data", {}).get("from_agent"):
+                return
+            turn_id = msg_dict.get("turn_id", "") or msg_dict.get("data", {}).get("turn_id", "")
+            if turn_id:
+                turn = self._find_turn(turn_id)
+                if turn and not turn.user_message:
+                    data = msg_dict.get("data", {})
+                    # 优先使用 raw_input（对齐 Web ChatMessageItem 明细模式行为）
+                    if data.get("raw_input") is not None:
+                        turn.user_message = str(data.get("raw_input", ""))
+                    else:
+                        # data.content 是 json.dumps({"content": "用户消息", ...})
+                        raw = data.get("content", "")
+                        if raw:
+                            try:
+                                parsed = json.loads(raw)
+                                if isinstance(parsed, dict):
+                                    turn.user_message = parsed.get("content", str(parsed))
+                                else:
+                                    turn.user_message = str(parsed)
+                            except (json.JSONDecodeError, TypeError):
+                                turn.user_message = str(raw)
+                    if turn.user_message:
+                        self._notify_change()
+                # 记录最后一条消息 ID（用于撤销定位）
+                msg_id = msg_dict.get("message_id", "")
+                if msg_id:
+                    self._turn_last_response_msg_id[turn_id] = msg_id
 
         # Skip filtered message types
         filtered_types = {
@@ -353,6 +416,13 @@ class ChatStore:
         if msg_dict.get("message_type") != "command_result" and not self._preserve_redo:
             self.show_redo_button = False
             self.redo_receiver_id = None
+
+        # 跳过连接相关的系统消息（对齐 Web 行为）
+        content_str = msg_dict.get("data", {}).get("content", "")
+        if isinstance(content_str, str):
+            content_lower = content_str.lower()
+            if "connected to" in content_lower or "subscribed to" in content_lower:
+                return
 
         # Add message
         # Turn update already handled above for step_start/tool_call/agent_response.
@@ -517,15 +587,26 @@ class ChatStore:
         # 更新当前工具
         turn.current_tool = tool_name
 
-        # 更新工具调用统计
-        found = False
-        for stat in turn.tool_call_stats:
-            if stat.get("toolName") == tool_name:
-                stat["count"] = stat.get("count", 0) + 1
-                found = True
-                break
-        if not found:
-            turn.tool_call_stats.append({"toolName": tool_name, "count": 1})
+        # 更新工具调用统计（去重：同一 tool_call_id 会发送 preview→actual→result 三次）
+        tool_call_id = data.get("tool_call_id", "")
+        is_first_seen = True
+        if tool_call_id:
+            seen_ids = self._turn_seen_tool_call_ids.get(turn_id, set())
+            if tool_call_id in seen_ids:
+                is_first_seen = False
+            else:
+                seen_ids.add(tool_call_id)
+                self._turn_seen_tool_call_ids[turn_id] = seen_ids
+
+        if is_first_seen:
+            found = False
+            for stat in turn.tool_call_stats:
+                if stat.get("tool_name") == tool_name:
+                    stat["count"] = stat.get("count", 0) + 1
+                    found = True
+                    break
+            if not found:
+                turn.tool_call_stats.append({"tool_name": tool_name, "count": 1})
 
         # 提取文件路径
         if tool_name in ("read_file", "edit_file", "write_file"):
@@ -556,16 +637,28 @@ class ChatStore:
         turn.status = "calling_tool"
         self._notify_change()
 
-    def update_turn_on_agent_response(self, turn_id: str, data: Dict[str, Any]):
+    def update_turn_on_agent_response(self, turn_id: str, data: Dict[str, Any], message_id: str = ""):
         """Agent 回复消息到达时累加 finalResponse。
+
+        同一 message_id 的 streaming chunks 连续拼接（同一 LLM 调用的输出流片段），
+        不同 message_id（不同 LLM 调用）之间加空行分隔，对齐 Web ChatStore 行为。
+
+        当 agent 开始思考/回复时，上一次工具调用已结束，清除 current_tool，
+        使得推理区域（reasoning）能正常显示（与"当前调用"互斥）。
 
         Args:
             turn_id: Turn ID
             data: agent_response 消息的 data 字段
+            message_id: 消息 ID，用于判断是否属于同一 LLM 调用
         """
         turn = self._find_turn(turn_id)
         if not turn:
             return
+
+        # Agent 开始思考/回复 → 上一次工具调用已结束，清除调用状态
+        turn.current_tool = None
+        turn.current_file_path = None
+        turn.current_todo_list = []
 
         content_str = data.get("content", "")
         if isinstance(content_str, str) and content_str.strip():
@@ -574,14 +667,53 @@ class ChatStore:
                 if isinstance(parsed, dict):
                     content = parsed.get("content", "")
                     reasoning = parsed.get("reasoning_content", "")
+
+                    # Determine if this is a new LLM call (different message_id)
+                    last_msg_id = self._turn_last_response_msg_id.get(turn_id, "")
+                    is_new_response = last_msg_id != message_id
+
                     if content:
+                        # 不同 message_id（不同 LLM 调用）之间加空行分隔
+                        prev_msg_id = self._turn_content_msg_id.get(turn_id, "")
+                        is_new_message = prev_msg_id != message_id
+                        if is_new_message and turn.final_response:
+                            turn.final_response += "\n\n"
                         turn.final_response += content
+                        if message_id:
+                            self._turn_content_msg_id[turn_id] = message_id
+
                     if reasoning:
-                        turn.reasoning_content += reasoning
+                        if is_new_response:
+                            turn.reasoning_content = reasoning  # 新 LLM 调用，重新开始
+                        else:
+                            if turn.reasoning_content:
+                                turn.reasoning_content += "\n\n"
+                            turn.reasoning_content += reasoning  # 同调用流，累加
+
+                    # 收到回复内容 → 思考阶段已结束，清空 reasoningContent
+                    if content and turn.reasoning_content:
+                        turn.reasoning_content = ""
+
+                    if message_id:
+                        self._turn_last_response_msg_id[turn_id] = message_id
                 else:
+                    prev_msg_id = self._turn_content_msg_id.get(turn_id, "")
+                    is_new_message = prev_msg_id != message_id
+                    if is_new_message and turn.final_response:
+                        turn.final_response += "\n\n"
                     turn.final_response += content_str
+                    if message_id:
+                        self._turn_content_msg_id[turn_id] = message_id
+                        self._turn_last_response_msg_id[turn_id] = message_id
             except (json.JSONDecodeError, TypeError):
+                prev_msg_id = self._turn_content_msg_id.get(turn_id, "")
+                is_new_message = prev_msg_id != message_id
+                if is_new_message and turn.final_response:
+                    turn.final_response += "\n\n"
                 turn.final_response += content_str
+                if message_id:
+                    self._turn_content_msg_id[turn_id] = message_id
+                    self._turn_last_response_msg_id[turn_id] = message_id
 
         turn.status = "thinking"
         self._notify_change()
@@ -601,6 +733,17 @@ class ChatStore:
         is_error = (result or {}).get("status") == "error" if result else False
         turn.status = "error" if is_error else "completed"
         turn.total_duration = (time.time() * 1000 - turn.started_at) / 1000
+
+        # 保存该 turn 最后一条消息的 ID（用于撤销定位），再清理追踪 map
+        last_msg_id = self._turn_last_response_msg_id.get(turn_id, "")
+        if last_msg_id:
+            turn.last_message_id = last_msg_id
+        if turn_id in self._turn_content_msg_id:
+            del self._turn_content_msg_id[turn_id]
+        if turn_id in self._turn_last_response_msg_id:
+            del self._turn_last_response_msg_id[turn_id]
+        if turn_id in self._turn_seen_tool_call_ids:
+            del self._turn_seen_tool_call_ids[turn_id]
 
         # 如果当前活跃的 turn 被终结，停止定时器
         if self.active_turn_index >= 0:

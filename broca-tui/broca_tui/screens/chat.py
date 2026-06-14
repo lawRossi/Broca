@@ -61,7 +61,7 @@ class ChatScreen(Screen):
         self._chat_store = ChatStore()
         self._agent_store = AgentStore()
 
-        # Update throttle (for filtered turn count)
+        # Track last rendered turn count
         self._last_turn_count = -1
 
     def compose(self) -> ComposeResult:
@@ -203,8 +203,8 @@ class ChatScreen(Screen):
             ))
         )
 
-        # Agent store → re-render turns when agent list/visibility changes
-        self._agent_store.on_change(lambda: self._on_chat_change())
+        # Agent store → agent 状态/列表变化只更新侧栏，不触发 turn 渲染
+        self._agent_store.on_change(lambda: self._on_agent_change())
         self._agent_store.on_visibility_change(
             lambda: self._on_visibility_changed()
         )
@@ -223,20 +223,20 @@ class ChatScreen(Screen):
     # ==================== Event Handlers ====================
 
     def _on_chat_change(self):
-        """React to chat store state changes with throttled turn updates."""
+        """React to chat store state changes — 每次更新立即渲染，不 throttle。
+
+        增量更新（update_turn）只更新内容不重建 DOM，不会闪烁，
+        因此不需要 throttle 合并更新。
+        """
         try:
             message_list = self.query_one("#message-list", MessageList)
-            header = self.query_one("#chat-header", ChatHeader)
-            info_sidebar = self.query_one("#info-sidebar", InfoSidebar)
-            chat_input = self.query_one("#chat-input", ChatInput)
         except Exception:
             return
 
-        # Sync loading state from chat store to message list
+        # Sync loading/has_more/redo state to message list
         message_list.loading = self._chat_store.loading
-
-        # Sync has_more so scroll check doesn't keep triggering
         message_list.has_more = self._chat_store.has_more_turns
+        message_list.show_redo = self._chat_store.show_redo_button
 
         # Build agent_id → display_name map
         agent_name_map = {
@@ -250,42 +250,21 @@ class ChatScreen(Screen):
 
         # 加载中时只更新 loading 状态，跳过 turn 渲染
         if not self._chat_store.loading:
-            # Filter turns by agent visibility
             filtered_turns = self._chat_store.get_filtered_turns(visible_ids, all_ids)
-
-            # 始终更新 turn 数据，不依赖 count throttling：
-            # - 历史加载时 count 变化，需要渲染
-            # - 实时更新时 turn 内部字段变化（tool_call / agent_response / turn_end），
-            #   但 count 不变，仍需要重新渲染以反映最新数据
-            current_count = len(filtered_turns)
-            log(f" _on_chat_change: loading={self._chat_store.loading}, turn_count={current_count}, last_count={self._last_turn_count}, visible_ids={visible_ids}")
+            # 立即渲染，不 throttle
             message_list.set_turn_summaries(filtered_turns, agent_name_map)
-            self._last_turn_count = current_count
+            self._last_turn_count = len(filtered_turns)
 
-        # Update connection status
-        if self._chat_store.connected:
-            header.connection_status = "connected"
-        elif self._chat_store.connecting:
-            header.connection_status = "connecting"
-        else:
-            header.connection_status = "disconnected"
+    def _on_agent_change(self):
+        """React to agent store changes — agent 状态/列表变化不影响 turn 列表。
 
-        # Update redo button
-        message_list.show_redo = self._chat_store.show_redo_button
-
-        # Update runner status from ChatStore
-        if self._chat_store.runner_alive:
-            info_sidebar.runner_status = "alive"
-            chat_input.disabled = False
-        elif info_sidebar.runner_status == "alive":
-            chat_input.disabled = False
-        elif self._chat_store.runner_info:
-            info_sidebar.runner_status = "dead"
-            chat_input.disabled = True
-
-        # ⚠️ InfoSidebar 消息统计不再通过本地 messages 计算
-        # 改由 InfoSidebar 自己的 _poll_runner_status 中调用
-        # GET /session/{id}/stats API 获取（见 Task 3.3）
+        AgentSidebar 有自己独立的 AgentStore 实例和 20s 轮询机制，
+        ChatScreen 的 _agent_store 变化只需更新 agent_name_map 用于后续 turn 过滤，
+        不需要重新渲染 turn 列表。
+        """
+        # agent 状态变化不触发 turn 渲染（turn 数据没变）
+        # AgentSidebar 有自己的 store 和轮询，不需要这里更新
+        pass
 
     def _on_visibility_changed(self):
         """React to agent visibility changes — immediately refresh turn list."""
@@ -315,17 +294,33 @@ class ChatScreen(Screen):
         """
         msg_type = msg.get("type", "")
 
-        if msg_type == "turn_start":
+        if msg_type in ("turn_start", "agent_active"):
             self._agent_store.update_agent_status(msg.get("agent_id", ""), "running")
         elif msg_type == "turn_end":
             self._agent_store.update_agent_status(msg.get("agent_id", ""), "idle")
 
     def _on_connection_change(self, connected: bool):
-        """Handle connection state changes.
+        """Handle connection state changes — update header + agent status.
+
+        Aligns with Web behavior:
+        - connected → all agents 'idle'
+        - disconnected → all agents 'disconnected'
 
         Args:
             connected: Whether connected
         """
+        try:
+            header = self.query_one("#chat-header", ChatHeader)
+            header.connection_status = "connected" if connected else "disconnected"
+        except Exception:
+            pass
+
+        # Update all agents' status on connect/disconnect (align with Web)
+        status = "idle" if connected else "disconnected"
+        for agent in self._agent_store.agents:
+            agent["agent_status"] = status
+        self._agent_store._notify_change()
+
         if connected:
             self.run_worker(self._chat_store._fetch_runner_status())
 

@@ -42,8 +42,12 @@ async def test_chat_screen_with_turn_data():
         screen = app.screen
         ml = screen.query_one("#message-list", MessageList)
 
-        # 直接注入 turn 数据
-        ml.set_turn_summaries(fake_turns, agent_name_map={"a1": "Agent A"})
+        # 通过 store 注入 turn 数据（不要绕过 store 直接操作 MessageList，
+        # 否则 _on_chat_change 的实时更新会用 store 的空数据覆盖）
+        screen._chat_store.turn_summaries = fake_turns
+        screen._chat_store.loading = False
+        screen._chat_store._notify_change()
+        await pilot.pause()
         await pilot.pause()
 
         scroll = ml.query_one("#turn-scroll")

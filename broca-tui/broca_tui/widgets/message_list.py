@@ -12,6 +12,7 @@ Message list with:
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Callable, Dict, List, Optional
 
 from textual.app import ComposeResult
@@ -203,27 +204,69 @@ class MessageList(Vertical):
             log(f" _render_turn_cards: query failed: {e}")
             return
 
-        area.remove_children()
-
+        # 空 turn → 显示暂无数据
         if not self._turn_summaries:
+            area.remove_children()
             log(f" _render_turn_cards: empty turns, showing '暂无 Turn 数据'")
             empty = Label("暂无 Turn 数据", classes="empty-message")
             area.mount(empty)
             return
 
-        log(f" _render_turn_cards: mounting {len(self._turn_summaries)} TurnCards")
-        prev_agent_id = None
-        for i, turn in enumerate(self._turn_summaries):
-            consecutive = (turn.agent_id == prev_agent_id)
-            card = TurnCard(
-                turn=turn,
-                agent_name_map=self._agent_name_map,
-                consecutive_agent=consecutive,
+        existing_cards = list(area.children)
+        turn_count = len(self._turn_summaries)
+
+        # 尝试增量更新：turn 数量一致且 turn_id 匹配时，只更新内容不重建 DOM
+        # 但如果有条件渲染变化（final_response/reasoning/current_tool 从有到无或从无到有），
+        # 必须重建，因为对应的子 widget 不存在或需要移除，update_turn 无法增减它们
+        def _conditions_changed(old_turn, new_turn) -> bool:
+            return (
+                (old_turn.final_response != new_turn.final_response)
+                or (old_turn.reasoning_content != new_turn.reasoning_content)
+                or (old_turn.current_tool != new_turn.current_tool)
+                or (old_turn.tool_call_stats != new_turn.tool_call_stats)
+                or (old_turn.user_message != new_turn.user_message)
+                or (old_turn.status != new_turn.status)
             )
-            area.mount(card)
-            prev_agent_id = turn.agent_id
-            if i < 3 or i == len(self._turn_summaries) - 1:
-                log(f" _render_turn_cards: mounted card {i+1}/{len(self._turn_summaries)}: turn_id={turn.turn_id}, agent={turn.agent_name}")
+
+        can_update_in_place = (
+            len(existing_cards) == turn_count
+            and all(
+                isinstance(existing_cards[i], TurnCard)
+                and existing_cards[i]._turn.turn_id == self._turn_summaries[i].turn_id
+                and not _conditions_changed(existing_cards[i]._turn, self._turn_summaries[i])
+                for i in range(turn_count)
+            )
+        )
+
+        if can_update_in_place:
+            log(f" _render_turn_cards: updating {turn_count} TurnCards in-place")
+            prev_agent_id = None
+            for i, turn in enumerate(self._turn_summaries):
+                card = existing_cards[i]
+                consecutive = (turn.agent_id == prev_agent_id)
+                card._consecutive_agent = consecutive
+                card.update_turn(turn, self._agent_name_map)
+                prev_agent_id = turn.agent_id
+                if i < 3 or i == turn_count - 1:
+                    log(f" _render_turn_cards: updated card {i+1}/{turn_count}: turn_id={turn.turn_id}")
+        else:
+            # 数量或 id 不匹配 → 全量重建
+            log(f" _render_turn_cards: rebuilding {turn_count} TurnCards (in-place={can_update_in_place})")
+            area.remove_children()
+            prev_agent_id = None
+            for i, turn in enumerate(self._turn_summaries):
+                consecutive = (turn.agent_id == prev_agent_id)
+                # ⚠️ 必须深拷贝 turn，否则 card._turn 和 store.turn_summaries[i] 是同一个对象，
+                # _conditions_changed 永远检测不到变化，条件渲染区域（如 #response-text）永不创建
+                card = TurnCard(
+                    turn=copy.deepcopy(turn),
+                    agent_name_map=self._agent_name_map,
+                    consecutive_agent=consecutive,
+                )
+                area.mount(card)
+                prev_agent_id = turn.agent_id
+                if i < 3 or i == turn_count - 1:
+                    log(f" _render_turn_cards: mounted card {i+1}/{turn_count}: turn_id={turn.turn_id}, agent={turn.agent_name}")
 
         # Auto-scroll to bottom (仅追加新 turn 时触发，初始加载不滚动)
         if auto_scroll and self.auto_scroll and not self._user_scrolled_up:
@@ -292,10 +335,16 @@ class MessageList(Vertical):
         # 使用 _prev_scroll_y 区分"初始加载 scroll_y=0"和"用户主动滚动到顶部"：
         # - 初始加载：prev=0, current=0 → is_at_top=False（prev 没有 > 0）
         # - 用户滚回顶部：prev=12, current=0 → is_at_top=True（prev 曾 > 0）
+        # - 内容没占满一页（max_scroll_y=0）：初始加载完成后即可触发，否则永远无法加载更多
         has_content = max_scroll_y > 0
-        is_at_top = current_scroll_y <= 0 and self._prev_scroll_y > 2
+        if not has_content:
+            # 内容没占满时，只要初始加载完成且有更多数据，即可触发
+            is_at_top = current_scroll_y <= 0 and self._initial_loaded
+        else:
+            # 内容占满时，需要用户主动滚动到顶部才触发
+            is_at_top = current_scroll_y <= 0 and self._prev_scroll_y > 2
         self._prev_scroll_y = current_scroll_y
-        should_trigger = (is_at_top and has_content and self.has_more and self._on_load_more_turns
+        should_trigger = (is_at_top and self.has_more and self._on_load_more_turns
                 and not self._scroll_cooldown_active and not self.loading
                 and self._initial_loaded)
         if should_trigger:

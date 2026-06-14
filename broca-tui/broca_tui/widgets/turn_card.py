@@ -17,6 +17,7 @@ TurnCard Widget — 简洁模式 turn 摘要卡片
 
 from __future__ import annotations
 
+import copy
 from typing import Any, Dict, Optional
 
 from rich.markdown import Markdown
@@ -129,7 +130,7 @@ class TurnCard(Widget):
 
     .turn-summary-label {
         color: #94a3b8;
-        width: 12;
+        width: 20;
     }
 
     .turn-summary-value {
@@ -168,6 +169,61 @@ class TurnCard(Widget):
         width: 1fr;
     }
 
+    .turn-response-content.collapsed {
+        max-height: 20;
+        overflow: hidden;
+    }
+
+    .turn-fold-label {
+        height: auto;
+        color: #0ea5e9;
+        text-style: bold;
+        padding: 0 1;
+        margin: 0 0 0 3;
+    }
+
+    .turn-fold-label:hover {
+        text-style: bold underline;
+    }
+
+    .turn-current-call {
+        height: auto;
+        width: 1fr;
+        margin: 1 0 0 0;
+        padding: 1 2;
+        background: rgba(59, 130, 246, 0.08);
+        border: solid #3b82f6;
+    }
+
+    .turn-current-call-icon {
+        height: auto;
+        width: auto;
+        color: #3b82f6;
+        margin: 0 1 0 0;
+    }
+
+    .turn-current-call-label {
+        height: auto;
+        width: auto;
+        color: #3b82f6;
+        text-style: bold;
+        margin: 0 1 0 0;
+    }
+
+    .turn-current-call-tool {
+        height: auto;
+        width: auto;
+        color: $text;
+        margin: 0 1 0 0;
+    }
+
+    .turn-current-call-path {
+        height: auto;
+        width: 1fr;
+        color: #64748b;
+        text-style: italic;
+    }
+
     .turn-reasoning-toggle {
         color: #f59e0b;
         text-style: bold;
@@ -190,12 +246,10 @@ class TurnCard(Widget):
         text-style: italic;
     }
 
-    .turn-undo-button {
+    .turn-undo-label {
         dock: right;
-        background: transparent;
+        height: auto;
         color: #94a3b8;
-        border: none;
-        min-width: 8;
         padding: 0 1;
         margin: 0;
         text-style: none;
@@ -241,6 +295,57 @@ class TurnCard(Widget):
         self._agent_name_map = agent_name_map or {}
         self._consecutive_agent = consecutive_agent
         self._show_reasoning = False
+        self._response_expanded = True  # 回复默认展开，过长时可折叠
+
+    def update_turn(self, turn: TurnSummary, agent_name_map: Optional[Dict[str, str]] = None):
+        """更新卡片内容（不重建 DOM），用于流式更新避免闪烁。
+
+        Args:
+            turn: 新的 TurnSummary 数据
+            agent_name_map: 可选的 agent 名称映射更新
+        """
+        # 深拷贝保持 self._turn 独立于 live TurnSummary（来自 chat_store.turn_summaries），
+        # 使得 _render_turn_cards 中的 _conditions_changed 能正确检测数据变化，
+        # 触发全量重建以创建条件渲染区域（回复、推理、工具调用等）。
+        # 如果直接 self._turn = turn，则 _conditions_changed 比较同一对象的引用，
+        # 永远返回 False，条件渲染元素永不创建 → Bug: 新 turn 只有 header 不更新内容。
+        self._turn = copy.deepcopy(turn)
+        if agent_name_map is not None:
+            self._agent_name_map = agent_name_map
+
+        # 更新标题栏（始终有）
+        try:
+            self.query_one(".turn-agent-name", Label).update(self._get_agent_display_name())
+        except Exception:
+            pass
+        try:
+            self.query_one(".turn-duration", Label).update(f"⏱️ {self._get_formatted_duration()}")
+        except Exception:
+            pass
+
+        # 更新状态点（根据 simplified_status 切换 class）
+        simplified = self._get_simplified_status()
+        try:
+            dot = self.query_one(".turn-status-dot", Label)
+            dot.classes = f"turn-status-dot {simplified}"
+        except Exception:
+            pass
+
+        # 更新回复内容
+        try:
+            resp_text = self.query_one("#response-text", Static)
+            if turn.final_response:
+                resp_text.update(Markdown(self._format_response(turn.final_response)))
+        except Exception:
+            pass
+
+        # 更新推理内容
+        try:
+            reasoning_label = self.query_one("#reasoning-text", Label)
+            if turn.reasoning_content:
+                reasoning_label.update(turn.reasoning_content)
+        except Exception:
+            pass
 
     def _get_simplified_status(self) -> str:
         """获取简化状态（对齐 Web：active/thinking/calling_tool → active）。"""
@@ -286,9 +391,8 @@ class TurnCard(Widget):
         return bool(self._turn.current_todo_list and len(self._turn.current_todo_list) > 0)
 
     def _get_tool_stats_text(self) -> str:
-        """获取工具调用统计文本。"""
         return ", ".join(
-            f'{s.get("toolName", "?")} ({s.get("count", 0)}次)'
+            f'{s.get("tool_name", s.get("toolName", "?"))} ({s.get("count", 0)}次)'
             for s in self._turn.tool_call_stats
         )
 
@@ -297,9 +401,25 @@ class TurnCard(Widget):
         name = self._agent_name_map.get(self._turn.agent_id) or self._turn.agent_name
         return name or self._turn.agent_id
 
+    @staticmethod
+    def _format_response(text: str) -> str:
+        """格式化回复内容，确保不同 chunk 之间的 \\n\\n 保留。
+
+        现在不同 message 之间的空行已在 update_turn_on_agent_response 中
+        通过追加 \\n\\n 处理，此方法仅做基本清理。
+        """
+        return text.replace("\r\n", "\n")
+
     def _can_undo(self) -> bool:
         """判断是否可撤销。"""
         return self._turn.status == "completed" and bool(self._turn.last_message_id)
+
+    def _needs_fold(self) -> bool:
+        """判断回复内容是否需要折叠（超过 20 行）。"""
+        content = (self._turn.final_response or "").strip()
+        if not content:
+            return False
+        return content.count('\n') > 20
 
     def compose(self) -> ComposeResult:
         """创建 TurnCard 布局。"""
@@ -341,18 +461,6 @@ class TurnCard(Widget):
                     yield Label("🔄 状态", classes="turn-summary-label")
                     yield Label(status_text, classes=f"turn-summary-status {simplified_status}")
 
-                # 当前工具
-                if self._turn.current_tool:
-                    with Horizontal(classes="turn-summary-row"):
-                        yield Label("🔧 工具", classes="turn-summary-label")
-                        yield Label(self._turn.current_tool, classes="turn-summary-value")
-
-                # 文件路径
-                if self._show_file_path():
-                    with Horizontal(classes="turn-summary-row"):
-                        yield Label("📁 文件", classes="turn-summary-label")
-                        yield Label(self._turn.current_file_path or "", classes="turn-summary-value")
-
                 # TODO 列表
                 if self._show_todo_list():
                     with Vertical(classes="turn-todo-list"):
@@ -374,31 +482,49 @@ class TurnCard(Widget):
         if self._turn.final_response:
             with Horizontal(classes="turn-response-section"):
                 yield Label("🤖", classes="turn-response-icon")
-                with Vertical(classes="turn-response-content"):
-                    yield Static(Markdown(self._turn.final_response))
+                with Vertical(classes="turn-response-content", id="response-content"):
+                    yield Static(Markdown(self._format_response(self._turn.final_response)), id="response-text")
+            # 内容过长时显示折叠标签
+            if self._needs_fold():
+                yield Label("折叠", id="toggle-response", classes="turn-fold-label")
 
-        # ===== 推理内容（可折叠） =====
-        if self._turn.reasoning_content:
+        # ===== 当前调用（仅在 turn 未完成且有当前工具时显示，参考 web 版） =====
+        # web 版条件：currentTool && status === 'active'
+        # turn 结束后 status 变为 completed，即使 current_tool 残留也不显示
+        if self._turn.current_tool and self._turn.status != "completed":
+            with Horizontal(classes="turn-current-call"):
+                yield Label("⏳", classes="turn-current-call-icon")
+                yield Label("当前调用", classes="turn-current-call-label")
+                yield Label(self._turn.current_tool, classes="turn-current-call-tool")
+                if self._turn.current_file_path:
+                    yield Label(self._turn.current_file_path, classes="turn-current-call-path")
+
+        # ===== 推理内容（可折叠，仅在无当前工具或 turn 已完成时显示） =====
+        if self._turn.reasoning_content and (self._turn.status == "completed" or not self._turn.current_tool):
             toggle_icon = "▼" if self._show_reasoning else "▶"
             yield Label(f"{toggle_icon} 思考", classes="turn-reasoning-toggle", id="reasoning-toggle")
             # 始终包含 content，通过 display 控制显隐
             with Vertical(classes="turn-reasoning-content", id="reasoning-content"):
                 yield Label(self._turn.reasoning_content, classes="turn-reasoning-text")
 
-        # ===== 撤销按钮（hover 显示） =====
+        # ===== 撤销按钮（hover 显示，右下角） =====
         if self._can_undo():
-            yield Button("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-button")
+            yield Label("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-label")
 
     def on_mount(self) -> None:
         """Set up after mount."""
         # 初始隐藏推理内容和撤销按钮
         self._update_reasoning_visibility()
         try:
-            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Button)
-            if undo_btn:
-                undo_btn.display = False
+            undo_label = self.query_one(f"#undo-{self._turn.turn_id}", Label)
+            if undo_label:
+                undo_label.display = False
         except Exception:
             pass
+        # 回复内容默认展开，如果内容超长且有折叠按钮，默认折叠
+        if self._needs_fold():
+            self._response_expanded = False
+            self._update_response_visibility()
 
     def _update_reasoning_visibility(self):
         """更新推理内容的显示状态。"""
@@ -413,21 +539,42 @@ class TurnCard(Widget):
         except Exception:
             pass
 
+    def _update_response_visibility(self):
+        """更新回复内容的折叠状态。"""
+        try:
+            content = self.query_one("#response-content", Vertical)
+            toggle = self.query_one("#toggle-response", Label)
+            if content:
+                if self._response_expanded:
+                    content.remove_class("collapsed")
+                else:
+                    content.add_class("collapsed")
+            if toggle:
+                toggle.update("折叠" if self._response_expanded else "展开全部")
+        except Exception:
+            pass
+
     def on_click(self, event) -> None:
-        """处理推理内容的点击切换。"""
+        """处理推理/回复/撤销的点击切换。"""
         if hasattr(event, 'widget') and event.widget is not None:
             widget_id = getattr(event.widget, 'id', None)
             if widget_id == "reasoning-toggle":
                 self._show_reasoning = not self._show_reasoning
                 self._update_reasoning_visibility()
+            elif widget_id == "toggle-response":
+                self._response_expanded = not self._response_expanded
+                self._update_response_visibility()
+            elif widget_id and widget_id.startswith("undo-"):
+                # 撤销操作由 ChatScreen 处理
+                pass
 
     def on_enter(self) -> None:
         """鼠标进入时显示撤销按钮。"""
         self._show_actions = True
         try:
-            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Button)
-            if undo_btn:
-                undo_btn.display = True
+            undo_label = self.query_one(f"#undo-{self._turn.turn_id}", Label)
+            if undo_label:
+                undo_label.display = True
         except Exception:
             pass
 
@@ -435,8 +582,8 @@ class TurnCard(Widget):
         """鼠标离开时隐藏撤销按钮。"""
         self._show_actions = False
         try:
-            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Button)
-            if undo_btn:
-                undo_btn.display = False
+            undo_label = self.query_one(f"#undo-{self._turn.turn_id}", Label)
+            if undo_label:
+                undo_label.display = False
         except Exception:
             pass

@@ -403,7 +403,9 @@ class AgentSidebar(Widget):
                 yield Static("Loading agents...", classes="loading")
 
     def on_mount(self) -> None:
-        """Start polling after mount."""
+        """Register store callback and start polling after mount."""
+        # 监听 store 变化（来自 ChatScreen 的即时状态更新），实时重渲染
+        self._store.on_change(self._render_agents)
         if self._session_id:
             self._start_polling()
 
