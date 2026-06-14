@@ -258,7 +258,9 @@ class TurnCard(Widget):
         width: auto;
         height: auto;
         min-width: 0;
+        min-height: 0;
         padding: 0 1;
+        margin: 0;
         background: transparent;
         color: #94a3b8;
         border: none;
@@ -266,7 +268,6 @@ class TurnCard(Widget):
     }
 
     .turn-undo-button:hover {
-        background: transparent;
         color: #ef4444;
         text-style: bold;
     }
@@ -559,7 +560,7 @@ class TurnCard(Widget):
         # ===== 撤销按钮（hover 显示，右下角） =====
         if self._can_undo():
             with Horizontal(classes="turn-undo-container"):
-                yield Button("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-button")
+                yield Static("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-button")
 
     def on_mount(self) -> None:
         """Set up after mount."""
@@ -601,7 +602,7 @@ class TurnCard(Widget):
             pass
 
     def on_click(self, event) -> None:
-        """处理推理/回复的点击切换。"""
+        """处理推理/回复/撤销的点击切换。"""
         if hasattr(event, 'widget') and event.widget is not None:
             widget_id = getattr(event.widget, 'id', None)
             if widget_id == "reasoning-toggle":
@@ -610,11 +611,20 @@ class TurnCard(Widget):
             elif widget_id == "toggle-response":
                 self._response_expanded = not self._response_expanded
                 self._update_response_visibility()
+            elif widget_id and widget_id.startswith("undo-"):
+                # 撤销操作：向上找 MessageList 处理
+                turn_id = widget_id.replace("undo-", "", 1)
+                parent = self.parent
+                while parent is not None:
+                    if hasattr(parent, '_confirm_and_undo'):
+                        parent._confirm_and_undo(turn_id)
+                        break
+                    parent = parent.parent
 
     def _hide_undo(self):
         """Hide undo button."""
         try:
-            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Button)
+            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Static)
             if undo_btn:
                 undo_btn.display = False
         except Exception:
@@ -623,7 +633,7 @@ class TurnCard(Widget):
     def _show_undo(self):
         """Show undo button."""
         try:
-            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Button)
+            undo_btn = self.query_one(f"#undo-{self._turn.turn_id}", Static)
             if undo_btn:
                 undo_btn.display = True
         except Exception:

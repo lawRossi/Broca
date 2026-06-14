@@ -1055,14 +1055,19 @@ export const useChatStore = defineStore('chat', () => {
     switch (message.message_type) {
       case 'user_message':
         if (!turn.userMessage) {
-          // 后端回显的 user_message 可能 JSON 包裹，与 web 版一致处理
-          const raw = message.data?.content
-          if (raw) {
-            try {
-              const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-              turn.userMessage = parsed?.content || String(parsed)
-            } catch {
-              turn.userMessage = String(raw)
+          // 优先使用 raw_input（与明细模式 ChatMessageItem 一致）
+          if (message.data?.raw_input !== undefined) {
+            turn.userMessage = String(message.data.raw_input)
+          } else {
+            // 后端回显的 user_message 可能 JSON 包裹，与 web 版一致处理
+            const raw = message.data?.content
+            if (raw) {
+              try {
+                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+                turn.userMessage = parsed?.content || String(parsed)
+              } catch {
+                turn.userMessage = String(raw)
+              }
             }
           }
         }

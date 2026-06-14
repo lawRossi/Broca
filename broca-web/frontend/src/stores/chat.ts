@@ -458,14 +458,21 @@ export const useChatStore = defineStore('chat', () => {
     const turn = turnSummaries.value[idx]
 
     if (message.message_type === 'user_message') {
-      // data.content 是 json.dumps({"content": "用户消息", ...})
-      const raw = message.data?.content
-      if (raw && !turn.userMessage) {
-        try {
-          const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-          turn.userMessage = parsed?.content || String(parsed)
-        } catch {
-          turn.userMessage = String(raw)
+      if (!turn.userMessage) {
+        // 优先使用 raw_input（与明细模式 ChatMessageItem 一致）
+        if (message.data?.raw_input !== undefined) {
+          turn.userMessage = String(message.data.raw_input)
+        } else {
+          // data.content 是 json.dumps({"content": "用户消息", ...})
+          const raw = message.data?.content
+          if (raw) {
+            try {
+              const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+              turn.userMessage = parsed?.content || String(parsed)
+            } catch {
+              turn.userMessage = String(raw)
+            }
+          }
         }
       }
       // 记录最后一条消息 ID（用于撤销定位）
