@@ -629,18 +629,15 @@ export const useChatStore = defineStore('chat', () => {
 
     const turn = turnSummaries.value[idx]
     turn.isActive = false
-    turn.status = message.data?.result?.status === 'error' ? 'error' : 'completed'
+    turn.status = message.data?.status === 'error' || message.data?.status === 'aborted' ? 'error' : 'completed'
     turn.totalDuration = (Date.now() - turn.startedAt) / 1000
 
     if (activeTurnIndex.value === idx) {
       activeTurnIndex.value = -1
       stopDurationTimer()
     }
-    // 保存该 turn 最后一条消息的 ID（用于撤销定位），再清理追踪 map
-    const lastMsgId = _turnLastResponseMsgId.get(turnId)
-    if (lastMsgId) {
-      turn.lastMessageId = lastMsgId
-    }
+    // 保存 turn_end 消息 ID 用于撤销定位（始终安全，后端可能已删除最后响应消息）
+    turn.lastMessageId = message.message_id
     _turnLastResponseMsgId.delete(turnId)
     _turnContentMsgId.delete(turnId)
     _turnSeenToolCallIds.delete(turnId)
@@ -915,7 +912,7 @@ export const useChatStore = defineStore('chat', () => {
           agentId: t.agent_id,
           agentName: t.agent_name || 'Unknown',
           userMessage: t.user_message,
-          status: t.ended_at ? 'completed' as const : 'active' as const,
+          status: (t.status === 'error' ? 'error' : 'completed') as const,
           currentTool: null,
           currentFilePath: t.current_file_path,
           currentTodoList: (t.current_todo_list || []) as TodoItem[],

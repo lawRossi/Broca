@@ -21,6 +21,27 @@ marked.setOptions({
 const showReasoning = ref(false)
 const showActions = ref(false)
 const showUndoConfirm = ref(false)
+const showFullResponse = ref(false)
+const MAX_RESPONSE_LINES = 25
+
+// ==================== 长回复检测 ====================
+const isLongResponse = computed(() => {
+  const text = props.turn.finalResponse
+  if (!text) return false
+  let lineCount = 0
+  let pos = 0
+  while (pos < text.length) {
+    const nextBreak = text.indexOf('\n', pos)
+    if (nextBreak === -1) {
+      lineCount++
+      break
+    }
+    lineCount++
+    pos = nextBreak + 1
+    if (lineCount > MAX_RESPONSE_LINES) return true
+  }
+  return false
+})
 
 // ==================== 状态文本与颜色（与 web 版一致） ====================
 const simplifiedStatus = computed(() => {
@@ -42,7 +63,7 @@ const statusBorderClass = computed(() => {
 })
 
 const headerTextClass = computed(() => {
-  if (simplifiedStatus.value === 'completed') return 'text-green'
+  if (simplifiedStatus.value === 'completed') return 'text-blue'
   if (simplifiedStatus.value === 'error') return 'text-red'
   return 'text-primary'
 })
@@ -56,7 +77,7 @@ const statusColorClass = computed(() => {
 const statusDotClass = computed(() => {
   if (simplifiedStatus.value === 'active') return 'dot-blue pulse'
   if (simplifiedStatus.value === 'error') return 'dot-red'
-  return 'dot-green'
+  return 'dot-gray'
 })
 
 // ==================== 耗时格式化（与 web 版一致） ====================
@@ -129,7 +150,7 @@ const renderedResponse = computed(() => {
 // ==================== 撤销功能 ====================
 const canUndo = computed(() => {
   if (!chatStore.connected || !chatStore.sessionId || !chatStore.runnerAlive) return false
-  if (props.turn.status !== 'completed') return false
+  if (props.turn.status !== 'completed' && props.turn.status !== 'error') return false
   return !!props.turn.lastMessageId
 })
 
@@ -222,19 +243,28 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
       <div class="response-row">
         <span class="response-icon">🤖</span>
         <div class="response-content">
-          <div class="markdown-body" v-html="renderedResponse"></div>
+          <div
+            class="markdown-body"
+            :class="{ 'response-collapsed': isLongResponse && !showFullResponse }"
+            v-html="renderedResponse"
+          ></div>
+          <button
+            v-if="isLongResponse"
+            class="expand-btn"
+            @click="showFullResponse = !showFullResponse"
+          >
+            {{ showFullResponse ? '收起 ▲' : '展开 ▼' }}
+          </button>
         </div>
       </div>
     </div>
 
-    <!-- ==================== 当前调用 / 推理内容 ==================== -->
-    <!-- 调用工具时：展示当前调用工具 + 漏斗图标，不展示思考 -->
+    <!-- ==================== 当前调用（与工具名同一行，不显示文件路径） ==================== -->
     <div v-if="currentToolText && simplifiedStatus === 'active'" class="tool-calling-section">
-      <div class="tool-calling-label-row">当前调用</div>
       <div class="tool-calling-row">
         <span class="tool-calling-icon">⏳</span>
-        <span class="tool-calling-name">{{ currentToolText }}</span>
-        <span v-if="showFilePath" class="tool-calling-file">{{ turn.currentFilePath }}</span>
+        <span class="tool-calling-name">当前调用:</span>
+        <span class="tool-calling-name font-semibold">{{ currentToolText }}</span>
       </div>
     </div>
     <!-- 未调用工具时：展示思考（可折叠） -->
@@ -284,6 +314,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   border-left-width: 4px;
   border-left-style: solid;
   transition: all 0.2s ease;
+  margin-bottom: 12px;
 }
 
 .turn-card:hover {
@@ -296,7 +327,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 
 /* 状态边框颜色 */
 .border-l-blue { border-left-color: #3b82f6; }
-.border-l-green { border-left-color: #22c55e; }
+.border-l-green { border-left-color: var(--vscode-widget-border, #b0b0b0); }
 .border-l-red { border-left-color: #ef4444; }
 
 /* ==================== 标题栏 ==================== */
@@ -331,7 +362,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 }
 
 .dot-blue { background-color: #3b82f6; }
-.dot-green { background-color: #22c55e; }
+.dot-gray { background-color: var(--vscode-widget-border, #b0b0b0); }
 .dot-red { background-color: #ef4444; }
 
 .dot-blue.pulse {
@@ -510,6 +541,41 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 .response-content {
   flex: 1;
   min-width: 0;
+}
+
+.response-collapsed {
+  max-height: calc(1.6em * 25);
+  overflow: hidden;
+  position: relative;
+}
+
+.response-collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3em;
+  background: linear-gradient(transparent, var(--vscode-editor-background, #fff));
+  pointer-events: none;
+}
+
+.expand-btn {
+  display: block;
+  margin-top: 4px;
+  background: none;
+  border: 1px solid var(--vscode-widget-border, #e0e0e0);
+  color: var(--vscode-textLink-foreground, #006ab1);
+  font-size: 11px;
+  padding: 2px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  width: 100%;
+  text-align: center;
+}
+
+.expand-btn:hover {
+  background: var(--vscode-button-hoverBackground, rgba(0, 0, 0, 0.05));
 }
 
 /* ==================== 推理内容（对齐 web 版） ==================== */

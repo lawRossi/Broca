@@ -275,8 +275,8 @@ class ChatStore:
             # 简洁模式：终结 TurnSummary
             turn_id = message.data.get("turn_id") if message.data else None
             if turn_id:
-                result = message.data.get("result") if message.data else None
-                self.finalize_turn_summary(turn_id, result)
+                status = message.data.get("status") if message.data else None
+                self.finalize_turn_summary(turn_id, status, turn_end_msg_id=message.message_id)
 
             if self._on_message:
                 self._on_message({"type": "turn_end", "agent_id": target_id})
@@ -557,6 +557,13 @@ class ChatStore:
             )
 
             # 将后端数据映射为 TurnSummary
+            # 检查是否有 reverted turn → 说明存在可 redo 的撤销操作
+            has_reverted = any(t.get("is_reverted") for t in raw_turns)
+            if has_reverted:
+                self.show_redo_button = True
+            else:
+                self.show_redo_button = False
+
             new_turns = []
             for t in raw_turns:
                 # 过滤已撤销的 turn
@@ -569,7 +576,7 @@ class ChatStore:
                     agent_id=t.get("agent_id", ""),
                     agent_name=t.get("agent_name", ""),
                     user_message=t.get("user_message"),
-                    status="completed",  # 历史 turn 都是已完成的
+                    status=t.get("status", "completed"),  # 从数据库读取持久化状态
                     current_tool=t.get("current_tool"),
                     current_file_path=t.get("current_file_path"),
                     current_todo_list=t.get("current_todo_list", []),
@@ -781,26 +788,26 @@ class ChatStore:
         turn.status = "thinking"
         self._notify_change()
 
-    def finalize_turn_summary(self, turn_id: str, result: Optional[Dict] = None):
+    def finalize_turn_summary(self, turn_id: str, status: Optional[str] = None, turn_end_msg_id: Optional[str] = None):
         """终结 TurnSummary（turn_end 事件触发）。
 
         Args:
             turn_id: Turn ID
-            result: turn_end 消息的 result 数据
+            status: turn_end 消息的 status 值（"completed"/"error"/"aborted"）
+            turn_end_msg_id: turn_end 消息自身的 ID（中止时最后的响应消息已被删，用它做撤销定位）
         """
         turn = self._find_turn(turn_id)
         if not turn:
             return
 
         turn.is_active = False
-        is_error = (result or {}).get("status") == "error" if result else False
+        is_error = status in ("error", "aborted") if status else False
         turn.status = "error" if is_error else "completed"
         turn.total_duration = (time.time() * 1000 - turn.started_at) / 1000
 
-        # 保存该 turn 最后一条消息的 ID（用于撤销定位），再清理追踪 map
-        last_msg_id = self._turn_last_response_msg_id.get(turn_id, "")
-        if last_msg_id:
-            turn.last_message_id = last_msg_id
+        # 保存 turn_end 消息 ID 用于撤销定位（始终安全，后端可能已删除最后响应消息）
+        if turn_end_msg_id:
+            turn.last_message_id = turn_end_msg_id
         if turn_id in self._turn_content_msg_id:
             del self._turn_content_msg_id[turn_id]
         if turn_id in self._turn_last_response_msg_id:
@@ -813,6 +820,9 @@ class ChatStore:
             turn_at_index = self.turn_summaries[self.active_turn_index]
             if turn_at_index.turn_id == turn_id:
                 self.active_turn_index = -1
+
+        # 触发 UI 更新（_process_incoming_message 跳过了 turn_end 类型，需手动通知）
+        self._notify_change()
 
         self._notify_change(force=True)
 
@@ -896,9 +906,9 @@ class ChatStore:
             return
         try:
             await self._socket.send_command(
-                command="/abort",
-                arguments={"agent_id": agent_id} if agent_id else None,
-                subscription=self.session_id,
+                command="abort",
+                arguments={},
+                receiver_id=agent_id
             )
         except Exception as e:
             self._notify_error(f"中止失败: {e}")

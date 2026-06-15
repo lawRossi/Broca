@@ -1021,13 +1021,11 @@ export const useChatStore = defineStore('chat', () => {
     if (!turn) return
 
     turn.isActive = false
-    turn.status = message.data?.error ? 'error' : 'completed'
+    turn.status = message.data?.status === 'error' || message.data?.status === 'aborted' ? 'error' : 'completed'
     stopDurationTimer()
 
-    // 如果有 lastMessageId，从 _turnLastResponseMsgId 更新
-    if (turn.lastMessageId) {
-      _turnLastResponseMsgId.value.set(turn.turnId, turn.lastMessageId)
-    }
+    // 保存 turn_end 消息 ID 用于撤销定位（始终安全，后端可能已删除最后响应消息）
+    turn.lastMessageId = message.message_id || ''
 
     activeTurnIndex.value = -1
   }

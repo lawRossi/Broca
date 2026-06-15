@@ -191,30 +191,17 @@ class TurnCard(Widget):
         height: auto;
         width: 1fr;
         margin: 1 0 0 0;
-    }
-
-    .turn-current-call-row {
-        height: auto;
-        width: 1fr;
+        align: left middle;
         padding: 1 2;
         background: rgba(59, 130, 246, 0.08);
         border: solid #3b82f6;
-    }
-
-    .turn-current-call-icon {
-        height: auto;
-        width: auto;
-        color: #3b82f6;
-        margin: 0 1 0 0;
     }
 
     .turn-current-call-label {
         height: auto;
         width: auto;
         color: #64748b;
-        text-style: bold;
         margin: 0 0 0 0;
-        padding: 0 1;
     }
 
     .turn-current-call-tool {
@@ -222,13 +209,7 @@ class TurnCard(Widget):
         width: auto;
         color: $text;
         margin: 0 1 0 0;
-    }
-
-    .turn-current-call-path {
-        height: auto;
-        width: 1fr;
-        color: #64748b;
-        text-style: italic;
+        text-style: bold;
     }
 
     .turn-reasoning-toggle {
@@ -396,10 +377,6 @@ class TurnCard(Widget):
                 if turn.current_tool:
                     tool_label.update(turn.current_tool)
 
-                path_label = self.query_one(".turn-current-call-path", Label)
-                if turn.current_file_path:
-                    path_label.update(turn.current_file_path)
-
                 self._last_tool_update = now
         except Exception:
             pass
@@ -491,7 +468,7 @@ class TurnCard(Widget):
 
     def _can_undo(self) -> bool:
         """判断是否可撤销。"""
-        return self._turn.status == "completed" and bool(self._turn.last_message_id)
+        return self._turn.status in ("completed", "error") and bool(self._turn.last_message_id)
 
     def _needs_fold(self) -> bool:
         """判断回复内容是否需要折叠（超过 20 行）。"""
@@ -567,17 +544,11 @@ class TurnCard(Widget):
             if self._needs_fold():
                 yield Label("折叠", id="toggle-response", classes="turn-fold-label")
 
-        # ===== 当前调用（参考 web 版，单独一行 label + 一行内容） =====
-        # web 版条件：currentTool && status === 'active'
-        # turn 结束后 status 变为 completed，即使 current_tool 残留也不显示
+        # ===== 当前调用（与工具名同一行，不显示文件路径） =====
         if self._turn.current_tool and self._turn.status != "completed":
-            with Vertical(classes="turn-current-call"):
-                yield Label("当前调用", classes="turn-current-call-label")
-                with Horizontal(classes="turn-current-call-row"):
-                    yield Label("⏳", classes="turn-current-call-icon")
-                    yield Label(self._turn.current_tool, classes="turn-current-call-tool")
-                    if self._turn.current_file_path:
-                        yield Label(self._turn.current_file_path, classes="turn-current-call-path")
+            with Horizontal(classes="turn-current-call"):
+                yield Label("⏳ 当前调用:", classes="turn-current-call-label")
+                yield Label(self._turn.current_tool, classes="turn-current-call-tool")
 
         # ===== 推理内容（可折叠，仅在无当前工具或 turn 已完成时显示） =====
         if self._turn.reasoning_content and (self._turn.status == "completed" or not self._turn.current_tool):

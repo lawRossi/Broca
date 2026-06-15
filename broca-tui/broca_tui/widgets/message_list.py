@@ -237,9 +237,8 @@ class MessageList(Vertical):
                 # current_todo_list: 从无到有（创建 TODO 列表区域）
                 or (not old_turn.current_todo_list and new_turn.current_todo_list)
                 or (old_turn.current_todo_list and not new_turn.current_todo_list)
-                # status: 完成/未完成切换影响条件渲染（如当前调用区域在 completed 时隐藏）
-                or (old_turn.status != "completed" and new_turn.status == "completed")
-                or (old_turn.status == "completed" and new_turn.status != "completed")
+                # status: 切换影响条件渲染（如撤销按钮和当前调用区域显隐）
+                or (old_turn.status != new_turn.status)
             )
 
         can_update_in_place = (

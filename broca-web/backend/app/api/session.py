@@ -642,11 +642,16 @@ async def get_session_turns(
             agent = await agent_service.get(t.agent_id) if t.agent_id else None
             stats = await turn_service.get_turn_stats(t.turn_id)
 
+            # turn 状态：'active', 'completed', 'error'
+            # 兼容旧数据：None → 'completed'
+            turn_status = t.status or "completed"
+
             turn_list.append({
                 "turn_id": t.turn_id,
                 "sequence_number": t.sequence_number,
                 "agent_id": t.agent_id,
                 "agent_name": agent.name if agent else None,
+                "status": turn_status,
                 "started_at": start_time.isoformat() if start_time else None,
                 "ended_at": end_time.isoformat() if end_time else None,
                 "duration_seconds": round(duration, 1) if duration else None,
