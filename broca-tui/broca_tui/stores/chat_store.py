@@ -557,13 +557,6 @@ class ChatStore:
             )
 
             # 将后端数据映射为 TurnSummary
-            # 检查是否有 reverted turn → 说明存在可 redo 的撤销操作
-            has_reverted = any(t.get("is_reverted") for t in raw_turns)
-            if has_reverted:
-                self.show_redo_button = True
-            else:
-                self.show_redo_button = False
-
             new_turns = []
             for t in raw_turns:
                 # 过滤已撤销的 turn
