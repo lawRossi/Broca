@@ -554,6 +554,7 @@ class SocketIOClient:
         room: Optional[str] = None,
         subscription: Optional[str] = None,
         callback: Optional[Callable] = None,
+        message_id: Optional[str] = None,
     ) -> str:
         """Send turn end message"""
         message = MessageProtocol.create_turn_end(
@@ -564,6 +565,7 @@ class SocketIOClient:
             receiver_id=receiver_id,
             room=room,
             subscription=subscription,
+            message_id=message_id,
         )
         return await self.send_message(message, callback)
 
@@ -652,6 +654,24 @@ class SocketIOClient:
             subscription=subscription,
         )
         return await self.send_message(msg, callback)
+
+    async def send_user_answer(
+        self,
+        answer: str,
+        request_id: str,
+        receiver_id: str,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ):
+        msg = MessageProtocol.create_user_answer(
+            answer=answer,
+            request_id=request_id,
+            sender_id=self.client_id,
+            receiver_id=receiver_id,
+            room=room,
+            subscription=subscription,
+        )
+        return await self.send_message(msg)
 
     async def send_error(
         self,

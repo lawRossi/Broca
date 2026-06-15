@@ -100,6 +100,9 @@ class Turn(SQLModel, table=True):
     turn_description: Optional[str] = Field(default=None, description="轮次描述")
     sequence_number: int = Field(description="轮次序号")
 
+    # 轮次状态（active/completed/error，由 process_turn_end 设置）
+    status: Optional[str] = Field(default=None, description="轮次状态")
+
     # 撤销状态（用于undo/redo）
     reverted: bool = Field(
         default=False,
@@ -531,7 +534,7 @@ class MessageProtocol:
         """创建轮次结束消息"""
         data = {"turn_id": turn_id}
         if result:
-            data["result"] = result
+            data["status"] = result
         if turn_description:
             data["turn_description"] = turn_description
         return Message(

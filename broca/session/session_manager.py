@@ -494,10 +494,24 @@ class SessionManager:
         )
 
     async def save_turn_end(
-        self, turn_id: str | None, agent_id: str | None, message: str | None
+        self,
+        turn_id: str | None,
+        agent_id: str | None,
+        message: str | None,
+        status: str | None = None,
+        message_id: str | None = None,
     ) -> bool:
         if not turn_id or not agent_id:
             return False
+
+        # 持久化 turn 状态到数据库（加载历史时恢复）
+        data: Dict[str, Any] = {}
+        if status:
+            data["status"] = status
+            try:
+                await self.turn_service.update(turn_id, status=status)
+            except Exception as e:
+                logger.warning(f"Failed to persist turn status: {e}")
 
         return await self.save_message(
             role=MessageRole.SYSTEM,
@@ -505,6 +519,8 @@ class SessionManager:
             message_type=MessageType.TURN_END,
             turn_id=turn_id,
             agent_id=agent_id,
+            data=data if data else None,
+            message_id=message_id,
         )
 
     async def save_tool_call(
@@ -577,5 +593,7 @@ class SessionManager:
                 else:
                     break
 
-        count = await self.message_service.update_batch(message_ids_to_mark, is_truncated=True)
+        count = await self.message_service.update_batch(
+            message_ids_to_mark, is_truncated=True
+        )
         return count

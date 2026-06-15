@@ -839,10 +839,10 @@ class ExecutionEngine:
     async def process_turn_end(self, result: ExecutionResult) -> bool:
         try:
             logger.info("turn ended with result: " + str(result))
-            if self.config.interactive:
-                await self.communicator.send_turn_end(
-                    turn_id=self.turn_id, subscription=self.session_id
-                )
+
+            # 统一生成 turn_end 消息 ID，DB 和 Socket.IO 用同一个（前端撤销时用此 ID 查找）
+            turn_end_msg_id = f"msg_{uuid.uuid4().hex[:16]}"
+
             if result.status == ExecutionStatus.COMPLETED:
                 message = "Turn completed successfully"
             elif result.status == ExecutionStatus.ABORTED:
@@ -859,15 +859,28 @@ class ExecutionEngine:
             else:
                 message = "Turn failed"
 
+            # 先保存到 DB（使用统一 message_id），再发 Socket.IO
+            turn_status = "completed" if result.status == ExecutionStatus.COMPLETED else "error"
+            saved = await self.session_manager.save_turn_end(
+                turn_id=self.turn_id, agent_id=self.agent_id, message=message,
+                status=turn_status, message_id=turn_end_msg_id,
+            )
+
+            if self.config.interactive:
+                await self.communicator.send_turn_end(
+                    turn_id=self.turn_id,
+                    result=result.status.value,
+                    message_id=turn_end_msg_id,
+                    subscription=self.session_id,
+                )
+
             if result.status != ExecutionStatus.COMPLETED:
                 if self.config.interactive:
                     await self.communicator.send_error(
-                        message, subscription=self.session_id
+                        message, subscription=self.session_id,
                     )
 
-            return await self.session_manager.save_turn_end(
-                turn_id=self.turn_id, agent_id=self.agent_id, message=message
-            )
+            return saved
         except Exception as e:
             logger.error(f"Error in process_turn_end: {e}")
             return False
