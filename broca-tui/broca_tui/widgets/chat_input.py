@@ -88,6 +88,7 @@ class ChatInput(Vertical):
         self._selected_index: int = 0
         self._on_send: Optional[Callable] = None
         self._on_abort: Optional[Callable] = None
+        self._suppress_next_change: bool = False  # 补全后抑制一次 Input.Changed
 
     def compose(self) -> ComposeResult:
         """Create the input layout."""
@@ -233,6 +234,10 @@ class ChatInput(Vertical):
         Args:
             value: Current input value
         """
+        if self._suppress_next_change:
+            self._suppress_next_change = False
+            self._hide_autocomplete()
+            return
         if not value:
             self._hide_autocomplete()
             return
@@ -257,7 +262,8 @@ class ChatInput(Vertical):
                 mention_text = value[at_index + 1:].split(" ")[0]
                 matches = [
                     agent for agent in self._agents
-                    if mention_text.lower() in agent.get("name", "").lower()
+                    if not mention_text  # 无过滤文本时匹配全部
+                    or mention_text.lower() in agent.get("name", "").lower()
                     or mention_text.lower() in agent.get("agent_id", "").lower()
                 ]
                 if matches:
@@ -296,8 +302,16 @@ class ChatInput(Vertical):
                 rest = after[1] if len(after) > 1 else ""
                 self._set_input_value(f"{before}@{agent_name} {rest}")
 
+        # 抑制本次补全触发的 Input.Changed 重新弹出下拉
+        self._suppress_next_change = True
         self._hide_autocomplete()
         self._focus_input()
+        # 补全后将光标移到末尾
+        try:
+            input_field = self.query_one("#chat-input-field", Input)
+            input_field.cursor_position = len(input_field.value)
+        except Exception:
+            pass
 
     def _send_message(self):
         """Send the current message.

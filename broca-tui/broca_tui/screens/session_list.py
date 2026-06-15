@@ -16,16 +16,17 @@ from typing import Any, Dict, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
+from textual import events
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Input, Label, Select, Static
 
 from broca_tui.api.session import SessionAPI
 from broca_tui.stores.session_store import SessionStore
 
-
 # ============================================================================
 # Create Session Dialog
 # ============================================================================
+
 
 class CreateSessionDialog(ModalScreen):
     """Modal dialog for creating a new session.
@@ -48,7 +49,9 @@ class CreateSessionDialog(ModalScreen):
             yield Label("创建新会话", classes="dialog-title")
 
             yield Label("名称:", classes="dialog-label")
-            yield Input(placeholder="会话名称（可选）", id="input-name", classes="dialog-input")
+            yield Input(
+                placeholder="会话名称（可选）", id="input-name", classes="dialog-input"
+            )
 
             yield Label("Workspace:", classes="dialog-label")
             yield Input(
@@ -60,8 +63,12 @@ class CreateSessionDialog(ModalScreen):
 
             yield Label("类型:", classes="dialog-label")
             with Horizontal(classes="dialog-type-row"):
-                yield Button("📝 普通会话", id="btn-type-normal", classes="dialog-input selected")
-                yield Button("🤖 Agent 编排", id="btn-type-orch", classes="dialog-input")
+                yield Button(
+                    "📝 普通会话", id="btn-type-normal", classes="dialog-input selected"
+                )
+                yield Button(
+                    "🤖 Agent 编排", id="btn-type-orch", classes="dialog-input"
+                )
 
             yield Label("LLM 配置（可选，不选则使用默认）", classes="dialog-label")
             with Horizontal(classes="dialog-select-row"):
@@ -132,7 +139,9 @@ class CreateSessionDialog(ModalScreen):
         except Exception:
             model_select.set_options([("无法加载模型", "")])
             model_select.disabled = True
-            self.notify(f"无法加载 {provider} 的模型列表", severity="warning", timeout=3)
+            self.notify(
+                f"无法加载 {provider} 的模型列表", severity="warning", timeout=3
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
@@ -170,19 +179,22 @@ class CreateSessionDialog(ModalScreen):
             else model_select.value
         )
 
-        self.dismiss({
-            "action": "create",
-            "description": name or None,
-            "workspace": workspace or None,
-            "category": self._selected_type,
-            "provider": provider,
-            "model": model,
-        })
+        self.dismiss(
+            {
+                "action": "create",
+                "description": name or None,
+                "workspace": workspace or None,
+                "category": self._selected_type,
+                "provider": provider,
+                "model": model,
+            }
+        )
 
 
 # ============================================================================
 # Delete Confirm Dialog
 # ============================================================================
+
 
 class DeleteConfirmDialog(ModalScreen):
     """Confirm dialog for deleting a session."""
@@ -194,7 +206,9 @@ class DeleteConfirmDialog(ModalScreen):
     def compose(self) -> ComposeResult:
         with Vertical(classes="dialog dialog-delete"):
             yield Label("⚠️ 确认删除", classes="dialog-title")
-            yield Label("确定要删除该会话吗？此操作不可撤销。", classes="dialog-content")
+            yield Label(
+                "确定要删除该会话吗？此操作不可撤销。", classes="dialog-content"
+            )
             with Horizontal(classes="dialog-actions dialog-actions-delete"):
                 yield Button("取消", id="btn-cancel", classes="cancel-btn")
                 yield Button("删除", id="btn-confirm", classes="delete-btn")
@@ -211,6 +225,7 @@ class DeleteConfirmDialog(ModalScreen):
 # ============================================================================
 # SessionListScreen
 # ============================================================================
+
 
 class SessionListScreen(Screen):
     """Default home screen for session management."""
@@ -232,7 +247,12 @@ class SessionListScreen(Screen):
                 yield Label("会话管理", classes="screen-title")
                 yield Label("", id="session-count", classes="session-count")
                 yield Static("", classes="header-spacer")
-                yield Button("＋ 新会话", id="btn-create-session", variant="primary", classes="create-btn")
+                yield Button(
+                    "＋ 新会话",
+                    id="btn-create-session",
+                    variant="primary",
+                    classes="create-btn",
+                )
 
             # Search bar
             yield Input(
@@ -262,9 +282,11 @@ class SessionListScreen(Screen):
             # Strip operation prefix like "加载会话列表失败: " for cleaner display
             error_detail = self._store.last_error.split(": ", 1)[-1]
             container.mount(
-                Static("无法连接到后端服务，请确保 API 服务器正在运行。\n"
-                       f"错误: {error_detail}",
-                       classes="empty-state error-state")
+                Static(
+                    "无法连接到后端服务，请确保 API 服务器正在运行。\n"
+                    f"错误: {error_detail}",
+                    classes="empty-state error-state",
+                )
             )
             self._store.last_error = None
             return
@@ -281,7 +303,9 @@ class SessionListScreen(Screen):
         count_label.update(f"共 {self._store.total} 个会话")
 
         if not sessions:
-            container.mount(Static("暂无会话，点击「＋ 新会话」创建", classes="empty-state"))
+            container.mount(
+                Static("暂无会话，点击「＋ 新会话」创建", classes="empty-state")
+            )
             return
 
         for session in sessions:
@@ -349,6 +373,17 @@ class SessionListScreen(Screen):
         category_label = "📝 普通" if category == "normal" else "🤖 编排"
         category_class = "category-normal" if category == "normal" else "category-orch"
 
+        # Runner status
+        runner_status = session.get("runner_status", "none") or "none"
+        status_map = {
+            "alive": "● 运行中",
+            "starting": "◐ 启动中",
+            "error": "⚠ 进程异常",
+            "dead": "● 已停止",
+            "none": "○ 未运行",
+        }
+        status_text = status_map.get(runner_status, runner_status)
+
         # Build meta labels list
         meta_labels = [
             Label(f"ID: {session_id[:12]}...", classes="session-meta"),
@@ -357,17 +392,28 @@ class SessionListScreen(Screen):
             meta_labels.append(Label(f"📁 {workspace[:20]}...", classes="session-meta"))
         meta_labels.append(Label(f"🕐 {created_at}", classes="session-meta"))
 
+        # Runner toggle button
+        is_alive = runner_status == "alive"
+        toggle_btn = Button(
+            "⏹ 停止" if is_alive else "▶ 启动",
+            id=f"runner-{session_id}",
+            classes=f"runner-toggle-btn {'stop' if is_alive else 'start'}",
+        )
+
         # Build card using constructor positional args (avoids mount() before DOM)
         card = Vertical(
             Horizontal(
                 Label(description[:40], classes="session-name"),
                 Label(category_label, classes=f"session-category {category_class}"),
+                Label(status_text, classes=f"runner-status {runner_status}"),
                 classes="session-card-header",
             ),
             Horizontal(
                 *meta_labels,
-                Button("▶ 进入", id=f"enter-{session_id}", classes="action-btn enter-btn"),
-                Button("🗑 删除", id=f"delete-{session_id}", classes="action-btn del-btn"),
+                toggle_btn,
+                Button(
+                    "🗑 删除", id=f"delete-{session_id}", classes="action-btn del-btn"
+                ),
                 classes="session-card-actions",
             ),
             classes="session-card",
@@ -375,14 +421,18 @@ class SessionListScreen(Screen):
         )
         return card
 
-    def on_static_click(self, event: Static.Click) -> None:
-        """Handle session card click — delegates to the enter button for consistency.
+    def on_click(self, event: events.Click) -> None:
+        """Handle session card click — click card to enter, skip buttons.
 
         Args:
             event: Click event
         """
+        # 如果点击的是按钮，不触发导航（按钮有自己的处理）
+        if isinstance(event.widget, Button):
+            return
+
+        # Walk up to find session card
         widget = event.widget
-        # Walk up to find session card, then trigger "enter" action
         while widget is not None:
             if hasattr(widget, "id") and widget.id and widget.id.startswith("session-"):
                 session_id = widget.id.replace("session-", "")
@@ -439,12 +489,9 @@ class SessionListScreen(Screen):
         elif btn_id.startswith("delete-"):
             session_id = btn_id.replace("delete-", "")
             self.run_worker(self._confirm_delete(session_id))
-        elif btn_id.startswith("enter-"):
-            session_id = btn_id.replace("enter-", "")
-            session = self._store.get_session(session_id)
-            if session:
-                category = session.get("category", "normal")
-                self._navigate_to_session(session_id, category)
+        elif btn_id.startswith("runner-"):
+            session_id = btn_id.replace("runner-", "")
+            self.run_worker(self._toggle_runner(session_id))
 
     async def action_create_session(self) -> None:
         """Show create session dialog."""
@@ -476,6 +523,14 @@ class SessionListScreen(Screen):
         dialog = DeleteConfirmDialog(name)
         result = await self.app.push_screen_wait(dialog)
         if result and result.get("action") == "confirm":
+            # Show loading state
+            try:
+                del_btn = self.query_one(f"#delete-{session_id}", Button)
+                del_btn.disabled = True
+                del_btn.label = "⏳ 删除中"
+            except Exception:
+                pass
+
             deleted = await self._store.delete_session(session_id)
             if deleted:
                 await self._render_sessions()
@@ -483,6 +538,42 @@ class SessionListScreen(Screen):
                 error_msg = self._store.last_error or "删除会话失败"
                 self._store.last_error = None
                 self.notify(error_msg, severity="error", timeout=5)
+
+    async def _toggle_runner(self, session_id: str) -> None:
+        """Start or stop the runner for a session.
+
+        Args:
+            session_id: Session ID
+        """
+        session = self._store.get_session(session_id)
+        if not session:
+            return
+        runner_status = session.get("runner_status", "none") or "none"
+
+        # Show loading state on the button
+        try:
+            toggle_btn = self.query_one(f"#runner-{session_id}", Button)
+            toggle_btn.disabled = True
+            toggle_btn.label = "⏳ 处理中"
+        except Exception:
+            pass
+
+        api = SessionAPI()
+        try:
+            if runner_status == "alive":
+                await api.stop_runner(session_id)
+                self.notify("进程已停止", timeout=2)
+            else:
+                await api.restart_runner(session_id)
+                self.notify("进程已启动", timeout=2)
+            await api.close()
+            # 刷新列表
+            await self._store.refresh()
+            await self._render_sessions()
+        except Exception as e:
+            await api.close()
+            msg = getattr(e, "message", str(e))
+            self.notify(f"操作失败: {msg}", severity="error", timeout=5)
 
     def action_focus_search(self) -> None:
         """Focus the search input."""

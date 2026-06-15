@@ -20,7 +20,7 @@ from textual.screen import Screen
 from broca_tui.stores.agent_store import AgentStore
 from broca_tui.stores.chat_store import ChatStore
 from broca_tui.widgets.agent_query_dialog import AgentQueryDialog
-from broca_tui.widgets.agent_sidebar import AbortAgent, AgentSidebar
+from broca_tui.widgets.agent_sidebar import AgentSidebar
 from broca_tui.widgets.chat_header import ChatHeader
 from broca_tui.widgets.chat_input import ChatInput
 from broca_tui.widgets.info_sidebar import InfoSidebar
@@ -203,8 +203,9 @@ class ChatScreen(Screen):
             ))
         )
 
-        # Agent store → agent 状态/列表变化只更新侧栏，不触发 turn 渲染
-        self._agent_store.on_change(lambda: self._on_agent_change())
+        # Agent store → agent 状态/列表变化由 AgentSidebar 的 _render_agents 处理
+        # 注意：AgentSidebar 在 on_mount 时已注册 _render_agents 到 _agent_store.on_change
+        # 这里不能再注册其他回调覆盖它。AgentSidebar 和 ChatScreen 共享同一个 _agent_store 实例。
         self._agent_store.on_visibility_change(
             lambda: self._on_visibility_changed()
         )
@@ -264,17 +265,6 @@ class ChatScreen(Screen):
             message_list.set_turn_summaries(filtered_turns, agent_name_map)
             self._last_turn_count = len(filtered_turns)
 
-    def _on_agent_change(self):
-        """React to agent store changes — agent 状态/列表变化不影响 turn 列表。
-
-        AgentSidebar 有自己独立的 AgentStore 实例和 20s 轮询机制，
-        ChatScreen 的 _agent_store 变化只需更新 agent_name_map 用于后续 turn 过滤，
-        不需要重新渲染 turn 列表。
-        """
-        # agent 状态变化不触发 turn 渲染（turn 数据没变）
-        # AgentSidebar 有自己的 store 和轮询，不需要这里更新
-        pass
-
     def _on_visibility_changed(self):
         """React to agent visibility changes — immediately refresh turn list."""
         try:
@@ -302,11 +292,13 @@ class ChatScreen(Screen):
             msg: Message dict
         """
         msg_type = msg.get("type", "")
+        agent_id = msg.get("agent_id", "")
 
-        if msg_type in ("turn_start", "agent_active"):
-            self._agent_store.update_agent_status(msg.get("agent_id", ""), "running")
+        # 对齐 Web 行为：turn_start / agent_active / agent_response / tool_call 均标记为 running
+        if msg_type in ("turn_start", "agent_active", "agent_response", "tool_call"):
+            self._agent_store.update_agent_status(agent_id, "running")
         elif msg_type == "turn_end":
-            self._agent_store.update_agent_status(msg.get("agent_id", ""), "idle")
+            self._agent_store.update_agent_status(agent_id, "idle")
 
     def _on_connection_change(self, connected: bool):
         """Handle connection state changes — update header + agent status.
@@ -454,9 +446,9 @@ class ChatScreen(Screen):
         """Handle navigation to crew from header."""
         self.action_go_to_crew()
 
-    def on_agent_sidebar_abort_agent(self, event: AbortAgent) -> None:
-        """Handle agent abort from sidebar."""
-        self.run_worker(self._chat_store.send_abort(event.agent_id))
+    def _abort_agent(self, agent_id: str) -> None:
+        """Handle agent abort from sidebar button (called directly by AgentCard)."""
+        self.run_worker(self._chat_store.send_abort(agent_id))
 
     # ==================== Cleanup ====================
 

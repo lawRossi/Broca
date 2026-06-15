@@ -10,20 +10,22 @@ import warnings
 from pathlib import Path
 from typing import Optional
 
-# Suppress aiohttp resource warnings on app exit.
-# We close sessions cleanly in _quit(), but some short-lived or leftover sessions
-# can trigger "Unclosed client session/connector" during GC.
-# These are harmless since the process is terminating.
-warnings.filterwarnings("ignore", category=ResourceWarning, message=".*[Uu]nclosed.*", append=False)
-
 from textual.app import App
 from textual.binding import Binding
 from textual.reactive import reactive
 
 from broca_tui.config import get_config
-from broca_tui.screens.session_list import SessionListScreen
 from broca_tui.screens.chat import ChatScreen
 from broca_tui.screens.crew_executions import CrewExecutionsScreen
+from broca_tui.screens.session_list import SessionListScreen
+
+# Suppress aiohttp resource warnings on app exit.
+# We close sessions cleanly in _quit(), but some short-lived or leftover sessions
+# can trigger "Unclosed client session/connector" during GC.
+# These are harmless since the process is terminating.
+warnings.filterwarnings(
+    "ignore", category=ResourceWarning, message=".*[Uu]nclosed.*", append=False
+)
 
 
 class BrocaTUIApp(App):
@@ -75,7 +77,9 @@ class BrocaTUIApp(App):
         """Handle session selection from SessionListScreen."""
         self._open_chat(event.session_id)
 
-    def _make_chat_screen(self, session_id: str, execution_id: Optional[str] = None) -> ChatScreen:
+    def _make_chat_screen(
+        self, session_id: str, execution_id: Optional[str] = None
+    ) -> ChatScreen:
         """Create a ChatScreen instance.
 
         Args:
@@ -133,10 +137,12 @@ class BrocaTUIApp(App):
         current = self.screen
         if isinstance(current, SessionListScreen):
             return
-        if hasattr(current, 'disconnect_all'):
+        if hasattr(current, "disconnect_all"):
+
             async def _go():
                 await current.disconnect_all()
                 self.pop_screen()
+
             asyncio.create_task(_go())
         else:
             self.pop_screen()
@@ -147,27 +153,26 @@ class BrocaTUIApp(App):
 
         current_screen = self.screen
 
-        # 1. Stop runner
-        if hasattr(current_screen, 'stop_runner'):
-            try:
-                self._runner_stopped = True
-                await current_screen.stop_runner()
-            except Exception as e:
-                logger.warning(f"停止 Runner 失败: {e}")
-
-        # 2. Disconnect Socket.IO
-        if hasattr(current_screen, 'disconnect_all'):
+        # 1. Disconnect Socket.IO
+        if hasattr(current_screen, "disconnect_all"):
             try:
                 await current_screen.disconnect_all()
             except Exception as e:
                 logger.warning(f"断开 Socket 连接失败: {e}")
 
-        # 3. Close all API sessions — check all possible store/API attribute names
+        # 2. Close all API sessions — check all possible store/API attribute names
         # (avoids "Unclosed client session" warnings on exit)
         stores_to_close = []
-        for attr_name in ('_chat_store', '_agent_store', '_store', '_session_store', '_crew_store', '_api'):
+        for attr_name in (
+            "_chat_store",
+            "_agent_store",
+            "_store",
+            "_session_store",
+            "_crew_store",
+            "_api",
+        ):
             obj = getattr(current_screen, attr_name, None)
-            if obj and hasattr(obj, 'close'):
+            if obj and hasattr(obj, "close"):
                 stores_to_close.append(obj)
 
         for store in stores_to_close:

@@ -120,6 +120,8 @@ class InfoSidebar(Widget):
         self.query_one("#info-session-id", Label).update(f"ID: {session_id[:16]}...")
         self.query_one("#info-workspace", Label).update(f"Workspace: {workspace or '-'}")
         self._start_polling()
+        # 立即做一次初始状态获取，不等20s后的第一次轮询
+        self.run_worker(self._poll_runner_status())
 
     def watch_runner_status(self, status: str):
         """Update runner status display and toggle button.

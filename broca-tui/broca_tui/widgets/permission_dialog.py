@@ -44,32 +44,31 @@ class PermissionDialog(ModalScreen):
     def compose(self) -> ComposeResult:
         """Create the dialog layout."""
         with Vertical(classes="dialog permission-dialog"):
-            yield Label("🔒 权限请求", classes="dialog-title")
+            title = "🔧 工具权限请求" if self._request_type == "tool" else "🔐 权限请求"
+            yield Label(title, classes="dialog-title")
 
             # Request message content
             with Vertical(classes="dialog-content"):
                 yield Label(self._message, classes="permission-message")
 
-            # Action buttons based on type
+            # Action buttons (2x2 grid, matching Web order: session-deny | deny-once / allow-once | session-allow)
             if self._request_type == "tool":
                 yield Grid(
                     Button(
-                        "✅ 单次允许",
-                        id="btn-allow-once",
-                        classes="permission-btn allow",
-                    ),
-                    Button(
-                        "❌ 单次拒绝", id="btn-deny-once", classes="permission-btn deny"
-                    ),
-                    Button(
-                        "🔓 本Session允许",
-                        id="btn-allow-session",
-                        classes="permission-btn allow-session",
-                    ),
-                    Button(
-                        "🔒 本Session拒绝",
+                        "🔒 当前Session不允许",
                         id="btn-deny-session",
-                        classes="permission-btn deny-session",
+                        classes="permission-btn",
+                    ),
+                    Button(
+                        "❌ 单次不允许", id="btn-deny-once", classes="permission-btn"
+                    ),
+                    Button(
+                        "✅ 单次允许", id="btn-allow-once", classes="permission-btn"
+                    ),
+                    Button(
+                        "🔓 当前Session允许",
+                        id="btn-allow-session",
+                        classes="permission-btn",
                     ),
                     classes="permission-grid",
                 )

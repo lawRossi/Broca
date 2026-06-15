@@ -13,10 +13,9 @@ from typing import Any, Callable, Dict, List, Optional
 
 from broca.communication.socketio_client import SocketIOClient
 from broca.session.models import Message, MessageProtocol
-
-from broca_tui.debug_log import log, clear as debug_clear
 from broca_tui.api.session import SessionAPI
 from broca_tui.config import get_config
+from broca_tui.debug_log import log
 
 
 @dataclass
@@ -25,6 +24,7 @@ class TurnSummary:
 
     表示一个 Agent 执行轮次的摘要信息，包含用户输入、工具执行统计、最终回复等。
     """
+
     turn_id: str
     sequence_number: int
     agent_id: str
@@ -178,7 +178,10 @@ class ChatStore:
         if self._change_timer is not None:
             return  # 已有待处理的更新
         import asyncio
-        self._change_timer = asyncio.get_event_loop().call_later(0.15, self._flush_change)
+
+        self._change_timer = asyncio.get_event_loop().call_later(
+            0.15, self._flush_change
+        )
 
     def _flush_change(self):
         """Flush throttled change notification."""
@@ -284,7 +287,9 @@ class ChatStore:
             self.permission_dialog["request_id"] = message.data.get("request_id")
             self.permission_dialog["sender_id"] = message.sender_id
             self.permission_dialog["message"] = message.data.get("message", "")
-            self.permission_dialog["request_type"] = message.data.get("request_type", "general")
+            self.permission_dialog["request_type"] = message.data.get(
+                "request_type", "general"
+            )
             if self._on_permission:
                 self._on_permission(self.permission_dialog)
 
@@ -293,7 +298,9 @@ class ChatStore:
             self.agent_query_dialog["visible"] = True
             self.agent_query_dialog["request_id"] = message.data.get("request_id")
             self.agent_query_dialog["sender_id"] = message.sender_id
-            self.agent_query_dialog["question"] = message.data.get("question") or message.data.get("content", "")
+            self.agent_query_dialog["question"] = message.data.get(
+                "question"
+            ) or message.data.get("content", "")
             self.agent_query_dialog["options"] = message.data.get("options", [])
             if self._on_agent_query:
                 self._on_agent_query(self.agent_query_dialog)
@@ -345,7 +352,9 @@ class ChatStore:
                 try:
                     parsed = json.loads(raw_content)
                     if isinstance(parsed, dict):
-                        has_content = bool(parsed.get("content")) or bool(parsed.get("reasoning_content"))
+                        has_content = bool(parsed.get("content")) or bool(
+                            parsed.get("reasoning_content")
+                        )
                         if not has_content:
                             return  # 跳过空响应
                 except (json.JSONDecodeError, TypeError):
@@ -354,13 +363,16 @@ class ChatStore:
             turn_id = msg_dict.get("turn_id", "")
             if turn_id:
                 message_id = msg_dict.get("message_id", "")
-                self.update_turn_on_agent_response(turn_id, msg_dict.get("data", {}), message_id)
+                self.update_turn_on_agent_response(
+                    turn_id, msg_dict.get("data", {}), message_id
+                )
 
         # Notify agent status: tool_call / agent_response → agent is active (running)
         if msg_type in ("tool_call", "agent_response"):
             # 先从消息中取 sender_id 或 data.agent_id，若没有则从 turn 查
-            agent_id = (msg_dict.get("sender_id", "")
-                        or msg_dict.get("data", {}).get("agent_id", ""))
+            agent_id = msg_dict.get("sender_id", "") or msg_dict.get("data", {}).get(
+                "agent_id", ""
+            )
             if not agent_id and turn_id:
                 turn = self._find_turn(turn_id)
                 if turn:
@@ -376,7 +388,9 @@ class ChatStore:
             # 跳过来自 agent 的用户消息（agent 转发/回显的消息，对齐 Web 行为）
             if msg_dict.get("data", {}).get("from_agent"):
                 return
-            turn_id = msg_dict.get("turn_id", "") or msg_dict.get("data", {}).get("turn_id", "")
+            turn_id = msg_dict.get("turn_id", "") or msg_dict.get("data", {}).get(
+                "turn_id", ""
+            )
             if turn_id:
                 turn = self._find_turn(turn_id)
                 if turn and not turn.user_message:
@@ -391,7 +405,9 @@ class ChatStore:
                             try:
                                 parsed = json.loads(raw)
                                 if isinstance(parsed, dict):
-                                    turn.user_message = parsed.get("content", str(parsed))
+                                    turn.user_message = parsed.get(
+                                        "content", str(parsed)
+                                    )
                                 else:
                                     turn.user_message = str(parsed)
                             except (json.JSONDecodeError, TypeError):
@@ -405,11 +421,22 @@ class ChatStore:
 
         # Skip filtered message types
         filtered_types = {
-            "turn_start", "turn_end", "command",
-            "permission_request", "permission_response",
-            "agent_query", "user_answer",
-            "subscribe", "unsubscribe", "connect", "disconnect",
-            "ping", "pong", "task_start", "task_complete", "task_error",
+            "turn_start",
+            "turn_end",
+            "command",
+            "permission_request",
+            "permission_response",
+            "agent_query",
+            "user_answer",
+            "subscribe",
+            "unsubscribe",
+            "connect",
+            "disconnect",
+            "ping",
+            "pong",
+            "task_start",
+            "task_complete",
+            "task_error",
             "step_end",
         }
         if msg_type in filtered_types:
@@ -435,6 +462,7 @@ class ChatStore:
                         self._preserve_redo = False
                     # Reload turn data (简洁模式: turn_summaries 替代 messages)
                     import asyncio
+
                     asyncio.ensure_future(self.load_turn_history())
                 return
 
@@ -493,11 +521,15 @@ class ChatStore:
             log("load_turn_history: no session_id")
             return
 
-        log(f" load_turn_history: is_load_more={is_load_more}, loading_more_turns={self.loading_more_turns}, has_more_turns={self.has_more_turns}, skip={self.turn_history_skip}")
+        log(
+            f" load_turn_history: is_load_more={is_load_more}, loading_more_turns={self.loading_more_turns}, has_more_turns={self.has_more_turns}, skip={self.turn_history_skip}"
+        )
 
         if is_load_more:
             if self.loading_more_turns or not self.has_more_turns:
-                log(f" load_turn_history: early return (loading_more={self.loading_more_turns}, has_more={self.has_more_turns})")
+                log(
+                    f" load_turn_history: early return (loading_more={self.loading_more_turns}, has_more={self.has_more_turns})"
+                )
                 return
             self.loading_more_turns = True
             self.loading = True  # 确保 loading 状态同步到 MessageList
@@ -520,7 +552,9 @@ class ChatStore:
             total = result.get("total", 0)
             raw_turns = result.get("turns", [])
 
-            log(f" load_turn_history: API returned total={total}, turns_count={len(raw_turns)}, skip={self.turn_history_skip}")
+            log(
+                f" load_turn_history: API returned total={total}, turns_count={len(raw_turns)}, skip={self.turn_history_skip}"
+            )
 
             # 将后端数据映射为 TurnSummary
             new_turns = []
@@ -558,7 +592,9 @@ class ChatStore:
             self.turn_history_skip += limit
             self.has_more_turns = self.turn_history_skip < total
 
-            log(f" load_turn_history: done, turn_summaries count={len(self.turn_summaries)}, has_more_turns={self.has_more_turns}, loading={self.loading}")
+            log(
+                f" load_turn_history: done, turn_summaries count={len(self.turn_summaries)}, has_more_turns={self.has_more_turns}, loading={self.loading}"
+            )
 
         except Exception as e:
             log(f" load_turn_history: ERROR {e}")
@@ -662,7 +698,9 @@ class ChatStore:
         turn.status = "calling_tool"
         self._notify_change()
 
-    def update_turn_on_agent_response(self, turn_id: str, data: Dict[str, Any], message_id: str = ""):
+    def update_turn_on_agent_response(
+        self, turn_id: str, data: Dict[str, Any], message_id: str = ""
+    ):
         """Agent 回复消息到达时累加 finalResponse。
 
         同一 message_id 的 streaming chunks 连续拼接（同一 LLM 调用的输出流片段），
@@ -711,7 +749,9 @@ class ChatStore:
                         if is_new_response:
                             turn.reasoning_content = reasoning  # 新 LLM 调用，重新开始
                         else:
-                            turn.reasoning_content += reasoning  # 同调用流，连续拼接无分隔符
+                            turn.reasoning_content += (
+                                reasoning  # 同调用流，连续拼接无分隔符
+                            )
 
                     # 收到回复内容 → 思考阶段已结束，清空 reasoningContent
                     if content and turn.reasoning_content:
@@ -798,7 +838,9 @@ class ChatStore:
 
     # ==================== Filtered Turns (简洁模式) ====================
 
-    def get_filtered_turns(self, visible_agent_ids: List[str], all_agent_ids: List[str]) -> List[TurnSummary]:
+    def get_filtered_turns(
+        self, visible_agent_ids: List[str], all_agent_ids: List[str]
+    ) -> List[TurnSummary]:
         """根据 Agent 可见性过滤 turn。
 
         Args:
@@ -861,19 +903,13 @@ class ChatStore:
         except Exception as e:
             self._notify_error(f"中止失败: {e}")
 
-    async def send_undo(self, target_message_id: str, target_agent_id: Optional[str] = None,
-                         level: str = "step"):
+    async def send_undo(
+        self,
+        target_message_id: str,
+        target_agent_id: Optional[str] = None,
+        level: str = "step",
+    ):
         """Send undo command (matching Web's sendUndo command).
-
-        Web reference:
-        ```javascript
-        client.sendCommand({
-          command: 'undo',
-          arguments: { target_message_id, level },
-          subscription,
-          receiverId,
-        })
-        ```
 
         Args:
             target_message_id: ID of the message to undo
@@ -890,7 +926,6 @@ class ChatStore:
                     "target_message_id": target_message_id,
                     "level": level,
                 },
-                subscription=self.session_id,
                 receiver_id=target_agent_id,
             )
         except Exception as e:
@@ -898,15 +933,6 @@ class ChatStore:
 
     async def send_redo(self, target_agent_id: Optional[str] = None):
         """Send redo command (matching Web's sendRedo command).
-
-        Web reference:
-        ```javascript
-        client.sendCommand({
-          command: 'redo',
-          arguments: {},
-          receiverId,
-        })
-        ```
 
         Args:
             target_agent_id: Target agent (receiverId)
@@ -918,13 +944,14 @@ class ChatStore:
             await self._socket.send_command(
                 command="redo",
                 arguments={},
-                subscription=self.session_id,
                 receiver_id=target_agent_id,
             )
         except Exception as e:
             self._notify_error(f"重做失败: {e}")
 
-    async def respond_permission(self, granted: bool, session_action: Optional[str] = None):
+    async def respond_permission(
+        self, granted: bool, session_action: Optional[str] = None
+    ):
         """Respond to a permission request.
 
         Args:
@@ -940,7 +967,6 @@ class ChatStore:
                 granted=granted,
                 request_id=dialog["request_id"],
                 receiver_id=dialog["sender_id"] or "",
-                subscription=self.session_id,
             )
         except Exception as e:
             self._notify_error(f"权限响应失败: {e}")
@@ -951,15 +977,6 @@ class ChatStore:
     async def respond_user_answer(self, answer: str):
         """Respond to an agent query (Web alignment: sendUserAnswer).
 
-        Web reference:
-        ```javascript
-        socketStore.sendUserAnswer({
-          answer,        // string
-          requestId,     // string
-          receiverId,    // string
-        })
-        ```
-
         Args:
             answer: User's answer text
         """
@@ -969,19 +986,11 @@ class ChatStore:
         dialog = self.agent_query_dialog
         target_agent_id = dialog.get("sender_id") or ""
         try:
-            # Send user_answer matching Web's format: {answer, request_id, receiver_id}
-            from broca_tui.api.session import MessageProtocol
-            msg = MessageProtocol.create_user_message(
-                content=answer,
-                sender_id="user",
+            await self._socket.send_user_answer(
+                answer=answer,
+                request_id=dialog["request_id"],
                 receiver_id=target_agent_id,
             )
-            msg.message_type = "user_answer"
-            # Backend handle_user_answer expects data.answer + data.request_id
-            msg.data["answer"] = answer
-            msg.data["request_id"] = dialog.get("request_id", "")
-            msg.subscription = self.session_id
-            await self._socket.send_message(msg)
         except Exception as e:
             self._notify_error(f"回答发送失败: {e}")
         finally:
@@ -1056,6 +1065,3 @@ class ChatStore:
         """Close all connections and clean up."""
         await self.disconnect()
         await self._api.close()
-
-
-

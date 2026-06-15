@@ -299,6 +299,12 @@ class AgentCard(Widget):
     AgentCard {
         height: auto;   /* 防止在 ScrollableContainer 中被 1fr 拉伸 */
     }
+    AgentCard .abort-button {
+        display: none;  /* 默认隐藏，由 _update_status_display 切换 */
+    }
+    AgentCard .abort-button.visible {
+        display: block;
+    }
     """
 
     class Clicked(Message, bubble=True):
@@ -345,23 +351,44 @@ class AgentCard(Widget):
                 yield Static(f"输入: {agent.get('total_input_tokens', 0)}", classes="stat-item")
                 yield Static(f"输出: {agent.get('total_output_tokens', 0)}", classes="stat-item")
 
-            # Abort button (only shown when running)
-            if status == "running":
-                yield Button("⏹ 停止", id=f"abort-{agent.get('agent_id')}", classes="abort-button")
+            # Abort button (始终创建，通过 CSS 显隐)
+            yield Button("⏹ 停止", id=f"abort-{agent.get('agent_id')}", classes="abort-button")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        """Handle abort button press — directly calls screen."""
+        button_id = event.button.id or ""
+        if button_id.startswith("abort-"):
+            event.stop()
+            agent_id = self._agent.get("agent_id", "")
+            if agent_id and hasattr(self, 'screen') and hasattr(self.screen, '_abort_agent'):
+                self.screen._abort_agent(agent_id)
 
     def on_click(self) -> None:
-        """Handle card click to open config dialog."""
+        """Handle card click (not from button) to open config dialog."""
         agent_id = self._agent.get("agent_id", "")
         if agent_id:
             self.post_message(self.Clicked(agent_id=agent_id))
 
     def _update_status_display(self):
-        """Update status dot color and label text in-place (no DOM rebuild)."""
+        """Update status dot color and label text in-place (no DOM rebuild).
+
+        Also mounts/removes the abort button based on current status.
+        """
         status = self._agent.get("agent_status", "idle") or "idle"
+        agent_id = self._agent.get("agent_id", "")
+
         try:
             label = self.query_one(".agent-status", Label)
             label.update(self._get_status_display(status))
             label.classes = f"agent-status {status}"
+        except Exception:
+            return
+
+        # Toggle abort button visibility via CSS class (按钮始终在 compose 中)
+        abort_id = f"abort-{agent_id}"
+        try:
+            btn = self.query_one(f"#{abort_id}", Button)
+            btn.set_class(status == "running", "visible")
         except Exception:
             pass
 
@@ -492,20 +519,13 @@ class AgentSidebar(Widget):
             container.mount(card)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button presses.
-
-        Args:
-            event: Button pressed event
-        """
+        """Handle button presses (non-abort buttons only; abort is handled by AgentCard)."""
         button_id = event.button.id or ""
 
         if button_id == "btn-refresh-agents":
             self._render_agents()
         elif button_id == "btn-filter-agents":
             self.run_worker(self._show_visibility_filter())
-        elif button_id.startswith("abort-"):
-            agent_id = button_id.replace("abort-", "")
-            self._abort_agent(agent_id)
 
     def on_unmount(self) -> None:
         """Clean up on unmount."""
@@ -593,16 +613,6 @@ class AgentSidebar(Widget):
             # Use set_visible_agent_ids to trigger both change and visibility listeners
             self._store.set_visible_agent_ids(new_visible)
 
-    def _abort_agent(self, agent_id: str):
-        """Send abort command to an agent.
-
-        Args:
-            agent_id: Agent ID to abort
-        """
-        if self._store:
-            # Post message to parent to handle abort
-            self.post_message(AbortAgent(agent_id=agent_id))
-
     def update_agent_status(self, agent_id: str, status: str):
         """Update an agent's status display.
 
@@ -618,11 +628,3 @@ class AgentSidebar(Widget):
         """Set up after mount."""
         if self._store:
             self._store.on_change(self._render_agents)
-
-
-class AbortAgent(Message, bubble=True):
-    """Message posted when user wants to abort an agent."""
-
-    def __init__(self, agent_id: str) -> None:
-        super().__init__()
-        self.agent_id = agent_id

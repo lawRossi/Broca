@@ -568,7 +568,8 @@ ModalScreen {
 
 /* Permission dialog */
 .permission-dialog {
-    min-width: 50;
+    min-width: 45;
+    max-width: 65;
 }
 
 .permission-message {
@@ -576,36 +577,31 @@ ModalScreen {
     padding: 1;
     background: $gray-50;
     border: solid $gray-200;
+    margin: 0 1;
+    max-width: 56;
+}
+
+.dialog-content {
+    height: auto;
 }
 
 .permission-grid {
     grid-size: 2;
     grid-gutter: 1;
-    margin-top: 1;
+    margin: 1 1 0 1;
+    height: auto;
 }
 
 .permission-btn {
-    min-width: 15;
+    width: 30;
+    height: 3;
+    padding: 0 1;
+    border: solid $gray-300;
 }
 
-.permission-btn.allow {
-    background: $success;
-    color: white;
-}
-
-.permission-btn.deny {
-    background: $error;
-    color: white;
-}
-
-.permission-btn.allow-session {
-    background: $primary-500;
-    color: white;
-}
-
-.permission-btn.deny-session {
-    background: $gray-600;
-    color: white;
+.permission-btn:hover {
+    background: $primary-100;
+    border: solid $primary-300;
 }
 
 /* Agent query dialog */
@@ -821,6 +817,7 @@ Toast {
 .session-card-header {
     margin-bottom: 1;
     height: auto;
+    align: left middle;
 }
 
 .session-name {
@@ -858,20 +855,63 @@ Toast {
 .action-btn {
     min-width: 8;
     margin: 0 1;
-}
-
-.enter-btn {
-    background: $primary-500;
-    color: white;
+    border: none;
+    height: 3;
 }
 
 .del-btn {
     background: $error;
     color: white;
+    border: none;
+    height: 3;
 }
 
 .del-btn:hover {
     background: $error-darken-1;
+}
+
+.del-btn:disabled {
+    background: $error-darken-2;
+    color: $gray-300;
+}
+
+/* Runner status */
+.runner-status {
+    text-style: bold;
+    padding: 0 1;
+    height: auto;
+}
+.runner-status.alive {
+    color: $success;
+}
+.runner-status.starting {
+    color: $warning;
+}
+.runner-status.dead, .runner-status.none {
+    color: $gray-400;
+}
+.runner-status.error {
+    color: $error;
+}
+
+/* Runner toggle button */
+.runner-toggle-btn {
+    min-width: 8;
+    margin: 0 1;
+    border: none;
+    height: 3;
+}
+.runner-toggle-btn.stop {
+    background: $warning;
+    color: white;
+}
+.runner-toggle-btn.start {
+    background: $success;
+    color: white;
+}
+.runner-toggle-btn:disabled {
+    background: $gray-500;
+    color: $gray-300;
 }
 
 /* Dialog input */
