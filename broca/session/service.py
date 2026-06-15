@@ -376,17 +376,23 @@ class TurnService(BaseService[Turn]):
             stats["last_message_id"] = m.message_id
 
             if m.message_type == MessageType.USER_MESSAGE:
-                raw = m.data.get("content") if m.data else None
-                if raw and stats["user_message"] is None:
-                    # data["content"] 是 json.dumps({"content": "用户消息", ...})
-                    try:
-                        parsed = json.loads(raw) if isinstance(raw, str) else raw
-                        if isinstance(parsed, dict):
-                            stats["user_message"] = parsed.get("content", str(parsed))
-                        else:
-                            stats["user_message"] = str(parsed)
-                    except (json.JSONDecodeError, TypeError):
-                        stats["user_message"] = str(raw)
+                if stats["user_message"] is None:
+                    # 优先使用 raw_input（与前端明细模式一致）
+                    raw_input = m.data.get("raw_input") if m.data else None
+                    if raw_input is not None:
+                        stats["user_message"] = str(raw_input)
+                    else:
+                        # data["content"] 是 json.dumps({"content": "用户消息", ...})
+                        raw = m.data.get("content") if m.data else None
+                        if raw:
+                            try:
+                                parsed = json.loads(raw) if isinstance(raw, str) else raw
+                                if isinstance(parsed, dict):
+                                    stats["user_message"] = parsed.get("content", str(parsed))
+                                else:
+                                    stats["user_message"] = str(parsed)
+                            except (json.JSONDecodeError, TypeError):
+                                stats["user_message"] = str(raw)
 
             elif m.message_type == MessageType.STEP_START:
                 stats["total_steps"] += 1

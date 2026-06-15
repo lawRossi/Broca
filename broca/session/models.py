@@ -592,6 +592,24 @@ class MessageProtocol:
         )
 
     @staticmethod
+    def create_user_answer(
+        answer: str,
+        request_id: str,
+        sender_id: str,
+        receiver_id: str,
+        **kwargs,
+    ) -> Message:
+        """创建用户回答消息"""
+        return Message(
+            message_type=MessageType.USER_ANSWER,
+            role=MessageRole.USER,
+            data={"answer": answer, "request_id": request_id},
+            sender_id=sender_id,
+            receiver_id=receiver_id,
+            **kwargs,
+        )
+
+    @staticmethod
     def create_subscribe(subscription: str, **kwargs) -> Message:
         """创建订阅消息"""
         return Message(
