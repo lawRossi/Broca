@@ -616,38 +616,43 @@ function toggleToolParams() {
 }
 
 .message-item:hover {
-  filter: brightness(1.02);
+  background: var(--list-hover-bg, rgba(128, 128, 128, 0.08));
 }
 
 /* ==================== 消息类型样式 ==================== */
 .message-user {
-  background: var(--message-user-bg, #eff6ff);
-  border-left: 4px solid var(--message-user-border, #3b82f6);
+  background: var(--message-user-bg, transparent);
+  border-left: 4px solid var(--message-user-border, #8e8e8e);
   margin-left: 8px;
 }
 
 .message-agent {
-  background: var(--message-agent-bg, #f0fdf4);
-  border-left: 4px solid var(--message-agent-border, #22c55e);
+  background: var(--message-agent-bg, transparent);
+  border-left: 4px solid var(--message-agent-border, #5a8fc9);
   margin-right: 8px;
 }
 
 .message-tool {
-  background: var(--message-tool-bg, #faf5ff);
-  border-left: 4px solid var(--message-tool-border, #a855f7);
+  background: var(--message-tool-bg, transparent);
+  border-left: 4px solid var(--message-tool-border, #c9a84c);
   font-size: 12px;
 }
 
 .message-system {
   text-align: center;
-  background: var(--message-system-bg, #f3f4f6);
+  background: var(--message-system-bg, transparent);
   border: 1px solid var(--border-color);
 }
 
 .message-error {
-  background: var(--message-error-bg, #fef2f2);
-  border-left: 4px solid var(--message-error-border, #ef4444);
+  background: var(--message-error-bg, transparent);
+  border-left: 4px solid var(--message-error-border, #c95a5a);
   color: var(--error-fg);
+}
+
+/* 用户消息：名字灰色，与灰色边框一致 */
+.message-user .sender-name {
+  color: var(--vscode-descriptionForeground, #8e8e8e);
 }
 
 /* ==================== 消息头 ==================== */
@@ -749,11 +754,10 @@ function toggleToolParams() {
 
 .reasoning-content {
   padding: 8px 12px;
-  background: var(--reasoning-bg, #fffbeb);
   border-left: 3px solid var(--warning-fg);
   border-radius: 4px;
   font-size: 12px;
-  color: var(--reasoning-text, #92400e);
+  color: var(--reasoning-text);
   font-style: italic;
   white-space: pre-wrap;
   word-break: break-word;
@@ -767,6 +771,8 @@ function toggleToolParams() {
   gap: 6px;
   cursor: pointer;
   padding: 4px 0;
+  color: var(--warning-fg);
+  font-weight: 500;
 }
 
 .tool-icon {
@@ -799,7 +805,7 @@ function toggleToolParams() {
   margin-top: 4px;
   padding: 4px 0;
   font-size: 12px;
-  color: var(--success-fg);
+  color: var(--warning-fg);
 }
 
 .result-content {
@@ -831,7 +837,7 @@ function toggleToolParams() {
 .diff-header,
 .file-header {
   padding: 6px 10px;
-  background: rgba(168, 85, 247, 0.1);
+  background: var(--bg-tertiary);
   border-bottom: 1px solid var(--border-color);
   font-size: 12px;
   overflow: hidden;
@@ -841,6 +847,7 @@ function toggleToolParams() {
 .file-path {
   color: var(--text-link);
   font-weight: 500;
+  font-family: var(--code-font-family);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -881,23 +888,23 @@ function toggleToolParams() {
 }
 
 .diff-added {
-  background-color: #dcfce7;
-  color: #166534;
+  background-color: var(--diff-added-bg, rgba(0, 200, 80, 0.15));
+  color: var(--diff-added-fg, #166534);
 }
 
 .diff-added::before {
   content: '+';
-  color: #16a34a;
+  color: var(--vscode-gitDecoration-addedResourceForeground, #16a34a);
 }
 
 .diff-removed {
-  background-color: #fee2e2;
-  color: #991b1b;
+  background-color: var(--diff-removed-bg, rgba(200, 0, 0, 0.15));
+  color: var(--diff-removed-fg, #991b1b);
 }
 
 .diff-removed::before {
   content: '-';
-  color: #dc2626;
+  color: var(--vscode-gitDecoration-deletedResourceForeground, #dc2626);
 }
 
 .diff-unchanged {
@@ -910,23 +917,23 @@ function toggleToolParams() {
 }
 
 .diff-line:hover {
-  filter: brightness(0.95);
+  filter: brightness(1.05);
 }
 
 .diff-added:hover {
-  background-color: #d4edda;
+  background-color: var(--diff-added-bg, rgba(0, 200, 80, 0.2));
 }
 
 .diff-removed:hover {
-  background-color: #f8d7da;
+  background-color: var(--diff-removed-bg, rgba(200, 0, 0, 0.2));
 }
 
 /* ==================== Todo 列表 ==================== */
 .todo-list {
   padding: 8px;
-  border: 1px solid var(--border-color);
+  border: 1px solid rgba(201, 168, 76, 0.25);
   border-radius: 4px;
-  background: var(--bg-secondary);
+  background: rgba(201, 168, 76, 0.06);
 }
 
 .todo-item {
@@ -957,7 +964,7 @@ function toggleToolParams() {
 .result-label {
   font-size: 11px;
   font-weight: 600;
-  color: var(--success-fg);
+  color: var(--warning-fg);
   margin-bottom: 4px;
 }
 
@@ -1237,54 +1244,4 @@ function toggleToolParams() {
 :deep(.markdown-body strong) { font-weight: 600; }
 :deep(.markdown-body em) { font-style: italic; }
 
-/* ==================== 暗色模式 ==================== */
-@media (prefers-color-scheme: dark) {
-  .message-user {
-    background: rgba(59, 130, 246, 0.1);
-    border-left-color: #3b82f6;
-  }
-  .message-agent {
-    background: rgba(34, 197, 94, 0.1);
-    border-left-color: #22c55e;
-  }
-  .message-tool {
-    background: rgba(168, 85, 247, 0.1);
-    border-left-color: #a855f7;
-  }
-  .message-system {
-    background: rgba(255, 255, 255, 0.05);
-  }
-  .message-error {
-    background: rgba(239, 68, 68, 0.1);
-    border-left-color: #ef4444;
-  }
-  .reasoning-content {
-    background: rgba(217, 119, 6, 0.1);
-    color: #fbbf24;
-  }
-  .diff-added {
-    background-color: #064e3b;
-    color: #a7f3d0;
-  }
-  .diff-added::before {
-    color: #4ade80;
-  }
-  .diff-removed {
-    background-color: #7f1d1d;
-    color: #fecaca;
-  }
-  .diff-removed::before {
-    color: #f87171;
-  }
-  .diff-unchanged {
-    background-color: transparent;
-    color: var(--text-primary);
-  }
-  .diff-added:hover {
-    background-color: #065f46;
-  }
-  .diff-removed:hover {
-    background-color: #991b1b;
-  }
-}
 </style>

@@ -88,43 +88,41 @@ const getSenderName = (message: Message, agentName: string) => {
 
 const getHeaderColor = (message: Message) => {
   if (message.message_type === 'user_message' || message.role === 'user') {
-    return 'text-blue-700'
+    return 'text-gray-500'
   } else if (message.message_type === 'agent_response' || message.role === 'assistant') {
-    return 'text-green-700'
+    return 'text-blue-600'
   } else if (message.message_type === 'error' || message.message_type === 'agent_error') {
-    return 'text-red-700'
+    return 'text-red-600'
   } else if (message.message_type === 'tool_call') {
-    return 'text-purple-700'
-  } else if (message.message_type === 'agent_system_message' || message.role === 'agent_system') {
-    return 'text-gray-700'
+    return 'text-amber-600'
   }
-  return 'text-gray-700'
+  return 'text-gray-500'
 }
 
 const getBgClass = (message: Message) => {
   if (message.message_type === 'user_message' || message.role === 'user') {
-    return 'bg-blue-50 border-l-4 border-blue-500 ml-4 sm:ml-8'
+    return 'msg-user'
   } else if (message.message_type === 'agent_response' || message.role === 'assistant') {
-    return 'bg-green-50 border-l-4 border-green-500 mr-4 sm:mr-8'
+    return 'msg-agent'
   } else if (message.message_type === 'agent_system_message' || message.role === 'agent_system') {
-    return 'bg-gray-100 border border-gray-200 text-center text-gray-600 text-xs sm:text-sm'
+    return 'msg-system'
   } else if (message.message_type === 'error' || message.message_type === 'agent_error') {
-    return 'bg-red-50 border-l-4 border-red-500 text-red-800'
+    return 'msg-error'
   } else if (message.message_type === 'tool_call') {
-    return 'bg-purple-50 border-l-4 border-purple-500'
+    return 'msg-tool'
   }
   return ''
 }
 
 const getContentClass = (message: Message) => {
   if (message.message_type === 'user_message' || message.role === 'user') {
-    return 'text-gray-800'
+    return ''
   } else if (message.message_type === 'agent_response' || message.role === 'assistant') {
-    return 'text-gray-800'
+    return ''
   } else if (message.message_type === 'agent_system_message' || message.role === 'agent_system') {
     return 'font-mono'
   } else if (message.message_type === 'tool_call') {
-    return 'text-purple-800'
+    return ''
   }
   return ''
 }
@@ -534,7 +532,7 @@ const handleUndoToHere = async () => {
 
 <template>
   <div 
-    class="rounded-lg p-2 sm:p-3 transition-all duration-200 message-container"
+    class="message-container"
     :class="getBgClass(message)"
     @mouseenter="showActions = true"
     @mouseleave="showActions = false"
@@ -545,13 +543,13 @@ const handleUndoToHere = async () => {
     >
       <div class="flex items-center gap-2">
         <span class="text-lg">{{ getIcon(message) }}</span>
-        <span class="font-semibold text-sm" :class="getHeaderColor(message)">
+        <span class="font-semibold text-sm sender-name" :class="getHeaderColor(message)">
           {{ getSenderName(message, agentStore.currentAgentName) }}
         </span>
       </div>
       
       <div class="flex items-center gap-2">
-        <div class="text-xs text-gray-500 opacity-70">
+        <div class="text-xs text-gray-500">
           {{ formatBeijingTimeShort(message.timestamp) }}
         </div>
         
@@ -586,11 +584,9 @@ const handleUndoToHere = async () => {
 
         <div
           v-if="getShowReasoning(message.message_id)"
-          class="mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200"
+          class="reasoning-content"
         >
-          <pre class="text-xs font-mono text-amber-800 whitespace-pre-wrap break-words leading-relaxed">{{
-            getReasoningContent(message)
-          }}</pre>
+          <pre class="reasoning-text">{{ getReasoningContent(message) }}</pre>
         </div>
       </div>
 
@@ -664,7 +660,7 @@ const handleUndoToHere = async () => {
             v-if="!isTodoManagement(message) && !isAskUser(message)"
             size="small"
             type="default"
-            class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
+            class="tool-label-btn"
             @click="chatStore.toggleToolParameters(message.message_id)"
           >
             {{ getParametersTitle(message) }}
@@ -672,7 +668,7 @@ const handleUndoToHere = async () => {
 
           <!-- 参数内容：特殊处理todo_management和ask_user -->
           <div v-if="shouldExpandParameters(message)" class="params-container mt-1 p-2 rounded border">
-            <div v-if="isAskUser(message)" class="params-label text-xs font-semibold mb-1">问题:</div>
+            <div v-if="isAskUser(message)" class="tool-label text-xs font-semibold mb-1">问题:</div>
 
             <!-- 特殊处理todo_management的todos列表 -->
             <div v-if="isTodoManagement(message) && getTodos(message)" class="params-inner p-2 rounded border">
@@ -755,7 +751,7 @@ const handleUndoToHere = async () => {
             v-if="!isAskUser(message)"
             size="small"
             type="default"
-            class="!text-purple-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
+            class="tool-label-btn"
             @click="chatStore.toggleToolResult(message.message_id)"
           >
             {{ getResultTitle(message) }}
@@ -763,7 +759,7 @@ const handleUndoToHere = async () => {
 
           <!-- ask_user结果默认展开 -->
           <div v-if="shouldExpandResult(message)" class="result-container mt-1 p-2 rounded border">
-            <div v-if="isAskUser(message)" class="result-label text-xs font-semibold mb-1">回答:</div>
+            <div v-if="isAskUser(message)" class="tool-label text-xs font-semibold mb-1">回答:</div>
 
             <!-- 特殊处理ask_user结果 -->
             <div v-if="isAskUser(message) && getAskUserResult(message)" class="result-inner p-2 rounded border">
@@ -792,32 +788,67 @@ const handleUndoToHere = async () => {
   />
 </template>
 <style scoped>
-/* 消息容器样式 */
+/* ==================== 消息容器 ==================== */
 .message-container {
   position: relative;
-  transition: all 0.2s ease;
+  padding: 10px 14px;
   border-radius: 8px;
-  padding: 12px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+  transition: all 0.2s ease;
 }
 
 .message-container:hover {
-  background-color: rgba(0, 0, 0, 0.02);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  background: rgba(0, 0, 0, 0.02);
 }
 
-/* 悬停操作按钮 */
+/* ==================== 消息类型样式 ==================== */
+.msg-user {
+  border-left: 4px solid var(--text-secondary, #8e8e8e);
+  margin-left: 8px;
+}
+
+.msg-agent {
+  border-left: 4px solid #5a8fc9;
+  margin-right: 8px;
+}
+
+.msg-tool {
+  border-left: 4px solid #c9a84c;
+  font-size: 12px;
+}
+
+.msg-system {
+  text-align: center;
+  border: 1px solid var(--border-color, #e0e0e0);
+}
+
+.msg-error {
+  border-left: 4px solid #c95a5a;
+  color: var(--error-fg, #c95a5a);
+}
+
+/* 发送者名字 */
+.sender-name {
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.msg-user .sender-name {
+  color: var(--text-secondary, #8e8e8e);
+}
+
+/* ==================== 悬停操作 ==================== */
 .hover-actions {
   opacity: 0;
   transition: opacity 0.2s ease;
-  margin-left: 8px;
 }
 
 .message-container:hover .hover-actions {
   opacity: 1;
 }
 
-/* 撤销按钮样式 */
 .hover-actions .el-button.undo-button {
   color: #f56c6c;
   font-size: 12px;
@@ -833,209 +864,76 @@ const handleUndoToHere = async () => {
   border-color: rgba(245, 108, 108, 0.3);
 }
 
-.hover-actions .el-button.undo-button:disabled {
-  color: #c0c4cc;
-  background: rgba(192, 196, 204, 0.1);
-  border-color: rgba(192, 196, 204, 0.2);
-  cursor: not-allowed;
+/* ==================== 推理内容 ==================== */
+.reasoning-content {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--warning-fg, #d97706);
+  border-radius: 4px;
 }
 
-/* 不同类型的消息撤销按钮颜色不同 */
-.message-container.bg-blue-50 .hover-actions .el-button.undo-button {
-  color: #409eff;
-  background: rgba(64, 158, 255, 0.1);
-  border-color: rgba(64, 158, 255, 0.2);
+.reasoning-text {
+  margin: 0;
+  font-family: var(--code-font-family, 'Consolas', 'Courier New', monospace);
+  font-size: 11px;
+  color: var(--warning-fg, #b89500);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
-.message-container.bg-blue-50 .hover-actions .el-button.undo-button:hover {
-  background: rgba(64, 158, 255, 0.2);
-  color: #409eff;
-  border-color: rgba(64, 158, 255, 0.3);
+/* ==================== 工具标签按钮 ==================== */
+.tool-label-btn {
+  font-size: 12px !important;
+  color: var(--warning-fg, #c9a84c) !important;
+  padding: 0 !important;
+  height: auto !important;
+  min-height: 0 !important;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  font-weight: 500;
 }
 
-.message-container.bg-green-50 .hover-actions .el-button.undo-button {
-  color: #67c23a;
-  background: rgba(103, 194, 58, 0.1);
-  border-color: rgba(103, 194, 58, 0.2);
+.tool-label-btn:hover {
+  color: var(--warning-fg, #d97706) !important;
+  background: transparent !important;
 }
 
-.message-container.bg-green-50 .hover-actions .el-button.undo-button:hover {
-  background: rgba(103, 194, 58, 0.2);
-  color: #67c23a;
-  border-color: rgba(103, 194, 58, 0.3);
+.tool-label {
+  color: var(--warning-fg, #c9a84c);
 }
 
-.message-container.bg-purple-50 .hover-actions .el-button.undo-button {
-  color: #8a2be2;
-  background: rgba(138, 43, 226, 0.1);
-  border-color: rgba(138, 43, 226, 0.2);
+.params-question {
+  color: var(--text-primary, #333);
 }
 
-.message-container.bg-purple-50 .hover-actions .el-button.undo-button:hover {
-  background: rgba(138, 43, 226, 0.2);
-  color: #8a2be2;
-  border-color: rgba(138, 43, 226, 0.3);
+.params-option {
+  color: var(--text-primary, #333);
+  font-size: 12px;
 }
 
-/* Markdown 内容样式 */
-:deep(.markdown-content) {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
+.params-bullet {
+  color: var(--warning-fg, #c9a84c);
 }
 
-:deep(.markdown-content h1),
-:deep(.markdown-content h2),
-:deep(.markdown-content h3),
-:deep(.markdown-content h4),
-:deep(.markdown-content h5),
-:deep(.markdown-content h6) {
-  margin-top: 1em;
-  margin-bottom: 0.5em;
-  font-weight: 600;
-  line-height: 1.25;
+.params-desc {
+  color: var(--text-secondary, #808080);
 }
 
-:deep(.markdown-content h1) {
-  font-size: 1.5em;
-  border-bottom: 1px solid #eaecef;
-  padding-bottom: 0.3em;
-}
-
-:deep(.markdown-content h2) {
-  font-size: 1.3em;
-  border-bottom: 1px solid #eaecef;
-  padding-bottom: 0.3em;
-}
-
-:deep(.markdown-content h3) {
-  font-size: 1.1em;
-}
-
-:deep(.markdown-content p) {
-  margin-bottom: 1em;
-  line-height: 1.6;
-}
-
-:deep(.markdown-content ul),
-:deep(.markdown-content ol) {
-  padding-left: 2em;
-  margin-bottom: 1em;
-}
-
-:deep(.markdown-content li) {
-  margin-bottom: 0.25em;
-}
-
-:deep(.markdown-content blockquote) {
-  margin: 1em 0;
-  padding: 0 1em;
-  color: #6a737d;
-  border-left: 0.25em solid #dfe2e5;
-  background-color: #f6f8fa;
-  padding: 0.5em 1em;
-  border-radius: 0 4px 4px 0;
-}
-
-:deep(.markdown-content code) {
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    SF Mono,
-    Menlo,
-    Consolas,
-    Liberation Mono,
-    monospace;
-  font-size: 0.875em;
-  background-color: rgba(175, 184, 193, 0.2);
-  padding: 0.2em 0.4em;
-  border-radius: 3px;
-}
-
-:deep(.markdown-content pre) {
-  background-color: #f6f8fa;
-  border-radius: 6px;
-  padding: 1em;
-  overflow: auto;
-  margin: 1em 0;
-}
-
-:deep(.markdown-content pre code) {
-  background-color: transparent;
-  padding: 0;
-  font-size: 0.8em;
-  line-height: 1.45;
-}
-
-:deep(.markdown-content table) {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1em 0;
-}
-
-:deep(.markdown-content table th),
-:deep(.markdown-content table td) {
-  border: 1px solid #dfe2e5;
-  padding: 0.6em 1em;
-}
-
-:deep(.markdown-content table th) {
-  font-weight: 600;
-  background-color: #f6f8fa;
-}
-
-:deep(.markdown-content tr:nth-child(2n)) {
-  background-color: #f6f8fa;
-}
-
-:deep(.markdown-content a) {
-  color: #0366d6;
-  text-decoration: none;
-}
-
-:deep(.markdown-content a:hover) {
-  text-decoration: underline;
-}
-
-:deep(.markdown-content img) {
-  max-width: 100%;
-  height: auto;
-}
-
-:deep(.markdown-content hr) {
-  height: 0.25em;
-  padding: 0;
-  margin: 1.5em 0;
-  background-color: #e1e4e8;
-  border: 0;
-}
-
-:deep(.markdown-content strong) {
-  font-weight: 600;
-}
-
-:deep(.markdown-content em) {
-  font-style: italic;
-}
-
-:deep(.markdown-content del) {
-  text-decoration: line-through;
-}
-
-/* ========== Diff 展示样式 ========== */
-
-/* --- 外层容器 --- */
-.diff-wrapper {
-  background-color: #fff;
-  border-color: #e2e8f0;
-}
-
+/* ==================== 工具调用区域 ==================== */
 .diff-header {
-  background-color: #faf5ff;
-  border-color: #e9d5ff;
+  padding: 6px 10px;
+  background: var(--bg-tertiary, #f1f5f9);
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
+  font-size: 12px;
+  overflow: hidden;
 }
 
 .diff-path {
-  color: #9333ea;
+  color: var(--text-link, #3b82f6);
+  font-weight: 500;
+  font-family: var(--code-font-family, 'Consolas', monospace);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1043,14 +941,35 @@ const handleUndoToHere = async () => {
   min-width: 0;
 }
 
-/* --- Diff 容器（可滚动） --- */
+.params-container {
+  border-color: rgba(201, 168, 76, 0.25);
+  background: rgba(201, 168, 76, 0.06);
+}
+
+.params-inner {
+  border-color: var(--border-color, #e0e0e0);
+  background: #fff;
+}
+
+.params-todo-name {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* ==================== Diff 展示 ==================== */
+.diff-wrapper {
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  overflow: hidden;
+  background: #fff;
+}
+
 .diff-container {
   max-height: 400px;
   overflow-y: auto;
   overflow-x: auto;
 }
 
-/* --- Diff 行 --- */
 .diff-line {
   display: block;
   white-space: pre;
@@ -1060,6 +979,8 @@ const handleUndoToHere = async () => {
   line-height: 22px;
   width: fit-content;
   min-width: 100%;
+  font-family: var(--code-font-family, 'Consolas', monospace);
+  font-size: 11px;
 }
 
 .diff-line::before {
@@ -1075,7 +996,7 @@ const handleUndoToHere = async () => {
 }
 
 .diff-added {
-  background-color: #e6ffec;
+  background-color: rgba(0, 200, 80, 0.15);
 }
 
 .diff-added::before {
@@ -1084,7 +1005,7 @@ const handleUndoToHere = async () => {
 }
 
 .diff-removed {
-  background-color: #ffebe9;
+  background-color: rgba(200, 0, 0, 0.15);
 }
 
 .diff-removed::before {
@@ -1101,250 +1022,133 @@ const handleUndoToHere = async () => {
 }
 
 .diff-line:hover {
-  filter: brightness(0.95);
+  filter: brightness(1.05);
 }
 
 .diff-added:hover {
-  background-color: #d4edda;
+  background-color: rgba(0, 200, 80, 0.2);
 }
 
 .diff-removed:hover {
-  background-color: #f8d7da;
+  background-color: rgba(200, 0, 0, 0.2);
 }
 
-/* ========== 工具参数展示 ========== */
-.params-container {
-  background-color: #faf5ff;
-  border-color: #e9d5ff;
-}
-
-.params-label {
-  color: #9333ea;
-}
-
-.params-inner {
-  background-color: #fff;
-  border-color: #e2e8f0;
-}
-
-.params-todo-name {
-  color: #1e293b;
-}
-
-.params-question {
-  color: #1e293b;
-}
-
-.params-option {
-  color: #475569;
-}
-
-.params-bullet {
-  color: #9333ea;
-}
-
-.params-desc {
-  color: #94a3b8;
-}
-
-/* ========== 结果展示 ========== */
+/* ==================== 结果展示 ==================== */
 .result-container {
-  background-color: #f0fdf4;
-  border-color: #bbf7d0;
-}
-
-.result-label {
-  color: #2563eb;
+  border-color: rgba(201, 168, 76, 0.25);
+  background: rgba(201, 168, 76, 0.06);
 }
 
 .result-inner {
-  background-color: #fff;
-  border-color: #e2e8f0;
+  border-color: var(--border-color, #e0e0e0);
+  background: #fff;
 }
 
 .result-text {
-  color: #1e293b;
+  color: var(--text-primary, #333);
 }
 
 .result-pre {
-  background-color: #fff;
-  color: #15803d;
-  border-color: #e2e8f0;
+  font-family: var(--code-font-family, 'Consolas', monospace);
+  font-size: 11px;
+  color: var(--text-primary, #333);
+  border-color: var(--border-color, #e0e0e0);
+  background: #fff;
 }
 
-/* ========== 文件内容展示（write_file） ========== */
+/* ==================== 文件内容展示 ==================== */
 .file-content {
-  background-color: #fff;
-  color: #6b21a8;
-  border-color: #e2e8f0;
+  background: var(--bg-tertiary, #f1f5f9);
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-radius: 4px;
+  font-family: var(--code-font-family, 'Consolas', monospace);
+  font-size: 11px;
+  color: var(--text-primary, #333);
 }
 
-/* ========== JSON 显示样式 ========== */
+/* ==================== JSON 显示 ==================== */
 .json-display {
-  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', 'Consolas', monospace;
+  font-family: var(--code-font-family, 'Consolas', monospace);
   line-height: 1.4;
 }
 
-.json-display .string { color: #4c7a1f; }
-.json-display .number { color: #7b1fa2; }
-.json-display .boolean { color: #0369a1; }
-.json-display .null { color: #999; }
-.json-display .key { color: #0369a1; }
-
-/* ========== 暗色模式 ========== */
-@media (prefers-color-scheme: dark) {
-  /* Markdown 内容 - 容器背景色(bg-green-50)在暗色下仍是浅色，所以文字保持深色，不改背景避免黑色块 */
-
-  /* 标题保持深色以在浅色背景上可读 */
-  :deep(.markdown-content h1),
-  :deep(.markdown-content h2),
-  :deep(.markdown-content h3),
-  :deep(.markdown-content h4),
-  :deep(.markdown-content h5),
-  :deep(.markdown-content h6) {
-    color: #0f172a;
-    border-bottom-color: #cbd5e1;
-  }
-
-  :deep(.markdown-content blockquote) {
-    color: #334155;
-    border-left-color: #64748b;
-    background-color: #e2e8f0;
-  }
-
-  :deep(.markdown-content table th) {
-    background-color: #cbd5e1;
-    font-weight: 700;
-    color: #0f172a;
-  }
-
-  :deep(.markdown-content a) {
-    color: #1d4ed8;
-  }
-
-  /* 工具参数 */
-  .params-container {
-    background-color: transparent;
-    border-color: #475569;
-  }
-
-  .params-label {
-    color: #c084fc;
-  }
-
-  .params-inner {
-    background-color: #f1f5f9;
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .params-todo-name {
-    color: #1e293b;
-  }
-
-  .params-question {
-    color: #1e293b;
-  }
-
-  .params-option {
-    color: #475569;
-  }
-
-  .params-bullet {
-    color: #c084fc;
-  }
-
-  .params-desc {
-    color: #334155;
-  }
-
-  /* 结果展示 */
-  .result-container {
-    background-color: rgba(6, 78, 59, 0.2);
-    border-color: #166534;
-  }
-
-  .result-label {
-    color: #60a5fa;
-  }
-
-  .result-inner {
-    background-color: #f1f5f9;
-    border-color: #d9dce0;
-  }
-
-  .result-text {
-    color: #1e293b;
-  }
-
-  .result-pre {
-    background-color: #f1f5f9;
-    color: #60a5fa;
-    border-color: #d9dce0;
-  }
-
-  /* Diff */
-  .diff-wrapper {
-    background-color: #1e293b;
-    border-color: #475569;
-  }
-
-  .diff-header {
-    background-color: transparent;
-    border-color: #475569;
-  }
-
-  .diff-path {
-    color: #9333ea;
-  }
-
-  .diff-line {
-    color: #e2e8f0;
-  }
-
-  .diff-added {
-    background-color: #064e3b;
-  }
-
-  .diff-added::before {
-    color: #4ade80;
-  }
-
-  .diff-removed {
-    background-color: #7f1d1d;
-  }
-
-  .diff-removed::before {
-    color: #f87171;
-  }
-
-  .diff-unchanged {
-    background-color: transparent;
-  }
-
-  .diff-line:hover {
-    filter: brightness(1.35);
-  }
-
-  .diff-added:hover {
-    background-color: #065f46;
-  }
-
-  .diff-removed:hover {
-    background-color: #991b1b;
-  }
-
-  /* 文件内容 */
-  .file-content {
-    background-color: #1e293b;
-    color: #c084fc;
-    border-color: #475569;
-  }
-
-  /* JSON */
-  .json-display .string { color: #8bc34a; }
-  .json-display .number { color: #ce93d8; }
-  .json-display .boolean { color: #4fc3f7; }
-  .json-display .null { color: #888; }
-  .json-display .key { color: #4fc3f7; }
+/* ==================== Markdown 样式 ==================== */
+:deep(.markdown-content) {
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  color: var(--text-primary, #333);
+  font-size: 13px;
+  line-height: 1.6;
 }
+
+:deep(.markdown-content h1),
+:deep(.markdown-content h2),
+:deep(.markdown-content h3),
+:deep(.markdown-content h4),
+:deep(.markdown-content h5),
+:deep(.markdown-content h6) {
+  margin-top: 1em;
+  margin-bottom: 0.5em;
+  font-weight: 600;
+  line-height: 1.25;
+  color: #1e293b;
+}
+
+:deep(.markdown-content h1) { font-size: 1.5em; border-bottom: 1px solid var(--border-color, #eaecef); padding-bottom: 0.3em; }
+:deep(.markdown-content h2) { font-size: 1.3em; border-bottom: 1px solid var(--border-color, #eaecef); padding-bottom: 0.3em; }
+:deep(.markdown-content h3) { font-size: 1.1em; }
+:deep(.markdown-content p) { margin-bottom: 1em; line-height: 1.6; }
+:deep(.markdown-content ul),
+:deep(.markdown-content ol) { padding-left: 2em; margin-bottom: 1em; }
+:deep(.markdown-content li) { margin-bottom: 0.25em; }
+:deep(.markdown-content blockquote) {
+  margin: 1em 0;
+  padding: 0.5em 1em;
+  color: var(--text-secondary, #6a737d);
+  border-left: 0.25em solid var(--border-color, #dfe2e5);
+  background: var(--bg-tertiary, #f6f8fa);
+  border-radius: 0 4px 4px 0;
+}
+:deep(.markdown-content code) {
+  font-family: var(--code-font-family, ui-monospace, SFMono-Regular, monospace);
+  font-size: 0.875em;
+  background-color: rgba(175, 184, 193, 0.2);
+  padding: 0.2em 0.4em;
+  border-radius: 3px;
+}
+:deep(.markdown-content pre) {
+  background: var(--bg-tertiary, #f6f8fa);
+  border: 1px solid var(--border-color, #e1e4e8);
+  border-radius: 6px;
+  padding: 1em;
+  overflow: auto;
+  margin: 1em 0;
+}
+:deep(.markdown-content pre code) {
+  background-color: transparent;
+  padding: 0;
+  font-size: 0.8em;
+  line-height: 1.45;
+}
+:deep(.markdown-content table) {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 1em 0;
+}
+:deep(.markdown-content table th),
+:deep(.markdown-content table td) {
+  border: 1px solid var(--border-color, #dfe2e5);
+  padding: 0.6em 1em;
+}
+:deep(.markdown-content table th) {
+  font-weight: 600;
+  background: var(--bg-tertiary, #f6f8fa);
+  color: #1e293b;
+}
+:deep(.markdown-content a) { color: var(--text-link, #0366d6); text-decoration: none; }
+:deep(.markdown-content a:hover) { text-decoration: underline; }
+:deep(.markdown-content img) { max-width: 100%; height: auto; }
+:deep(.markdown-content hr) { height: 0.25em; padding: 0; margin: 1.5em 0; background-color: var(--border-color, #e1e4e8); border: 0; }
+:deep(.markdown-content strong) { font-weight: 600; }
+:deep(.markdown-content em) { font-style: italic; }
 </style>

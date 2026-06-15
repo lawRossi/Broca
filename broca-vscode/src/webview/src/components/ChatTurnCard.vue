@@ -187,13 +187,15 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
         <span class="turn-label">第{{ turn.sequenceNumber }}轮</span>
       </div>
       <div class="header-right">
-        <span v-if="formattedCompletionTime" class="completion-time" :title="'完成于 ' + formattedCompletionTime">🕐 {{ formattedCompletionTime }}</span>
-        <span class="duration">⏱️ {{ formattedDuration }}</span>
+        <span :class="['header-stat', 'stat-status', statusColorClass]">{{ statusText }}</span>
+        <span class="header-sep"></span>
+        <span v-if="formattedCompletionTime" class="completion-time" :title="'完成于 ' + formattedCompletionTime">🕐{{ formattedCompletionTime }}</span>
+        <span class="duration">⏱️{{ formattedDuration }}</span>
       </div>
     </div>
 
     <!-- ==================== 用户消息（对齐 web 版） ==================== -->
-    <div v-if="turn.userMessage" class="user-message-section">
+    <div v-if="turn.userMessage" class="user-message-section section-accent accent-user">
       <div class="user-message-row">
         <span class="user-icon">👤</span>
         <div class="user-message-text">{{ turn.userMessage }}</div>
@@ -201,7 +203,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
     </div>
 
     <!-- ==================== 执行摘要（对齐 web 版结构） ==================== -->
-    <div v-if="hasToolExecution" class="execution-summary">
+    <div v-if="hasToolExecution" class="execution-summary section-accent accent-tool">
       <div class="summary-header">
         <span class="summary-title">执行摘要</span>
       </div>
@@ -209,10 +211,6 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
         <div class="summary-row">
           <span class="summary-label">📋 步骤</span>
           <span class="summary-value">{{ turn.totalSteps }}</span>
-        </div>
-        <div class="summary-row">
-          <span class="summary-label">🔄 状态</span>
-          <span :class="['summary-value', statusColorClass]">{{ statusText }}</span>
         </div>
         <div v-if="showTodoList" class="summary-row todo-section">
           <div class="todo-header">
@@ -239,7 +237,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
     </div>
 
     <!-- ==================== 回复区域（对齐 web 版） ==================== -->
-    <div v-if="showResponse" class="response-section">
+    <div v-if="showResponse" class="response-section section-accent accent-agent">
       <div class="response-row">
         <span class="response-icon">🤖</span>
         <div class="response-content">
@@ -326,9 +324,9 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 }
 
 /* 状态边框颜色 */
-.border-l-blue { border-left-color: #3b82f6; }
+.border-l-blue { border-left-color: #5a8fc9; }
 .border-l-green { border-left-color: var(--vscode-widget-border, #b0b0b0); }
-.border-l-red { border-left-color: #ef4444; }
+.border-l-red { border-left-color: #c95a5a; }
 
 /* ==================== 标题栏 ==================== */
 .turn-header {
@@ -349,45 +347,36 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 .header-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
   font-size: 11px;
 }
 
-.status-dot {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  display: inline-block;
-  flex-shrink: 0;
+.header-stat {
+  font-size: 11px;
+  white-space: nowrap;
 }
 
-.dot-blue { background-color: #3b82f6; }
-.dot-gray { background-color: var(--vscode-widget-border, #b0b0b0); }
-.dot-red { background-color: #ef4444; }
-
-.dot-blue.pulse {
-  animation: pulse-dot 1.5s ease-in-out infinite;
-}
-
-@keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.agent-name {
-  font-weight: 600;
-  font-size: 13px;
-}
-
-.text-primary { color: var(--vscode-editor-foreground, #333); }
-.text-green { color: #16a34a; }
-.text-red { color: #dc2626; }
-.text-blue { color: #2563eb; }
-
-.turn-label {
-  font-size: 12px;
+.stat-tools {
   color: var(--vscode-descriptionForeground, #808080);
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stat-steps {
+  color: var(--vscode-descriptionForeground, #808080);
+}
+
+.stat-status {
   font-weight: 500;
+}
+
+.header-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--vscode-widget-border, #e0e0e0);
+  flex-shrink: 0;
 }
 
 .completion-time {
@@ -399,23 +388,37 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   opacity: 0.7;
 }
 
-/* ==================== 用户消息（对齐 web 版） ==================== */
-.user-message-section {
-  padding: 6px 0;
+/* ==================== 区域分隔 + 左侧标识竖线 ==================== */
+.section-accent {
+  padding: 8px 0 8px 10px;
+  border-left: 2px solid transparent;
+  margin-top: 8px;
   border-bottom: 1px solid var(--vscode-widget-border, #e0e0e0);
 }
 
+.section-accent:last-child {
+  border-bottom: none;
+}
+
+.accent-user {
+  border-left-color: var(--vscode-descriptionForeground, #8e8e8e);
+}
+
+.accent-tool {
+  border-left-color: #c9a84c;
+}
+
+.accent-agent {
+  border-left-color: #5a8fc9;
+}
+
+/* ==================== 用户消息 ==================== */
 .user-message-row {
   display: flex;
   align-items: flex-start;
   gap: 6px;
   font-size: 13px;
   color: var(--vscode-editor-foreground, #333);
-}
-
-.user-icon {
-  flex-shrink: 0;
-  font-size: 14px;
 }
 
 .user-message-text {
@@ -425,10 +428,10 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 
 /* ==================== 执行摘要（对齐 web 版结构） ==================== */
 .execution-summary {
-  padding: 6px 0;
-  border-bottom: 1px solid var(--vscode-widget-border, #e0e0e0);
+  /* spacing & border handled by .section-accent */
 }
 
+/* 执行摘要 */
 .summary-header {
   display: flex;
   align-items: center;
@@ -467,20 +470,8 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   font-size: 12px;
 }
 
-.file-path {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  max-width: 100%;
-}
-
 .stats-text {
   word-break: break-word;
-}
-
-/* Todo 列表 */
-.todo-section {
-  flex-direction: column;
 }
 
 .todo-header {
@@ -488,12 +479,13 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   align-items: center;
 }
 
+/* Todo 列表 */
 .todo-list {
   margin-left: 64px;
   padding: 6px 8px;
-  border: 1px solid var(--vscode-widget-border, #e0e0e0);
+  border: 1px solid rgba(201, 168, 76, 0.25);
   border-radius: 4px;
-  background: var(--vscode-sideBar-background, #f3f3f3);
+  background: rgba(201, 168, 76, 0.06);
 }
 
 .todo-item-inner {
@@ -523,7 +515,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 
 /* ==================== 回复区域（对齐 web 版） ==================== */
 .response-section {
-  padding-top: 6px;
+  /* spacing & border handled by .section-accent */
 }
 
 .response-row {
@@ -561,21 +553,22 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 }
 
 .expand-btn {
-  display: block;
+  display: inline-block;
   margin-top: 4px;
-  background: none;
-  border: 1px solid var(--vscode-widget-border, #e0e0e0);
+  background: transparent;
+  border: none;
   color: var(--vscode-textLink-foreground, #006ab1);
   font-size: 11px;
-  padding: 2px 12px;
-  border-radius: 4px;
+  padding: 2px 8px;
+  border-radius: 3px;
   cursor: pointer;
-  width: 100%;
-  text-align: center;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
 }
 
 .expand-btn:hover {
-  background: var(--vscode-button-hoverBackground, rgba(0, 0, 0, 0.05));
+  opacity: 1;
+  background: transparent;
 }
 
 /* ==================== 推理内容（对齐 web 版） ==================== */
@@ -589,8 +582,8 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   align-items: center;
   gap: 4px;
   padding: 4px 8px;
-  background: rgba(59, 130, 246, 0.08);
-  border: 1px solid rgba(59, 130, 246, 0.2);
+  background: rgba(201, 168, 76, 0.1);
+  border: 1px solid rgba(201, 168, 76, 0.25);
   border-radius: 6px;
   font-size: 12px;
 }

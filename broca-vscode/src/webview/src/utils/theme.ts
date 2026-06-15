@@ -30,20 +30,28 @@ export function applyVSCodeTheme() {
       --font-size: var(--vscode-font-size, 13px);
       --code-font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
 
-      /* Message type colors - used by ChatMessageItem */
-      --message-user-bg: rgba(59, 130, 246, 0.08);
-      --message-user-border: #3b82f6;
-      --message-agent-bg: rgba(34, 197, 94, 0.08);
-      --message-agent-border: #22c55e;
-      --message-tool-bg: rgba(168, 85, 247, 0.08);
-      --message-tool-border: #a855f7;
-      --message-system-bg: rgba(255, 255, 255, 0.04);
-      --message-error-bg: rgba(239, 68, 68, 0.08);
-      --message-error-border: #ef4444;
+      /* Message type colors - VS Code native fusion */
+      --message-user-bg: transparent;
+      --message-user-border: var(--vscode-descriptionForeground, #8e8e8e);
+      --message-agent-bg: transparent;
+      --message-agent-border: #5a8fc9;
+      --message-tool-bg: var(--vscode-input-background, rgba(128, 128, 128, 0.04));
+      --message-tool-border: #c9a84c;
+      --message-system-bg: transparent;
+      --message-error-bg: var(--vscode-inputValidation-errorBackground, rgba(239, 68, 68, 0.06));
+      --message-error-border: #c95a5a;
+
+      /* List hover */
+      --list-hover-bg: var(--vscode-list-hoverBackground, rgba(128, 128, 128, 0.08));
 
       /* Reasoning */
-      --reasoning-bg: rgba(217, 119, 6, 0.1);
-      --reasoning-text: #fbbf24;
+      --reasoning-text: var(--vscode-editorWarning-foreground, #fbbf24);
+
+      /* Diff colors - VS Code native */
+      --diff-added-bg: var(--vscode-diffEditor-insertedTextBackground, rgba(0, 200, 80, 0.15));
+      --diff-added-fg: var(--vscode-editor-foreground, #166534);
+      --diff-removed-bg: var(--vscode-diffEditor-removedTextBackground, rgba(200, 0, 0, 0.15));
+      --diff-removed-fg: var(--vscode-editor-foreground, #991b1b);
     }
   `
   document.head.appendChild(style)

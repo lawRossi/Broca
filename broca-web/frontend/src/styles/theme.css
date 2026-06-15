@@ -32,6 +32,17 @@
   --color-error: #ef4444;
   --color-info: var(--color-primary-500);
 
+  /* ChatTurnCard 主题变量 */
+  --border-color: #e2e8f0;
+  --text-primary: #334155;
+  --text-secondary: #64748b;
+  --text-link: #3b82f6;
+  --card-bg: #ffffff;
+  --bg-tertiary: #f1f5f9;
+  --focus-border: #3b82f6;
+  --warning-fg: #d97706;
+  --code-font-family: var(--font-family-mono);
+
   /* 字体系统 */
   --font-family-sans: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
   --font-family-mono: 'SF Mono', 'Monaco', 'Inconsolata', 'Roboto Mono', monospace;
@@ -107,7 +118,6 @@
     --color-gray-900: #f8fafc;
   }
 }
-
 /* 自定义属性快捷方式 */
 .bg-primary {
   background-color: var(--color-primary-500);

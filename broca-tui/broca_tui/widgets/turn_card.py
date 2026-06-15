@@ -38,8 +38,8 @@ class TurnCard(Widget):
         height: auto;
         margin: 0 2 2 2;
         padding: 1 2;
-        border-left: solid #0ea5e9;
-        background: white;
+        border-left: solid #5a8fc9;
+        background: #f5f5f5;
     }
 
     TurnCard.consecutive-agent {
@@ -47,15 +47,15 @@ class TurnCard(Widget):
     }
 
     TurnCard.status-completed {
-        border-left: solid #10b981;
+        border-left: solid #6b6b6b;
     }
 
     TurnCard.status-error {
-        border-left: solid #ef4444;
+        border-left: solid #c95a5a;
     }
 
     TurnCard.status-active {
-        border-left: solid #0ea5e9;
+        border-left: solid #5a8fc9;
     }
 
     .turn-card-header {
@@ -70,44 +70,85 @@ class TurnCard(Widget):
     }
 
     .turn-status-dot.active {
-        color: #0ea5e9;
+        color: #5a8fc9;
     }
 
     .turn-status-dot.completed {
-        color: #10b981;
+        color: #6b6b6b;
     }
 
     .turn-status-dot.error {
-        color: #ef4444;
+        color: #c95a5a;
     }
 
     .turn-agent-name {
         text-style: bold;
-        color: #1e293b;
+        color: $text;
         width: 1fr;
     }
 
     .turn-sequence {
-        color: #94a3b8;
+        color: #6b6b6b;
+    }
+
+    .turn-sep {
+        color: #3c3c3c;
+    }
+
+    .turn-status-text {
+        text-style: bold;
+        margin-right: 0;
+    }
+
+    .turn-status-text.active {
+        color: #5a8fc9;
+    }
+
+    .turn-status-text.completed {
+        color: #6b6b6b;
+    }
+
+    .turn-status-text.error {
+        color: #c95a5a;
     }
 
     .turn-duration {
-        color: #64748b;
+        color: #6b6b6b;
+    }
+
+    /* 区域左侧竖线 + 底部隔线 */
+    .section-accent {
+        height: auto;
+        border-left: solid #3c3c3c;
+        border-bottom: solid #3c3c3c;
+        padding: 0 0 0 1;
+        margin: 1 0 0 0;
+    }
+
+    .accent-user {
+        border-left: solid #6b6b6b;
+    }
+
+    .accent-tool {
+        border-left: solid #c9a84c;
+    }
+
+    .accent-agent {
+        border-left: solid #5a8fc9;
     }
 
     .turn-user-message {
         height: auto;
-        border-bottom: solid #f1f5f9;
         padding: 0;
         margin: 0 0 0 0;
     }
 
     .turn-user-icon {
-        color: #3b82f6;
+        color: #6b6b6b;
     }
 
     .turn-user-text {
-        color: #475569;
+        color: $text;
         width: 1fr;
     }
 
@@ -118,7 +159,7 @@ class TurnCard(Widget):
     }
 
     .turn-summary-title {
-        color: #94a3b8;
+        color: #6b6b6b;
         text-style: bold;
         margin-bottom: 0;
         margin-top: 0;
@@ -130,61 +171,13 @@ class TurnCard(Widget):
     }
 
     .turn-summary-label {
-        color: #94a3b8;
+        color: #6b6b6b;
         width: 20;
     }
 
     .turn-summary-value {
-        color: #334155;
+        color: $text;
         width: 1fr;
-    }
-
-    .turn-summary-status {
-        text-style: bold;
-    }
-
-    .turn-summary-status.active {
-        color: #0ea5e9;
-    }
-
-    .turn-summary-status.completed {
-        color: #10b981;
-    }
-
-    .turn-summary-status.error {
-        color: #ef4444;
-    }
-
-    .turn-response-section {
-        height: auto;
-        padding: 0;
-        margin: 0;
-    }
-
-    .turn-response-icon {
-        color: #22c55e;
-    }
-
-    .turn-response-content {
-        height: auto;
-        width: 1fr;
-    }
-
-    .turn-response-content.collapsed {
-        max-height: 20;
-        overflow: hidden;
-    }
-
-    .turn-fold-label {
-        height: auto;
-        color: #0ea5e9;
-        text-style: bold;
-        padding: 0 1;
-        margin: 0 0 0 3;
-    }
-
-    .turn-fold-label:hover {
-        text-style: bold underline;
     }
 
     .turn-current-call {
@@ -193,14 +186,14 @@ class TurnCard(Widget):
         margin: 1 0 0 0;
         align: left middle;
         padding: 1 2;
-        background: rgba(59, 130, 246, 0.08);
-        border: solid #3b82f6;
+        background: rgba(201, 168, 76, 0.1);
+        border: solid #c9a84c;
     }
 
     .turn-current-call-label {
         height: auto;
         width: auto;
-        color: #64748b;
+        color: #6b6b6b;
         margin: 0 0 0 0;
     }
 
@@ -223,14 +216,14 @@ class TurnCard(Widget):
 
     .turn-reasoning-content {
         height: auto;
-        background: #fffbeb;
-        border: solid #e2e8f0;
+        background: transparent;
+        border-left: solid #f59e0b;
         padding: 1;
         margin: 1 0;
     }
 
     .turn-reasoning-text {
-        color: #475569;
+        color: #f59e0b;
         text-style: italic;
     }
 
@@ -250,7 +243,7 @@ class TurnCard(Widget):
         padding: 0 1;
         margin: 0;
         background: transparent;
-        color: #94a3b8;
+        color: #6b6b6b;
         border: none;
         text-style: none;
     }
@@ -270,6 +263,7 @@ class TurnCard(Widget):
     .turn-todo-list {
         height: auto;
         padding: 0 0 0 2;
+        border-left: solid #c9a84c;
     }
 
     .turn-todo-item {
@@ -278,7 +272,55 @@ class TurnCard(Widget):
     }
 
     .turn-tool-stats {
-        color: #475569;
+        color: $text;
+    }
+
+    .turn-summary-value {
+        color: $text;
+        width: 1fr;
+    }
+
+    .turn-todo-item {
+        height: auto;
+        padding: 0 0 0 1;
+    }
+
+    .turn-tool-stats {
+        color: $text;
+    }
+
+    .turn-response-section {
+        height: auto;
+        padding: 0;
+        margin: 0;
+    }
+
+    .turn-response-icon {
+        color: #5a8fc9;
+    }
+
+    .turn-response-content {
+        height: auto;
+        width: 1fr;
+    }
+
+    .turn-response-content.collapsed {
+        max-height: 20;
+        overflow: hidden;
+    }
+
+    .turn-fold-label {
+        height: auto;
+        color: #6b6b6b;
+        text-style: none;
+        padding: 0 1;
+        margin: 0 0 0 3;
+        opacity: 0.6;
+    }
+
+    .turn-fold-label:hover {
+        text-style: none;
+        opacity: 1;
     }
     """
 
@@ -494,28 +536,25 @@ class TurnCard(Widget):
             yield Label("●", classes=f"turn-status-dot {simplified_status}")
             yield Label(agent_name, classes="turn-agent-name")
             yield Label(f"第{self._turn.sequence_number}轮", classes="turn-sequence")
+            yield Label("|", classes="turn-sep")
+            yield Label(status_text, classes=f"turn-status-text {simplified_status}")
             yield Label(f"⏱️ {self._get_formatted_duration()}", classes="turn-duration")
 
         # ===== 用户消息 =====
         if self._turn.user_message:
-            with Horizontal(classes="turn-user-message"):
+            with Horizontal(classes="turn-user-message section-accent accent-user"):
                 yield Label("👤", classes="turn-user-icon")
                 yield Label(self._turn.user_message, classes="turn-user-text")
 
         # ===== 执行摘要 =====
         if self._has_tool_execution():
-            with Vertical(classes="turn-summary-section"):
+            with Vertical(classes="turn-summary-section section-accent accent-tool"):
                 yield Label("执行摘要", classes="turn-summary-title")
 
                 # 步骤数
                 with Horizontal(classes="turn-summary-row"):
                     yield Label("📋 步骤", classes="turn-summary-label")
                     yield Label(str(self._turn.total_steps), classes="turn-summary-value")
-
-                # 状态
-                with Horizontal(classes="turn-summary-row"):
-                    yield Label("🔄 状态", classes="turn-summary-label")
-                    yield Label(status_text, classes=f"turn-summary-status {simplified_status}")
 
                 # TODO 列表
                 if self._show_todo_list():
@@ -536,13 +575,13 @@ class TurnCard(Widget):
 
         # ===== 回复区域 =====
         if self._turn.final_response:
-            with Horizontal(classes="turn-response-section"):
+            with Horizontal(classes="turn-response-section section-accent accent-agent"):
                 yield Label("🤖", classes="turn-response-icon")
                 with Vertical(classes="turn-response-content", id="response-content"):
                     yield Static(Markdown(self._format_response(self._turn.final_response)), id="response-text")
             # 内容过长时显示折叠标签
             if self._needs_fold():
-                yield Label("折叠", id="toggle-response", classes="turn-fold-label")
+                yield Label("展开全部", id="toggle-response", classes="turn-fold-label")
 
         # ===== 当前调用（与工具名同一行，不显示文件路径） =====
         if self._turn.current_tool and self._turn.status != "completed":

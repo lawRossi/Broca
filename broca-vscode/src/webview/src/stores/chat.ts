@@ -877,7 +877,7 @@ export const useChatStore = defineStore('chat', () => {
           name: item.name || '',
           status: item.status || 'pending',
         })),
-        totalDuration: t.total_duration || 0,
+        totalDuration: t.duration_seconds || 0,
         totalSteps: t.total_steps || 0,
         toolCallStats: (t.tool_call_stats || []).map((stat: any) => ({
           toolName: stat.tool_name || '',
@@ -1021,6 +1021,7 @@ export const useChatStore = defineStore('chat', () => {
     if (!turn) return
 
     turn.isActive = false
+    turn.totalDuration = Math.floor((Date.now() - turn.startedAt) / 1000)
     turn.status = message.data?.status === 'error' || message.data?.status === 'aborted' ? 'error' : 'completed'
     stopDurationTimer()
 

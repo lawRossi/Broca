@@ -75,35 +75,35 @@ const statusText = computed(() => {
 
 const statusBorderClass = computed(() => {
   const map: Record<string, string> = {
-    active: 'border-l-blue-400',
-    completed: 'border-l-gray-400',
-    error: 'border-l-red-500',
+    active: 'border-l-active',
+    completed: 'border-l-completed',
+    error: 'border-l-error',
   }
-  return map[simplifiedStatus.value] || 'border-l-gray-400'
+  return map[simplifiedStatus.value] || 'border-l-completed'
 })
 
 const headerTextClass = computed(() => {
-  if (simplifiedStatus.value === 'completed') return 'text-blue-700'
-  if (simplifiedStatus.value === 'error') return 'text-red-700'
+  if (simplifiedStatus.value === 'completed') return 'text-agent'
+  if (simplifiedStatus.value === 'error') return 'text-error'
   return 'text-gray-700'
 })
 
 const statusColorClass = computed(() => {
   const map: Record<string, string> = {
-    active: 'text-blue-600',
-    completed: 'text-green-600',
-    error: 'text-red-600',
+    active: 'text-active',
+    completed: 'text-completed',
+    error: 'text-error',
   }
   return map[simplifiedStatus.value] || 'text-gray-600'
 })
 
 const statusDotClass = computed(() => {
   const map: Record<string, string> = {
-    active: 'bg-blue-400 animate-pulse',
-    completed: 'bg-gray-400',
-    error: 'bg-red-500',
+    active: 'dot-active animate-pulse',
+    completed: 'dot-completed',
+    error: 'dot-error',
   }
-  return map[simplifiedStatus.value] || 'bg-gray-400'
+  return map[simplifiedStatus.value] || 'dot-completed'
 })
 
 // 格式化耗时
@@ -227,11 +227,10 @@ const handleUndo = async () => {
 <template>
   <div
     :class="[
-      'rounded-lg p-2 sm:p-3 transition-all duration-200 bg-white',
+      'turn-card',
       statusBorderClass,
       consecutiveAgent ? 'mt-1' : 'mt-3',
     ]"
-    style="border-left-width: 4px;"
     @mouseenter="showActions = true"
     @mouseleave="showActions = false"
   >
@@ -242,14 +241,16 @@ const handleUndo = async () => {
         <span class="font-semibold text-sm" :class="headerTextClass">{{ turn.agentName }}</span>
         <span class="text-xs text-gray-400">第{{ turn.sequenceNumber }}轮</span>
       </div>
-      <div class="flex items-center gap-2 text-xs">
-        <span v-if="formattedCompletionTime" class="text-gray-400" :title="'完成于 ' + formattedCompletionTime">🕐 {{ formattedCompletionTime }}</span>
+      <div class="flex items-center gap-2 text-xs header-right">
+        <span class="stat-status" :class="statusColorClass">{{ statusText }}</span>
+        <span class="header-sep"></span>
+        <span v-if="formattedCompletionTime" class="text-gray-500" :title="'完成于 ' + formattedCompletionTime">🕐 {{ formattedCompletionTime }}</span>
         <span class="text-gray-500 opacity-70">⏱️ {{ formattedDuration }}</span>
       </div>
     </div>
 
     <!-- 用户消息 -->
-    <div v-if="turn.userMessage" class="py-2 border-b border-gray-100">
+    <div v-if="turn.userMessage" class="section-accent accent-user">
       <div class="flex items-start gap-2 text-xs sm:text-sm text-gray-600">
         <span class="flex-shrink-0">👤</span>
         <div>{{ turn.userMessage }}</div>
@@ -257,64 +258,51 @@ const handleUndo = async () => {
     </div>
 
     <!-- 执行摘要 -->
-    <div v-if="hasToolExecution" class="py-2 border-b border-gray-100">
-      <div class="flex items-center gap-1 mb-1.5 text-xs text-gray-400">
-        <span>📊</span>
-        <span class="font-medium">执行摘要</span>
+    <div v-if="hasToolExecution" class="section-accent accent-tool">
+      <div class="summary-header">
+        <span class="summary-title">执行摘要</span>
       </div>
-      <div class="space-y-1 text-xs">
-        <div class="flex items-center gap-2">
-          <span class="text-gray-400 w-16 flex-shrink-0">📋 步骤</span>
-          <span class="text-gray-700">{{ turn.totalSteps }}</span>
+      <div class="summary-body">
+        <div class="summary-row">
+          <span class="summary-label">📋 步骤</span>
+          <span class="summary-value">{{ turn.totalSteps }}</span>
         </div>
-        <div class="flex items-center gap-2">
-          <span class="text-gray-400 w-16 flex-shrink-0">🔄 状态</span>
-          <span :class="statusColorClass">{{ statusText }}</span>
-        </div>
-        <div v-if="showTodoList" class="pt-1">
-          <div class="flex items-center gap-2 mb-1">
-            <span class="text-gray-400 w-16 flex-shrink-0">📝 任务</span>
+        <div v-if="showTodoList" class="summary-row todo-section">
+          <div class="todo-header">
+            <span class="summary-label">📝 任务</span>
           </div>
-          <div class="params-inner p-2 rounded border ml-2">
-            <div v-for="(todo, idx) in turn.currentTodoList" :key="idx" class="mb-2 last:mb-0">
-              <div class="flex items-start gap-2">
-                <span class="mt-1 text-sm">
+          <div class="todo-list">
+            <div v-for="(todo, idx) in turn.currentTodoList" :key="idx" class="todo-item-inner">
+              <div class="todo-item-row">
+                <span class="todo-icon">
                   <span v-if="todo.status === 'completed'">✅</span>
                   <span v-else-if="todo.status === 'in_progress'">⏳</span>
                   <span v-else>⬜️</span>
                 </span>
-                <div class="flex-1">
-                  <div class="params-todo-name text-sm font-medium">
-                    {{ todo.name }}
-                  </div>
-                </div>
+                <span class="todo-name">{{ todo.name }}</span>
               </div>
             </div>
           </div>
         </div>
-        <div v-if="showToolStats" class="flex items-start gap-2">
-          <span class="text-gray-400 w-16 flex-shrink-0">📈 调用</span>
-          <span class="text-gray-600">{{ toolStatsText }}</span>
+        <div v-if="showToolStats" class="summary-row">
+          <span class="summary-label">🔧 工具调用</span>
+          <span class="summary-value stats-text">{{ toolStatsText }}</span>
         </div>
       </div>
     </div>
 
     <!-- 回复区域 -->
-    <div v-if="showResponse" class="pt-2">
+    <div v-if="showResponse" class="section-accent accent-agent">
       <div class="flex items-start gap-2">
         <span class="flex-shrink-0 text-sm mt-0.5">🤖</span>
         <div class="flex-1 min-w-0">
           <div class="markdown-content text-gray-800 text-xs sm:text-sm leading-relaxed overflow-x-auto"
-            :class="{ 'max-h-[calc(1.5em*25)] overflow-hidden relative': isLongResponse && !showFullResponse }"
+            :class="{ 'response-collapsed': isLongResponse && !showFullResponse }"
             v-html="renderMarkdown(turn.finalResponse)"></div>
-          <!-- 渐变遮罩 -->
-          <div v-if="isLongResponse && !showFullResponse"
-            class="h-8 -mt-8 relative z-10"
-            style="background: linear-gradient(transparent, var(--turn-card-bg, #fff)); pointer-events: none;">
-          </div>
+          <!-- 渐变遮罩由 .response-collapsed::after 处理 -->
           <button
             v-if="isLongResponse"
-            class="w-full mt-1 text-xs text-blue-600 hover:text-blue-700 bg-transparent border border-gray-200 rounded py-1 cursor-pointer"
+            class="expand-btn"
             @click="showFullResponse = !showFullResponse"
           >
             {{ showFullResponse ? '收起 ▲' : '展开 ▼' }}
@@ -323,27 +311,26 @@ const handleUndo = async () => {
       </div>
     </div>
 
-    <!-- 当前调用（与工具名同一行，不显示文件路径） -->
+    <!-- 当前调用（琥珀色） -->
     <div v-if="currentToolText && simplifiedStatus === 'active'" class="pt-2">
-      <div class="flex items-center gap-2 px-3 py-2 rounded-lg text-xs"
-        style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.2);">
+      <div class="tool-call-badge">
         <span class="text-sm animate-pulse">⏳</span>
         <span class="text-gray-500">当前调用:</span>
-        <span class="text-gray-700 font-semibold">{{ currentToolText }}</span>
+        <span class="font-semibold">{{ currentToolText }}</span>
       </div>
     </div>
     <!-- 未调用工具时：展示思考（可折叠） -->
     <div v-else-if="hasReasoning" class="pt-2">
       <button
-        class="flex items-center gap-1 text-xs !text-amber-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
+        class="reasoning-toggle"
         @click="showReasoning = !showReasoning"
       >
         <span>{{ showReasoning ? '▼' : '▶' }}</span>
-        <span class="text-xs">思考</span>
-        <span v-if="!showReasoning && simplifiedStatus === 'active'" class="animate-pulse text-amber-500">...</span>
+        <span class="reasoning-label">思考</span>
+        <span v-if="!showReasoning && simplifiedStatus === 'active'" class="reasoning-dots">...</span>
       </button>
-      <div v-if="showReasoning" class="mt-2 p-3 bg-amber-50 rounded-lg border border-amber-200">
-        <pre class="text-xs font-mono text-amber-800 whitespace-pre-wrap break-words leading-relaxed">{{ turn.reasoningContent }}</pre>
+      <div v-if="showReasoning" class="reasoning-content">
+        <pre class="reasoning-text">{{ turn.reasoningContent }}</pre>
       </div>
     </div>
 
@@ -364,259 +351,257 @@ const handleUndo = async () => {
 
 
 <style scoped>
-/* ========== Markdown 样式（与 ChatMessageItem 严格一致） ========== */
-
-:deep(.markdown-content) {
-  word-wrap: break-word;
-  overflow-wrap: break-word;
+/* ==================== 卡片基础样式 ==================== */
+.turn-card {
+  border-radius: 8px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  border-left-width: 4px;
+  border-left-style: solid;
+  transition: all 0.2s ease;
+  background: var(--card-bg, #ffffff);
 }
 
-:deep(.markdown-content h1),
-:deep(.markdown-content h2),
-:deep(.markdown-content h3),
-:deep(.markdown-content h4),
-:deep(.markdown-content h5),
-:deep(.markdown-content h6) {
-  margin-top: 1em;
-  margin-bottom: 0.5em;
-  font-weight: 600;
-  line-height: 1.25;
+.turn-card:hover {
+  border-color: var(--focus-border, #007acc);
 }
 
-:deep(.markdown-content h1) {
-  font-size: 1.5em;
-  border-bottom: 1px solid #eaecef;
-  padding-bottom: 0.3em;
+/* 状态边框颜色 */
+.border-l-active { border-left-color: #5a8fc9; }
+.border-l-completed { border-left-color: var(--border-color, #b0b0b0); }
+.border-l-error { border-left-color: #c95a5a; }
+
+/* 状态文字颜色 */
+.text-active { color: #5a8fc9; }
+.text-completed { color: var(--text-secondary, #808080); }
+.text-error { color: #c95a5a; }
+.text-agent { color: #5a8fc9; }
+
+/* 状态圆点 */
+.dot-active { background-color: #5a8fc9; }
+.dot-completed { background-color: var(--border-color, #b0b0b0); }
+.dot-error { background-color: #c95a5a; }
+
+.dot-active.animate-pulse {
+  animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
-:deep(.markdown-content h2) {
-  font-size: 1.3em;
-  border-bottom: 1px solid #eaecef;
-  padding-bottom: 0.3em;
+@keyframes pulse-dot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
-:deep(.markdown-content h3) {
-  font-size: 1.1em;
+/* ==================== 标题栏 ==================== */
+.header-right {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 
-:deep(.markdown-content p) {
-  margin-bottom: 1em;
-  line-height: 1.6;
+.stat-status {
+  font-weight: 500;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
-:deep(.markdown-content ul),
-:deep(.markdown-content ol) {
-  padding-left: 2em;
-  margin-bottom: 1em;
+.header-sep {
+  width: 1px;
+  height: 12px;
+  background: var(--border-color, #e0e0e0);
+  flex-shrink: 0;
 }
 
-:deep(.markdown-content li) {
-  margin-bottom: 0.25em;
+/* ==================== 区域分隔 + 左侧标识竖线 ==================== */
+.section-accent {
+  padding: 8px 0 8px 10px;
+  border-left: 2px solid transparent;
+  margin-top: 8px;
+  border-bottom: 1px solid var(--border-color, #e0e0e0);
 }
 
-:deep(.markdown-content blockquote) {
-  margin: 1em 0;
-  padding: 0 1em;
-  color: #6a737d;
-  border-left: 0.25em solid #dfe2e5;
-  background-color: #f6f8fa;
-  padding: 0.5em 1em;
-  border-radius: 0 4px 4px 0;
+.section-accent:last-child {
+  border-bottom: none;
 }
 
-:deep(.markdown-content code) {
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    SF Mono,
-    Menlo,
-    Consolas,
-    Liberation Mono,
-    monospace;
-  font-size: 0.875em;
-  background-color: rgba(175, 184, 193, 0.2);
-  padding: 0.2em 0.4em;
-  border-radius: 3px;
+.accent-user {
+  border-left-color: var(--text-secondary, #8e8e8e);
 }
 
-:deep(.markdown-content pre) {
-  background-color: #f6f8fa;
+.accent-tool {
+  border-left-color: #c9a84c;
+}
+
+.accent-agent {
+  border-left-color: #5a8fc9;
+}
+
+/* ==================== 工具调用琥珀色 ==================== */
+.tool-call-badge {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  background: rgba(201, 168, 76, 0.1);
+  border: 1px solid rgba(201, 168, 76, 0.25);
   border-radius: 6px;
-  padding: 1em;
-  overflow: auto;
-  margin: 1em 0;
+  font-size: 12px;
+  color: var(--text-primary, #333);
 }
 
-:deep(.markdown-content pre code) {
-  background-color: transparent;
-  padding: 0;
-  font-size: 0.8em;
-  line-height: 1.45;
-}
-
-:deep(.markdown-content table) {
-  border-collapse: collapse;
-  width: 100%;
-  margin: 1em 0;
-}
-
-:deep(.markdown-content table th),
-:deep(.markdown-content table td) {
-  border: 1px solid #dfe2e5;
-  padding: 0.6em 1em;
-}
-
-:deep(.markdown-content table th) {
-  font-weight: 600;
-  background-color: #f6f8fa;
-}
-
-:deep(.markdown-content tr:nth-child(2n)) {
-  background-color: #f6f8fa;
-}
-
-:deep(.markdown-content a) {
-  color: #0366d6;
-  text-decoration: none;
-}
-
-:deep(.markdown-content a:hover) {
-  text-decoration: underline;
-}
-
-:deep(.markdown-content img) {
-  max-width: 100%;
-  height: auto;
-}
-
-:deep(.markdown-content hr) {
-  height: 0.25em;
-  padding: 0;
-  margin: 1.5em 0;
-  background-color: #e1e4e8;
-  border: 0;
-}
-
-:deep(.markdown-content strong) {
+.tool-call-badge .font-semibold {
   font-weight: 600;
 }
 
-:deep(.markdown-content em) {
-  font-style: italic;
+/* ==================== 推理内容 ==================== */
+.reasoning-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--warning-fg, #b89500);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 0;
 }
 
-:deep(.markdown-content del) {
-  text-decoration: line-through;
+.reasoning-toggle:hover {
+  color: var(--warning-fg, #d97706);
 }
 
-/* ========== 暗色模式（与 ChatMessageItem 严格一致） ========== */
-@media (prefers-color-scheme: dark) {
-  /* --- Markdown（与 ChatMessageItem 完全一致） --- */
-  :deep(.markdown-content h1),
-  :deep(.markdown-content h2),
-  :deep(.markdown-content h3),
-  :deep(.markdown-content h4),
-  :deep(.markdown-content h5),
-  :deep(.markdown-content h6) {
-    color: #0f172a;
-    border-bottom-color: #cbd5e1;
-  }
+.reasoning-label {
+  font-size: 12px;
+}
 
-  :deep(.markdown-content blockquote) {
-    color: #334155;
-    border-left-color: #64748b;
-    background-color: #e2e8f0;
-  }
+.reasoning-dots {
+  animation: pulse-dot 1.5s ease-in-out infinite;
+  font-size: 12px;
+}
 
-  :deep(.markdown-content table th) {
-    background-color: #cbd5e1;
-    font-weight: 700;
-    color: #0f172a;
-  }
+.reasoning-content {
+  margin-top: 6px;
+  padding: 8px 12px;
+  border-left: 3px solid var(--warning-fg, #b89500);
+  border-radius: 4px;
+}
 
-  :deep(.markdown-content a) {
-    color: #1d4ed8;
-  }
+.reasoning-text {
+  margin: 0;
+  font-family: var(--code-font-family, 'Consolas', 'Courier New', monospace);
+  font-size: 11px;
+  color: var(--warning-fg, #b89500);
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
+}
 
-  /* --- 卡片分隔线 --- */
-  .border-gray-100 {
-    border-color: #334155;
-  }
-  .border-b-gray-100 {
-    border-bottom-color: #334155;
-  }
+/* ==================== 执行摘要 ==================== */
+.summary-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--text-secondary, #64748b);
+  margin-bottom: 6px;
+}
 
-  /* --- 执行摘要与用户信息文字颜色（暗色模式下使用深色文字，与亮色背景形成高对比） --- */
-  .text-gray-400 {
-    color: #334155;
-  }
-  .text-gray-600 {
-    color: #1e293b;
-  }
-  .text-gray-700 {
-    color: #0f172a;
-  }
-  .text-gray-500 {
-    color: #475569;
-  }
-  .text-gray-800 {
-    color: #111827;
-  }
+.summary-title {
+  font-weight: 500;
+}
 
-  /* --- 状态点颜色（暗色背景下加深） --- */
-  .bg-blue-500 {
-    background-color: #3b82f6;
-  }
-  .bg-gray-400 {
-    background-color: #9ca3af;
-  }
-  .bg-red-500 {
-    background-color: #ef4444;
-  }
-    background-color: #94a3b8;
-  }
+.summary-body {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+}
 
-  /* --- 推理区域 --- */
-  .bg-amber-50 {
-    background-color: rgba(180, 130, 30, 0.15);
-  }
-  .border-amber-200 {
-    border-color: rgba(180, 130, 30, 0.3);
-  }
-  .text-amber-800 {
-    color: #fbbf24;
-  }
-  .text-amber-600 {
-    color: #f59e0b;
-  }
-  .text-amber-500 {
-    color: #f59e0b;
-  }
+.summary-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
 
-  /* --- 回复区域背景（暗色模式下与明细模式 agent response 对齐：绿色调浅背景） --- */
-  .bg-white {
-    background-color: rgba(34, 197, 94, 0.1);
-  }
-  .border-l-4 {
-    border-left-width: 4px;
-  }
-  .border-gray-400 {
-    border-left-color: #9ca3af;
-  }
+.summary-label {
+  color: var(--text-primary, #333);
+  flex-shrink: 0;
+  min-width: 64px;
+  font-size: 12px;
+}
 
-  /* --- Todo 列表（与 ChatMessageItem 的 params-inner / params-todo-name 对齐） --- */
-  .params-inner {
-    background-color: #f1f5f9;
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-  .params-todo-name {
-    color: #1e293b;
-  }
+.summary-value {
+  color: var(--text-secondary, #64748b);
+  font-size: 12px;
+}
 
-</style>
+.stats-text {
+  word-break: break-word;
+}
 
-<style scoped>
-/* ========== 撤销按钮 ========== */
+.todo-section {
+  flex-direction: column;
+}
+
+.todo-header {
+  display: flex;
+  align-items: center;
+}
+
+.todo-item-inner {
+  margin-bottom: 4px;
+}
+
+.todo-item-inner:last-child {
+  margin-bottom: 0;
+}
+
+.todo-item-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.todo-icon {
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.todo-name {
+  font-size: 12px;
+  color: var(--text-secondary, #64748b);
+  font-weight: 500;
+}
+
+/* ==================== Todo 列表 ==================== */
+.todo-list {
+  padding: 6px 8px;
+  border: 1px solid rgba(201, 168, 76, 0.25);
+  border-radius: 4px;
+  background: rgba(201, 168, 76, 0.06);
+  margin-left: 20px;
+}
+
+/* ==================== 展开按钮 ==================== */
+.expand-btn {
+  display: inline-block;
+  margin-top: 4px;
+  background: transparent;
+  border: none;
+  color: var(--text-link, #006ab1);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.expand-btn:hover {
+  opacity: 1;
+  background: transparent;
+}
+
+/* ==================== 撤销按钮 ==================== */
 .undo-button {
   color: #f56c6c !important;
   font-size: 12px !important;
@@ -632,11 +617,13 @@ const handleUndo = async () => {
   border-color: rgba(245, 108, 108, 0.3) !important;
 }
 
-/* ========== Markdown 样式（与 ChatMessageItem 严格一致） ========== */
-
+/* ==================== Markdown 样式 ==================== */
 :deep(.markdown-content) {
   word-wrap: break-word;
   overflow-wrap: break-word;
+  color: var(--text-primary, #333);
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 :deep(.markdown-content h1),
@@ -649,244 +636,82 @@ const handleUndo = async () => {
   margin-bottom: 0.5em;
   font-weight: 600;
   line-height: 1.25;
+  color: #1e293b;
 }
 
-:deep(.markdown-content h1) {
-  font-size: 1.5em;
-  border-bottom: 1px solid #eaecef;
-  padding-bottom: 0.3em;
-}
-
-:deep(.markdown-content h2) {
-  font-size: 1.3em;
-  border-bottom: 1px solid #eaecef;
-  padding-bottom: 0.3em;
-}
-
-:deep(.markdown-content h3) {
-  font-size: 1.1em;
-}
-
-:deep(.markdown-content p) {
-  margin-bottom: 1em;
-  line-height: 1.6;
-}
-
+:deep(.markdown-content h1) { font-size: 1.5em; border-bottom: 1px solid var(--border-color, #eaecef); padding-bottom: 0.3em; }
+:deep(.markdown-content h2) { font-size: 1.3em; border-bottom: 1px solid var(--border-color, #eaecef); padding-bottom: 0.3em; }
+:deep(.markdown-content h3) { font-size: 1.1em; }
+:deep(.markdown-content p) { margin-bottom: 1em; line-height: 1.6; }
 :deep(.markdown-content ul),
-:deep(.markdown-content ol) {
-  padding-left: 2em;
-  margin-bottom: 1em;
-}
-
-:deep(.markdown-content li) {
-  margin-bottom: 0.25em;
-}
-
+:deep(.markdown-content ol) { padding-left: 2em; margin-bottom: 1em; }
+:deep(.markdown-content li) { margin-bottom: 0.25em; }
 :deep(.markdown-content blockquote) {
   margin: 1em 0;
-  padding: 0 1em;
-  color: #6a737d;
-  border-left: 0.25em solid #dfe2e5;
-  background-color: #f6f8fa;
   padding: 0.5em 1em;
+  color: var(--text-secondary, #6a737d);
+  border-left: 0.25em solid var(--border-color, #dfe2e5);
+  background: var(--bg-tertiary, #f6f8fa);
   border-radius: 0 4px 4px 0;
 }
-
 :deep(.markdown-content code) {
-  font-family:
-    ui-monospace,
-    SFMono-Regular,
-    SF Mono,
-    Menlo,
-    Consolas,
-    Liberation Mono,
-    monospace;
+  font-family: var(--code-font-family, ui-monospace, SFMono-Regular, monospace);
   font-size: 0.875em;
   background-color: rgba(175, 184, 193, 0.2);
   padding: 0.2em 0.4em;
   border-radius: 3px;
 }
-
 :deep(.markdown-content pre) {
-  background-color: #f6f8fa;
+  background: var(--bg-tertiary, #f6f8fa);
+  border: 1px solid var(--border-color, #e1e4e8);
   border-radius: 6px;
   padding: 1em;
   overflow: auto;
   margin: 1em 0;
 }
-
 :deep(.markdown-content pre code) {
   background-color: transparent;
   padding: 0;
   font-size: 0.8em;
   line-height: 1.45;
 }
-
 :deep(.markdown-content table) {
   border-collapse: collapse;
   width: 100%;
   margin: 1em 0;
 }
-
 :deep(.markdown-content table th),
 :deep(.markdown-content table td) {
-  border: 1px solid #dfe2e5;
+  border: 1px solid var(--border-color, #dfe2e5);
   padding: 0.6em 1em;
 }
-
 :deep(.markdown-content table th) {
   font-weight: 600;
-  background-color: #f6f8fa;
+  background: var(--bg-tertiary, #f6f8fa);
+  color: #1e293b;
+}
+:deep(.markdown-content a) { color: var(--text-link, #0366d6); text-decoration: none; }
+:deep(.markdown-content a:hover) { text-decoration: underline; }
+:deep(.markdown-content img) { max-width: 100%; height: auto; }
+:deep(.markdown-content hr) { height: 0.25em; padding: 0; margin: 1.5em 0; background-color: var(--border-color, #e1e4e8); border: 0; }
+:deep(.markdown-content strong) { font-weight: 600; }
+:deep(.markdown-content em) { font-style: italic; }
+
+/* ==================== 响应渐变遮罩 ==================== */
+.response-collapsed {
+  max-height: calc(1.5em * 25);
+  overflow: hidden;
+  position: relative;
 }
 
-:deep(.markdown-content tr:nth-child(2n)) {
-  background-color: #f6f8fa;
-}
-
-:deep(.markdown-content a) {
-  color: #0366d6;
-  text-decoration: none;
-}
-
-:deep(.markdown-content a:hover) {
-  text-decoration: underline;
-}
-
-:deep(.markdown-content img) {
-  max-width: 100%;
-  height: auto;
-}
-
-:deep(.markdown-content hr) {
-  height: 0.25em;
-  padding: 0;
-  margin: 1.5em 0;
-  background-color: #e1e4e8;
-  border: 0;
-}
-
-:deep(.markdown-content strong) {
-  font-weight: 600;
-}
-
-:deep(.markdown-content em) {
-  font-style: italic;
-}
-
-:deep(.markdown-content del) {
-  text-decoration: line-through;
-}
-
-/* ========== 暗色模式（与 ChatMessageItem 严格一致） ========== */
-@media (prefers-color-scheme: dark) {
-  /* --- Markdown（与 ChatMessageItem 完全一致） --- */
-  :deep(.markdown-content h1),
-  :deep(.markdown-content h2),
-  :deep(.markdown-content h3),
-  :deep(.markdown-content h4),
-  :deep(.markdown-content h5),
-  :deep(.markdown-content h6) {
-    color: #0f172a;
-    border-bottom-color: #cbd5e1;
-  }
-
-  :deep(.markdown-content blockquote) {
-    color: #334155;
-    border-left-color: #64748b;
-    background-color: #e2e8f0;
-  }
-
-  :deep(.markdown-content table th) {
-    background-color: #cbd5e1;
-    font-weight: 700;
-    color: #0f172a;
-  }
-
-  :deep(.markdown-content a) {
-    color: #1d4ed8;
-  }
-
-  /* --- 卡片分隔线 --- */
-  .border-gray-100 {
-    border-color: #334155;
-  }
-  .border-b-gray-100 {
-    border-bottom-color: #334155;
-  }
-
-  /* --- 执行摘要与用户信息文字颜色（暗色模式下使用深色文字，与亮色背景形成高对比） --- */
-  .text-gray-400 {
-    color: #334155;
-  }
-  .text-gray-600 {
-    color: #1e293b;
-  }
-  .text-gray-700 {
-    color: #0f172a;
-  }
-  .text-gray-500 {
-    color: #475569;
-  }
-  .text-gray-800 {
-    color: #111827;
-  }
-
-  /* --- 状态点颜色（暗色背景下加深） --- */
-  .bg-blue-500 {
-    background-color: #3b82f6;
-  }
-  .bg-gray-400 {
-    background-color: #9ca3af;
-  }
-  .bg-red-500 {
-    background-color: #ef4444;
-  }
-
-
-  /* --- 推理区域 --- */
-  .bg-amber-50 {
-    background-color: rgba(180, 130, 30, 0.15);
-  }
-  .border-amber-200 {
-    border-color: rgba(180, 130, 30, 0.3);
-  }
-  .text-amber-800 {
-    color: #fbbf24;
-  }
-  .text-amber-600 {
-    color: #f59e0b;
-  }
-  .text-amber-500 {
-    color: #f59e0b;
-  }
-
-  /* --- 回复区域背景（暗色模式下与明细模式 agent response 对齐：绿色调浅背景） --- */
-  .bg-white {
-    background-color: rgba(34, 197, 94, 0.1);
-  }
-  .border-l-4 {
-    border-left-width: 4px;
-  }
-  .border-gray-400 {
-    border-left-color: #9ca3af;
-  }
-
-  /* --- Todo 列表（与 ChatMessageItem 的 params-inner / params-todo-name 对齐） --- */
-  .params-inner {
-    background-color: #f1f5f9;
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-  .params-todo-name {
-    color: #1e293b;
-  }
-}
-
-@keyframes pulse-border {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.6; }
-}
-
-.animate-pulse-border {
-  animation: pulse-border 1.5s ease-in-out infinite;
+.response-collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 3em;
+  background: linear-gradient(transparent, var(--card-bg, #ffffff));
+  pointer-events: none;
 }
 </style>
