@@ -188,9 +188,9 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
       </div>
       <div class="header-right">
         <span :class="['header-stat', 'stat-status', statusColorClass]">{{ statusText }}</span>
-        <span class="header-sep"></span>
-        <span v-if="formattedCompletionTime" class="completion-time" :title="'完成于 ' + formattedCompletionTime">🕐{{ formattedCompletionTime }}</span>
-        <span class="duration">⏱️{{ formattedDuration }}</span>
+        <span class="header-sep">|</span>
+        <span v-if="formattedCompletionTime" class="completion-time" :title="'完成于 ' + formattedCompletionTime">🕐 {{ formattedCompletionTime }}</span>
+        <span class="duration">⏱️ {{ formattedDuration }}</span>
       </div>
     </div>
 
@@ -344,6 +344,11 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   gap: 6px;
 }
 
+.turn-label {
+  margin-left: 20px;
+  color: var(--vscode-editor-foreground, #333);
+}
+
 .header-right {
   display: flex;
   align-items: center;
@@ -373,19 +378,15 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 }
 
 .header-sep {
-  width: 1px;
-  height: 12px;
-  background: var(--vscode-widget-border, #e0e0e0);
-  flex-shrink: 0;
+  color: var(--vscode-descriptionForeground, #808080);
 }
 
 .completion-time {
-  color: var(--vscode-descriptionForeground, #808080);
+  color: var(--vscode-editor-foreground, #333);
 }
 
 .duration {
-  color: var(--vscode-descriptionForeground, #808080);
-  opacity: 0.7;
+  color: var(--vscode-editor-foreground, #333);
 }
 
 /* ==================== 区域分隔 + 左侧标识竖线 ==================== */

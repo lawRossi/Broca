@@ -330,14 +330,6 @@ onUnmounted(() => {
             </el-dropdown-menu>
           </template>
         </el-dropdown>
-        <el-button
-          size="small"
-          :icon="Refresh"
-          :loading="loading"
-          class="!p-1 !h-6 !w-6"
-          :disabled="!chatStore.sessionId"
-          @click="refreshAgents"
-        />
       </div>
     </div>
 

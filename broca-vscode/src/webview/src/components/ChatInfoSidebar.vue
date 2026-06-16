@@ -165,8 +165,8 @@ function formatUptime(seconds: number | undefined): string {
   if (!seconds || seconds <= 0) return '-'
   const h = Math.floor(seconds / 3600)
   const m = Math.floor((seconds % 3600) / 60)
-  if (h > 0) return `${h}h ${m}m`
-  return `${m}m`
+  if (h > 0) return h + '小时' + m + '分钟'
+  return m + '分钟'
 }
 
 function formatMemory(mb: number | undefined): string {
@@ -175,21 +175,16 @@ function formatMemory(mb: number | undefined): string {
   return `${Math.round(mb)}MB`
 }
 
-function handleRunnerAction() {
+function handleStopRunner() {
   if (chatStore.runnerActionLoading) return
   chatStore.runnerActionLoading = true
-  const status = runnerInfo.value?.status
-  if (status === 'alive') {
-    postMessage({
-      type: 'runnerAction',
-      payload: { action: 'stop', sessionId: chatStore.sessionId },
-    })
-  } else {
-    postMessage({
-      type: 'runnerAction',
-      payload: { action: 'restart', sessionId: chatStore.sessionId },
-    })
-  }
+  postMessage({ type: 'runnerAction', payload: { action: 'stop' } })
+}
+
+function handleRestartRunner() {
+  if (chatStore.runnerActionLoading) return
+  chatStore.runnerActionLoading = true
+  postMessage({ type: 'runnerAction', payload: { action: 'start' } })
 }
 
 function handleRefreshRunner() {
@@ -277,16 +272,18 @@ onUnmounted(() => {
       <div class="panel">
         <div class="panel-title">Session Info</div>
         <div class="panel-body">
-          <div class="info-row">
-            <span class="info-label">Session ID: </span>
+          <div class="session-id-section">
+            <span class="info-label">Session ID</span>
             <div class="session-id-group">
               <span class="session-id-text mono" :title="chatStore.sessionId">{{ chatStore.sessionId }}</span>
               <button class="copy-btn" :class="{ 'copied': copyFeedback }" @click="copySessionId" :title="copyFeedback ? '已复制' : '复制 Session ID'">{{ copyFeedback ? '✓' : '📋' }}</button>
             </div>
           </div>
-          <div class="info-row">
-            <span class="info-label">Workspace: </span>
-            <span class="info-value mono" :title="workspace">{{ workspace || '未设置' }}</span>
+          <div class="workspace-section">
+            <span class="info-label">Workspace</span>
+            <div class="session-id-group">
+              <span class="session-id-text mono" :title="workspace">{{ workspace || '未设置' }}</span>
+            </div>
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">
             <span>📋</span>
@@ -330,16 +327,37 @@ onUnmounted(() => {
             <span class="info-label">内存</span>
             <span class="info-value">{{ formatMemory(runnerInfo?.resource_usage?.memory_rss_mb) }}</span>
           </div>
-          <div v-if="runnerInfo" class="runner-actions">
-            <button
-              class="action-btn"
-              :class="[runnerInfo.status === 'alive' ? 'btn-danger' : 'btn-primary', { 'btn-loading': chatStore.runnerActionLoading }]"
-              :disabled="chatStore.runnerActionLoading || runnerInfo.status === 'starting'"
-              @click="handleRunnerAction"
-            >
-              <span v-if="chatStore.runnerActionLoading" class="btn-spinner"></span>
-              {{ chatStore.runnerActionLoading ? '处理中...' : getRunnerConfig(runnerInfo.status).btnLabel }}
-            </button>
+          <div class="runner-actions">
+            <div v-if="runnerInfo?.status === 'alive'">
+              <button
+                class="action-btn btn-danger"
+                :disabled="chatStore.runnerActionLoading"
+                @click="handleStopRunner"
+              >
+                <span v-if="chatStore.runnerActionLoading" class="btn-spinner"></span>
+                {{ chatStore.runnerActionLoading ? '处理中...' : '停止进程' }}
+              </button>
+            </div>
+            <div v-else-if="runnerInfo?.status === 'error'">
+              <button
+                class="action-btn btn-danger"
+                :disabled="chatStore.runnerActionLoading"
+                @click="handleRestartRunner"
+              >
+                <span v-if="chatStore.runnerActionLoading" class="btn-spinner"></span>
+                {{ chatStore.runnerActionLoading ? '处理中...' : '重启进程' }}
+              </button>
+            </div>
+            <div v-else-if="runnerInfo && runnerInfo.status !== 'starting'">
+              <button
+                class="action-btn btn-primary"
+                :disabled="chatStore.runnerActionLoading"
+                @click="handleRestartRunner"
+              >
+                <span v-if="chatStore.runnerActionLoading" class="btn-spinner"></span>
+                {{ chatStore.runnerActionLoading ? '处理中...' : '启动进程' }}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -348,31 +366,25 @@ onUnmounted(() => {
       <div class="panel">
         <div class="panel-title">
           <span>Message Statistics</span>
-          <button class="refresh-btn" @click="handleRefreshStats" title="刷新">🔄</button>
         </div>
         <div class="panel-body">
           <div class="stat-item">
-            <span class="stat-dot dot-blue"></span>
             <span class="stat-label">User Messages</span>
             <span class="stat-value">{{ userMessagesFromApi }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-dot dot-green"></span>
             <span class="stat-label">Assistant Responses</span>
             <span class="stat-value">{{ assistantMessagesFromApi }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-dot dot-gray"></span>
             <span class="stat-label">System Messages</span>
             <span class="stat-value">{{ systemMessagesFromApi }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-dot dot-purple"></span>
             <span class="stat-label">Tool Calls</span>
             <span class="stat-value">{{ toolCallsFromApi }}</span>
           </div>
           <div class="stat-item">
-            <span class="stat-dot dot-red"></span>
             <span class="stat-label">Tool Call Errors</span>
             <span class="stat-value" :class="{ 'error-value': toolCallErrorsFromApi > 0 }">{{ toolCallErrorsFromApi }}</span>
           </div>
@@ -625,11 +637,11 @@ onUnmounted(() => {
 }
 
 .action-btn {
-  width: 100%;
+  width: auto;
   border: none;
   border-radius: 4px;
-  padding: 6px 12px;
-  font-size: 12px;
+  padding: 4px 8px;
+  font-size: 11px;
   font-weight: 500;
   cursor: pointer;
   text-align: center;

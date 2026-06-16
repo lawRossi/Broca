@@ -239,13 +239,13 @@ const handleUndo = async () => {
       <div class="flex items-center gap-2">
         <span :class="['inline-block w-2.5 h-2.5 rounded-full', statusDotClass]"></span>
         <span class="font-semibold text-sm" :class="headerTextClass">{{ turn.agentName }}</span>
-        <span class="text-xs text-gray-400">第{{ turn.sequenceNumber }}轮</span>
+        <span class="text-xs text-gray-600" style="margin-left: 20px;">第{{ turn.sequenceNumber }}轮</span>
       </div>
       <div class="flex items-center gap-2 text-xs header-right">
         <span class="stat-status" :class="statusColorClass">{{ statusText }}</span>
-        <span class="header-sep"></span>
-        <span v-if="formattedCompletionTime" class="text-gray-500" :title="'完成于 ' + formattedCompletionTime">🕐 {{ formattedCompletionTime }}</span>
-        <span class="text-gray-500 opacity-70">⏱️ {{ formattedDuration }}</span>
+        <span class="text-gray-400 mx-1">|</span>
+        <span v-if="formattedCompletionTime" class="text-gray-600" :title="'完成于 ' + formattedCompletionTime">🕐 {{ formattedCompletionTime }}</span>
+        <span class="text-gray-600">⏱️ {{ formattedDuration }}</span>
       </div>
     </div>
 
@@ -404,12 +404,7 @@ const handleUndo = async () => {
   white-space: nowrap;
 }
 
-.header-sep {
-  width: 1px;
-  height: 12px;
-  background: var(--border-color, #e0e0e0);
-  flex-shrink: 0;
-}
+
 
 /* ==================== 区域分隔 + 左侧标识竖线 ==================== */
 .section-accent {

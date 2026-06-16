@@ -319,7 +319,6 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
             </label>
           </div>
         </div>
-        <button class="icon-btn" :disabled="loading" @click="refreshAgents">🔄</button>
         <button class="close-btn" @click="chatStore.toggleLeftSidebar()">✕</button>
       </div>
     </div>

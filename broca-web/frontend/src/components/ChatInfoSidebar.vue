@@ -245,7 +245,7 @@ const getRunnerConfig = (status: string | undefined) => {
 
 <template>
   <div
-    class="col-span-10 lg:col-span-2 flex-col gap-4 overflow-y-auto pr-1"
+    class="col-span-10 lg:col-span-2 flex-col gap-2 overflow-y-auto pr-1"
     :class="{
       flex: !chatStore.isMobile || chatStore.showRightSidebar,
       hidden: chatStore.isMobile && !chatStore.showRightSidebar,
@@ -261,25 +261,24 @@ const getRunnerConfig = (status: string | undefined) => {
     <div class="bg-white rounded-lg border p-3 sm:p-4 shadow-sm">
       <div class="text-sm font-semibold text-gray-900 mb-3">Session Info</div>
       <div class="space-y-3 text-sm">
-        <div class="flex justify-between">
-          <span class="text-gray-700">Session ID:</span>
-          <span class="font-mono text-xs truncate max-w-[150px] text-gray-800" :title="chatStore.sessionId">
+        <div>
+          <div class="text-gray-700 mb-1">Session ID:</div>
+          <div class="font-mono text-xs truncate text-gray-800 break-all" :title="chatStore.sessionId">
             {{ chatStore.sessionId || '未设置' }}
-          </span>
+          </div>
         </div>
-        <div class="flex justify-between">
-          <span class="text-gray-700">Workspace:</span>
-          <span class="font-mono text-xs truncate max-w-[150px] text-gray-800" :title="workspace">
+        <div>
+          <div class="text-gray-700 mb-1">Workspace:</div>
+          <div class="font-mono text-xs truncate text-gray-800 break-all" :title="workspace">
             {{ workspace || '未设置' }}
-          </span>
+          </div>
         </div>
         <div
-          class="flex justify-between items-center cursor-pointer hover:bg-gray-50 p-1 rounded"
+          class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
           @click="router.push({ name: 'Jobs', query: { session_id: chatStore.sessionId } })"
           title="Click to view jobs for this session"
         >
-          <span class="text-gray-700 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-orange-500" />
+          <span class="text-gray-700">
             Jobs:
           </span>
           <div class="flex items-center gap-2">
@@ -290,12 +289,11 @@ const getRunnerConfig = (status: string | undefined) => {
           </div>
         </div>
         <div
-          class="flex justify-between items-center cursor-pointer hover:bg-gray-50 p-1 rounded"
+          class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
           @click="router.push({ name: 'Tasks', query: { session_id: chatStore.sessionId } })"
           title="Click to view tasks for this session"
         >
-          <span class="text-gray-700 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-indigo-500" />
+          <span class="text-gray-700">
             Tasks:
           </span>
           <div class="flex items-center gap-2">
@@ -369,37 +367,28 @@ const getRunnerConfig = (status: string | undefined) => {
     <div class="bg-white rounded-lg border p-3 sm:p-4 shadow-sm">
       <div class="flex items-center justify-between mb-3">
         <div class="text-sm font-semibold text-gray-900">Message Statistics</div>
-        <el-tooltip content="Auto-refresh every 30s" placement="top">
-          <el-button size="small" circle :loading="statsLoading" @click="fetchStats">
-            <el-icon><Refresh /></el-icon>
-          </el-button>
-        </el-tooltip>
       </div>
       <div class="space-y-2">
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-700 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-blue-500" />
             User Messages
           </span>
           <span class="font-mono text-sm text-gray-800">{{ userMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-700 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-green-500" />
             Assistant Responses
           </span>
           <span class="font-mono text-sm text-gray-800">{{ assistantMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-700 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-gray-500" />
             System Messages
           </span>
           <span class="font-mono text-sm text-gray-800">{{ systemMessagesFromApi }}</span>
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-700 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-red-500" />
             Tool Call Errors
           </span>
           <span
@@ -411,7 +400,6 @@ const getRunnerConfig = (status: string | undefined) => {
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-700 flex items-center gap-2">
-            <span class="w-2 h-2 rounded-full bg-purple-500" />
             Tool Calls
           </span>
           <span class="font-mono text-sm text-gray-800">{{ toolCallsFromApi }}</span>
