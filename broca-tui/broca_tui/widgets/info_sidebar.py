@@ -241,10 +241,18 @@ class InfoSidebar(Widget):
         pass
 
     def _update_stats_from_api(self, stats_data: dict):
-        """从 API 响应更新消息统计 — 对齐 Web 标签名。
+        """从 API 响应更新消息统计 — 对齐 Web 版兼容两种 key 格式。
 
         API 返回格式（GET /session/{id}/stats）：
-        {total, user_count, agent_count, tool_count, system_count, error_count}
+        {
+            "total_messages": int,
+            "messages_by_type": {"MessageType.XXX": int} or {"XXX": int},
+            "tool_call_errors": int
+        }
+
+        兼容两种 key 格式（Web 版 ChatInfoSidebar 相同做法）：
+        - "MessageType.AGENT_RESPONSE" (SQLAlchemy str(enum) 输出)
+        - "AGENT_RESPONSE" (数据库原始值)
 
         Args:
             stats_data: API 返回的统计数据
@@ -252,11 +260,30 @@ class InfoSidebar(Widget):
         if not stats_data:
             return
 
-        user_count = stats_data.get("user_count", 0)
-        agent_count = stats_data.get("agent_count", 0)
-        tool_count = stats_data.get("tool_count", 0)
-        system_count = stats_data.get("system_count", 0)
-        error_count = stats_data.get("error_count", 0)
+        mt = stats_data.get("messages_by_type", {}) or {}
+        error_count = stats_data.get("tool_call_errors", 0)
+
+        # 兼容两种 key 格式：MessageType.XYZ 或 XYZ
+        def _get(key: str) -> int:
+            return mt.get(f"MessageType.{key}", 0) or mt.get(key, 0) or 0
+
+        user_count = _get("USER_MESSAGE")
+        agent_count = _get("AGENT_RESPONSE")
+        tool_count = _get("TOOL_CALL")
+        # 系统消息：包含 SYSTEM_MESSAGE + AGENT_SYSTEM_MESSAGE + COMMAND + 其他系统类（对齐 Web）
+        system_count = (
+            _get("SYSTEM_MESSAGE")
+            + _get("AGENT_SYSTEM_MESSAGE")
+            + _get("COMMAND")
+            + _get("COMMAND_RESULT")
+            + _get("PERMISSION_REQUEST")
+            + _get("PERMISSION_RESPONSE")
+            + _get("SUBSCRIBE")
+            + _get("UNSUBSCRIBE")
+            + _get("BROADCAST")
+            + _get("TURN_START")
+            + _get("TURN_END")
+        )
 
         self.query_one("#stat-user", Label).update(str(user_count))
         self.query_one("#stat-agent", Label).update(str(agent_count))
@@ -268,11 +295,11 @@ class InfoSidebar(Widget):
         err_label.styles.color = "$error" if error_count > 0 else ""
 
     def _start_polling(self):
-        """Start periodic runner status polling (20s interval, aligning with AgentSidebar)."""
+        """Start periodic runner status polling (10s interval)."""
         if self._polling:
             return
         self._polling = True
-        self._poll_timer = self.set_interval(20, self._poll_runner_status)
+        self._poll_timer = self.set_interval(10, self._poll_runner_status)
 
     def _stop_polling(self):
         """Stop runner status polling."""
@@ -303,11 +330,15 @@ class InfoSidebar(Widget):
         return f"{m}分钟"
 
     async def _poll_runner_status(self):
-        """Poll runner status from API — extended to include Session Info + Message Stats + Job/Task counts."""
+        """Poll runner status from API — extended to include Session Info + Message Stats + Job/Task counts.
+
+        All sections are independent: a failure in one does not block the others.
+        """
         if not self._session_id:
             return
+
+        # 1. Runner status (独立 try/except，不影响其他统计)
         try:
-            # 1. Runner status
             info = await self._api.get_runner_status(self._session_id)
             status = info.get("status", "unknown")
             self.runner_status = status
@@ -320,38 +351,37 @@ class InfoSidebar(Widget):
                 cpu=resource.get("cpu_percent"),
                 memory_mb=resource.get("memory_rss_mb"),
             )
-
-            # 2. Session Info refresh (workspace may change)
-            try:
-                session_info = await self._api.get_session(self._session_id)
-                workspace = session_info.get("workspace", "") or ""
-                self.query_one("#info-workspace", Label).update(
-                    workspace or "未设置"
-                )
-            except Exception:
-                pass
-
-            # 3. Message Statistics refresh (via API, not local messages)
-            try:
-                stats_data = await self._api.get_session_stats(self._session_id)
-                self._update_stats_from_api(stats_data)
-            except Exception:
-                pass
-
-            # 4. Job & Task counts
-            try:
-                job_count = await self._api.get_job_count(self._session_id)
-                self.query_one("#info-jobs", Label).update(str(job_count))
-            except Exception:
-                pass
-            try:
-                task_count = await self._api.get_task_count(self._session_id)
-                self.query_one("#info-tasks", Label).update(str(task_count))
-            except Exception:
-                pass
-
         except Exception:
             self.runner_status = "unknown"
+
+        # 2. Session Info refresh (workspace may change)
+        try:
+            session_info = await self._api.get_session(self._session_id)
+            workspace = session_info.get("workspace", "") or ""
+            self.query_one("#info-workspace", Label).update(
+                workspace or "未设置"
+            )
+        except Exception:
+            pass
+
+        # 3. Message Statistics refresh (via API, not local messages)
+        try:
+            stats_data = await self._api.get_session_stats(self._session_id)
+            self._update_stats_from_api(stats_data)
+        except Exception:
+            pass
+
+        # 4. Job & Task counts
+        try:
+            job_count = await self._api.get_job_count(self._session_id)
+            self.query_one("#info-jobs", Label).update(str(job_count))
+        except Exception:
+            pass
+        try:
+            task_count = await self._api.get_task_count(self._session_id)
+            self.query_one("#info-tasks", Label).update(str(task_count))
+        except Exception:
+            pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses — 对齐 Web 多按钮模式。

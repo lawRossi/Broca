@@ -389,6 +389,12 @@ const getRunnerConfig = (status: string | undefined) => {
         </div>
         <div class="flex justify-between items-center">
           <span class="text-sm text-gray-700 flex items-center gap-2">
+            Tool Calls
+          </span>
+          <span class="font-mono text-sm text-gray-800">{{ toolCallsFromApi }}</span>
+        </div>
+        <div class="flex justify-between items-center">
+          <span class="text-sm text-gray-700 flex items-center gap-2">
             Tool Call Errors
           </span>
           <span
@@ -397,12 +403,6 @@ const getRunnerConfig = (status: string | undefined) => {
           >
             {{ toolCallErrorsFromApi }}
           </span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-gray-700 flex items-center gap-2">
-            Tool Calls
-          </span>
-          <span class="font-mono text-sm text-gray-800">{{ toolCallsFromApi }}</span>
         </div>
       </div>
     </div>

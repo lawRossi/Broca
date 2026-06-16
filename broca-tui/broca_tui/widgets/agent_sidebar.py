@@ -326,6 +326,7 @@ class AgentCard(Widget):
         name = agent.get("name", "Unknown")
         status = agent.get("agent_status", "idle")
         description = agent.get("description", "")
+        agent_id = agent.get("agent_id", "")
 
         with Vertical(classes="agent-card"):
             # Header: name + status (no icon, no role — matching Web alignment)
@@ -344,17 +345,17 @@ class AgentCard(Widget):
             with Horizontal(classes="agent-stats"):
                 with Vertical(classes="stat-block"):
                     yield Static("调用次数", classes="stat-label")
-                    yield Static(str(agent.get("total_llm_calls", 0)), classes="stat-value")
+                    yield Static(str(agent.get("total_llm_calls", 0)), classes="stat-value", id=f"stat-calls-{agent_id}")
                 with Vertical(classes="stat-block"):
                     yield Static("上下文", classes="stat-label")
-                    yield Static(str(ctx_display), classes="stat-value")
+                    yield Static(str(ctx_display), classes="stat-value", id=f"stat-ctx-{agent_id}")
             with Horizontal(classes="agent-stats"):
                 with Vertical(classes="stat-block"):
                     yield Static("输入", classes="stat-label")
-                    yield Static(str(agent.get("total_input_tokens", 0)), classes="stat-value")
+                    yield Static(str(agent.get("total_input_tokens", 0)), classes="stat-value", id=f"stat-input-{agent_id}")
                 with Vertical(classes="stat-block"):
                     yield Static("输出", classes="stat-label")
-                    yield Static(str(agent.get("total_output_tokens", 0)), classes="stat-value")
+                    yield Static(str(agent.get("total_output_tokens", 0)), classes="stat-value", id=f"stat-output-{agent_id}")
 
             # Abort button (始终创建，通过 CSS 显隐)
             yield Button("⏹ 停止", id=f"abort-{agent.get('agent_id')}", classes="abort-button")
@@ -375,7 +376,7 @@ class AgentCard(Widget):
             self.post_message(self.Clicked(agent_id=agent_id))
 
     def _update_status_display(self):
-        """Update status dot color and label text in-place (no DOM rebuild).
+        """Update status dot color, label text, and statistics in-place (no DOM rebuild).
 
         Also mounts/removes the abort button based on current status.
         """
@@ -394,6 +395,25 @@ class AgentCard(Widget):
         try:
             btn = self.query_one(f"#{abort_id}", Button)
             btn.set_class(status == "running", "visible")
+        except Exception:
+            pass
+
+        # ── 同步更新统计数字（轮询时 agent 数据已更新，但 Static 不会自动刷新）──
+        # 使用 compose 中定义的 id 精确定位每个 stat-value
+        stat_ids = {
+            "total_llm_calls":     f"stat-calls-{agent_id}",
+            "last_context_length": f"stat-ctx-{agent_id}",
+            "total_input_tokens":  f"stat-input-{agent_id}",
+            "total_output_tokens": f"stat-output-{agent_id}",
+        }
+        try:
+            for key, widget_id in stat_ids.items():
+                widget = self.query_one(f"#{widget_id}", Static)
+                if key == "last_context_length":
+                    ctx_val = self._agent.get("last_context_length")
+                    widget.update(str(ctx_val if ctx_val is not None else 0))
+                else:
+                    widget.update(str(self._agent.get(key, 0)))
         except Exception:
             pass
 
@@ -462,11 +482,11 @@ class AgentSidebar(Widget):
         self._start_polling()
 
     def _start_polling(self):
-        """Start periodic agent list refresh (20s interval, aligning with InfoSidebar)."""
+        """Start periodic agent list refresh (10s interval)."""
         if self._polling or not self._session_id:
             return
         self._polling = True
-        self._poll_timer = self.set_interval(20, self._poll_agents)
+        self._poll_timer = self.set_interval(10, self._poll_agents)
 
     def _stop_polling(self):
         """Stop agent polling."""
