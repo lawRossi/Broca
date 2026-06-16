@@ -657,6 +657,17 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
+    // 通用去重：按 message_id 检查是否已存在
+    const existing = messages.value.findIndex(m => m.message_id === message.message_id)
+    if (existing !== -1) {
+      messages.value[existing] = {
+        ...messages.value[existing],
+        data: { ...messages.value[existing].data, ...message.data },
+        timestamp: message.timestamp,
+      }
+      return
+    }
+
     messages.value.push(message)
     getMessageState(message.message_id)
   }

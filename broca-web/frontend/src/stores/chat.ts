@@ -768,6 +768,18 @@ export const useChatStore = defineStore('chat', () => {
       }
       return message
     } else {
+      // 通用去重：按 message_id 检查是否已存在
+      const existingIndex = messages.value.findIndex(
+        (m) => m.message_id === message.message_id
+      )
+      if (existingIndex !== -1) {
+        const existing = messages.value[existingIndex]
+        if (existing) {
+          existing.data = { ...existing.data, ...message.data }
+          if (message.timestamp) existing.timestamp = message.timestamp
+          return existing
+        }
+      }
       messages.value.push(message)
       // 初始化消息状态
       if (!messageStates.value.has(message.message_id)) {
@@ -995,7 +1007,8 @@ export const useChatStore = defineStore('chat', () => {
       startDurationTimer()
     } else if (newMode === 'detail') {
       stopDurationTimer()
-      if (messages.value.length === 0) {
+      // 只在没有任何消息时加载历史，避免与 socket 实时消息重复
+      if (messages.value.length === 0 && !loading.value) {
         await loadHistory(sessionId.value, false, executionId.value)
       }
     }
