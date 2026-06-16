@@ -4,21 +4,16 @@ import { useChatStore, useAgentStore } from '@/stores'
 import type { Agent } from '@/stores/agent'
 import { ElIcon, ElTooltip, ElTag, ElButton, ElDialog, ElSelect, ElOption, ElMessage, ElInput, ElCheckbox, ElDropdown, ElDropdownMenu, ElDropdownItem } from 'element-plus'
 import {
-  User,
-  Document,
-  Search,
-  List,
-  PieChart,
+  UserFilled,
   QuestionFilled,
-  Loading,
-  Refresh,
-  Setting,
-  InfoFilled,
+  Tools,
+  Document,
+  Upload,
+  Download,
+  Connection,
   ChatDotRound,
-  TrendCharts,
-  DataAnalysis,
+  Setting,
 } from '@element-plus/icons-vue'
-import { StarFilled } from '@element-plus/icons-vue'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -71,11 +66,8 @@ const statusColors: Record<string, string> = {
 }
 
 const typeIcons: Record<string, any> = {
-  assistant: User,
-  code_assistant: Document,
-  research_assistant: Search,
-  task_manager: List,
-  data_analyst: PieChart,
+  assistant: UserFilled,
+  code_assistant: Document
 }
 
 const typeColors: Record<string, string> = {
@@ -298,7 +290,7 @@ onUnmounted(() => {
 
 <template>
   <div
-    class="col-span-12 lg:col-span-3 flex-col gap-4 overflow-y-auto pr-1"
+    class="col-span-10 lg:col-span-2 flex-col gap-4 overflow-y-auto pr-1"
     :class="{
       flex: !chatStore.isMobile || chatStore.showLeftSidebar,
       hidden: chatStore.isMobile && !chatStore.showLeftSidebar,
@@ -310,17 +302,6 @@ onUnmounted(() => {
     <div class="flex items-center justify-between mb-2">
       <div class="flex items-center gap-2">
         <h3 class="text-sm font-semibold text-gray-900">Session Agents</h3>
-        <el-tooltip content="点击Agent查看详情，使用 @agent名称 发送消息给指定agent" placement="top">
-          <el-icon :size="14" class="text-gray-400 cursor-help">
-            <InfoFilled />
-          </el-icon>
-        </el-tooltip>
-        <el-tooltip v-if="autoRefreshInterval" content="自动刷新已开启 (10秒)" placement="top">
-          <div class="flex items-center gap-1">
-            <div class="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span class="text-[10px] text-gray-500">自动</span>
-          </div>
-        </el-tooltip>
       </div>
       <div class="flex items-center gap-1">
         <!-- Agent 消息过滤下拉 -->
@@ -368,26 +349,12 @@ onUnmounted(() => {
         class="bg-white rounded-lg border p-3 shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
         :class="{
           'ring-2 ring-blue-500': agentStore.currentAgentId === agent.agent_id,
-          'ring-2 ring-yellow-500': agent.role === 'main_agent' || agent.role === 'main-agent',
         }"
         @click="handleAgentClick(agent)"
       >
         <!-- Agent 头部：名称、类型、状态 -->
         <div class="flex items-start justify-between mb-3">
           <div class="flex items-center gap-2 min-w-0 flex-1">
-            <div class="relative">
-              <el-icon :size="20" :color="getTypeColor(agent.type || 'assistant')">
-                <component :is="getTypeIcon(agent.type || 'assistant')" />
-              </el-icon>
-              <el-icon
-                v-if="agent.role === 'main_agent' || agent.role === 'main-agent'"
-                :size="10"
-                class="absolute -top-1 -right-1 text-yellow-500"
-                title="Main Agent (默认)"
-              >
-                <StarFilled />
-              </el-icon>
-            </div>
             <div class="min-w-0 flex-1">
               <div class="text-sm font-semibold text-gray-900 truncate">
                 {{ agent.name }}
@@ -420,13 +387,13 @@ onUnmounted(() => {
         </div>
 
         <!-- 描述 -->
-        <p class="text-xs text-gray-600 mb-3 line-clamp-2 leading-relaxed">
-          {{ agent.description || '暂无描述' }}
+        <p v-if="agent.description" class="text-xs text-gray-600 mb-3 line-clamp-2 leading-relaxed">
+          {{ agent.description }}
         </p>
 
         <!-- LLM 统计信息 -->
         <div class="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-2.5 border border-gray-100">
-          <div class="grid grid-cols-2 gap-2 text-xs">
+          <div class="grid grid-cols-2 gap-2 text-xs stats-grid">
             <!-- 调用次数 -->
             <div class="flex items-center gap-1.5">
               <div class="p-1 bg-blue-100 rounded">
@@ -457,7 +424,7 @@ onUnmounted(() => {
             <div class="flex items-center gap-1.5">
               <div class="p-1 bg-green-100 rounded">
                 <el-icon :size="12" class="text-green-600">
-                  <TrendCharts />
+                  <Download />
                 </el-icon>
               </div>
               <div class="flex flex-col">
@@ -470,7 +437,7 @@ onUnmounted(() => {
             <div class="flex items-center gap-1.5">
               <div class="p-1 bg-orange-100 rounded">
                 <el-icon :size="12" class="text-orange-600">
-                  <DataAnalysis />
+                  <Upload />
                 </el-icon>
               </div>
               <div class="flex flex-col">
@@ -634,7 +601,11 @@ onUnmounted(() => {
 }
 
 .overflow-y-auto::-webkit-scrollbar {
-  width: 6px;
+  width: 4px;
+}
+
+.stats-grid {
+  grid-template-columns: 1fr 1fr !important;
 }
 
 .overflow-y-auto::-webkit-scrollbar-track {

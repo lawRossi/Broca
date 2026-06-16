@@ -12,7 +12,7 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
       <div class="dialog-container">
         <div class="dialog-header">
           <span class="dialog-icon">{{ isToolPermission ? '🔧' : '🔒' }}</span>
-          <span class="dialog-title">{{ isToolPermission ? 'Tool Permission' : 'Permission Required' }}</span>
+          <span class="dialog-title">{{ isToolPermission ? '工具权限请求' : '权限请求' }}</span>
         </div>
         <div class="dialog-body">
           <p>{{ chatStore.permissionDialog.message }}</p>
@@ -22,20 +22,20 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
           <template v-if="isToolPermission">
             <div class="perm-grid">
               <button class="perm-btn" @click="chatStore.respondPermission(false, 'forbid')">
-                <span class="perm-btn-label">🔒 Always Deny</span>
-                <span class="perm-btn-desc">for this session</span>
+                <span class="perm-btn-label">🔒 当前Session都不允许</span>
+                <span class="perm-btn-desc">后续不再询问</span>
               </button>
               <button class="perm-btn" @click="chatStore.respondPermission(false)">
-                <span class="perm-btn-label">❌ Deny Once</span>
-                <span class="perm-btn-desc">this time only</span>
+                <span class="perm-btn-label">❌ 单次不允许</span>
+                <span class="perm-btn-desc">仅本次拒绝</span>
               </button>
               <button class="perm-btn" @click="chatStore.respondPermission(true)">
-                <span class="perm-btn-label">✅ Allow Once</span>
-                <span class="perm-btn-desc">this time only</span>
+                <span class="perm-btn-label">✅ 单次允许</span>
+                <span class="perm-btn-desc">仅本次执行</span>
               </button>
               <button class="perm-btn" @click="chatStore.respondPermission(true, 'allow')">
-                <span class="perm-btn-label">🔓 Always Allow</span>
-                <span class="perm-btn-desc">for this session</span>
+                <span class="perm-btn-label">🔓 当前Session都允许</span>
+                <span class="perm-btn-desc">后续不再询问</span>
               </button>
             </div>
           </template>

@@ -94,7 +94,7 @@ const getHeaderColor = (message: Message) => {
   } else if (message.message_type === 'error' || message.message_type === 'agent_error') {
     return 'text-red-600'
   } else if (message.message_type === 'tool_call') {
-    return 'text-amber-600'
+    return 'text-amber-700'
   }
   return 'text-gray-500'
 }
@@ -573,7 +573,7 @@ const handleUndoToHere = async () => {
         <el-button
           size="small"
           type="default"
-          class="!text-amber-600 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
+          class="!text-amber-700 !p-0 !h-auto !min-h-0 !border-0 !bg-transparent !shadow-none hover:!bg-transparent"
           @click="chatStore.toggleReasoning(message.message_id)"
         >
           <span class="flex items-center gap-1">
@@ -807,16 +807,19 @@ const handleUndoToHere = async () => {
 .msg-user {
   border-left: 4px solid var(--text-secondary, #8e8e8e);
   margin-left: 8px;
+  color: var(--text-primary, #334155);
 }
 
 .msg-agent {
   border-left: 4px solid #5a8fc9;
   margin-right: 8px;
+  color: var(--text-primary, #334155);
 }
 
 .msg-tool {
   border-left: 4px solid #c9a84c;
   font-size: 12px;
+  color: var(--text-primary, #334155);
 }
 
 .msg-system {
@@ -885,7 +888,7 @@ const handleUndoToHere = async () => {
 /* ==================== 工具标签按钮 ==================== */
 .tool-label-btn {
   font-size: 12px !important;
-  color: var(--warning-fg, #c9a84c) !important;
+  color: #b45309 !important;
   padding: 0 !important;
   height: auto !important;
   min-height: 0 !important;
@@ -896,7 +899,7 @@ const handleUndoToHere = async () => {
 }
 
 .tool-label-btn:hover {
-  color: var(--warning-fg, #d97706) !important;
+  color: #92400e !important;
   background: transparent !important;
 }
 

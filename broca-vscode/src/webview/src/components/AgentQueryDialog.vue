@@ -15,6 +15,10 @@ function handleSubmit() {
     chatStore.respondAgentQuery(answer.value.trim())
   }
 }
+
+function handleClose() {
+  chatStore.respondAgentQuery('')
+}
 </script>
 
 <template>
@@ -24,6 +28,7 @@ function handleSubmit() {
         <div class="dialog-header">
           <span class="dialog-icon">❓</span>
           <span class="dialog-title">Agent Question</span>
+          <button class="close-btn" @click="handleClose">✕</button>
         </div>
         <div class="dialog-body">
           <p class="question">{{ chatStore.agentQueryDialog.question }}</p>
@@ -41,15 +46,17 @@ function handleSubmit() {
             </button>
           </div>
 
-          <!-- Free text input (if no options) -->
-          <div v-else class="text-input-area">
+          <!-- Free text input (always visible) -->
+          <div class="text-input-area" :class="{ 'with-options': chatStore.agentQueryDialog.options.length > 0 }">
+            <label v-if="chatStore.agentQueryDialog.options.length > 0" class="input-label">Or enter your own answer:</label>
+            <label v-else class="input-label">Enter your answer:</label>
             <textarea
               v-model="answer"
               class="answer-input"
               placeholder="Type your answer..."
               rows="3"
             ></textarea>
-            <button class="btn btn-primary" @click="handleSubmit">Submit</button>
+            <button class="btn btn-primary" @click="handleSubmit" :disabled="!answer.trim()">Submit</button>
           </div>
         </div>
       </div>
@@ -94,6 +101,23 @@ function handleSubmit() {
   font-weight: 600;
   font-size: 14px;
   color: var(--text-primary);
+  flex: 1;
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.close-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
 }
 
 .dialog-body {
@@ -111,6 +135,7 @@ function handleSubmit() {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  margin-bottom: 16px;
 }
 
 .option-button {
@@ -149,6 +174,16 @@ function handleSubmit() {
   gap: 8px;
 }
 
+.text-input-area.with-options {
+  border-top: 1px solid var(--border-color);
+  padding-top: 12px;
+}
+
+.input-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
 .answer-input {
   background: var(--input-bg);
   color: var(--input-text);
@@ -176,12 +211,17 @@ function handleSubmit() {
   align-self: flex-end;
 }
 
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .btn-primary {
   background: var(--button-bg);
   color: var(--button-text);
 }
 
-.btn-primary:hover {
+.btn-primary:hover:not(:disabled) {
   background: var(--button-hover-bg);
 }
 </style>

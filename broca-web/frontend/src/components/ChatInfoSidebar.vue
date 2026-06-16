@@ -245,7 +245,7 @@ const getRunnerConfig = (status: string | undefined) => {
 
 <template>
   <div
-    class="col-span-12 lg:col-span-3 flex-col gap-4 overflow-y-auto pr-1"
+    class="col-span-10 lg:col-span-2 flex-col gap-4 overflow-y-auto pr-1"
     :class="{
       flex: !chatStore.isMobile || chatStore.showRightSidebar,
       hidden: chatStore.isMobile && !chatStore.showRightSidebar,

@@ -298,10 +298,6 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
     <div class="sidebar-header">
       <div class="header-title">
         <span>🤖 Agents</span>
-        <span v-if="autoRefreshInterval" class="auto-badge">
-          <span class="auto-dot"></span>
-          自动
-        </span>
       </div>
       <div class="header-actions">
         <!-- Agent 消息过滤 -->
@@ -343,7 +339,6 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
         <!-- Agent 头部 -->
         <div class="card-header">
           <div class="agent-info">
-            <span class="type-icon" :style="{ color: getTypeColor(agent.type) }">{{ getTypeIcon(agent.type) }}</span>
             <div class="agent-name-group">
               <span class="agent-name">{{ agent.name }}</span>
               <span class="agent-role">{{ agent.role || '未指定' }}</span>
@@ -392,14 +387,14 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
             </div>
           </div>
           <div class="stat-item">
-            <span class="stat-icon" style="background:rgba(34,197,94,0.12)">📈</span>
+            <span class="stat-icon" style="background:rgba(34,197,94,0.12)">⬇️</span>
             <div class="stat-text">
               <span class="stat-label">输入 Token</span>
               <span class="stat-value" style="color:var(--success-fg)">{{ (agent.total_input_tokens || 0).toLocaleString() }}</span>
             </div>
           </div>
           <div class="stat-item">
-            <span class="stat-icon" style="background:rgba(234,179,8,0.12)">📊</span>
+            <span class="stat-icon" style="background:rgba(234,179,8,0.12)">⬆️</span>
             <div class="stat-text">
               <span class="stat-label">输出 Token</span>
               <span class="stat-value" style="color:var(--warning-fg)">{{ (agent.total_output_tokens || 0).toLocaleString() }}</span>
@@ -696,7 +691,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
 /* ==================== 统计信息 ==================== */
 .stats-section {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: 1fr 1fr !important;
   gap: 4px;
   margin-top: 8px;
   padding-top: 8px;

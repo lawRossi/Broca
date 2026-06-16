@@ -84,13 +84,13 @@ onUnmounted(() => {
     <ChatHeader @search="handleSearch" />
 
     <div class="flex-1 mx-auto max-w-7xl w-full px-2 sm:px-2 py-2 sm:py-2 overflow-hidden">
-      <div class="grid grid-cols-12 gap-2 sm:gap-4 h-full relative">
+      <div class="grid grid-cols-10 gap-2 sm:gap-4 h-full relative">
         <AgentSidebar />
 
         <div
           class="flex flex-col gap-1 sm:gap-2 h-full overflow-hidden"
           :class="{
-            'col-span-12 lg:col-span-6': true,
+            'col-span-10 lg:col-span-6': true,
           }"
         >
           <ChatMessageList />
