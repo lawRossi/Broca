@@ -215,38 +215,13 @@ class MessageList(Vertical):
         existing_cards = list(area.children)
         turn_count = len(self._turn_summaries)
 
-        # 尝试增量更新：turn 数量一致且 turn_id 匹配时，只更新内容不重建 DOM
-        # 但如果有条件渲染变化（final_response/reasoning/current_tool 从有到无或从无到有），
-        # 必须重建，因为对应的子 widget 不存在或需要移除，update_turn 无法增减它们
-        def _conditions_changed(old_turn, new_turn) -> bool:
-            # 只检测需要 DOM 结构变化的场景（增删条件渲染区域），
-            # 纯内容更新（如 final_response streaming 追加）走 update_turn 原地更新免闪烁。
-            return (
-                # final_response: 从无到有 → 创建响应区域；已有内容时只更新文本，无需重建
-                (not old_turn.final_response and new_turn.final_response)
-                # reasoning_content: 从无到有（创建推理区域），或从有到无（被 content 清空）
-                or (not old_turn.reasoning_content and new_turn.reasoning_content)
-                or (old_turn.reasoning_content and not new_turn.reasoning_content)
-                # current_tool: 从无到有（创建当前调用区域），或从有到无（恢复推理/响应显示）
-                or (not old_turn.current_tool and new_turn.current_tool)
-                or (old_turn.current_tool and not new_turn.current_tool)
-                # tool_call_stats: 从无到有（创建工具统计区域）
-                or (not old_turn.tool_call_stats and new_turn.tool_call_stats)
-                # user_message: 从无到有（创建用户消息区域）
-                or (not old_turn.user_message and new_turn.user_message)
-                # current_todo_list: 从无到有（创建 TODO 列表区域）
-                or (not old_turn.current_todo_list and new_turn.current_todo_list)
-                or (old_turn.current_todo_list and not new_turn.current_todo_list)
-                # status: 切换影响条件渲染（如撤销按钮和当前调用区域显隐）
-                or (old_turn.status != new_turn.status)
-            )
-
+        # TurnCard 所有区域已在 compose() 中预创建，update_turn() 通过 display 控制显隐，
+        # 因此无需为内容过渡而重建 DOM。只要 turn_id 匹配，一律原地更新。
         can_update_in_place = (
             len(existing_cards) == turn_count
             and all(
                 isinstance(existing_cards[i], TurnCard)
                 and existing_cards[i]._turn.turn_id == self._turn_summaries[i].turn_id
-                and not _conditions_changed(existing_cards[i]._turn, self._turn_summaries[i])
                 for i in range(turn_count)
             )
         )
@@ -284,7 +259,7 @@ class MessageList(Vertical):
                 for card in existing[turn_count:]:
                     card.remove()
 
-            # Step 2: 逐个卡片检查，仅替换条件变化的（使用最新 DOM 快照）
+            # Step 2: 逐个卡片检查，turn_id 匹配则原地更新，否则替换 DOM（如新 turn）
             existing = list(area.children)
             prev_agent_id = None
             for i, turn in enumerate(self._turn_summaries):
@@ -292,13 +267,12 @@ class MessageList(Vertical):
                 prev_agent_id = turn.agent_id
                 if i < len(existing):
                     card = existing[i]
-                    if (isinstance(card, TurnCard) and card._turn.turn_id == turn.turn_id
-                            and not _conditions_changed(card._turn, turn)):
-                        # 条件未变，原地更新（不触碰 DOM）
+                    if isinstance(card, TurnCard) and card._turn.turn_id == turn.turn_id:
+                        # turn_id 匹配，原地更新（不重建 DOM，update_turn 内部处理显隐切换）
                         card._consecutive_agent = consecutive
                         card.update_turn(turn, self._agent_name_map)
                     else:
-                        # 条件变化，在 DOM 中替换此卡片
+                        # turn_id 不匹配（新 turn 或乱序），在 DOM 中替换此卡片
                         new_card = TurnCard(
                             turn=copy.deepcopy(turn),
                             agent_name_map=self._agent_name_map,

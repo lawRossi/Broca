@@ -305,7 +305,7 @@ class TurnCard(Widget):
     }
 
     .turn-response-content.collapsed {
-        max-height: 20;
+        max-height: 25;
         overflow: hidden;
     }
 
@@ -349,17 +349,12 @@ class TurnCard(Widget):
         self._last_tool_update = 0.0  # 工具调用节流时间戳
 
     def update_turn(self, turn: TurnSummary, agent_name_map: Optional[Dict[str, str]] = None):
-        """更新卡片内容（不重建 DOM），用于流式更新避免闪烁。
+        """更新卡片内容（仅 in-place 更新，永不重建 DOM），用于流式更新避免闪烁。
 
         Args:
             turn: 新的 TurnSummary 数据
             agent_name_map: 可选的 agent 名称映射更新
         """
-        # 深拷贝保持 self._turn 独立于 live TurnSummary（来自 chat_store.turn_summaries），
-        # 使得 _render_turn_cards 中的 _conditions_changed 能正确检测数据变化，
-        # 触发全量重建以创建条件渲染区域（回复、推理、工具调用等）。
-        # 如果直接 self._turn = turn，则 _conditions_changed 比较同一对象的引用，
-        # 永远返回 False，条件渲染元素永不创建 → Bug: 新 turn 只有 header 不更新内容。
         self._turn = copy.deepcopy(turn)
         if agent_name_map is not None:
             self._agent_name_map = agent_name_map
@@ -374,69 +369,90 @@ class TurnCard(Widget):
         except Exception:
             pass
 
-        # 更新状态点（根据 simplified_status 切换 class）
+        # 更新状态点 + 状态文本（根据 simplified_status 切换 class 和文字）
         simplified = self._get_simplified_status()
         try:
             dot = self.query_one(".turn-status-dot", Label)
             dot.classes = f"turn-status-dot {simplified}"
         except Exception:
             pass
-
-        # 更新回复内容（节流，避免频繁 Markdown 重渲染）
         try:
-            resp_text = self.query_one("#response-text", Static)
-            if turn.final_response:
-                now = time.time()
-                if now - self._last_response_update >= 0.4:
-                    resp_text.update(Markdown(self._format_response(turn.final_response), code_theme="friendly"))
-                    self._last_response_update = now
+            status_text = self.query_one("#turn-status-text", Label)
+            status_text.update(self._get_status_text())
+            status_text.classes = f"turn-status-text {simplified}"
         except Exception:
             pass
 
-        # 更新推理内容（节流：折叠时 ≤0.5Hz，展开时 ≤2.5Hz）
+        # 更新用户消息文本
         try:
-            reasoning_label = self.query_one("#reasoning-text", Label)
-            if turn.reasoning_content:
+            self.query_one("#user-msg-text", Label).update(self._turn.user_message or "")
+        except Exception:
+            pass
+
+        # 更新回复内容（节流，避免频繁 Markdown 重渲染）
+        if self._turn.final_response:
+            try:
+                resp_text = self.query_one("#response-text", Static)
+                now = time.time()
+                if now - self._last_response_update >= 0.2:
+                    resp_text.update(Markdown(self._format_response(self._turn.final_response), code_theme="friendly"))
+                    self._last_response_update = now
+            except Exception:
+                pass
+
+        # 更新推理内容（节流：折叠时 ≤0.5Hz，展开时 ≤2.5Hz）
+        if self._turn.reasoning_content:
+            try:
+                reasoning_label = self.query_one("#reasoning-text", Label)
                 now = time.time()
                 throttle = 2.0 if not self._show_reasoning else 0.4
                 if now - self._last_reasoning_update < throttle:
-                    # 距上次更新不足节流间隔，跳过本次更新
                     pass
                 else:
-                    reasoning_label.update(turn.reasoning_content)
+                    reasoning_label.update(self._turn.reasoning_content)
                     self._last_reasoning_update = now
-        except Exception:
-            pass
+            except Exception:
+                pass
 
-        # 更新工具调用信息（节流 ≤5Hz）
+        # 更新工具调用统计 + 当前工具名（节流 ≤5Hz）
         try:
             now = time.time()
             if now - self._last_tool_update >= 0.2:
-                stats_label = self.query_one(".turn-tool-stats", Label)
+                stats_label = self.query_one("#tool-stats-text", Label)
                 stats_label.update(self._get_tool_stats_text())
 
-                tool_label = self.query_one(".turn-current-call-tool", Label)
-                if turn.current_tool:
-                    tool_label.update(turn.current_tool)
+                tool_label = self.query_one("#current-call-tool", Label)
+                tool_label.update(self._turn.current_tool or "")
 
                 self._last_tool_update = now
         except Exception:
             pass
 
-        # 更新 TODO 列表内容（列表容器已由全量重建创建）
-        try:
-            todo_container = self.query_one(".turn-todo-list", Vertical)
-            if self._show_todo_list():
-                todo_container.remove_children()
-                for todo in turn.current_todo_list:
+        # 更新 TODO 列表内容 — 替换容器内子元素（容器本身不重建）
+        if self._show_todo_list():
+            try:
+                todo_container = self.query_one("#todo-list", Vertical)
+                # 保留标题 label，移除后面 todo 项
+                children = list(todo_container.children)
+                for child in children[1:]:  # 跳过第1个（"📝 任务" label）
+                    child.remove()
+                for todo in self._turn.current_todo_list:
                     todo_name = todo.get("name", "")
                     todo_status = todo.get("status", "pending")
                     icon = "✅" if todo_status == "completed" else ("⏳" if todo_status == "in_progress" else "⬜️")
-                    h = Horizontal(classes="turn-todo-item")
-                    h.mount(Label(f"{icon} {todo_name}"))
-                    todo_container.mount(h)
-        except Exception:
-            pass
+                    with Horizontal(classes="turn-todo-item"):
+                        todo_container.mount(Label(f"{icon} {todo_name}"))
+            except Exception:
+                pass
+
+        # 更新卡片基础 class（status / consecutive 变化时切换）
+        base_class = f"turn-card status-{self._get_simplified_status()}"
+        if self._consecutive_agent:
+            base_class += " consecutive-agent"
+        self.classes = base_class
+
+        # 更新各区域显隐（所有区域已预创建，只切换 display）
+        self._update_all_sections()
 
     def _get_simplified_status(self) -> str:
         """获取简化状态（对齐 Web：active/thinking/calling_tool → active）。"""
@@ -513,14 +529,14 @@ class TurnCard(Widget):
         return self._turn.status in ("completed", "error") and bool(self._turn.last_message_id)
 
     def _needs_fold(self) -> bool:
-        """判断回复内容是否需要折叠（超过 20 行）。"""
+        """判断回复内容是否需要折叠（超过 25 行）。"""
         content = (self._turn.final_response or "").strip()
         if not content:
             return False
-        return content.count('\n') > 20
+        return content.count('\n') > 25
 
     def compose(self) -> ComposeResult:
-        """创建 TurnCard 布局。"""
+        """创建 TurnCard 布局 — 所有区域始终创建，通过 display 控制显隐，避免 DOM 重建闪烁。"""
         simplified_status = self._get_simplified_status()
         status_text = self._get_status_text()
         agent_name = self._get_agent_display_name()
@@ -531,97 +547,132 @@ class TurnCard(Widget):
             base_class += " consecutive-agent"
         self.classes = base_class
 
-        # ===== 标题栏 =====
+        # ===== 标题栏（始终有） =====
         with Horizontal(classes="turn-card-header"):
             yield Label("●", classes=f"turn-status-dot {simplified_status}")
             yield Label(agent_name, classes="turn-agent-name")
             yield Label(f"第{self._turn.sequence_number}轮", classes="turn-sequence")
             yield Label("|", classes="turn-sep")
-            yield Label(status_text, classes=f"turn-status-text {simplified_status}")
+            yield Label(status_text, classes=f"turn-status-text {simplified_status}", id="turn-status-text")
             yield Label(f"⏱️ {self._get_formatted_duration()}", classes="turn-duration")
 
-        # ===== 用户消息 =====
-        if self._turn.user_message:
-            with Horizontal(classes="turn-user-message section-accent accent-user"):
-                yield Label("👤", classes="turn-user-icon")
-                yield Label(self._turn.user_message, classes="turn-user-text")
+        # ===== 用户消息（始终创建，初始隐藏） =====
+        with Horizontal(classes="turn-user-message section-accent accent-user", id="user-msg-section"):
+            yield Label("👤", classes="turn-user-icon")
+            yield Label(self._turn.user_message or "", classes="turn-user-text", id="user-msg-text")
 
-        # ===== 执行摘要 =====
-        if self._has_tool_execution():
-            with Vertical(classes="turn-summary-section section-accent accent-tool"):
-                yield Label("执行摘要", classes="turn-summary-title")
+        # ===== 执行摘要（始终创建，初始隐藏） =====
+        with Vertical(classes="turn-summary-section section-accent accent-tool", id="tool-summary-section"):
+            yield Label("执行摘要", classes="turn-summary-title")
+            # 步骤数
+            with Horizontal(classes="turn-summary-row"):
+                yield Label("📋 步骤", classes="turn-summary-label")
+                yield Label(str(self._turn.total_steps), classes="turn-summary-value")
+            # TODO 列表（容器始终存在，内部项通过 update_turn 动态更新）
+            with Vertical(classes="turn-todo-list", id="todo-list"):
+                yield Label("📝 任务", classes="turn-summary-label")
+                for todo in self._turn.current_todo_list:
+                    todo_name = todo.get("name", "")
+                    todo_status = todo.get("status", "pending")
+                    icon = "✅" if todo_status == "completed" else ("⏳" if todo_status == "in_progress" else "⬜️")
+                    with Horizontal(classes="turn-todo-item"):
+                        yield Label(f"{icon} {todo_name}")
+            # 工具调用统计
+            with Horizontal(classes="turn-summary-row", id="tool-stats-row"):
+                yield Label("🔧 工具调用", classes="turn-summary-label")
+                yield Label(self._get_tool_stats_text(), classes="turn-tool-stats", id="tool-stats-text")
 
-                # 步骤数
-                with Horizontal(classes="turn-summary-row"):
-                    yield Label("📋 步骤", classes="turn-summary-label")
-                    yield Label(str(self._turn.total_steps), classes="turn-summary-value")
+        # ===== 回复区域（始终创建，初始隐藏） =====
+        with Horizontal(classes="turn-response-section section-accent accent-agent", id="response-section"):
+            yield Label("🤖", classes="turn-response-icon")
+            with Vertical(classes="turn-response-content", id="response-content"):
+                yield Static(Markdown(self._format_response(self._turn.final_response or ""), code_theme="friendly"), id="response-text")
+        yield Label("展开全部", id="toggle-response", classes="turn-fold-label")
 
-                # TODO 列表
-                if self._show_todo_list():
-                    with Vertical(classes="turn-todo-list"):
-                        yield Label("📝 任务", classes="turn-summary-label")
-                        for todo in self._turn.current_todo_list:
-                            todo_name = todo.get("name", "")
-                            todo_status = todo.get("status", "pending")
-                            icon = "✅" if todo_status == "completed" else ("⏳" if todo_status == "in_progress" else "⬜️")
-                            with Horizontal(classes="turn-todo-item"):
-                                yield Label(f"{icon} {todo_name}")
+        # ===== 当前调用（始终创建，初始隐藏） =====
+        with Horizontal(classes="turn-current-call", id="current-call-section"):
+            yield Label("⏳ 当前调用:", classes="turn-current-call-label")
+            yield Label(self._turn.current_tool or "", classes="turn-current-call-tool", id="current-call-tool")
 
-                # 工具调用统计
-                if self._turn.tool_call_stats:
-                    with Horizontal(classes="turn-summary-row"):
-                        yield Label("🔧 工具调用", classes="turn-summary-label")
-                        yield Label(self._get_tool_stats_text(), classes="turn-tool-stats")
+        # ===== 推理内容（始终创建，初始隐藏） =====
+        toggle_icon = "▼" if self._show_reasoning else "▶"
+        yield Label(f"{toggle_icon} 思考", classes="turn-reasoning-toggle", id="reasoning-toggle")
+        with Vertical(classes="turn-reasoning-content", id="reasoning-content"):
+            yield Label(self._turn.reasoning_content or "", classes="turn-reasoning-text", id="reasoning-text")
 
-        # ===== 回复区域 =====
-        if self._turn.final_response:
-            with Horizontal(classes="turn-response-section section-accent accent-agent"):
-                yield Label("🤖", classes="turn-response-icon")
-                with Vertical(classes="turn-response-content", id="response-content"):
-                    yield Static(Markdown(self._format_response(self._turn.final_response), code_theme="friendly"), id="response-text")
-            # 内容过长时显示折叠标签
-            if self._needs_fold():
-                yield Label("展开全部", id="toggle-response", classes="turn-fold-label")
-
-        # ===== 当前调用（与工具名同一行，不显示文件路径） =====
-        if self._turn.current_tool and self._turn.status != "completed":
-            with Horizontal(classes="turn-current-call"):
-                yield Label("⏳ 当前调用:", classes="turn-current-call-label")
-                yield Label(self._turn.current_tool, classes="turn-current-call-tool")
-
-        # ===== 推理内容（可折叠，仅在无当前工具或 turn 已完成时显示） =====
-        if self._turn.reasoning_content and (self._turn.status == "completed" or not self._turn.current_tool):
-            toggle_icon = "▼" if self._show_reasoning else "▶"
-            yield Label(f"{toggle_icon} 思考", classes="turn-reasoning-toggle", id="reasoning-toggle")
-            # 始终包含 content，通过 display 控制显隐
-            with Vertical(classes="turn-reasoning-content", id="reasoning-content"):
-                yield Label(self._turn.reasoning_content, classes="turn-reasoning-text", id="reasoning-text")
-
-        # ===== 撤销按钮（始终显示，右下角） =====
-        if self._can_undo():
-            with Horizontal(classes="turn-undo-container"):
-                yield Button("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-button")
+        # ===== 撤销按钮（始终创建，初始隐藏） =====
+        with Horizontal(classes="turn-undo-container", id="undo-container"):
+            yield Button("↩️ 撤销", id=f"undo-{self._turn.turn_id}", classes="turn-undo-button")
 
     def on_mount(self) -> None:
-        """Set up after mount."""
-        # 初始隐藏推理内容
-        self._update_reasoning_visibility()
+        """Set up after mount — 初始化各区域显隐状态。"""
+        self._update_all_sections()
 
-        # 回复内容默认展开，如果内容超长且有折叠按钮，默认折叠
-        if self._needs_fold():
-            self._response_expanded = False
+    def _update_all_sections(self):
+        """根据当前 _turn 数据，更新所有条件渲染区域的显隐 + 内容。
+
+        所有区域已在 compose() 中预创建，这里只做：
+        1. display 切换（永不重建 DOM）
+        2. 文本内容更新（in-place）
+        """
+        # 用户消息
+        self._toggle_display("#user-msg-section", bool(self._turn.user_message))
+
+        # 执行摘要整体
+        has_tool = self._has_tool_execution()
+        self._toggle_display("#tool-summary-section", has_tool)
+        if has_tool:
+            # TODO 列表
+            self._toggle_display("#todo-list", self._show_todo_list())
+            # 工具调用统计
+            self._toggle_display("#tool-stats-row", bool(self._turn.tool_call_stats))
+
+        # 回复区域
+        has_response = bool(self._turn.final_response)
+        self._toggle_display("#response-section", has_response)
+        needs_fold = has_response and self._needs_fold()
+        self._toggle_display("#toggle-response", needs_fold)
+        # 内容首次超过阈值时自动折叠，且每次更新都维持折叠/展开状态
+        if has_response:
+            if needs_fold and self._response_expanded:
+                # 内容刚超过阈值，自动折叠
+                self._response_expanded = False
+            elif not needs_fold and not self._response_expanded:
+                # 内容被缩短到阈值以下，自动展开
+                self._response_expanded = True
             self._update_response_visibility()
 
-    def _update_reasoning_visibility(self):
-        """更新推理内容的显示状态。"""
-        try:
-            content = self.query_one("#reasoning-content", Vertical)
-            toggle = self.query_one("#reasoning-toggle", Label)
-            if content:
-                content.display = self._show_reasoning
-            if toggle:
+        # 当前调用 — 仅在 actively calling a tool 时显示
+        # 不依赖 current_tool 的清空（已对齐 Web 版不清空行为），用 status 精确判断
+        show_call = bool(self._turn.current_tool and self._turn.status == "calling_tool")
+        self._toggle_display("#current-call-section", show_call)
+
+        # 推理内容（可折叠）— 与"当前调用"互斥，不在 calling_tool 状态时显示
+        # 包括 thinking（agent 思考/回复时）、completed（回看记录时）
+        show_reasoning = bool(self._turn.reasoning_content and not show_call)
+        self._toggle_display("#reasoning-toggle", show_reasoning)
+        self._toggle_display("#reasoning-content", show_reasoning and self._show_reasoning)
+        if show_reasoning:
+            try:
+                toggle = self.query_one("#reasoning-toggle", Label)
                 toggle_icon = "▼" if self._show_reasoning else "▶"
                 toggle.update(f"{toggle_icon} 思考")
+            except Exception:
+                pass
+
+        # 撤销按钮
+        self._toggle_display("#undo-container", self._can_undo())
+
+    def _toggle_display(self, selector: str, show: bool) -> None:
+        """Toggle widget display by selector.
+
+        Args:
+            selector: CSS selector for the widget
+            show: True to show, False to hide
+        """
+        try:
+            widget = self.query_one(selector)
+            widget.display = show
         except Exception:
             pass
 
@@ -655,7 +706,7 @@ class TurnCard(Widget):
                             self._last_reasoning_update = time.time()
                     except Exception:
                         pass
-                self._update_reasoning_visibility()
+                self._update_all_sections()
             elif widget_id == "toggle-response":
                 self._response_expanded = not self._response_expanded
                 self._update_response_visibility()
