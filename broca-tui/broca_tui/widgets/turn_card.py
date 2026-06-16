@@ -64,6 +64,20 @@ class TurnCard(Widget):
         padding: 0;
     }
 
+    .turn-header-spacer {
+        width: 1fr;
+        height: auto;
+    }
+
+    .turn-completion-time {
+        color: #6b6b6b;
+        margin: 0 1;
+    }
+
+    .turn-duration {
+        margin: 0 0 0 1;
+    }
+
     .turn-status-dot {
         text-style: bold;
         margin-right: 1;
@@ -97,7 +111,7 @@ class TurnCard(Widget):
 
     .turn-status-text {
         text-style: bold;
-        margin-right: 0;
+        margin: 0 1 0 0;
     }
 
     .turn-status-text.active {
@@ -140,7 +154,7 @@ class TurnCard(Widget):
     .turn-user-message {
         height: auto;
         padding: 0;
-        margin: 0 0 0 0;
+        margin: 2 0 0 0;
     }
 
     .turn-user-icon {
@@ -375,6 +389,18 @@ class TurnCard(Widget):
         except Exception:
             pass
 
+        # 更新完成时刻
+        try:
+            ct_label = self.query_one("#turn-completion-time", Label)
+            ct = self._get_formatted_completion_time()
+            if ct:
+                ct_label.update(f"🕐 {ct}")
+                ct_label.display = True
+            else:
+                ct_label.display = False
+        except Exception:
+            pass
+
         # 更新状态点 + 状态文本（根据 simplified_status 切换 class 和文字）
         simplified = self._get_simplified_status()
         try:
@@ -507,6 +533,35 @@ class TurnCard(Widget):
         secs = seconds % 60
         return f"{mins}分{secs}秒"
 
+    def _get_formatted_completion_time(self) -> str:
+        """格式化完成时刻（已完成的 turn，用 started_at + total_duration 算出结束时间）。"""
+        if self._turn.is_active:
+            return ""
+        import time as tm
+        import datetime as dt
+
+        # 优先用 started_at（活跃 turn 有 ms 时间戳），否则用 created_at（ISO 格式）
+        if self._turn.started_at > 0:
+            end_ms = self._turn.started_at + self._turn.total_duration * 1000
+            d = tm.localtime(end_ms / 1000)
+        elif self._turn.created_at:
+            try:
+                created = dt.datetime.fromisoformat(self._turn.created_at.replace("Z", "+00:00"))
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=dt.timezone.utc)
+                end_ts = created.timestamp() + self._turn.total_duration
+                d = tm.localtime(end_ts)
+            except Exception:
+                return ""
+        else:
+            return ""
+
+        now = tm.localtime()
+        time_str = f"{d.tm_hour:02d}:{d.tm_min:02d}:{d.tm_sec:02d}"
+        if d.tm_yday != now.tm_yday or d.tm_year != now.tm_year:
+            return f"{d.tm_year}-{d.tm_mon:02d}-{d.tm_mday:02d} {time_str}"
+        return time_str
+
     def _has_tool_execution(self) -> bool:
         """判断是否有工具执行。"""
         return (
@@ -575,16 +630,23 @@ class TurnCard(Widget):
             base_class += " consecutive-agent"
         self.classes = base_class
 
-        # ===== 标题栏（始终有） =====
+        # ===== 标题栏（始终有） — 对齐 Web 版左右两组布局 =====
+        completion_time = self._get_formatted_completion_time()
         with Horizontal(classes="turn-card-header"):
             yield Label("●", classes=f"turn-status-dot {simplified_status}")
             yield Label(agent_name, classes="turn-agent-name")
             yield Label(f"第{self._turn.sequence_number}轮", classes="turn-sequence")
-            yield Label("|", classes="turn-sep")
+            yield Label("", classes="turn-header-spacer")
             yield Label(
                 status_text,
                 classes=f"turn-status-text {simplified_status}",
                 id="turn-status-text",
+            )
+            yield Label("|", classes="turn-sep")
+            yield Label(
+                f"🕐 {completion_time}" if completion_time else "",
+                classes="turn-completion-time",
+                id="turn-completion-time",
             )
             yield Label(f"⏱️ {self._get_formatted_duration()}", classes="turn-duration")
 

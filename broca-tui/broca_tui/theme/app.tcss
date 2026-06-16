@@ -273,7 +273,7 @@ Label {
     background: white;
     border: solid $gray-200;
     margin: 0 1 1 1;
-    padding: 1 0;   /* 左右 padding 缩小，给内容更多空间 */
+    padding: 0;
     height: auto;   /* 切断 1fr 链路 — 否则 Vertical 默认 height: 1fr 撑满父容器 */
 }
 
@@ -344,6 +344,7 @@ Label {
     text-style: dim;
     width: 1fr;
     text-align: center;
+    padding-bottom: 1;
 }
 
 .stat-value {
@@ -488,15 +489,17 @@ Label {
    INFO SIDEBAR — 对齐 Web ChatInfoSidebar
    ============================================================ */
 .info-section {
-    margin: 0 0 1 0;
-    border-bottom: solid $gray-200;
-    padding-bottom: 1;
+    height: auto;
+    background: white;
+    border: solid $gray-200;
+    margin: 0 1 1 1;
+    padding: 0 1;
 }
 
 .section-title {
     text-style: bold;
     color: $gray-700;
-    margin-bottom: 0;
+    margin-bottom: 1;
 }
 
 .section-title-bar {
@@ -525,7 +528,7 @@ Label {
 .info-block {
     height: auto;
     padding: 0 1;
-    margin-bottom: 0;
+    margin-bottom: 1;
 }
 
 .info-label {
@@ -545,9 +548,11 @@ Label {
 }
 
 .runner-btn {
-    width: 1fr;
+    width: auto;
     margin: 0 1;
-    min-width: 10;
+    min-width: 6;
+    padding: 0 1;
+    border: none;
     display: none;  /* 默认隐藏，由 watch_runner_status 控制显示 */
 }
 
@@ -570,6 +575,7 @@ Label {
 .info-section .stat-label {
     color: $gray-600;
     width: auto;
+    padding-bottom: 0;
 }
 
 .info-section .stat-value {

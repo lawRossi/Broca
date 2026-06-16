@@ -563,6 +563,20 @@ class ChatStore:
                 if t.get("is_reverted", False):
                     continue
 
+                # 解析 started_at（API 返回 ISO 格式字符串，转为 ms 时间戳）
+                started_at_raw = t.get("started_at")
+                started_at_ms = 0
+                if started_at_raw:
+                    try:
+                        import datetime as _dt
+                        # 统一按 UTC 解析，避免本地时区偏移
+                        d = _dt.datetime.fromisoformat(started_at_raw.replace("Z", "+00:00"))
+                        if d.tzinfo is None:
+                            d = d.replace(tzinfo=_dt.timezone.utc)
+                        started_at_ms = d.timestamp() * 1000
+                    except Exception:
+                        pass
+
                 summary = TurnSummary(
                     turn_id=t.get("turn_id", ""),
                     sequence_number=t.get("sequence_number", 0),
@@ -578,7 +592,7 @@ class ChatStore:
                     tool_call_stats=t.get("tool_call_stats", []),
                     final_response=t.get("final_response", ""),
                     is_active=False,
-                    started_at=0,
+                    started_at=started_at_ms,
                     created_at=t.get("created_at", ""),
                     last_message_id=t.get("last_message_id"),
                 )
@@ -616,9 +630,11 @@ class ChatStore:
         if any(t.turn_id == turn_id for t in self.turn_summaries):
             return
 
+        # 轮次序号 = 已有最大序号 + 1（对齐 Web 版）
+        max_seq = max((t.sequence_number for t in self.turn_summaries), default=0)
         summary = TurnSummary(
             turn_id=turn_id,
-            sequence_number=len(self.turn_summaries) + 1,
+            sequence_number=max_seq + 1,
             agent_id=agent_id,
             agent_name=agent_name,
             is_active=True,
