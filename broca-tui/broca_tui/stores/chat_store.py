@@ -706,8 +706,11 @@ class ChatStore:
         同一 message_id 的 streaming chunks 连续拼接（同一 LLM 调用的输出流片段），
         不同 message_id（不同 LLM 调用）之间加空行分隔，对齐 Web ChatStore 行为。
 
-        当 agent 开始思考/回复时，上一次工具调用已结束，清除 current_tool，
-        使得推理区域（reasoning）能正常显示（与"当前调用"互斥）。
+        注意：对齐 Web 行为，不清除 current_tool / current_file_path / current_todo_list。
+        TurnCard 的 compose 已通过 status 和字段值的组合条件控制显隐：
+        - "当前调用"区域：由 current_tool and status != "completed" 控制
+        - 推理区域：由 reasoning_content and (completed or not current_tool) 控制
+        - TODO 列表：由 current_todo_list 有值控制
 
         Args:
             turn_id: Turn ID
@@ -718,10 +721,8 @@ class ChatStore:
         if not turn:
             return
 
-        # Agent 开始思考/回复 → 上一次工具调用已结束，清除调用状态
-        turn.current_tool = None
-        turn.current_file_path = None
-        turn.current_todo_list = []
+        # 对齐 Web 行为：不主动清除工具调用状态（current_tool/current_file_path/current_todo_list），
+        # TurnCard 的 compose 通过 status + 字段值组合条件控制各区域显隐。
 
         content_str = data.get("content", "")
         if isinstance(content_str, str) and content_str.strip():

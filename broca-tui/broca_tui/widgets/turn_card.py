@@ -388,7 +388,7 @@ class TurnCard(Widget):
             if turn.final_response:
                 now = time.time()
                 if now - self._last_response_update >= 0.4:
-                    resp_text.update(Markdown(self._format_response(turn.final_response)))
+                    resp_text.update(Markdown(self._format_response(turn.final_response), code_theme="friendly"))
                     self._last_response_update = now
         except Exception:
             pass
@@ -578,7 +578,7 @@ class TurnCard(Widget):
             with Horizontal(classes="turn-response-section section-accent accent-agent"):
                 yield Label("🤖", classes="turn-response-icon")
                 with Vertical(classes="turn-response-content", id="response-content"):
-                    yield Static(Markdown(self._format_response(self._turn.final_response)), id="response-text")
+                    yield Static(Markdown(self._format_response(self._turn.final_response), code_theme="friendly"), id="response-text")
             # 内容过长时显示折叠标签
             if self._needs_fold():
                 yield Label("展开全部", id="toggle-response", classes="turn-fold-label")
