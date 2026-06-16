@@ -242,33 +242,30 @@ class AgentConfigDialog(ModalScreen):
         with Vertical(classes="dialog"):
             yield Label(f"配置: {agent_name}", classes="dialog-title")
 
-            # Provider selection
-            yield Label("Provider:", classes="dialog-label")
-            yield Select(
-                [(p, p) for p in ["openai", "anthropic", "google", "azure"]],
-                prompt="Select provider...",
-                id="provider-select",
-                classes="dialog-select",
-            )
+            # Provider + Model 同一行（不要 label，下拉已有提示文字）
+            with Horizontal(classes="dialog-select-row", id="provider-model-row"):
+                yield Select(
+                    [(p, p) for p in ["openai", "anthropic", "google", "azure"]],
+                    prompt="Select provider...",
+                    id="provider-select",
+                    classes="dialog-select",
+                )
+                yield Select(
+                    [(m, m) for m in ["gpt-4", "gpt-3.5-turbo", "claude-3-opus", "claude-3-sonnet"]],
+                    prompt="Select model...",
+                    id="model-select",
+                    classes="dialog-select",
+                )
 
-            # Model selection
-            yield Label("Model:", classes="dialog-label")
-            yield Select(
-                [(m, m) for m in ["gpt-4", "gpt-3.5-turbo", "claude-3-opus", "claude-3-sonnet"]],
-                prompt="Select model...",
-                id="model-select",
-                classes="dialog-select",
-            )
-
-            # JSON config editor
+            # JSON config editor（撑满剩余空间）
             yield Label("Config (JSON):", classes="dialog-label")
             config_content = json.dumps(self._agent.get("agent_config", {}), indent=2)
             yield TextArea(config_content, id="config-editor", classes="dialog-textarea")
 
-            # Action buttons
-            with Horizontal(classes="dialog-actions"):
+            # 底部按钮区（靠下，按钮紧凑）
+            with Horizontal(classes="dialog-actions dialog-actions-config"):
                 yield Button("保存", id="btn-save", variant="primary")
-                yield Button("取消", id="btn-cancel")
+                yield Button("取消", id="btn-cancel", classes="cancel-btn")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
@@ -341,15 +338,23 @@ class AgentCard(Widget):
                 desc_short = description[:80] + "..." if len(description) > 80 else description
                 yield Label(desc_short, classes="agent-description")
 
-            # LLM Stats (2x2 grid) — Chinese labels, handle None/0 context
+            # LLM Stats (2x2 网格) — 标签在上，数字在下，对齐 Web 版
             ctx_val = agent.get("last_context_length")
             ctx_display = ctx_val if ctx_val is not None else 0
             with Horizontal(classes="agent-stats"):
-                yield Static(f"调用次数: {agent.get('total_llm_calls', 0)}", classes="stat-item")
-                yield Static(f"上下文: {ctx_display}", classes="stat-item")
+                with Vertical(classes="stat-block"):
+                    yield Static("调用次数", classes="stat-label")
+                    yield Static(str(agent.get("total_llm_calls", 0)), classes="stat-value")
+                with Vertical(classes="stat-block"):
+                    yield Static("上下文", classes="stat-label")
+                    yield Static(str(ctx_display), classes="stat-value")
             with Horizontal(classes="agent-stats"):
-                yield Static(f"输入: {agent.get('total_input_tokens', 0)}", classes="stat-item")
-                yield Static(f"输出: {agent.get('total_output_tokens', 0)}", classes="stat-item")
+                with Vertical(classes="stat-block"):
+                    yield Static("输入", classes="stat-label")
+                    yield Static(str(agent.get("total_input_tokens", 0)), classes="stat-value")
+                with Vertical(classes="stat-block"):
+                    yield Static("输出", classes="stat-label")
+                    yield Static(str(agent.get("total_output_tokens", 0)), classes="stat-value")
 
             # Abort button (始终创建，通过 CSS 显隐)
             yield Button("⏹ 停止", id=f"abort-{agent.get('agent_id')}", classes="abort-button")
@@ -429,10 +434,9 @@ class AgentSidebar(Widget):
         # The inner Vertical must NOT carry the .sidebar class, otherwise it gets
         # width: 25% of the outer 25%, becoming only 6.25% of the screen.
         with Vertical():
-            # Title bar
+            # Title bar（只保留筛选按钮）
             with Horizontal(classes="sidebar-title-bar"):
                 yield Label("Session Agents", classes="sidebar-title")
-                yield Button("🔄", id="btn-refresh-agents", classes="icon-button")
                 yield Button("☰", id="btn-filter-agents", classes="icon-button")
 
             # Agent list (scrollable)
@@ -522,9 +526,7 @@ class AgentSidebar(Widget):
         """Handle button presses (non-abort buttons only; abort is handled by AgentCard)."""
         button_id = event.button.id or ""
 
-        if button_id == "btn-refresh-agents":
-            self._render_agents()
-        elif button_id == "btn-filter-agents":
+        if button_id == "btn-filter-agents":
             self.run_worker(self._show_visibility_filter())
 
     def on_unmount(self) -> None:
@@ -547,25 +549,28 @@ class AgentSidebar(Widget):
         Args:
             agent: Agent dict
         """
-        # 先从 API 拉取完整配置（agent 列表接口不返回 config_content）
-        from broca_tui.api.session import SessionAPI
-        api = SessionAPI()
-        try:
-            config_data = await api.get_agent_config(self._session_id, agent.get("agent_id", ""))
-            agent_with_config = {**agent, "agent_config": config_data.get("config_content", {})}
-        except Exception:
-            # API 获取失败时使用空配置
-            agent_with_config = {**agent, "agent_config": {}}
-        finally:
-            await api.close()
+        # 优先用本地 store 中已保存的配置（_save_agent_config 更新后的数据），
+        # 没有时才从 API 拉取（首次打开）。
+        agent_config = agent.get("agent_config")
+        if agent_config is None:
+            from broca_tui.api.session import SessionAPI
+            api = SessionAPI()
+            try:
+                config_data = await api.get_agent_config(self._session_id, agent.get("agent_id", ""))
+                agent_config = config_data.get("config_content", {})
+            except Exception:
+                agent_config = {}
+            finally:
+                await api.close()
 
+        agent_with_config = {**agent, "agent_config": agent_config}
         dialog = AgentConfigDialog(agent_with_config)
         result = await self.app.push_screen_wait(dialog)
         if result and result.get("action") == "save_config":
             await self._save_agent_config(result)
 
     async def _save_agent_config(self, config_data: Dict[str, Any]):
-        """Save agent configuration via API.
+        """保存 agent 配置到后端 API，同时更新本地 store。
 
         Args:
             config_data: Dict with agent_id, session_id, provider, model, config
@@ -574,7 +579,9 @@ class AgentSidebar(Widget):
         api = SessionAPI()
         try:
             agent_id = config_data.get("agent_id", "")
-            session_id = config_data.get("session_id", "")
+            session_id = config_data.get("session_id", "") or self._session_id
+            provider = config_data.get("provider", "")
+            model = config_data.get("model", "")
             config_content = config_data.get("config", "{}")
 
             # Parse and validate the config JSON
@@ -584,12 +591,27 @@ class AgentSidebar(Widget):
                 self.notify("配置 JSON 格式无效", severity="error", timeout=5)
                 return
 
-            # Save via API (update agent config)
-            if session_id and agent_id:
-                await api.update_session(session_id, description=None)
+            # 对齐 Web 版：后端只接收 { config_content: {完整配置对象} }
+            # provider / model 等字段包含在 config_content 内部
+            full_config = {
+                "provider": provider,
+                "model": model,
+                **(parsed_config if isinstance(parsed_config, dict) else {}),
+            }
+            await api.update_agent_config(session_id, agent_id, {
+                "config_content": full_config,
+            })
+
+            # 同步更新本地 store
+            agent = self._store.get_agent(agent_id)
+            if agent:
+                agent["provider"] = provider
+                agent["model"] = model
+                agent["agent_config"] = parsed_config
+                self._store._notify_change()
 
             self.notify(
-                f"配置已保存（需重启 Session 生效）",
+                "配置已保存，重启 Session 后生效",
                 severity="information",
                 timeout=5,
             )

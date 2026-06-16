@@ -238,6 +238,7 @@ Label {
     text-style: bold;
     color: $gray-700;
     width: 1fr;
+    text-wrap: nowrap;  /* 不换行 */
 }
 
 .icon-button {
@@ -258,7 +259,7 @@ Label {
     background: white;
     border: solid $gray-200;
     margin: 0 1 1 1;
-    padding: 1;
+    padding: 1 0;   /* 左右 padding 缩小，给内容更多空间 */
     height: auto;   /* 切断 1fr 链路 — 否则 Vertical 默认 height: 1fr 撑满父容器 */
 }
 
@@ -269,6 +270,7 @@ Label {
 .agent-card-header {
     align: left middle;
     height: auto;   /* 切断 1fr 链路 — 否则 Horizontal 默认 height: 1fr 撑满父卡片 */
+    margin-bottom: 1;  /* 与下方统计信息保持间隔 */
 }
 
 .agent-name {
@@ -311,10 +313,30 @@ Label {
     margin: 0;
 }
 
-.stat-item {
-    color: $gray-500;
-    width: 1fr;
+.agent-stats {
+    height: auto;
+    margin: 0 0 1 0;
     padding: 0 0 0 1;
+}
+
+.stat-block {
+    width: 1fr;
+    height: auto;
+    align: center middle;
+}
+
+.stat-label {
+    color: $gray-500;
+    text-style: dim;
+    width: 1fr;
+    text-align: center;
+}
+
+.stat-value {
+    color: $gray-700;
+    text-style: bold;
+    width: 1fr;
+    text-align: center;
 }
 
 .abort-button {
@@ -562,7 +584,37 @@ ModalScreen {
 }
 
 .dialog-textarea {
-    height: 10;
+    height: 16;
+    margin: 0 1;
+}
+
+/* Agent 配置弹框 */
+AgentConfigDialog .dialog-textarea {
+    height: 16;
+}
+
+AgentConfigDialog #provider-model-row {
+    height: auto;
+    margin: 0 1 0 1;
+    align: center middle;
+}
+
+AgentConfigDialog #provider-model-row > .dialog-select {
+    width: 1fr;
+    margin: 0 0 0 1;
+}
+
+/* Agent 配置弹框 — 底部按钮区，按钮小而紧凑 */
+AgentConfigDialog .dialog-actions-config {
+    margin-top: 1;
+    align: center middle;
+    height: auto;
+}
+
+AgentConfigDialog .dialog-actions-config > Button {
+    min-width: 6;
+    width: auto;
+    padding: 0 1;
     margin: 0 1;
 }
 

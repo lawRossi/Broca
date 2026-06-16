@@ -133,6 +133,19 @@ class SessionAPI:
         """
         return await self._client.get(f"/session/{session_id}/agents/{agent_id}/config")
 
+    async def update_agent_config(self, session_id: str, agent_id: str, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Update agent configuration.
+
+        Args:
+            session_id: Session ID
+            agent_id: Agent ID
+            config: Dict with provider, model, config_content (JSON string), etc.
+
+        Returns:
+            Dict with config_id, config_name, etc.
+        """
+        return await self._client.put(f"/session/{session_id}/agents/{agent_id}/config", data=config)
+
     async def get_session_turns(
         self,
         session_id: str,
