@@ -121,6 +121,26 @@ class SessionAPI:
         """Get session statistics."""
         return await self._client.get(f"/session/{session_id}/stats")
 
+    async def get_job_count(self, session_id: str) -> int:
+        """Get job count for a session."""
+        try:
+            result = await self._client.get("/jobs", params={"session_id": session_id, "limit": 1})
+            if isinstance(result, dict):
+                return result.get("total", 0)
+            return 0
+        except Exception:
+            return 0
+
+    async def get_task_count(self, session_id: str) -> int:
+        """Get task count for a session."""
+        try:
+            result = await self._client.get("/tasks", params={"session_id": session_id, "limit": 1})
+            if isinstance(result, dict):
+                return result.get("total", 0)
+            return 0
+        except Exception:
+            return 0
+
     async def get_agent_config(self, session_id: str, agent_id: str) -> Dict[str, Any]:
         """Get agent configuration.
 

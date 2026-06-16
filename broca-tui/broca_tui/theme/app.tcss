@@ -38,6 +38,15 @@ $error-darken-2: #b91c1c;
 $error-darken-3: #991b1b;
 $info: $primary-500;
 
+/* Scrollbar colors - 覆盖默认黑色，使用灰色系 */
+$scrollbar: $gray-300;
+$scrollbar-hover: $gray-400;
+$scrollbar-active: $gray-500;
+$scrollbar-background: $gray-100;
+$scrollbar-background-hover: $gray-200;
+$scrollbar-background-active: $gray-300;
+$scrollbar-corner-color: $gray-200;
+
 /* ===== Message Type Colors ===== */
 $msg-user-bg: #eff6ff;
 $msg-user-border: #3b82f6;
@@ -225,7 +234,12 @@ Label {
     width: $sidebar-width;
     background: $gray-100;
     border-left: solid $gray-200;
+    border-right: none;
 }
+
+
+
+
 
 .sidebar-title-bar {
     padding: 0 1;
@@ -382,6 +396,8 @@ Label {
     height: 1fr;
 }
 
+
+
 .redo-container {
     align: center middle;
     padding: 0 1;
@@ -469,10 +485,10 @@ Label {
 }
 
 /* ============================================================
-   INFO SIDEBAR
+   INFO SIDEBAR — 对齐 Web ChatInfoSidebar
    ============================================================ */
 .info-section {
-    margin: 1;
+    margin: 0 0 1 0;
     border-bottom: solid $gray-200;
     padding-bottom: 1;
 }
@@ -480,56 +496,86 @@ Label {
 .section-title {
     text-style: bold;
     color: $gray-700;
+    margin-bottom: 0;
+}
+
+.section-title-bar {
+    height: auto;
+    align: center middle;
     margin-bottom: 1;
 }
 
+.section-title-bar > .section-title {
+    width: 1fr;
+    margin-bottom: 0;
+}
+
+.section-title-bar > .icon-button {
+    min-width: 3;
+    margin: 0;
+}
+
 .info-row {
-    color: $gray-600;
-    padding: 0 1;
-}
-
-.runner-actions {
-    margin-top: 1;
+    height: auto;
     align: center middle;
+    padding: 0 1;
+    margin-bottom: 1;
 }
 
-.runner-btn {
-    min-width: 8;
+.info-block {
+    height: auto;
+    padding: 0 1;
+    margin-bottom: 0;
+}
+
+.info-label {
+    color: $gray-600;
+    width: auto;
+}
+
+.info-value {
+    color: $gray-800;
+    width: 1fr;
+    padding: 0 0 0 1;
+}
+
+.runner-btns {
+    height: auto;
     margin: 0 1;
 }
 
+.runner-btn {
+    width: 1fr;
+    margin: 0 1;
+    min-width: 10;
+    display: none;  /* 默认隐藏，由 watch_runner_status 控制显示 */
+}
+
+.runner-btn.stop-btn {
+    background: $error;
+    color: white;
+}
+
+.runner-btn.restart-btn {
+    background: $warning;
+    color: white;
+}
+
 .stat-row {
-    height: 1;
+    height: auto;
     padding: 0 1;
+    margin-bottom: 1;
 }
 
-.stat-dot {
-    text-style: bold;
-    margin-right: 1;
-}
-
-.stat-dot.user-dot {
-    color: $msg-user-border;
-}
-
-.stat-dot.agent-dot {
-    color: $msg-agent-border;
-}
-
-.stat-dot.tool-dot {
-    color: $msg-tool-border;
-}
-
-.stat-dot.system-dot {
-    color: $gray-400;
-}
-
-.stat-dot.error-dot {
-    color: $msg-error-border;
-}
-
-.stat-text {
+.info-section .stat-label {
     color: $gray-600;
+    width: auto;
+}
+
+.info-section .stat-value {
+    color: $gray-800;
+    width: 1fr;
+    text-align: right;
 }
 
 /* ============================================================

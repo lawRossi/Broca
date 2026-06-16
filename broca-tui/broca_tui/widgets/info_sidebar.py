@@ -66,43 +66,78 @@ class InfoSidebar(Widget):
         self._poll_timer = None
 
     def compose(self) -> ComposeResult:
-        """Create the sidebar layout."""
-        with Vertical():
-            # Session Info Section
+        """Create the sidebar layout — 对齐 Web ChatInfoSidebar 结构。"""
+        with Vertical(id="info-sidebar-content"):
+            # ===== Session Info — 标签在上，值在下 =====
             with Vertical(classes="info-section"):
                 yield Label("Session Info", classes="section-title")
-                yield Label("ID: -", classes="info-row", id="info-session-id")
-                yield Label("Workspace: -", classes="info-row", id="info-workspace")
+                with Vertical(classes="info-block"):
+                    yield Label("Session ID:", classes="info-label")
+                    yield Label("未设置", classes="info-value", id="info-session-id")
+                with Vertical(classes="info-block"):
+                    yield Label("Workspace:", classes="info-label")
+                    yield Label("未设置", classes="info-value", id="info-workspace")
+                with Horizontal(classes="info-row"):
+                    yield Label("Jobs:", classes="info-label")
+                    yield Label("0", classes="info-value", id="info-jobs")
+                with Horizontal(classes="info-row"):
+                    yield Label("Tasks:", classes="info-label")
+                    yield Label("0", classes="info-value", id="info-tasks")
 
-            # Runner Status Section
+            # ===== Runner Status =====
             with Vertical(classes="info-section"):
-                yield Label("Runner Status", classes="section-title")
-                yield Label("Status: ● unknown", classes="info-row", id="runner-status")
-                yield Label("PID: -", classes="info-row", id="runner-pid")
-                yield Label("Uptime: -", classes="info-row", id="runner-uptime")
-                yield Label("CPU: -", classes="info-row", id="runner-cpu")
-                yield Label("Memory: -", classes="info-row", id="runner-memory")
-                # Single toggle button (broca-web pattern)
-                yield Button("▶ 启动进程", id="btn-toggle-runner", classes="runner-btn")
+                with Horizontal(classes="section-title-bar"):
+                    yield Label("Runner Status", classes="section-title")
+                    yield Button("🔄", id="btn-refresh-runner", classes="icon-button")
+                yield Horizontal(
+                    Label("Status:", classes="info-label"),
+                    Label("● unknown", classes="info-value", id="runner-status"),
+                    classes="info-row",
+                )
+                yield Horizontal(
+                    Label("PID:", classes="info-label"),
+                    Label("-", classes="info-value", id="runner-pid"),
+                    classes="info-row",
+                )
+                yield Horizontal(
+                    Label("运行时长:", classes="info-label"),
+                    Label("-", classes="info-value", id="runner-uptime"),
+                    classes="info-row",
+                )
+                yield Horizontal(
+                    Label("CPU:", classes="info-label"),
+                    Label("-", classes="info-value", id="runner-cpu"),
+                    classes="info-row",
+                )
+                yield Horizontal(
+                    Label("Memory:", classes="info-label"),
+                    Label("-", classes="info-value", id="runner-memory"),
+                    classes="info-row",
+                )
+                # Action button — 对齐 Web：停止/重启/启动 不同按钮（非单 toggle）
+                with Horizontal(classes="runner-btns"):
+                    yield Button("启动", id="btn-start-runner", classes="runner-btn")
+                    yield Button("停止", id="btn-stop-runner", classes="runner-btn stop-btn")
+                    yield Button("重启", id="btn-restart-runner", classes="runner-btn restart-btn")
 
-            # Message Statistics Section
+            # ===== Message Statistics =====
             with Vertical(classes="info-section"):
                 yield Label("Message Statistics", classes="section-title")
                 with Horizontal(classes="stat-row"):
-                    yield Label("●", classes="stat-dot user-dot")
-                    yield Label("User: 0", classes="stat-text", id="stat-user")
+                    yield Label("User Messages:", classes="stat-label")
+                    yield Label("0", classes="stat-value", id="stat-user")
                 with Horizontal(classes="stat-row"):
-                    yield Label("●", classes="stat-dot agent-dot")
-                    yield Label("Agent: 0", classes="stat-text", id="stat-agent")
+                    yield Label("Assistant Responses:", classes="stat-label")
+                    yield Label("0", classes="stat-value", id="stat-agent")
                 with Horizontal(classes="stat-row"):
-                    yield Label("●", classes="stat-dot tool-dot")
-                    yield Label("Tools: 0", classes="stat-text", id="stat-tools")
+                    yield Label("System Messages:", classes="stat-label")
+                    yield Label("0", classes="stat-value", id="stat-system")
                 with Horizontal(classes="stat-row"):
-                    yield Label("●", classes="stat-dot system-dot")
-                    yield Label("System: 0", classes="stat-text", id="stat-system")
+                    yield Label("Tool Calls:", classes="stat-label")
+                    yield Label("0", classes="stat-value", id="stat-tool-calls")
                 with Horizontal(classes="stat-row"):
-                    yield Label("●", classes="stat-dot error-dot")
-                    yield Label("Errors: 0", classes="stat-text", id="stat-errors")
+                    yield Label("Tool Call Errors:", classes="stat-label")
+                    yield Label("0", classes="stat-value", id="stat-errors")
 
     def on_mount(self) -> None:
         """Start polling after mount."""
@@ -117,52 +152,53 @@ class InfoSidebar(Widget):
             workspace: Workspace path
         """
         self._session_id = session_id
-        self.query_one("#info-session-id", Label).update(f"ID: {session_id[:16]}...")
-        self.query_one("#info-workspace", Label).update(f"Workspace: {workspace or '-'}")
+        self.query_one("#info-session-id", Label).update(session_id[:16] + "..." if len(session_id) > 16 else session_id)
+        self.query_one("#info-workspace", Label).update(workspace or "未设置")
         self._start_polling()
         # 立即做一次初始状态获取，不等20s后的第一次轮询
         self.run_worker(self._poll_runner_status())
 
     def watch_runner_status(self, status: str):
-        """Update runner status display and toggle button.
+        """Update runner status display and button visibility — 对齐 Web 多按钮模式。
 
         Args:
             status: 'alive', 'starting', 'error', 'dead', or 'unknown'
         """
         status_label = self.query_one("#runner-status", Label)
         color_map = {
-            "alive": "● connected",
+            "alive": "● running",
             "starting": "◐ starting",
             "error": "● error",
             "dead": "○ stopped",
             "unknown": "● unknown",
         }
         display = color_map.get(status, f"● {status}")
-        status_label.update(f"Status: {display}")
+        status_label.update(display)
 
-        # Update toggle button (single button, broca-web pattern)
-        toggle_btn = self.query_one("#btn-toggle-runner", Button)
+        # 对齐 Web：不同状态显示不同按钮
+        # starting 状态保持启动按钮可见（显示 loading 提示）
+        self.query_one("#btn-start-runner").display = status in ("dead", "unknown", "error", "starting")
+        self.query_one("#btn-stop-runner").display = (status == "alive")
+        self.query_one("#btn-restart-runner").display = (status == "error")
 
-        if status == "alive":
-            toggle_btn.label = "⏹ 停止进程"
-            toggle_btn.disabled = self.runner_action_loading
-        elif status == "starting":
-            toggle_btn.label = "◐ 启动中"
-            toggle_btn.disabled = True
-        elif status == "error":
-            toggle_btn.label = "🔄 重启进程"
-            toggle_btn.disabled = self.runner_action_loading
-        else:  # dead, unknown
-            toggle_btn.label = "▶ 启动进程"
-            toggle_btn.disabled = self.runner_action_loading
+        # 所有按钮在 starting/loading 时禁用
+        for btn_id in ("#btn-start-runner", "#btn-stop-runner", "#btn-restart-runner"):
+            self.query_one(btn_id).disabled = (status == "starting") or self.runner_action_loading
 
     def watch_runner_action_loading(self, loading: bool):
-        """Sync loading state with button disabled state."""
-        try:
-            btn = self.query_one("#btn-toggle-runner", Button)
-            btn.disabled = loading
-        except Exception:
-            pass
+        """Sync loading state with button disabled states and show loading indicator."""
+        labels = {
+            "#btn-start-runner": "启动",
+            "#btn-stop-runner": "停止",
+            "#btn-restart-runner": "重启",
+        }
+        for btn_id, label in labels.items():
+            try:
+                btn = self.query_one(btn_id, Button)
+                btn.disabled = loading
+                btn.label = "◐ 处理中..." if loading else label
+            except Exception:
+                pass
 
     def update_runner_stats(self, pid: Optional[int], uptime: Optional[str],
                              cpu: Optional[float] = None, memory_mb: Optional[float] = None):
@@ -174,22 +210,23 @@ class InfoSidebar(Widget):
             cpu: CPU usage percentage
             memory_mb: Memory usage in MB
         """
-        self.query_one("#runner-pid", Label).update(f"PID: {pid if pid else '-'}")
+        self.query_one("#runner-pid", Label).update(str(pid) if pid else "-")
         uptime_str = uptime or "-"
-        self.query_one("#runner-uptime", Label).update(f"Uptime: {uptime_str}")
+        self.query_one("#runner-uptime", Label).update(uptime_str)
 
-        # CPU display
-        cpu_str = f"CPU: {cpu:.1f}%" if cpu is not None else "CPU: -"
+        # CPU
+        cpu_str = f"{int(cpu)}%" if cpu is not None else "-"
         self.query_one("#runner-cpu", Label).update(cpu_str)
 
-        # Memory display (>1024MB → GB)
+        # Memory (>1024MB → GB)
         if memory_mb is not None:
-            if memory_mb > 1024:
-                memory_str = f"Memory: {memory_mb / 1024:.1f} GB"
+            val = int(memory_mb)
+            if val > 1024:
+                memory_str = f"{val // 1024} GB"
             else:
-                memory_str = f"Memory: {memory_mb:.0f} MB"
+                memory_str = f"{val} MB"
         else:
-            memory_str = "Memory: -"
+            memory_str = "-"
         self.query_one("#runner-memory", Label).update(memory_str)
 
     def update_message_stats(self, messages: list):
@@ -204,7 +241,7 @@ class InfoSidebar(Widget):
         pass
 
     def _update_stats_from_api(self, stats_data: dict):
-        """从 API 响应更新消息统计。
+        """从 API 响应更新消息统计 — 对齐 Web 标签名。
 
         API 返回格式（GET /session/{id}/stats）：
         {total, user_count, agent_count, tool_count, system_count, error_count}
@@ -221,11 +258,14 @@ class InfoSidebar(Widget):
         system_count = stats_data.get("system_count", 0)
         error_count = stats_data.get("error_count", 0)
 
-        self.query_one("#stat-user", Label).update(f"User: {user_count}")
-        self.query_one("#stat-agent", Label).update(f"Agent: {agent_count}")
-        self.query_one("#stat-tools", Label).update(f"Tools: {tool_count}")
-        self.query_one("#stat-system", Label).update(f"System: {system_count}")
-        self.query_one("#stat-errors", Label).update(f"Errors: {error_count}")
+        self.query_one("#stat-user", Label).update(str(user_count))
+        self.query_one("#stat-agent", Label).update(str(agent_count))
+        self.query_one("#stat-tool-calls", Label).update(str(tool_count))
+        self.query_one("#stat-system", Label).update(str(system_count))
+        # Tool Call Errors — 大于 0 时红色加粗（对齐 Web）
+        err_label = self.query_one("#stat-errors", Label)
+        err_label.update(str(error_count))
+        err_label.styles.color = "$error" if error_count > 0 else ""
 
     def _start_polling(self):
         """Start periodic runner status polling (20s interval, aligning with AgentSidebar)."""
@@ -244,8 +284,26 @@ class InfoSidebar(Widget):
                 pass
             self._poll_timer = None
 
+    def _get_runner_uptime(self, uptime_seconds: Optional[float]) -> str:
+        """格式化运行时长 — 中文格式。
+
+        Args:
+            uptime_seconds: 运行秒数（可能带小数）
+
+        Returns:
+            如 "3小时20分钟" 或 "45分钟"
+        """
+        if not uptime_seconds or uptime_seconds <= 0:
+            return "-"
+        total = int(uptime_seconds)
+        h = total // 3600
+        m = (total % 3600) // 60
+        if h > 0:
+            return f"{h}小时{m}分钟"
+        return f"{m}分钟"
+
     async def _poll_runner_status(self):
-        """Poll runner status from API — extended to include Session Info + Message Stats."""
+        """Poll runner status from API — extended to include Session Info + Message Stats + Job/Task counts."""
         if not self._session_id:
             return
         try:
@@ -255,9 +313,10 @@ class InfoSidebar(Widget):
             self.runner_status = status
             self.runner_uptime = str(info.get("uptime_seconds", ""))
             resource = info.get("resource_usage", {}) or {}
+            uptime_seconds = info.get("uptime_seconds") or 0
             self.update_runner_stats(
                 pid=info.get("pid"),
-                uptime=self.runner_uptime,
+                uptime=self._get_runner_uptime(uptime_seconds),
                 cpu=resource.get("cpu_percent"),
                 memory_mb=resource.get("memory_rss_mb"),
             )
@@ -267,7 +326,7 @@ class InfoSidebar(Widget):
                 session_info = await self._api.get_session(self._session_id)
                 workspace = session_info.get("workspace", "") or ""
                 self.query_one("#info-workspace", Label).update(
-                    f"Workspace: {workspace or '-'}"
+                    workspace or "未设置"
                 )
             except Exception:
                 pass
@@ -279,27 +338,44 @@ class InfoSidebar(Widget):
             except Exception:
                 pass
 
+            # 4. Job & Task counts
+            try:
+                job_count = await self._api.get_job_count(self._session_id)
+                self.query_one("#info-jobs", Label).update(str(job_count))
+            except Exception:
+                pass
+            try:
+                task_count = await self._api.get_task_count(self._session_id)
+                self.query_one("#info-tasks", Label).update(str(task_count))
+            except Exception:
+                pass
+
         except Exception:
             self.runner_status = "unknown"
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle toggle button press — starts or stops the runner.
+        """Handle button presses — 对齐 Web 多按钮模式。
 
-        broca-web pattern: single button that switches between start/stop.
+        三个按钮分别对应：启动/停止/重启，不同状态显示不同按钮。
         """
-        if event.button.id != "btn-toggle-runner":
+        button_id = event.button.id or ""
+
+        if button_id == "btn-refresh-runner":
+            self.run_worker(self._poll_runner_status())
             return
 
-        status = self.runner_status
+        if button_id not in ("btn-start-runner", "btn-stop-runner", "btn-restart-runner"):
+            return
+
         session_id = self._session_id
         if not session_id:
             return
 
-        if status == "alive":
-            self.runner_action_loading = True
+        self.runner_action_loading = True
+
+        if button_id == "btn-stop-runner":
             self.run_worker(self._do_stop_runner(session_id))
         else:
-            self.runner_action_loading = True
             self.run_worker(self._do_start_runner(session_id))
 
     async def _do_start_runner(self, session_id: str):
@@ -319,7 +395,7 @@ class InfoSidebar(Widget):
                     self.runner_status = s
                     self.update_runner_stats(
                         pid=info.get("pid"),
-                        uptime=str(info.get("uptime_seconds", "")),
+                        uptime=self._get_runner_uptime(info.get("uptime_seconds")),
                     )
                     if s == "alive":
                         break
@@ -341,8 +417,6 @@ class InfoSidebar(Widget):
                 await self._api.stop_runner(session_id)
             self.runner_status = "dead"
             self.update_runner_stats(pid=None, uptime=None)
-        except Exception:
-            pass  # Keep current status on failure
         finally:
             self.runner_action_loading = False
 
