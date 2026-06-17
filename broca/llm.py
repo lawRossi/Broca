@@ -88,7 +88,7 @@ class LLMClient:
             raise ValueError(f"Unknown model: {model}")
 
         modality = self.config[provider]["models"][model]["meta"]["modality"]
-        raw_input = None
+        raw_input = message.data.get("raw_input") if message.data else None
         if message.message_type == MessageType.USER_MESSAGE:
             text_content = message.data.get("content", "")
             image_content = []
@@ -120,7 +120,8 @@ class LLMClient:
                         file_info = f"文件类型：{file_type}\n文件链接：{file_url}"
                         file_info_parts.append(file_info)
                 if file_info_parts:
-                    raw_input = text_content
+                    if raw_input is None:
+                        raw_input = text_content
                     files_section = "\n\n[附件文件]:\n" + "\n".join(file_info_parts)
                     text_content = text_content + files_section
         elif message.message_type == MessageType.TASK_START:

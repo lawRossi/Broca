@@ -860,10 +860,15 @@ class ExecutionEngine:
                 message = "Turn failed"
 
             # 先保存到 DB（使用统一 message_id），再发 Socket.IO
-            turn_status = "completed" if result.status == ExecutionStatus.COMPLETED else "error"
+            turn_status = (
+                "completed" if result.status == ExecutionStatus.COMPLETED else "error"
+            )
             saved = await self.session_manager.save_turn_end(
-                turn_id=self.turn_id, agent_id=self.agent_id, message=message,
-                status=turn_status, message_id=turn_end_msg_id,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+                message=message,
+                status=turn_status,
+                message_id=turn_end_msg_id,
             )
 
             if self.config.interactive:
@@ -877,7 +882,8 @@ class ExecutionEngine:
             if result.status != ExecutionStatus.COMPLETED:
                 if self.config.interactive:
                     await self.communicator.send_error(
-                        message, subscription=self.session_id,
+                        message,
+                        subscription=self.session_id,
                     )
 
             return saved
@@ -949,6 +955,8 @@ class ExecutionEngine:
                 )
                 if message.data and message.data.get("files"):
                     broadcast_msg.data["files"] = message.data["files"]
+                if user_message.get("raw_input"):
+                    broadcast_msg.data["raw_input"] = user_message["raw_input"]
                 await self.communicator.send_message(broadcast_msg)
 
             await self.context.add_message(user_message, message_id)
