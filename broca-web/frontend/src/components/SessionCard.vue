@@ -318,21 +318,25 @@ const handleToggleRunner = async () => {
     </div>
 
     <!-- 第二行：ID、Workspace、创建时间、操作按钮 -->
-    <div class="flex items-center justify-between text-sm text-gray-500">
-      <div class="flex items-center gap-3 min-w-0">
+    <!-- 桌面端：[ID workspace]  🕐时间                [文件] [启动] [删除] -->
+    <!-- 移动端：[ID workspace]                [文件] [启动] [删除] -->
+    <!--        🕐时间                                                    -->
+    <div class="flex items-center text-sm text-gray-500 session-meta-row">
+      <div class="flex items-center gap-3 min-w-0 session-meta-left">
         <span class="font-mono text-xs truncate max-w-[120px]" :title="session.session_id">
           ID: {{ truncateId(session.session_id, 12) }}
         </span>
         <span v-if="session.workspace" class="truncate max-w-[160px]" :title="session.workspace">
           📁 {{ session.workspace.length > 20 ? session.workspace.slice(0, 20) + '...' : session.workspace }}
         </span>
-        <span class="flex items-center gap-1 flex-shrink-0">
-          🕐 {{ formatBeijingTime(session.created_at ? (session.created_at.includes('T') && !session.created_at.endsWith('Z') && !session.created_at.includes('+') ? session.created_at + 'Z' : session.created_at) : null).slice(0, 16) }}
-        </span>
       </div>
 
+      <span class="session-time">
+        🕐 {{ formatBeijingTime(session.created_at ? (session.created_at.includes('T') && !session.created_at.endsWith('Z') && !session.created_at.includes('+') ? session.created_at + 'Z' : session.created_at) : null).slice(0, 16) }}
+      </span>
+
       <!-- 操作按钮组 -->
-      <div v-if="showActions" class="flex items-center gap-2 flex-shrink-0">
+      <div v-if="showActions" class="flex items-center gap-2 flex-shrink-0 session-actions">
         <el-button
           v-if="session.workspace"
           type="primary"
@@ -367,7 +371,7 @@ const handleToggleRunner = async () => {
       </div>
 
       <!-- 桌面端显示箭头 -->
-      <el-icon v-else class="text-gray-400 flex-shrink-0">
+      <el-icon v-else class="flex-shrink-0 session-arrow">
         <ArrowRight />
       </el-icon>
     </div>
@@ -402,8 +406,43 @@ const handleToggleRunner = async () => {
   font-weight: 500;
 }
 
+/* 第二行：flex 布局控制 */
+.session-meta-row {
+  display: flex;
+  align-items: center;
+}
+
+.session-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  order: 1;
+}
+
+.session-time {
+  order: 2;
+  margin-left: 12px;
+  flex-shrink: 0;
+}
+
+.session-actions,
+.session-arrow {
+  order: 3;
+  margin-left: auto;
+}
+
 /* 移动端优化 */
 @media (max-width: 640px) {
+  .session-meta-row {
+    flex-wrap: wrap;
+  }
+  .session-time {
+    order: 3;
+    width: 100%;
+    margin-left: 0;
+    margin-top: 4px;
+  }
   .session-card {
     padding: 0.75rem 1rem;
   }
