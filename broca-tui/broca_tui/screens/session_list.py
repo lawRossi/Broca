@@ -12,12 +12,14 @@ Features:
 from __future__ import annotations
 
 import os
+from datetime import datetime, timezone, timedelta
 from typing import Any, Dict, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual import events
 from textual.screen import ModalScreen, Screen
+from textual.widget import Widget
 from textual.widgets import Button, Input, Label, Select, Static
 
 from broca_tui.api.session import SessionAPI
@@ -238,6 +240,11 @@ class SessionListScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         self._store = SessionStore()
+        self._api = SessionAPI()
+
+    async def _cleanup(self) -> None:
+        """Clean up API client when screen is closed."""
+        await self._api.close()
 
     def compose(self) -> ComposeResult:
         """Create the screen layout."""
@@ -245,8 +252,8 @@ class SessionListScreen(Screen):
             # Top bar
             with Horizontal(classes="session-list-header"):
                 yield Label("会话管理", classes="screen-title")
-                yield Label("", id="session-count", classes="session-count")
                 yield Static("", classes="header-spacer")
+                yield Label("", id="session-count", classes="session-count")
                 yield Button(
                     "＋ 新会话",
                     id="btn-create-session",
@@ -367,7 +374,16 @@ class SessionListScreen(Screen):
         session_id = session.get("session_id", "")
         description = session.get("description") or session_id[:16]
         category = session.get("category", "normal")
-        created_at = (session.get("created_at", "") or "")[:19]
+        created_at_raw = session.get("created_at", "") or ""
+        # 后端存储 UTC 时间，转为北京时间 (UTC+8) 并显示到分钟
+        try:
+            utc_dt = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+            if utc_dt.tzinfo is None:
+                utc_dt = utc_dt.replace(tzinfo=timezone.utc)
+            beijing_dt = utc_dt.astimezone(timezone(timedelta(hours=8)))
+            created_at = beijing_dt.strftime("%Y-%m-%d %H:%M")
+        except (ValueError, AttributeError):
+            created_at = created_at_raw[:16]
         workspace = session.get("workspace", "")
 
         category_label = "" if category == "normal" else "📝 编排"
@@ -404,6 +420,8 @@ class SessionListScreen(Screen):
         card = Vertical(
             Horizontal(
                 Label(description[:40], classes="session-name"),
+                Label("✏️", classes="edit-hint"),
+                Static("", classes="header-spacer"),
                 Label(category_label, classes=f"session-category {category_class}"),
                 Label(status_text, classes=f"runner-status {runner_status}"),
                 classes="session-card-header",
@@ -421,6 +439,111 @@ class SessionListScreen(Screen):
         )
         return card
 
+    def _find_session_id(self, widget: Widget) -> str | None:
+        """Walk up the widget tree to find the session card ID.
+
+        Args:
+            widget: The clicked widget
+
+        Returns:
+            Session ID or None
+        """
+        parent = widget.parent
+        while parent is not None:
+            if hasattr(parent, "id") and parent.id and parent.id.startswith("session-"):
+                return parent.id.replace("session-", "")
+            parent = parent.parent
+        return None
+
+    def _start_inline_edit(self, session_id: str) -> None:
+        """Replace session name label with an Input for inline editing.
+
+        Finds the session-name label in the session card automatically.
+
+        Args:
+            session_id: Session ID
+        """
+        session = self._store.get_session(session_id)
+        current_text = session.get("description", "") or session_id[:16]
+
+        # Find the session-name label in the card
+        card = self.query_one(f"#session-{session_id}", Vertical)
+        name_label = card.query_one(".session-name", Label)
+        edit_input = Input(
+            value=str(current_text),
+            id=f"edit-name-{session_id}",
+            classes="edit-name-input",
+        )
+        parent = name_label.parent
+        if parent:
+            # 也移除编辑图标
+            for child in list(parent.children):
+                if child.has_class("edit-hint"):
+                    child.remove()
+            name_label.remove()
+            parent.mount(edit_input, before=0)
+            self.set_timer(0.05, lambda: edit_input.focus())
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle Escape key to cancel inline editing.
+
+        Args:
+            event: Key event
+        """
+        if event.key == "escape":
+            focused = self.focused
+            if focused and isinstance(focused, Input) and focused.id and focused.id.startswith("edit-name-"):
+                # Cancel: just re-render without saving
+                event.stop()
+                self.run_worker(self._render_sessions())
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Handle input submission — save inline-edited description on Enter.
+
+        Args:
+            event: Input submitted event
+        """
+        input_id = event.input.id or ""
+        if input_id.startswith("edit-name-"):
+            session_id = input_id.replace("edit-name-", "")
+            new_desc = event.value.strip()
+            self.run_worker(self._save_description(session_id, new_desc, event.input))
+
+    def on_input_blurred(self, event: Input.Blurred) -> None:
+        """Handle input blur — save and revert inline edit input on focus loss.
+
+        Args:
+            event: Input blurred event
+        """
+        input_id = event.input.id or ""
+        if input_id.startswith("edit-name-"):
+            session_id = input_id.replace("edit-name-", "")
+            new_desc = event.value.strip()
+            self.run_worker(self._save_description(session_id, new_desc, event.input))
+
+    async def _save_description(self, session_id: str, description: str, edit_input: Input) -> None:
+        """Save updated description via API and refresh the card.
+
+        Args:
+            session_id: Session ID
+            description: New description text
+            edit_input: The Input widget to replace back
+        """
+        session = self._store.get_session(session_id)
+        old_desc = session.get("description", "") or session_id[:16]
+        if description == old_desc:
+            await self._render_sessions()
+            return
+
+        try:
+            await self._api.update_session(session_id, description=description)
+            await self._store.refresh()
+            self.notify("描述已更新", severity="information", timeout=2)
+        except Exception as e:
+            self.notify(f"保存失败: {e}", severity="error", timeout=5)
+        finally:
+            await self._render_sessions()
+
     def on_click(self, event: events.Click) -> None:
         """Handle session card click — click card to enter, skip buttons.
 
@@ -429,6 +552,17 @@ class SessionListScreen(Screen):
         """
         # 如果点击的是按钮，不触发导航（按钮有自己的处理）
         if isinstance(event.widget, Button):
+            return
+
+        # 如果是输入框或编辑图标，不触发导航
+        if isinstance(event.widget, Input):
+            return
+
+        # 点击 session-name 或 edit-hint 启动内联编辑
+        if event.widget.has_class("session-name") or event.widget.has_class("edit-hint"):
+            session_id = self._find_session_id(event.widget)
+            if session_id:
+                self._start_inline_edit(session_id)
             return
 
         # Walk up to find session card

@@ -260,80 +260,56 @@ const handleToggleRunner = async () => {
     :class="{ 'ring-2 ring-blue-500': isSelected }"
     @click="handleCardClick"
   >
-    <!-- 顶部：复选框、ID、状态 -->
-    <div class="flex items-start justify-between mb-3">
-      <div class="flex items-start gap-3 flex-1 min-w-0">
+    <!-- 第一行：描述 + 状态标签 -->
+    <div class="flex items-center justify-between mb-2">
+      <div class="flex items-center gap-3 flex-1 min-w-0">
         <!-- 选择复选框 -->
         <el-checkbox :model-value="isSelected" @change="handleCheckboxChange" @click.stop />
 
-        <!-- ID 和描述 -->
-        <div class="flex-1 min-w-0">
-          <div class="font-mono text-xs text-gray-500 mb-1">
-            {{ truncateId(session.session_id, 10) }}
+        <!-- 描述显示/编辑区域 -->
+        <div v-if="!isEditing" class="flex items-center gap-2 flex-1 min-w-0">
+          <div class="text-gray-900 font-medium truncate cursor-text" @dblclick="startEdit">
+            {{ session.description || '无描述' }}
           </div>
+          <el-icon
+            class="text-gray-400 hover:text-blue-500 cursor-pointer transition-colors flex-shrink-0"
+            size="14"
+            @click.stop="startEdit"
+            title="编辑描述"
+          >
+            <Edit />
+          </el-icon>
+        </div>
 
-          <!-- 描述显示/编辑区域 -->
-          <div class="flex items-center gap-2">
-            <!-- 显示模式 -->
-            <div v-if="!isEditing" class="flex items-center gap-2 flex-1">
-              <div class="text-gray-900 font-medium truncate cursor-text" @dblclick="startEdit">
-                {{ session.description || '无描述' }}
-              </div>
-              <!-- 编辑小图标 -->
-              <el-icon
-                class="text-gray-400 hover:text-blue-500 cursor-pointer transition-colors"
-                size="14"
-                @click.stop="startEdit"
-                title="编辑描述"
-              >
-                <Edit />
-              </el-icon>
-            </div>
-
-            <!-- 编辑模式 -->
-            <div v-else class="flex items-center gap-2 flex-1 flex-col">
-              <el-input
-                ref="descriptionInputRef"
-                v-model="editDescription"
-                size="small"
-                placeholder="请输入会话描述"
-                maxlength="200"
-                show-word-limit
-                @keydown="handleKeydown"
-                @blur="saveEdit"
-                class="flex-1 w-full"
-              />
-              <div class="flex items-center gap-1">
-                <el-button
-                  type="success"
-                  size="small"
-                  :loading="editing"
-                  :icon="Check"
-                  @click.stop="saveEdit"
-                  title="保存"
-                />
-                <el-button type="info" size="small" :icon="Close" @click.stop="cancelEdit" title="取消" />
-              </div>
-            </div>
+        <!-- 编辑模式 -->
+        <div v-else class="flex items-center gap-2 flex-1 flex-col">
+          <el-input
+            ref="descriptionInputRef"
+            v-model="editDescription"
+            size="small"
+            placeholder="请输入会话描述"
+            maxlength="200"
+            show-word-limit
+            @keydown="handleKeydown"
+            @blur="saveEdit"
+            class="flex-1 w-full"
+          />
+          <div class="flex items-center gap-1">
+            <el-button type="success" size="small" :loading="editing" :icon="Check" @click.stop="saveEdit" title="保存" />
+            <el-button type="info" size="small" :icon="Close" @click.stop="cancelEdit" title="取消" />
           </div>
         </div>
       </div>
 
-      <!-- 状态标签（使用 runner_status） -->
-      <div class="ml-3 flex-shrink-0 flex items-center gap-1">
-        <el-tag
-          :type="getDisplayStatusType(session)"
-          size="small"
-          effect="plain"
-        >
+      <!-- 状态标签 -->
+      <div class="flex-shrink-0 flex items-center gap-1 ml-2">
+        <el-tag v-if="session.category === 'agent-orchestration'" type="warning" size="small" effect="light">
+          📝 编排
+        </el-tag>
+        <el-tag :type="getDisplayStatusType(session)" size="small" effect="plain">
           {{ getDisplayStatusLabel(session) }}
         </el-tag>
-        <!-- 心跳异常额外标记 -->
-        <el-tooltip
-          v-if="session.runner_status === 'error'"
-          content="后台进程异常，点击重启"
-          placement="top"
-        >
+        <el-tooltip v-if="session.runner_status === 'error'" content="后台进程异常，点击重启" placement="top">
           <el-icon class="text-red-500 cursor-pointer" size="14" @click.stop="handleToggleRunner">
             <WarningFilled />
           </el-icon>
@@ -341,18 +317,22 @@ const handleToggleRunner = async () => {
       </div>
     </div>
 
-    <!-- 底部：创建时间、操作按钮 -->
+    <!-- 第二行：ID、Workspace、创建时间、操作按钮 -->
     <div class="flex items-center justify-between text-sm text-gray-500">
-      <div class="flex items-center gap-1">
-        <el-icon class="text-xs">
-          <Calendar />
-        </el-icon>
-        <span>{{ formatBeijingTime(session.created_at).split(' ')[0] }}</span>
+      <div class="flex items-center gap-3 min-w-0">
+        <span class="font-mono text-xs truncate max-w-[120px]" :title="session.session_id">
+          ID: {{ truncateId(session.session_id, 12) }}
+        </span>
+        <span v-if="session.workspace" class="truncate max-w-[160px]" :title="session.workspace">
+          📁 {{ session.workspace.length > 20 ? session.workspace.slice(0, 20) + '...' : session.workspace }}
+        </span>
+        <span class="flex items-center gap-1 flex-shrink-0">
+          🕐 {{ formatBeijingTime(session.created_at ? (session.created_at.includes('T') && !session.created_at.endsWith('Z') && !session.created_at.includes('+') ? session.created_at + 'Z' : session.created_at) : null).slice(0, 16) }}
+        </span>
       </div>
 
       <!-- 操作按钮组 -->
-      <div v-if="showActions" class="flex items-center gap-2">
-        <!-- 文件浏览按钮 -->
+      <div v-if="showActions" class="flex items-center gap-2 flex-shrink-0">
         <el-button
           v-if="session.workspace"
           type="primary"
@@ -362,13 +342,9 @@ const handleToggleRunner = async () => {
           :title="`浏览工作空间: ${session.workspace}`"
           @click.stop="handleBrowseFiles"
         >
-          <el-icon class="mr-1">
-            <FolderOpened />
-          </el-icon>
+          <el-icon class="mr-1"><FolderOpened /></el-icon>
           文件
         </el-button>
-
-        <!-- 进程启停按钮（所有会话类型） -->
         <el-button
           :type="session.runner_status === 'alive' ? 'warning' : 'primary'"
           size="small"
@@ -384,18 +360,14 @@ const handleToggleRunner = async () => {
           </el-icon>
           {{ session.runner_status === 'alive' ? '停止' : session.runner_status === 'starting' ? '启动中' : '启动' }}
         </el-button>
-
-        <!-- 删除按钮 -->
         <el-button type="danger" size="small" plain :disabled="isEditing || sessionStore.isDeleting(session.session_id)" :loading="sessionStore.isDeleting(session.session_id)" @click.stop="handleDelete">
-          <el-icon v-if="!sessionStore.isDeleting(session.session_id)" class="mr-1">
-            <Delete />
-          </el-icon>
+          <el-icon v-if="!sessionStore.isDeleting(session.session_id)" class="mr-1"><Delete /></el-icon>
           {{ sessionStore.isDeleting(session.session_id) ? '删除中...' : '删除' }}
         </el-button>
       </div>
 
       <!-- 桌面端显示箭头 -->
-      <el-icon v-else class="text-gray-400">
+      <el-icon v-else class="text-gray-400 flex-shrink-0">
         <ArrowRight />
       </el-icon>
     </div>

@@ -854,14 +854,14 @@ Toast {
 
 .session-list-header {
     height: 5;
-    background: $gray-700;
+    background: $gray-200;
     padding: 0 2;
     align: left middle;
     min-height: 5;
 }
 
 .screen-title {
-    color: white;
+    color: $gray-800;
     text-style: bold;
     width: auto;
     margin-right: 1;
@@ -872,7 +872,8 @@ Toast {
 }
 
 .session-count {
-    color: $gray-200;
+    color: $gray-600;
+    margin-top: 1;
 }
 
 .create-btn {
@@ -881,13 +882,23 @@ Toast {
     color: white;
     border: none;
     text-style: bold;
-    padding: 0 3;
+    padding: 0 1;
     margin-left: 1;
     height: 3;
 }
 
 .create-btn:hover {
     background: $primary-600;
+}
+
+.edit-name-input {
+    width: 1fr;
+    height: 3;
+    border: solid $primary-400;
+    background: $gray-50;
+    color: $gray-800;
+    padding: 0 1;
+    min-height: 3;
 }
 
 .search-bar {
@@ -926,7 +937,14 @@ Toast {
 .session-name {
     text-style: bold;
     color: $gray-800;
-    width: 1fr;
+    width: auto;
+}
+
+.edit-hint {
+    color: $gray-400;
+    width: auto;
+    padding: 0;
+    margin: 0;
 }
 
 .session-category {
