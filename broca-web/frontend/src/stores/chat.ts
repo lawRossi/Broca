@@ -16,6 +16,15 @@ interface TodoItem {
   status: 'pending' | 'in_progress' | 'completed'
 }
 
+interface ChangedFiles {
+  totalAdded: number
+  totalDeleted: number
+  totalModified: number
+  filesAdded: string[]
+  filesDeleted: string[]
+  filesModified: string[]
+}
+
 interface TurnSummary {
   turnId: string
   sequenceNumber: number
@@ -36,6 +45,8 @@ interface TurnSummary {
   createdAt: string
   /** 该 turn 最后一个非撤销消息的 message_id，用于 turn 级撤销定位 */
   lastMessageId: string | null
+  /** 文件变更摘要 */
+  changedFiles: ChangedFiles | null
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -612,6 +623,7 @@ export const useChatStore = defineStore('chat', () => {
       startedAt: Date.now(),
       createdAt: new Date().toISOString(),
       lastMessageId: null,
+      changedFiles: null,
     }
 
     turnSummaries.value.push(newSummary)
@@ -638,6 +650,18 @@ export const useChatStore = defineStore('chat', () => {
     }
     // 保存 turn_end 消息 ID 用于撤销定位（始终安全，后端可能已删除最后响应消息）
     turn.lastMessageId = message.message_id
+    // 提取文件变更信息
+    if (message.data?.changed_files) {
+      const cf = message.data.changed_files
+      turn.changedFiles = {
+        totalAdded: cf.total_added || 0,
+        totalDeleted: cf.total_deleted || 0,
+        totalModified: cf.total_modified || 0,
+        filesAdded: cf.files_added || [],
+        filesDeleted: cf.files_deleted || [],
+        filesModified: cf.files_modified || [],
+      }
+    }
     _turnLastResponseMsgId.delete(turnId)
     _turnContentMsgId.delete(turnId)
     _turnSeenToolCallIds.delete(turnId)
@@ -940,6 +964,14 @@ export const useChatStore = defineStore('chat', () => {
           startedAt: parseISODate(t.started_at) ?? Date.now(),
           createdAt: t.created_at || '',
           lastMessageId: t.last_message_id || null,
+          changedFiles: t.changed_files ? {
+            totalAdded: t.changed_files.total_added || 0,
+            totalDeleted: t.changed_files.total_deleted || 0,
+            totalModified: t.changed_files.total_modified || 0,
+            filesAdded: t.changed_files.files_added || [],
+            filesDeleted: t.changed_files.files_deleted || [],
+            filesModified: t.changed_files.files_modified || [],
+          } : null,
         }))
 
       if (isLoadMore) {

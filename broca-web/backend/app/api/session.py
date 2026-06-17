@@ -665,6 +665,7 @@ async def get_session_turns(
                 "current_todo_list": stats["current_todo_list"],
                 "final_response": stats["final_response"],
                 "last_message_id": stats.get("last_message_id"),
+                "changed_files": stats.get("changed_files", {}),
             })
 
         turn_list.reverse()

@@ -529,6 +529,7 @@ class MessageProtocol:
         turn_id: str,
         result: Optional[str] = None,
         turn_description: Optional[str] = None,
+        changed_files: Optional[Dict[str, Any]] = None,
         **kwargs,
     ) -> Message:
         """创建轮次结束消息"""
@@ -537,6 +538,8 @@ class MessageProtocol:
             data["status"] = result
         if turn_description:
             data["turn_description"] = turn_description
+        if changed_files:
+            data["changed_files"] = changed_files
         return Message(
             message_type=MessageType.TURN_END,
             role=MessageRole.AGENT,

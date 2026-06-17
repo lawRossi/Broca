@@ -127,6 +127,14 @@ export interface TurnSummaryData {
   started_at: string
   created_at: string
   last_message_id: string | null
+  changed_files?: {
+    total_added: number
+    total_deleted: number
+    total_modified: number
+    files_added: string[]
+    files_deleted: string[]
+    files_modified: string[]
+  }
 }
 
 export interface TurnsResponse {

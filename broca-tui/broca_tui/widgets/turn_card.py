@@ -281,6 +281,26 @@ class TurnCard(Widget):
         border-left: solid #c9a84c;
     }
 
+    #changed-files-summary {
+        color: $text;
+    }
+
+    #changed-files-summary:hover {
+        text-style: bold underline;
+    }
+
+    .changed-files-detail {
+        height: auto;
+        margin: 0 0 0 2;
+        padding: 1 1;
+        border-left: solid #c9a84c;
+        background: rgba(201, 168, 76, 0.06);
+    }
+
+    #changed-files-detail-text {
+        color: $text;
+    }
+
     .turn-tool-stats {
         color: $text;
     }
@@ -344,6 +364,7 @@ class TurnCard(Widget):
         self._agent_name_map = agent_name_map or {}
         self._consecutive_agent = consecutive_agent
         self._show_reasoning = False
+        self._show_changed_files_detail = False  # 文件变更详情默认折叠
         self._response_expanded = True  # 回复默认展开，过长时可折叠
         self._last_reasoning_update = 0.0  # 推理内容节流时间戳
         self._last_response_update = 0.0  # 回复内容节流时间戳
@@ -462,6 +483,39 @@ class TurnCard(Widget):
         except Exception:
             pass
 
+        # 更新文件变更统计和详情（使用 plain text 避免 Rich markup span 拦截点击事件）
+        try:
+            cf = self._turn.changed_files
+            if cf:
+                cf_summary = self.query_one("#changed-files-summary", Label)
+                if cf_summary:
+                    added = cf.get("total_added", 0)
+                    deleted = cf.get("total_deleted", 0)
+                    modified = cf.get("total_modified", 0)
+                    toggle_icon = "▼" if self._show_changed_files_detail else "▶"
+                    cf_summary.update(
+                        f"+{added} -{deleted} ~{modified} {toggle_icon}"
+                    )
+
+                detail_label = self.query_one("#changed-files-detail-text", Label)
+                if detail_label:
+                    lines = []
+                    if cf.get("files_added"):
+                        lines.append("新增:")
+                        for f in cf.get("files_added", []):
+                            lines.append(f"  + {f}")
+                    if cf.get("files_deleted"):
+                        lines.append("删除:")
+                        for f in cf.get("files_deleted", []):
+                            lines.append(f"  - {f}")
+                    if cf.get("files_modified"):
+                        lines.append("修改:")
+                        for f in cf.get("files_modified", []):
+                            lines.append(f"  ~ {f}")
+                    detail_label.update("\n".join(lines))
+        except Exception:
+            pass
+
         # 更新 TODO 列表内容 — 替换容器内子元素（容器本身不重建）
         if self._show_todo_list():
             try:
@@ -561,6 +615,18 @@ class TurnCard(Widget):
             or bool(self._turn.current_tool)
             or self._show_file_path()
             or self._show_todo_list()
+            or self._show_changed_files()
+        )
+
+    def _show_changed_files(self) -> bool:
+        """判断是否有文件变更可展示。"""
+        cf = self._turn.changed_files
+        if not cf:
+            return False
+        return (
+            cf.get("total_added", 0) > 0
+            or cf.get("total_deleted", 0) > 0
+            or cf.get("total_modified", 0) > 0
         )
 
     def _show_file_path(self) -> bool:
@@ -688,6 +754,17 @@ class TurnCard(Widget):
                     classes="turn-tool-stats",
                     id="tool-stats-text",
                 )
+            # 文件变更统计（可点击展开/折叠）
+            with Horizontal(classes="turn-summary-row", id="changed-files-row"):
+                yield Label("📁 变更文件", classes="turn-summary-label", id="changed-files-label")
+                yield Label(
+                    "",
+                    classes="turn-summary-value",
+                    id="changed-files-summary",
+                )
+            # 文件变更详情（折叠区域）
+            with Vertical(classes="changed-files-detail", id="changed-files-detail"):
+                yield Label("", id="changed-files-detail-text")
 
         # ===== 回复区域（始终创建，初始隐藏） =====
         with Horizontal(
@@ -717,7 +794,7 @@ class TurnCard(Widget):
         # ===== 推理内容（始终创建，初始隐藏） =====
         toggle_icon = "▼" if self._show_reasoning else "▶"
         yield Label(
-            f"{toggle_icon} 思考",
+            f"{toggle_icon} 思考...",
             classes="turn-reasoning-toggle",
             id="reasoning-toggle",
         )
@@ -756,6 +833,12 @@ class TurnCard(Widget):
             self._toggle_display("#todo-list", self._show_todo_list())
             # 工具调用统计
             self._toggle_display("#tool-stats-row", bool(self._turn.tool_call_stats))
+            # 文件变更
+            show_cf = self._show_changed_files()
+            self._toggle_display("#changed-files-row", show_cf)
+            self._toggle_display(
+                "#changed-files-detail", show_cf and self._show_changed_files_detail
+            )
 
         # 回复区域
         has_response = bool(self._turn.final_response)
@@ -840,6 +923,9 @@ class TurnCard(Widget):
                             self._last_reasoning_update = time.time()
                     except Exception:
                         pass
+                self._update_all_sections()
+            elif widget_id in ("changed-files-row", "changed-files-summary", "changed-files-label"):
+                self._show_changed_files_detail = not self._show_changed_files_detail
                 self._update_all_sections()
             elif widget_id == "toggle-response":
                 self._response_expanded = not self._response_expanded

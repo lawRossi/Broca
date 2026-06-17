@@ -152,6 +152,10 @@ class ExecutionEngine:
         self.patch_calculator: Optional[PatchCalculator] = None
         self.current_snapshot_hash: Optional[str] = None
 
+        # Turn 级快照跟踪（用于 turn_end 时计算全量文件变更）
+        self._turn_first_snapshot_hash: Optional[str] = None
+        self._turn_last_snapshot_hash: Optional[str] = None
+
         # Step跟踪
         self._step_has_write_operations: bool = False
 
@@ -187,6 +191,9 @@ class ExecutionEngine:
             if self._step_has_write_operations:
                 snapshot_hash = await self.snapshot_tracker.track()
                 self.current_snapshot_hash = snapshot_hash
+                # 记录该 turn 的第一个快照（用于 turn_end 时计算全量 diff）
+                if self._turn_first_snapshot_hash is None:
+                    self._turn_first_snapshot_hash = self.current_snapshot_hash
             else:
                 snapshot_hash = ""
 
@@ -244,6 +251,19 @@ class ExecutionEngine:
                 )
                 if not patch.get("files"):
                     patch = {}
+                else:
+                    # 计算 diff summary (files_added/files_deleted/files_modified)
+                    try:
+                        diff_content = await self.patch_calculator.calculate_diff(
+                            self.current_snapshot_hash, end_snapshot_hash
+                        )
+                        diff_summary = self.patch_calculator.get_diff_summary(diff_content)
+                        patch["summary"] = diff_summary
+                    except Exception as e:
+                        logger.warning(f"Error calculating diff summary: {e}")
+                        patch["summary"] = {}
+                    # 更新 turn 级最晚快照
+                    self._turn_last_snapshot_hash = snapshot_hash
             except Exception as e:
                 logger.error(f"Error capturing snapshot/patch at step end: {e}")
 
@@ -859,6 +879,35 @@ class ExecutionEngine:
             else:
                 message = "Turn failed"
 
+            # === 计算 turn 级全量文件变更（最早快照 vs 最晚快照）===
+            changed_files = None
+            if (
+                self.patch_calculator
+                and self._turn_first_snapshot_hash
+                and self._turn_last_snapshot_hash
+                and self._turn_first_snapshot_hash != self._turn_last_snapshot_hash
+            ):
+                try:
+                    diff_content = await self.patch_calculator.calculate_diff(
+                        self._turn_first_snapshot_hash, self._turn_last_snapshot_hash
+                    )
+                    diff_summary = self.patch_calculator.get_diff_summary(diff_content)
+                    if diff_summary.get("total_files", 0) > 0:
+                        changed_files = {
+                            "total_added": len(diff_summary.get("files_added", [])),
+                            "total_deleted": len(diff_summary.get("files_deleted", [])),
+                            "total_modified": len(diff_summary.get("files_modified", [])),
+                            "files_added": diff_summary.get("files_added", []),
+                            "files_deleted": diff_summary.get("files_deleted", []),
+                            "files_modified": diff_summary.get("files_modified", []),
+                        }
+                except Exception as e:
+                    logger.warning(f"Error calculating turn-level diff: {e}")
+
+            # 清理 turn 级快照跟踪（为下一个 turn 做准备）
+            self._turn_first_snapshot_hash = None
+            self._turn_last_snapshot_hash = None
+
             # 先保存到 DB（使用统一 message_id），再发 Socket.IO
             turn_status = (
                 "completed" if result.status == ExecutionStatus.COMPLETED else "error"
@@ -869,6 +918,7 @@ class ExecutionEngine:
                 message=message,
                 status=turn_status,
                 message_id=turn_end_msg_id,
+                changed_files=changed_files,
             )
 
             if self.config.interactive:
@@ -877,6 +927,7 @@ class ExecutionEngine:
                     result=result.status.value,
                     message_id=turn_end_msg_id,
                     subscription=self.session_id,
+                    changed_files=changed_files,
                 )
 
             if result.status != ExecutionStatus.COMPLETED:

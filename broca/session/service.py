@@ -362,6 +362,7 @@ class TurnService(BaseService[Turn]):
             "current_todo_list": [],
             "final_response": "",
             "last_message_id": None,
+            "changed_files": {},
         }
 
         tool_call_counter: Dict[str, int] = {}
@@ -407,16 +408,26 @@ class TurnService(BaseService[Turn]):
                     if tool_name in ("read_file", "edit_file", "write_file"):
                         args = m.data.get("arguments")
                         if args:
-                            parsed = json.loads(args) if isinstance(args, str) else args
-                            if isinstance(parsed, dict) and parsed.get("path"):
-                                stats["current_file_path"] = parsed["path"]
+                            try:
+                                parsed = json.loads(args) if isinstance(args, str) else args
+                                if isinstance(parsed, dict) and parsed.get("path"):
+                                    stats["current_file_path"] = parsed["path"]
+                            except (json.JSONDecodeError, TypeError):
+                                pass
                     # 提取 TODO 列表
                     if tool_name == "todo_management":
                         args = m.data.get("arguments")
                         if args:
-                            parsed = json.loads(args) if isinstance(args, str) else args
-                            if isinstance(parsed, dict) and parsed.get("todos"):
-                                stats["current_todo_list"] = parsed["todos"]
+                            try:
+                                parsed = json.loads(args) if isinstance(args, str) else args
+                                if isinstance(parsed, dict) and parsed.get("todos"):
+                                    stats["current_todo_list"] = parsed["todos"]
+                            except (json.JSONDecodeError, TypeError):
+                                pass
+
+            elif m.message_type == MessageType.TURN_END:
+                if m.data and "changed_files" in m.data:
+                    stats["changed_files"] = m.data["changed_files"]
 
             elif m.message_type == MessageType.AGENT_RESPONSE:
                 content = m.data.get("content") if m.data else None

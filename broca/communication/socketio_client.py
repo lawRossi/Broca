@@ -555,12 +555,14 @@ class SocketIOClient:
         subscription: Optional[str] = None,
         callback: Optional[Callable] = None,
         message_id: Optional[str] = None,
+        changed_files: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Send turn end message"""
         message = MessageProtocol.create_turn_end(
             turn_id=turn_id,
             result=result,
             turn_description=turn_description,
+            changed_files=changed_files,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,

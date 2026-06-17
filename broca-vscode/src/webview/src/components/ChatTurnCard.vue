@@ -125,8 +125,20 @@ const showToolStats = computed(() => {
   return props.turn.toolCallStats.length > 0
 })
 
+// 是否显示文件变更
+const showChangedFiles = computed(() => {
+  const cf = props.turn.changedFiles
+  return cf && (cf.totalAdded > 0 || cf.totalDeleted > 0 || cf.totalModified > 0)
+})
+
+// 文件变更详情展开/折叠
+const showChangedFilesDetail = ref(false)
+const toggleChangedFiles = () => {
+  showChangedFilesDetail.value = !showChangedFilesDetail.value
+}
+
 const hasToolExecution = computed(() => {
-  return showToolStats.value || !!currentToolText.value || showFilePath.value || showTodoList.value
+  return showToolStats.value || !!currentToolText.value || showFilePath.value || showTodoList.value || showChangedFiles.value
 })
 
 const toolStatsText = computed(() => {
@@ -233,6 +245,32 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
           <span class="summary-label">🔧 工具调用</span>
           <span class="summary-value stats-text">{{ toolStatsText }}</span>
         </div>
+        <!-- 变更文件 -->
+        <div v-if="showChangedFiles" class="summary-row">
+          <span class="summary-label">📁 变更文件</span>
+          <span class="summary-value changed-files-summary" @click="toggleChangedFiles">
+            <span class="cf-added">+{{ turn.changedFiles.totalAdded }}</span>
+            <span class="cf-sep"> </span>
+            <span class="cf-deleted">-{{ turn.changedFiles.totalDeleted }}</span>
+            <span class="cf-sep"> </span>
+            <span class="cf-modified">~{{ turn.changedFiles.totalModified }}</span>
+            <span class="cf-expand-icon">{{ showChangedFilesDetail ? '▲' : '▼' }}</span>
+          </span>
+        </div>
+        <div v-if="showChangedFiles && showChangedFilesDetail" class="changed-files-detail">
+          <div v-if="turn.changedFiles.filesAdded.length" class="cf-group">
+            <div class="cf-group-label cf-added-label">新增</div>
+            <div v-for="f in turn.changedFiles.filesAdded" :key="f" class="cf-file-item cf-added-file">+ {{ f }}</div>
+          </div>
+          <div v-if="turn.changedFiles.filesDeleted.length" class="cf-group">
+            <div class="cf-group-label cf-deleted-label">删除</div>
+            <div v-for="f in turn.changedFiles.filesDeleted" :key="f" class="cf-file-item cf-deleted-file">- {{ f }}</div>
+          </div>
+          <div v-if="turn.changedFiles.filesModified.length" class="cf-group">
+            <div class="cf-group-label cf-modified-label">修改</div>
+            <div v-for="f in turn.changedFiles.filesModified" :key="f" class="cf-file-item cf-modified-file">~ {{ f }}</div>
+          </div>
+        </div>
       </div>
     </div>
 
@@ -272,7 +310,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
         @click="showReasoning = !showReasoning"
       >
         <span>{{ showReasoning ? '▼' : '▶' }}</span>
-        <span class="reasoning-label">思考</span>
+        <span class="reasoning-label">思考...</span>
         <span v-if="!showReasoning && simplifiedStatus === 'active'" class="reasoning-dots">...</span>
       </button>
       <div v-if="showReasoning" class="reasoning-content">
@@ -492,6 +530,66 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 .todo-item-inner {
   margin-bottom: 4px;
 }
+
+/* ==================== 变更文件 ==================== */
+.changed-files-summary {
+  cursor: pointer;
+  user-select: none;
+}
+
+.changed-files-summary:hover {
+  opacity: 0.8;
+}
+
+.cf-added { color: #16a34a; font-weight: 600; }
+.cf-deleted { color: #dc2626; font-weight: 600; }
+.cf-modified { color: #ca8a04; font-weight: 600; }
+.cf-sep { margin: 0 2px; }
+.cf-expand-icon {
+  font-size: 10px;
+  margin-left: 4px;
+  color: var(--vscode-descriptionForeground, #808080);
+}
+
+.changed-files-detail {
+  margin-top: 4px;
+  margin-left: 64px;
+  padding: 6px 8px;
+  border: 1px solid rgba(201, 168, 76, 0.25);
+  border-radius: 4px;
+  background: rgba(201, 168, 76, 0.06);
+  font-size: 11px;
+}
+
+.cf-group {
+  margin-bottom: 4px;
+}
+
+.cf-group:last-child {
+  margin-bottom: 0;
+}
+
+.cf-group-label {
+  font-weight: 600;
+  font-size: 11px;
+  margin-bottom: 2px;
+}
+
+.cf-added-label { color: #16a34a; }
+.cf-deleted-label { color: #dc2626; }
+.cf-modified-label { color: #ca8a04; }
+
+.cf-file-item {
+  padding: 1px 0 1px 8px;
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+  font-size: 11px;
+  color: var(--vscode-descriptionForeground, #808080);
+  word-break: break-all;
+}
+
+.cf-added-file { color: #15803d; }
+.cf-deleted-file { color: #b91c1c; }
+.cf-modified-file { color: #a16207; }
 
 .todo-item-inner:last-child {
   margin-bottom: 0;

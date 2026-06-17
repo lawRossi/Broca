@@ -500,6 +500,7 @@ class SessionManager:
         message: str | None,
         status: str | None = None,
         message_id: str | None = None,
+        changed_files: Optional[Dict[str, Any]] = None,
     ) -> bool:
         if not turn_id or not agent_id:
             return False
@@ -512,6 +513,8 @@ class SessionManager:
                 await self.turn_service.update(turn_id, status=status)
             except Exception as e:
                 logger.warning(f"Failed to persist turn status: {e}")
+        if changed_files:
+            data["changed_files"] = changed_files
 
         return await self.save_message(
             role=MessageRole.SYSTEM,

@@ -43,6 +43,7 @@ class TurnSummary:
     started_at: float = 0.0  # timestamp in ms
     created_at: str = ""
     last_message_id: Optional[str] = None
+    changed_files: Optional[Dict[str, Any]] = None
 
 
 class ChatStore:
@@ -276,7 +277,8 @@ class ChatStore:
             turn_id = message.data.get("turn_id") if message.data else None
             if turn_id:
                 status = message.data.get("status") if message.data else None
-                self.finalize_turn_summary(turn_id, status, turn_end_msg_id=message.message_id)
+                changed_files = message.data.get("changed_files") if message.data else None
+                self.finalize_turn_summary(turn_id, status, turn_end_msg_id=message.message_id, changed_files=changed_files)
 
             if self._on_message:
                 self._on_message({"type": "turn_end", "agent_id": target_id})
@@ -595,6 +597,7 @@ class ChatStore:
                     started_at=started_at_ms,
                     created_at=t.get("created_at", ""),
                     last_message_id=t.get("last_message_id"),
+                    changed_files=t.get("changed_files"),
                 )
                 new_turns.append(summary)
 
@@ -800,13 +803,14 @@ class ChatStore:
         turn.status = "thinking"
         self._notify_change()
 
-    def finalize_turn_summary(self, turn_id: str, status: Optional[str] = None, turn_end_msg_id: Optional[str] = None):
+    def finalize_turn_summary(self, turn_id: str, status: Optional[str] = None, turn_end_msg_id: Optional[str] = None, changed_files: Optional[Dict[str, Any]] = None):
         """终结 TurnSummary（turn_end 事件触发）。
 
         Args:
             turn_id: Turn ID
             status: turn_end 消息的 status 值（"completed"/"error"/"aborted"）
             turn_end_msg_id: turn_end 消息自身的 ID（中止时最后的响应消息已被删，用它做撤销定位）
+            changed_files: 文件变更摘要字典
         """
         turn = self._find_turn(turn_id)
         if not turn:
@@ -816,6 +820,10 @@ class ChatStore:
         is_error = status in ("error", "aborted") if status else False
         turn.status = "error" if is_error else "completed"
         turn.total_duration = (time.time() * 1000 - turn.started_at) / 1000
+
+        # 保存文件变更信息
+        if changed_files:
+            turn.changed_files = changed_files
 
         # 保存 turn_end 消息 ID 用于撤销定位（始终安全，后端可能已删除最后响应消息）
         if turn_end_msg_id:
