@@ -328,6 +328,23 @@ fi
 # 将后续所有 $PYTHON 指向（虚拟环境的）Python
 PYTHON="$BROCA_PYTHON"
 
+# 安装 TUI（broca-tui）
+if [[ -d "$PROJECT_ROOT/broca-tui" ]]; then
+    info "安装 TUI 依赖..."
+    if PIP_OUTPUT=$($BROCA_PIP install "$PROJECT_ROOT/broca-tui" 2>&1); then
+        echo "$PIP_OUTPUT" | { grep -v -E "^$|Requirement already" || true; }
+        info "TUI 依赖安装完成"
+    else
+        echo "$PIP_OUTPUT" | tail -10
+        warn "TUI 依赖安装失败（broca-tui 目录存在但 pip install 出错）"
+        warn "可之后手动执行: $BROCA_PIP install $PROJECT_ROOT/broca-tui"
+    fi
+else
+    warn "broca-tui 目录不存在 (未找到 $PROJECT_ROOT/broca-tui)，跳过 TUI 安装"
+    warn "如需使用 TUI，请确保 broca-tui 目录存在并手动执行:"
+    warn "  $BROCA_PIP install $PROJECT_ROOT/broca-tui"
+fi
+
 info "broca 模块安装完成。"
 
 # ============================================================================
