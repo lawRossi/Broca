@@ -658,6 +658,25 @@ examples:
     # service status
     svc_sub.subcommands.add_parser("status", help="Show service status")
 
+    # ---- tui command ----
+    tui_sub = sub.add_parser(
+        "tui",
+        help="Launch the Terminal User Interface",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  Broca tui                        Launch TUI with session list
+  Broca tui --session <id>         Open specific session directly
+  Broca tui --server <url>         Connect to custom server
+""",
+    )
+    tui_sub.add_argument(
+        "--session", "-s", default=None, help="Session ID to open directly"
+    )
+    tui_sub.add_argument(
+        "--server", default=None, help="Socket.IO server URL"
+    )
+
     return parser
 
 
@@ -709,6 +728,10 @@ def main():
                 args.backend_port,
                 args.reload,
             )
+
+    # ---- tui command ----
+    elif command == "tui":
+        _launch_tui(session_id=args.session, server_url=getattr(args, "server", None))
 
     # ---- run commands ----
     elif command == "run":
@@ -780,23 +803,38 @@ def main():
     # ---- no command (TUI) ----
     elif command is None:
         # 默认行为：启动 TUI（如果存在）
-        try:
-            from broca.tui.app import BrocaTUIApp
-            app = BrocaTUIApp()
-            app.run()
-        except ImportError:
-            print(f"Broca {get_version()}")
-            print("Type 'Broca --help' for usage information.")
-            print()
-            print("Available commands:")
-            print("  web          Start web services (dev mode)")
-            print("  service      Manage production services")
-            print("  --version    Show version")
-            print()
-            print("TUI not available. Install with: pip install broca[tui]")
+        _launch_tui(session_id=args.session, server_url=getattr(args, "server", None))
 
     else:
         parser.print_help()
+
+
+def _launch_tui(session_id=None, server_url=None):
+    """Launch the Broca Terminal User Interface.
+
+    Args:
+        session_id: Optional session ID to open directly
+        server_url: Optional Socket.IO server URL override
+    """
+    import os
+
+    # Set server URL via environment variable if provided
+    if server_url:
+        os.environ["BROCA_SOCKET_SERVER_URL"] = server_url
+
+    try:
+        from broca_tui.app import BrocaTUIApp
+        app = BrocaTUIApp(session_id=session_id)
+        app.run()
+    except ImportError as e:
+        print(f"Error: TUI not available ({e})")
+        print()
+        print("Install broca-tui with:")
+        print("  pip install -e broca-tui/")
+        print()
+        print("Or install from the project root:")
+        print("  cd /path/to/broca && pip install -e broca-tui/")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
