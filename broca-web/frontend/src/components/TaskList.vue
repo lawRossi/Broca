@@ -637,27 +637,5 @@ const isTaskStarred = (task: Task): boolean => {
   }
 }
 
-/* 暗色模式支持 */
-@media (prefers-color-scheme: dark) {
-  .task-card {
-    background-color: #1f2937;
-    border-color: #374151;
-  }
 
-  .task-card:hover {
-    border-color: #4b5563;
-  }
-
-  .task-card h3 {
-    color: #f9fafb;
-  }
-
-  .task-card .text-gray-600 {
-    color: #d1d5db;
-  }
-
-  .task-card .border-gray-100 {
-    border-color: #374151;
-  }
-}
 </style>

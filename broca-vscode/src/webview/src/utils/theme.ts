@@ -52,6 +52,29 @@ export function applyVSCodeTheme() {
       --diff-added-fg: var(--vscode-editor-foreground, #166534);
       --diff-removed-bg: var(--vscode-diffEditor-removedTextBackground, rgba(200, 0, 0, 0.15));
       --diff-removed-fg: var(--vscode-editor-foreground, #991b1b);
+
+      /* Status badge semantic colors (Crew/Orchestration) */
+      --badge-pending-bg: var(--vscode-badge-background, #4d4d4d);
+      --badge-pending-fg: var(--vscode-badge-foreground, #cccccc);
+      --badge-running-bg: var(--vscode-activityBarBadge-background, #0e639c);
+      --badge-running-fg: var(--vscode-activityBarBadge-foreground, #ffffff);
+      --badge-completed-bg: var(--vscode-testing-iconPassed, #73c991);
+      --badge-completed-fg: var(--vscode-badge-foreground, #ffffff);
+      --badge-failed-bg: var(--vscode-testing-iconFailed, #f14c4c);
+      --badge-failed-fg: var(--vscode-badge-foreground, #ffffff);
+      --badge-aborted-bg: var(--vscode-testing-iconErrored, #cca700);
+      --badge-aborted-fg: var(--vscode-badge-foreground, #ffffff);
+
+      /* DAG phase indicator colors */
+      --phase-completed: var(--vscode-testing-iconPassed, #73c991);
+      --phase-running: var(--vscode-activityBarBadge-background, #0e639c);
+      --phase-failed: var(--vscode-testing-iconFailed, #f14c4c);
+      --phase-pending: var(--vscode-disabledForeground, #8b8b8b);
+
+      /* Danger / error */
+      --danger-bg: var(--vscode-inputValidation-errorBackground, #5a1d1d);
+      --danger-border: var(--vscode-inputValidation-errorBorder, #c04040);
+      --danger-hover-bg: var(--vscode-inputValidation-errorBorder, #c04040);
     }
   `
   document.head.appendChild(style)

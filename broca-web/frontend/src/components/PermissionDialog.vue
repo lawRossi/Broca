@@ -110,30 +110,4 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
   opacity: 0.8;
 }
 
-/* ========== 暗色模式 ========== */
-@media (prefers-color-scheme: dark) {
-  :deep(.el-dialog__title) {
-    color: #1a1a2e;
-    font-weight: 600;
-  }
-
-  .permission-message {
-    color: #4a4a6a;
-  }
-
-  .perm-btn {
-    background: #f0f2f5;
-    border-color: #d9dce0;
-    color: #333;
-  }
-
-  .perm-btn:hover {
-    background: #e4e7ed;
-    border-color: var(--color-primary-400);
-  }
-
-  .perm-btn:active {
-    background: #d9dce0;
-  }
-}
 </style>

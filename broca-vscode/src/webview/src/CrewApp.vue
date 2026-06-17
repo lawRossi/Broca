@@ -521,6 +521,24 @@ html, body {
   height: 100%;
 }
 
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-bg, #424242);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-hover-bg, #4f4f4f);
+}
+
 .crew-container {
   height: 100vh;
   display: flex;
@@ -695,11 +713,11 @@ html, body {
   white-space: nowrap;
 }
 
-.status-pending { background: #555; color: #ccc; }
-.status-running { background: #005fb8; color: #fff; }
-.status-completed { background: #0d7a3f; color: #fff; }
-.status-failed { background: #a12622; color: #fff; }
-.status-aborted { background: #b89500; color: #000; }
+.status-pending { background: var(--badge-pending-bg, #4d4d4d); color: var(--badge-pending-fg, #cccccc); }
+.status-running { background: var(--badge-running-bg, #0e639c); color: var(--badge-running-fg, #ffffff); }
+.status-completed { background: var(--badge-completed-bg, #73c991); color: var(--badge-completed-fg, #ffffff); }
+.status-failed { background: var(--badge-failed-bg, #f14c4c); color: var(--badge-failed-fg, #ffffff); }
+.status-aborted { background: var(--badge-aborted-bg, #cca700); color: var(--badge-aborted-fg, #ffffff); }
 
 /* ==================== Progress Bar ==================== */
 .crew-progress-bar-container {
@@ -718,11 +736,11 @@ html, body {
 }
 
 .crew-progress-bar.progress-completed {
-  background: #0d7a3f;
+  background: var(--badge-completed-bg, #73c991);
 }
 
 .crew-progress-bar.progress-failed {
-  background: #a12622;
+  background: var(--badge-failed-bg, #f14c4c);
 }
 
 .crew-progress-text {
@@ -835,10 +853,10 @@ html, body {
   border: 2px solid var(--border-color, #555);
 }
 
-.crew-dag-dot-inner.phase-completed { background: #0d7a3f; border-color: #0d7a3f; }
-.crew-dag-dot-inner.phase-running { background: #005fb8; border-color: #005fb8; }
-.crew-dag-dot-inner.phase-failed { background: #a12622; border-color: #a12622; }
-.crew-dag-dot-inner.phase-pending { background: transparent; border-color: #555; }
+.crew-dag-dot-inner.phase-completed { background: var(--phase-completed, #73c991); border-color: var(--phase-completed, #73c991); }
+.crew-dag-dot-inner.phase-running { background: var(--phase-running, #0e639c); border-color: var(--phase-running, #0e639c); }
+.crew-dag-dot-inner.phase-failed { background: var(--phase-failed, #f14c4c); border-color: var(--phase-failed, #f14c4c); }
+.crew-dag-dot-inner.phase-pending { background: transparent; border-color: var(--phase-pending, #8b8b8b); }
 
 .crew-dag-card {
   flex: 1;
@@ -848,9 +866,9 @@ html, body {
   background: var(--bg-secondary, #252526);
 }
 
-.crew-dag-card.phase-completed { border-color: #0d7a3f44; background: #0d7a3f11; }
-.crew-dag-card.phase-running { border-color: #005fb844; background: #005fb811; }
-.crew-dag-card.phase-failed { border-color: #a1262244; background: #a1262211; }
+.crew-dag-card.phase-completed { border-color: color-mix(in srgb, var(--phase-completed, #73c991) 25%, transparent); background: color-mix(in srgb, var(--phase-completed, #73c991) 8%, transparent); }
+.crew-dag-card.phase-running { border-color: color-mix(in srgb, var(--phase-running, #0e639c) 25%, transparent); background: color-mix(in srgb, var(--phase-running, #0e639c) 8%, transparent); }
+.crew-dag-card.phase-failed { border-color: color-mix(in srgb, var(--phase-failed, #f14c4c) 25%, transparent); background: color-mix(in srgb, var(--phase-failed, #f14c4c) 8%, transparent); }
 
 .crew-dag-card-header {
   display: flex;
@@ -870,10 +888,10 @@ html, body {
   border-radius: 3px;
 }
 
-.crew-dag-phase-status.phase-completed { color: #0d7a3f; }
-.crew-dag-phase-status.phase-running { color: #005fb8; }
-.crew-dag-phase-status.phase-failed { color: #a12622; }
-.crew-dag-phase-status.phase-pending { color: #888; }
+.crew-dag-phase-status.phase-completed { color: var(--phase-completed, #73c991); }
+.crew-dag-phase-status.phase-running { color: var(--phase-running, #0e639c); }
+.crew-dag-phase-status.phase-failed { color: var(--phase-failed, #f14c4c); }
+.crew-dag-phase-status.phase-pending { color: var(--phase-pending, #8b8b8b); }
 
 .crew-dag-agents {
   display: flex;
@@ -895,8 +913,8 @@ html, body {
   padding: 4px 8px;
   margin-bottom: 4px;
   font-size: 11px;
-  color: #f48771;
-  background: #a1262211;
+  color: var(--vscode-errorForeground, #f48771);
+  background: color-mix(in srgb, var(--badge-failed-bg, #f14c4c) 8%, transparent);
   border-radius: 4px;
 }
 
@@ -984,12 +1002,13 @@ html, body {
 }
 
 .btn-danger {
-  background: #a12622;
-  color: #fff;
+  background: var(--danger-bg, #5a1d1d);
+  color: var(--vscode-errorForeground, #f48771);
+  border: 1px solid var(--danger-border, #c04040);
 }
 
 .btn-danger:hover:not(:disabled) {
-  background: #c53030;
+  background: var(--danger-hover-bg, #c04040);
 }
 
 .crew-loading {
@@ -1032,9 +1051,9 @@ html, body {
   z-index: 9999;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   word-break: break-word;
-  background: #5a1d1d;
-  border: 1px solid #c04040;
-  color: #f0c0c0;
+  background: var(--danger-bg, #5a1d1d);
+  border: 1px solid var(--danger-border, #c04040);
+  color: var(--vscode-errorForeground, #f48771);
 }
 
 .crew-error-toast__icon {

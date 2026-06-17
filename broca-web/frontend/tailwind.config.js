@@ -325,16 +325,6 @@ export default {
 
       addUtilities(newUtilities)
     },
-    // 暗色模式支持
-    function ({ addComponents, theme }) {
-      addComponents({
-        '.dark-mode': {
-          '&': {
-            'color-scheme': 'dark',
-          },
-        },
-      })
-    },
   ],
   // 重要前缀
   prefix: '',

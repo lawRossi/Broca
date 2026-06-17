@@ -126,47 +126,4 @@ const selectOption = (optionName: string) => {
     @apply text-xs;
   }
 }
-
-/* ========== 暗色模式 ========== */
-@media (prefers-color-scheme: dark) {
-  :deep(.el-dialog__title) {
-    color: #1a1a2e;
-    font-weight: 600;
-  }
-
-  .question-text {
-    color: #4a4a6a;
-  }
-
-  .options-label,
-  .answer-label {
-    color: #888;
-  }
-
-  .option-card {
-    background: #f0f2f5;
-    border-color: #d9dce0;
-  }
-
-  .option-card:hover {
-    background: #e4e7ed;
-    border-color: var(--color-primary-400);
-  }
-
-  .option-name {
-    color: #333;
-  }
-
-  .option-desc {
-    color: #888;
-  }
-
-  .option-arrow {
-    color: #aaa;
-  }
-
-  .option-card:hover .option-arrow {
-    color: var(--color-primary-400);
-  }
-}
 </style>

@@ -758,33 +758,4 @@
   }
 }
 
-/* 暗色主题覆盖 */
-@media (prefers-color-scheme: dark) {
-  body {
-    background-color: var(--color-gray-50);
-    color: var(--color-gray-900);
-  }
 
-  .card {
-    background-color: var(--color-gray-100);
-    border-color: var(--color-gray-300);
-  }
-
-  .card-header,
-  .card-footer {
-    background-color: var(--color-gray-200);
-  }
-
-  .form-input,
-  .form-select,
-  .form-textarea {
-    background-color: var(--color-gray-100);
-    border-color: var(--color-gray-300);
-    color: var(--color-gray-900);
-  }
-
-  .form-input::placeholder,
-  .form-textarea::placeholder {
-    color: var(--color-gray-500);
-  }
-}

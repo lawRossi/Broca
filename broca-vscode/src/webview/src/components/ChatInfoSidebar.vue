@@ -199,16 +199,18 @@ function handleRefreshStats() {
 }
 
 const copyFeedback = ref(false)
+const wsCopyFeedback = ref(false)
 
 function copySessionId() {
-  const id = chatStore.sessionId
-  if (!id) return
-  navigator.clipboard.writeText(id).then(() => {
-    copyFeedback.value = true
-    setTimeout(() => {
-      copyFeedback.value = false
-    }, 1500)
-  })
+  navigator.clipboard.writeText(chatStore.sessionId || '')
+  copyFeedback.value = true
+  setTimeout(() => { copyFeedback.value = false }, 2000)
+}
+
+function copyWorkspace() {
+  navigator.clipboard.writeText(workspace.value || '')
+  wsCopyFeedback.value = true
+  setTimeout(() => { wsCopyFeedback.value = false }, 2000)
 }
 
 // ==================== 侧栏状态 ====================
@@ -283,6 +285,7 @@ onUnmounted(() => {
             <span class="info-label">Workspace</span>
             <div class="session-id-group">
               <span class="session-id-text mono" :title="workspace">{{ workspace || '未设置' }}</span>
+              <button v-if="workspace" class="copy-btn" :class="{ 'copied': wsCopyFeedback }" @click="copyWorkspace" :title="wsCopyFeedback ? '已复制' : '复制 Workspace'">{{ wsCopyFeedback ? '✓' : '📋' }}</button>
             </div>
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">

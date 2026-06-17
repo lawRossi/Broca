@@ -103,21 +103,6 @@
   --header-height: 64px;
 }
 
-/* 暗色主题 */
-@media (prefers-color-scheme: dark) {
-  :root {
-    --color-gray-50: #0f172a;
-    --color-gray-100: #1e293b;
-    --color-gray-200: #334155;
-    --color-gray-300: #475569;
-    --color-gray-400: #64748b;
-    --color-gray-500: #94a3b8;
-    --color-gray-600: #cbd5e1;
-    --color-gray-700: #e2e8f0;
-    --color-gray-800: #f1f5f9;
-    --color-gray-900: #f8fafc;
-  }
-}
 /* 自定义属性快捷方式 */
 .bg-primary {
   background-color: var(--color-primary-500);
