@@ -277,31 +277,17 @@ class TurnCard(Widget):
 
     .turn-todo-list {
         height: auto;
-        padding: 0 0 0 2;
+        padding: 0 0 0 0;
         border-left: solid #c9a84c;
     }
 
-    .turn-todo-item {
-        height: auto;
-        padding: 0 0 0 1;
-    }
-
     .turn-tool-stats {
         color: $text;
     }
 
-    .turn-summary-value {
-        color: $text;
-        width: 1fr;
-    }
-
     .turn-todo-item {
         height: auto;
-        padding: 0 0 0 1;
-    }
-
-    .turn-tool-stats {
-        color: $text;
+        margin: 0 0 0 2;
     }
 
     .turn-response-section {
@@ -456,7 +442,9 @@ class TurnCard(Widget):
 
         # 更新步骤数
         try:
-            self.query_one("#turn-steps-value", Label).update(str(self._turn.total_steps))
+            self.query_one("#turn-steps-value", Label).update(
+                str(self._turn.total_steps)
+            )
         except Exception:
             pass
 
@@ -490,8 +478,9 @@ class TurnCard(Widget):
                         if todo_status == "completed"
                         else ("⏳" if todo_status == "in_progress" else "⬜️")
                     )
-                    with Horizontal(classes="turn-todo-item"):
-                        todo_container.mount(Label(f"{icon} {todo_name}"))
+                    todo_container.mount(
+                        Label(f"{icon} {todo_name}", classes="turn-todo-item")
+                    )
             except Exception:
                 pass
 
@@ -538,8 +527,8 @@ class TurnCard(Widget):
         """格式化完成时刻（已完成的 turn，用 started_at + total_duration 算出结束时间）。"""
         if self._turn.is_active:
             return ""
-        import time as tm
         import datetime as dt
+        import time as tm
 
         # 优先用 started_at（活跃 turn 有 ms 时间戳），否则用 created_at（ISO 格式）
         if self._turn.started_at > 0:
@@ -547,7 +536,9 @@ class TurnCard(Widget):
             d = tm.localtime(end_ms / 1000)
         elif self._turn.created_at:
             try:
-                created = dt.datetime.fromisoformat(self._turn.created_at.replace("Z", "+00:00"))
+                created = dt.datetime.fromisoformat(
+                    self._turn.created_at.replace("Z", "+00:00")
+                )
                 if created.tzinfo is None:
                     created = created.replace(tzinfo=dt.timezone.utc)
                 end_ts = created.timestamp() + self._turn.total_duration
@@ -672,7 +663,11 @@ class TurnCard(Widget):
             # 步骤数
             with Horizontal(classes="turn-summary-row"):
                 yield Label("📋 步骤", classes="turn-summary-label")
-                yield Label(str(self._turn.total_steps), classes="turn-summary-value", id="turn-steps-value")
+                yield Label(
+                    str(self._turn.total_steps),
+                    classes="turn-summary-value",
+                    id="turn-steps-value",
+                )
             # TODO 列表（容器始终存在，内部项通过 update_turn 动态更新）
             with Vertical(classes="turn-todo-list", id="todo-list"):
                 yield Label("📝 任务", classes="turn-summary-label")
@@ -684,8 +679,7 @@ class TurnCard(Widget):
                         if todo_status == "completed"
                         else ("⏳" if todo_status == "in_progress" else "⬜️")
                     )
-                    with Horizontal(classes="turn-todo-item"):
-                        yield Label(f"{icon} {todo_name}")
+                    yield Label(f"{icon} {todo_name}", classes="turn-todo-item")
             # 工具调用统计
             with Horizontal(classes="turn-summary-row", id="tool-stats-row"):
                 yield Label("🔧 工具调用", classes="turn-summary-label")
