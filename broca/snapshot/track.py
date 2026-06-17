@@ -6,7 +6,6 @@
 
 import asyncio
 import os
-from datetime import datetime
 from pathlib import Path
 from typing import List, Optional
 
@@ -31,6 +30,7 @@ class SnapshotTracker:
         self.workspace_path = Path(workspace_path).resolve()
         self.git_manager = GitManager(str(self.workspace_path))
         self.lock = asyncio.Lock()  # 并发控制锁
+        self._last_tree_hash: Optional[str] = None  # 上一次快照的树哈希，用于重置索引
 
     async def track(self, ignore_patterns: Optional[list[str]] = None) -> str:
         """
@@ -64,12 +64,11 @@ class SnapshotTracker:
         logger.info("变更文件:" + ",".join(filtered_files))
 
         if not filtered_files:
-            # 如果没有变更文件，返回当前 HEAD 的树哈希
-            try:
-                return repo.head.commit.tree.hexsha
-            except ValueError:
-                # 如果还没有提交，创建一个空的树
-                return self._create_empty_tree()
+            # 如果没有变更文件，返回上一次快照的树哈希
+            if self._last_tree_hash:
+                return self._last_tree_hash
+            # 没有任何快照历史，返回空树
+            return self._create_empty_tree()
 
         # 移除忽略文件
         ignored_files = set(changed_files) - set(filtered_files)
@@ -80,39 +79,25 @@ class SnapshotTracker:
         # 暂存变更文件
         if not await self._stage_files(filtered_files):
             logger.info("无法稀疏添加变更文件，跳过提交")
-            return repo.head.commit.tree.hexsha
+            if self._last_tree_hash:
+                return self._last_tree_hash
+            return self._create_empty_tree()
 
         # 写入 Git 树
         tree_hash = (await self.git_manager._run_git_command("write-tree")).strip()
 
-        # 创建提交来引用树对象
         if tree_hash:
-            try:
-                commit_message = f"Snapshot-at-{datetime.now().isoformat()}"
-                commit_hash = (
-                    await self.git_manager._run_git_command(
-                        "commit-tree", tree_hash, "-m", commit_message
-                    )
-                ).strip()
+            # 重置索引到上一个快照的树（为下一次变更检测做准备）
+            # 首次快照时使用 --empty，后续用上次的树哈希
+            if self._last_tree_hash:
+                await self.git_manager._run_git_command("read-tree", self._last_tree_hash)
+            else:
+                await self.git_manager._run_git_command("read-tree", "--empty")
 
-                # 更新引用
-                await self.git_manager._run_git_command(
-                    "update-ref", "refs/heads/snapshot", commit_hash
-                )
-
-                # 更新 HEAD 指向 snapshot 分支
-                await self.git_manager._run_git_command(
-                    "symbolic-ref", "HEAD", "refs/heads/snapshot"
-                )
-
-                logger.info("提交成功")
-            except git.GitCommandError as e:
-                # 如果创建提交失败，仍然返回树哈希
-                logger.error(f"创建提交失败: {e}")
-                pass
-
-        # 重置暂存区
-        await self.git_manager._run_git_command("reset", "--mixed")
+            self._last_tree_hash = tree_hash
+            logger.info(f"快照成功: {tree_hash}")
+        else:
+            logger.warning("write-tree 返回空哈希")
 
         return tree_hash
 

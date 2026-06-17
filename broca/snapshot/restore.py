@@ -4,7 +4,6 @@
 将工作空间恢复到指定的快照状态。
 """
 
-import asyncio
 import shutil
 from pathlib import Path
 from typing import Any
@@ -41,11 +40,26 @@ class SnapshotRestorer:
         self.git_manager.ensure_initialized()
 
         try:
-            # 使用 checkout 直接恢复整个树到工作区
-            # 与 read-tree --reset + checkout-index -a -f 不同，
-            # checkout tree_hash -- . 会删除目标树中不存在的文件（如果它们曾被跟踪），
-            # 避免"孤儿文件"残留（如 undo 恢复了一个文件，redo 本应删除它但没删）。
-            await self.git_manager._run_git_command("checkout", tree_hash, "--", ".")
+            # 1. 精确重置索引到目标 tree
+            await self.git_manager._run_git_command("read-tree", "--reset", tree_hash)
+
+            # 2. 将索引强制写入工作区（覆盖现有文件）
+            await self.git_manager._run_git_command("checkout-index", "-f", "-a")
+
+            # 3. 删除孤儿文件：工作区存在但索引中不存在的文件
+            #    （这些文件曾被 snapshot 跟踪过，但在目标 tree 中已不存在）
+            result = await self.git_manager._run_git_command(
+                "diff", "--name-only", "--diff-filter=A"
+            )
+            orphaned_files = [f for f in result.strip().split("\n") if f]
+
+            for file_path in orphaned_files:
+                full_path = self.workspace_path / file_path
+                if full_path.exists():
+                    if full_path.is_file():
+                        full_path.unlink()
+                    elif full_path.is_dir():
+                        shutil.rmtree(full_path)
         except git.GitCommandError as e:
             logger.error(f"恢复快照失败: {e}")
             raise
@@ -83,7 +97,9 @@ class SnapshotRestorer:
         self.git_manager.ensure_initialized()
 
         try:
-            await self.git_manager._run_git_command("checkout", tree_hash, "--", file_path)
+            await self.git_manager._run_git_command(
+                "checkout", tree_hash, "--", file_path
+            )
         except git.GitCommandError:
             logger.info(f"文件检出失败：{file_path}")
             # 判断文件是否存在，使用ls-tree命令

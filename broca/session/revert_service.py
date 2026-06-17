@@ -31,7 +31,7 @@ class SessionRevertService:
         self.snapshot_tracker = SnapshotTracker(self.workspace_path)
         self.patch_calculator = PatchCalculator(self.workspace_path)
         self.snapshot_restorer = SnapshotRestorer(self.workspace_path)
-        self.undo_meta_info: dict = {}
+        self.undo_stack: List[dict] = []  # undo 栈，支持多级撤销
 
     async def undo(
         self,
@@ -77,6 +77,7 @@ class SessionRevertService:
             }
 
         # 捕获当前快照（用于重做）
+        # 注意：每次 undo 都要捕获当前工作区的实际快照，不能复用上次 undo 的快照
         current_snapshot_hash = await self.snapshot_tracker.track()
 
         # 如果有patch，反向应用patch
@@ -90,6 +91,11 @@ class SessionRevertService:
             diff_content = await self._calculate_diff_for_patches(current_snapshot_hash)
             diff_summary = self.patch_calculator.get_diff_summary(diff_content)
 
+        # 标记相关消息为已撤销（需要先标记，获取被撤销的消息ID）
+        message_ids_to_revert = await self._mark_messages_as_reverted(
+            messages, pivot_message_id
+        )
+
         # 保存撤销记录
         undo_meta_info = self._create_undo_meta_info(
             session_id,
@@ -100,11 +106,10 @@ class SessionRevertService:
             diff_content,
             diff_summary,
             patches_to_revert,
+            message_ids_to_revert,
         )
-        self.undo_meta_info = undo_meta_info
-
-        # 标记相关消息为已撤销
-        await self._mark_messages_as_reverted(messages, pivot_message_id)
+        # 保存撤销记录到栈
+        self.undo_stack.append(undo_meta_info)
 
         return {
             "success": True,
@@ -128,10 +133,11 @@ class SessionRevertService:
         if not session:
             raise ValueError(f"会话不存在: {session_id}")
 
-        # 获取最新的撤销记录
-        undo_meta_info = self.undo_meta_info
-        if not undo_meta_info:
+        # 从 undo 栈顶获取最新的撤销记录
+        if not self.undo_stack:
             return {"success": False, "message": "没有可重做的操作"}
+
+        undo_meta_info = self.undo_stack[-1]
 
         # 从撤销记录中恢复快照
         snapshot_hash = undo_meta_info.get("snapshot_hash")
@@ -144,10 +150,10 @@ class SessionRevertService:
         # 标记相关消息为已重做
         await self._mark_messages_as_redone(agent_id, undo_meta_info)
 
-        # 删除撤销记录
-        self.undo_meta_info = {}
-        logger.info("redo成功")
+        # 弹出 undo 栈（redo 后该记录即失效）
+        self.undo_stack.pop()
 
+        logger.info("redo成功")
         return {"success": True}
 
     async def _collect_patches_to_message(
@@ -227,6 +233,7 @@ class SessionRevertService:
         diff_content: str,
         diff_summary: Dict[str, Any],
         patches: List[dict[str, Any]] = [],
+        message_ids_to_revert: Optional[set] = None,
     ) -> dict:
         """创建撤销消息"""
         message = {
@@ -240,17 +247,17 @@ class SessionRevertService:
             "pivot_message_id": pivot_message_id,
             "timestamp": datetime.now().isoformat(),
             "patches": patches,
+            "message_ids_to_revert": list(message_ids_to_revert) if message_ids_to_revert else [],
         }
         return message
 
     async def _mark_messages_as_reverted(
         self, messages: List[Message], pivot_message_id: str | None
-    ) -> None:
-        """标记消息和关联轮次为已撤销
+    ) -> set[str]:
+        """标记消息和关联轮次为已撤销，返回被标记的消息ID集合
 
         轮次标记规则：仅当该轮次中所有消息都被撤销时，才标记轮次为已撤销。
         """
-
         # 按 turn 分组所有消息
         turn_message_map: dict[str, set[str]] = {}
         for msg in messages:
@@ -275,7 +282,8 @@ class SessionRevertService:
         # 更新消息状态
         if message_ids_to_revert:
             await self.session_manager.batch_update_messages(
-                message_ids_to_revert, reverted=True)
+                list(message_ids_to_revert), reverted=True
+            )
 
         # 标记轮次：仅当该轮次的所有消息都被撤销时才标记
         turn_ids_to_revert = set()
@@ -286,46 +294,42 @@ class SessionRevertService:
         if turn_ids_to_revert:
             logger.debug(f"标记轮次为已撤销（全部消息已撤销）: {turn_ids_to_revert}")
             await self.session_manager.batch_update_turns(
-                turn_ids_to_revert, reverted=True)
+                list(turn_ids_to_revert), reverted=True
+            )
+
+        return message_ids_to_revert
 
     async def _mark_messages_as_redone(
         self, agent_id: str, undo_meta_info: dict
     ) -> None:
         """标记消息和轮次为已重做
 
-        轮次标记规则：只要轮次中有任一消息被恢复未撤销，该轮次即标记为未撤销。
+        只恢复本次 undo 时被撤销的消息，不影响 undo 之后产生的新消息。
         """
-        pivot_message_id = undo_meta_info.get("pivot_message_id")
+        message_ids_to_restore = set(undo_meta_info.get("message_ids_to_revert", []))
+        if not message_ids_to_restore:
+            return
 
+        # 获取所有消息（包括已撤销的），用于找到这些消息所属的 turn
         messages = await self.session_manager.get_messages(
             agent_id, ignore_reverted=False
         )
 
-        # 收集从 pivot 开始需要恢复的消息
-        message_ids_to_mark = set()
-        turn_ids_to_redone = set()
-        collecting = False
+        # 建立 message_id -> turn_id 映射
+        msg_turn_map: dict[str, str] = {}
         for msg in messages:
-            if msg.message_id == pivot_message_id:
-                message_ids_to_mark.add(msg.message_id)
-                if msg.turn_id:
-                    turn_ids_to_redone.add(msg.turn_id)
-                collecting = True
-                continue
-            if collecting:
-                message_ids_to_mark.add(msg.message_id)
-                if msg.turn_id:
-                    turn_ids_to_redone.add(msg.turn_id)
+            if msg.message_id in message_ids_to_restore and msg.turn_id:
+                msg_turn_map[msg.message_id] = msg.turn_id
 
-        if not message_ids_to_mark:
-            return
-
+        # 恢复消息
         await self.session_manager.batch_update_messages(
-            message_ids_to_mark, reverted=False
+            list(message_ids_to_restore), reverted=False
         )
 
-        if turn_ids_to_redone:
-            logger.debug(f"标记轮次为已重做: {turn_ids_to_redone}")
+        # 恢复轮次：只恢复本次 undo 涉及到的轮次
+        turn_ids_to_restore = set(msg_turn_map.values())
+        if turn_ids_to_restore:
+            logger.debug(f"标记轮次为已重做: {turn_ids_to_restore}")
             await self.session_manager.batch_update_turns(
-                turn_ids_to_redone, reverted=False
+                list(turn_ids_to_restore), reverted=False
             )
