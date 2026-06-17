@@ -47,7 +47,14 @@ class ContextCompressor:
     负责检查 context token 数，触发过期工具结果清理和 session memory 截断。
     """
 
-    EXCLUSIVE_TOOLS = ["load_skill"]
+    EXCLUSIVE_TOOLS = [
+        "load_skill",
+        "write_file",
+        "edit_file",
+        "ask_user",
+        "task_management",
+        "todo_management",
+    ]
 
     def __init__(self):
         self.stats = CompressionStats()
@@ -58,7 +65,9 @@ class ContextCompressor:
         if self._llm_config is None:
             config_path = os.getenv("BROCA_LLM_CONFIG")
             if not config_path:
-                config_path = Path(__file__).parent.parent / "configs" / "llm_config.json"
+                config_path = (
+                    Path(__file__).parent.parent / "configs" / "llm_config.json"
+                )
             with open(config_path) as f:
                 self._llm_config = json.load(f)
         return self._llm_config
