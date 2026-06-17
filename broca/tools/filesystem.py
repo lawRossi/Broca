@@ -1,29 +1,9 @@
 import datetime
 import re
 from pathlib import Path
-from typing import Generator, List, Optional
+from typing import Generator, Optional
 
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
-
-
-def _levenshtein(a: str, b: str) -> int:
-    """Levenshtein distance between two strings."""
-    if not a or not b:
-        return max(len(a), len(b))
-    matrix = [[0] * (len(b) + 1) for _ in range(len(a) + 1)]
-    for i in range(len(a) + 1):
-        matrix[i][0] = i
-    for j in range(len(b) + 1):
-        matrix[0][j] = j
-    for i in range(1, len(a) + 1):
-        for j in range(1, len(b) + 1):
-            cost = 0 if a[i - 1] == b[j - 1] else 1
-            matrix[i][j] = min(
-                matrix[i - 1][j] + 1,
-                matrix[i][j - 1] + 1,
-                matrix[i - 1][j - 1] + cost,
-            )
-    return matrix[len(a)][len(b)]
 
 
 # ---------- Replacers ----------
@@ -56,93 +36,6 @@ def _line_trimmed_replacer(content: str, find: str) -> Replacer:
                 for k in range(len(search_lines))
             )
             yield content[start:end]
-
-
-def _block_anchor_replacer(content: str, find: str) -> Replacer:
-    """First/last line anchors + levenshtein similarity for middle lines."""
-    original_lines = content.split("\n")
-    search_lines = find.split("\n")
-    if search_lines and search_lines[-1] == "":
-        search_lines.pop()
-    if len(search_lines) < 3:
-        return
-
-    first_line_search = search_lines[0].strip()
-    last_line_search = search_lines[-1].strip()
-
-    # Collect all candidate positions
-    candidates: List[tuple[int, int]] = []
-    for i in range(len(original_lines)):
-        if original_lines[i].strip() != first_line_search:
-            continue
-        for j in range(i + 2, len(original_lines)):
-            if original_lines[j].strip() == last_line_search:
-                candidates.append((i, j))
-                break
-
-    if not candidates:
-        return
-
-    single_threshold = 0.0
-    multi_threshold = 0.3
-
-    if len(candidates) == 1:
-        start_line, end_line = candidates[0]
-        actual_size = end_line - start_line + 1
-        lines_to_check = min(len(search_lines) - 2, actual_size - 2)
-        if lines_to_check > 0:
-            similarity = 0.0
-            for j in range(1, min(len(search_lines) - 1, actual_size - 1)):
-                ol = original_lines[start_line + j].strip()
-                sl = search_lines[j].strip()
-                max_len = max(len(ol), len(sl))
-                if max_len == 0:
-                    continue
-                similarity += (1 - _levenshtein(ol, sl) / max_len) / lines_to_check
-                if similarity >= single_threshold:
-                    break
-            if similarity < single_threshold:
-                return
-        start = sum(len(original_lines[k]) + 1 for k in range(start_line))
-        end = start + sum(
-            len(original_lines[k]) + (1 if k < end_line else 0)
-            for k in range(start_line, end_line + 1)
-        )
-        yield content[start:end]
-        return
-
-    # Multiple candidates - pick best
-    best_match: Optional[tuple[int, int]] = None
-    max_similarity = -1.0
-
-    for start_line, end_line in candidates:
-        actual_size = end_line - start_line + 1
-        lines_to_check = min(len(search_lines) - 2, actual_size - 2)
-        if lines_to_check > 0:
-            similarity = 0.0
-            for j in range(1, min(len(search_lines) - 1, actual_size - 1)):
-                ol = original_lines[start_line + j].strip()
-                sl = search_lines[j].strip()
-                max_len = max(len(ol), len(sl))
-                if max_len == 0:
-                    continue
-                similarity += 1 - _levenshtein(ol, sl) / max_len
-            similarity /= lines_to_check
-        else:
-            similarity = 1.0
-
-        if similarity > max_similarity:
-            max_similarity = similarity
-            best_match = (start_line, end_line)
-
-    if max_similarity >= multi_threshold and best_match:
-        start_line, end_line = best_match
-        start = sum(len(original_lines[k]) + 1 for k in range(start_line))
-        end = start + sum(
-            len(original_lines[k]) + (1 if k < end_line else 0)
-            for k in range(start_line, end_line + 1)
-        )
-        yield content[start:end]
 
 
 def _whitespace_normalized_replacer(content: str, find: str) -> Replacer:
@@ -247,39 +140,6 @@ def _trimmed_boundary_replacer(content: str, find: str) -> Replacer:
             yield block
 
 
-def _context_aware_replacer(content: str, find: str) -> Replacer:
-    """Use first/last line as context anchors."""
-    find_lines = find.split("\n")
-    if find_lines and find_lines[-1] == "":
-        find_lines.pop()
-    if len(find_lines) < 3:
-        return
-
-    content_lines = content.split("\n")
-    first_line = find_lines[0].strip()
-    last_line = find_lines[-1].strip()
-
-    for i in range(len(content_lines)):
-        if content_lines[i].strip() != first_line:
-            continue
-        for j in range(i + 2, len(content_lines)):
-            if content_lines[j].strip() == last_line:
-                block_lines = content_lines[i : j + 1]
-                if len(block_lines) == len(find_lines):
-                    matching = 0
-                    total = 0
-                    for k in range(1, len(block_lines) - 1):
-                        bl = block_lines[k].strip()
-                        fl = find_lines[k].strip()
-                        if bl or fl:
-                            total += 1
-                            if bl == fl:
-                                matching += 1
-                    if total == 0 or matching / total >= 0.5:
-                        yield "\n".join(block_lines)
-                break
-
-
 def _multi_occurrence_replacer(content: str, find: str) -> Replacer:
     """Yield all exact matches of find in content."""
     start = 0
@@ -299,12 +159,10 @@ def _find_old_text(content: str, old_text: str, replace_all: bool) -> Optional[s
     for replacer in [
         _simple_replacer,
         _line_trimmed_replacer,
-        _block_anchor_replacer,
         _whitespace_normalized_replacer,
         _indentation_flexible_replacer,
         _escape_normalized_replacer,
         _trimmed_boundary_replacer,
-        _context_aware_replacer,
         _multi_occurrence_replacer,
     ]:
         for match in replacer(content, old_text):

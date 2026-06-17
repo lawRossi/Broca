@@ -30,6 +30,9 @@ class AskUserToolManager:
 
 
 class AssignTask(Tool):
+    def __init__(self):
+        super().__init__(max_content_length=30000)
+
     @property
     def name(self):
         return "assign_task"
