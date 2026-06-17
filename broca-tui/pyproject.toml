@@ -22,3 +22,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["broca_tui*"]
+
+[tool.setuptools.package-data]
+broca_tui = ["theme/*.tcss"]
