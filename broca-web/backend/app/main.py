@@ -15,6 +15,7 @@ from app.services.auth_service import AuthService
 
 init_logging()
 
+LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
 WHITE_LIST = {
     "/api/auth/login",
     "/api/health",
@@ -26,21 +27,27 @@ security = HTTPBearer(auto_error=False)
 
 
 def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(security)) -> None:
-    # path = req.url.path
-    # if path in WHITE_LIST:
-    #     return
-    # for prefix in WHITE_LIST_PREFIXES:
-    #     if path.startswith(prefix):
-    #         return
-    # if not cred:
-    #     raise HTTPException(401, "Unauthorized")
-    # try:
-    #     payload = AuthService.decode_access_token(cred.credentials)
-    #     req.state.user_id = payload.get("sub")
-    #     req.state.username = payload.get("username")
-    # except Exception as e:
-    #     raise HTTPException(401, "Unauthorized") from e
-    req.state.user_id = "12323"
+    # 本机请求不做鉴权（nginx 反向代理时通过 X-Real-IP 传递真实客户端 IP）
+    client_host = req.headers.get("X-Real-IP") or (req.client.host if req.client else None)
+    if client_host in LOCAL_HOSTS:
+        req.state.user_id = None
+        req.state.username = None
+        return
+
+    path = req.url.path
+    if path in WHITE_LIST:
+        return
+    for prefix in WHITE_LIST_PREFIXES:
+        if path.startswith(prefix):
+            return
+    if not cred:
+        raise HTTPException(401, "Unauthorized")
+    try:
+        payload = AuthService.decode_access_token(cred.credentials)
+        req.state.user_id = payload.get("sub")
+        req.state.username = payload.get("username")
+    except Exception as e:
+        raise HTTPException(401, "Unauthorized") from e
 
 
 app = FastAPI(dependencies=[Depends(verify_token)])
