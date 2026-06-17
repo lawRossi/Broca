@@ -390,8 +390,8 @@ class Agent:
             self._abort_task = asyncio.current_task()
             await self._set_status(self.STATUS_RUNNING)
 
-            # Clear undo meta info
-            self.revert_service.undo_meta_info = {}
+            # Clear undo stack (new operation invalidates undo history)
+            self.revert_service.undo_stack.clear()
 
             # Set execution context before execution
             self.execution_engine.allowed_tools = allowed_tools
