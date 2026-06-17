@@ -17,14 +17,13 @@ References broca-web ChatInfoSidebar pattern:
 
 from __future__ import annotations
 
-import time
-from typing import Any, Dict, Optional
+from typing import Optional
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical, ScrollableContainer
+from textual.containers import Horizontal, Vertical
 from textual.reactive import reactive
-from textual.widgets import Button, Label, Static
 from textual.widget import Widget
+from textual.widgets import Button, Label
 
 from broca_tui.api.session import SessionAPI
 from broca_tui.stores.chat_store import ChatStore
@@ -117,26 +116,32 @@ class InfoSidebar(Widget):
                 # Action button — 对齐 Web：停止/重启/启动 不同按钮（非单 toggle）
                 with Horizontal(classes="runner-btns"):
                     yield Button("启动", id="btn-start-runner", classes="runner-btn")
-                    yield Button("停止", id="btn-stop-runner", classes="runner-btn stop-btn")
-                    yield Button("重启", id="btn-restart-runner", classes="runner-btn restart-btn")
+                    yield Button(
+                        "停止", id="btn-stop-runner", classes="runner-btn stop-btn"
+                    )
+                    yield Button(
+                        "重启",
+                        id="btn-restart-runner",
+                        classes="runner-btn restart-btn",
+                    )
 
             # ===== Message Statistics =====
             with Vertical(classes="info-section"):
                 yield Label("Message Statistics", classes="section-title")
                 with Horizontal(classes="stat-row"):
-                    yield Label("User Messages:", classes="stat-label")
+                    yield Label("User Messages", classes="stat-label")
                     yield Label("0", classes="stat-value", id="stat-user")
                 with Horizontal(classes="stat-row"):
-                    yield Label("Assistant Responses:", classes="stat-label")
+                    yield Label("Assistant Responses", classes="stat-label")
                     yield Label("0", classes="stat-value", id="stat-agent")
                 with Horizontal(classes="stat-row"):
-                    yield Label("System Messages:", classes="stat-label")
+                    yield Label("System Messages", classes="stat-label")
                     yield Label("0", classes="stat-value", id="stat-system")
                 with Horizontal(classes="stat-row"):
-                    yield Label("Tool Calls:", classes="stat-label")
+                    yield Label("Tool Calls", classes="stat-label")
                     yield Label("0", classes="stat-value", id="stat-tool-calls")
                 with Horizontal(classes="stat-row"):
-                    yield Label("Tool Call Errors:", classes="stat-label")
+                    yield Label("Tool Call Errors", classes="stat-label")
                     yield Label("0", classes="stat-value", id="stat-errors")
 
     def on_mount(self) -> None:
@@ -152,8 +157,12 @@ class InfoSidebar(Widget):
             workspace: Workspace path
         """
         self._session_id = session_id
-        self.query_one("#info-session-id", Label).update(session_id[:16] + "..." if len(session_id) > 16 else session_id)
-        self.query_one("#info-workspace", Label).update(workspace or "未设置")
+        self.query_one("#info-session-id", Label).update(
+            session_id[:20] + "..." if session_id and len(session_id) > 20 else (session_id or "未设置")
+        )
+        self.query_one("#info-workspace", Label).update(
+            workspace[:20] + "..." if workspace and len(workspace) > 20 else (workspace or "未设置")
+        )
         self._start_polling()
         # 立即做一次初始状态获取，不等20s后的第一次轮询
         self.run_worker(self._poll_runner_status())
@@ -177,13 +186,20 @@ class InfoSidebar(Widget):
 
         # 对齐 Web：不同状态显示不同按钮
         # starting 状态保持启动按钮可见（显示 loading 提示）
-        self.query_one("#btn-start-runner").display = status in ("dead", "unknown", "error", "starting")
-        self.query_one("#btn-stop-runner").display = (status == "alive")
-        self.query_one("#btn-restart-runner").display = (status == "error")
+        self.query_one("#btn-start-runner").display = status in (
+            "dead",
+            "unknown",
+            "error",
+            "starting",
+        )
+        self.query_one("#btn-stop-runner").display = status == "alive"
+        self.query_one("#btn-restart-runner").display = status == "error"
 
         # 所有按钮在 starting/loading 时禁用
         for btn_id in ("#btn-start-runner", "#btn-stop-runner", "#btn-restart-runner"):
-            self.query_one(btn_id).disabled = (status == "starting") or self.runner_action_loading
+            self.query_one(btn_id).disabled = (
+                status == "starting"
+            ) or self.runner_action_loading
 
     def watch_runner_action_loading(self, loading: bool):
         """Sync loading state with button disabled states and show loading indicator."""
@@ -196,12 +212,17 @@ class InfoSidebar(Widget):
             try:
                 btn = self.query_one(btn_id, Button)
                 btn.disabled = loading
-                btn.label = "◐ 处理中..." if loading else label
+                btn.label = "处理中..." if loading else label
             except Exception:
                 pass
 
-    def update_runner_stats(self, pid: Optional[int], uptime: Optional[str],
-                             cpu: Optional[float] = None, memory_mb: Optional[float] = None):
+    def update_runner_stats(
+        self,
+        pid: Optional[int],
+        uptime: Optional[str],
+        cpu: Optional[float] = None,
+        memory_mb: Optional[float] = None,
+    ):
         """Update runner PID, uptime, CPU, and memory.
 
         Args:
@@ -351,6 +372,10 @@ class InfoSidebar(Widget):
                 cpu=resource.get("cpu_percent"),
                 memory_mb=resource.get("memory_rss_mb"),
             )
+            # 同步 runner 状态到 ChatStore，确保 chat_input 禁用状态及时更新
+            if self._chat_store:
+                self._chat_store.runner_alive = status == "alive"
+                self._chat_store._notify_change()
         except Exception:
             self.runner_status = "unknown"
 
@@ -358,9 +383,7 @@ class InfoSidebar(Widget):
         try:
             session_info = await self._api.get_session(self._session_id)
             workspace = session_info.get("workspace", "") or ""
-            self.query_one("#info-workspace", Label).update(
-                workspace or "未设置"
-            )
+            self.query_one("#info-workspace", Label).update(workspace or "未设置")
         except Exception:
             pass
 
@@ -394,7 +417,11 @@ class InfoSidebar(Widget):
             self.run_worker(self._poll_runner_status())
             return
 
-        if button_id not in ("btn-start-runner", "btn-stop-runner", "btn-restart-runner"):
+        if button_id not in (
+            "btn-start-runner",
+            "btn-stop-runner",
+            "btn-restart-runner",
+        ):
             return
 
         session_id = self._session_id
@@ -453,6 +480,7 @@ class InfoSidebar(Widget):
     async def _sleep(self, seconds: float):
         """Async sleep helper."""
         import asyncio
+
         await asyncio.sleep(seconds)
 
     def on_unmount(self) -> None:

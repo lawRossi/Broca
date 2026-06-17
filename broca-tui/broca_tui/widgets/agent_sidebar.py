@@ -18,15 +18,15 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.message import Message
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, ListView, ListItem, Select, Static, TextArea
 from textual.widget import Widget
+from textual.widgets import Button, Label, Select, Static, TextArea
 
 from broca_tui.stores.agent_store import AgentStore
-
 
 # ============================================================================
 # Visibility Filter Dialog (ModalScreen)
 # ============================================================================
+
 
 class VisibilityFilterDialog(ModalScreen):
     """Compact visibility filter dialog aligning with Web's dropdown approach.
@@ -139,7 +139,9 @@ class VisibilityFilterDialog(ModalScreen):
             with Vertical(classes="filter-list"):
                 # Single toggle-all row (matching Web's "全部" checkbox)
                 all_check = "●" if self._all_visible else "○"
-                yield Button(f"{all_check} 全部", id="btn-toggle-all", classes="filter-item-all")
+                yield Button(
+                    f"{all_check} 全部", id="btn-toggle-all", classes="filter-item-all"
+                )
 
                 # Individual agent checkboxes
                 for agent in self._agents:
@@ -174,7 +176,9 @@ class VisibilityFilterDialog(ModalScreen):
         if self._all_visible:
             self._visible_ids = set()
         else:
-            self._visible_ids = {a.get("agent_id", "") for a in self._agents if a.get("agent_id")}
+            self._visible_ids = {
+                a.get("agent_id", "") for a in self._agents if a.get("agent_id")
+            }
         self._refresh_buttons()
 
     def _refresh_buttons(self):
@@ -207,10 +211,12 @@ class VisibilityFilterDialog(ModalScreen):
         btn_id = event.button.id or ""
 
         if btn_id == "btn-apply":
-            self.dismiss({
-                "action": "apply_visibility",
-                "visible_ids": list(self._visible_ids),
-            })
+            self.dismiss(
+                {
+                    "action": "apply_visibility",
+                    "visible_ids": list(self._visible_ids),
+                }
+            )
         elif btn_id == "btn-cancel":
             self.dismiss({"action": "cancel"})
         elif btn_id == "btn-toggle-all":
@@ -223,6 +229,7 @@ class VisibilityFilterDialog(ModalScreen):
 # ============================================================================
 # Agent Config Edit Dialog (ModalScreen)
 # ============================================================================
+
 
 class AgentConfigDialog(ModalScreen):
     """Modal dialog for editing agent configuration."""
@@ -251,7 +258,15 @@ class AgentConfigDialog(ModalScreen):
                     classes="dialog-select",
                 )
                 yield Select(
-                    [(m, m) for m in ["gpt-4", "gpt-3.5-turbo", "claude-3-opus", "claude-3-sonnet"]],
+                    [
+                        (m, m)
+                        for m in [
+                            "gpt-4",
+                            "gpt-3.5-turbo",
+                            "claude-3-opus",
+                            "claude-3-sonnet",
+                        ]
+                    ],
                     prompt="Select model...",
                     id="model-select",
                     classes="dialog-select",
@@ -260,7 +275,9 @@ class AgentConfigDialog(ModalScreen):
             # JSON config editor（撑满剩余空间）
             yield Label("Config (JSON):", classes="dialog-label")
             config_content = json.dumps(self._agent.get("agent_config", {}), indent=2)
-            yield TextArea(config_content, id="config-editor", classes="dialog-textarea")
+            yield TextArea(
+                config_content, id="config-editor", classes="dialog-textarea"
+            )
 
             # 底部按钮区（靠下，按钮紧凑）
             with Horizontal(classes="dialog-actions dialog-actions-config"):
@@ -273,14 +290,16 @@ class AgentConfigDialog(ModalScreen):
             provider = self.query_one("#provider-select", Select).value
             model = self.query_one("#model-select", Select).value
             config_text = self.query_one("#config-editor", TextArea).text
-            self.dismiss({
-                "action": "save_config",
-                "agent_id": self._agent.get("agent_id"),
-                "session_id": self._agent.get("session_id"),
-                "provider": provider,
-                "model": model,
-                "config": config_text,
-            })
+            self.dismiss(
+                {
+                    "action": "save_config",
+                    "agent_id": self._agent.get("agent_id"),
+                    "session_id": self._agent.get("session_id"),
+                    "provider": provider,
+                    "model": model,
+                    "config": config_text,
+                }
+            )
         elif event.button.id == "btn-cancel":
             self.dismiss({"action": "cancel"})
 
@@ -288,6 +307,7 @@ class AgentConfigDialog(ModalScreen):
 # ============================================================================
 # Agent Card (individual agent display)
 # ============================================================================
+
 
 class AgentCard(Widget):
     """A single agent card in the sidebar. Click to open config dialog."""
@@ -332,11 +352,15 @@ class AgentCard(Widget):
             # Header: name + status (no icon, no role — matching Web alignment)
             with Horizontal(classes="agent-card-header"):
                 yield Label(name, classes="agent-name")
-                yield Label(self._get_status_display(status), classes=f"agent-status {status}")
+                yield Label(
+                    self._get_status_display(status), classes=f"agent-status {status}"
+                )
 
             # Description (truncated to 2 lines)
             if description:
-                desc_short = description[:80] + "..." if len(description) > 80 else description
+                desc_short = (
+                    description[:80] + "..." if len(description) > 80 else description
+                )
                 yield Label(desc_short, classes="agent-description")
 
             # LLM Stats (2x2 网格) — 标签在上，数字在下，对齐 Web 版
@@ -345,20 +369,38 @@ class AgentCard(Widget):
             with Horizontal(classes="agent-stats"):
                 with Vertical(classes="stat-block"):
                     yield Static("调用次数", classes="stat-label")
-                    yield Static(str(agent.get("total_llm_calls", 0)), classes="stat-value", id=f"stat-calls-{agent_id}")
+                    yield Static(
+                        str(agent.get("total_llm_calls", 0)),
+                        classes="stat-value",
+                        id=f"stat-calls-{agent_id}",
+                    )
                 with Vertical(classes="stat-block"):
                     yield Static("上下文", classes="stat-label")
-                    yield Static(str(ctx_display), classes="stat-value", id=f"stat-ctx-{agent_id}")
+                    yield Static(
+                        str(ctx_display),
+                        classes="stat-value",
+                        id=f"stat-ctx-{agent_id}",
+                    )
             with Horizontal(classes="agent-stats"):
                 with Vertical(classes="stat-block"):
                     yield Static("输入", classes="stat-label")
-                    yield Static(str(agent.get("total_input_tokens", 0)), classes="stat-value", id=f"stat-input-{agent_id}")
+                    yield Static(
+                        str(agent.get("total_input_tokens", 0)),
+                        classes="stat-value",
+                        id=f"stat-input-{agent_id}",
+                    )
                 with Vertical(classes="stat-block"):
                     yield Static("输出", classes="stat-label")
-                    yield Static(str(agent.get("total_output_tokens", 0)), classes="stat-value", id=f"stat-output-{agent_id}")
+                    yield Static(
+                        str(agent.get("total_output_tokens", 0)),
+                        classes="stat-value",
+                        id=f"stat-output-{agent_id}",
+                    )
 
             # Abort button (始终创建，通过 CSS 显隐)
-            yield Button("⏹ 停止", id=f"abort-{agent.get('agent_id')}", classes="abort-button")
+            yield Button(
+                "停止", id=f"abort-{agent.get('agent_id')}", classes="abort-button"
+            )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle abort button press — directly calls screen."""
@@ -366,7 +408,11 @@ class AgentCard(Widget):
         if button_id.startswith("abort-"):
             event.stop()
             agent_id = self._agent.get("agent_id", "")
-            if agent_id and hasattr(self, 'screen') and hasattr(self.screen, '_abort_agent'):
+            if (
+                agent_id
+                and hasattr(self, "screen")
+                and hasattr(self.screen, "_abort_agent")
+            ):
                 self.screen._abort_agent(agent_id)
 
     def on_click(self) -> None:
@@ -401,9 +447,9 @@ class AgentCard(Widget):
         # ── 同步更新统计数字（轮询时 agent 数据已更新，但 Static 不会自动刷新）──
         # 使用 compose 中定义的 id 精确定位每个 stat-value
         stat_ids = {
-            "total_llm_calls":     f"stat-calls-{agent_id}",
+            "total_llm_calls": f"stat-calls-{agent_id}",
             "last_context_length": f"stat-ctx-{agent_id}",
-            "total_input_tokens":  f"stat-input-{agent_id}",
+            "total_input_tokens": f"stat-input-{agent_id}",
             "total_output_tokens": f"stat-output-{agent_id}",
         }
         try:
@@ -432,6 +478,7 @@ class AgentCard(Widget):
 # ============================================================================
 # AgentSidebar (main widget)
 # ============================================================================
+
 
 class AgentSidebar(Widget):
     """Left sidebar showing agent list and management."""
@@ -574,9 +621,12 @@ class AgentSidebar(Widget):
         agent_config = agent.get("agent_config")
         if agent_config is None:
             from broca_tui.api.session import SessionAPI
+
             api = SessionAPI()
             try:
-                config_data = await api.get_agent_config(self._session_id, agent.get("agent_id", ""))
+                config_data = await api.get_agent_config(
+                    self._session_id, agent.get("agent_id", "")
+                )
                 agent_config = config_data.get("config_content", {})
             except Exception:
                 agent_config = {}
@@ -596,6 +646,7 @@ class AgentSidebar(Widget):
             config_data: Dict with agent_id, session_id, provider, model, config
         """
         from broca_tui.api.session import SessionAPI
+
         api = SessionAPI()
         try:
             agent_id = config_data.get("agent_id", "")
@@ -618,9 +669,13 @@ class AgentSidebar(Widget):
                 "model": model,
                 **(parsed_config if isinstance(parsed_config, dict) else {}),
             }
-            await api.update_agent_config(session_id, agent_id, {
-                "config_content": full_config,
-            })
+            await api.update_agent_config(
+                session_id,
+                agent_id,
+                {
+                    "config_content": full_config,
+                },
+            )
 
             # 同步更新本地 store
             agent = self._store.get_agent(agent_id)

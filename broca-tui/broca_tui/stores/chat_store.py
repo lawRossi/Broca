@@ -466,8 +466,8 @@ class ChatStore:
                     asyncio.ensure_future(self.load_turn_history())
                 return
 
-        # Clear redo state on new messages (but not immediately after undo)
-        if msg_dict.get("message_type") != "command_result" and not self._preserve_redo:
+        # Clear redo state on new messages (undo result is command_result, so it won't be cleared)
+        if msg_dict.get("message_type") != "command_result":
             self.show_redo_button = False
             self.redo_receiver_id = None
 
@@ -602,6 +602,8 @@ class ChatStore:
                 self.turn_summaries = new_turns + self.turn_summaries
             else:
                 self.turn_summaries = new_turns
+                # undo 重载完成后，允许后续新消息清除 redo 按钮
+                self._preserve_redo = False
 
             self.turn_history_skip += limit
             self.has_more_turns = self.turn_history_skip < total

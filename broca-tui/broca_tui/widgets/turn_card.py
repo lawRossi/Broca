@@ -98,11 +98,12 @@ class TurnCard(Widget):
     .turn-agent-name {
         text-style: bold;
         color: $text;
-        width: 1fr;
+        width: auto;
     }
 
     .turn-sequence {
         color: #6b6b6b;
+        margin-left: 1;
     }
 
     .turn-sep {

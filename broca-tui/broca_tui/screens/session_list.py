@@ -370,7 +370,7 @@ class SessionListScreen(Screen):
         created_at = (session.get("created_at", "") or "")[:19]
         workspace = session.get("workspace", "")
 
-        category_label = "📝 普通" if category == "normal" else "🤖 编排"
+        category_label = "" if category == "normal" else "📝 编排"
         category_class = "category-normal" if category == "normal" else "category-orch"
 
         # Runner status
@@ -395,7 +395,7 @@ class SessionListScreen(Screen):
         # Runner toggle button
         is_alive = runner_status == "alive"
         toggle_btn = Button(
-            "⏹ 停止" if is_alive else "▶ 启动",
+            "停止" if is_alive else "启动",
             id=f"runner-{session_id}",
             classes=f"runner-toggle-btn {'stop' if is_alive else 'start'}",
         )
@@ -412,7 +412,7 @@ class SessionListScreen(Screen):
                 *meta_labels,
                 toggle_btn,
                 Button(
-                    "🗑 删除", id=f"delete-{session_id}", classes="action-btn del-btn"
+                    "删除", id=f"delete-{session_id}", classes="action-btn del-btn"
                 ),
                 classes="session-card-actions",
             ),

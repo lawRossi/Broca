@@ -258,63 +258,65 @@ const getRunnerConfig = (status: string | undefined) => {
       <el-button size="small" @click="chatStore.showRightSidebar = false"> ✕ </el-button>
     </div>
 
-    <div class="bg-white rounded-lg border p-3 sm:p-4 shadow-sm">
-      <div class="text-sm font-semibold text-gray-900 mb-3">Session Info</div>
-      <div class="space-y-3 text-sm">
-        <div>
-          <div class="text-gray-700 mb-1">Session ID:</div>
-          <div class="font-mono text-xs truncate text-gray-800 break-all" :title="chatStore.sessionId">
-            {{ chatStore.sessionId || '未设置' }}
+    <div class="bg-white rounded-lg border p-2 sm:p-3 shadow hover:shadow-md transition-shadow duration-200">
+      <div class="text-sm font-semibold text-gray-900 mb-2">Session Info</div>
+      <div class="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-2 border border-gray-100">
+        <div class="space-y-1.5 text-sm">
+          <div>
+            <div class="text-gray-700 mb-1">Session ID:</div>
+            <div class="font-mono text-xs truncate text-gray-800 break-all" :title="chatStore.sessionId">
+              {{ chatStore.sessionId || '未设置' }}
+            </div>
           </div>
-        </div>
-        <div>
-          <div class="text-gray-700 mb-1">Workspace:</div>
-          <div class="font-mono text-xs truncate text-gray-800 break-all" :title="workspace">
-            {{ workspace || '未设置' }}
+          <div>
+            <div class="text-gray-700 mb-1">Workspace:</div>
+            <div class="font-mono text-xs truncate text-gray-800 break-all" :title="workspace">
+              {{ workspace || '未设置' }}
+            </div>
           </div>
-        </div>
-        <div
-          class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
-          @click="router.push({ name: 'Jobs', query: { session_id: chatStore.sessionId } })"
-          title="Click to view jobs for this session"
-        >
-          <span class="text-gray-700">
-            Jobs:
-          </span>
-          <div class="flex items-center gap-2">
-            <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
-              <el-icon class="is-loading"><Loading /></el-icon>
+          <div
+            class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
+            @click="router.push({ name: 'Jobs', query: { session_id: chatStore.sessionId } })"
+            title="Click to view jobs for this session"
+          >
+            <span class="text-gray-700">
+              Jobs:
             </span>
-            <span v-else class="font-mono text-sm text-gray-800">{{ jobCount }}</span>
+            <div class="flex items-center gap-2">
+              <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
+                <el-icon class="is-loading"><Loading /></el-icon>
+              </span>
+              <span v-else class="font-mono text-sm text-gray-800">{{ jobCount }}</span>
+            </div>
           </div>
-        </div>
-        <div
-          class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
-          @click="router.push({ name: 'Tasks', query: { session_id: chatStore.sessionId } })"
-          title="Click to view tasks for this session"
-        >
-          <span class="text-gray-700">
-            Tasks:
-          </span>
-          <div class="flex items-center gap-2">
-            <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
-              <el-icon class="is-loading"><Loading /></el-icon>
+          <div
+            class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
+            @click="router.push({ name: 'Tasks', query: { session_id: chatStore.sessionId } })"
+            title="Click to view tasks for this session"
+          >
+            <span class="text-gray-700">
+              Tasks:
             </span>
-            <span v-else class="font-mono text-sm text-gray-800">{{ taskCount }}</span>
+            <div class="flex items-center gap-2">
+              <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
+                <el-icon class="is-loading"><Loading /></el-icon>
+              </span>
+              <span v-else class="font-mono text-sm text-gray-800">{{ taskCount }}</span>
+            </div>
           </div>
-        </div>
-        <div v-if="statsLoading" class="flex justify-between">
-          <span class="text-gray-700">Loading stats...</span>
-          <el-icon class="is-loading">
-            <Loading />
-          </el-icon>
+          <div v-if="statsLoading" class="flex justify-between">
+            <span class="text-gray-700">Loading stats...</span>
+            <el-icon class="is-loading">
+              <Loading />
+            </el-icon>
+          </div>
         </div>
       </div>
     </div>
 
     <!-- Runner 状态面板 -->
-    <div class="bg-white rounded-lg border p-3 sm:p-4 shadow-sm">
-      <div class="flex items-center justify-between mb-3">
+    <div class="bg-white rounded-lg border p-2 sm:p-3 shadow hover:shadow-md transition-shadow duration-200">
+      <div class="flex items-center justify-between mb-2">
         <div class="text-sm font-semibold text-gray-900">Runner Status</div>
         <el-button size="small" circle :loading="runnerLoading" @click="fetchRunnerStatus">
           <el-icon><Refresh /></el-icon>
@@ -323,86 +325,90 @@ const getRunnerConfig = (status: string | undefined) => {
       <div v-if="runnerLoading && !runnerInfo" class="flex justify-center py-4">
         <el-icon class="is-loading"><Loading /></el-icon>
       </div>
-      <div v-else class="space-y-2 text-sm">
-        <div class="flex justify-between items-center">
-          <span class="text-gray-700">状态</span>
-          <el-tag :type="getRunnerConfig(runnerInfo?.status).type" size="small">
-            {{ getRunnerConfig(runnerInfo?.status).label }}
-          </el-tag>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-700">PID</span>
-          <span class="font-mono text-gray-800">{{ runnerInfo?.pid || '-' }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-700">运行时长</span>
-          <span class="text-gray-800">{{ formatUptime(runnerInfo?.uptime_seconds) }}</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-700">CPU</span>
-          <span class="text-gray-800">{{ runnerInfo?.resource_usage?.cpu_percent ?? '-' }}%</span>
-        </div>
-        <div class="flex justify-between">
-          <span class="text-gray-700">内存</span>
-          <span class="text-gray-800">{{ formatMemory(runnerInfo?.resource_usage?.memory_rss_mb) }}</span>
-        </div>
-        <div v-if="runnerInfo?.status === 'alive'" class="pt-2 flex gap-2">
-          <el-button type="danger" size="small" :loading="stopping" @click="handleStopRunner">
-            停止进程
-          </el-button>
-        </div>
-        <div v-else-if="runnerInfo?.status === 'error'" class="pt-2">
-          <el-button type="danger" size="small" :loading="restarting" @click="handleRestartRunner">
-            重启进程
-          </el-button>
-        </div>
-        <div v-else-if="runnerInfo && runnerInfo.status !== 'starting'" class="pt-2">
-          <el-button type="warning" size="small" :loading="restarting" @click="handleRestartRunner">
-            启动进程
-          </el-button>
+      <div v-else class="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-2 border border-gray-100">
+        <div class="space-y-1.5 text-sm">
+          <div class="flex justify-between items-center">
+            <span class="text-gray-700">状态</span>
+            <el-tag :type="getRunnerConfig(runnerInfo?.status).type" size="small">
+              {{ getRunnerConfig(runnerInfo?.status).label }}
+            </el-tag>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-700">PID</span>
+            <span class="font-mono text-gray-800">{{ runnerInfo?.pid || '-' }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-700">运行时长</span>
+            <span class="text-gray-800">{{ formatUptime(runnerInfo?.uptime_seconds) }}</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-700">CPU</span>
+            <span class="text-gray-800">{{ runnerInfo?.resource_usage?.cpu_percent ?? '-' }}%</span>
+          </div>
+          <div class="flex justify-between">
+            <span class="text-gray-700">内存</span>
+            <span class="text-gray-800">{{ formatMemory(runnerInfo?.resource_usage?.memory_rss_mb) }}</span>
+          </div>
+          <div v-if="runnerInfo?.status === 'alive'" class="pt-2 flex gap-2">
+            <el-button type="danger" size="small" :loading="stopping" @click="handleStopRunner">
+              停止进程
+            </el-button>
+          </div>
+          <div v-else-if="runnerInfo?.status === 'error'" class="pt-2">
+            <el-button type="danger" size="small" :loading="restarting" @click="handleRestartRunner">
+              重启进程
+            </el-button>
+          </div>
+          <div v-else-if="runnerInfo && runnerInfo.status !== 'starting'" class="pt-2">
+            <el-button type="warning" size="small" :loading="restarting" @click="handleRestartRunner">
+              启动进程
+            </el-button>
+          </div>
         </div>
       </div>
     </div>
 
-    <div class="bg-white rounded-lg border p-3 sm:p-4 shadow-sm">
-      <div class="flex items-center justify-between mb-3">
+    <div class="bg-white rounded-lg border p-2 sm:p-3 shadow hover:shadow-md transition-shadow duration-200">
+      <div class="flex items-center justify-between mb-2">
         <div class="text-sm font-semibold text-gray-900">Message Statistics</div>
       </div>
-      <div class="space-y-2">
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-gray-700 flex items-center gap-2">
-            User Messages
-          </span>
-          <span class="font-mono text-sm text-gray-800">{{ userMessagesFromApi }}</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-gray-700 flex items-center gap-2">
-            Assistant Responses
-          </span>
-          <span class="font-mono text-sm text-gray-800">{{ assistantMessagesFromApi }}</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-gray-700 flex items-center gap-2">
-            System Messages
-          </span>
-          <span class="font-mono text-sm text-gray-800">{{ systemMessagesFromApi }}</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-gray-700 flex items-center gap-2">
-            Tool Calls
-          </span>
-          <span class="font-mono text-sm text-gray-800">{{ toolCallsFromApi }}</span>
-        </div>
-        <div class="flex justify-between items-center">
-          <span class="text-sm text-gray-700 flex items-center gap-2">
-            Tool Call Errors
-          </span>
-          <span
-            class="font-mono text-sm text-gray-800"
-            :class="{ 'text-red-600 font-bold': toolCallErrorsFromApi > 0 }"
-          >
-            {{ toolCallErrorsFromApi }}
-          </span>
+      <div class="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-2 border border-gray-100">
+        <div class="space-y-1.5">
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-gray-700 flex items-center gap-2">
+              User Messages
+            </span>
+            <span class="font-mono text-sm text-gray-800">{{ userMessagesFromApi }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-gray-700 flex items-center gap-2">
+              Assistant Responses
+            </span>
+            <span class="font-mono text-sm text-gray-800">{{ assistantMessagesFromApi }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-gray-700 flex items-center gap-2">
+              System Messages
+            </span>
+            <span class="font-mono text-sm text-gray-800">{{ systemMessagesFromApi }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-gray-700 flex items-center gap-2">
+              Tool Calls
+            </span>
+            <span class="font-mono text-sm text-gray-800">{{ toolCallsFromApi }}</span>
+          </div>
+          <div class="flex justify-between items-center">
+            <span class="text-sm text-gray-700 flex items-center gap-2">
+              Tool Call Errors
+            </span>
+            <span
+              class="font-mono text-sm text-gray-800"
+              :class="{ 'text-red-600 font-bold': toolCallErrorsFromApi > 0 }"
+            >
+              {{ toolCallErrorsFromApi }}
+            </span>
+          </div>
         </div>
       </div>
     </div>

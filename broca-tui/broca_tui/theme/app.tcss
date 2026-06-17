@@ -549,9 +549,8 @@ Label {
 
 .runner-btn {
     width: auto;
-    margin: 0 1;
-    min-width: 6;
-    padding: 0 1;
+    height: auto;
+    min-width: 8;
     border: none;
     display: none;  /* 默认隐藏，由 watch_runner_status 控制显示 */
 }
@@ -937,8 +936,7 @@ Toast {
 }
 
 .session-category.category-normal {
-    background: $primary-100;
-    color: $primary-700;
+    display: none;
 }
 
 .session-category.category-orch {
@@ -957,25 +955,24 @@ Toast {
 }
 
 .action-btn {
-    min-width: 8;
+    min-width: 6;
     margin: 0 1;
     border: none;
-    height: 3;
+    padding: 0 1;
 }
 
 .del-btn {
-    background: $error;
-    color: white;
+    background: $error-lighten-1;
+    color: $gray-700;
     border: none;
-    height: 3;
 }
 
 .del-btn:hover {
-    background: $error-darken-1;
+    background: $error-lighten-2;
 }
 
 .del-btn:disabled {
-    background: $error-darken-2;
+    background: $error-lighten-3;
     color: $gray-300;
 }
 
@@ -1000,22 +997,22 @@ Toast {
 
 /* Runner toggle button */
 .runner-toggle-btn {
-    min-width: 8;
+    min-width: 6;
     margin: 0 1;
     border: none;
-    height: 3;
+    padding: 0 1;
 }
 .runner-toggle-btn.stop {
-    background: $warning;
-    color: white;
+    background: $warning-lighten-1;
+    color: $gray-700;
 }
 .runner-toggle-btn.start {
-    background: $success;
-    color: white;
+    background: $success-lighten-1;
+    color: $gray-700;
 }
 .runner-toggle-btn:disabled {
-    background: $gray-500;
-    color: $gray-300;
+    background: $gray-200;
+    color: $gray-400;
 }
 
 /* Dialog input */
