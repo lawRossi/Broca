@@ -115,15 +115,6 @@ class MessageList(Vertical):
             with Vertical(classes="redo-container", id="redo-container"):
                 yield Button("↩ Redo", id="btn-redo", classes="redo-button")
 
-    def _view_file_diff(self, turn_id: str, file_path: str):
-        """查看文件的 diff — 沿父链向上冒泡到 ChatScreen。"""
-        parent = self.parent
-        while parent is not None:
-            if hasattr(parent, "_view_file_diff"):
-                parent._view_file_diff(turn_id, file_path)
-                break
-            parent = parent.parent
-
     def on_mount(self) -> None:
         """Set up after mount."""
         # Hide loading and redo initially

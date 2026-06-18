@@ -26,6 +26,7 @@ from broca_tui.widgets.chat_input import ChatInput
 from broca_tui.widgets.info_sidebar import InfoSidebar
 from broca_tui.widgets.message_list import MessageList
 from broca_tui.widgets.permission_dialog import PermissionDialog
+from broca_tui.widgets.turn_card import TurnCard
 
 from broca_tui.debug_log import log, clear as debug_clear
 
@@ -365,9 +366,10 @@ class ChatScreen(Screen):
                 level="turn",
             )
 
-    def _view_file_diff(self, turn_id: str, file_path: str):
-        """被父链遍历调用的入口（与 undo 模式一致），转发到异步方法。"""
-        self.run_worker(self._show_file_diff(turn_id, file_path))
+    def on_turn_card_file_diff_requested(self, event: TurnCard.FileDiffRequested):
+        """处理 TurnCard 发起的文件 diff 请求。"""
+        event.stop()
+        self.run_worker(self._show_file_diff(event.turn_id, event.file_path))
 
     async def _show_file_diff(self, turn_id: str, file_path: str):
         """获取并展示文件的 unified diff。"""

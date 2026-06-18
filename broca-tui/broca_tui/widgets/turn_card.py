@@ -33,6 +33,13 @@ from broca_tui.stores.chat_store import TurnSummary
 class TurnCard(Widget):
     """Turn 摘要卡片 — 渲染单个执行轮次的摘要信息。"""
 
+    class FileDiffRequested(Message):
+        """点击文件名时触发，沿父链冒泡到 ChatScreen 处理。"""
+        def __init__(self, turn_id: str, file_path: str) -> None:
+            super().__init__()
+            self.turn_id = turn_id
+            self.file_path = file_path
+
     DEFAULT_CSS = """
     TurnCard {
         height: auto;
@@ -1028,13 +1035,10 @@ class TurnCard(Widget):
                 parent = parent.parent
 
     def _request_file_diff(self, file_path: str):
-        """请求查看文件的 diff — 沿父链向上冒泡，与 undo 模式一致。"""
-        parent = self.parent
-        while parent is not None:
-            if hasattr(parent, "_view_file_diff"):
-                parent._view_file_diff(self._turn.turn_id, file_path)
-                break
-            parent = parent.parent
+        """请求查看文件的 diff — 通过 post_message 沿父链冒泡。"""
+        self.post_message(self.FileDiffRequested(
+            turn_id=self._turn.turn_id, file_path=file_path
+        ))
 
     def on_update_turn_undo_visibility(self) -> None:
         """撤销按钮始终显示（不需要 hover 触发）。"""
