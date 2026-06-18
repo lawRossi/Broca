@@ -137,6 +137,7 @@ class FileSelector(ModalScreen):
         super().__init__()
         self._turn_id = turn_id
         self._changed_files = changed_files
+        self._file_paths: Dict[int, str] = {}  # idx -> file_path
 
     def compose(self) -> ComposeResult:
         with Vertical(id="fs-container"):
@@ -144,24 +145,36 @@ class FileSelector(ModalScreen):
             yield Static("点击文件名查看，按 q/Esc 关闭", id="fs-hint")
             with Vertical(id="fs-list"):
                 cf = self._changed_files
+                idx = 0
                 if cf.get("files_added"):
                     yield Label("新增:", classes="fs-group-label")
                     for f in cf["files_added"]:
-                        yield Button(f"+ {f}", id=f"fs-file::{f}")
+                        self._file_paths[idx] = f
+                        yield Button(f"+ {f}", id=f"fs-file-{idx}")
+                        idx += 1
                 if cf.get("files_deleted"):
                     yield Label("删除:", classes="fs-group-label")
                     for f in cf["files_deleted"]:
-                        yield Button(f"- {f}", id=f"fs-file::{f}")
+                        self._file_paths[idx] = f
+                        yield Button(f"- {f}", id=f"fs-file-{idx}")
+                        idx += 1
                 if cf.get("files_modified"):
                     yield Label("修改:", classes="fs-group-label")
                     for f in cf["files_modified"]:
-                        yield Button(f"~ {f}", id=f"fs-file::{f}")
+                        self._file_paths[idx] = f
+                        yield Button(f"~ {f}", id=f"fs-file-{idx}")
+                        idx += 1
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """处理文件选择，将文件路径作为 dismiss 值返回。"""
-        if event.button.id and event.button.id.startswith("fs-file::"):
-            file_path = event.button.id[len("fs-file::"):]
-            self.dismiss(file_path)
+        """处理文件选择，根据索引找到文件路径。"""
+        if event.button.id and event.button.id.startswith("fs-file-"):
+            try:
+                idx = int(event.button.id.replace("fs-file-", ""))
+                file_path = self._file_paths.get(idx)
+                if file_path:
+                    self.dismiss(file_path)
+            except (ValueError, IndexError):
+                pass
 
     def on_key(self, event):
         if event.key in ("escape", "q"):
