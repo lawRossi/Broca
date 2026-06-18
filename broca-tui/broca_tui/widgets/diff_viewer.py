@@ -30,7 +30,7 @@ class DiffViewer(ModalScreen):
     }
     #diff-header-bar {
         height: auto;
-        padding: 1 2;
+        padding: 0 1;
         background: #e0e0e0;
         border-bottom: solid $border;
     }
@@ -43,20 +43,20 @@ class DiffViewer(ModalScreen):
         width: auto;
         min-width: 0;
         height: auto;
-        padding: 0 2;
+        padding: 0 1;
         background: transparent;
         border: none;
-        color: #666;
+        color: #999;
     }
     #diff-close-btn:hover {
-        text-style: bold;
-        background: #ccc;
+        color: #333;
+        background: #d0d0d0;
     }
     #diff-content {
         width: 1fr;
         height: 1fr;
         overflow: auto;
-        padding: 1 2;
+        padding: 0 1;
     }
     """
 

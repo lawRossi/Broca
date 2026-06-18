@@ -557,9 +557,9 @@ class TurnCard(Widget):
                     )
 
                 # 更新预创建的 Label：每组用各自的索引范围
-                MAX = 100
+                MAX = 50
                 self._file_diff_paths.clear()
-                # 新增 (idx 0-99)
+                # 新增 (idx 0-49)
                 added = cf.get("files_added", [])
                 self._toggle_display("#cf-head-added", bool(added))
                 for i, f in enumerate(added):
@@ -572,7 +572,7 @@ class TurnCard(Widget):
                         self.query_one(f"#cf-file-{i}", Label).display = False
                     except Exception:
                         pass
-                # 删除 (idx 100-199)
+                # 删除 (idx 50-99)
                 deleted = cf.get("files_deleted", [])
                 self._toggle_display("#cf-head-deleted", bool(deleted))
                 for i, f in enumerate(deleted):
@@ -586,7 +586,7 @@ class TurnCard(Widget):
                         self.query_one(f"#cf-file-{MAX + i}", Label).display = False
                     except Exception:
                         pass
-                # 修改 (idx 200-299)
+                # 修改 (idx 100-149)
                 modified = cf.get("files_modified", [])
                 self._toggle_display("#cf-head-modified", bool(modified))
                 for i, f in enumerate(modified):
@@ -851,7 +851,7 @@ class TurnCard(Widget):
                 )
             # 文件变更详情（折叠区域，Label 预先创建，通过 display 控制显隐）
             with Vertical(classes="changed-files-detail", id="changed-files-detail"):
-                MAX_FILES_PER_GROUP = 100
+                MAX_FILES_PER_GROUP = 50
                 yield Label("新增:", id="cf-head-added", classes="cf-group-label cf-added-label")
                 for i in range(MAX_FILES_PER_GROUP):
                     yield Label("", id=f"cf-file-{i}")
