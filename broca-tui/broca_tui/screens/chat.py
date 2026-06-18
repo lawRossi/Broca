@@ -369,11 +369,34 @@ class ChatScreen(Screen):
     def on_turn_card_file_diff_requested(self, event: TurnCard.FileDiffRequested):
         """处理 TurnCard 发起的文件 diff 请求。"""
         event.stop()
-        self.run_worker(self._show_file_diff(event.turn_id, event.file_path))
+        # 打开文件选择器
+        from broca_tui.widgets.diff_viewer import FileSelector, DiffViewer
+
+        # 从 chat_store 中查找该 turn 的 changed_files
+        changed_files = None
+        for turn in self._chat_store.turn_summaries:
+            if turn.turn_id == event.turn_id:
+                changed_files = turn.changed_files
+                break
+
+        if not changed_files:
+            self.notify("没有可查看的 diff", severity="warning", timeout=3)
+            return
+
+        async def _on_file_selected(result: Optional[str]):
+            if not result:
+                return
+            await self._show_file_diff(event.turn_id, result)
+
+        self.push_screen(
+            FileSelector(event.turn_id, changed_files),
+            callback=_on_file_selected,
+        )
 
     async def _show_file_diff(self, turn_id: str, file_path: str):
         """获取并展示文件的 unified diff。"""
         from broca_tui.api.session import SessionAPI
+        from broca_tui.widgets.diff_viewer import DiffViewer
 
         try:
             api = SessionAPI()
@@ -381,71 +404,12 @@ class ChatScreen(Screen):
             if not session_id:
                 return
 
-            # 调用 API 获取 diff
             diff_text = await api.get_file_diff(session_id, turn_id, file_path)
-
-            # 在 Textual 的 Screen 中展示
-            from textual.screen import ModalScreen
-            from textual.widgets import Static, Header
-            from textual.app import ComposeResult
-            from textual.containers import Vertical
-
-            class DiffScreen(ModalScreen):
-                DEFAULT_CSS = """
-                DiffScreen {
-                    align: center middle;
-                }
-                #diff-container {
-                    width: 90%;
-                    height: 80%;
-                    border: solid $primary;
-                    background: $surface;
-                    padding: 1;
-                }
-                #diff-header {
-                    text-style: bold;
-                    padding: 0 0 1 0;
-                }
-                #diff-content {
-                    width: 1fr;
-                    height: 1fr;
-                    overflow: auto;
-                    padding: 0 1;
-                }
-                #diff-content {
-                    background: $surface;
-                }
-                """
-
-                def __init__(self, file_path: str, diff_text: str):
-                    super().__init__()
-                    self._file_path = file_path
-                    self._diff_text = diff_text
-
-                def compose(self) -> ComposeResult:
-                    with Vertical(id="diff-container"):
-                        yield Static(f"Diff: {self._file_path}", id="diff-header")
-                        # 解析 unified diff 为 Rich 标记
-                        rich_lines = []
-                        for line in (self._diff_text or "(无变更)").split("\n"):
-                            if line.startswith("+") and not line.startswith("+++"):
-                                rich_lines.append(f"[bold #055d20 on #e6ffec]{line}[/]")
-                            elif line.startswith("-") and not line.startswith("---"):
-                                rich_lines.append(f"[bold #82071e on #ffebe9]{line}[/]")
-                            elif line.startswith("@@"):
-                                rich_lines.append(f"[#666 on #f0f0f0]{line}[/]")
-                            else:
-                                rich_lines.append(line)
-                        yield Static("\n".join(rich_lines), id="diff-content")
-
-                def on_key(self, event):
-                    if event.key in ("escape", "q"):
-                        self.dismiss()
-
-            await self.push_screen(DiffScreen(file_path, diff_text or "(无变更)"))
+            await self.push_screen(DiffViewer(file_path, diff_text or "(无变更)"))
         except Exception as e:
             from broca_tui.debug_log import log
             log(f"_show_file_diff error: {e}")
+            self.notify(f"获取 diff 失败: {e}", severity="error", timeout=5)
 
     # ==================== Dialog Handlers ====================
 

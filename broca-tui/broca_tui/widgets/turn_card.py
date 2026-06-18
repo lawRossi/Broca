@@ -23,6 +23,7 @@ from typing import Dict, Optional
 
 from rich.markdown import Markdown
 from textual.app import ComposeResult
+from textual.message import Message
 from textual.containers import Horizontal, Vertical
 from textual.widget import Widget
 from textual.widgets import Button, Label, Static
@@ -555,36 +556,23 @@ class TurnCard(Widget):
                         f"+{added} -{deleted} ~{modified} {toggle_icon}"
                     )
 
-                # 重建详情区域：每个文件一个独立 Label（可点击）
+                # 更新详情区域的摘要文本
                 detail_container = self.query_one("#changed-files-detail", Vertical)
                 if detail_container:
                     # 清除旧的子元素（保留容器本身）
                     for child in list(detail_container.children):
                         child.remove()
-                    # 重新挂载文件项
-                    self._file_diff_paths.clear()
-                    file_index = 0
-                    if cf.get("files_added"):
-                        detail_container.mount(Label("新增:", classes="cf-group-label cf-added-label"))
-                        for f in cf.get("files_added", []):
-                            self._file_diff_paths[file_index] = f
-                            btn = Button(f"+ {f}", id=f"cf-file-{file_index}", classes="cf-file-btn")
-                            detail_container.mount(btn)
-                            file_index += 1
-                    if cf.get("files_deleted"):
-                        detail_container.mount(Label("删除:", classes="cf-group-label cf-deleted-label"))
-                        for f in cf.get("files_deleted", []):
-                            self._file_diff_paths[file_index] = f
-                            btn = Button(f"- {f}", id=f"cf-file-{file_index}", classes="cf-file-btn")
-                            detail_container.mount(btn)
-                            file_index += 1
-                    if cf.get("files_modified"):
-                        detail_container.mount(Label("修改:", classes="cf-group-label cf-modified-label"))
-                        for f in cf.get("files_modified", []):
-                            self._file_diff_paths[file_index] = f
-                            btn = Button(f"~ {f}", id=f"cf-file-{file_index}", classes="cf-file-btn")
-                            detail_container.mount(btn)
-                            file_index += 1
+                    # 展示文件分组摘要
+                    cf = self._turn.changed_files
+                    if cf:
+                        if cf.get("files_added"):
+                            detail_container.mount(Label(f"新增: {len(cf['files_added'])} 个文件"))
+                        if cf.get("files_deleted"):
+                            detail_container.mount(Label(f"删除: {len(cf['files_deleted'])} 个文件"))
+                        if cf.get("files_modified"):
+                            detail_container.mount(Label(f"修改: {len(cf['files_modified'])} 个文件"))
+                        # 查看详情按钮
+                        detail_container.mount(Button("查看详细 diff", id="btn-view-diffs"))
         except Exception:
             pass
 
@@ -1017,14 +1005,12 @@ class TurnCard(Widget):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button press (undo + file diff)."""
-        if event.button.id and event.button.id.startswith("cf-file-"):
-            try:
-                idx = int(event.button.id.replace("cf-file-", ""))
-                file_path = self._file_diff_paths.get(idx)
-                if file_path:
-                    self._request_file_diff(file_path)
-            except (ValueError, IndexError):
-                pass
+        if event.button.id == "btn-view-diffs":
+            # 打开文件选择器查看 diff
+            self.post_message(self.FileDiffRequested(
+                turn_id=self._turn.turn_id,
+                file_path="__selector__",  # 特殊标记：打开文件选择器
+            ))
         elif event.button.id and event.button.id.startswith("undo-"):
             turn_id = event.button.id.replace("undo-", "", 1)
             parent = self.parent
