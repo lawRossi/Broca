@@ -367,28 +367,9 @@ class ChatScreen(Screen):
             )
 
     def on_turn_card_file_diff_requested(self, event: TurnCard.FileDiffRequested):
-        """处理 TurnCard 发起的文件 diff 请求。"""
+        """处理 TurnCard 发起的文件 diff 请求（点击文件名 → 直接弹 DiffViewer）。"""
         event.stop()
-        self.run_worker(self._show_file_selector(event.turn_id))
-
-    async def _show_file_selector(self, turn_id: str):
-        """异步展示文件选择器。"""
-        from broca_tui.widgets.diff_viewer import FileSelector, DiffViewer
-
-        # 从 chat_store 中查找该 turn 的 changed_files
-        changed_files = None
-        for turn in self._chat_store.turn_summaries:
-            if turn.turn_id == turn_id:
-                changed_files = turn.changed_files
-                break
-
-        if not changed_files:
-            self.notify("没有可查看的 diff", severity="warning", timeout=3)
-            return
-
-        file_path = await self.app.push_screen_wait(FileSelector(turn_id, changed_files))
-        if file_path:
-            await self._show_file_diff(turn_id, file_path)
+        self.run_worker(self._show_file_diff(event.turn_id, event.file_path))
 
     async def _show_file_diff(self, turn_id: str, file_path: str):
         """获取并展示文件的 unified diff。"""
