@@ -25,17 +25,19 @@ class DiffViewer(ModalScreen):
         width: 90%;
         height: 80%;
         border: solid $border;
-        background: #2d2d2d;
+        background: #f0f0f0;
         padding: 0;
     }
     #diff-header-bar {
         height: auto;
         padding: 1 2;
-        background: #3a3a3a;
+        background: #e0e0e0;
+        border-bottom: solid $border;
     }
     #diff-header-text {
         text-style: bold;
         width: 1fr;
+        color: #333;
     }
     #diff-close-btn {
         width: auto;
@@ -44,11 +46,11 @@ class DiffViewer(ModalScreen):
         padding: 0 2;
         background: transparent;
         border: none;
-        color: #ccc;
+        color: #666;
     }
     #diff-close-btn:hover {
         text-style: bold;
-        background: #555;
+        background: #ccc;
     }
     #diff-content {
         width: 1fr;
@@ -72,13 +74,13 @@ class DiffViewer(ModalScreen):
             rich_lines = []
             for line in (self._diff_text or "(无变更)").split("\n"):
                 if line.startswith("+") and not line.startswith("+++"):
-                    rich_lines.append(f"[bold #055d20 on #3a5a3a]{line}[/]")
+                    rich_lines.append(f"[bold #055d20 on #e6ffec]{line}[/]")
                 elif line.startswith("-") and not line.startswith("---"):
-                    rich_lines.append(f"[bold #82071e on #5a3a3a]{line}[/]")
+                    rich_lines.append(f"[bold #82071e on #ffebe9]{line}[/]")
                 elif line.startswith("@@"):
-                    rich_lines.append(f"[#999 on #4a4a4a]{line}[/]")
+                    rich_lines.append(f"[#666 on #e8e8e8]{line}[/]")
                 else:
-                    rich_lines.append(f"[#ccc]{line}[/]")
+                    rich_lines.append(line)
             yield Static("\n".join(rich_lines), id="diff-content")
 
     def on_key(self, event):
