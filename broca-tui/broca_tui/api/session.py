@@ -187,6 +187,23 @@ class SessionAPI:
             f"/session/{session_id}/turns", params=params
         )
 
+    async def get_file_diff(self, session_id: str, turn_id: str, file_path: str) -> str:
+        """获取 turn 中指定文件的 unified diff。
+
+        Args:
+            session_id: Session ID
+            turn_id: Turn ID
+            file_path: 文件路径
+
+        Returns:
+            unified diff 文本
+        """
+        result = await self._client.get(
+            f"/session/{session_id}/turns/{turn_id}/file-diff",
+            params={"path": file_path},
+        )
+        return result.get("diff", "")
+
     # ==================== Runner Management ====================
 
     async def get_runner_status(self, session_id: str) -> Dict[str, Any]:

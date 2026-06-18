@@ -194,14 +194,33 @@ const openFileDiff = async (filePath: string) => {
   try {
     const turnId = props.turn.turnId
     const res = await sessionApi.getFileDiff(chatStore.sessionId, turnId, filePath)
-    diffContent.value = res.diff || '(无变更)'
+    diffContent.value = res.diff || ''
   } catch (err) {
-    diffContent.value = '获取 diff 失败'
+    diffContent.value = ''
     console.error('Failed to get file diff:', err)
   } finally {
     diffLoading.value = false
   }
 }
+
+// 解析 unified diff 为带颜色的行
+interface DiffLine { text: string; type: 'add' | 'del' | 'ctx' | 'head' }
+const parsedDiffLines = computed<DiffLine[]>(() => {
+  if (!diffContent.value) return [{ text: '(无变更)', type: 'ctx' }]
+  const lines: DiffLine[] = []
+  for (const raw of diffContent.value.split('\n')) {
+    if (raw.startsWith('+') && !raw.startsWith('+++')) {
+      lines.push({ text: raw.slice(1), type: 'add' })
+    } else if (raw.startsWith('-') && !raw.startsWith('---')) {
+      lines.push({ text: raw.slice(1), type: 'del' })
+    } else if (raw.startsWith('@@')) {
+      lines.push({ text: raw, type: 'head' })
+    } else {
+      lines.push({ text: raw, type: 'ctx' })
+    }
+  }
+  return lines
+})
 
 // 是否有工具执行（无工具执行时隐藏整个执行摘要）
 const hasToolExecution = computed(() => {
@@ -438,7 +457,13 @@ const handleUndo = async () => {
       <el-icon class="is-loading" :size="24"><Loading /></el-icon>
       <p style="margin-top:8px;color:#999;">加载中...</p>
     </div>
-    <pre v-else class="diff-content">{{ diffContent }}</pre>
+    <div v-else class="diff-view">
+      <div
+        v-for="(line, idx) in parsedDiffLines"
+        :key="idx"
+        :class="['diff-line', line.type]"
+      ><span class="diff-line-num">{{ idx + 1 }}</span><span class="diff-line-content">{{ line.text }}</span></div>
+    </div>
   </el-dialog>
 </template>
 
@@ -740,18 +765,45 @@ const handleUndo = async () => {
 }
 
 /* ==================== Diff 弹窗 ==================== */
-.diff-content {
-  background: #f5f5f5;
+.diff-view {
+  background: #f8f9fa;
   border: 1px solid #e0e0e0;
   border-radius: 4px;
-  padding: 16px;
   font-family: 'Consolas', 'Courier New', monospace;
   font-size: 12px;
-  line-height: 1.5;
-  overflow-x: auto;
-  white-space: pre;
+  line-height: 1.6;
   max-height: 70vh;
+  overflow: auto;
 }
+
+.diff-line {
+  display: flex;
+  padding: 0 8px;
+  min-height: 1.6em;
+}
+
+.diff-line-num {
+  display: inline-block;
+  width: 32px;
+  flex-shrink: 0;
+  text-align: right;
+  color: #999;
+  padding-right: 12px;
+  user-select: none;
+}
+
+.diff-line-content {
+  white-space: pre;
+  flex: 1;
+}
+
+.diff-line.add { background: #e6ffec; }
+.diff-line.del { background: #ffebe9; }
+.diff-line.head { background: #f0f0f0; color: #666; font-weight: 600; }
+.diff-line.ctx { color: #333; }
+
+.diff-line.add .diff-line-content { color: #055d20; }
+.diff-line.del .diff-line-content { color: #82071e; }
 
 /* ==================== 展开按钮 ==================== */
 .expand-btn {

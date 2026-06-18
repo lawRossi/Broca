@@ -202,6 +202,9 @@ class ChatScreen(Screen):
                 target_agent_id=self._agent_store.current_agent_id or "",
             ))
         )
+        message_list._on_view_file_diff = lambda turn_id, file_path: self.run_worker(
+            self._show_file_diff(turn_id, file_path)
+        )
 
         # Agent store → agent 状态/列表变化由 AgentSidebar 的 _render_agents 处理
         # 注意：AgentSidebar 在 on_mount 时已注册 _render_agents 到 _agent_store.on_change
@@ -364,6 +367,67 @@ class ChatScreen(Screen):
                 target_agent_id=target_agent_id,
                 level="turn",
             )
+
+    async def _show_file_diff(self, turn_id: str, file_path: str):
+        """获取并展示文件的 unified diff。"""
+        from broca_tui.api.session import SessionAPI
+
+        try:
+            api = SessionAPI()
+            session_id = self._chat_store.session_id
+            if not session_id:
+                return
+
+            # 调用 API 获取 diff
+            diff_text = await api.get_file_diff(session_id, turn_id, file_path)
+
+            # 在 Textual 的 Screen 中展示
+            from textual.screen import ModalScreen
+            from textual.widgets import Static, Header
+            from textual.app import ComposeResult
+            from textual.containers import Vertical
+
+            class DiffScreen(ModalScreen):
+                DEFAULT_CSS = """
+                DiffScreen {
+                    align: center middle;
+                }
+                #diff-container {
+                    width: 90%;
+                    height: 80%;
+                    border: solid $primary;
+                    background: $surface;
+                    padding: 1;
+                }
+                #diff-header {
+                    text-style: bold;
+                    padding: 0 0 1 0;
+                }
+                #diff-content {
+                    width: 1fr;
+                    height: 1fr;
+                    overflow: auto;
+                }
+                """
+
+                def __init__(self, file_path: str, diff_text: str):
+                    super().__init__()
+                    self._file_path = file_path
+                    self._diff_text = diff_text
+
+                def compose(self) -> ComposeResult:
+                    with Vertical(id="diff-container"):
+                        yield Static(f"Diff: {self._file_path}", id="diff-header")
+                        yield Static(self._diff_text or "(无变更)", id="diff-content")
+
+                def on_key(self, event):
+                    if event.key in ("escape", "q"):
+                        self.dismiss()
+
+            await self.push_screen(DiffScreen(file_path, diff_text or "(无变更)"))
+        except Exception as e:
+            from broca_tui.debug_log import log
+            log(f"_show_file_diff error: {e}")
 
     # ==================== Dialog Handlers ====================
 

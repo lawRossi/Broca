@@ -816,6 +816,20 @@ export class ChatWebViewManager {
       case 'fetchTurns':
         await this.handleFetchTurns(panel, message.payload)
         break
+
+      // ==================== Search handlers ====================
+      case 'searchMessages':
+        await this.handleSearchMessages(panel, sessionId, message.payload)
+        break
+
+      case 'getSearchFilters':
+        await this.handleGetSearchFilters(panel, sessionId)
+        break
+
+      // ==================== File diff handlers ====================
+      case 'viewDiff':
+        await this.handleViewFileDiff(message.payload)
+        break
     }
   }
 
@@ -1790,6 +1804,81 @@ export class ChatWebViewManager {
         type: 'commands',
         payload: { commands: [] },
       } as ExtensionToWebView)
+    }
+  }
+
+  // ==================== Search handlers ====================
+
+  private async handleSearchMessages(panel: vscode.WebviewPanel, sessionId: string, payload: {
+    keyword?: string
+    message_type?: string
+    sender_id?: string
+    tool_name?: string
+    order?: string
+    skip?: number
+    limit?: number
+  }) {
+    try {
+      const result = await this.apiClient.searchSessionMessages(sessionId, {
+        keyword: payload.keyword,
+        message_type: payload.message_type,
+        sender_id: payload.sender_id,
+        tool_name: payload.tool_name,
+        order: (payload.order as 'desc' | 'asc') || 'desc',
+        skip: payload.skip ?? 0,
+        limit: payload.limit ?? 20,
+      })
+      this.postToPanel(panel, {
+        type: 'searchMessages',
+        payload: result,
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, {
+        type: 'error',
+        payload: { message: extractErrorMessage(error, '搜索消息失败') },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleGetSearchFilters(panel: vscode.WebviewPanel, sessionId: string) {
+    try {
+      const result = await this.apiClient.getSearchFilters(sessionId)
+      this.postToPanel(panel, {
+        type: 'searchFilters',
+        payload: result,
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      this.postToPanel(panel, {
+        type: 'error',
+        payload: { message: extractErrorMessage(error, '获取搜索筛选选项失败') },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleViewFileDiff(payload: { turnId: string; filePath: string; sessionId?: string }) {
+    try {
+      const { turnId, filePath } = payload
+      // Find sessionId from payload or from the first active panel
+      const sessionId = payload.sessionId || Array.from(this.panels.keys())[0]
+      if (!sessionId) {
+        vscode.window.showErrorMessage('无法获取会话 ID')
+        return
+      }
+
+      const result = await this.apiClient.getFileDiff(sessionId, turnId, filePath)
+      const diffText = result.diff || '(无变更)'
+
+      // Create a temporary document to show the diff
+      const doc = await vscode.workspace.openTextDocument({
+        content: diffText,
+        language: 'diff',
+      })
+      await vscode.window.showTextDocument(doc, {
+        preview: true,
+        viewColumn: vscode.ViewColumn.Beside,
+      })
+    } catch (error: any) {
+      vscode.window.showErrorMessage(`获取 diff 失败: ${extractErrorMessage(error)}`)
     }
   }
 

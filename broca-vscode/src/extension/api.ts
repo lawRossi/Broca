@@ -18,6 +18,9 @@ import type {
   CrewConfigFile,
   CrewConfigDetail,
   CommandInfo,
+  SearchParams,
+  SearchFilters,
+  SearchMessagesResponse,
 } from './types'
 
 export class ApiClient {
@@ -177,6 +180,13 @@ export class ApiClient {
     return response.data
   }
 
+  async getFileDiff(sessionId: string, turnId: string, path: string): Promise<{ diff: string; file_path: string }> {
+    const response = await this.client.get(`/session/${sessionId}/turns/${turnId}/file-diff`, {
+      params: { path },
+    })
+    return response.data
+  }
+
   // ==================== Auth API ====================
 
   async login(username: string, password: string): Promise<{ token: string; user_id: string; username: string }> {
@@ -255,6 +265,28 @@ export class ApiClient {
       filename,
       content,
     })
+    return response.data
+  }
+
+  // ==================== Search API ====================
+
+  async searchSessionMessages(sessionId: string, params?: SearchParams): Promise<SearchMessagesResponse> {
+    const response = await this.client.get(`/session/${sessionId}/messages/search`, {
+      params: {
+        keyword: params?.keyword,
+        message_type: params?.message_type,
+        sender_id: params?.sender_id,
+        tool_name: params?.tool_name,
+        order: params?.order ?? 'desc',
+        skip: params?.skip ?? 0,
+        limit: params?.limit ?? 20,
+      },
+    })
+    return response.data
+  }
+
+  async getSearchFilters(sessionId: string): Promise<SearchFilters> {
+    const response = await this.client.get(`/session/${sessionId}/messages/search/filters`)
     return response.data
   }
 }
