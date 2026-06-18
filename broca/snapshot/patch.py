@@ -94,7 +94,9 @@ class PatchCalculator:
             raise
 
     async def calculate_diff(
-        self, from_hash: str, to_hash: Optional[str] = None,
+        self,
+        from_hash: str,
+        to_hash: str,
         file_path: Optional[str] = None,
     ) -> str:
         """
@@ -111,34 +113,13 @@ class PatchCalculator:
         self.git_manager.ensure_initialized()
 
         try:
-            if to_hash:
-                # 比较两个树对象
-                cmd = ["diff-tree", "--no-commit-id", "-r", "-p", "-U3", from_hash, to_hash]
-                if file_path:
-                    cmd.extend(["--", file_path])
-                return await self.git_manager._run_git_command(*cmd)
-            else:
-                # 比较树对象和当前工作区
-                # 首先将树对象写入索引
-                await self.git_manager._run_git_command("read-tree", from_hash)
-                # 然后比较索引和工作区
-                diff = await self.git_manager._run_git_command(
-                    "diff", "-U3", "HEAD", "--", "."
-                )
-                # 重置索引
-                await self.git_manager._run_git_command("reset", "--mixed")
-                return diff
+            # 比较两个树对象
+            cmd = ["diff-tree", "--no-commit-id", "-r", "-p", "-U3", from_hash, to_hash]
+            if file_path:
+                cmd.extend(["--", file_path])
+            return await self.git_manager._run_git_command(*cmd)
         except git.GitCommandError as e:
-            # 如果 from_hash 不存在，返回空差异
-            if "bad object" in str(e) and from_hash:
-                try:
-                    await self.git_manager._run_git_command("cat-file", "-t", from_hash)
-                    # 对象存在但不是树
-                    return ""
-                except git.GitCommandError:
-                    # 对象不存在
-                    return ""
-            raise
+            raise e
 
     def get_diff_summary(self, diff_content: str) -> Dict[str, any]:
         """
@@ -178,19 +159,32 @@ class PatchCalculator:
                     file_a = parts[2][2:]  # 去掉 "a/"
                     file_b = parts[3][2:] if len(parts) > 3 else ""  # 去掉 "b/"
 
-                    if file_a == "/dev/null":
-                        # 新文件
-                        current_file = file_b
-                        files_added.append(current_file)
-                    elif file_b == "/dev/null":
-                        # 删除文件
-                        current_file = file_a
-                        files_deleted.append(current_file)
-                    else:
-                        # 修改文件
-                        current_file = file_a
-                        if current_file not in files_modified:
-                            files_modified.append(current_file)
+                    # 暂存文件名，等看到 new/deleted file mode 行再确定类型
+                    current_file = (
+                        file_a
+                        if file_a != "/dev/null" and file_a != "dev/null"
+                        else file_b
+                    )
+
+            elif line.startswith("new file mode"):
+                # 新增文件
+                if current_file and current_file not in files_added:
+                    files_added.append(current_file)
+
+            elif line.startswith("deleted file mode"):
+                # 删除文件
+                if current_file and current_file not in files_deleted:
+                    files_deleted.append(current_file)
+
+            elif line.startswith("--- a/"):
+                # 修改文件（没有 new/deleted file mode 标记）
+                if (
+                    current_file
+                    and current_file not in files_added
+                    and current_file not in files_deleted
+                    and current_file not in files_modified
+                ):
+                    files_modified.append(current_file)
 
             elif line.startswith("+") and not line.startswith("+++"):
                 total_additions += 1
