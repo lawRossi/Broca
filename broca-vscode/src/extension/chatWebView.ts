@@ -828,7 +828,7 @@ export class ChatWebViewManager {
 
       // ==================== File diff handlers ====================
       case 'viewDiff':
-        await this.handleViewFileDiff(message.payload)
+        await this.handleViewFileDiff(panel, message.payload)
         break
     }
   }
@@ -1855,30 +1855,27 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleViewFileDiff(payload: { turnId: string; filePath: string; sessionId?: string }) {
+  private async handleViewFileDiff(panel: vscode.WebviewPanel, payload: { turnId: string; filePath: string; sessionId?: string }) {
     try {
       const { turnId, filePath } = payload
-      // Find sessionId from payload or from the first active panel
       const sessionId = payload.sessionId || Array.from(this.panels.keys())[0]
       if (!sessionId) {
-        vscode.window.showErrorMessage('无法获取会话 ID')
+        this.postToPanel(panel, {
+          type: 'fileDiffResult',
+          payload: { filePath, diff: '' },
+        } as ExtensionToWebView)
         return
       }
-
       const result = await this.apiClient.getFileDiff(sessionId, turnId, filePath)
-      const diffText = result.diff || '(无变更)'
-
-      // Create a temporary document to show the diff
-      const doc = await vscode.workspace.openTextDocument({
-        content: diffText,
-        language: 'diff',
-      })
-      await vscode.window.showTextDocument(doc, {
-        preview: true,
-        viewColumn: vscode.ViewColumn.Beside,
-      })
+      this.postToPanel(panel, {
+        type: 'fileDiffResult',
+        payload: { filePath, diff: result.diff || '' },
+      } as ExtensionToWebView)
     } catch (error: any) {
-      vscode.window.showErrorMessage(`获取 diff 失败: ${extractErrorMessage(error)}`)
+      this.postToPanel(panel, {
+        type: 'fileDiffResult',
+        payload: { filePath, diff: '' },
+      } as ExtensionToWebView)
     }
   }
 

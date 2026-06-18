@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { marked } from 'marked'
 import type { TurnSummary } from '../stores/chat'
 import { useChatStore } from '../stores/chat'
-import { postMessage, getInitialData } from '../api/vscode'
+import { postMessage, onMessage, getInitialData } from '../api/vscode'
 
 const props = defineProps<{
   turn: TurnSummary
@@ -170,27 +170,33 @@ const parsedDiffLines = computed<DiffLine[]>(() => {
   return lines
 })
 
-const openFileDiff = async (filePath: string) => {
-  const sid = chatStore.sessionId
-  if (!sid) return
+const openFileDiff = (filePath: string) => {
   diffFileName.value = filePath
   diffDialogVisible.value = true
   diffLoading.value = true
   diffContent.value = ''
-  try {
-    const initData = getInitialData()
-    const baseUrl = initData?.serverUrl ? initData.serverUrl.replace(/\/+$/, '') : ''
-    const res = await fetch(
-      `${baseUrl}/api/session/${sid}/turns/${props.turn.turnId}/file-diff?path=${encodeURIComponent(filePath)}`
-    )
-    const data = await res.json()
-    diffContent.value = data.data?.diff || ''
-  } catch (err) {
-    diffContent.value = ''
-    console.error('Failed to get file diff:', err)
-  } finally {
-    diffLoading.value = false
-  }
+  // 通过 extension host 获取 diff（extension host 有正确的 API base URL）
+  const unsub = onMessage((data: any) => {
+    if (data.type === 'fileDiffResult' && data.payload?.filePath === filePath) {
+      diffContent.value = data.payload.diff || ''
+      diffLoading.value = false
+      unsub()
+    }
+  })
+  postMessage({
+    type: 'viewDiff',
+    payload: {
+      turnId: props.turn.turnId,
+      filePath,
+    },
+  })
+  // 超时保护
+  setTimeout(() => {
+    if (diffLoading.value) {
+      diffLoading.value = false
+      diffContent.value = ''
+    }
+  }, 15000)
 }
 
 // ==================== 回复区域 ====================
