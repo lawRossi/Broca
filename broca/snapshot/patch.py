@@ -113,7 +113,7 @@ class PatchCalculator:
         try:
             if to_hash:
                 # 比较两个树对象
-                cmd = ["diff-tree", "--no-commit-id", "-p", "-U3", from_hash, to_hash]
+                cmd = ["diff-tree", "--no-commit-id", "-r", "-p", "-U3", from_hash, to_hash]
                 if file_path:
                     cmd.extend(["--", file_path])
                 return await self.git_manager._run_git_command(*cmd)
