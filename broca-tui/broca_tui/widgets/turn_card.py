@@ -556,37 +556,47 @@ class TurnCard(Widget):
                         f"+{added} -{deleted} ~{modified} {toggle_icon}"
                     )
 
-                # 更新预创建的 Label：填充文本 + 控制显隐
+                # 更新预创建的 Label：每组用各自的索引范围
                 self._file_diff_paths.clear()
-                idx = 0
+                # 新增 (idx 0-29)
                 added = cf.get("files_added", [])
                 self._toggle_display("#cf-head-added", bool(added))
-                for f in added:
-                    if idx < 90:
-                        self.query_one(f"#cf-file-{idx}", Label).update(f"  + {f}")
-                        self.query_one(f"#cf-file-{idx}", Label).display = True
-                        self._file_diff_paths[idx] = f
-                        idx += 1
+                for i, f in enumerate(added):
+                    if i < 30:
+                        self.query_one(f"#cf-file-{i}", Label).update(f"  + {f}")
+                        self.query_one(f"#cf-file-{i}", Label).display = True
+                        self._file_diff_paths[i] = f
+                for i in range(len(added), 30):
+                    try:
+                        self.query_one(f"#cf-file-{i}", Label).display = False
+                    except Exception:
+                        pass
+                # 删除 (idx 30-59)
                 deleted = cf.get("files_deleted", [])
                 self._toggle_display("#cf-head-deleted", bool(deleted))
-                for f in deleted:
-                    if idx < 90:
+                for i, f in enumerate(deleted):
+                    idx = 30 + i
+                    if i < 30:
                         self.query_one(f"#cf-file-{idx}", Label).update(f"  - {f}")
                         self.query_one(f"#cf-file-{idx}", Label).display = True
                         self._file_diff_paths[idx] = f
-                        idx += 1
+                for i in range(len(deleted), 30):
+                    try:
+                        self.query_one(f"#cf-file-{30 + i}", Label).display = False
+                    except Exception:
+                        pass
+                # 修改 (idx 60-89)
                 modified = cf.get("files_modified", [])
                 self._toggle_display("#cf-head-modified", bool(modified))
-                for f in modified:
-                    if idx < 90:
+                for i, f in enumerate(modified):
+                    idx = 60 + i
+                    if i < 30:
                         self.query_one(f"#cf-file-{idx}", Label).update(f"  ~ {f}")
                         self.query_one(f"#cf-file-{idx}", Label).display = True
                         self._file_diff_paths[idx] = f
-                        idx += 1
-                # 隐藏剩余的 Label
-                for i in range(idx, 90):
+                for i in range(len(modified), 30):
                     try:
-                        self.query_one(f"#cf-file-{i}", Label).display = False
+                        self.query_one(f"#cf-file-{60 + i}", Label).display = False
                     except Exception:
                         pass
         except Exception:
