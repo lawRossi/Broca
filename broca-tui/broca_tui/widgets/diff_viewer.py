@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 
 from textual.app import ComposeResult
-from textual.containers import Vertical, Horizontal
+from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual.screen import ModalScreen
 from textual.widgets import Static, Label, Button
 
@@ -55,7 +55,6 @@ class DiffViewer(ModalScreen):
     #diff-content {
         width: 1fr;
         height: 1fr;
-        overflow: auto;
         padding: 0 1;
     }
     """
@@ -81,7 +80,8 @@ class DiffViewer(ModalScreen):
                     rich_lines.append(f"[#666 on #e8e8e8]{line}[/]")
                 else:
                     rich_lines.append(line)
-            yield Static("\n".join(rich_lines), id="diff-content")
+            with ScrollableContainer(id="diff-content"):
+                yield Static("\n".join(rich_lines))
 
     def on_key(self, event):
         if event.key in ("escape", "q"):
