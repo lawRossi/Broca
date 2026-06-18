@@ -681,3 +681,34 @@ async def get_session_turns(
     except Exception as e:
         logger.exception("Error getting session turns")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.get("/{session_id}/turns/{turn_id}/file-diff", response_model=ApiResponse)
+async def get_turn_file_diff(
+    session_id: str,
+    turn_id: str,
+    path: str,
+) -> ApiResponse:
+    """
+    获取 turn 中指定文件的 unified diff。
+
+    后端从 turn_end 消息中提取最早/最晚快照哈希，
+    实时计算该文件的 diff 并返回。
+    """
+    try:
+        turn_service = get_turn_service()
+        diff = await turn_service.get_file_diff(session_id, turn_id, path)
+        if diff is None:
+            return ApiResponse.success({
+                "diff": "",
+                "file_path": path,
+            })
+        return ApiResponse.success({
+            "diff": diff,
+            "file_path": path,
+        })
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error getting file diff for {path}")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e

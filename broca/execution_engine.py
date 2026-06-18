@@ -900,6 +900,8 @@ class ExecutionEngine:
                             "files_added": diff_summary.get("files_added", []),
                             "files_deleted": diff_summary.get("files_deleted", []),
                             "files_modified": diff_summary.get("files_modified", []),
+                            "first_snapshot_hash": self._turn_first_snapshot_hash,
+                            "last_snapshot_hash": self._turn_last_snapshot_hash,
                         }
                 except Exception as e:
                     logger.warning(f"Error calculating turn-level diff: {e}")

@@ -6,6 +6,7 @@ import { renderMarkdown } from '@/utils/markdown'
 
 const chatStore = useChatStore()
 const socketStore = useSocketStore()
+import { sessionApi } from '@/api/session'
 
 interface ToolCallStat {
   toolName: string
@@ -178,6 +179,30 @@ const toggleChangedFiles = () => {
   showChangedFilesDetail.value = !showChangedFilesDetail.value
 }
 
+// ====== 文件 Diff 弹窗 ======
+const diffDialogVisible = ref(false)
+const diffContent = ref('')
+const diffFileName = ref('')
+const diffLoading = ref(false)
+
+const openFileDiff = async (filePath: string) => {
+  if (!chatStore.sessionId) return
+  diffFileName.value = filePath
+  diffDialogVisible.value = true
+  diffLoading.value = true
+  diffContent.value = ''
+  try {
+    const turnId = props.turn.turnId
+    const res = await sessionApi.getFileDiff(chatStore.sessionId, turnId, filePath)
+    diffContent.value = res.diff || '(无变更)'
+  } catch (err) {
+    diffContent.value = '获取 diff 失败'
+    console.error('Failed to get file diff:', err)
+  } finally {
+    diffLoading.value = false
+  }
+}
+
 // 是否有工具执行（无工具执行时隐藏整个执行摘要）
 const hasToolExecution = computed(() => {
   return showToolStats.value || !!currentToolText.value || showFilePath.value || showTodoList.value || showChangedFiles.value
@@ -324,15 +349,21 @@ const handleUndo = async () => {
         <div v-if="showChangedFiles && showChangedFilesDetail" class="changed-files-detail">
           <div v-if="turn.changedFiles.filesAdded.length" class="cf-group">
             <div class="cf-group-label cf-added-label">新增</div>
-            <div v-for="f in turn.changedFiles.filesAdded" :key="f" class="cf-file-item cf-added-file">+ {{ f }}</div>
+            <div v-for="f in turn.changedFiles.filesAdded" :key="f" class="cf-file-item cf-added-file">
+              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">+ {{ f }}</span>
+            </div>
           </div>
           <div v-if="turn.changedFiles.filesDeleted.length" class="cf-group">
             <div class="cf-group-label cf-deleted-label">删除</div>
-            <div v-for="f in turn.changedFiles.filesDeleted" :key="f" class="cf-file-item cf-deleted-file">- {{ f }}</div>
+            <div v-for="f in turn.changedFiles.filesDeleted" :key="f" class="cf-file-item cf-deleted-file">
+              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">- {{ f }}</span>
+            </div>
           </div>
           <div v-if="turn.changedFiles.filesModified.length" class="cf-group">
             <div class="cf-group-label cf-modified-label">修改</div>
-            <div v-for="f in turn.changedFiles.filesModified" :key="f" class="cf-file-item cf-modified-file">~ {{ f }}</div>
+            <div v-for="f in turn.changedFiles.filesModified" :key="f" class="cf-file-item cf-modified-file">
+              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">~ {{ f }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -394,6 +425,21 @@ const handleUndo = async () => {
       </el-button>
     </div>
   </div>
+
+  <!-- Diff 弹窗 -->
+  <el-dialog
+    v-model="diffDialogVisible"
+    :title="'Diff: ' + diffFileName"
+    width="80%"
+    top="5vh"
+    destroy-on-close
+  >
+    <div v-if="diffLoading" style="text-align:center;padding:40px;">
+      <el-icon class="is-loading" :size="24"><Loading /></el-icon>
+      <p style="margin-top:8px;color:#999;">加载中...</p>
+    </div>
+    <pre v-else class="diff-content">{{ diffContent }}</pre>
+  </el-dialog>
 </template>
 
 
@@ -682,6 +728,30 @@ const handleUndo = async () => {
 .cf-added-file { color: #15803d; }
 .cf-deleted-file { color: #b91c1c; }
 .cf-modified-file { color: #a16207; }
+
+.cf-file-link {
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+
+.cf-file-link:hover {
+  opacity: 0.7;
+}
+
+/* ==================== Diff 弹窗 ==================== */
+.diff-content {
+  background: #f5f5f5;
+  border: 1px solid #e0e0e0;
+  border-radius: 4px;
+  padding: 16px;
+  font-family: 'Consolas', 'Courier New', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+  overflow-x: auto;
+  white-space: pre;
+  max-height: 70vh;
+}
 
 /* ==================== 展开按钮 ==================== */
 .expand-btn {

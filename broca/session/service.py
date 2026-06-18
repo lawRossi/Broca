@@ -16,6 +16,7 @@ from sqlmodel import SQLModel, and_
 
 from broca.logging_config import get_logger
 from broca.session.database import db_manager
+from broca.snapshot.patch import PatchCalculator
 from broca.session.models import (
     Agent,
     AgentConfig,
@@ -452,6 +453,45 @@ class TurnService(BaseService[Turn]):
         ]
         stats["is_reverted"] = active_count == 0
         return stats
+
+    async def get_file_diff(self, session_id: str, turn_id: str, file_path: str) -> Optional[str]:
+        """获取 turn 中指定文件的 unified diff
+
+        从 turn_end 消息中提取最早/最晚快照哈希，通过 PatchCalculator 实时计算 diff。
+
+        Args:
+            session_id: 会话 ID（用于获取 workspace 路径）
+            turn_id: Turn ID
+            file_path: 文件路径
+
+        Returns:
+            unified diff 文本，或 None（快照不可用或没有变更）
+        """
+        # 查 Session 拿 workspace 路径
+        session_service = SessionService()
+        sess = await session_service.get(session_id)
+        if not sess or not sess.workspace:
+            return None
+
+        # 创建 PatchCalculator
+        calculator = PatchCalculator(sess.workspace)
+
+        # 从 turn 的 turn_end 消息中拿快照哈希
+        stats = await self.get_turn_stats(turn_id)
+        cf = stats.get("changed_files", {})
+        first_hash = cf.get("first_snapshot_hash")
+        last_hash = cf.get("last_snapshot_hash")
+        if not first_hash or not last_hash:
+            return None
+
+        # 计算指定文件的 diff
+        try:
+            return await calculator.calculate_diff(
+                first_hash, last_hash, file_path=file_path
+            )
+        except Exception as e:
+            logger.warning(f"Error calculating file diff for {file_path}: {e}")
+            return None
 
     async def count_turns_by_session(self, session_id: str) -> int:
         """统计会话的 turn 总数"""

@@ -94,7 +94,8 @@ class PatchCalculator:
             raise
 
     async def calculate_diff(
-        self, from_hash: str, to_hash: Optional[str] = None
+        self, from_hash: str, to_hash: Optional[str] = None,
+        file_path: Optional[str] = None,
     ) -> str:
         """
         计算两个快照之间的差异（unified diff 格式）
@@ -102,6 +103,7 @@ class PatchCalculator:
         Args:
             from_hash: 起始快照的 Git 树哈希
             to_hash: 结束快照的 Git 树哈希，如果为 None 则使用当前暂存区
+            file_path: 可选的过滤路径，只返回指定文件的 diff
 
         Returns:
             unified diff 格式的差异
@@ -111,9 +113,10 @@ class PatchCalculator:
         try:
             if to_hash:
                 # 比较两个树对象
-                return await self.git_manager._run_git_command(
-                    "diff-tree", "--no-commit-id", "-p", "-U3", from_hash, to_hash
-                )
+                cmd = ["diff-tree", "--no-commit-id", "-p", "-U3", from_hash, to_hash]
+                if file_path:
+                    cmd.extend(["--", file_path])
+                return await self.git_manager._run_git_command(*cmd)
             else:
                 # 比较树对象和当前工作区
                 # 首先将树对象写入索引

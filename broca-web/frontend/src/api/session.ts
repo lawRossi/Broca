@@ -240,6 +240,19 @@ export const sessionApi = {
     return request.get(`/session/${sessionId}/turns`, { params })
   },
 
+  /**
+   * 获取 turn 中指定文件的 unified diff
+   */
+  async getFileDiff(
+    sessionId: string,
+    turnId: string,
+    path: string
+  ): Promise<{ diff: string; file_path: string }> {
+    return request.get(`/session/${sessionId}/turns/${turnId}/file-diff`, {
+      params: { path },
+    })
+  },
+
   // ==================== Runner 管理 API ====================
 
   /**

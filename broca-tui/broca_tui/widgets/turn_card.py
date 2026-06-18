@@ -301,6 +301,31 @@ class TurnCard(Widget):
         color: $text;
     }
 
+    #changed-files-detail Label {
+        height: auto;
+    }
+
+    #changed-files-detail Label:hover {
+        text-style: bold underline;
+    }
+
+    .cf-group-label {
+        text-style: bold;
+        margin-top: 1;
+    }
+
+    .cf-added-label {
+        color: #16a34a;
+    }
+
+    .cf-deleted-label {
+        color: #dc2626;
+    }
+
+    .cf-modified-label {
+        color: #ca8a04;
+    }
+
     .turn-tool-stats {
         color: $text;
     }
@@ -365,6 +390,7 @@ class TurnCard(Widget):
         self._consecutive_agent = consecutive_agent
         self._show_reasoning = False
         self._show_changed_files_detail = False  # 文件变更详情默认折叠
+        self._file_diff_paths: Dict[int, str] = {}  # idx → file_path, 用于点击文件查看 diff
         self._response_expanded = True  # 回复默认展开，过长时可折叠
         self._last_reasoning_update = 0.0  # 推理内容节流时间戳
         self._last_response_update = 0.0  # 回复内容节流时间戳
@@ -497,22 +523,36 @@ class TurnCard(Widget):
                         f"+{added} -{deleted} ~{modified} {toggle_icon}"
                     )
 
-                detail_label = self.query_one("#changed-files-detail-text", Label)
-                if detail_label:
-                    lines = []
+                # 重建详情区域：每个文件一个独立 Label（可点击）
+                detail_container = self.query_one("#changed-files-detail", Vertical)
+                if detail_container:
+                    # 清除旧的子元素（保留容器本身）
+                    for child in list(detail_container.children):
+                        child.remove()
+                    # 重新挂载文件项
+                    self._file_diff_paths.clear()
+                    file_index = 0
                     if cf.get("files_added"):
-                        lines.append("新增:")
+                        detail_container.mount(Label("新增:", classes="cf-group-label cf-added-label"))
                         for f in cf.get("files_added", []):
-                            lines.append(f"  + {f}")
+                            lbl = Label(f"  + {f}", id=f"cf-file-{file_index}")
+                            self._file_diff_paths[file_index] = f
+                            file_index += 1
+                            detail_container.mount(lbl)
                     if cf.get("files_deleted"):
-                        lines.append("删除:")
+                        detail_container.mount(Label("删除:", classes="cf-group-label cf-deleted-label"))
                         for f in cf.get("files_deleted", []):
-                            lines.append(f"  - {f}")
+                            lbl = Label(f"  - {f}", id=f"cf-file-{file_index}")
+                            self._file_diff_paths[file_index] = f
+                            file_index += 1
+                            detail_container.mount(lbl)
                     if cf.get("files_modified"):
-                        lines.append("修改:")
+                        detail_container.mount(Label("修改:", classes="cf-group-label cf-modified-label"))
                         for f in cf.get("files_modified", []):
-                            lines.append(f"  ~ {f}")
-                    detail_label.update("\n".join(lines))
+                            lbl = Label(f"  ~ {f}", id=f"cf-file-{file_index}")
+                            self._file_diff_paths[file_index] = f
+                            file_index += 1
+                            detail_container.mount(lbl)
         except Exception:
             pass
 
@@ -762,9 +802,9 @@ class TurnCard(Widget):
                     classes="turn-summary-value",
                     id="changed-files-summary",
                 )
-            # 文件变更详情（折叠区域）
+            # 文件变更详情（折叠区域，子元素由 update_turn 动态重建）
             with Vertical(classes="changed-files-detail", id="changed-files-detail"):
-                yield Label("", id="changed-files-detail-text")
+                pass
 
         # ===== 回复区域（始终创建，初始隐藏） =====
         with Horizontal(
@@ -927,6 +967,15 @@ class TurnCard(Widget):
             elif widget_id in ("changed-files-row", "changed-files-summary", "changed-files-label"):
                 self._show_changed_files_detail = not self._show_changed_files_detail
                 self._update_all_sections()
+            elif widget_id and widget_id.startswith("cf-file-"):
+                # 点击文件名 → 触发 diff 查看
+                try:
+                    idx = int(widget_id.replace("cf-file-", ""))
+                    file_path = self._file_diff_paths.get(idx)
+                    if file_path:
+                        self._request_file_diff(file_path)
+                except (ValueError, IndexError):
+                    pass
             elif widget_id == "toggle-response":
                 self._response_expanded = not self._response_expanded
                 self._update_response_visibility()
@@ -944,6 +993,11 @@ class TurnCard(Widget):
                     parent._confirm_and_undo(turn_id)
                     break
                 parent = parent.parent
+
+    def _request_file_diff(self, file_path: str):
+        """请求查看文件的 diff，通过回调通知外部。"""
+        if hasattr(self, '_on_view_file_diff') and self._on_view_file_diff:
+            self._on_view_file_diff(self._turn.turn_id, file_path)
 
     def on_update_turn_undo_visibility(self) -> None:
         """撤销按钮始终显示（不需要 hover 触发）。"""

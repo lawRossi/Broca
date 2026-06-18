@@ -3,6 +3,7 @@ import { ref, computed } from 'vue'
 import { marked } from 'marked'
 import type { TurnSummary } from '../stores/chat'
 import { useChatStore } from '../stores/chat'
+import { postMessage } from '../api/vscode'
 
 const props = defineProps<{
   turn: TurnSummary
@@ -145,6 +146,18 @@ const toolStatsText = computed(() => {
   return props.turn.toolCallStats.map(s => `${s.toolName} (${s.count}次)`).join(', ')
 })
 
+// ==================== 文件 Diff ====================
+const openFileDiff = (filePath: string) => {
+  postMessage({
+    type: 'viewDiff',
+    payload: {
+      sessionId: props.turn.turnId,  // 由 extension host 根据 turnId 查 sessionId
+      turnId: props.turn.turnId,
+      filePath,
+    },
+  })
+}
+
 // ==================== 回复区域 ====================
 const showResponse = computed(() => props.turn.finalResponse.length > 0)
 const hasReasoning = computed(() => props.turn.reasoningContent.length > 0)
@@ -260,15 +273,21 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
         <div v-if="showChangedFiles && showChangedFilesDetail" class="changed-files-detail">
           <div v-if="turn.changedFiles.filesAdded.length" class="cf-group">
             <div class="cf-group-label cf-added-label">新增</div>
-            <div v-for="f in turn.changedFiles.filesAdded" :key="f" class="cf-file-item cf-added-file">+ {{ f }}</div>
+            <div v-for="f in turn.changedFiles.filesAdded" :key="f" class="cf-file-item cf-added-file">
+              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">+ {{ f }}</span>
+            </div>
           </div>
           <div v-if="turn.changedFiles.filesDeleted.length" class="cf-group">
             <div class="cf-group-label cf-deleted-label">删除</div>
-            <div v-for="f in turn.changedFiles.filesDeleted" :key="f" class="cf-file-item cf-deleted-file">- {{ f }}</div>
+            <div v-for="f in turn.changedFiles.filesDeleted" :key="f" class="cf-file-item cf-deleted-file">
+              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">- {{ f }}</span>
+            </div>
           </div>
           <div v-if="turn.changedFiles.filesModified.length" class="cf-group">
             <div class="cf-group-label cf-modified-label">修改</div>
-            <div v-for="f in turn.changedFiles.filesModified" :key="f" class="cf-file-item cf-modified-file">~ {{ f }}</div>
+            <div v-for="f in turn.changedFiles.filesModified" :key="f" class="cf-file-item cf-modified-file">
+              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">~ {{ f }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -590,6 +609,16 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 .cf-added-file { color: #15803d; }
 .cf-deleted-file { color: #b91c1c; }
 .cf-modified-file { color: #a16207; }
+
+.cf-file-link {
+  cursor: pointer;
+  text-decoration: none;
+  border-bottom: 1px dashed currentColor;
+}
+
+.cf-file-link:hover {
+  opacity: 0.7;
+}
 
 .todo-item-inner:last-child {
   margin-bottom: 0;
