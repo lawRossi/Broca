@@ -309,6 +309,31 @@ class TurnCard(Widget):
         text-style: bold underline;
     }
 
+    .cf-file-btn {
+        width: 1fr;
+        height: auto;
+        min-width: 0;
+        min-height: 0;
+        padding: 0 1;
+        margin: 0;
+        background: transparent;
+        border: none;
+        text-style: none;
+        color: $text;
+    }
+
+    .cf-file-btn:hover {
+        text-style: bold underline;
+        background: transparent;
+        border: none;
+    }
+
+    .cf-file-btn:focus {
+        text-style: none;
+        background: transparent;
+        border: none;
+    }
+
     .cf-group-label {
         text-style: bold;
         margin-top: 1;
@@ -535,24 +560,24 @@ class TurnCard(Widget):
                     if cf.get("files_added"):
                         detail_container.mount(Label("新增:", classes="cf-group-label cf-added-label"))
                         for f in cf.get("files_added", []):
-                            lbl = Label(f"  + {f}", id=f"cf-file-{file_index}")
                             self._file_diff_paths[file_index] = f
+                            btn = Button(f"+ {f}", id=f"cf-file-{file_index}", classes="cf-file-btn")
+                            detail_container.mount(btn)
                             file_index += 1
-                            detail_container.mount(lbl)
                     if cf.get("files_deleted"):
                         detail_container.mount(Label("删除:", classes="cf-group-label cf-deleted-label"))
                         for f in cf.get("files_deleted", []):
-                            lbl = Label(f"  - {f}", id=f"cf-file-{file_index}")
                             self._file_diff_paths[file_index] = f
+                            btn = Button(f"- {f}", id=f"cf-file-{file_index}", classes="cf-file-btn")
+                            detail_container.mount(btn)
                             file_index += 1
-                            detail_container.mount(lbl)
                     if cf.get("files_modified"):
                         detail_container.mount(Label("修改:", classes="cf-group-label cf-modified-label"))
                         for f in cf.get("files_modified", []):
-                            lbl = Label(f"  ~ {f}", id=f"cf-file-{file_index}")
                             self._file_diff_paths[file_index] = f
+                            btn = Button(f"~ {f}", id=f"cf-file-{file_index}", classes="cf-file-btn")
+                            detail_container.mount(btn)
                             file_index += 1
-                            detail_container.mount(lbl)
         except Exception:
             pass
 
@@ -984,8 +1009,16 @@ class TurnCard(Widget):
                 pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle undo button press."""
-        if event.button.id and event.button.id.startswith("undo-"):
+        """Handle button press (undo + file diff)."""
+        if event.button.id and event.button.id.startswith("cf-file-"):
+            try:
+                idx = int(event.button.id.replace("cf-file-", ""))
+                file_path = self._file_diff_paths.get(idx)
+                if file_path:
+                    self._request_file_diff(file_path)
+            except (ValueError, IndexError):
+                pass
+        elif event.button.id and event.button.id.startswith("undo-"):
             turn_id = event.button.id.replace("undo-", "", 1)
             parent = self.parent
             while parent is not None:

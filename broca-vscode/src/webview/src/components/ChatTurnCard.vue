@@ -3,7 +3,7 @@ import { ref, computed } from 'vue'
 import { marked } from 'marked'
 import type { TurnSummary } from '../stores/chat'
 import { useChatStore } from '../stores/chat'
-import { postMessage } from '../api/vscode'
+import { postMessage, getInitialData } from '../api/vscode'
 
 const props = defineProps<{
   turn: TurnSummary
@@ -147,15 +147,50 @@ const toolStatsText = computed(() => {
 })
 
 // ==================== 文件 Diff ====================
-const openFileDiff = (filePath: string) => {
-  postMessage({
-    type: 'viewDiff',
-    payload: {
-      sessionId: props.turn.turnId,  // 由 extension host 根据 turnId 查 sessionId
-      turnId: props.turn.turnId,
-      filePath,
-    },
-  })
+const diffDialogVisible = ref(false)
+const diffContent = ref('')
+const diffFileName = ref('')
+const diffLoading = ref(false)
+
+interface DiffLine { text: string; type: 'add' | 'del' | 'ctx' | 'head' }
+const parsedDiffLines = computed<DiffLine[]>(() => {
+  if (!diffContent.value) return [{ text: '(无变更)', type: 'ctx' }]
+  const lines: DiffLine[] = []
+  for (const raw of diffContent.value.split('\n')) {
+    if (raw.startsWith('+') && !raw.startsWith('+++')) {
+      lines.push({ text: raw.slice(1), type: 'add' })
+    } else if (raw.startsWith('-') && !raw.startsWith('---')) {
+      lines.push({ text: raw.slice(1), type: 'del' })
+    } else if (raw.startsWith('@@')) {
+      lines.push({ text: raw, type: 'head' })
+    } else {
+      lines.push({ text: raw, type: 'ctx' })
+    }
+  }
+  return lines
+})
+
+const openFileDiff = async (filePath: string) => {
+  const sid = chatStore.sessionId
+  if (!sid) return
+  diffFileName.value = filePath
+  diffDialogVisible.value = true
+  diffLoading.value = true
+  diffContent.value = ''
+  try {
+    const initData = getInitialData()
+    const baseUrl = initData?.serverUrl ? initData.serverUrl.replace(/\/+$/, '') : ''
+    const res = await fetch(
+      `${baseUrl}/api/session/${sid}/turns/${props.turn.turnId}/file-diff?path=${encodeURIComponent(filePath)}`
+    )
+    const data = await res.json()
+    diffContent.value = data.data?.diff || ''
+  } catch (err) {
+    diffContent.value = ''
+    console.error('Failed to get file diff:', err)
+  } finally {
+    diffLoading.value = false
+  }
 }
 
 // ==================== 回复区域 ====================
@@ -351,6 +386,31 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
           <div class="confirm-footer">
             <button class="btn btn-secondary" @click="cancelUndo">取消</button>
             <button class="btn btn-danger" @click="confirmUndo">确定撤销</button>
+          </div>
+        </div>
+      </div>
+    </Teleport>
+
+    <!-- ==================== Diff 弹窗 ==================== -->
+    <Teleport to="body">
+      <div v-if="diffDialogVisible" class="diff-overlay" @click.self="diffDialogVisible = false">
+        <div class="diff-dialog">
+          <div class="diff-header">
+            <span class="diff-title">Diff: {{ diffFileName }}</span>
+            <button class="diff-close" @click="diffDialogVisible = false">✕</button>
+          </div>
+          <div class="diff-body">
+            <div v-if="diffLoading" class="diff-loading">加载中...</div>
+            <div v-else class="diff-view">
+              <div
+                v-for="(line, idx) in parsedDiffLines"
+                :key="idx"
+                :class="['diff-line', line.type]"
+              >
+                <span class="diff-line-num">{{ idx + 1 }}</span>
+                <span class="diff-line-content">{{ line.text }}</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -972,4 +1032,105 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 .btn-danger:hover {
   background: #dc2626;
 }
+
+/* ==================== Diff 弹窗 ==================== */
+.diff-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.diff-dialog {
+  background: var(--vscode-editor-background, #ffffff);
+  border: 1px solid var(--vscode-widget-border, #e0e0e0);
+  border-radius: 8px;
+  width: 80%;
+  height: 80%;
+  display: flex;
+  flex-direction: column;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.diff-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--vscode-widget-border, #e0e0e0);
+}
+
+.diff-title {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--vscode-editor-foreground, #333);
+}
+
+.diff-close {
+  background: none;
+  border: none;
+  font-size: 16px;
+  cursor: pointer;
+  color: var(--vscode-descriptionForeground, #808080);
+  padding: 2px 6px;
+  border-radius: 3px;
+}
+
+.diff-close:hover {
+  background: var(--vscode-list-hoverBackground, #e8e8e8);
+}
+
+.diff-body {
+  flex: 1;
+  overflow: auto;
+  padding: 0;
+}
+
+.diff-loading {
+  text-align: center;
+  padding: 40px;
+  color: var(--vscode-descriptionForeground, #808080);
+}
+
+.diff-view {
+  font-family: var(--vscode-editor-font-family, 'Consolas', 'Courier New', monospace);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.diff-line {
+  display: flex;
+  padding: 0 8px;
+  min-height: 1.6em;
+}
+
+.diff-line-num {
+  display: inline-block;
+  width: 32px;
+  flex-shrink: 0;
+  text-align: right;
+  color: var(--vscode-descriptionForeground, #999);
+  padding-right: 12px;
+  user-select: none;
+}
+
+.diff-line-content {
+  white-space: pre;
+  flex: 1;
+}
+
+.diff-line.add { background: #e6ffec; }
+.diff-line.del { background: #ffebe9; }
+.diff-line.head { background: #f0f0f0; }
+.diff-line.ctx { }
+
+.diff-line.add .diff-line-content { color: #055d20; }
+.diff-line.del .diff-line-content { color: #82071e; }
+.diff-line.head .diff-line-content { color: #666; font-weight: 600; }
 </style>
