@@ -15,7 +15,7 @@ from textual.widgets import Static, Label, Button
 
 
 class DiffViewer(ModalScreen):
-    """全屏 ModalScreen，展示文件的 unified diff，支持按 q/Esc 关闭。"""
+    """全屏 ModalScreen，展示文件的 unified diff，支持按 q/Esc/关闭按钮关闭。"""
 
     DEFAULT_CSS = """
     DiffViewer {
@@ -24,25 +24,37 @@ class DiffViewer(ModalScreen):
     #diff-container {
         width: 90%;
         height: 80%;
-        border: solid $primary;
-        background: $surface;
-        padding: 1;
+        border: solid $border;
+        background: #2d2d2d;
+        padding: 0;
     }
-    #diff-header {
+    #diff-header-bar {
+        height: auto;
+        padding: 1 2;
+        background: #3a3a3a;
+    }
+    #diff-header-text {
         text-style: bold;
-        padding: 0 0 1 0;
-        height: auto;
+        width: 1fr;
     }
-    #diff-close-hint {
-        color: $text-disabled;
+    #diff-close-btn {
+        width: auto;
+        min-width: 0;
         height: auto;
-        padding: 0 0 1 0;
+        padding: 0 2;
+        background: transparent;
+        border: none;
+        color: #ccc;
+    }
+    #diff-close-btn:hover {
+        text-style: bold;
+        background: #555;
     }
     #diff-content {
         width: 1fr;
         height: 1fr;
         overflow: auto;
-        padding: 0 1;
+        padding: 1 2;
     }
     """
 
@@ -53,23 +65,28 @@ class DiffViewer(ModalScreen):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="diff-container"):
-            yield Static(f"Diff: {self._file_path}", id="diff-header")
-            yield Static("按 q 或 Esc 关闭", id="diff-close-hint")
+            with Horizontal(id="diff-header-bar"):
+                yield Static(f"Diff: {self._file_path}", id="diff-header-text")
+                yield Button("✕", id="diff-close-btn")
             # 解析 unified diff 为 Rich 标记
             rich_lines = []
             for line in (self._diff_text or "(无变更)").split("\n"):
                 if line.startswith("+") and not line.startswith("+++"):
-                    rich_lines.append(f"[bold #055d20 on #e6ffec]{line}[/]")
+                    rich_lines.append(f"[bold #055d20 on #3a5a3a]{line}[/]")
                 elif line.startswith("-") and not line.startswith("---"):
-                    rich_lines.append(f"[bold #82071e on #ffebe9]{line}[/]")
+                    rich_lines.append(f"[bold #82071e on #5a3a3a]{line}[/]")
                 elif line.startswith("@@"):
-                    rich_lines.append(f"[#666 on #f0f0f0]{line}[/]")
+                    rich_lines.append(f"[#999 on #4a4a4a]{line}[/]")
                 else:
-                    rich_lines.append(line)
+                    rich_lines.append(f"[#ccc]{line}[/]")
             yield Static("\n".join(rich_lines), id="diff-content")
 
     def on_key(self, event):
         if event.key in ("escape", "q"):
+            self.dismiss()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "diff-close-btn":
             self.dismiss()
 
 
