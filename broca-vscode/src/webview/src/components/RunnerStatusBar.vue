@@ -6,6 +6,9 @@ import { postMessage } from '../api/vscode'
 const chatStore = useChatStore()
 
 const refreshing = ref(false)
+const emit = defineEmits<{
+  (e: 'openSearch'): void
+}>()
 
 function handleRefresh() {
   if (refreshing.value) return
@@ -29,6 +32,12 @@ function handleRefresh() {
       </span>
     </div>
     <div class="status-right">
+      <!-- Search button -->
+      <button
+        class="search-btn"
+        title="搜索消息"
+        @click="emit('openSearch')"
+      >🔍</button>
       <!-- Mode toggle -->
       <button
         class="mode-toggle-btn"
@@ -78,6 +87,24 @@ function handleRefresh() {
 
 .status-label {
   color: var(--text-secondary);
+}
+
+.search-btn {
+  background: none;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  padding: 0 5px;
+  border-radius: 3px;
+  line-height: 1.5;
+  transition: all 0.2s;
+}
+
+.search-btn:hover {
+  background: var(--bg-tertiary);
+  border-color: var(--border-color);
+  color: var(--text-primary);
 }
 
 .mode-toggle-btn {

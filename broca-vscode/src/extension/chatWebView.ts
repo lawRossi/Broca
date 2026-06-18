@@ -828,7 +828,7 @@ export class ChatWebViewManager {
 
       // ==================== File diff handlers ====================
       case 'viewDiff':
-        await this.handleViewFileDiff(panel, message.payload)
+        await this.handleViewFileDiff(panel, sessionId, message.payload)
         break
     }
   }
@@ -1855,10 +1855,9 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleViewFileDiff(panel: vscode.WebviewPanel, payload: { turnId: string; filePath: string; sessionId?: string }) {
+  private async handleViewFileDiff(panel: vscode.WebviewPanel, sessionId: string, payload: { turnId: string; filePath: string }) {
+    const { turnId, filePath } = payload
     try {
-      const { turnId, filePath } = payload
-      const sessionId = payload.sessionId || Array.from(this.panels.keys())[0]
       if (!sessionId) {
         this.postToPanel(panel, {
           type: 'fileDiffResult',

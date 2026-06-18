@@ -186,6 +186,7 @@ const openFileDiff = (filePath: string) => {
   postMessage({
     type: 'viewDiff',
     payload: {
+      sessionId: chatStore.sessionId,
       turnId: props.turn.turnId,
       filePath,
     },
@@ -370,7 +371,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
         @click="showReasoning = !showReasoning"
       >
         <span>{{ showReasoning ? '▼' : '▶' }}</span>
-        <span class="reasoning-label">思考...</span>
+        <span class="reasoning-label">思考</span>
         <span v-if="!showReasoning && simplifiedStatus === 'active'" class="reasoning-dots">...</span>
       </button>
       <div v-if="showReasoning" class="reasoning-content">

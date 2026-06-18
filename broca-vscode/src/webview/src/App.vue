@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, nextTick, onMounted, onUnmounted } from 'vue'
 import { useChatStore } from './stores/chat'
 import AgentSidebar from './components/AgentSidebar.vue'
 import ChatMessageList from './components/ChatMessageList.vue'
@@ -12,6 +12,7 @@ import LoadingOverlay from './components/LoadingOverlay.vue'
 import ErrorToast from './components/ErrorToast.vue'
 import TaskPage from './components/TaskPage.vue'
 import JobPage from './components/JobPage.vue'
+import ChatSearchDialog from './components/ChatSearchDialog.vue'
 import { postMessage } from './api/vscode'
 
 const chatStore = useChatStore()
@@ -25,6 +26,21 @@ function navigate(page: string) {
 
 function goBack() {
   currentPage.value = 'chat'
+}
+
+// ==================== Search dialog ====================
+const searchDialogVisible = ref(false)
+const searchDialogRef = ref<InstanceType<typeof ChatSearchDialog>>()
+
+function handleOpenSearch() {
+  searchDialogVisible.value = true
+  nextTick(() => {
+    searchDialogRef.value?.open()
+  })
+}
+
+function handleCloseSearch() {
+  searchDialogVisible.value = false
 }
 
 onMounted(() => {
@@ -44,7 +60,14 @@ onUnmounted(() => {
       <LoadingOverlay :visible="chatStore.loading" />
 
       <!-- Runner Status Bar -->
-      <RunnerStatusBar />
+      <RunnerStatusBar @open-search="handleOpenSearch" />
+
+      <!-- Search Dialog -->
+      <ChatSearchDialog
+        ref="searchDialogRef"
+        v-model:visible="searchDialogVisible"
+        @close="handleCloseSearch"
+      />
 
       <!-- Main Content Area: Three-Column Layout -->
       <div class="chat-body">

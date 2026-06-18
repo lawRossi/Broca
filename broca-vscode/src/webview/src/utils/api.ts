@@ -19,6 +19,7 @@ let requestCounter = 0
 const RESPONSE_TYPES = new Set([
   'tasks', 'taskDetail', 'taskCreated', 'taskUpdated', 'taskDeleted', 'taskCommentAdded',
   'jobs', 'jobDetail', 'jobExecuted', 'jobPaused', 'jobResumed', 'jobDeleted',
+  'searchMessages', 'searchFilters',
 ])
 
 let listenerInitialized = false
@@ -139,5 +140,30 @@ export const jobApi = {
 
   deleteJob(jobId: string) {
     return sendRequest('deleteJob', 'jobDeleted', { jobId })
+  },
+}
+
+// ==================== Search API ====================
+
+export interface SearchParams {
+  keyword?: string
+  message_type?: string
+  sender_id?: string
+  tool_name?: string
+  order?: 'desc' | 'asc'
+  skip?: number
+  limit?: number
+}
+
+export const searchApi = {
+  searchMessages(sessionId: string, params: SearchParams = {}) {
+    return sendRequest('searchMessages', 'searchMessages', {
+      sessionId,
+      ...params,
+    })
+  },
+
+  getSearchFilters(sessionId: string) {
+    return sendRequest('getSearchFilters', 'searchFilters', { sessionId })
   },
 }
