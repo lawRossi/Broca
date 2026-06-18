@@ -179,6 +179,7 @@ class InfoSidebar(Widget):
             "starting": "◐ starting",
             "error": "● error",
             "dead": "○ stopped",
+            "none": "○ stopped",
             "unknown": "● unknown",
         }
         display = color_map.get(status, f"● {status}")
@@ -188,6 +189,7 @@ class InfoSidebar(Widget):
         # starting 状态保持启动按钮可见（显示 loading 提示）
         self.query_one("#btn-start-runner").display = status in (
             "dead",
+            "none",
             "unknown",
             "error",
             "starting",

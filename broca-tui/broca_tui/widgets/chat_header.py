@@ -63,9 +63,6 @@ class ChatHeader(Widget):
                 yield Label("●", classes="status-dot", id="status-dot")
                 yield Label("connecting...", classes="status-text", id="status-text")
 
-            # Center section: Session ID (if available)
-            yield Label("", classes="header-session", id="header-session")
-
             # Right section: Navigation buttons
             with Horizontal(classes="header-right"):
                 yield Button("← 会话列表", id="btn-sessions", classes="nav-button")
@@ -108,29 +105,20 @@ class ChatHeader(Widget):
         crew_btn.display = self.is_agent_orchestration or self.session_category == "agent-orchestration"
 
     def set_session_id(self, session_id: str) -> None:
-        """Set the current session ID for display.
+        """Set the current session ID.
 
         Args:
-            session_id: Session ID to display
+            session_id: Session ID
         """
         self._session_id = session_id
-        label = self.query_one("#header-session", Label)
-        if session_id:
-            label.update(f"Session: {session_id[:8]}...")
-        else:
-            label.update("")
 
     def set_execution_filter(self, execution_id: Optional[str] = None) -> None:
-        """Set execution filter message in header.
+        """Set execution filter (no-op, no longer displayed in header).
 
         Args:
             execution_id: Optional execution ID being filtered
         """
-        label = self.query_one("#header-session", Label)
-        if execution_id:
-            label.update(f"当前筛选: execution {execution_id[:8]}...")
-        else:
-            label.update(f"Session: {self._session_id[:8]}..." if self._session_id else "")
+        pass
 
     def action_go_to_sessions(self) -> None:
         """Navigate back to session list."""

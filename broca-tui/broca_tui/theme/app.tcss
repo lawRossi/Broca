@@ -147,12 +147,12 @@ Label {
 .chat-header {
     height: 3;
     background: $primary-600;
-    padding: 0 2;
+    padding: 1 2 0 2;
     align: center middle;
 }
 
 .header-left {
-    width: 40%;
+    width: 1fr;
 }
 
 .header-brand {
@@ -191,12 +191,6 @@ Label {
 
 .status-text.disconnected {
     color: $gray-400;
-}
-
-.header-session {
-    color: $gray-200;
-    width: 1fr;
-    text-align: center;
 }
 
 .header-right {
