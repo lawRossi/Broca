@@ -557,46 +557,47 @@ class TurnCard(Widget):
                     )
 
                 # 更新预创建的 Label：每组用各自的索引范围
+                MAX = 100
                 self._file_diff_paths.clear()
-                # 新增 (idx 0-29)
+                # 新增 (idx 0-99)
                 added = cf.get("files_added", [])
                 self._toggle_display("#cf-head-added", bool(added))
                 for i, f in enumerate(added):
-                    if i < 30:
+                    if i < MAX:
                         self.query_one(f"#cf-file-{i}", Label).update(f"  + {f}")
                         self.query_one(f"#cf-file-{i}", Label).display = True
                         self._file_diff_paths[i] = f
-                for i in range(len(added), 30):
+                for i in range(len(added), MAX):
                     try:
                         self.query_one(f"#cf-file-{i}", Label).display = False
                     except Exception:
                         pass
-                # 删除 (idx 30-59)
+                # 删除 (idx 100-199)
                 deleted = cf.get("files_deleted", [])
                 self._toggle_display("#cf-head-deleted", bool(deleted))
                 for i, f in enumerate(deleted):
-                    idx = 30 + i
-                    if i < 30:
+                    idx = MAX + i
+                    if i < MAX:
                         self.query_one(f"#cf-file-{idx}", Label).update(f"  - {f}")
                         self.query_one(f"#cf-file-{idx}", Label).display = True
                         self._file_diff_paths[idx] = f
-                for i in range(len(deleted), 30):
+                for i in range(len(deleted), MAX):
                     try:
-                        self.query_one(f"#cf-file-{30 + i}", Label).display = False
+                        self.query_one(f"#cf-file-{MAX + i}", Label).display = False
                     except Exception:
                         pass
-                # 修改 (idx 60-89)
+                # 修改 (idx 200-299)
                 modified = cf.get("files_modified", [])
                 self._toggle_display("#cf-head-modified", bool(modified))
                 for i, f in enumerate(modified):
-                    idx = 60 + i
-                    if i < 30:
+                    idx = MAX * 2 + i
+                    if i < MAX:
                         self.query_one(f"#cf-file-{idx}", Label).update(f"  ~ {f}")
                         self.query_one(f"#cf-file-{idx}", Label).display = True
                         self._file_diff_paths[idx] = f
-                for i in range(len(modified), 30):
+                for i in range(len(modified), MAX):
                     try:
-                        self.query_one(f"#cf-file-{60 + i}", Label).display = False
+                        self.query_one(f"#cf-file-{MAX * 2 + i}", Label).display = False
                     except Exception:
                         pass
         except Exception:
@@ -850,14 +851,15 @@ class TurnCard(Widget):
                 )
             # 文件变更详情（折叠区域，Label 预先创建，通过 display 控制显隐）
             with Vertical(classes="changed-files-detail", id="changed-files-detail"):
+                MAX_FILES_PER_GROUP = 100
                 yield Label("新增:", id="cf-head-added", classes="cf-group-label cf-added-label")
-                for i in range(30):
+                for i in range(MAX_FILES_PER_GROUP):
                     yield Label("", id=f"cf-file-{i}")
                 yield Label("删除:", id="cf-head-deleted", classes="cf-group-label cf-deleted-label")
-                for i in range(30, 60):
+                for i in range(MAX_FILES_PER_GROUP, MAX_FILES_PER_GROUP * 2):
                     yield Label("", id=f"cf-file-{i}")
                 yield Label("修改:", id="cf-head-modified", classes="cf-group-label cf-modified-label")
-                for i in range(60, 90):
+                for i in range(MAX_FILES_PER_GROUP * 2, MAX_FILES_PER_GROUP * 3):
                     yield Label("", id=f"cf-file-{i}")
 
         # ===== 回复区域（始终创建，初始隐藏） =====
