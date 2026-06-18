@@ -556,33 +556,39 @@ class TurnCard(Widget):
                         f"+{added} -{deleted} ~{modified} {toggle_icon}"
                     )
 
-                # 更新详情区域：每个文件一个独立 Label（点击通过 on_click 处理）
-                detail_container = self.query_one("#changed-files-detail", Vertical)
-                if detail_container:
-                    # 清除旧的子元素（保留容器本身）
-                    for child in list(detail_container.children):
-                        child.remove()
-                    # 重新挂载文件项
-                    self._file_diff_paths.clear()
-                    file_index = 0
-                    if cf.get("files_added"):
-                        detail_container.mount(Label("新增:", classes="cf-group-label cf-added-label"))
-                        for f in cf.get("files_added", []):
-                            self._file_diff_paths[file_index] = f
-                            detail_container.mount(Label(f"  + {f}", id=f"cf-file-{file_index}"))
-                            file_index += 1
-                    if cf.get("files_deleted"):
-                        detail_container.mount(Label("删除:", classes="cf-group-label cf-deleted-label"))
-                        for f in cf.get("files_deleted", []):
-                            self._file_diff_paths[file_index] = f
-                            detail_container.mount(Label(f"  - {f}", id=f"cf-file-{file_index}"))
-                            file_index += 1
-                    if cf.get("files_modified"):
-                        detail_container.mount(Label("修改:", classes="cf-group-label cf-modified-label"))
-                        for f in cf.get("files_modified", []):
-                            self._file_diff_paths[file_index] = f
-                            detail_container.mount(Label(f"  ~ {f}", id=f"cf-file-{file_index}"))
-                            file_index += 1
+                # 更新预创建的 Label：填充文本 + 控制显隐
+                self._file_diff_paths.clear()
+                idx = 0
+                added = cf.get("files_added", [])
+                self._toggle_display("#cf-head-added", bool(added))
+                for f in added:
+                    if idx < 90:
+                        self.query_one(f"#cf-file-{idx}", Label).update(f"  + {f}")
+                        self.query_one(f"#cf-file-{idx}", Label).display = True
+                        self._file_diff_paths[idx] = f
+                        idx += 1
+                deleted = cf.get("files_deleted", [])
+                self._toggle_display("#cf-head-deleted", bool(deleted))
+                for f in deleted:
+                    if idx < 90:
+                        self.query_one(f"#cf-file-{idx}", Label).update(f"  - {f}")
+                        self.query_one(f"#cf-file-{idx}", Label).display = True
+                        self._file_diff_paths[idx] = f
+                        idx += 1
+                modified = cf.get("files_modified", [])
+                self._toggle_display("#cf-head-modified", bool(modified))
+                for f in modified:
+                    if idx < 90:
+                        self.query_one(f"#cf-file-{idx}", Label).update(f"  ~ {f}")
+                        self.query_one(f"#cf-file-{idx}", Label).display = True
+                        self._file_diff_paths[idx] = f
+                        idx += 1
+                # 隐藏剩余的 Label
+                for i in range(idx, 90):
+                    try:
+                        self.query_one(f"#cf-file-{i}", Label).display = False
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -832,9 +838,17 @@ class TurnCard(Widget):
                     classes="turn-summary-value",
                     id="changed-files-summary",
                 )
-            # 文件变更详情（折叠区域，子元素由 update_turn 动态重建）
+            # 文件变更详情（折叠区域，Label 预先创建，通过 display 控制显隐）
             with Vertical(classes="changed-files-detail", id="changed-files-detail"):
-                pass
+                yield Label("新增:", id="cf-head-added", classes="cf-group-label cf-added-label")
+                for i in range(30):
+                    yield Label("", id=f"cf-file-{i}")
+                yield Label("删除:", id="cf-head-deleted", classes="cf-group-label cf-deleted-label")
+                for i in range(30, 60):
+                    yield Label("", id=f"cf-file-{i}")
+                yield Label("修改:", id="cf-head-modified", classes="cf-group-label cf-modified-label")
+                for i in range(60, 90):
+                    yield Label("", id=f"cf-file-{i}")
 
         # ===== 回复区域（始终创建，初始隐藏） =====
         with Horizontal(
