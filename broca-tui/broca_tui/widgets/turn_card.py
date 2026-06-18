@@ -1028,9 +1028,13 @@ class TurnCard(Widget):
                 parent = parent.parent
 
     def _request_file_diff(self, file_path: str):
-        """请求查看文件的 diff，通过回调通知外部。"""
-        if hasattr(self, '_on_view_file_diff') and self._on_view_file_diff:
-            self._on_view_file_diff(self._turn.turn_id, file_path)
+        """请求查看文件的 diff — 沿父链向上冒泡，与 undo 模式一致。"""
+        parent = self.parent
+        while parent is not None:
+            if hasattr(parent, "_view_file_diff"):
+                parent._view_file_diff(self._turn.turn_id, file_path)
+                break
+            parent = parent.parent
 
     def on_update_turn_undo_visibility(self) -> None:
         """撤销按钮始终显示（不需要 hover 触发）。"""

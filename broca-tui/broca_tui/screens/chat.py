@@ -202,9 +202,6 @@ class ChatScreen(Screen):
                 target_agent_id=self._agent_store.current_agent_id or "",
             ))
         )
-        message_list._on_view_file_diff = lambda turn_id, file_path: self.run_worker(
-            self._show_file_diff(turn_id, file_path)
-        )
 
         # Agent store → agent 状态/列表变化由 AgentSidebar 的 _render_agents 处理
         # 注意：AgentSidebar 在 on_mount 时已注册 _render_agents 到 _agent_store.on_change
@@ -367,6 +364,10 @@ class ChatScreen(Screen):
                 target_agent_id=target_agent_id,
                 level="turn",
             )
+
+    def _view_file_diff(self, turn_id: str, file_path: str):
+        """被父链遍历调用的入口（与 undo 模式一致），转发到异步方法。"""
+        self.run_worker(self._show_file_diff(turn_id, file_path))
 
     async def _show_file_diff(self, turn_id: str, file_path: str):
         """获取并展示文件的 unified diff。"""

@@ -93,7 +93,6 @@ class MessageList(Vertical):
         self._on_load_more_turns: Optional[Callable] = None
         self._on_undo: Optional[Callable] = None
         self._on_redo: Optional[Callable] = None
-        self._on_view_file_diff: Optional[Callable] = None  # callback(turn_id, file_path)
         self._session_id: str = ""
         self._user_scrolled_up = False
         self.auto_scroll = True
@@ -115,6 +114,15 @@ class MessageList(Vertical):
             # Redo button (shown after undo)
             with Vertical(classes="redo-container", id="redo-container"):
                 yield Button("↩ Redo", id="btn-redo", classes="redo-button")
+
+    def _view_file_diff(self, turn_id: str, file_path: str):
+        """查看文件的 diff — 沿父链向上冒泡到 ChatScreen。"""
+        parent = self.parent
+        while parent is not None:
+            if hasattr(parent, "_view_file_diff"):
+                parent._view_file_diff(turn_id, file_path)
+                break
+            parent = parent.parent
 
     def on_mount(self) -> None:
         """Set up after mount."""
@@ -255,7 +263,6 @@ class MessageList(Vertical):
                         agent_name_map=self._agent_name_map,
                         consecutive_agent=consecutive,
                     )
-                    card._on_view_file_diff = self._on_view_file_diff
                     area.mount(card)
             elif turn_count < len(existing):
                 for card in existing[turn_count:]:
@@ -280,7 +287,6 @@ class MessageList(Vertical):
                             agent_name_map=self._agent_name_map,
                             consecutive_agent=consecutive,
                         )
-                        new_card._on_view_file_diff = self._on_view_file_diff
                         siblings = list(area.children)
                         card_idx = siblings.index(card) if card in siblings else -1
                         card.remove()
