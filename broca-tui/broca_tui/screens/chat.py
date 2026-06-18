@@ -407,6 +407,10 @@ class ChatScreen(Screen):
                     width: 1fr;
                     height: 1fr;
                     overflow: auto;
+                    padding: 0 1;
+                }
+                #diff-content {
+                    background: $surface;
                 }
                 """
 
@@ -418,7 +422,18 @@ class ChatScreen(Screen):
                 def compose(self) -> ComposeResult:
                     with Vertical(id="diff-container"):
                         yield Static(f"Diff: {self._file_path}", id="diff-header")
-                        yield Static(self._diff_text or "(无变更)", id="diff-content")
+                        # 解析 unified diff 为 Rich 标记
+                        rich_lines = []
+                        for line in (self._diff_text or "(无变更)").split("\n"):
+                            if line.startswith("+") and not line.startswith("+++"):
+                                rich_lines.append(f"[bold #055d20 on #e6ffec]{line}[/]")
+                            elif line.startswith("-") and not line.startswith("---"):
+                                rich_lines.append(f"[bold #82071e on #ffebe9]{line}[/]")
+                            elif line.startswith("@@"):
+                                rich_lines.append(f"[#666 on #f0f0f0]{line}[/]")
+                            else:
+                                rich_lines.append(line)
+                        yield Static("\n".join(rich_lines), id="diff-content")
 
                 def on_key(self, event):
                     if event.key in ("escape", "q"):
