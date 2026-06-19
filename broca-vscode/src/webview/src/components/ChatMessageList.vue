@@ -143,7 +143,7 @@ const handleScroll = () => {
     // 简洁模式：上滑加载 turn 历史
     if (chatStore.displayMode === 'concise') {
       if (container.scrollTop < 50 && !chatStore.loadingMoreTurns && chatStore.hasMoreTurns) {
-        chatStore.loadTurnHistory(chatStore.sessionId, true)
+        chatStore.loadTurnHistory(chatStore.sessionId, true, chatStore.executionId)
         // 加载后自动恢复到原位置
         isRestoringScroll.value = true
         setTimeout(() => {

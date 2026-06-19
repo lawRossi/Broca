@@ -234,9 +234,13 @@ export const sessionApi = {
   async getSessionTurns(
     sessionId: string,
     skip: number = 0,
-    limit: number = 20
+    limit: number = 20,
+    executionId?: string
   ): Promise<TurnsResponse> {
     const params: Record<string, any> = { skip, limit }
+    if (executionId) {
+      params.execution_id = executionId
+    }
     return request.get(`/session/${sessionId}/turns`, { params })
   },
 

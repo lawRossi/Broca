@@ -916,7 +916,8 @@ export const useChatStore = defineStore('chat', () => {
 
   const loadTurnHistory = async (
     sessionId: string,
-    isLoadMore: boolean = false
+    isLoadMore: boolean = false,
+    filterExecutionId?: string
   ) => {
     // 保存当前活跃 turn，避免被后续重置覆盖
     const activeTurns = turnSummaries.value.filter(t => t.isActive)
@@ -937,7 +938,8 @@ export const useChatStore = defineStore('chat', () => {
       const response = await sessionApi.getSessionTurns(
         sessionId,
         turnHistorySkip.value,
-        3
+        3,
+        filterExecutionId
       )
 
       const newSummaries: TurnSummary[] = response.turns
@@ -1031,7 +1033,7 @@ export const useChatStore = defineStore('chat', () => {
     saveDisplayMode(sessionId.value, newMode)
 
     if (newMode === 'concise' && turnSummaries.value.length === 0) {
-      await loadTurnHistory(sessionId.value, false)
+      await loadTurnHistory(sessionId.value, false, executionId.value)
       // loadTurnHistory 内部已做降级检测，如果降级则 displayMode 已切回 'detail'
       if (displayMode.value === 'detail') return
       startDurationTimer()
@@ -1108,13 +1110,13 @@ export const useChatStore = defineStore('chat', () => {
             showRedoButton.value = true
             redoReceiverId.value = m.sender_id
             loadHistory(sessionId.value, false, executionId.value)
-            loadTurnHistory(sessionId.value, false)
+            loadTurnHistory(sessionId.value, false, executionId.value)
           } else {
             // 重做成功后，隐藏重做按钮
             showRedoButton.value = false
             redoReceiverId.value = undefined
             loadHistory(sessionId.value, false, executionId.value)
-            loadTurnHistory(sessionId.value, false)
+            loadTurnHistory(sessionId.value, false, executionId.value)
           }
         }
         return
@@ -1342,7 +1344,7 @@ export const useChatStore = defineStore('chat', () => {
       // 恢复上次保存的显示模式
       displayMode.value = loadDisplayMode(sessionId.value)
       if (displayMode.value === 'concise') {
-        await loadTurnHistory(sessionId.value, false)
+        await loadTurnHistory(sessionId.value, false, executionId.value)
         if (displayMode.value === 'detail') {
           // 降级：无 turn 数据，回退到明细模式并加载消息
           await loadHistory(sessionId.value, false, executionId.value)

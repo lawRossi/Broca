@@ -780,6 +780,8 @@ const handleUndo = async () => {
   display: flex;
   padding: 0 8px;
   min-height: 1.6em;
+  width: max-content;
+  min-width: 100%;
 }
 
 .diff-line-num {

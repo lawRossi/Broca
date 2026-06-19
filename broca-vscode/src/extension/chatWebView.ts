@@ -1120,10 +1120,11 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleFetchTurns(panel: vscode.WebviewPanel, payload: { sessionId: string; skip: number; limit: number }) {
+  private async handleFetchTurns(panel: vscode.WebviewPanel, payload: { sessionId: string; skip: number; limit: number; executionId?: string }) {
     try {
-      const { sessionId, skip, limit } = payload
-      const response = await this.apiClient.getSessionTurns(sessionId, skip, limit)
+      const { sessionId, skip, limit, executionId } = payload
+      const execId = executionId || this.sessionExecutionIds.get(sessionId)
+      const response = await this.apiClient.getSessionTurns(sessionId, skip, limit, execId)
       this.postToPanel(panel, { type: 'turnsData', payload: response } as ExtensionToWebView)
     } catch (error: any) {
       console.error('Failed to fetch turns:', error)

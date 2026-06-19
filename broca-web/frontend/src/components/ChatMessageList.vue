@@ -143,7 +143,7 @@ const handleScroll = (event: Event) => {
         if (!chatStore.loadingMoreTurns && chatStore.hasMoreTurns) {
           const scrollState = saveScrollState()
           chatStore
-            .loadTurnHistory(chatStore.sessionId, true)
+            .loadTurnHistory(chatStore.sessionId, true, chatStore.executionId)
             .then(() => {
               restoreScrollState(scrollState)
             })

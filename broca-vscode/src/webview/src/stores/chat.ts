@@ -370,7 +370,7 @@ export const useChatStore = defineStore('chat', () => {
     // 加载简洁模式偏好，若为简洁模式则同时加载 turn 数据
     const savedMode = loadDisplayMode(sessionId.value)
     if (savedMode === 'concise' && sessionId.value) {
-      loadTurnHistory(sessionId.value, false)
+      loadTurnHistory(sessionId.value, false, executionId.value)
     }
 
     // Notify extension that WebView is ready
@@ -476,14 +476,14 @@ export const useChatStore = defineStore('chat', () => {
         redoReceiverId.value = message.sender_id
         loadHistory(0, 50)
         // 简洁模式：重新加载 turn 历史，刷新被撤销的 turn
-        if (sessionId.value) loadTurnHistory(sessionId.value, false)
+        if (sessionId.value) loadTurnHistory(sessionId.value, false, executionId.value)
         return
       } else if (message.data?.command === 'redo') {
         showRedoButton.value = false
         redoReceiverId.value = undefined
         loadHistory(0, 50)
         // 简洁模式：重新加载 turn 历史
-        if (sessionId.value) loadTurnHistory(sessionId.value, false)
+        if (sessionId.value) loadTurnHistory(sessionId.value, false, executionId.value)
         return
       }
     }
@@ -835,7 +835,7 @@ export const useChatStore = defineStore('chat', () => {
       }
       // 首次加载 turn 数据
       if (turnSummaries.value.length === 0) {
-        loadTurnHistory(sessionId.value, false)
+        loadTurnHistory(sessionId.value, false, executionId.value)
       }
     } else {
       // 切换到明细模式：停止计时器
@@ -843,7 +843,7 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function loadTurnHistory(sessionId: string, isLoadMore: boolean) {
+  async function loadTurnHistory(sessionId: string, isLoadMore: boolean, filterExecutionId?: string) {
     if (isLoadMore) {
       if (loadingMoreTurns.value || !hasMoreTurns.value) return
       loadingMoreTurns.value = true
@@ -851,6 +851,7 @@ export const useChatStore = defineStore('chat', () => {
 
     const skip = isLoadMore ? turnHistorySkip.value : 0
     const limit = 3
+    const execId = filterExecutionId || executionId.value
 
     // 使用 Promise 包装 postMessage 请求，等待 extension host 响应
     const response = await new Promise<any>((resolve, reject) => {
@@ -879,7 +880,7 @@ export const useChatStore = defineStore('chat', () => {
 
       postMessage({
         type: 'fetchTurns',
-        payload: { sessionId, skip, limit },
+        payload: { sessionId, skip, limit, executionId: execId },
       })
     })
 

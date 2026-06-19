@@ -173,9 +173,13 @@ export class ApiClient {
 
   // ==================== Turns (Concise Mode) API ====================
 
-  async getSessionTurns(sessionId: string, skip: number = 0, limit: number = 3): Promise<TurnsResponse> {
+  async getSessionTurns(sessionId: string, skip: number = 0, limit: number = 3, executionId?: string): Promise<TurnsResponse> {
+    const params: Record<string, any> = { skip, limit }
+    if (executionId) {
+      params.execution_id = executionId
+    }
     const response = await this.client.get(`/session/${sessionId}/turns`, {
-      params: { skip, limit },
+      params,
     })
     return response.data
   }
