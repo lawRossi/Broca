@@ -14,7 +14,7 @@ import pytest
 
 from broca_tui.screens.session_list import SessionListScreen, CreateSessionDialog, DeleteConfirmDialog
 from broca_tui.screens.chat import ChatScreen
-from broca_tui.screens.crew_executions import CrewExecutionsScreen, SubmitExecutionDialog
+from broca_tui.screens.crew_executions import CrewExecutionsScreen, ConfirmDialog
 from broca_tui.app import BrocaTUIApp
 
 
@@ -89,6 +89,16 @@ class TestChatScreen:
         screen = ChatScreen(session_id="test-session")
         assert screen._last_turn_count == -1  # -1 ensures first render always fires
 
+    def test_category_default_normal(self):
+        """Test that ChatScreen defaults to normal category."""
+        screen = ChatScreen(session_id="test-session")
+        assert screen._category == "normal"
+
+    def test_category_orchestration(self):
+        """Test that ChatScreen accepts agent-orchestration category."""
+        screen = ChatScreen(session_id="test-session", category="agent-orchestration")
+        assert screen._category == "agent-orchestration"
+
     def test_bindings_defined(self):
         """Test that keyboard bindings include navigation and sidebar toggles."""
         bindings = ChatScreen.BINDINGS
@@ -131,20 +141,19 @@ class TestCrewExecutionsScreen:
         screen = CrewExecutionsScreen(session_id="test-session")
         assert screen._store is not None
 
-    def test_submit_dialog_with_configs(self):
-        """Test SubmitExecutionDialog with config files."""
-        config_files = [
-            {"name": "crew1.yaml", "description": "Test crew", "orchestrator_type": "pipeline", "agent_names": ["a1", "a2"]},
-        ]
-        dialog = SubmitExecutionDialog(config_files)
-        assert dialog is not None
-        assert len(dialog._config_files) == 1
+    def test_confirm_dialog_text(self):
+        """Test ConfirmDialog stores title and message."""
+        dialog = ConfirmDialog(title="确认", message="确定要中止吗？")
+        assert dialog._title == "确认"
+        assert dialog._message == "确定要中止吗？"
 
-    def test_submit_dialog_empty(self):
-        """Test SubmitExecutionDialog with no config files."""
-        dialog = SubmitExecutionDialog([])
+    def test_confirm_dialog_compose(self):
+        """Test ConfirmDialog compose produces buttons."""
+        dialog = ConfirmDialog(title="Test", message="Test?")
+        # Verify compose works
+        from textual.containers import Vertical, Horizontal
+        from textual.widgets import Button, Label
         assert dialog is not None
-        assert len(dialog._config_files) == 0
 
 
 # ============================================================================

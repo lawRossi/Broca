@@ -72,6 +72,8 @@ class ChatHeader(Widget):
         """Initial setup after mount."""
         self.watch_connection_status(self.connection_status)
         self._update_crew_button_visibility()
+        # Also set initial display based on is_agent_orchestration
+        self.watch_is_agent_orchestration(self.is_agent_orchestration)
 
     def watch_connection_status(self, status: str) -> None:
         """React to connection status changes.
@@ -101,8 +103,11 @@ class ChatHeader(Widget):
 
     def _update_crew_button_visibility(self) -> None:
         """Show/hide the crew management button based on session category."""
-        crew_btn = self.query_one("#btn-crew", Button)
-        crew_btn.display = self.is_agent_orchestration or self.session_category == "agent-orchestration"
+        try:
+            crew_btn = self.query_one("#btn-crew", Button)
+            crew_btn.display = self.is_agent_orchestration or self.session_category == "agent-orchestration"
+        except Exception:
+            pass  # Not yet mounted
 
     def set_session_id(self, session_id: str) -> None:
         """Set the current session ID.

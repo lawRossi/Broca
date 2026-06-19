@@ -220,3 +220,51 @@ class TestTurnCardUndo:
         turn = make_turn(status="error", last_message_id="msg-1")
         card = TurnCard(turn)
         assert card._can_undo() is False
+
+
+# ============================================================================
+# OrchestrationBanner tests
+# ============================================================================
+
+class TestOrchestrationBanner:
+    """Test OrchestrationBanner widget."""
+
+    def test_banner_imports(self):
+        """Test that OrchestrationBanner can be imported."""
+        from broca_tui.widgets.orchestration_banner import OrchestrationBanner
+        assert OrchestrationBanner is not None
+
+    def test_banner_has_navigate_message(self):
+        """Test that OrchestrationBanner has NavigateToCrew message."""
+        from broca_tui.widgets.orchestration_banner import OrchestrationBanner
+        assert hasattr(OrchestrationBanner, 'NavigateToCrew')
+
+    def test_banner_has_css(self):
+        """Test that OrchestrationBanner has DEFAULT_CSS defined."""
+        from broca_tui.widgets.orchestration_banner import OrchestrationBanner
+        assert OrchestrationBanner.DEFAULT_CSS is not None
+        assert len(OrchestrationBanner.DEFAULT_CSS) > 0
+
+    def test_banner_accepts_session_id(self):
+        """Test that OrchestrationBanner accepts session_id."""
+        from broca_tui.widgets.orchestration_banner import OrchestrationBanner
+        banner = OrchestrationBanner(session_id="test-session")
+        assert banner._session_id == "test-session"
+
+    def test_banner_compose_structure(self):
+        """Test that OrchestrationBanner compose method exists and yields widgets."""
+        from broca_tui.widgets.orchestration_banner import OrchestrationBanner
+        import inspect
+        # Verify compose is a generator (yields widgets)
+        assert inspect.isgeneratorfunction(OrchestrationBanner.compose)
+        # Verify it composes correctly by checking the source
+        src = inspect.getsource(OrchestrationBanner.compose)
+        assert "btn-view-crew" in src
+        assert "Agent 编排会话" in src
+        assert "只读模式" in src
+
+    def test_banner_navigate_message(self):
+        """Test that NavigateToCrew message carries session_id."""
+        from broca_tui.widgets.orchestration_banner import OrchestrationBanner
+        msg = OrchestrationBanner.NavigateToCrew(session_id="test-session")
+        assert msg.session_id == "test-session"

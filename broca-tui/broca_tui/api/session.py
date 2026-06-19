@@ -171,6 +171,7 @@ class SessionAPI:
         session_id: str,
         skip: int = 0,
         limit: int = 20,
+        execution_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """获取会话的 turn 摘要列表（简洁模式使用）。
 
@@ -178,11 +179,14 @@ class SessionAPI:
             session_id: Session ID
             skip: Number of turns to skip
             limit: Max turns to return
+            execution_id: 可选，按编排执行 ID 过滤 turn
 
         Returns:
             Dict with 'turns' list and 'total' count.
         """
         params: Dict[str, Any] = {"skip": skip, "limit": limit}
+        if execution_id:
+            params["execution_id"] = execution_id
         return await self._client.get(
             f"/session/{session_id}/turns", params=params
         )

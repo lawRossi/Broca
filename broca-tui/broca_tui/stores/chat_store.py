@@ -465,7 +465,7 @@ class ChatStore:
                     # Reload turn data (简洁模式: turn_summaries 替代 messages)
                     import asyncio
 
-                    asyncio.ensure_future(self.load_turn_history())
+                    asyncio.ensure_future(self.load_turn_history(filter_execution_id=self.execution_id))
                 return
 
         # Clear redo state on new messages (undo result is command_result, so it won't be cleared)
@@ -513,11 +513,12 @@ class ChatStore:
                 return t
         return None
 
-    async def load_turn_history(self, is_load_more: bool = False):
+    async def load_turn_history(self, is_load_more: bool = False, filter_execution_id: Optional[str] = None):
         """加载 turn 历史（简洁模式）。
 
         Args:
             is_load_more: 是否加载更多（滚动到顶部触发）
+            filter_execution_id: 可选，按编排执行 ID 过滤
         """
         if not self.session_id:
             log("load_turn_history: no session_id")
@@ -543,12 +544,14 @@ class ChatStore:
         self._notify_change()
 
         limit = 3
+        exec_id = filter_execution_id or self.execution_id
 
         try:
             result = await self._api.get_session_turns(
                 self.session_id,
                 skip=self.turn_history_skip,
                 limit=limit,
+                execution_id=exec_id,
             )
 
             total = result.get("total", 0)

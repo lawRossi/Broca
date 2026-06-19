@@ -18,7 +18,7 @@ import pytest
 from broca_tui.app import BrocaTUIApp
 from broca_tui.screens.session_list import SessionListScreen, CreateSessionDialog, DeleteConfirmDialog
 from broca_tui.screens.chat import ChatScreen
-from broca_tui.screens.crew_executions import CrewExecutionsScreen, SubmitExecutionDialog
+from broca_tui.screens.crew_executions import CrewExecutionsScreen, ConfirmDialog
 from broca_tui.widgets.chat_input import ChatInput
 from broca_tui.stores.session_store import SessionStore
 from broca_tui.stores.chat_store import ChatStore, TurnSummary
@@ -336,18 +336,17 @@ class TestDialogLifecycle:
         dialog = DeleteConfirmDialog("test-session")
         assert dialog._session_name == "test-session"
 
-    def test_submit_execution_dialog_with_configs(self):
-        """Test SubmitExecutionDialog with config files."""
-        configs = [
-            {"name": "crew1.yaml", "description": "Test", "orchestrator_type": "pipeline", "agent_names": ["a1"]},
-        ]
-        dialog = SubmitExecutionDialog(configs)
-        assert dialog._config_files[0]["name"] == "crew1.yaml"
+    def test_confirm_dialog_confirm(self):
+        """Test ConfirmDialog confirm action."""
+        dialog = ConfirmDialog(title="Test", message="Confirm?")
+        assert dialog._title == "Test"
+        assert dialog._message == "Confirm?"
 
-    def test_submit_execution_dialog_empty(self):
-        """Test SubmitExecutionDialog with no configs."""
-        dialog = SubmitExecutionDialog([])
-        assert len(dialog._config_files) == 0
+    def test_confirm_dialog_empty(self):
+        """Test ConfirmDialog with empty strings."""
+        dialog = ConfirmDialog(title="", message="")
+        assert dialog._title == ""
+        assert dialog._message == ""
 
 
 # ============================================================================

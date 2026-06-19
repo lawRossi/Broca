@@ -25,6 +25,7 @@ from broca_tui.widgets.chat_header import ChatHeader
 from broca_tui.widgets.chat_input import ChatInput
 from broca_tui.widgets.info_sidebar import InfoSidebar
 from broca_tui.widgets.message_list import MessageList
+from broca_tui.widgets.orchestration_banner import OrchestrationBanner
 from broca_tui.widgets.permission_dialog import PermissionDialog
 from broca_tui.widgets.turn_card import TurnCard
 
@@ -45,6 +46,7 @@ class ChatScreen(Screen):
         self,
         session_id: str = "",
         execution_id: Optional[str] = None,
+        category: str = "normal",
         **kwargs,
     ):
         """Initialize chat screen.
@@ -52,11 +54,12 @@ class ChatScreen(Screen):
         Args:
             session_id: Session ID to connect to
             execution_id: Optional execution ID for message filtering
+            category: Session category ('normal' or 'agent-orchestration')
         """
         super().__init__(**kwargs)
         self._session_id = session_id
         self._execution_id = execution_id
-        self._category = "normal"
+        self._category = category
 
         # Stores
         self._chat_store = ChatStore()
@@ -67,9 +70,12 @@ class ChatScreen(Screen):
 
     def compose(self) -> ComposeResult:
         """Create the three-panel layout."""
+        is_orch = self._category == "agent-orchestration"
         with Vertical(classes="chat-screen"):
             # Header
-            yield ChatHeader(session_id=self._session_id, id="chat-header")
+            header = ChatHeader(session_id=self._session_id, id="chat-header")
+            header.is_agent_orchestration = is_orch
+            yield header
 
             # Main content: three panels
             with Horizontal(classes="chat-content", id="chat-content"):
@@ -81,7 +87,14 @@ class ChatScreen(Screen):
                 # Center: Messages (TurnCards) + Input
                 with Vertical(classes="main-content"):
                     yield MessageList(id="message-list")
-                    yield ChatInput(id="chat-input", classes="chat-input-container")
+                    if is_orch:
+                        yield OrchestrationBanner(
+                            session_id=self._session_id,
+                            id="orchestration-banner",
+                            classes="chat-input-container",
+                        )
+                    else:
+                        yield ChatInput(id="chat-input", classes="chat-input-container")
 
                 # Right: Info sidebar
                 yield InfoSidebar(
@@ -114,11 +127,14 @@ class ChatScreen(Screen):
         header = self.query_one("#chat-header", ChatHeader)
         message_list = self.query_one("#message-list", MessageList)
         info_sidebar = self.query_one("#info-sidebar", InfoSidebar)
-        chat_input = self.query_one("#chat-input", ChatInput)
+        is_orch = self._category == "agent-orchestration"
+        if not is_orch:
+            chat_input = self.query_one("#chat-input", ChatInput)
         agent_sidebar = self.query_one("#agent-sidebar", AgentSidebar)
 
         # Set session info
         header.set_session_id(self._session_id)
+        header.is_agent_orchestration = is_orch
         message_list.set_session(self._session_id)
         info_sidebar.set_session(self._session_id)
 
@@ -144,17 +160,18 @@ class ChatScreen(Screen):
                     agent["agent_status"] = "idle"
             self._agent_store._notify_change()
 
-            chat_input.set_agents(
-                self._agent_store.agents,
-                main_agent_id=self._agent_store.current_agent_id or "",
-            )
+            if not is_orch:
+                chat_input.set_agents(
+                    self._agent_store.agents,
+                    main_agent_id=self._agent_store.current_agent_id or "",
+                )
             await agent_sidebar.load_agents(self._session_id)
         except Exception as e:
             self.notify(f"Agent 加载失败: {e}", severity="warning", timeout=5)
 
         # ── Path 3: Load turn history via HTTP — 即使 agents 加载失败也应继续
         try:
-            await self._chat_store.load_turn_history()
+            await self._chat_store.load_turn_history(filter_execution_id=self._execution_id)
         except Exception as e:
             self.notify(f"加载 Turn 历史失败: {e}", severity="error", timeout=5)
         finally:
@@ -167,8 +184,8 @@ class ChatScreen(Screen):
 
     def _setup_connections(self):
         """Connect stores to widgets and register callbacks."""
+        is_orch = self._category == "agent-orchestration"
         message_list = self.query_one("#message-list", MessageList)
-        chat_input = self.query_one("#chat-input", ChatInput)
 
         # Chat store → MessageList
         self._chat_store.on_change(lambda: self._on_chat_change())
@@ -205,22 +222,23 @@ class ChatScreen(Screen):
         )
 
         # Agent store → agent 状态/列表变化由 AgentSidebar 的 _render_agents 处理
-        # 注意：AgentSidebar 在 on_mount 时已注册 _render_agents 到 _agent_store.on_change
-        # 这里不能再注册其他回调覆盖它。AgentSidebar 和 ChatScreen 共享同一个 _agent_store 实例。
         self._agent_store.on_visibility_change(
             lambda: self._on_visibility_changed()
         )
 
-        # ChatInput callbacks
-        chat_input.set_on_send(
-            lambda text, target: self.run_worker(self._send_message(text, target))
-        )
-
-        # Set agents for @mention, with main agent as default target
-        chat_input.set_agents(
-            self._agent_store.agents,
-            main_agent_id=self._agent_store.current_agent_id or "",
-        )
+        # ChatInput callbacks (only in normal sessions)
+        if not is_orch:
+            try:
+                chat_input = self.query_one("#chat-input", ChatInput)
+                chat_input.set_on_send(
+                    lambda text, target: self.run_worker(self._send_message(text, target))
+                )
+                chat_input.set_agents(
+                    self._agent_store.agents,
+                    main_agent_id=self._agent_store.current_agent_id or "",
+                )
+            except Exception:
+                pass
 
     # ==================== Event Handlers ====================
 
@@ -468,6 +486,12 @@ class ChatScreen(Screen):
 
     def on_chat_header_navigate_to_crew(self, event: ChatHeader.NavigateToCrew) -> None:
         """Handle navigation to crew from header."""
+        self.action_go_to_crew()
+
+    def on_orchestration_banner_navigate_to_crew(
+        self, event: OrchestrationBanner.NavigateToCrew
+    ) -> None:
+        """Handle navigation to crew from orchestration banner."""
         self.action_go_to_crew()
 
     def _abort_agent(self, agent_id: str) -> None:

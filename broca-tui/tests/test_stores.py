@@ -443,17 +443,129 @@ class TestCrewStore:
         assert len(store.executions) == 1
         assert store.total == 1
 
-    def test_update_execution_status(self, store):
-        """Test updating execution status for real-time progress."""
+    def test_update_execution_from_event(self, store):
+        """Test updating execution status via event for real-time progress."""
         store.executions = [
             {"execution_id": "e1", "status": "running"},
             {"execution_id": "e2", "status": "pending"},
         ]
 
-        store.update_execution_status("e1", "completed")
+        store.update_execution_from_event({"execution_id": "e1", "status": "completed"})
         assert store.executions[0]["status"] == "completed"
         assert store.executions[1]["status"] == "pending"  # unchanged
 
-    def test_update_execution_status_not_found(self, store):
+    def test_update_execution_from_event_not_found(self, store):
         """Test updating non-existent execution does nothing."""
-        store.update_execution_status("nonexistent", "completed")  # should not raise
+        store.update_execution_from_event({"execution_id": "nonexistent", "status": "completed"})  # should not raise
+
+    # ── AC: set_active_tab / active_tab ──
+
+    def test_active_tab_defaults_to_executions(self, store):
+        """Test that active_tab defaults to 'executions'."""
+        assert store.active_tab == "executions"
+
+    def test_set_active_tab_updates_tab(self, store):
+        """Test that set_active_tab updates active_tab and triggers on_change."""
+        change_called = False
+        def on_change():
+            nonlocal change_called
+            change_called = True
+        store.on_change(on_change)
+
+        store.set_active_tab("configs")
+        assert store.active_tab == "configs"
+        assert change_called, "on_change should be triggered"
+
+        # Switching back
+        store.set_active_tab("executions")
+        assert store.active_tab == "executions"
+
+    # ── AC: load_execution_detail / selected_execution ──
+
+    @pytest.mark.asyncio
+    async def test_load_execution_detail_populates_selected(self, store):
+        """Test that load_execution_detail populates selected_execution."""
+        mock_detail = {
+            "execution_id": "e1",
+            "crew_name": "Crew 1",
+            "status": "running",
+            "phases": [{"name": "Phase 1", "status": "completed"}],
+            "result": {"key": "value"},
+        }
+        store._api.get_execution_detail.return_value = mock_detail
+
+        await store.load_execution_detail("e1")
+        assert store.selected_execution is not None
+        assert store.selected_execution["execution_id"] == "e1"
+        assert len(store.selected_execution["phases"]) == 1
+        assert store.selected_execution["phases"][0]["name"] == "Phase 1"
+
+    @pytest.mark.asyncio
+    async def test_load_execution_detail_notifies_change(self, store):
+        """Test that load_execution_detail triggers on_change."""
+        store._api.get_execution_detail.return_value = {"execution_id": "e1"}
+        change_called = False
+        def on_change():
+            nonlocal change_called
+            change_called = True
+        store.on_change(on_change)
+
+        await store.load_execution_detail("e1")
+        assert change_called, "on_change should be triggered on detail load start and end"
+
+    # ── AC: on_socket_event callback ──
+
+    def test_on_socket_event_callback_triggered(self, store):
+        """Test that on_socket_event callback is triggered by update_execution_from_event."""
+        received_events = []
+        store.on_socket_event(lambda e: received_events.append(e))
+
+        store.executions = [{"execution_id": "e1", "status": "pending"}]
+        event = {"execution_id": "e1", "status": "running"}
+        store.update_execution_from_event(event)
+
+        assert len(received_events) == 1
+        assert received_events[0]["status"] == "running"
+
+    def test_on_socket_event_callback_deletion(self, store):
+        """Test that deletion events also trigger on_socket_event."""
+        received_events = []
+        store.on_socket_event(lambda e: received_events.append(e))
+
+        store.executions = [{"execution_id": "e1", "status": "running"}]
+        store.update_execution_from_event({"execution_id": "e1", "event": "deleted"})
+
+        assert len(received_events) == 1
+        assert received_events[0]["event"] == "deleted"
+
+    def test_update_execution_from_event_updates_detail_view(self, store):
+        """Test that events update selected_execution when detail view is open."""
+        store.selected_execution = {"execution_id": "e1", "status": "running", "phases": []}
+        store.update_execution_from_event({"execution_id": "e1", "status": "completed"})
+        assert store.selected_execution["status"] == "completed"
+
+    # ── AC: on_change / _notify_change ──
+
+    def test_on_change_called_on_state_change(self, store):
+        """Test that on_change is called on various state changes."""
+        calls = []
+        store.on_change(lambda: calls.append("change"))
+
+        store.set_active_tab("configs")
+        assert len(calls) >= 1
+
+    def test_clear_error(self, store):
+        """Test clear_error resets error_message and triggers on_change."""
+        change_called = False
+        def on_change():
+            nonlocal change_called
+            change_called = True
+        store.on_change(on_change)
+
+        store._notify_error("test error")
+        assert store.error_message == "test error"
+
+        change_called = False
+        store.clear_error()
+        assert store.error_message is None
+        assert change_called
