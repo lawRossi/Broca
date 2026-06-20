@@ -147,6 +147,25 @@ class SessionRevertService:
         if undo_meta_info["patches"]:
             await self.snapshot_restorer.restore(snapshot_hash)
 
+            # 清理孤儿文件：遍历 undo patch 中出现过的文件，
+            # 如果 restore 后它们变为未跟踪状态，说明在目标 tree 中已被删除
+            orphan_candidates = set()
+            for patch in undo_meta_info["patches"]:
+                for f in patch.get("files", []):
+                    orphan_candidates.add(f)
+
+            if orphan_candidates:
+                result = await self.snapshot_tracker.git_manager._run_git_command(
+                    "ls-files", "--others", "--exclude-standard", "-z"
+                )
+                untracked_files = set(result.strip().split("\0")) if result.strip() else set()
+                orphan_files = orphan_candidates & untracked_files
+                for file_path in orphan_files:
+                    full_path = self.snapshot_restorer.workspace_path / file_path
+                    if full_path.exists():
+                        logger.info(f"删除孤儿文件: {file_path}")
+                        full_path.unlink()
+
         # 标记相关消息为已重做
         await self._mark_messages_as_redone(agent_id, undo_meta_info)
 
