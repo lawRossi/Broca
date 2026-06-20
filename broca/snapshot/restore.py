@@ -45,21 +45,6 @@ class SnapshotRestorer:
 
             # 2. 将索引强制写入工作区（覆盖现有文件）
             await self.git_manager._run_git_command("checkout-index", "-f", "-a")
-
-            # 3. 删除孤儿文件：工作区存在但索引中不存在的文件
-            #    （这些文件曾被 snapshot 跟踪过，但在目标 tree 中已不存在）
-            result = await self.git_manager._run_git_command(
-                "diff", "--name-only", "--diff-filter=A"
-            )
-            orphaned_files = [f for f in result.strip().split("\n") if f]
-
-            for file_path in orphaned_files:
-                full_path = self.workspace_path / file_path
-                if full_path.exists():
-                    if full_path.is_file():
-                        full_path.unlink()
-                    elif full_path.is_dir():
-                        shutil.rmtree(full_path)
         except git.GitCommandError as e:
             logger.error(f"恢复快照失败: {e}")
             raise

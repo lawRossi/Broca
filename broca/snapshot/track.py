@@ -53,8 +53,6 @@ class SnapshotTracker:
         # 同步忽略规则
         self.git_manager.sync_ignore_rules(ignore_patterns)
 
-        repo = self.git_manager.get_repo()
-
         # 发现变更文件
         changed_files = await self._discover_changed_files()
 
@@ -90,7 +88,9 @@ class SnapshotTracker:
             # 重置索引到上一个快照的树（为下一次变更检测做准备）
             # 首次快照时使用 --empty，后续用上次的树哈希
             if self._last_tree_hash:
-                await self.git_manager._run_git_command("read-tree", self._last_tree_hash)
+                await self.git_manager._run_git_command(
+                    "read-tree", self._last_tree_hash
+                )
             else:
                 await self.git_manager._run_git_command("read-tree", "--empty")
 
