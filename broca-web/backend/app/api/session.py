@@ -609,6 +609,7 @@ async def get_session_turns(
     session_id: str,
     skip: int = 0,
     limit: int = 20,
+    execution_id: str | None = None,
 ) -> ApiResponse:
     """
     获取会话的 turn 摘要列表（简洁模式使用）。
@@ -616,6 +617,7 @@ async def get_session_turns(
     返回时反转（最早的在前）。
 
     每个 turn 带有 is_reverted 标记，前端自行过滤已撤销的 turn。
+    支持按 execution_id 过滤（仅返回指定编排执行的 turn）。
     """
     try:
         session_service = get_session_service()
@@ -626,10 +628,10 @@ async def get_session_turns(
         turn_service = get_turn_service()
         agent_service = get_agent_service()
 
-        total = await turn_service.count_turns_by_session(session_id)
+        total = await turn_service.count_turns_by_session(session_id, execution_id=execution_id)
         turns = await turn_service.get_turns_by_session(
             session_id, order_by="sequence_number desc",
-            skip=skip, limit=limit,
+            skip=skip, limit=limit, execution_id=execution_id,
         )
 
         turn_list = []
