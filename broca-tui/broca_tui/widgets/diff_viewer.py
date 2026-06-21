@@ -6,12 +6,60 @@ DiffViewer — 独立的文件 diff 展示 ModalScreen。
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual.screen import ModalScreen
 from textual.widgets import Static, Label, Button
+
+# unified diff @@ 头部正则：@@ -old_start,old_count +new_start,new_count @@
+_HUNK_HEADER_RE = re.compile(r"@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@")
+
+
+def _parse_diff_lines(diff_text: str) -> List[dict]:
+    """解析 unified diff 文本，每行返回 {text, type, line_num}。
+
+    type: add / del / ctx / head
+    line_num: 新文件中的真实行号（del/head 行为 None）
+    """
+    lines: List[dict] = []
+    new_line_num = 0
+    for raw in diff_text.split("\n"):
+        if raw.startswith("@@"):
+            m = _HUNK_HEADER_RE.search(raw)
+            if m:
+                new_line_num = int(m.group(1))
+            lines.append({"text": raw, "type": "head", "line_num": None})
+        elif raw.startswith("---") or raw.startswith("+++"):
+            lines.append({"text": raw, "type": "head", "line_num": None})
+        elif raw.startswith("+"):
+            lines.append({"text": raw[1:], "type": "add", "line_num": new_line_num})
+            new_line_num += 1
+        elif raw.startswith("-"):
+            lines.append({"text": raw[1:], "type": "del", "line_num": None})
+        else:
+            lines.append({"text": raw, "type": "ctx", "line_num": new_line_num})
+            new_line_num += 1
+    return lines
+
+
+def _line_display(line: dict) -> str:
+    """将解析后的行渲染为 Rich 标记字符串，包含行号和颜色。"""
+    text = line["text"]
+    typ = line["type"]
+    ln = line["line_num"]
+    line_num_str = f"{ln:>4}" if ln is not None else "    "
+
+    if typ == "add":
+        return f"[bold #055d20 on #e6ffec]{line_num_str} + {text}[/]"
+    elif typ == "del":
+        return f"[bold #82071e on #ffebe9]{line_num_str} - {text}[/]"
+    elif typ == "head":
+        return f"[#666 on #e8e8e8]{line_num_str}   {text}[/]"
+    else:
+        return f"{line_num_str}   {text}"
 
 
 class DiffViewer(ModalScreen):
@@ -69,17 +117,11 @@ class DiffViewer(ModalScreen):
             with Horizontal(id="diff-header-bar"):
                 yield Static(f"Diff: {self._file_path}", id="diff-header-text")
                 yield Button("✕", id="diff-close-btn")
-            # 解析 unified diff 为 Rich 标记
-            rich_lines = []
-            for line in (self._diff_text or "(无变更)").split("\n"):
-                if line.startswith("+") and not line.startswith("+++"):
-                    rich_lines.append(f"[bold #055d20 on #e6ffec]{line}[/]")
-                elif line.startswith("-") and not line.startswith("---"):
-                    rich_lines.append(f"[bold #82071e on #ffebe9]{line}[/]")
-                elif line.startswith("@@"):
-                    rich_lines.append(f"[#666 on #e8e8e8]{line}[/]")
-                else:
-                    rich_lines.append(line)
+            # 解析 unified diff 为带行号和颜色的 Rich 标记
+            rich_lines = [
+                _line_display(line)
+                for line in _parse_diff_lines(self._diff_text or "(无变更)")
+            ]
             with ScrollableContainer(id="diff-content"):
                 yield Static("\n".join(rich_lines))
 
