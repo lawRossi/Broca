@@ -110,6 +110,13 @@ class Turn(SQLModel, table=True):
         description="是否已回滚",
     )
 
+    # 编排执行 ID（仅编排会话产生的 turn 有此值）
+    execution_id: Optional[str] = Field(
+        default=None,
+        sa_column=Column(String, nullable=True, index=True),
+        description="关联的编排执行ID（仅编排会话产生的 turn 有此值）",
+    )
+
     # 关联关系
     agent: "Agent" = Relationship(back_populates="turns")
     session: "Session" = Relationship(back_populates="turns")

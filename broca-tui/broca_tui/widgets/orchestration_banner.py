@@ -28,8 +28,8 @@ class OrchestrationBanner(Widget):
     DEFAULT_CSS = """
     OrchestrationBanner {
         height: auto;
-        border-top: solid $primary-200;
-        background: $primary-50;
+        border-top: solid #bae6fd;
+        background: #f0f9ff;
         padding: 0 1;
     }
 
@@ -39,7 +39,7 @@ class OrchestrationBanner(Widget):
     }
 
     .orchestration-banner-icon {
-        color: $primary-600;
+        color: #0284c7;
         text-style: bold;
         width: 3;
     }
@@ -51,15 +51,15 @@ class OrchestrationBanner(Widget):
 
     .orchestration-banner-title {
         text-style: bold;
-        color: $primary-800;
+        color: #075985;
     }
 
     .orchestration-banner-desc {
-        color: $primary-600;
+        color: #0284c7;
     }
 
     .orchestration-banner-btn {
-        background: $primary-500;
+        background: #0ea5e9;
         color: white;
         border: none;
         min-width: 16;
@@ -67,7 +67,7 @@ class OrchestrationBanner(Widget):
     }
 
     .orchestration-banner-btn:hover {
-        background: $primary-600;
+        background: #0284c7;
         text-style: bold;
     }
     """

@@ -114,8 +114,7 @@ class CrewStore:
         self.loading = True
         if session_id is not None:
             self.session_id_filter = session_id
-        if status is not None:
-            self.status_filter = status
+        self.status_filter = status
         self._notify_change()
 
         try:

@@ -266,6 +266,7 @@ class TurnService(BaseService[Turn]):
         agent_id: str,
         sequence_number: int,
         turn_description: Optional[str] = None,
+        execution_id: Optional[str] = None,
     ) -> Turn:
         """创建新轮次"""
         return await self.create(
@@ -274,6 +275,7 @@ class TurnService(BaseService[Turn]):
             agent_id=agent_id,
             sequence_number=sequence_number,
             turn_description=turn_description,
+            execution_id=execution_id,
             created_at=datetime.now(timezone.utc),
         )
 
@@ -302,10 +304,14 @@ class TurnService(BaseService[Turn]):
         order_by: str = "sequence_number desc",
         skip: int = 0,
         limit: int = 20,
+        execution_id: Optional[str] = None,
     ) -> List[Turn]:
-        """获取会话的 turn 列表"""
+        """获取会话的 turn 列表，支持按 execution_id 过滤"""
+        filters = {"session_id": session_id, "reverted": False}
+        if execution_id:
+            filters["execution_id"] = execution_id
         return await self.get_batch(
-            filters={"session_id": session_id, "reverted": False},
+            filters=filters,
             order_by=order_by,
             skip=skip,
             limit=limit,
@@ -493,9 +499,12 @@ class TurnService(BaseService[Turn]):
             logger.warning(f"Error calculating file diff for {file_path}: {e}")
             return None
 
-    async def count_turns_by_session(self, session_id: str) -> int:
-        """统计会话的 turn 总数"""
-        return await self.count({"session_id": session_id, "reverted": False})
+    async def count_turns_by_session(self, session_id: str, execution_id: Optional[str] = None) -> int:
+        """统计会话的 turn 总数，支持按 execution_id 过滤"""
+        filters = {"session_id": session_id, "reverted": False}
+        if execution_id:
+            filters["execution_id"] = execution_id
+        return await self.count(filters)
 
 
 class MessageService(BaseService[Message]):

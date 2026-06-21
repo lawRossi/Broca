@@ -11,17 +11,14 @@ Features:
 
 from __future__ import annotations
 
-import asyncio
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Label, Select, Static
 
-from broca_tui.config import get_config
 from broca_tui.stores.crew_store import CrewStore
-
 
 # ============================================================================
 # Orchestrator type labels (matching VS Code CrewApp.vue)
@@ -48,6 +45,7 @@ STATUS_LABELS: Dict[str, str] = {
 # ============================================================================
 # ConfirmDialog
 # ============================================================================
+
 
 class ConfirmDialog(ModalScreen):
     """Simple confirmation dialog."""
@@ -118,6 +116,7 @@ class ConfirmDialog(ModalScreen):
 # CrewExecutionsScreen
 # ============================================================================
 
+
 class CrewExecutionsScreen(Screen):
     """Crew execution management screen."""
 
@@ -133,11 +132,10 @@ class CrewExecutionsScreen(Screen):
 
     def compose(self) -> ComposeResult:
         with Vertical(classes="crew-screen"):
-            # Header
+            # Header — 标题左对齐，会话列表按钮右对齐
             with Horizontal(classes="crew-header"):
-                yield Button("← 会话列表", id="btn-back", classes="nav-button")
                 yield Label("编排执行管理", classes="screen-title")
-                yield Label("", id="exec-count", classes="session-count")
+                yield Button("← 会话列表", id="btn-back", classes="nav-button")
 
             # Tab bar
             with Horizontal(classes="crew-tab-bar"):
@@ -158,6 +156,7 @@ class CrewExecutionsScreen(Screen):
                             ("待执行", "pending"),
                         ],
                         value="all",
+                        allow_blank=False,
                         id="status-filter",
                         classes="status-filter",
                     )
@@ -185,10 +184,16 @@ class CrewExecutionsScreen(Screen):
                 # Summary section
                 with Vertical(id="detail-summary", classes="detail-summary"):
                     with Horizontal(classes="detail-summary-row"):
-                        yield Label("", id="detail-status", classes="detail-status-badge")
-                        yield Label("", id="detail-orch-type", classes="detail-orch-label")
+                        yield Label(
+                            "", id="detail-status", classes="detail-status-badge"
+                        )
+                        yield Label(
+                            "", id="detail-orch-type", classes="detail-orch-label"
+                        )
                     with Horizontal(classes="detail-progress-row"):
-                        yield Static("", id="detail-progress", classes="detail-progress")
+                        yield Static(
+                            "", id="detail-progress", classes="detail-progress"
+                        )
                     yield Label("", id="detail-duration", classes="detail-duration")
 
                 # DAG Timeline
@@ -202,15 +207,13 @@ class CrewExecutionsScreen(Screen):
 
     def on_mount(self) -> None:
         """Load executions on mount, bind store, and connect socket."""
-        # Bind store changes (use app.call_later for thread safety)
-        self._store.on_change(lambda: self._on_store_change())
-        self._store.on_error(lambda msg: self._show_error(msg))
+        # Bind store changes — use set_timer to ensure UI runs in Textual's event loop
+        # Note: delay must be > 0 to avoid Textual division-by-zero error
+        self._store.on_change(lambda: self.set_timer(0.01, self._on_store_change))
+        self._store.on_error(lambda msg: self.set_timer(0.01, lambda: self._show_error(msg)))
 
         # Initial load
         self.run_worker(self._load_executions())
-
-        # Connect Socket.IO for real-time updates
-        self.run_worker(self._connect_socket())
 
         # Set initial visibility (configs tab and detail view hidden)
         try:
@@ -218,6 +221,17 @@ class CrewExecutionsScreen(Screen):
             self.query_one("#detail-view", Vertical).display = "none"
         except Exception:
             pass
+
+        # Periodic refresh every 10 seconds to keep execution cards up-to-date
+        self._refresh_timer = self.set_interval(10, self._refresh_executions_list)
+
+    def _refresh_executions_list(self) -> None:
+        """Periodic refresh of execution list data and rendering."""
+        if self._selected_execution_id is not None:
+            return  # Don't refresh while in detail view
+        if self._store.loading:
+            return  # Don't refresh while already loading
+        self.run_worker(self._store.refresh())
 
     # ── Store change handler ──
 
@@ -231,10 +245,8 @@ class CrewExecutionsScreen(Screen):
                 # Detail was cleared (e.g. by deletion event)
                 self._exit_detail_view()
 
-        # Update executions tab if visible
-        if self._store.active_tab == "executions" or self._selected_execution_id is None:
-            # Only re-render if data changed (executions list modified)
-            self._render_executions_tab()
+        # Always re-render executions tab (method has its own guard via try/except)
+        self._render_executions_tab()
 
         # Update configs tab if visible
         if self._store.active_tab == "configs":
@@ -248,65 +260,15 @@ class CrewExecutionsScreen(Screen):
         """
         self.notify(message, severity="error", timeout=5)
 
-    # ── Socket.IO Connection (independent, not shared with ChatStore) ──
-
-    async def _connect_socket(self):
-        """Establish independent Socket.IO connection for crew events."""
-        from broca.communication.socketio_client import SocketIOClient
-
-        config = get_config()
-        self._crew_socket: Optional[SocketIOClient] = None
-
-        try:
-            self._crew_socket = SocketIOClient(
-                server_url=config.socket_server_url,
-                client_type="tui",
-                client_id=f"crew_{id(self)}",
-                user_id=config.user_id,
-                auto_reconnect=True,
-                reconnect_delay=2.0,
-                max_reconnect_attempts=3,
-            )
-
-            @self._crew_socket.on_message
-            async def handle_message(message):
-                """Handle incoming crew socket messages."""
-                await self._process_crew_message(message)
-
-            await self._crew_socket.connect()
-            if self._session_id:
-                await self._crew_socket.subscribe(self._session_id)
-        except Exception as e:
-            # Socket connection is best-effort for real-time updates
-            self.log(f"Crew socket connection failed: {e}")
-
-    async def _process_crew_message(self, message) -> None:
-        """Process an incoming crew socket message.
-
-        Args:
-            message: Socket message object
-        """
-        try:
-            msg_type = getattr(message, "type", None) or (
-                message.get("type") if isinstance(message, dict) else None
-            )
-            msg_data = getattr(message, "data", None) or (
-                message.get("data") if isinstance(message, dict) else {}
-            )
-
-            if msg_type == "crew_event" and isinstance(msg_data, dict):
-                self._store.update_execution_from_event(msg_data)
-        except Exception as e:
-            self.log(f"Error processing crew message: {e}")
-
     def on_unmount(self) -> None:
-        """Clean up socket connection on unmount."""
-        if hasattr(self, '_crew_socket') and self._crew_socket:
+        """Clean up timers on unmount."""
+        if hasattr(self, "_refresh_timer"):
             try:
-                # Schedule disconnect in a fire-and-forget manner
-                asyncio.ensure_future(self._crew_socket.disconnect())
+                self._refresh_timer.stop()
             except Exception:
                 pass
+
+    # ── Periodic auto-refresh ──
 
     # ── Confirmation Dialog ──
 
@@ -338,8 +300,11 @@ class CrewExecutionsScreen(Screen):
         )
 
     def _render_executions_tab(self):
-        """Render the executions tab content."""
-        # Check if executions-tab exists and is visible
+        """Render the executions tab content.
+
+        Rebuilds all cards from scratch using mount() pattern.
+        Calls refresh() at the end to ensure Textual re-layouts.
+        """
         try:
             container = self.query_one("#execution-list", ScrollableContainer)
             count_label = self.query_one("#filter-count", Label)
@@ -356,13 +321,23 @@ class CrewExecutionsScreen(Screen):
             return
 
         if not executions:
-            container.mount(Static("暂无编排执行记录\n提交编排 YAML 配置以开始执行", classes="crew-empty"))
+            container.mount(
+                Static(
+                    "暂无编排执行记录\n提交编排 YAML 配置以开始执行",
+                    classes="crew-empty",
+                )
+            )
             return
 
         for exec_item in executions:
             self._render_execution_card(container, exec_item)
 
-    def _render_execution_card(self, container: ScrollableContainer, exec_item: Dict[str, Any]):
+        # Force layout refresh to ensure newly mounted children are rendered
+        container.refresh()
+
+    def _render_execution_card(
+        self, container: ScrollableContainer, exec_item: Dict[str, Any]
+    ):
         """Render a single execution card.
 
         Builds the widget tree bottom-up, mounting each level before adding children.
@@ -394,7 +369,9 @@ class CrewExecutionsScreen(Screen):
         title_row = Horizontal(classes="crew-card-title-row")
         header.mount(title_row)
         title_row.mount(Label(status_text, classes=f"crew-status-badge {status_class}"))
-        title_row.mount(Button(crew_name, id=f"detail-{exec_id}", classes="crew-card-name-btn"))
+        title_row.mount(
+            Button(crew_name, id=f"detail-{exec_id}", classes="crew-card-name-btn")
+        )
         title_row.mount(Label(orch_label, classes="crew-card-type"))
 
         # Description
@@ -408,7 +385,9 @@ class CrewExecutionsScreen(Screen):
         if exec_item.get("phases"):
             phases = exec_item["phases"]
             phases_total = exec_item.get("phases_total", len(phases))
-            meta.mount(Label(f"阶段: {len(phases)}/{phases_total}", classes="crew-meta-item"))
+            meta.mount(
+                Label(f"阶段: {len(phases)}/{phases_total}", classes="crew-meta-item")
+            )
         meta.mount(Label(f"{created_at}", classes="crew-meta-item"))
 
         # Progress bar
@@ -418,17 +397,27 @@ class CrewExecutionsScreen(Screen):
             card.mount(prog_row)
             bar_container = Horizontal(classes="crew-progress-bar-container")
             prog_row.mount(bar_container)
-            bar_container.mount(Static("", classes=f"crew-progress-bar {status_class}", id=f"prog-{exec_id}"))
+            bar = Static("", classes=f"crew-progress-bar {status_class}")
+            bar.styles.width = f"{pct}%"  # Set width dynamically based on progress
+            bar_container.mount(bar)
             prog_row.mount(Label(f"{pct}%", classes="crew-progress-text"))
 
         # Action buttons
         actions = Horizontal(classes="crew-card-actions")
         card.mount(actions)
-        actions.mount(Button("查看聊天日志", id=f"view-{exec_id}", classes="btn btn-sm btn-secondary"))
+        actions.mount(
+            Button(
+                "查看聊天日志", id=f"view-{exec_id}", classes="btn btn-sm btn-secondary"
+            )
+        )
         if status == "running":
-            actions.mount(Button("中止", id=f"abort-{exec_id}", classes="btn btn-sm btn-danger"))
+            actions.mount(
+                Button("中止", id=f"abort-{exec_id}", classes="btn btn-sm btn-danger")
+            )
         if status in ("completed", "failed", "aborted"):
-            actions.mount(Button("删除", id=f"del-{exec_id}", classes="btn btn-sm btn-danger"))
+            actions.mount(
+                Button("删除", id=f"del-{exec_id}", classes="btn btn-sm btn-danger")
+            )
 
     # ── Configs Tab ──
 
@@ -450,10 +439,12 @@ class CrewExecutionsScreen(Screen):
             return
 
         if not config_files:
-            container.mount(Static(
-                "该工作空间下没有编排配置文件\n请在 workspace 的 crew_configs/ 目录下创建 .yaml 文件",
-                classes="crew-empty",
-            ))
+            container.mount(
+                Static(
+                    "该工作空间下没有编排配置文件\n请在 workspace 的 crew_configs/ 目录下创建 .yaml 文件",
+                    classes="crew-empty",
+                )
+            )
             return
 
         for cfg in config_files:
@@ -473,7 +464,8 @@ class CrewExecutionsScreen(Screen):
             Sanitized ID string
         """
         import re
-        return re.sub(r'[^a-zA-Z0-9_-]', '-', raw)
+
+        return re.sub(r"[^a-zA-Z0-9_-]", "-", raw)
 
     def _render_config_card(self, container: ScrollableContainer, cfg: Dict[str, Any]):
         """Render a single config file card.
@@ -507,7 +499,9 @@ class CrewExecutionsScreen(Screen):
         title_row.mount(Label(name, classes="crew-card-name"))
         title_row.mount(Label(orch_label, classes="crew-card-type"))
         if parse_error:
-            title_row.mount(Label("解析失败", classes="crew-status-badge status-failed"))
+            title_row.mount(
+                Label("解析失败", classes="crew-status-badge status-failed")
+            )
         header.mount(Label(filename, classes="crew-card-filename"))
 
         # Description
@@ -522,6 +516,7 @@ class CrewExecutionsScreen(Screen):
             meta.mount(Label(f"Agent: {agents_str}", classes="crew-meta-item"))
         if modified_time:
             import datetime
+
             mt = datetime.datetime.fromtimestamp(modified_time).strftime("%m-%d %H:%M")
             meta.mount(Label(mt, classes="crew-meta-item"))
 
@@ -529,12 +524,14 @@ class CrewExecutionsScreen(Screen):
         actions = Horizontal(classes="crew-card-actions")
         card.mount(actions)
         is_running = self._store.is_executing(name)
-        actions.mount(Button(
-            "执行中..." if is_running else "执行",
-            id=f"submit-{safe_id}",
-            classes="btn btn-sm btn-primary",
-            disabled=is_running,
-        ))
+        actions.mount(
+            Button(
+                "执行中..." if is_running else "执行",
+                id=f"submit-{safe_id}",
+                classes="btn btn-sm btn-primary",
+                disabled=is_running,
+            )
+        )
 
     # ── Detail View ──
 
@@ -599,12 +596,15 @@ class CrewExecutionsScreen(Screen):
         result = execution.get("result")
         if result:
             import json
+
             result_section.display = "block"
             result_json.update(json.dumps(result, indent=2, ensure_ascii=False))
         else:
             result_section.display = "none"
 
-    def _render_phase_node(self, parent: Vertical, phase: Dict[str, Any], index: int, total: int):
+    def _render_phase_node(
+        self, parent: Vertical, phase: Dict[str, Any], index: int, total: int
+    ):
         """Render a single DAG phase node as a child of the dag-list Vertical.
 
         Builds the widget tree bottom-up, mounting each level before adding children.
@@ -644,10 +644,12 @@ class CrewExecutionsScreen(Screen):
         card_header = Horizontal(classes="crew-dag-card-header")
         card.mount(card_header)
         card_header.mount(Label(phase_name, classes="crew-dag-phase-name"))
-        card_header.mount(Label(
-            f"{status_icon} {STATUS_LABELS.get(phase_status, phase_status)}",
-            classes=f"crew-dag-phase-status {status_class}",
-        ))
+        card_header.mount(
+            Label(
+                f"{status_icon} {STATUS_LABELS.get(phase_status, phase_status)}",
+                classes=f"crew-dag-phase-status {status_class}",
+            )
+        )
 
         if agents:
             agents_row = Horizontal(classes="crew-dag-agents")
@@ -673,9 +675,14 @@ class CrewExecutionsScreen(Screen):
         created_at = execution.get("created_at")
         if completed_at and created_at:
             import datetime
+
             try:
-                start = datetime.datetime.fromisoformat(created_at.replace("Z", "+00:00"))
-                end = datetime.datetime.fromisoformat(completed_at.replace("Z", "+00:00"))
+                start = datetime.datetime.fromisoformat(
+                    created_at.replace("Z", "+00:00")
+                )
+                end = datetime.datetime.fromisoformat(
+                    completed_at.replace("Z", "+00:00")
+                )
                 delta = end - start
                 total_seconds = int(delta.total_seconds())
                 if total_seconds < 60:
@@ -745,8 +752,10 @@ class CrewExecutionsScreen(Screen):
         """
         if event.select.id == "status-filter":
             value = event.value
-            status = value if value and value != "all" else None
-            self.run_worker(self._load_executions(status=status))
+            # Guard against Select.BLANK (NoSelection sentinel)
+            if isinstance(value, str):
+                status = value if value and value != "all" else None
+                self.run_worker(self._load_executions(status=status))
 
     # ── Tab switching ──
 
@@ -777,6 +786,7 @@ class CrewExecutionsScreen(Screen):
     async def _load_config_files(self):
         """Load config files for the configs tab."""
         from broca_tui.api.session import SessionAPI
+
         api = SessionAPI()
         workspace = ""
         try:
@@ -824,6 +834,10 @@ class CrewExecutionsScreen(Screen):
         self.query_one("#executions-tab", Vertical).display = active == "executions"
         self.query_one("#configs-tab", Vertical).display = active == "configs"
 
+        # Re-render executions tab with latest data from store
+        if active == "executions":
+            self._render_executions_tab()
+
     # ── Actions ──
 
     async def _submit_config(self, filename: str):
@@ -849,7 +863,11 @@ class CrewExecutionsScreen(Screen):
         )
 
         if result:
-            self.notify(f"编排 {cfg.get('name', filename)} 提交成功", severity="information", timeout=3)
+            self.notify(
+                f"编排 {cfg.get('name', filename)} 提交成功",
+                severity="information",
+                timeout=3,
+            )
             # Switch to executions tab to show the new execution
             self._switch_tab("executions")
 
@@ -884,7 +902,12 @@ class CrewExecutionsScreen(Screen):
             exec_id: Execution ID to filter by
         """
         from broca_tui.screens.chat import ChatScreen
-        screen = ChatScreen(session_id=self._session_id, execution_id=exec_id)
+
+        screen = ChatScreen(
+            session_id=self._session_id,
+            execution_id=exec_id,
+            category="agent-orchestration",
+        )
         self.app.push_screen(screen)
 
     def action_go_to_sessions(self) -> None:
