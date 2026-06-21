@@ -562,9 +562,9 @@ class TurnCard(Widget):
                 # 新增 (idx 0-49)
                 added = cf.get("files_added", [])
                 self._toggle_display("#cf-head-added", bool(added))
-                for i, f in enumerate(added):
+                    for i, f in enumerate(added):
                     if i < MAX:
-                        self.query_one(f"#cf-file-{i}", Label).update(f"  + {f}")
+                        self.query_one(f"#cf-file-{i}", Label).update(f"+ {f}")
                         self.query_one(f"#cf-file-{i}", Label).display = True
                         self._file_diff_paths[i] = f
                 for i in range(len(added), MAX):
@@ -575,10 +575,10 @@ class TurnCard(Widget):
                 # 删除 (idx 50-99)
                 deleted = cf.get("files_deleted", [])
                 self._toggle_display("#cf-head-deleted", bool(deleted))
-                for i, f in enumerate(deleted):
+                    for i, f in enumerate(deleted):
                     idx = MAX + i
                     if i < MAX:
-                        self.query_one(f"#cf-file-{idx}", Label).update(f"  - {f}")
+                        self.query_one(f"#cf-file-{idx}", Label).update(f"- {f}")
                         self.query_one(f"#cf-file-{idx}", Label).display = True
                         self._file_diff_paths[idx] = f
                 for i in range(len(deleted), MAX):
@@ -589,10 +589,10 @@ class TurnCard(Widget):
                 # 修改 (idx 100-149)
                 modified = cf.get("files_modified", [])
                 self._toggle_display("#cf-head-modified", bool(modified))
-                for i, f in enumerate(modified):
+                    for i, f in enumerate(modified):
                     idx = MAX * 2 + i
                     if i < MAX:
-                        self.query_one(f"#cf-file-{idx}", Label).update(f"  ~ {f}")
+                        self.query_one(f"#cf-file-{idx}", Label).update(f"~ {f}")
                         self.query_one(f"#cf-file-{idx}", Label).display = True
                         self._file_diff_paths[idx] = f
                 for i in range(len(modified), MAX):

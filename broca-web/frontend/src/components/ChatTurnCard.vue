@@ -724,7 +724,6 @@ const handleUndo = async () => {
 
 .changed-files-detail {
   margin-top: 4px;
-  margin-left: 70px;
   padding: 6px 8px;
   border: 1px solid rgba(201, 168, 76, 0.25);
   border-radius: 4px;
