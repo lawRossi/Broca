@@ -241,7 +241,20 @@ class GraphOrchestrator(Orchestrator, ABC):
         return agents
 
     def _estimate_total_phases(self) -> int:
-        return len(self.graph.nodes) * 2
+        """估算总阶段数
+
+        排除不执行的入口节点后，统计所有将被执行的节点数作为总阶段数估算值。
+
+        注意：
+        - 入口节点（entry）在 _run_main_loop 中被跳过执行，不计入
+        - 循环/分支场景下实际 phase 数可能多于或少于估算值
+          （循环产生更多、条件分支可能跳过某些节点）
+        - 此估算值用于进度百分比计算，偏保守比偏乐观更好：
+          偏保守时进度条不会在未完成时显示 100%
+        """
+        entry = self.graph.entry
+        total = sum(1 for name in self.graph.nodes if name != entry)
+        return max(total, 1)
 
     # ═══════════════════════════════════════════════
     # TASK 节点执行
