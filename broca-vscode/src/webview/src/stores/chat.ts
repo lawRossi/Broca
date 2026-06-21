@@ -29,7 +29,7 @@ interface TurnSummary {
   agentId: string
   agentName: string
   userMessage: string | null
-  status: 'active' | 'completed' | 'error'
+  status: 'active' | 'thinking' | 'calling_tool' | 'completed' | 'error'
   currentTool: string | null
   currentFilePath: string | null
   currentTodoList: TodoItem[]
@@ -475,15 +475,15 @@ export const useChatStore = defineStore('chat', () => {
         showRedoButton.value = true
         redoReceiverId.value = message.sender_id
         loadHistory(0, 50)
-        // 简洁模式：重新加载 turn 历史，刷新被撤销的 turn
-        if (sessionId.value) loadTurnHistory(sessionId.value, false, executionId.value)
+        // 简洁模式：重新加载 turn 历史（reset=true 清空旧数据，因为底层数据已改变）
+        if (sessionId.value) loadTurnHistory(sessionId.value, false, executionId.value, true)
         return
       } else if (message.data?.command === 'redo') {
         showRedoButton.value = false
         redoReceiverId.value = undefined
         loadHistory(0, 50)
-        // 简洁模式：重新加载 turn 历史
-        if (sessionId.value) loadTurnHistory(sessionId.value, false, executionId.value)
+        // 简洁模式：重新加载 turn 历史（reset=true 清空旧数据，因为底层数据已改变）
+        if (sessionId.value) loadTurnHistory(sessionId.value, false, executionId.value, true)
         return
       }
     }
@@ -823,30 +823,53 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function toggleDisplayMode() {
-    const newMode = displayMode.value === 'detail' ? 'concise' : 'detail'
-    displayMode.value = newMode
-    saveDisplayMode(sessionId.value, newMode)
+  /** 防止 toggleDisplayMode 并发调用的锁 */
+  let _togglingDisplayMode = false
 
-    if (newMode === 'concise') {
-      // 切换到简洁模式：如有活跃 turn，启动计时器
-      if (turnSummaries.value.some(t => t.isActive)) {
-        startDurationTimer()
+  async function toggleDisplayMode() {
+    // 并发防护：如果已有切换操作在进行中，忽略本次调用
+    if (_togglingDisplayMode) {
+      console.debug('toggleDisplayMode: 已有切换操作进行中，忽略')
+      return
+    }
+    _togglingDisplayMode = true
+    try {
+      const newMode = displayMode.value === 'detail' ? 'concise' : 'detail'
+      displayMode.value = newMode
+      saveDisplayMode(sessionId.value, newMode)
+
+      if (newMode === 'concise') {
+        // 切换到简洁模式：如有活跃 turn，启动计时器
+        if (turnSummaries.value.some(t => t.isActive)) {
+          startDurationTimer()
+        }
+        // 首次加载 turn 数据
+        if (turnSummaries.value.length === 0) {
+          await loadTurnHistory(sessionId.value, false, executionId.value)
+        }
+      } else {
+        // 切换到明细模式：停止计时器
+        stopDurationTimer()
       }
-      // 首次加载 turn 数据
-      if (turnSummaries.value.length === 0) {
-        loadTurnHistory(sessionId.value, false, executionId.value)
-      }
-    } else {
-      // 切换到明细模式：停止计时器
-      stopDurationTimer()
+    } finally {
+      _togglingDisplayMode = false
     }
   }
 
-  async function loadTurnHistory(sessionId: string, isLoadMore: boolean, filterExecutionId?: string) {
+  async function loadTurnHistory(sessionId: string, isLoadMore: boolean, filterExecutionId?: string, reset: boolean = false) {
     if (isLoadMore) {
       if (loadingMoreTurns.value || !hasMoreTurns.value) return
       loadingMoreTurns.value = true
+    } else if (reset) {
+      // reset=true: 清空现有数据，适用于 undo/redo 等数据已根本改变的场景
+      turnSummaries.value = []
+      turnHistorySkip.value = 0
+      hasMoreTurns.value = true
+      activeTurnIndex.value = -1
+      _turnLastResponseMsgId.value = new Map()
+      _turnContentMsgId.value = new Map()
+      _turnSeenToolCallIds.value = new Set()
+      stopDurationTimer()
     }
 
     const skip = isLoadMore ? turnHistorySkip.value : 0
@@ -923,22 +946,15 @@ export const useChatStore = defineStore('chat', () => {
       }))
 
       if (skip === 0) {
-        // 初始加载时，保留当前活跃 turn（正在通过 socket 实时更新），避免覆盖
-        const activeTurns = turnSummaries.value.filter(t => t.isActive)
-        // 合并 API 数据和活跃 turn，API 数据中已有的 turnId 会被活跃版本替换
-        const mergedTurns = [...turnList]
-        const existingIds = new Set(mergedTurns.map(t => t.turnId))
-        for (const active of activeTurns) {
-          if (existingIds.has(active.turnId)) {
-            // 替换 API 中的对应 turn 为活跃版本
-            const idx = mergedTurns.findIndex(t => t.turnId === active.turnId)
-            if (idx !== -1) mergedTurns[idx] = active
-          } else {
-            // API 中没有此活跃 turn（可能是最新的），追加到末尾
-            mergedTurns.push(active)
-          }
-        }
-        turnSummaries.value = mergedTurns
+        // 合并 API 返回的 turn 和当前存在的 turn（去重，非 API 的 turn 放最后）。
+        // 注意：不能只使用 API 调用前保存的 activeTurns，因为在 await 期间，
+        // socket 事件（handleTurnStartMessage）可能向 turnSummaries 添加了新的活跃 turn。
+        // 如果只合并 activeTurns，这些中途添加的 turn 会被下面的赋值语句覆盖丢失。
+        const seenIds = new Set(turnList.map(t => t.turnId))
+        // 捕获当前 turnSummaries 中所有未被 API 数据覆盖的 turn
+        // 包含：(1) API 调用前就活跃的 turn (2) API 调用期间 socket 新添加的 turn
+        const currentLive = turnSummaries.value.filter(t => !seenIds.has(t.turnId))
+        turnSummaries.value = [...turnList, ...currentLive]
       } else {
         turnSummaries.value = [...turnList, ...turnSummaries.value]
       }

@@ -917,16 +917,27 @@ export const useChatStore = defineStore('chat', () => {
   const loadTurnHistory = async (
     sessionId: string,
     isLoadMore: boolean = false,
-    filterExecutionId?: string
+    filterExecutionId?: string,
+    reset: boolean = false
   ) => {
-    // 保存当前活跃 turn，避免被后续重置覆盖
-    const activeTurns = turnSummaries.value.filter(t => t.isActive)
-
     if (isLoadMore) {
       if (loadingMoreTurns.value || !hasMoreTurns.value) return
       loadingMoreTurns.value = true
-    } else {
+    } else if (reset) {
+      // reset=true: 清空现有数据，适用于 undo/redo 等数据已根本改变的场景
       turnSummaries.value = []
+      turnHistorySkip.value = 0
+      hasMoreTurns.value = true
+      activeTurnIndex.value = -1
+      _turnLastResponseMsgId.clear()
+      _turnSeenToolCallIds.clear()
+    } else {
+      // 注意：不清空 turnSummaries！因为在调用 loadTurnHistory 之前，
+      // socket 事件（handleTurnStart/handleTurnEnd）可能已通过 onMessage 向
+      // turnSummaries 添加了活跃的 turn（例如 autoConnectAndSubscribe 中
+      // doSubscribe 之后、loadTurnHistory 之前的间隙，或 toggleDisplayMode
+      // 切换过程中 socket 仍在处理事件）。清空会导致这些 turn 永久丢失。
+      // merge 逻辑会正确合并 API 数据和现有 turn（去重）。
       turnHistorySkip.value = 0
       hasMoreTurns.value = true
       activeTurnIndex.value = -1
@@ -979,10 +990,15 @@ export const useChatStore = defineStore('chat', () => {
       if (isLoadMore) {
         turnSummaries.value = [...newSummaries, ...turnSummaries.value]
       } else {
-        // 合并 API 返回的 turn 和之前保存的活跃 turn（去重，活跃 turn 放最后）
+        // 合并 API 返回的 turn 和当前存在的活跃 turn（去重，活跃 turn 放最后）
+        // 注意：不能只使用 API 调用前保存的 activeTurns，因为在 await 期间，
+        // socket 事件（handleTurnStart）可能向 turnSummaries 添加了新的活跃 turn。
+        // 如果只合并 activeTurns，这些中途添加的 turn 会被下面的赋值语句覆盖丢失。
         const seenIds = new Set(newSummaries.map(t => t.turnId))
-        const mergedActive = activeTurns.filter(t => !seenIds.has(t.turnId))
-        turnSummaries.value = [...newSummaries, ...mergedActive]
+        // 捕获当前 turnSummaries 中所有未被 API 数据覆盖的 turn
+        // 包含：(1) API 调用前就活跃的 turn (2) API 调用期间 socket 新添加的 turn
+        const currentLive = turnSummaries.value.filter(t => !seenIds.has(t.turnId))
+        turnSummaries.value = [...newSummaries, ...currentLive]
       }
 
       // 检测活跃 turn
@@ -1027,24 +1043,37 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  const toggleDisplayMode = async () => {
-    const newMode = displayMode.value === 'detail' ? 'concise' : 'detail'
-    displayMode.value = newMode
-    saveDisplayMode(sessionId.value, newMode)
+  /** 防止 toggleDisplayMode 并发调用的锁 */
+  let _togglingDisplayMode = false
 
-    if (newMode === 'concise' && turnSummaries.value.length === 0) {
-      await loadTurnHistory(sessionId.value, false, executionId.value)
-      // loadTurnHistory 内部已做降级检测，如果降级则 displayMode 已切回 'detail'
-      if (displayMode.value === 'detail') return
-      startDurationTimer()
-    } else if (newMode === 'concise') {
-      startDurationTimer()
-    } else if (newMode === 'detail') {
-      stopDurationTimer()
-      // 只在没有任何消息时加载历史，避免与 socket 实时消息重复
-      if (messages.value.length === 0 && !loading.value) {
-        await loadHistory(sessionId.value, false, executionId.value)
+  const toggleDisplayMode = async () => {
+    // 并发防护：如果已有切换操作在进行中，忽略本次调用
+    if (_togglingDisplayMode) {
+      console.debug('toggleDisplayMode: 已有切换操作进行中，忽略')
+      return
+    }
+    _togglingDisplayMode = true
+    try {
+      const newMode = displayMode.value === 'detail' ? 'concise' : 'detail'
+      displayMode.value = newMode
+      saveDisplayMode(sessionId.value, newMode)
+
+      if (newMode === 'concise' && turnSummaries.value.length === 0) {
+        await loadTurnHistory(sessionId.value, false, executionId.value)
+        // loadTurnHistory 内部已做降级检测，如果降级则 displayMode 已切回 'detail'
+        if (displayMode.value === 'detail') return
+        startDurationTimer()
+      } else if (newMode === 'concise') {
+        startDurationTimer()
+      } else if (newMode === 'detail') {
+        stopDurationTimer()
+        // 只在没有任何消息时加载历史，避免与 socket 实时消息重复
+        if (messages.value.length === 0 && !loading.value) {
+          await loadHistory(sessionId.value, false, executionId.value)
+        }
       }
+    } finally {
+      _togglingDisplayMode = false
     }
   }
 
@@ -1110,13 +1139,13 @@ export const useChatStore = defineStore('chat', () => {
             showRedoButton.value = true
             redoReceiverId.value = m.sender_id
             loadHistory(sessionId.value, false, executionId.value)
-            loadTurnHistory(sessionId.value, false, executionId.value)
+            loadTurnHistory(sessionId.value, false, executionId.value, true) // reset=true: 数据已改变
           } else {
             // 重做成功后，隐藏重做按钮
             showRedoButton.value = false
             redoReceiverId.value = undefined
             loadHistory(sessionId.value, false, executionId.value)
-            loadTurnHistory(sessionId.value, false, executionId.value)
+            loadTurnHistory(sessionId.value, false, executionId.value, true) // reset=true: 数据已改变
           }
         }
         return
