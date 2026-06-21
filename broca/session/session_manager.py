@@ -263,6 +263,7 @@ class SessionManager:
                 agent_id=agent_id,
                 sequence_number=seq_num,
                 turn_description=description,
+                execution_id=self.current_execution_id,
             )
             if not turn:
                 return None
