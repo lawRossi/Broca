@@ -152,19 +152,27 @@ const diffContent = ref('')
 const diffFileName = ref('')
 const diffLoading = ref(false)
 
-interface DiffLine { text: string; type: 'add' | 'del' | 'ctx' | 'head' }
+interface DiffLine { text: string; type: 'add' | 'del' | 'ctx' | 'head'; lineNum: number | null }
 const parsedDiffLines = computed<DiffLine[]>(() => {
-  if (!diffContent.value) return [{ text: '(无变更)', type: 'ctx' }]
+  if (!diffContent.value) return [{ text: '(无变更)', type: 'ctx', lineNum: null }]
   const lines: DiffLine[] = []
+  let newLineNum = 0
   for (const raw of diffContent.value.split('\n')) {
-    if (raw.startsWith('+') && !raw.startsWith('+++')) {
-      lines.push({ text: raw.slice(1), type: 'add' })
-    } else if (raw.startsWith('-') && !raw.startsWith('---')) {
-      lines.push({ text: raw.slice(1), type: 'del' })
-    } else if (raw.startsWith('@@')) {
-      lines.push({ text: raw, type: 'head' })
+    if (raw.startsWith('@@')) {
+      // 解析 @@ -old_start,old_count +new_start,new_count @@
+      const match = raw.match(/@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/)
+      if (match) newLineNum = parseInt(match[1])
+      lines.push({ text: raw, type: 'head', lineNum: null })
+    } else if (raw.startsWith('---') || raw.startsWith('+++')) {
+      lines.push({ text: raw, type: 'head', lineNum: null })
+    } else if (raw.startsWith('+')) {
+      lines.push({ text: raw.slice(1), type: 'add', lineNum: newLineNum })
+      newLineNum++
+    } else if (raw.startsWith('-')) {
+      lines.push({ text: raw.slice(1), type: 'del', lineNum: null })
     } else {
-      lines.push({ text: raw, type: 'ctx' })
+      lines.push({ text: raw, type: 'ctx', lineNum: newLineNum })
+      newLineNum++
     }
   }
   return lines
@@ -414,7 +422,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
                 :key="idx"
                 :class="['diff-line', line.type]"
               >
-                <span class="diff-line-num">{{ idx + 1 }}</span>
+                <span class="diff-line-num">{{ line.lineNum ?? '' }}</span>
                 <span class="diff-line-content">{{ line.text }}</span>
               </div>
             </div>
