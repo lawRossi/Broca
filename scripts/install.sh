@@ -389,34 +389,6 @@ cd "$PROJECT_ROOT"
 echo ""
 
 # ============================================================================
-# Step 4: 创建管理员账户
-# ============================================================================
-step "Step 4/10: 创建管理员账户..."
-
-SETUP_SCRIPT="$PROJECT_ROOT/broca-web/backend/scripts/setup_admin.py"
-
-if [[ -f "$SETUP_SCRIPT" ]]; then
-    info "正在检查/创建管理员账户..."
-    echo ""
-    $PYTHON "$SETUP_SCRIPT" --db "sqlite:///${BACKEND_DB_PATH}" 2>&1
-    SETUP_EXIT=$?
-    if [[ $SETUP_EXIT -eq 0 ]]; then
-        info "管理员账户处理完成。"
-        echo "  如需额外创建其他账户，可之后手动运行:"
-        echo "    $PYTHON $SETUP_SCRIPT --db \"sqlite:///${BACKEND_DB_PATH}\""
-    else
-        warn "管理员账户创建失败（可之后手动运行）:"
-        echo "    $PYTHON $SETUP_SCRIPT --db \"sqlite:///${BACKEND_DB_PATH}\""
-    fi
-    echo ""
-else
-    warn "未找到 setup_admin.py 脚本: $SETUP_SCRIPT"
-    echo "  可之后手动创建账户。"
-fi
-
-echo ""
-
-# ============================================================================
 # 配置 LLM
 # ============================================================================
 echo ""
@@ -537,7 +509,7 @@ if $SKIP_FRONTEND; then
     info "跳过前端配置（未部署 nginx）"
     echo ""
 else
-step "Step 5/10: 配置文件上传存储..."
+step "Step 4/9: 配置文件上传存储..."
 
 FRONTEND_DIR="$BROCA_WEB_DIR/frontend"
 ENV_FILE="$FRONTEND_DIR/.env.production"
@@ -729,7 +701,7 @@ fi  # SKIP_FRONTEND
 if $SKIP_FRONTEND; then
     info "跳过前端构建（未部署 nginx）"
 else
-step "Step 6/10: 安装前端依赖并构建..."
+step "Step 5/9: 安装前端依赖并构建..."
 
 if [[ ! -d "$FRONTEND_DIR" ]]; then
     error "前端目录不存在: $FRONTEND_DIR"
@@ -792,7 +764,7 @@ fi  # SKIP_FRONTEND
 # ============================================================================
 # Step 7: 打包 VS Code 插件
 # ============================================================================
-step "Step 7/10: 打包 VS Code 插件..."
+step "Step 6/9: 打包 VS Code 插件..."
 
 VSCODE_DIR="$PROJECT_ROOT/broca-vscode"
 if [[ -d "$VSCODE_DIR" ]]; then
@@ -825,7 +797,7 @@ if $SKIP_FRONTEND; then
     echo "  提示: 可使用 VS Code 插件连接后端服务"
     echo "  后端服务端口: 9000"
 else
-step "Step 8/10: 配置前端部署方式..."
+step "Step 7/9: 配置前端部署方式..."
 
 mkdir -p "$BROCA_HOME"
 
@@ -938,7 +910,7 @@ fi  # SKIP_FRONTEND
 # ============================================================================
 # Step 9: 创建 supervisor 配置
 # ============================================================================
-step "Step 9/10: 创建 supervisor 进程管理配置..."
+step "Step 8/9: 创建 supervisor 进程管理配置..."
 
 SUPERVISOR_DIR="$BROCA_HOME/supervisor"
 RUN_DIR="$BROCA_HOME/run"
@@ -1007,7 +979,7 @@ echo ""
 # ============================================================================
 # Step 10: 配置持久化 & 收尾
 # ============================================================================
-step "Step 10/10: 完成安装..."
+step "Step 9/9: 完成安装..."
 
 # 保存安装信息到 broca home
 cat > "$BROCA_HOME/install.json" << JSONEOF

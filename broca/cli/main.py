@@ -515,6 +515,38 @@ def cmd_service_status(args):
     print()
 
 
+def cmd_create_user(args):
+    """创建 Web 后端管理员账户"""
+    setup_script = (
+        Path(__file__).parent.parent.parent
+        / "broca-web" / "backend" / "scripts" / "setup_admin.py"
+    )
+    if not setup_script.exists():
+        print(f"❌ 未找到 {setup_script}")
+        print("   请确保 broca-web/backend/scripts/setup_admin.py 存在。")
+        sys.exit(1)
+
+    cmd = [sys.executable, str(setup_script)]
+    if args.username:
+        cmd.extend(["--username", args.username])
+    if args.password:
+        cmd.extend(["--password", args.password])
+    if args.db:
+        cmd.extend(["--db", args.db])
+
+    if args.username and args.password:
+        cmd.append("--non-interactive")
+
+    print("=" * 50)
+    print("  创建管理员账户")
+    print("=" * 50)
+    print()
+
+    env = os.environ.copy()
+    proc = subprocess.run(cmd, env=env)
+    sys.exit(proc.returncode)
+
+
 # ======================================================================
 # Argument Parser
 # ======================================================================
@@ -535,6 +567,7 @@ examples:
   Broca service stop             Stop production services
   Broca service restart          Restart production services
   Broca service status           Show service status
+  Broca create-user              Create an admin user for the Web backend
   Broca version                  Show version information
         """,
     )
@@ -658,6 +691,28 @@ examples:
     # service status
     svc_sub.subcommands.add_parser("status", help="Show service status")
 
+    # ---- create-user command ----
+    create_user_sub = sub.add_parser(
+        "create-user",
+        help="Create an admin user for the Web backend",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  Broca create-user                      Interactive mode
+  Broca create-user --username admin     Specify username
+  Broca create-user --username admin --password mypass  Non-interactive
+""",
+    )
+    create_user_sub.add_argument(
+        "--username", default=None, help="Admin username (default: admin, prompts if empty)"
+    )
+    create_user_sub.add_argument(
+        "--password", default=None, help="Admin password (prompts if empty)"
+    )
+    create_user_sub.add_argument(
+        "--db", default=None, help="Database URL (e.g. sqlite:///path/to/backend.db)"
+    )
+
     # ---- tui command ----
     tui_sub = sub.add_parser(
         "tui",
@@ -728,6 +783,10 @@ def main():
                 args.backend_port,
                 args.reload,
             )
+
+    # ---- create-user command ----
+    elif command == "create-user":
+        cmd_create_user(args)
 
     # ---- tui command ----
     elif command == "tui":
