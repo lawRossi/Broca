@@ -793,7 +793,7 @@ const handleUndo = async () => {
 
 .diff-line-num {
   display: inline-block;
-  width: 32px;
+  width: 48px;
   flex-shrink: 0;
   text-align: right;
   color: #999;
