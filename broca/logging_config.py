@@ -88,9 +88,6 @@ class LoggingConfig:
         )
 
         cls._initialized = True
-        logger.info(
-            f"Logging initialized: stderr=ON, file={log_file}, level={log_level}"
-        )
 
     @classmethod
     def get_logger(cls, name: str = __name__):

@@ -517,13 +517,26 @@ def cmd_service_status(args):
 
 def cmd_create_user(args):
     """创建 Web 后端管理员账户"""
+    # 优先查找项目源码目录（开发模式）
     setup_script = (
         Path(__file__).parent.parent.parent
         / "broca-web" / "backend" / "scripts" / "setup_admin.py"
     )
+    # 如果源码目录找不到，尝试 ~/.broca/web/（安装脚本部署的位置）
     if not setup_script.exists():
-        print(f"❌ 未找到 {setup_script}")
+        setup_script = (
+            Path.home() / ".broca" / "web" / "backend" / "scripts" / "setup_admin.py"
+        )
+    # 最后尝试 site-packages 同级目录（pip install 安装 broca-web 的情况）
+    if not setup_script.exists():
+        setup_script = (
+            Path(__file__).parent.parent.parent
+            / "broca_web" / "backend" / "scripts" / "setup_admin.py"
+        )
+    if not setup_script.exists():
+        print(f"❌ 未找到 setup_admin.py")
         print("   请确保 broca-web/backend/scripts/setup_admin.py 存在。")
+        print("   或先运行: broca service install")
         sys.exit(1)
 
     cmd = [sys.executable, str(setup_script)]

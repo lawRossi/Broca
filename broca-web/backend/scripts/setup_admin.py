@@ -1,15 +1,15 @@
 #!/usr/bin/env python3
 """
-setup_admin.py — 在安装过程中创建管理员账户
+setup_admin.py — 创建或更新管理员账户
 
 用法：
     python setup_admin.py [--db sqlite:///path/to/backend.db]
     python setup_admin.py --non-interactive [--username admin] [--password pass123]
 
 流程：
-  1. 连接数据库，检查是否有任何用户存在
-  2. 已有用户 → 显示信息并跳过
-  3. 无用户   → 交互式提示创建（或 --non-interactive 静默创建）
+  1. 连接数据库，检查 user_auth 表是否存在
+  2. 交互式提示输入用户名和密码（或 --non-interactive 静默创建）
+  3. 用户名已存在 → 更新密码；不存在 → 创建新用户
 
 支持环境变量覆盖：
     SQLITE_DATABASE_PATH — 数据库路径（默认 ~/.broca/data/backend.db）
@@ -90,10 +90,9 @@ def main():
     async_db_url = to_async_url(db_url)
 
     # ============================================================
-    # 第一步：连接数据库，检查状态
-    #   返回值: ("user_exists", id, username) | ("no_table",) | ("empty",)
+    # 第一步：检查数据库表是否存在
     # ============================================================
-    async def check_db_state():
+    async def check_table_exists():
         engine = create_async_engine(
             async_db_url,
             echo=False,
@@ -102,7 +101,6 @@ def main():
         )
         try:
             async with engine.connect() as conn:
-                # 检查 user_auth 表是否存在
                 is_sqlite = "sqlite" in async_db_url
                 if is_sqlite:
                     r = await conn.execute(
@@ -115,32 +113,20 @@ def main():
                         {"name": "user_auth"},
                     )
                 if r.fetchone() is None:
-                    return ("no_table",)
-
-                # 表存在，查询是否有用户
-                r = await conn.execute(text("SELECT id, username FROM user_auth LIMIT 1"))
-                row = r.fetchone()
-                if row:
-                    return ("user_exists", row[0], row[1])
-                return ("empty",)
+                    return False
+                return True
         finally:
             await engine.dispose()
 
-    state = asyncio.run(check_db_state())
-
-    if state[0] == "no_table":
+    if not asyncio.run(check_table_exists()):
         print("  数据库表 user_auth 不存在，请先执行数据库迁移。")
         print("  运行: cd broca-web/backend && alembic upgrade head")
         return 1
 
-    if state[0] == "user_exists":
-        print(f"  ✓ 账户已存在: {state[2]} (ID: {state[1]}) — 跳过创建")
-        return 0
-
     # ============================================================
-    # 第二步：无用户，需要创建
+    # 第二步：创建管理员账户（始终创建/更新）
     # ============================================================
-    print("\n🔧 检测到尚未创建管理员账户，开始创建...\n")
+    print("\n🔧 创建管理员账户...\n")
 
     username = (args.username or os.getenv("ADMIN_USERNAME", "admin")).strip()
     password = args.password or os.getenv("ADMIN_PASSWORD", "")
@@ -173,9 +159,9 @@ def main():
         print("   请立即保存此密码！\n")
 
     # ============================================================
-    # 第三步：写入数据库
+    # 第三步：写入数据库（用户名已存在则更新密码）
     # ============================================================
-    async def insert_user():
+    async def upsert_user():
         engine = create_async_engine(
             async_db_url,
             echo=False,
@@ -184,31 +170,56 @@ def main():
         )
         try:
             async with engine.connect() as conn:
-                user_id = str(uuid.uuid4())
+                # 检查用户名是否已存在
+                r = await conn.execute(
+                    text("SELECT id FROM user_auth WHERE username = :username"),
+                    {"username": username},
+                )
+                existing = r.fetchone()
+
                 hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
                 now = datetime.now(timezone.utc)
 
-                await conn.execute(
-                    text(
-                        "INSERT INTO user_auth (id, username, hashed_password, created_at) "
-                        "VALUES (:id, :username, :hashed_password, :created_at)"
-                    ),
-                    {
-                        "id": user_id,
-                        "username": username,
-                        "hashed_password": hashed,
-                        "created_at": now,
-                    },
-                )
-                await conn.commit()
-                print(f"  ✅ 管理员账户创建成功!")
-                print(f"     用户名: {username}")
-                print(f"     ID:     {user_id}")
+                if existing:
+                    # 更新已有用户的密码
+                    await conn.execute(
+                        text(
+                            "UPDATE user_auth SET hashed_password = :hashed_password "
+                            "WHERE username = :username"
+                        ),
+                        {
+                            "hashed_password": hashed,
+                            "username": username,
+                        },
+                    )
+                    await conn.commit()
+                    print(f"  ✅ 管理员账户密码已更新!")
+                    print(f"     用户名: {username}")
+                    print(f"     ID:     {existing[0]}")
+                else:
+                    # 创建新用户
+                    user_id = str(uuid.uuid4())
+                    await conn.execute(
+                        text(
+                            "INSERT INTO user_auth (id, username, hashed_password, created_at) "
+                            "VALUES (:id, :username, :hashed_password, :created_at)"
+                        ),
+                        {
+                            "id": user_id,
+                            "username": username,
+                            "hashed_password": hashed,
+                            "created_at": now,
+                        },
+                    )
+                    await conn.commit()
+                    print(f"  ✅ 管理员账户创建成功!")
+                    print(f"     用户名: {username}")
+                    print(f"     ID:     {user_id}")
                 return True
         finally:
             await engine.dispose()
 
-    success = asyncio.run(insert_user())
+    success = asyncio.run(upsert_user())
     return 0 if success else 1
 
 
