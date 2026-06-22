@@ -157,7 +157,7 @@ Label {
 }
 
 .header-brand {
-    color: white;
+    color: $gray-600;
     text-style: bold;
 }
 
@@ -201,7 +201,7 @@ Label {
 
 .nav-button {
     background: transparent;
-    color: white;
+    color: $gray-600;
     border: none;
     min-width: 12;
     min-height: 3;
@@ -347,7 +347,7 @@ Label {
 
 .abort-button {
     background: $error;
-    color: white;
+    color: $gray-600;
     border: none;
     min-width: 8;
     margin-top: 1;
@@ -404,7 +404,7 @@ Label {
 
 .redo-button {
     background: $warning;
-    color: white;
+    color: $gray-600;
     border: none;
     min-width: 10;
 }
@@ -558,12 +558,12 @@ Label {
 
 .runner-btn.stop-btn {
     background: $error;
-    color: white;
+    color: $gray-600;
 }
 
 .runner-btn.restart-btn {
     background: $warning;
-    color: white;
+    color: $gray-600;
 }
 
 .stat-row {
@@ -880,7 +880,7 @@ Toast {
 .create-btn {
     min-width: 16;
     background: $primary-500;
-    color: white;
+    color: $gray-600;
     border: none;
     text-style: bold;
     padding: 0 1;
@@ -1175,7 +1175,7 @@ Toast {
 /* Delete confirm button — higher specificity to override global Button:focus */
 .dialog-actions-delete > Button.delete-btn {
     background: $error;
-    color: white;
+    color: $gray-600;
     border: solid $error-darken-1;
 }
 
@@ -1225,7 +1225,7 @@ Toast {
 }
 
 .screen-title {
-    color: white;
+    color: $gray-600;
     text-style: bold;
     width: 1fr;
     padding-top: 1;
