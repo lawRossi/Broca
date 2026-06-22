@@ -377,19 +377,19 @@ const handleUndo = async () => {
           <div v-if="turn.changedFiles.filesAdded.length" class="cf-group">
             <div class="cf-group-label cf-added-label">新增</div>
             <div v-for="f in turn.changedFiles.filesAdded" :key="f" class="cf-file-item cf-added-file">
-              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">+ {{ f }}</span>
+              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">{{ f }}</span>
             </div>
           </div>
           <div v-if="turn.changedFiles.filesDeleted.length" class="cf-group">
             <div class="cf-group-label cf-deleted-label">删除</div>
             <div v-for="f in turn.changedFiles.filesDeleted" :key="f" class="cf-file-item cf-deleted-file">
-              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">- {{ f }}</span>
+              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">{{ f }}</span>
             </div>
           </div>
           <div v-if="turn.changedFiles.filesModified.length" class="cf-group">
             <div class="cf-group-label cf-modified-label">修改</div>
             <div v-for="f in turn.changedFiles.filesModified" :key="f" class="cf-file-item cf-modified-file">
-              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">~ {{ f }}</span>
+              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">{{ f }}</span>
             </div>
           </div>
         </div>

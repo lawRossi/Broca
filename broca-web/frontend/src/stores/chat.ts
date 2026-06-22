@@ -80,7 +80,7 @@ export const useChatStore = defineStore('chat', () => {
       const saved = localStorage.getItem(`broca_display_mode_${sid}`)
       if (saved === 'concise' || saved === 'detail') return saved
     } catch { /* localStorage 不可用时忽略 */ }
-    return 'detail'
+    return 'concise'
   }
   /** 将会话显示模式持久化到 localStorage */
   const saveDisplayMode = (sid: string, mode: 'detail' | 'concise') => {
@@ -88,7 +88,7 @@ export const useChatStore = defineStore('chat', () => {
       localStorage.setItem(`broca_display_mode_${sid}`, mode)
     } catch { /* 忽略 */ }
   }
-  const displayMode = ref<'detail' | 'concise'>('detail')
+  const displayMode = ref<'detail' | 'concise'>('concise')
   const turnSummaries = ref<TurnSummary[]>([])
   const turnHistorySkip = ref(0)
   const hasMoreTurns = ref(true)
@@ -1374,9 +1374,16 @@ export const useChatStore = defineStore('chat', () => {
       displayMode.value = loadDisplayMode(sessionId.value)
       if (displayMode.value === 'concise') {
         await loadTurnHistory(sessionId.value, false, executionId.value)
-        if (displayMode.value === 'detail') {
-          // 降级：无 turn 数据，回退到明细模式并加载消息
+        // 如果 turn 数据为空，加载消息历史用于降级检测（旧会话可能无 turn 聚合数据）
+        if (turnSummaries.value.length === 0) {
           await loadHistory(sessionId.value, false, executionId.value)
+          // 有消息但无 turn → 降级到明细模式
+          if (messages.value.length > 0) {
+            displayMode.value = 'detail'
+          }
+        }
+        if (displayMode.value === 'detail') {
+          // 已由降级条件加载了消息历史
         } else {
           startDurationTimer()
         }
@@ -1425,7 +1432,7 @@ export const useChatStore = defineStore('chat', () => {
     turnSummaries.value = []
     _turnLastResponseMsgId.clear()
     _turnSeenToolCallIds.clear()
-    displayMode.value = 'detail'
+    displayMode.value = 'concise'
   }
 
   return {

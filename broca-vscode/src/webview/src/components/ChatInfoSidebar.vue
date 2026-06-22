@@ -290,7 +290,7 @@ onUnmounted(() => {
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">
             <span>📋</span>
-            <span>任务</span>
+            <span>Agent Task</span>
             <span v-if="taskCount !== null" class="nav-badge">{{ taskCount }}</span>
           </button>
           <button class="nav-btn" @click="emit('navigate', 'jobs')">

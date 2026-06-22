@@ -276,32 +276,32 @@ const getRunnerConfig = (status: string | undefined) => {
           </div>
           <div
             class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
-            @click="router.push({ name: 'Jobs', query: { session_id: chatStore.sessionId } })"
-            title="Click to view jobs for this session"
-          >
-            <span class="text-gray-700">
-              Jobs:
-            </span>
-            <div class="flex items-center gap-2">
-              <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
-                <el-icon class="is-loading"><Loading /></el-icon>
-              </span>
-              <span v-else class="font-mono text-sm text-gray-800">{{ jobCount }}</span>
-            </div>
-          </div>
-          <div
-            class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
             @click="router.push({ name: 'Tasks', query: { session_id: chatStore.sessionId } })"
             title="Click to view tasks for this session"
           >
             <span class="text-gray-700">
-              Tasks:
+              Agent Task:
             </span>
             <div class="flex items-center gap-2">
               <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
                 <el-icon class="is-loading"><Loading /></el-icon>
               </span>
               <span v-else class="font-mono text-sm text-gray-800">{{ taskCount }}</span>
+            </div>
+          </div>
+          <div
+            class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
+            @click="router.push({ name: 'Jobs', query: { session_id: chatStore.sessionId } })"
+            title="Click to view jobs for this session"
+          >
+            <span class="text-gray-700">
+              定时Job
+            </span>
+            <div class="flex items-center gap-2">
+              <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
+                <el-icon class="is-loading"><Loading /></el-icon>
+              </span>
+              <span v-else class="font-mono text-sm text-gray-800">{{ jobCount }}</span>
             </div>
           </div>
           <div v-if="statsLoading" class="flex justify-between">

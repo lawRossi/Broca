@@ -114,7 +114,7 @@ export const useChatStore = defineStore('chat', () => {
   const executionId = ref<string | undefined>(getInitialData()?.executionId)
 
   // ==================== 简洁模式状态 ====================
-  const displayMode = ref<'detail' | 'concise'>('detail')
+  const displayMode = ref<'detail' | 'concise'>('concise')
   const turnSummaries = ref<TurnSummary[]>([])
   const turnHistorySkip = ref(0)
   const hasMoreTurns = ref(true)
@@ -589,6 +589,12 @@ export const useChatStore = defineStore('chat', () => {
     loading.value = false
     loadingMore.value = false
 
+    // 降级检测：简洁模式下 turn 数据为空但有消息 → 自动切回明细模式
+    // 覆盖 loadTurnHistory 中因 messages 尚未加载而遗漏的降级判断
+    if (displayMode.value === 'concise' && turnSummaries.value.length === 0 && messages.value.length > 0) {
+      displayMode.value = 'detail'
+    }
+
     // Initialize message states for all messages
     for (const msg of messages.value) {
       getMessageState(msg.message_id)
@@ -811,8 +817,8 @@ export const useChatStore = defineStore('chat', () => {
     } catch {
       // sessionStorage 可能在隐私模式下不可用
     }
-    displayMode.value = 'detail'
-    return 'detail'
+    displayMode.value = 'concise'
+    return 'concise'
   }
 
   function saveDisplayMode(sessionId: string, mode: 'detail' | 'concise') {
@@ -991,7 +997,7 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function resetTurnData() {
-    displayMode.value = 'detail'
+    displayMode.value = 'concise'
     turnSummaries.value = []
     turnHistorySkip.value = 0
     hasMoreTurns.value = true
