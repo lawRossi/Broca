@@ -23,8 +23,8 @@ from typing import Dict, Optional
 
 from rich.markdown import Markdown
 from textual.app import ComposeResult
-from textual.message import Message
 from textual.containers import Horizontal, Vertical
+from textual.message import Message
 from textual.widget import Widget
 from textual.widgets import Button, Label, Static
 
@@ -36,6 +36,7 @@ class TurnCard(Widget):
 
     class FileDiffRequested(Message):
         """点击文件名时触发，沿父链冒泡到 ChatScreen 处理。"""
+
         def __init__(self, turn_id: str, file_path: str) -> None:
             super().__init__()
             self.turn_id = turn_id
@@ -423,7 +424,9 @@ class TurnCard(Widget):
         self._consecutive_agent = consecutive_agent
         self._show_reasoning = False
         self._show_changed_files_detail = False  # 文件变更详情默认折叠
-        self._file_diff_paths: Dict[int, str] = {}  # idx → file_path, 用于点击文件查看 diff
+        self._file_diff_paths: Dict[
+            int, str
+        ] = {}  # idx → file_path, 用于点击文件查看 diff
         self._response_expanded = True  # 回复默认展开，过长时可折叠
         self._last_reasoning_update = 0.0  # 推理内容节流时间戳
         self._last_response_update = 0.0  # 回复内容节流时间戳
@@ -552,9 +555,7 @@ class TurnCard(Widget):
                     deleted = cf.get("total_deleted", 0)
                     modified = cf.get("total_modified", 0)
                     toggle_icon = "▼" if self._show_changed_files_detail else "▶"
-                    cf_summary.update(
-                        f"+{added} -{deleted} ~{modified} {toggle_icon}"
-                    )
+                    cf_summary.update(f"+{added} -{deleted} ~{modified} {toggle_icon}")
 
                 # 更新预创建的 Label：每组用各自的索引范围
                 MAX = 50
@@ -562,9 +563,9 @@ class TurnCard(Widget):
                 # 新增 (idx 0-49)
                 added = cf.get("files_added", [])
                 self._toggle_display("#cf-head-added", bool(added))
-                    for i, f in enumerate(added):
+                for i, f in enumerate(added):
                     if i < MAX:
-                        self.query_one(f"#cf-file-{i}", Label).update(f"+ {f}")
+                        self.query_one(f"#cf-file-{i}", Label).update(f)
                         self.query_one(f"#cf-file-{i}", Label).display = True
                         self._file_diff_paths[i] = f
                 for i in range(len(added), MAX):
@@ -575,10 +576,10 @@ class TurnCard(Widget):
                 # 删除 (idx 50-99)
                 deleted = cf.get("files_deleted", [])
                 self._toggle_display("#cf-head-deleted", bool(deleted))
-                    for i, f in enumerate(deleted):
+                for i, f in enumerate(deleted):
                     idx = MAX + i
                     if i < MAX:
-                        self.query_one(f"#cf-file-{idx}", Label).update(f"- {f}")
+                        self.query_one(f"#cf-file-{idx}", Label).update(f)
                         self.query_one(f"#cf-file-{idx}", Label).display = True
                         self._file_diff_paths[idx] = f
                 for i in range(len(deleted), MAX):
@@ -589,10 +590,10 @@ class TurnCard(Widget):
                 # 修改 (idx 100-149)
                 modified = cf.get("files_modified", [])
                 self._toggle_display("#cf-head-modified", bool(modified))
-                    for i, f in enumerate(modified):
+                for i, f in enumerate(modified):
                     idx = MAX * 2 + i
                     if i < MAX:
-                        self.query_one(f"#cf-file-{idx}", Label).update(f"~ {f}")
+                        self.query_one(f"#cf-file-{idx}", Label).update(f)
                         self.query_one(f"#cf-file-{idx}", Label).display = True
                         self._file_diff_paths[idx] = f
                 for i in range(len(modified), MAX):
@@ -843,7 +844,11 @@ class TurnCard(Widget):
                 )
             # 文件变更统计（可点击展开/折叠）
             with Horizontal(classes="turn-summary-row", id="changed-files-row"):
-                yield Label("📁 变更文件", classes="turn-summary-label", id="changed-files-label")
+                yield Label(
+                    "📁 变更文件",
+                    classes="turn-summary-label",
+                    id="changed-files-label",
+                )
                 yield Label(
                     "",
                     classes="turn-summary-value",
@@ -852,13 +857,23 @@ class TurnCard(Widget):
             # 文件变更详情（折叠区域，Label 预先创建，通过 display 控制显隐）
             with Vertical(classes="changed-files-detail", id="changed-files-detail"):
                 MAX_FILES_PER_GROUP = 50
-                yield Label("新增:", id="cf-head-added", classes="cf-group-label cf-added-label")
+                yield Label(
+                    "新增:", id="cf-head-added", classes="cf-group-label cf-added-label"
+                )
                 for i in range(MAX_FILES_PER_GROUP):
                     yield Label("", id=f"cf-file-{i}")
-                yield Label("删除:", id="cf-head-deleted", classes="cf-group-label cf-deleted-label")
+                yield Label(
+                    "删除:",
+                    id="cf-head-deleted",
+                    classes="cf-group-label cf-deleted-label",
+                )
                 for i in range(MAX_FILES_PER_GROUP, MAX_FILES_PER_GROUP * 2):
                     yield Label("", id=f"cf-file-{i}")
-                yield Label("修改:", id="cf-head-modified", classes="cf-group-label cf-modified-label")
+                yield Label(
+                    "修改:",
+                    id="cf-head-modified",
+                    classes="cf-group-label cf-modified-label",
+                )
                 for i in range(MAX_FILES_PER_GROUP * 2, MAX_FILES_PER_GROUP * 3):
                     yield Label("", id=f"cf-file-{i}")
 
@@ -1020,7 +1035,11 @@ class TurnCard(Widget):
                     except Exception:
                         pass
                 self._update_all_sections()
-            elif widget_id in ("changed-files-row", "changed-files-summary", "changed-files-label"):
+            elif widget_id in (
+                "changed-files-row",
+                "changed-files-summary",
+                "changed-files-label",
+            ):
                 self._show_changed_files_detail = not self._show_changed_files_detail
                 self._update_all_sections()
             elif widget_id and widget_id.startswith("cf-file-"):
@@ -1029,10 +1048,12 @@ class TurnCard(Widget):
                     idx = int(widget_id.replace("cf-file-", ""))
                     file_path = self._file_diff_paths.get(idx)
                     if file_path:
-                        self.post_message(self.FileDiffRequested(
-                            turn_id=self._turn.turn_id,
-                            file_path=file_path,
-                        ))
+                        self.post_message(
+                            self.FileDiffRequested(
+                                turn_id=self._turn.turn_id,
+                                file_path=file_path,
+                            )
+                        )
                 except (ValueError, IndexError):
                     pass
             elif widget_id == "toggle-response":
@@ -1055,9 +1076,9 @@ class TurnCard(Widget):
 
     def _request_file_diff(self, file_path: str):
         """请求查看文件的 diff — 通过 post_message 沿父链冒泡。"""
-        self.post_message(self.FileDiffRequested(
-            turn_id=self._turn.turn_id, file_path=file_path
-        ))
+        self.post_message(
+            self.FileDiffRequested(turn_id=self._turn.turn_id, file_path=file_path)
+        )
 
     def on_update_turn_undo_visibility(self) -> None:
         """撤销按钮始终显示（不需要 hover 触发）。"""

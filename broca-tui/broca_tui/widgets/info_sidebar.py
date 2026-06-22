@@ -77,11 +77,11 @@ class InfoSidebar(Widget):
                     yield Label("Workspace:", classes="info-label")
                     yield Label("未设置", classes="info-value", id="info-workspace")
                 with Horizontal(classes="info-row"):
-                    yield Label("Jobs:", classes="info-label")
-                    yield Label("0", classes="info-value", id="info-jobs")
-                with Horizontal(classes="info-row"):
-                    yield Label("Tasks:", classes="info-label")
+                    yield Label("Agent Tasks:", classes="info-label")
                     yield Label("0", classes="info-value", id="info-tasks")
+                with Horizontal(classes="info-row"):
+                    yield Label("定时Job:", classes="info-label")
+                    yield Label("0", classes="info-value", id="info-jobs")
 
             # ===== Runner Status =====
             with Vertical(classes="info-section"):
@@ -158,10 +158,14 @@ class InfoSidebar(Widget):
         """
         self._session_id = session_id
         self.query_one("#info-session-id", Label).update(
-            session_id[:20] + "..." if session_id and len(session_id) > 20 else (session_id or "未设置")
+            session_id[:20] + "..."
+            if session_id and len(session_id) > 20
+            else (session_id or "未设置")
         )
         self.query_one("#info-workspace", Label).update(
-            workspace[:20] + "..." if workspace and len(workspace) > 20 else (workspace or "未设置")
+            workspace[:20] + "..."
+            if workspace and len(workspace) > 20
+            else (workspace or "未设置")
         )
         self._start_polling()
         # 立即做一次初始状态获取，不等20s后的第一次轮询
@@ -214,7 +218,7 @@ class InfoSidebar(Widget):
             try:
                 btn = self.query_one(btn_id, Button)
                 btn.disabled = loading
-                btn.label = "处理中..." if loading else label
+                btn.label = "⏳ 处理中" if loading else label
             except Exception:
                 pass
 

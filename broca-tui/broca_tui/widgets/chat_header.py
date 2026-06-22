@@ -11,10 +11,10 @@ from __future__ import annotations
 from typing import Optional
 
 from textual.app import ComposeResult
-from textual.containers import Horizontal, Vertical
+from textual.containers import Horizontal
 from textual.message import Message
 from textual.reactive import reactive
-from textual.widgets import Button, Label, Static
+from textual.widgets import Button, Label
 from textual.widget import Widget
 
 
@@ -28,18 +28,10 @@ class ChatHeader(Widget):
 
     BINDINGS = [
         ("ctrl+s", "go_to_sessions", "会话列表"),
-        ("ctrl+e", "go_to_crew", "编排管理"),
     ]
 
     class NavigateToSessions(Message, bubble=True):
         """Message posted when user wants to go to sessions list."""
-
-    class NavigateToCrew(Message, bubble=True):
-        """Message posted when user wants to go to crew management."""
-
-        def __init__(self, session_id: str = "") -> None:
-            super().__init__()
-            self.session_id = session_id
 
     def __init__(
         self,
@@ -66,14 +58,10 @@ class ChatHeader(Widget):
             # Right section: Navigation buttons
             with Horizontal(classes="header-right"):
                 yield Button("← 会话列表", id="btn-sessions", classes="nav-button")
-                yield Button("编排管理", id="btn-crew", classes="nav-button crew-button")
 
     def on_mount(self) -> None:
         """Initial setup after mount."""
         self.watch_connection_status(self.connection_status)
-        self._update_crew_button_visibility()
-        # Also set initial display based on is_agent_orchestration
-        self.watch_is_agent_orchestration(self.is_agent_orchestration)
 
     def watch_connection_status(self, status: str) -> None:
         """React to connection status changes.
@@ -97,18 +85,6 @@ class ChatHeader(Widget):
             status_text.update("disconnected")
             status_text.classes = "status-text disconnected"
 
-    def watch_is_agent_orchestration(self, is_orch: bool) -> None:
-        """React to session category changes."""
-        self._update_crew_button_visibility()
-
-    def _update_crew_button_visibility(self) -> None:
-        """Show/hide the crew management button based on session category."""
-        try:
-            crew_btn = self.query_one("#btn-crew", Button)
-            crew_btn.display = self.is_agent_orchestration or self.session_category == "agent-orchestration"
-        except Exception:
-            pass  # Not yet mounted
-
     def set_session_id(self, session_id: str) -> None:
         """Set the current session ID.
 
@@ -129,18 +105,11 @@ class ChatHeader(Widget):
         """Navigate back to session list."""
         self.post_message(self.NavigateToSessions())
 
-    def action_go_to_crew(self) -> None:
-        """Navigate to crew execution management."""
-        self.post_message(self.NavigateToCrew(session_id=self._session_id))
-
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses.
 
         Args:
             event: Button pressed event
         """
-        button_id = event.button.id
-        if button_id == "btn-sessions":
+        if event.button.id == "btn-sessions":
             self.action_go_to_sessions()
-        elif button_id == "btn-crew":
-            self.action_go_to_crew()

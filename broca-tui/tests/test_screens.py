@@ -103,11 +103,9 @@ class TestChatScreen:
         """Test that keyboard bindings include navigation and sidebar toggles."""
         bindings = ChatScreen.BINDINGS
         has_ctrl_s = any("ctrl+s" in str(b) for b in bindings)
-        has_ctrl_e = any("ctrl+e" in str(b) for b in bindings)
         has_ctrl_l = any("ctrl+l" in str(b) for b in bindings)
         has_ctrl_r = any("ctrl+r" in str(b) for b in bindings)
         assert has_ctrl_s, "Ctrl+S binding not found"
-        assert has_ctrl_e, "Ctrl+E binding not found"
         assert has_ctrl_l, "Ctrl+L binding not found"
         assert has_ctrl_r, "Ctrl+R binding not found"
 

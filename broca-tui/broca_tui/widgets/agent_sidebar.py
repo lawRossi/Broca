@@ -124,6 +124,24 @@ class VisibilityFilterDialog(ModalScreen):
         super().__init__(**kwargs)
         self._agents = agents
         self._visible_ids = set(visible_ids)
+        # Map sanitized IDs back to original agent IDs for button lookup
+        self._safe_to_agent: Dict[str, str] = {}
+
+    @staticmethod
+    def _sanitize_id(raw: str) -> str:
+        """Sanitize a string for use as a Textual widget ID.
+
+        Textual IDs must contain only letters, numbers, underscores, or hyphens.
+
+        Args:
+            raw: Raw string to sanitize
+
+        Returns:
+            Sanitized ID string
+        """
+        import re
+
+        return re.sub(r"[^a-zA-Z0-9_-]", "-", raw)
 
     @property
     def _all_visible(self) -> bool:
@@ -143,15 +161,17 @@ class VisibilityFilterDialog(ModalScreen):
                     f"{all_check} 全部", id="btn-toggle-all", classes="filter-item-all"
                 )
 
-                # Individual agent checkboxes
+                # Individual agent checkboxes — use sanitized IDs
                 for agent in self._agents:
                     agent_id = agent.get("agent_id", "")
                     name = agent.get("name", agent_id)
+                    safe_id = self._sanitize_id(agent_id)
+                    self._safe_to_agent[safe_id] = agent_id
                     is_visible = agent_id in self._visible_ids
                     check = "●" if is_visible else "○"
                     yield Button(
                         f"  {check} {name}",
-                        id=f"vis-{agent_id}",
+                        id=f"vis-{safe_id}",
                         classes="filter-item",
                     )
 
@@ -191,12 +211,13 @@ class VisibilityFilterDialog(ModalScreen):
         except Exception:
             pass
 
-        # Update each agent button
+        # Update each agent button — query by sanitized ID
         for agent in self._agents:
             agent_id = agent.get("agent_id", "")
             name = agent.get("name", agent_id)
+            safe_id = self._sanitize_id(agent_id)
             try:
-                btn = self.query_one(f"#vis-{agent_id}", Button)
+                btn = self.query_one(f"#vis-{safe_id}", Button)
                 check = "●" if agent_id in self._visible_ids else "○"
                 btn.label = f"  {check} {name}"
             except Exception:
@@ -222,7 +243,8 @@ class VisibilityFilterDialog(ModalScreen):
         elif btn_id == "btn-toggle-all":
             self._toggle_all()
         elif btn_id.startswith("vis-"):
-            agent_id = btn_id.replace("vis-", "")
+            safe_id = btn_id.replace("vis-", "")
+            agent_id = self._safe_to_agent.get(safe_id, safe_id)
             self._toggle_agent(agent_id)
 
 
@@ -340,6 +362,22 @@ class AgentCard(Widget):
         super().__init__(**kwargs)
         self._agent = agent
 
+    @staticmethod
+    def _sanitize_id(raw: str) -> str:
+        """Sanitize a string for use as a Textual widget ID.
+
+        Textual IDs must contain only letters, numbers, underscores, or hyphens.
+
+        Args:
+            raw: Raw string to sanitize
+
+        Returns:
+            Sanitized ID string
+        """
+        import re
+
+        return re.sub(r"[^a-zA-Z0-9_-]", "-", raw)
+
     def compose(self) -> ComposeResult:
         """Create the card layout."""
         agent = self._agent
@@ -347,6 +385,7 @@ class AgentCard(Widget):
         status = agent.get("agent_status", "idle")
         description = agent.get("description", "")
         agent_id = agent.get("agent_id", "")
+        safe_id = self._sanitize_id(agent_id)
 
         with Vertical(classes="agent-card"):
             # Header: name + status (no icon, no role — matching Web alignment)
@@ -372,14 +411,14 @@ class AgentCard(Widget):
                     yield Static(
                         str(agent.get("total_llm_calls", 0)),
                         classes="stat-value",
-                        id=f"stat-calls-{agent_id}",
+                        id=f"stat-calls-{safe_id}",
                     )
                 with Vertical(classes="stat-block"):
                     yield Static("上下文", classes="stat-label")
                     yield Static(
                         str(ctx_display),
                         classes="stat-value",
-                        id=f"stat-ctx-{agent_id}",
+                        id=f"stat-ctx-{safe_id}",
                     )
             with Horizontal(classes="agent-stats"):
                 with Vertical(classes="stat-block"):
@@ -387,19 +426,19 @@ class AgentCard(Widget):
                     yield Static(
                         str(agent.get("total_input_tokens", 0)),
                         classes="stat-value",
-                        id=f"stat-input-{agent_id}",
+                        id=f"stat-input-{safe_id}",
                     )
                 with Vertical(classes="stat-block"):
                     yield Static("输出", classes="stat-label")
                     yield Static(
                         str(agent.get("total_output_tokens", 0)),
                         classes="stat-value",
-                        id=f"stat-output-{agent_id}",
+                        id=f"stat-output-{safe_id}",
                     )
 
             # Abort button (始终创建，通过 CSS 显隐)
             yield Button(
-                "停止", id=f"abort-{agent.get('agent_id')}", classes="abort-button"
+                "停止", id=f"abort-{safe_id}", classes="abort-button"
             )
 
     def on_button_pressed(self, event: Button.Pressed) -> None:

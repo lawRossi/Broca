@@ -5,6 +5,7 @@ Manages session list data, CRUD operations, and search/filter state.
 Each page creates its own SessionStore instance.
 """
 
+import asyncio
 import json
 import re
 from typing import Any, Callable, Dict, List, Optional
@@ -81,6 +82,8 @@ class SessionStore:
         self.keyword: Optional[str] = None
         self.loading: bool = False
         self.has_more: bool = True
+        # Generation counter to ignore stale responses from cancelled workers
+        self._gen: int = 0
 
         # Track last error for inline handling
         self.last_error: Optional[str] = None
@@ -110,28 +113,33 @@ class SessionStore:
         Args:
             keyword: Optional search keyword. If provided, resets pagination.
         """
-        if self.loading:
-            return
+        self._gen += 1
+        gen = self._gen
+
+        # Reset pagination immediately so stale responses don't
+        # append to an already-reset list (generation guard below handles the rest)
+        if keyword is not None:
+            self.keyword = keyword
+            self.skip = 0
+            self.sessions = []
+        elif keyword is None and self.keyword is not None:
+            self.keyword = None
+            self.skip = 0
+            self.sessions = []
 
         self.loading = True
         self._notify_change()
 
         try:
-            if keyword is not None:
-                self.keyword = keyword
-                self.skip = 0
-                self.sessions = []
-            elif keyword is None and self.keyword is not None:
-                # User cleared search — reset to show all sessions
-                self.keyword = None
-                self.skip = 0
-                self.sessions = []
-
             result = await self._api.list_sessions(
                 skip=self.skip,
                 limit=self.limit,
                 keyword=self.keyword,
             )
+
+            # Ignore stale response if a newer request has started
+            if gen != self._gen:
+                return
 
             if self.skip == 0:
                 self.sessions = result.get("sessions", [])
@@ -141,6 +149,8 @@ class SessionStore:
             self.total = result.get("total", len(result.get("sessions", [])))
             self.skip += self.limit
             self.has_more = self.skip < self.total
+        except asyncio.CancelledError:
+            raise
         except Exception as e:
             raw_msg = getattr(e, 'message', str(e))
             self._set_error(f"加载会话列表失败: {_clean_error_message(raw_msg)}")
@@ -149,10 +159,10 @@ class SessionStore:
             self._notify_change()
 
     async def load_more(self):
-        """Load next page of sessions."""
+        """Load next page of sessions (preserves current search keyword)."""
         if self.loading or not self.has_more:
             return
-        await self.load_sessions()
+        await self.load_sessions(keyword=self.keyword)
 
     async def create_session(
         self,

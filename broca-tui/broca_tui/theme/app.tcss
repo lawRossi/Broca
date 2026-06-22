@@ -212,10 +212,6 @@ Label {
     text-style: bold;
 }
 
-.crew-button {
-    display: none;
-}
-
 /* ============================================================
    SIDEBARS
    ============================================================ */
@@ -361,6 +357,10 @@ Label {
     background: #dc2626;
 }
 
+.abort-button:focus {
+    border: none;
+}
+
 /* ============================================================
    MESSAGE LIST
    ============================================================ */
@@ -384,6 +384,8 @@ Label {
     color: $gray-400;
     text-style: italic;
     text-align: center;
+    content-align: center middle;
+    width: 1fr;
     height: 100%;
 }
 
@@ -548,6 +550,10 @@ Label {
     min-width: 8;
     border: none;
     display: none;  /* 默认隐藏，由 watch_runner_status 控制显示 */
+}
+
+.runner-btn:focus {
+    border: none;
 }
 
 .runner-btn.stop-btn {
@@ -968,23 +974,33 @@ Toast {
 }
 
 .action-btn {
-    min-width: 6;
-    margin: 0 1;
+    min-width: 8;
+    margin-left: 1;
     border: none;
     padding: 0 1;
 }
 
-.del-btn {
+.action-btn:focus {
+    border: none;
+    padding: 0 1;
+}
+
+.del-session-btn {
     background: $error-lighten-1;
     color: $gray-700;
     border: none;
 }
 
-.del-btn:hover {
+.del-session-btn:hover {
     background: $error-lighten-2;
 }
 
-.del-btn:disabled {
+.del-session-btn:focus {
+    border: none;
+    background: $error-lighten-1;
+}
+
+.del-session-btn:disabled {
     background: $error-lighten-3;
     color: $gray-300;
 }
@@ -1010,11 +1026,17 @@ Toast {
 
 /* Runner toggle button */
 .runner-toggle-btn {
-    min-width: 6;
+    min-width: 8;
     margin: 0 1;
     border: none;
     padding: 0 1;
 }
+
+.runner-toggle-btn:focus {
+    border: none;
+    padding: 0 1;
+}
+
 .runner-toggle-btn.stop {
     background: $warning-lighten-1;
     color: $gray-700;
@@ -1523,10 +1545,6 @@ Toast {
     align: right middle;
 }
 
-.action-btn {
-    min-width: 10;
-    margin-left: 1;
-}
 
 .view-btn {
     background: $primary-500;
@@ -1546,16 +1564,6 @@ Toast {
 
 .abort-btn:hover {
     background: $error-darken-1;
-}
-
-.del-btn {
-    background: $error-darken-2;
-    color: white;
-    border: none;
-}
-
-.del-btn:hover {
-    background: $error-darken-3;
 }
 
 /* ── Shared Button Classes ── */
@@ -1636,6 +1644,7 @@ Toast {
     color: white;
     text-style: bold;
     width: 1fr;
+    padding-top: 1;
 }
 
 .detail-summary {
@@ -1834,4 +1843,24 @@ Toast {
     height: auto;
 }
 
+.btn-abort-exec {
+    background: white;
+    min-height: 3;
+    border: solid $gray-300;
+    color: $warning;
+}
 
+.btn-abort-exec:hover {
+    border: solid $warning;
+}
+
+.btn-del-exec {
+    background: white;
+    min-height: 3;
+    border: solid $gray-300;
+    color: $error;
+}
+
+.btn-del-exec:hover {
+    border: solid $error;
+}

@@ -37,7 +37,6 @@ class ChatScreen(Screen):
 
     BINDINGS = [
         ("ctrl+s", "go_to_sessions", "会话列表"),
-        ("ctrl+e", "go_to_crew", "编排管理"),
         ("ctrl+l", "toggle_left_sidebar", "左侧栏"),
         ("ctrl+r", "toggle_right_sidebar", "右侧栏"),
     ]
@@ -483,10 +482,6 @@ class ChatScreen(Screen):
     ) -> None:
         """Handle navigation to sessions from header."""
         self.action_go_to_sessions()
-
-    def on_chat_header_navigate_to_crew(self, event: ChatHeader.NavigateToCrew) -> None:
-        """Handle navigation to crew from header."""
-        self.action_go_to_crew()
 
     def on_orchestration_banner_navigate_to_crew(
         self, event: OrchestrationBanner.NavigateToCrew

@@ -210,7 +210,9 @@ class CrewExecutionsScreen(Screen):
         # Bind store changes — use set_timer to ensure UI runs in Textual's event loop
         # Note: delay must be > 0 to avoid Textual division-by-zero error
         self._store.on_change(lambda: self.set_timer(0.01, self._on_store_change))
-        self._store.on_error(lambda msg: self.set_timer(0.01, lambda: self._show_error(msg)))
+        self._store.on_error(
+            lambda msg: self.set_timer(0.01, lambda: self._show_error(msg))
+        )
 
         # Initial load
         self.run_worker(self._load_executions())
@@ -412,11 +414,11 @@ class CrewExecutionsScreen(Screen):
         )
         if status == "running":
             actions.mount(
-                Button("中止", id=f"abort-{exec_id}", classes="btn btn-sm btn-danger")
+                Button("中止", id=f"abort-{exec_id}", classes="btn btn-abort-exec")
             )
         if status in ("completed", "failed", "aborted"):
             actions.mount(
-                Button("删除", id=f"del-{exec_id}", classes="btn btn-sm btn-danger")
+                Button("删除", id=f"del-{exec_id}", classes="btn btn-del-exec")
             )
 
     # ── Configs Tab ──

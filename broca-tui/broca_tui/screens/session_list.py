@@ -430,7 +430,7 @@ class SessionListScreen(Screen):
                 *meta_labels,
                 toggle_btn,
                 Button(
-                    "删除", id=f"delete-{session_id}", classes="action-btn del-btn"
+                    "删除", id=f"delete-{session_id}", classes="action-btn del-session-btn"
                 ),
                 classes="session-card-actions",
             ),
@@ -601,6 +601,8 @@ class SessionListScreen(Screen):
         """
         if event.input.id == "search-input":
             keyword = event.value.strip()
+            # Cancel any pending load-more to prevent concurrent renders
+            self.workers.cancel_group(self, "session-load-more")
             # Exclusive group ensures previous search worker is cancelled
             # before starting a new one, preventing concurrent renders that
             # cause duplicate widget IDs.

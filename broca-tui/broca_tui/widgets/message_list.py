@@ -13,19 +13,17 @@ Message list with:
 from __future__ import annotations
 
 import copy
-from typing import Any, Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widgets import Button, Label, Static
-from textual.widget import Widget
+from textual.widgets import Button, Label
 
+from broca_tui.debug_log import log
 from broca_tui.stores.chat_store import TurnSummary
 from broca_tui.widgets.turn_card import TurnCard
-
-from broca_tui.debug_log import log, clear as debug_clear
 
 
 class UndoConfirmDialog(ModalScreen):
@@ -105,7 +103,11 @@ class MessageList(Vertical):
         """Create the message list layout."""
         with Vertical(classes="message-list-container"):
             # Loading indicator (shown when loading history)
-            yield Label("Loading history...", classes="loading-indicator", id="loading-indicator")
+            yield Label(
+                "Loading history...",
+                classes="loading-indicator",
+                id="loading-indicator",
+            )
 
             # Scrollable area — TurnCards inside Vertical (height: auto 切断 1fr 链路)
             with ScrollableContainer(id="turn-scroll", classes="message-scroll"):
@@ -121,7 +123,9 @@ class MessageList(Vertical):
         self.query_one("#loading-indicator", Label).display = False
         self.query_one("#redo-container", Vertical).display = False
         # Start scroll polling
-        self._poll_timer = self.set_interval(self._SCROLL_POLL_INTERVAL, self._check_scroll_position)
+        self._poll_timer = self.set_interval(
+            self._SCROLL_POLL_INTERVAL, self._check_scroll_position
+        )
 
     def set_session(self, session_id: str):
         """Set the current session ID.
@@ -157,14 +161,18 @@ class MessageList(Vertical):
 
     # ==================== Turn Management ====================
 
-    def set_turn_summaries(self, turns: List[TurnSummary], agent_name_map: Optional[Dict[str, str]] = None):
+    def set_turn_summaries(
+        self, turns: List[TurnSummary], agent_name_map: Optional[Dict[str, str]] = None
+    ):
         """Replace all turns (e.g., after history load).
 
         Args:
             turns: List of TurnSummary
             agent_name_map: agent_id → display_name mapping
         """
-        log(f" set_turn_summaries: turns={len(turns)}, initial_loaded={self._initial_loaded}")
+        log(
+            f" set_turn_summaries: turns={len(turns)}, initial_loaded={self._initial_loaded}"
+        )
         self._turn_summaries = turns
         if agent_name_map is not None:
             self._agent_name_map = agent_name_map
@@ -175,7 +183,9 @@ class MessageList(Vertical):
         # 初始加载后 auto-scroll 到底部，让用户看到最新内容
         self._render_turn_cards(auto_scroll=True)
 
-    def add_turn_summary(self, turn: TurnSummary, agent_name_map: Optional[Dict[str, str]] = None):
+    def add_turn_summary(
+        self, turn: TurnSummary, agent_name_map: Optional[Dict[str, str]] = None
+    ):
         """Append a turn (real-time update).
 
         Args:
@@ -207,7 +217,6 @@ class MessageList(Vertical):
         # 空 turn → 显示暂无数据
         if not self._turn_summaries:
             area.remove_children()
-            log(f" _render_turn_cards: empty turns, showing '暂无 Turn 数据'")
             empty = Label("暂无 Turn 数据", classes="empty-message")
             area.mount(empty)
             return
@@ -217,13 +226,10 @@ class MessageList(Vertical):
 
         # TurnCard 所有区域已在 compose() 中预创建，update_turn() 通过 display 控制显隐，
         # 因此无需为内容过渡而重建 DOM。只要 turn_id 匹配，一律原地更新。
-        can_update_in_place = (
-            len(existing_cards) == turn_count
-            and all(
-                isinstance(existing_cards[i], TurnCard)
-                and existing_cards[i]._turn.turn_id == self._turn_summaries[i].turn_id
-                for i in range(turn_count)
-            )
+        can_update_in_place = len(existing_cards) == turn_count and all(
+            isinstance(existing_cards[i], TurnCard)
+            and existing_cards[i]._turn.turn_id == self._turn_summaries[i].turn_id
+            for i in range(turn_count)
         )
 
         if can_update_in_place:
@@ -231,15 +237,19 @@ class MessageList(Vertical):
             prev_agent_id = None
             for i, turn in enumerate(self._turn_summaries):
                 card = existing_cards[i]
-                consecutive = (turn.agent_id == prev_agent_id)
+                consecutive = turn.agent_id == prev_agent_id
                 card._consecutive_agent = consecutive
                 card.update_turn(turn, self._agent_name_map)
                 prev_agent_id = turn.agent_id
                 if i < 3 or i == turn_count - 1:
-                    log(f" _render_turn_cards: updated card {i+1}/{turn_count}: turn_id={turn.turn_id}")
+                    log(
+                        f" _render_turn_cards: updated card {i + 1}/{turn_count}: turn_id={turn.turn_id}"
+                    )
         else:
             # 精准重建：只替换条件变化的卡片，保留其他卡片 DOM 不动
-            log(f" _render_turn_cards: targeted rebuild ({turn_count} cards, {len(existing_cards)} existing)")
+            log(
+                f" _render_turn_cards: targeted rebuild ({turn_count} cards, {len(existing_cards)} existing)"
+            )
             prev_agent_id = None
 
             # Step 1: 处理数量差异（末尾追加/移除）
@@ -247,7 +257,7 @@ class MessageList(Vertical):
             if turn_count > len(existing):
                 for i in range(len(existing), turn_count):
                     turn = self._turn_summaries[i]
-                    consecutive = (turn.agent_id == prev_agent_id)
+                    consecutive = turn.agent_id == prev_agent_id
                     prev_agent_id = turn.agent_id
                     card = TurnCard(
                         turn=copy.deepcopy(turn),
@@ -263,11 +273,14 @@ class MessageList(Vertical):
             existing = list(area.children)
             prev_agent_id = None
             for i, turn in enumerate(self._turn_summaries):
-                consecutive = (turn.agent_id == prev_agent_id)
+                consecutive = turn.agent_id == prev_agent_id
                 prev_agent_id = turn.agent_id
                 if i < len(existing):
                     card = existing[i]
-                    if isinstance(card, TurnCard) and card._turn.turn_id == turn.turn_id:
+                    if (
+                        isinstance(card, TurnCard)
+                        and card._turn.turn_id == turn.turn_id
+                    ):
                         # turn_id 匹配，原地更新（不重建 DOM，update_turn 内部处理显隐切换）
                         card._consecutive_agent = consecutive
                         card.update_turn(turn, self._agent_name_map)
@@ -281,15 +294,22 @@ class MessageList(Vertical):
                         siblings = list(area.children)
                         card_idx = siblings.index(card) if card in siblings else -1
                         card.remove()
-                        before = siblings[card_idx + 1] if card_idx >= 0 and card_idx + 1 < len(siblings) else None
+                        before = (
+                            siblings[card_idx + 1]
+                            if card_idx >= 0 and card_idx + 1 < len(siblings)
+                            else None
+                        )
                         area.mount(new_card, before=before)
                         if i < 3 or i == turn_count - 1:
-                            log(f" _render_turn_cards: replaced card {i+1}/{turn_count}: turn_id={turn.turn_id}, agent={turn.agent_name}")
+                            log(
+                                f" _render_turn_cards: replaced card {i + 1}/{turn_count}: turn_id={turn.turn_id}, agent={turn.agent_name}"
+                            )
 
         # Auto-scroll to bottom (仅追加新 turn 时触发，初始加载不滚动)
         if auto_scroll and self.auto_scroll and not self._user_scrolled_up:
             # 立即尝试滚动（使用当前 max_scroll_y，可能尚不准确）
             scroll.scroll_end(animate=False)
+
             # 延迟再滚动一次，确保新 mount 卡片布局完成后能滚到真正底部
             # 注意：set_timer(0) 会导致 Textual 除零错误，最小需 > 0
             def _do_scroll():
@@ -298,8 +318,9 @@ class MessageList(Vertical):
                     s.scroll_end(animate=False)
                 except Exception:
                     pass
+
             self.set_timer(0.01, _do_scroll)
-            log(f" _render_turn_cards: auto-scroll scheduled")
+            log(" _render_turn_cards: auto-scroll scheduled")
 
     # ==================== Watch Reactives ====================
 
@@ -362,11 +383,18 @@ class MessageList(Vertical):
             # 内容占满时，需要用户主动滚动到顶部才触发
             is_at_top = current_scroll_y <= 0 and self._prev_scroll_y > 2
         self._prev_scroll_y = current_scroll_y
-        should_trigger = (is_at_top and self.has_more and self._on_load_more_turns
-                and not self._scroll_cooldown_active and not self.loading
-                and self._initial_loaded)
+        should_trigger = (
+            is_at_top
+            and self.has_more
+            and self._on_load_more_turns
+            and not self._scroll_cooldown_active
+            and not self.loading
+            and self._initial_loaded
+        )
         if should_trigger:
-            log(f" scroll_check: TRIGGER loading! scroll_y={current_scroll_y}, max_y={max_scroll_y}, has_more={self.has_more}, loading={self.loading}, initial_loaded={self._initial_loaded}, cooldown={self._scroll_cooldown_active}")
+            log(
+                f" scroll_check: TRIGGER loading! scroll_y={current_scroll_y}, max_y={max_scroll_y}, has_more={self.has_more}, loading={self.loading}, initial_loaded={self._initial_loaded}, cooldown={self._scroll_cooldown_active}"
+            )
             self._scroll_cooldown_active = True
             self._on_load_more_turns()
             self.set_timer(self._SCROLL_COOLDOWN, self._reset_scroll_cooldown)
