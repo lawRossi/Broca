@@ -177,11 +177,12 @@ const parsedDiffLines = computed<DiffLine[]>(() => {
     ) continue
 
     if (raw.startsWith('@@')) {
-      // 解析 @@ -old_start,old_count +new_start,new_count @@
+      // @@ 头部：仅解析行号，不展示
       const match = raw.match(/@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/)
       if (match) newLineNum = parseInt(match[1])
-      lines.push({ text: raw, type: 'head', lineNum: null })
-    } else if (raw.startsWith('+')) {
+      continue
+    }
+    if (raw.startsWith('+')) {
       lines.push({ text: raw.slice(1), type: 'add', lineNum: newLineNum })
       newLineNum++
     } else if (raw.startsWith('-')) {

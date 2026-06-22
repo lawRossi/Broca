@@ -50,11 +50,12 @@ def _parse_diff_lines(diff_text: str) -> List[dict]:
             continue
 
         if raw.startswith("@@"):
+            # @@ 头部：仅解析行号，不展示
             m = _HUNK_HEADER_RE.search(raw)
             if m:
                 new_line_num = int(m.group(1))
-            lines.append({"text": raw, "type": "head", "line_num": None})
-        elif raw.startswith("+"):
+            continue
+        if raw.startswith("+"):
             lines.append({"text": raw[1:], "type": "add", "line_num": new_line_num})
             new_line_num += 1
         elif raw.startswith("-"):
