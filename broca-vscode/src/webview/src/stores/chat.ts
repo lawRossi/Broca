@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
-import { postMessage, onMessage, getInitialData } from '../api/vscode'
+import { postMessage, onMessage, getInitialData, getVSCodeAPI } from '../api/vscode'
 import type { Message, RunnerInfo } from '../types'
 
 // ========== 简洁模式类型定义 ==========
@@ -589,12 +589,6 @@ export const useChatStore = defineStore('chat', () => {
     loading.value = false
     loadingMore.value = false
 
-    // 降级检测：简洁模式下 turn 数据为空但有消息 → 自动切回明细模式
-    // 覆盖 loadTurnHistory 中因 messages 尚未加载而遗漏的降级判断
-    if (displayMode.value === 'concise' && turnSummaries.value.length === 0 && messages.value.length > 0) {
-      displayMode.value = 'detail'
-    }
-
     // Initialize message states for all messages
     for (const msg of messages.value) {
       getMessageState(msg.message_id)
@@ -807,25 +801,35 @@ export const useChatStore = defineStore('chat', () => {
 
   // ==================== 简洁模式方法 ====================
 
+  /** Storage key for display mode in VS Code persistent state */
+  const DM_KEY = 'broca_display_mode'
+
+  /** 从 VS Code 持久化状态中读取显示模式（getState 跨 WebView 面板重启持久化） */
   function loadDisplayMode(sessionId: string): 'detail' | 'concise' {
     try {
-      const saved = sessionStorage.getItem(`broca_display_mode_${sessionId}`)
-      if (saved === 'detail' || saved === 'concise') {
+      const api = getVSCodeAPI()
+      const state = api.getState() || {}
+      const saved = state[`${DM_KEY}_${sessionId}`]
+      if (saved === 'concise' || saved === 'detail') {
         displayMode.value = saved
         return saved
       }
     } catch {
-      // sessionStorage 可能在隐私模式下不可用
+      // API 不可用时忽略
     }
     displayMode.value = 'concise'
     return 'concise'
   }
 
+  /** 保存显示模式到 VS Code 持久化状态 */
   function saveDisplayMode(sessionId: string, mode: 'detail' | 'concise') {
     try {
-      sessionStorage.setItem(`broca_display_mode_${sessionId}`, mode)
+      const api = getVSCodeAPI()
+      const state = api.getState() || {}
+      state[`${DM_KEY}_${sessionId}`] = mode
+      api.setState(state)
     } catch {
-      // sessionStorage 不可用时忽略
+      // API 不可用时忽略
     }
   }
 
@@ -967,11 +971,6 @@ export const useChatStore = defineStore('chat', () => {
 
       turnHistorySkip.value = responseSkip + turnList.length
       hasMoreTurns.value = turnHistorySkip.value < (total || 0)
-
-      // 降级检测：无 turn 但有消息时自动切回 detail
-      if (turnList.length === 0 && messages.value.length > 0) {
-        displayMode.value = 'detail'
-      }
     } catch (err: any) {
       showError(err.message || '加载 turn 历史失败', 'error')
     } finally {

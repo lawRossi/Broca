@@ -77,7 +77,7 @@ class InfoSidebar(Widget):
                     yield Label("Workspace:", classes="info-label")
                     yield Label("未设置", classes="info-value", id="info-workspace")
                 with Horizontal(classes="info-row"):
-                    yield Label("Agent Tasks:", classes="info-label")
+                    yield Label("Agent Task:", classes="info-label")
                     yield Label("0", classes="info-value", id="info-tasks")
                 with Horizontal(classes="info-row"):
                     yield Label("定时Job:", classes="info-label")
@@ -90,7 +90,7 @@ class InfoSidebar(Widget):
                     yield Button("🔄", id="btn-refresh-runner", classes="icon-button")
                 yield Horizontal(
                     Label("Status:", classes="info-label"),
-                    Label("● unknown", classes="info-value", id="runner-status"),
+                    Label("-", classes="info-value", id="runner-status"),
                     classes="info-row",
                 )
                 yield Horizontal(
@@ -179,12 +179,12 @@ class InfoSidebar(Widget):
         """
         status_label = self.query_one("#runner-status", Label)
         color_map = {
-            "alive": "● running",
-            "starting": "◐ starting",
-            "error": "● error",
-            "dead": "○ stopped",
-            "none": "○ stopped",
-            "unknown": "● unknown",
+            "alive": "● 运行中",
+            "starting": "◐ 启动中",
+            "error": "● 异常",
+            "dead": "○ 已停止",
+            "none": "○ 已停止",
+            "unknown": "-",
         }
         display = color_map.get(status, f"● {status}")
         status_label.update(display)

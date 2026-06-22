@@ -1009,12 +1009,6 @@ export const useChatStore = defineStore('chat', () => {
           // 如果合并后有活跃 turn，确保计时器在运行
           startDurationTimer()
         }
-
-        // 降级检测：无 turn 数据但有消息 → 自动切回明细模式
-        if (turnSummaries.value.length === 0 && messages.value.length > 0) {
-          displayMode.value = 'detail'
-          console.warn('ChatConciseMode: 该会话暂无轮次数据，已自动降级到明细模式')
-        }
       }
 
       turnHistorySkip.value += response.turns.length
@@ -1060,8 +1054,6 @@ export const useChatStore = defineStore('chat', () => {
 
       if (newMode === 'concise' && turnSummaries.value.length === 0) {
         await loadTurnHistory(sessionId.value, false, executionId.value)
-        // loadTurnHistory 内部已做降级检测，如果降级则 displayMode 已切回 'detail'
-        if (displayMode.value === 'detail') return
         startDurationTimer()
       } else if (newMode === 'concise') {
         startDurationTimer()
@@ -1374,19 +1366,7 @@ export const useChatStore = defineStore('chat', () => {
       displayMode.value = loadDisplayMode(sessionId.value)
       if (displayMode.value === 'concise') {
         await loadTurnHistory(sessionId.value, false, executionId.value)
-        // 如果 turn 数据为空，加载消息历史用于降级检测（旧会话可能无 turn 聚合数据）
-        if (turnSummaries.value.length === 0) {
-          await loadHistory(sessionId.value, false, executionId.value)
-          // 有消息但无 turn → 降级到明细模式
-          if (messages.value.length > 0) {
-            displayMode.value = 'detail'
-          }
-        }
-        if (displayMode.value === 'detail') {
-          // 已由降级条件加载了消息历史
-        } else {
-          startDurationTimer()
-        }
+        startDurationTimer()
       } else {
         await loadHistory(sessionId.value, false, executionId.value)
       }

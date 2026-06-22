@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores'
-import { sessionApi, type SessionStats, type RunnerInfo } from '@/api/session'
+import { sessionApi, type SessionStats} from '@/api/session'
 import { jobApi } from '@/api/job'
 import { taskApi } from '@/api/task'
 import { Loading, Refresh } from '@element-plus/icons-vue'
@@ -295,7 +295,7 @@ const getRunnerConfig = (status: string | undefined) => {
             title="Click to view jobs for this session"
           >
             <span class="text-gray-700">
-              定时Job
+              定时Job:
             </span>
             <div class="flex items-center gap-2">
               <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
