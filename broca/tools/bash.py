@@ -13,7 +13,7 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 logger = get_logger(__name__)
 
 
-class ExecuteCode(Tool):
+class Bash(Tool):
     def __init__(self):
         super().__init__()
         self.code_output_template = "return code: {{output.returncode}}\n{% if output.stdout -%}\noutput:{{ output.stdout if output.stdout.strip() else 'execution succeeded'}}\n{% endif %}\n{%- if output.stderr -%}error: {{output.stderr}}{% endif %}"
@@ -21,7 +21,7 @@ class ExecuteCode(Tool):
 
     @property
     def name(self) -> str:
-        return "execute_code"
+        return "bash"
 
     @property
     def description(self) -> str:

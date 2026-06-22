@@ -35,8 +35,6 @@ class ToolManager:
 
     MODIFY_TOOLS = {"edit_file", "write_file"}
 
-    READ_SEARCH_FILE_CONTENT_TOOLS = {"read_file", "grep"}
-
     _SKIP_MODULES = {
         "tool_manager",  # self
         "tool",  # base class
