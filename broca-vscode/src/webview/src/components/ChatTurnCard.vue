@@ -158,12 +158,28 @@ const parsedDiffLines = computed<DiffLine[]>(() => {
   const lines: DiffLine[] = []
   let newLineNum = 0
   for (const raw of diffContent.value.split('\n')) {
+    // 跳过 git metadata 行
+    if (
+      raw.startsWith('diff --git') ||
+      raw.startsWith('index ') ||
+      raw.startsWith('--- ') ||
+      raw.startsWith('+++ ') ||
+      raw.startsWith('new file mode') ||
+      raw.startsWith('deleted file mode') ||
+      raw.startsWith('old mode') ||
+      raw.startsWith('new mode') ||
+      raw.startsWith('rename from') ||
+      raw.startsWith('rename to') ||
+      raw.startsWith('copy from') ||
+      raw.startsWith('copy to') ||
+      raw.startsWith('similarity index') ||
+      raw.startsWith('Binary files')
+    ) continue
+
     if (raw.startsWith('@@')) {
       // 解析 @@ -old_start,old_count +new_start,new_count @@
       const match = raw.match(/@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@/)
       if (match) newLineNum = parseInt(match[1])
-      lines.push({ text: raw, type: 'head', lineNum: null })
-    } else if (raw.startsWith('---') || raw.startsWith('+++')) {
       lines.push({ text: raw, type: 'head', lineNum: null })
     } else if (raw.startsWith('+')) {
       lines.push({ text: raw.slice(1), type: 'add', lineNum: newLineNum })

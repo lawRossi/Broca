@@ -21,18 +21,38 @@ _HUNK_HEADER_RE = re.compile(r"@@\s+-\d+(?:,\d+)?\s+\+(\d+)(?:,\d+)?\s+@@")
 def _parse_diff_lines(diff_text: str) -> List[dict]:
     """解析 unified diff 文本，每行返回 {text, type, line_num}。
 
+    自动跳过 git metadata 行（diff --git、index、---、+++ 等），
+    仅保留 @@ 头部和实际的变更内容行。
+
     type: add / del / ctx / head
     line_num: 新文件中的真实行号（del/head 行为 None）
     """
     lines: List[dict] = []
     new_line_num = 0
     for raw in diff_text.split("\n"):
+        # 跳过 git metadata 行
+        if (
+            raw.startswith("diff --git")
+            or raw.startswith("index ")
+            or raw.startswith("--- ")
+            or raw.startswith("+++ ")
+            or raw.startswith("new file mode")
+            or raw.startswith("deleted file mode")
+            or raw.startswith("old mode")
+            or raw.startswith("new mode")
+            or raw.startswith("rename from")
+            or raw.startswith("rename to")
+            or raw.startswith("copy from")
+            or raw.startswith("copy to")
+            or raw.startswith("similarity index")
+            or raw.startswith("Binary files")
+        ):
+            continue
+
         if raw.startswith("@@"):
             m = _HUNK_HEADER_RE.search(raw)
             if m:
                 new_line_num = int(m.group(1))
-            lines.append({"text": raw, "type": "head", "line_num": None})
-        elif raw.startswith("---") or raw.startswith("+++"):
             lines.append({"text": raw, "type": "head", "line_num": None})
         elif raw.startswith("+"):
             lines.append({"text": raw[1:], "type": "add", "line_num": new_line_num})
