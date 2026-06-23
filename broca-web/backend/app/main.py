@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from ipaddress import IPv6Address, ip_address
 
 # 初始化日志（stderr + 文件），必须在任何 import 之后、app 创建之前
 from broca.logging_config import init_logging
@@ -16,6 +17,32 @@ from app.services.auth_service import AuthService
 init_logging()
 
 LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
+
+
+def _is_loopback(host: str | None) -> bool:
+    """判断请求来源是否为本机回环地址。
+
+    兼容以下情况：
+    - 标准 IPv4 回环：127.0.0.1
+    - 标准 IPv6 回环：::1
+    - IPv4-mapped IPv6 回环：::ffff:127.0.0.1（macOS 双栈默认行为）
+    - IPv4-mapped IPv6 回环段：::ffff:127.x.x.x
+    """
+    if not host:
+        return False
+    if host in LOCAL_HOSTS:
+        return True
+    try:
+        addr = ip_address(host)
+        # Python 的 ipaddress 对 IPv4-mapped IPv6 地址（如 ::ffff:127.0.0.1）
+        # 的 is_loopback 始终返回 False，所以需要提取 mapped IPv4 再判断
+        if isinstance(addr, IPv6Address) and addr.ipv4_mapped:
+            return addr.ipv4_mapped.is_loopback
+        return addr.is_loopback
+    except ValueError:
+        # 非标准 IP 字符串（如 "localhost" 已在 LOCAL_HOSTS 中命中），不匹配
+        return False
+
 WHITE_LIST = {
     "/api/auth/login",
     "/api/health",
@@ -29,7 +56,7 @@ security = HTTPBearer(auto_error=False)
 def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(security)) -> None:
     # 本机请求不做鉴权（nginx 反向代理时通过 X-Real-IP 传递真实客户端 IP）
     client_host = req.headers.get("X-Real-IP") or (req.client.host if req.client else None)
-    if client_host in LOCAL_HOSTS:
+    if _is_loopback(client_host):
         req.state.user_id = None
         req.state.username = None
         return
