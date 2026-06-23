@@ -2,18 +2,20 @@
 Git 仓库管理模块
 
 管理独立的 Git 仓库，用于存储文件系统快照。
-与用户项目 git 完全隔离，位于 ~/.local/share/broca/snapshot/ 目录下。
+与用户项目 git 完全隔离，位于 ~/.broca/snapshots/ 目录下。
 
 跨进程安全：
   所有 Git 操作通过文件锁保护，确保多进程并发访问安全。
   锁文件位于 Git 仓库目录下的 .snapshot.lock。
-  跨平台支持：Unix 使用 fcntl.flock，Windows 使用 msvcrt.locking。
+  跨平台支持：Unix 使用 fcntl.flock（含网络文件系统 fallback），Windows 使用 msvcrt.locking。
 """
 
 import asyncio
+import errno
 import hashlib
 import os
 import shutil
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -28,14 +30,24 @@ class FileLock:
     """跨平台文件锁
 
     使用策略模式根据平台选择底层锁实现：
-    - Unix (Linux/macOS): fcntl.flock
+    - Unix (Linux/macOS): fcntl.flock，如果文件系统不支持 flock（如 NFS、SMB），
+      自动 fallback 到基于 O_EXCL 的 PID 文件锁。
     - Windows: msvcrt.locking
     """
+
+    # flock() 在这些 errno 下说明文件系统不支持，需要 fallback
+    _FLOCK_FALLBACK_ERRNOS = frozenset({
+        errno.ENOTSUP,    # Operation not supported (常见于 NFS)
+        errno.EOPNOTSUPP, # Operation not supported on socket
+        errno.EINVAL,     # Invalid argument (常见于 SMB 挂载)
+        errno.ENOSYS,     # Function not implemented
+    })
 
     def __init__(self, path: str):
         self._path = Path(path)
         self._fd: Optional[int] = None
         self._count: int = 0
+        self._fallback_mode: bool = False  # True 时使用 O_EXCL PID 文件锁
 
     @property
     def is_held(self) -> bool:
@@ -48,14 +60,26 @@ class FileLock:
             return True
 
         self._path.parent.mkdir(parents=True, exist_ok=True)
+
+        if self._fallback_mode:
+            return self._fallback_acquire(blocking)
+
         fd = os.open(str(self._path), os.O_RDWR | os.O_CREAT)
         try:
             self._platform_acquire(fd, blocking)
             self._fd = fd
             self._count = 1
             return True
-        except (BlockingIOError, OSError):
+        except OSError as e:
             os.close(fd)
+            # 如果是因为文件系统不支持 flock，切换到 fallback 模式
+            if e.errno in self._FLOCK_FALLBACK_ERRNOS:
+                logger.warning(
+                    f"flock() 不被当前文件系统支持 (errno={e.errno}), "
+                    f"切换到 PID 文件锁 fallback 模式"
+                )
+                self._fallback_mode = True
+                return self._fallback_acquire(blocking)
             return False
 
     def release(self) -> None:
@@ -65,14 +89,73 @@ class FileLock:
         self._count -= 1
         if self._count > 0:
             return
+
+        if self._fallback_mode:
+            self._fallback_release()
+        else:
+            try:
+                self._platform_release(self._fd)
+            except OSError:
+                pass
+
+        os.close(self._fd)
+        self._fd = None
+        self._count = 0
+
+    # ---- Fallback：基于 O_EXCL 的 PID 文件锁 ----
+
+    def _fallback_acquire(self, blocking: bool = True) -> bool:
+        """
+        基于 O_EXCL 的 PID 文件锁 fallback
+
+        适用于 flock() 不可用的文件系统（NFS、SMB 等）。
+        通过原子创建 PID 文件来模拟互斥锁，附带僵死锁检测。
+        """
+        lock_path = self._path.with_suffix(self._path.suffix + ".pidlock")
+        while True:
+            try:
+                fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
+                os.write(fd, f"{os.getpid()}\n".encode())
+                self._fd = fd
+                self._fallback_mode = True
+                self._count = 1
+                return True
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+                if not blocking:
+                    return False
+                # 检查是否为僵死锁（持有锁的进程已退出）
+                self._clean_stale_lock(lock_path)
+                time.sleep(0.05)
+
+    def _fallback_release(self) -> None:
+        """释放 PID 文件锁"""
+        lock_path = self._path.with_suffix(self._path.suffix + ".pidlock")
         try:
-            self._platform_release(self._fd)
+            os.unlink(lock_path)
         except OSError:
             pass
-        finally:
-            os.close(self._fd)
-            self._fd = None
-            self._count = 0
+
+    @staticmethod
+    def _clean_stale_lock(lock_path: Path) -> None:
+        """
+        检测并清理僵死锁
+
+        读取 PID 文件中的进程号，如果该进程已不存在则删除锁文件。
+        """
+        try:
+            content = lock_path.read_text().strip()
+            if content:
+                pid = int(content)
+                try:
+                    os.kill(pid, 0)  # 发送空信号检测进程是否存在
+                except OSError:
+                    # 进程不存在，僵死锁，清理
+                    logger.warning(f"清理僵死 PID 文件锁 (pid={pid}): {lock_path}")
+                    lock_path.unlink(missing_ok=True)
+        except (ValueError, OSError, FileNotFoundError):
+            pass
 
     # ---- 平台相关实现 ----
 
@@ -117,7 +200,6 @@ class FileLock:
     @staticmethod
     def _win32_acquire(fd: int, blocking: bool) -> None:
         import msvcrt
-        import time
 
         while True:
             try:
