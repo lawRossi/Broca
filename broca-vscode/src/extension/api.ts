@@ -198,6 +198,12 @@ export class ApiClient {
     return response.data
   }
 
+  /** 本地自动登录（仅对本机部署生效） */
+  async localLogin(): Promise<{ token: string; user_id: string; username: string }> {
+    const response = await this.client.post('/auth/local-login')
+    return response.data
+  }
+
   // 注册功能已移除：请在安装时通过 scripts/setup_admin.py 创建账户
 
   // ==================== Config API ====================

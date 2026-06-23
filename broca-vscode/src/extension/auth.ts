@@ -77,6 +77,28 @@ export class AuthManager {
     this.apiClient = new ApiClient(this.configManager, () => this._token)
   }
 
+  /**
+   * 尝试本地自动登录（仅对本机部署生效）。
+   * 在未检测到持久化会话时调用，避免弹出登录框。
+   */
+  async tryLocalLogin(): Promise<boolean> {
+    if (this._isLoggedIn) return true
+    try {
+      const response = await this.apiClient.localLogin()
+      this._token = response.token
+      this._userId = response.user_id
+      this._username = response.username
+      this._isLoggedIn = true
+      this.persistSession()
+      console.log('[Auth] Local auto-login succeeded')
+      this.onDidChangeEvent.fire()
+      return true
+    } catch (error: any) {
+      console.log('[Auth] Local auto-login not available (non-local deployment or server error)')
+      return false
+    }
+  }
+
   async login(): Promise<boolean> {
     const username = await vscode.window.showInputBox({
       prompt: '用户名',

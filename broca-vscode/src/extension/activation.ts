@@ -193,19 +193,19 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   )
 
-  // Initial login check
+  // Initial login check — 先尝试本地自动登录，失败再弹登录框
   if (!authManager.isLoggedIn) {
-    // Try silent login from stored session
-    if (authManager.isLoggedIn) {
-      // Session restored
-    } else {
-      // Not logged in, show login popup directly
-      authManager.login().then((success) => {
-        if (success) {
-          sessionTreeProvider.refresh()
-        }
-      })
-    }
+    authManager.tryLocalLogin().then((localLoggedIn) => {
+      if (!localLoggedIn) {
+        authManager.login().then((success) => {
+          if (success) {
+            sessionTreeProvider.refresh()
+          }
+        })
+      } else {
+        sessionTreeProvider.refresh()
+      }
+    })
   }
 
   // Show login button in status bar when not logged in
