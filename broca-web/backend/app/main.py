@@ -45,6 +45,7 @@ def _is_loopback(host: str | None) -> bool:
 
 WHITE_LIST = {
     "/api/auth/login",
+    "/api/auth/local-login",
     "/api/health",
 }
 WHITE_LIST_PREFIXES = {

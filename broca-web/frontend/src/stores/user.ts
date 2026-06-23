@@ -84,10 +84,31 @@ export const useUserStore = defineStore('user', () => {
         console.warn('Failed to fetch user info, token may be expired')
       }
     } else {
-      token.value = null
-      userId.value = null
-      username.value = null
-      isLoggedIn.value = false
+      // 无 token 时尝试本地自动登录（仅对 localhost 部署生效）
+      try {
+        const result = await userApi.localLogin()
+        token.value = result.token
+        userId.value = result.user_id
+        username.value = result.username
+        isLoggedIn.value = true
+        localStorage.setItem('token', result.token)
+        localStorage.setItem('user_id', result.user_id)
+        localStorage.setItem('username', result.username)
+        console.log('本地自动登录成功')
+        // 自动登录后获取用户信息
+        try {
+          userInfo.value = await userApi.getUserInfo()
+        } catch {
+          console.warn('Failed to fetch local user info')
+        }
+      } catch {
+        // 非本机部署或自动登录失败 → 保持未登录状态
+        console.log('本地自动登录不可用，需要手动登录')
+        token.value = null
+        userId.value = null
+        username.value = null
+        isLoggedIn.value = false
+      }
     }
   }
 

@@ -17,11 +17,19 @@ router = APIRouter()
 async def get_user_info(req: Request, db: AsyncSession = Depends(get_db)) -> ApiResponse:
     """获取用户信息"""
     try:
-        svc = UserService(db)
         user_id = req.state.user_id
         if not user_id:
             raise HTTPException(401, "Unauthorized")
 
+        # 本地自动登录用户 — 返回默认信息，不依赖数据库
+        if user_id == "local":
+            return ApiResponse.success({
+                "id": "local",
+                "name": "Local User",
+                "avatar": None,
+            })
+
+        svc = UserService(db)
         user_profile = await svc.get_by_id(user_id)
         return ApiResponse.success(user_profile)
     except HTTPException:
