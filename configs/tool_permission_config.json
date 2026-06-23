@@ -7,8 +7,8 @@
   },
   "tools": {
     "read_file": "allow",
-    "write_file": "ask",
-    "edit_file": "ask",
+    "write_file": "allow",
+    "edit_file": "allow",
     "glob": "allow",
     "grep": "allow",
     "list_dir": "allow",
@@ -17,16 +17,16 @@
     "web_search": "allow",
     "ask_user": "allow",
     "assign_task": "allow",
-    "execute_code": "ask",
+    "bash": "allow",
     "task_management": "allow",
     "todo_management": "allow",
     "cron": "ask",
     "memory": "ask",
     "load_skill": "allow",
     "blackboard_changes": "allow",
-    "delete_blackboard": "ask",
+    "delete_blackboard": "allow",
     "list_blackboard": "allow",
     "read_blackboard": "allow",
-    "write_blackboard": "ask"
+    "write_blackboard": "allow"
   }
 }
