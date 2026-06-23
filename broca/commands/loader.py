@@ -37,9 +37,7 @@ def _parse_command_md(md_path: Path) -> tuple[dict, str]:
 
 def _import_command_class(py_path: Path) -> type[CommandBase]:
     """Dynamically import the Command subclass from __init__.py"""
-    spec = importlib.util.spec_from_file_location(
-        py_path.parent.name, str(py_path)
-    )
+    spec = importlib.util.spec_from_file_location(py_path.parent.name, str(py_path))
     if spec is None or spec.loader is None:
         raise ImportError(f"Failed to load {py_path}")
 
@@ -69,9 +67,7 @@ def _build_command_from_md(cmd_dir: Path) -> Optional[CommandBase]:
     py_path = cmd_dir / "__init__.py"
 
     if not md_path.exists() or not py_path.exists():
-        raise FileNotFoundError(
-            f"Missing command.md or __init__.py in {cmd_dir}"
-        )
+        raise FileNotFoundError(f"Missing command.md or __init__.py in {cmd_dir}")
 
     # Parse command.md
     header, body = _parse_command_md(md_path)
@@ -93,12 +89,8 @@ def _build_command_from_md(cmd_dir: Path) -> Optional[CommandBase]:
 
     # PromptCommand-specific attributes
     if isinstance(instance, PromptCommand):
-        instance.use_sub_agent = header.get(
-            "use_sub_agent", instance.use_sub_agent
-        )
-        instance.sub_agent_name = header.get(
-            "sub_agent_name", instance.sub_agent_name
-        )
+        instance.use_sub_agent = header.get("use_sub_agent", instance.use_sub_agent)
+        instance.sub_agent_name = header.get("sub_agent_name", instance.sub_agent_name)
         instance.prompt_template = body  # body is the prompt template
 
     return instance
@@ -131,7 +123,7 @@ def load_commands_from_dir(
             cmd.loaded_from = loaded_from
             if not registry.has(cmd.name):
                 registry.register(cmd)
-                logger.info(f"Loaded command '{cmd.name}' from {cmd_dir}")
+                logger.debug(f"Loaded command '{cmd.name}' from {cmd_dir}")
         except Exception as e:
             logger.warning(f"Failed to load command from {cmd_dir}: {e}")
             continue
