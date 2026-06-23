@@ -56,8 +56,17 @@ security = HTTPBearer(auto_error=False)
 
 def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(security)) -> None:
     # 本机请求不做鉴权（nginx 反向代理时通过 X-Real-IP 传递真实客户端 IP）
+    # 但如果请求带了有效的 token（如 local-login 签发的），优先使用 token 中的身份
     client_host = req.headers.get("X-Real-IP") or (req.client.host if req.client else None)
     if _is_loopback(client_host):
+        if cred:
+            try:
+                payload = AuthService.decode_access_token(cred.credentials)
+                req.state.user_id = payload.get("sub")
+                req.state.username = payload.get("username")
+                return
+            except Exception:
+                pass  # token 无效，降级为匿名本地用户
         req.state.user_id = None
         req.state.username = None
         return
