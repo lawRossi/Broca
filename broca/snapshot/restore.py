@@ -39,6 +39,8 @@ class SnapshotRestorer:
         """
         self.git_manager.ensure_initialized()
 
+        # 在文件锁保护下原子执行
+        self.git_manager.acquire_lock(blocking=True)
         try:
             # 1. 精确重置索引到目标 tree
             await self.git_manager._run_git_command("read-tree", "--reset", tree_hash)
@@ -48,6 +50,8 @@ class SnapshotRestorer:
         except git.GitCommandError as e:
             logger.error(f"恢复快照失败: {e}")
             raise
+        finally:
+            self.git_manager.release_lock()
 
     async def revert_patches(self, patches: list[dict[str, Any]]) -> None:
         """

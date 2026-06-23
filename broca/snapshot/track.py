@@ -2,9 +2,11 @@
 快照捕获模块
 
 捕获文件系统快照，生成 Git 树哈希。
+
+跨进程安全：
+  所有 Git 操作通过 GitManager 的文件锁保护，确保多进程并发访问安全。
 """
 
-import asyncio
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -29,12 +31,13 @@ class SnapshotTracker:
         """
         self.workspace_path = Path(workspace_path).resolve()
         self.git_manager = GitManager(str(self.workspace_path))
-        self.lock = asyncio.Lock()  # 并发控制锁
-        self._last_tree_hash: Optional[str] = None  # 上一次快照的树哈希，用于重置索引
 
     async def track(self, ignore_patterns: Optional[list[str]] = None) -> str:
         """
         捕获快照
+
+        将当前工作区的变更写入 Git 树对象，返回树哈希。
+        如果没有变更，返回当前 HEAD 的树哈希（或空树哈希）。
 
         Args:
             ignore_patterns: 额外的忽略模式列表
@@ -42,64 +45,73 @@ class SnapshotTracker:
         Returns:
             Git 树哈希
         """
-        async with self.lock:
-            return await self._track_snapshot(ignore_patterns)
+        return await self._track_snapshot(ignore_patterns)
 
     async def _track_snapshot(self, ignore_patterns: Optional[list[str]] = None) -> str:
-        """实际执行快照捕获"""
-        # 确保 Git 仓库已初始化
+        """实际执行快照捕获（在文件锁保护下原子执行）"""
         self.git_manager.ensure_initialized()
 
-        # 同步忽略规则
-        self.git_manager.sync_ignore_rules(ignore_patterns)
+        self.git_manager.acquire_lock(blocking=True)
+        try:
+            # 同步忽略规则
+            self.git_manager.sync_ignore_rules(ignore_patterns)
 
-        # 发现变更文件
-        changed_files = await self._discover_changed_files()
+            # 发现变更文件
+            changed_files = await self._discover_changed_files()
 
-        # 过滤大文件和忽略文件
-        filtered_files = await self._filter_files(changed_files)
+            # 过滤大文件和忽略文件
+            filtered_files = await self._filter_files(changed_files)
 
-        logger.info("变更文件:" + ",".join(filtered_files))
+            logger.info("变更文件:" + ",".join(filtered_files)[:200] + "...")
 
-        if not filtered_files:
-            # 如果没有变更文件，返回上一次快照的树哈希
-            if self._last_tree_hash:
-                return self._last_tree_hash
-            # 没有任何快照历史，返回空树
-            return self._create_empty_tree()
+            if not filtered_files:
+                # 没有变更，返回当前 HEAD 的 tree hash
+                logger.info("无变更，返回当前 HEAD 的 tree hash")
+                return await self._get_head_tree_hash()
 
-        # 移除忽略文件
-        ignored_files = set(changed_files) - set(filtered_files)
-        if ignored_files:
-            logger.debug("忽略文件:" + ",".join(ignored_files))
-            await self.git_manager.remove_cached_files(list(ignored_files))
+            # 移除忽略文件
+            ignored_files = set(changed_files) - set(filtered_files)
+            if ignored_files:
+                logger.debug("忽略文件:" + ",".join(ignored_files))
+                await self.git_manager.remove_cached_files(list(ignored_files))
 
-        # 暂存变更文件
-        if not await self._stage_files(filtered_files):
-            logger.info("无法稀疏添加变更文件，跳过提交")
-            if self._last_tree_hash:
-                return self._last_tree_hash
-            return self._create_empty_tree()
+            # 暂存变更文件
+            if not await self._stage_files(filtered_files):
+                logger.info("无法稀疏添加变更文件，跳过提交")
+                return await self._get_head_tree_hash()
 
-        # 写入 Git 树
-        tree_hash = (await self.git_manager._run_git_command("write-tree")).strip()
+            # 写入 Git 树
+            tree_hash = (await self.git_manager._run_git_command("write-tree")).strip()
 
-        if tree_hash:
-            # 重置索引到上一个快照的树（为下一次变更检测做准备）
-            # 首次快照时使用 --empty，后续用上次的树哈希
-            if self._last_tree_hash:
-                await self.git_manager._run_git_command(
-                    "read-tree", self._last_tree_hash
-                )
+            if tree_hash:
+                # 将新 tree hash 写入 HEAD，为下一次变更检测做准备
+                # 用 commit-tree 创建临时 commit，再用 reset --mixed 更新 HEAD
+                commit_hash = (
+                    await self.git_manager._run_git_command(
+                        "commit-tree", tree_hash, "-m", "snapshot"
+                    )
+                ).strip()
+                await self.git_manager._run_git_command("reset", "--mixed", commit_hash)
+                logger.info(f"快照成功: {tree_hash}")
             else:
-                await self.git_manager._run_git_command("read-tree", "--empty")
+                logger.warning("write-tree 返回空哈希")
+                tree_hash = await self._get_head_tree_hash()
 
-            self._last_tree_hash = tree_hash
-            logger.info(f"快照成功: {tree_hash}")
-        else:
-            logger.warning("write-tree 返回空哈希")
+            return tree_hash
+        except git.GitCommandError as e:
+            logger.error(f"捕获快照失败: {e}")
+            raise
+        finally:
+            self.git_manager.release_lock()
 
-        return tree_hash
+    async def _get_head_tree_hash(self) -> str:
+        """获取当前 HEAD 的 tree hash，没有 commit 时返回空树哈希"""
+        try:
+            repo = self.git_manager.get_repo()
+            return repo.head.commit.tree.hexsha
+        except ValueError:
+            # 如果还没有提交，创建一个空的树
+            return "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
     async def _discover_changed_files(self) -> List[str]:
         """发现变更文件"""
@@ -186,7 +198,3 @@ class SnapshotTracker:
         finally:
             # 清理临时文件
             os.unlink(temp_file)
-
-    def _create_empty_tree(self) -> str:
-        """创建空的 Git 树"""
-        return "4b825dc642cb6eb9a060e54bf8d69288fbee4904"

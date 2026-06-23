@@ -50,7 +50,8 @@ class PatchCalculator:
     async def _get_changed_files(
         self, from_hash: str, to_hash: Optional[str] = None
     ) -> List[str]:
-        """获取变更文件列表"""
+        """获取变更文件列表（在文件锁保护下原子执行）"""
+        self.git_manager.acquire_lock(blocking=True)
         try:
             if to_hash:
                 # 比较两个树对象，使用树对象语法
@@ -92,6 +93,8 @@ class PatchCalculator:
                     # 对象不存在，返回空列表
                     return []
             raise
+        finally:
+            self.git_manager.release_lock()
 
     async def calculate_diff(
         self,

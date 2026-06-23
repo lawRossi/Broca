@@ -158,6 +158,7 @@ class ExecutionEngine:
 
         # Step跟踪
         self._step_has_write_operations: bool = False
+        self._step_lock_held: bool = False  # step 期间是否持有文件锁
 
         # 上下文压缩器
         self.context_compressor: Optional[ContextCompressor] = None
@@ -189,6 +190,9 @@ class ExecutionEngine:
 
         try:
             if self._step_has_write_operations:
+                # 持有文件锁直到 step end，防止其他进程插入导致 diff 串
+                self.snapshot_tracker.git_manager.acquire_lock(blocking=True)
+                self._step_lock_held = True
                 snapshot_hash = await self.snapshot_tracker.track()
                 self.current_snapshot_hash = snapshot_hash
                 # 记录该 turn 的第一个快照（用于 turn_end 时计算全量 diff）
@@ -196,8 +200,6 @@ class ExecutionEngine:
                     self._turn_first_snapshot_hash = self.current_snapshot_hash
             else:
                 snapshot_hash = ""
-
-            # 创建STEP_START消息
             step_start_msg = MessageProtocol.create_step_start(
                 step_id=self.step_id, snapshot_hash=snapshot_hash
             )
@@ -257,7 +259,9 @@ class ExecutionEngine:
                         diff_content = await self.patch_calculator.calculate_diff(
                             self.current_snapshot_hash, end_snapshot_hash
                         )
-                        diff_summary = self.patch_calculator.get_diff_summary(diff_content)
+                        diff_summary = self.patch_calculator.get_diff_summary(
+                            diff_content
+                        )
                         patch["summary"] = diff_summary
                     except Exception as e:
                         logger.warning(f"Error calculating diff summary: {e}")
@@ -313,7 +317,7 @@ class ExecutionEngine:
         # 生成Step ID
         self.step_id = self._generate_step_id()
 
-        self._capture_step_init()
+        await self._capture_step_init()
 
         errors = 0
 
@@ -356,44 +360,49 @@ class ExecutionEngine:
         self.check_step_has_write_operations(response.tool_calls)
 
         await self._capture_step_start()
+        try:
+            message_id = response.message_id
+            if not await self.session_manager.save_agent_response(
+                response,
+                self.turn_id,
+                self.agent_id,
+                self.step_id,
+                message_id=response.message_id,
+            ):
+                logger.error("Failed to save agent response")
+                return ExecutionStatus.ERROR
 
-        message_id = response.message_id
-        if not await self.session_manager.save_agent_response(
-            response,
-            self.turn_id,
-            self.agent_id,
-            self.step_id,
-            message_id=response.message_id,
-        ):
-            logger.error("Failed to save agent response")
-            return ExecutionStatus.ERROR
+            await self.context.add_message(response, message_id)
 
-        await self.context.add_message(response, message_id)
+            if not response.tool_calls:
+                await self._capture_step_end()
+                status = ExecutionStatus.COMPLETED
+            else:
+                await self._process_tool_calls(response.tool_calls)
+                await self._capture_step_end()
 
-        if not response.tool_calls:
-            await self._capture_step_end()
-            status = ExecutionStatus.COMPLETED
-        else:
-            await self._process_tool_calls(response.tool_calls)
-            await self._capture_step_end()
-
-            # 死循环检测：如果最近三个工具调用完全一样，判定为死循环
-            tool_call_signatures = self._extract_tool_call_signatures(
-                response.tool_calls
-            )
-            self._recent_tool_call_signatures.extend(tool_call_signatures)
-            if len(self._recent_tool_call_signatures) >= 3:
-                last3 = self._recent_tool_call_signatures[-3:]
-                if last3[0] == last3[1] == last3[2]:
-                    logger.warning(
-                        f"Dead loop detected: last 3 tool calls are identical "
-                        f"({self._recent_tool_call_signatures[-1]})"
-                    )
-                    status = ExecutionStatus.DEAD_LOOP
+                # 死循环检测：如果最近三个工具调用完全一样，判定为死循环
+                tool_call_signatures = self._extract_tool_call_signatures(
+                    response.tool_calls
+                )
+                self._recent_tool_call_signatures.extend(tool_call_signatures)
+                if len(self._recent_tool_call_signatures) >= 3:
+                    last3 = self._recent_tool_call_signatures[-3:]
+                    if last3[0] == last3[1] == last3[2]:
+                        logger.warning(
+                            f"Dead loop detected: last 3 tool calls are identical "
+                            f"({self._recent_tool_call_signatures[-1]})"
+                        )
+                        status = ExecutionStatus.DEAD_LOOP
+                    else:
+                        status = ExecutionStatus.RUNNING
                 else:
                     status = ExecutionStatus.RUNNING
-            else:
-                status = ExecutionStatus.RUNNING
+        finally:
+            # 确保 step 期间持有的文件锁被释放
+            if self._step_lock_held:
+                self.snapshot_tracker.git_manager.release_lock()
+                self._step_lock_held = False
 
         if self.config.enable_context_compression:
             await self._check_context_compression()
@@ -896,7 +905,9 @@ class ExecutionEngine:
                         changed_files = {
                             "total_added": len(diff_summary.get("files_added", [])),
                             "total_deleted": len(diff_summary.get("files_deleted", [])),
-                            "total_modified": len(diff_summary.get("files_modified", [])),
+                            "total_modified": len(
+                                diff_summary.get("files_modified", [])
+                            ),
                             "files_added": diff_summary.get("files_added", []),
                             "files_deleted": diff_summary.get("files_deleted", []),
                             "files_modified": diff_summary.get("files_modified", []),
