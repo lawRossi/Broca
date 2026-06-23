@@ -186,36 +186,7 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   )
 
-  // Auth state change listener
-  context.subscriptions.push(
-    authManager.onDidChange(() => {
-      sessionTreeProvider.refresh()
-    })
-  )
-
-  // Initial login check — 先尝试本地自动登录，失败再弹登录框
-  if (!authManager.isLoggedIn) {
-    authManager.tryLocalLogin().then((localLoggedIn) => {
-      if (!localLoggedIn) {
-        authManager.login().then((success) => {
-          if (success) {
-            sessionTreeProvider.refresh()
-          }
-        })
-      } else {
-        sessionTreeProvider.refresh()
-      }
-    })
-  }
-
-  // Show login button in status bar when not logged in
-  const loginStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
-  loginStatusItem.text = '$(sign-in) Broca: Not Logged In'
-  loginStatusItem.tooltip = 'Click to login to Broca'
-  loginStatusItem.command = 'broca.login'
-  loginStatusItem.show()
-
-  // Update status bar when auth state changes
+  // Auth state change listener — 统一处理 UI 刷新和状态栏更新
   const updateLoginStatus = () => {
     if (authManager.isLoggedIn) {
       loginStatusItem.text = '$(sign-in) Broca: Logged In'
@@ -235,10 +206,27 @@ export async function activate(context: vscode.ExtensionContext) {
     })
   )
 
-  updateLoginStatus()
+  // Show login button in status bar when not logged in
+  const loginStatusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100)
+  loginStatusItem.text = '$(sign-in) Broca: Not Logged In'
+  loginStatusItem.tooltip = 'Click to login to Broca'
+  loginStatusItem.command = 'broca.login'
+  loginStatusItem.show()
 
-  // Initial load
-  sessionTreeProvider.refresh()
+  // Initial login check — 先尝试本地自动登录，失败再弹登录框
+  if (!authManager.isLoggedIn) {
+    authManager.tryLocalLogin().then((localLoggedIn) => {
+      if (!localLoggedIn) {
+        // 非本机部署，弹登录框（登录成功后 onDidChange 会自动触发 refresh + updateLoginStatus）
+        authManager.login()
+      }
+      // tryLocalLogin 成功 → onDidChange 已自动触发 refresh + updateLoginStatus
+    })
+  } else {
+    // 已有持久化会话，直接加载（onDidChange 不会在构造时触发，需要手动 refresh）
+    updateLoginStatus()
+    sessionTreeProvider.refresh()
+  }
 
   console.log('Broca extension activated')
 }
