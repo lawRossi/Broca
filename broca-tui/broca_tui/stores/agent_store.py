@@ -77,7 +77,9 @@ class AgentStore:
     def _save_visibility_state(self):
         """Save current visibility state for the active session (Web: _visibleAgentIdsMap)."""
         if self._current_session_id:
-            self._visible_agent_ids_map[self._current_session_id] = list(self.visible_agent_ids)
+            self._visible_agent_ids_map[self._current_session_id] = list(
+                self.visible_agent_ids
+            )
 
     def _restore_visibility_state(self, session_id: str) -> bool:
         """Restore visibility state for a session (Web: _visibleAgentIdsMap).
@@ -108,8 +110,11 @@ class AgentStore:
 
         try:
             # 保存当前 agent 状态（API 可能不返回 agent_status，保留实时更新的状态）
-            old_statuses = {a.get("agent_id", ""): a.get("agent_status", "idle")
-                            for a in self.agents if a.get("agent_id")}
+            old_statuses = {
+                a.get("agent_id", ""): a.get("agent_status", "idle")
+                for a in self.agents
+                if a.get("agent_id")
+            }
 
             agents = await self._api.get_session_agents(session_id)
 
@@ -124,11 +129,20 @@ class AgentStore:
             # Try to restore visibility from saved state first
             if not self._restore_visibility_state(session_id):
                 # No saved state: set all agents visible by default
-                self.visible_agent_ids = [a.get("agent_id") for a in agents if a.get("agent_id")]
+                self.visible_agent_ids = [
+                    a.get("agent_id") for a in agents if a.get("agent_id")
+                ]
 
-            # Set first agent as current
+            # Set main agent as current (find agent with role "main-agent")
             if agents and not self.current_agent_id:
-                self.current_agent_id = agents[0].get("agent_id")
+                main_agent = next(
+                    (a for a in agents if a.get("role") == "main-agent"), None
+                )
+                self.current_agent_id = (
+                    main_agent.get("agent_id")
+                    if main_agent
+                    else agents[0].get("agent_id")
+                )
         except Exception as e:
             self._notify_error(f"加载Agent列表失败: {e}")
         finally:
@@ -185,7 +199,9 @@ class AgentStore:
     def get_agent_name(self, agent_id: str) -> str:
         """Get agent display name."""
         agent = self.get_agent(agent_id)
-        return agent.get("name") or agent.get("agent_id", "Unknown") if agent else agent_id
+        return (
+            agent.get("name") or agent.get("agent_id", "Unknown") if agent else agent_id
+        )
 
     @property
     def current_agent(self) -> Optional[Dict[str, Any]]:
