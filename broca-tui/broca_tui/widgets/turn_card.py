@@ -428,6 +428,7 @@ class TurnCard(Widget):
             int, str
         ] = {}  # idx → file_path, 用于点击文件查看 diff
         self._response_expanded = True  # 回复默认展开，过长时可折叠
+        self._response_manually_toggled = False  # 用户是否手动切换过折叠状态（防止自动折叠覆盖）
         self._last_reasoning_update = 0.0  # 推理内容节流时间戳
         self._last_response_update = 0.0  # 回复内容节流时间戳
         self._last_tool_update = 0.0  # 工具调用节流时间戳
@@ -957,13 +958,15 @@ class TurnCard(Widget):
         needs_fold = has_response and self._needs_fold()
         self._toggle_display("#toggle-response", needs_fold)
         # 内容首次超过阈值时自动折叠，且每次更新都维持折叠/展开状态
+        # 注意：用户手动切换后（_response_manually_toggled=True），不再自动折叠/展开
         if has_response:
-            if needs_fold and self._response_expanded:
-                # 内容刚超过阈值，自动折叠
-                self._response_expanded = False
-            elif not needs_fold and not self._response_expanded:
-                # 内容被缩短到阈值以下，自动展开
-                self._response_expanded = True
+            if not self._response_manually_toggled:
+                if needs_fold and self._response_expanded:
+                    # 内容刚超过阈值，自动折叠
+                    self._response_expanded = False
+                elif not needs_fold and not self._response_expanded:
+                    # 内容被缩短到阈值以下，自动展开
+                    self._response_expanded = True
             self._update_response_visibility()
 
         # 当前调用 — 仅在 actively calling a tool 时显示
@@ -1058,6 +1061,7 @@ class TurnCard(Widget):
                     pass
             elif widget_id == "toggle-response":
                 self._response_expanded = not self._response_expanded
+                self._response_manually_toggled = True
                 self._update_response_visibility()
             elif widget_id and widget_id.startswith("undo-"):
                 # 撤销按钮已改为 Button，由 on_button_pressed 处理

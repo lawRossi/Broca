@@ -157,7 +157,7 @@ Label {
 }
 
 .header-brand {
-    color: $gray-600;
+    color: $gray-700;
     text-style: bold;
 }
 
@@ -179,7 +179,7 @@ Label {
 }
 
 .status-text {
-    color: $gray-200;
+    color: $gray-700;
 }
 
 .status-text.connected {
@@ -201,7 +201,7 @@ Label {
 
 .nav-button {
     background: transparent;
-    color: $gray-600;
+    color: $gray-700;
     border: none;
     min-width: 12;
     min-height: 3;
@@ -331,7 +331,7 @@ Label {
 }
 
 .stat-label {
-    color: $gray-500;
+    color: $gray-600;
     text-style: dim;
     width: 1fr;
     text-align: center;
@@ -861,19 +861,12 @@ Toast {
     min-height: 5;
 }
 
-.screen-title {
-    color: $gray-800;
-    text-style: bold;
-    width: auto;
-    margin-right: 1;
-}
-
 .header-spacer {
     width: 1fr;
 }
 
 .session-count {
-    color: $gray-600;
+    color: $gray-700;
     margin-top: 1;
 }
 
@@ -1225,7 +1218,7 @@ Toast {
 }
 
 .screen-title {
-    color: $gray-600;
+    color: $gray-700;
     text-style: bold;
     width: 1fr;
     padding-top: 1;
