@@ -28,7 +28,8 @@
   - [服务管理](#服务管理)
   - [部署架构](#部署架构)
   - [访问](#访问)
-  - [VS Code 扩展安装](#vs-code-扩展安装)
+  - [TUI 终端界面](#tui-终端界面)
+- [VS Code 扩展安装](#vs-code-扩展安装)
 - [核心架构](#核心架构)
 - [技术栈](#技术栈)
 - [模块详解](#模块详解)
@@ -44,6 +45,7 @@
   - [10. Skill 系统](#10-skill-系统)
   - [11. 命令系统](#11-命令系统)
 - [前端与客户端](#前端与客户端)
+  - [TUI 终端界面](#tui-终端界面-1)
   - [Web 前端](#web-前端)
   - [Web 后端](#web-后端)
   - [VS Code 扩展](#vs-code-扩展)
@@ -62,7 +64,7 @@ Broca 是一个用 Python 构建的Agent系统，核心设计理念是 **模块�
 - **快照与撤销**：基于Git的文件系统快照，实现操作级撤销/重做
 - **上下文压缩**：智能管理长对话上下文，自动压缩过期内容
 - **Skill插件系统**：通过 Markdown 文件定义可复用的技能
-- **多客户端**：Web界面、VS Code 扩展
+- **多客户端**：TUI 终端界面、Web 界面、VS Code 扩展
 - **多智能体编排**：4 种拓扑（Pipeline/Supervisor-Worker/Round-Table/Composite），基于有向图（Graph）驱动，共享黑板通信，支持 static/agent 路由、并行扇出/汇聚、条件跳转、循环控制、人在环路（HITL）
 - **一键安装**：通过安装脚本一键安装，支持supervisor进行服务管理
 
@@ -165,6 +167,22 @@ broca service stop
 - REST API：`http://localhost:9000/api/`
 - Socket.IO：`http://localhost:6868`
 
+### TUI 终端界面
+
+Broca 提供基于 [Textual](https://textual.textualize.io/) 的终端用户界面（TUI），可在终端中直接使用：
+
+```bash
+# 启动 TUI 界面
+broca
+```
+
+TUI 界面功能：
+- 实时会话切换
+- Agent 侧边栏（显示 Agent 状态和统计信息）
+- 消息历史浏览
+- 权限请求对话框
+- 键盘快捷键操作
+
 ### VS Code 扩展安装
 
 安装脚本会自动打包 VS Code 插件，生成 `.vsix` 文件。安装方式如下：
@@ -197,27 +215,27 @@ code --install-extension broca-vscode/broca-chat-0.1.0.vsix
 
 ### 后端核心
 
-| 技术　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 用途　　　　　　　　　　　 |          |
-| ------------------------------------------------------------| ----------------------------| ----------|
-| Python　　　　　　　　　　　　　　　　　　　　　　　　　　 | 主语言　　　　　　　　　　 |          |
-| [litellm](https://github.com/BerriAI/litellm)　　　　　　　| 统一 LLM API 接入　　　　　|          |
-| [SQLModel](https://sqlmodel.tiangolo.com/)　　　　　　　　 | ORM + 数据建模　　　　　　 |          |
-| [aiosqlite](https://github.com/omnilib/aiosqlite)　　　　　| 异步 SQLite　　　　　　　　|          |
-| [python-socketio](https://python-socketio.readthedocs.io/) | 实时通信　　　　　　　　　 |          |
-| [aiohttp](https://docs.aiohttp.org/)　　　　　　　　　　　 | 异步 HTTP　　　　　　　　　| ≥ 3.11.0 |
-| [Jinja2](https://jinja.palletsprojects.com/)　　　　　　　 | 模板渲染（编排提示词模板） |          |
-| [APScheduler](https://apscheduler.readthedocs.io/)　　　　 | 任务调度　　　　　　　　　 |          |
-| [GitPython](https://gitpython.readthedocs.io/)　　　　　　 | Git 操作　　　　　　　　　 |          |
-| [Playwright](https://playwright.dev/python/)　　　　　　　 | Web 抓取　　　　　　　　　 |          |
+| 技术　　　　　　　　　　　　　　　　　　　　　　　　　　　 | 用途　　　　　　　　　　　 |
+| ------------------------------------------------------------| ----------------------------|
+| Python　　　　　　　　　　　　　　　　　　　　　　　　　　 | 主语言　　　　　　　　　　 |
+| [litellm](https://github.com/BerriAI/litellm)　　　　　　　| 统一 LLM API 接入　　　　　|
+| [SQLModel](https://sqlmodel.tiangolo.com/)　　　　　　　　 | ORM + 数据建模　　　　　　 |
+| [aiosqlite](https://github.com/omnilib/aiosqlite)　　　　　| 异步 SQLite　　　　　　　　|
+| [python-socketio](https://python-socketio.readthedocs.io/) | 实时通信　　　　　　　　　 |
+| [aiohttp](https://docs.aiohttp.org/)　　　　　　　　　　　 | 异步 HTTP　　　　　　　　　|
+| [Jinja2](https://jinja.palletsprojects.com/)　　　　　　　 | 模板渲染（编排提示词模板） |
+| [APScheduler](https://apscheduler.readthedocs.io/)　　　　 | 任务调度　　　　　　　　　 |
+| [GitPython](https://gitpython.readthedocs.io/)　　　　　　 | Git 操作　　　　　　　　　 |
+| [Playwright](https://playwright.dev/python/)　　　　　　　 | Web 抓取　　　　　　　　　 |
 
 ### Web 后端
 
-| 技术 | 用途 |
-|------|------|
-| [FastAPI](https://fastapi.tiangolo.com/) | REST API 框架 |
-| [Uvicorn](https://www.uvicorn.org/) | ASGI 服务器 |
-| [Supabase](https://supabase.com/) | 用户认证与文件上传 |
-| [Alembic](https://alembic.sqlalchemy.org/) | 数据库迁移 |
+| 技术　　　　　　　　　　　　　　　　　　　 | 用途　　　　　　　 |
+| --------------------------------------------| --------------------|
+| [FastAPI](https://fastapi.tiangolo.com/)　 | REST API 框架　　　|
+| [Uvicorn](https://www.uvicorn.org/)　　　　| ASGI 服务器　　　　|
+| [Supabase](https://supabase.com/)　　　　　| 用户认证与文件上传 |
+| [Alembic](https://alembic.sqlalchemy.org/) | 数据库迁移　　　　 |
 
 ### 前端
 
@@ -229,6 +247,15 @@ code --install-extension broca-vscode/broca-chat-0.1.0.vsix
 | [Pinia](https://pinia.vuejs.org/) | 状态管理 |
 | [Tailwind CSS](https://tailwindcss.com/) | 样式 |
 | [Socket.IO Client](https://socket.io/) | 实时通信 |
+
+### TUI 终端界面
+
+| 技术　　　　　　　　　　　　　　　 | 用途　　　　　 |
+| -----------------------------------| ----------------|
+| Python　　　　　　　　　　　　　　| 开发语言　　　 |
+| [Textual](https://textual.textualize.io/) | 终端 UI 框架 |
+| [Rich](https://rich.readthedocs.io/) | 富文本渲染　 |
+| Socket.IO Client　　　　　　　　　| 实时通信　　　 |
 
 ### VS Code 扩展
 
@@ -263,11 +290,11 @@ Agent 有三种运行状态：`idle`、`running`、`disconnected`。每个 Agent
 - 创建/恢复/缓存 Agent 实例
 - 管理会话内的 Agent 集合
 
-### 2. 执行引擎
+### 2. 循环执行引擎
 
-**核心文件**: `broca/execution_engine.py`
+**核心文件**: `broca/loop_engine.py`
 
-ExecutionEngine 是 Agent 的执行核心，管理完整的执行生命周期：
+LoopEngine 是 Agent 的执行核心，管理完整的执行生命周期：
 
 ```
 消息输入 → 设置执行上下文 → 循环执行步骤 → 返回执行结果
@@ -1083,6 +1110,16 @@ your-project/
 
 ## 前端与客户端
 
+### TUI 终端界面
+
+`broca-tui/` — 基于 [Textual](https://textual.textualize.io/) 的终端用户界面
+
+- **特性**：轻量级，无需浏览器或图形界面，直接在终端运行
+- **组件**：会话列表、消息流、Agent 状态侧边栏、输入框、权限对话框
+- **实时通信**：Socket.IO 客户端订阅 Agent 消息流
+- **键盘快捷键**：`Ctrl+P` 切换会话、`Ctrl+N` 新建会话、`Ctrl+D` 删除会话
+- **启动方式**：直接运行 `broca` 命令即可启动 TUI
+
 ### Web 前端
 
 `broca-web/frontend/` — Vue 3 + TypeScript 单页应用
@@ -1198,6 +1235,10 @@ broca/
 │   │   ├── task.py                 # 任务管理工具
 │   │   ├── cron.py                 # 定时任务工具
 │   │   └── ...                     # 其他工具
+│   ├── utils/                      # 安全工具模块
+│   │   ├── __init__.py             # 包文件
+│   │   ├── content_security.py     # 内容安全检测（提示注入/数据泄露）
+│   │   └── shell_security.py       # Shell 命令安全检测（危险命令扫描）
 │   ├── agent.py                    # Agent 类
 │   ├── agent_configs.py            # Agent 配置
 │   ├── agent_crew.py               # [遗留] 旧的 Agent 编排（已迁移至 orchestration/）
@@ -1217,8 +1258,8 @@ broca/
 │   │       ├── graph/              #   图编排通用模板（task_context, execute_step, fan_in_agent, human_node, agent_route）
 │   │       ├── supervisor_worker/  #   supervisor-worker 模板（plan, check_and_plan, synthesize）
 │   │       ├── round_table/        #   round-table 模板（discussion, moderator_*）
-│   ├── execution_engine.py         # 执行引擎
-│   ├── commands/                   # 命令系统
+│   ├── loop_engine.py                # 循环执行引擎（LLM 调用→工具执行→快照→压缩）
+│   ├── commands/                     # 命令系统
 │   │   ├── base.py                 # 命令基类（CommandBase/LocalCommand/PromptCommand）
 │   │   ├── registry.py             # 命令注册中心
 │   │   ├── loader.py               # 命令自动加载器
@@ -1226,7 +1267,6 @@ broca/
 │   │   ├── manager.py              # 命令管理器
 │   │   ├── builtin/                # 内置本地命令（help/abort/undo/redo）
 │   │   └── prompt/                 # 内置提示命令（init/plan/ask）
-│   ├── execution_engine.py         # 执行引擎
 │   ├── context.py                  # 上下文管理
 │   ├── context_compressor.py       # 上下文压缩
 │   ├── llm.py                      # LLM 客户端
@@ -1235,6 +1275,12 @@ broca/
 │   ├── permission_manager.py       # 权限管理
 │   ├── error_handler.py            # 错误处理
 │   └── configs.py                  # 全局配置
+├── broca-tui/                      # TUI 终端界面（Textual）
+│   └── src/
+│       ├── screens/                # 屏幕组件（Chat, Sessions, Settings）
+│       ├── widgets/                # 小组件（AgentCard, MessageItem, InputBar）
+│       ├── client.py               # Socket.IO 客户端
+│       └── app.py                  # TUI 应用入口
 ├── broca-web/                      # Web 应用
 │   ├── backend/                    # FastAPI 后端
 │   │   ├── app/
