@@ -1016,7 +1016,7 @@ Skill 是可复用的能力单元，以 Markdown 文件定义：
 | 类型 | 说明 | 示例 |
 |------|------|------|
 | **LocalCommand** | 在 Agent 进程内本地执行，不涉及 LLM 调用 | `/help`, `/abort`, `/undo`, `/redo` |
-| **PromptCommand** | 构造提示词后调用 LLM 执行，可生成流式回复 | `/ask`, `/plan`, `/init` |
+| **PromptCommand** | 构造提示词后调用 LLM 执行，可生成流式回复 | `/plan`, `/init`, `/debug`, `/review-code`, `/review-execution`, `/execute-plan` |
 
 #### 架构
 
@@ -1077,9 +1077,12 @@ class HelpCommand(LocalCommand):
 | `/abort` | local | 中止当前 Agent 执行（隐藏，不显示在补全中） |
 | `/undo` | local | 撤销上一步操作（隐藏） |
 | `/redo` | local | 重做上一次撤销的操作（隐藏） |
-| `/ask` | prompt | 回答问题模式，不做任何文件修改 |
-| `/init` | prompt | 初始化项目，扫描工作区并生成 `.agents/AGENTS.md` 概要 |
 | `/plan` | prompt | 根据用户目标制定进化计划并形成文档，不执行 |
+| `/init` | prompt | 初始化项目，扫描工作区并生成 `.agents/AGENTS.md` 概要 |
+| `/debug` | prompt | 系统性 Bug 修复 — 复现、隔离、理解、修复、验证 |
+| `/review-code` | prompt | 代码评审 — 检查 Bug、安全、代码异味、风格和最佳实践 |
+| `/review-execution` | prompt | 评审计划执行质量，对比计划文件与实际执行结果 |
+| `/execute-plan` | prompt | 执行已制定的计划文件 |
 
 #### 前端集成
 
@@ -1266,7 +1269,7 @@ broca/
 │   │   ├── dispatcher.py           # 命令分发器
 │   │   ├── manager.py              # 命令管理器
 │   │   ├── builtin/                # 内置本地命令（help/abort/undo/redo）
-│   │   └── prompt/                 # 内置提示命令（init/plan/ask）
+│   │   └── prompt/                 # 内置提示命令（init/plan/debug/review-code/review-execution/execute-plan）
 │   ├── context.py                  # 上下文管理
 │   ├── context_compressor.py       # 上下文压缩
 │   ├── llm.py                      # LLM 客户端
