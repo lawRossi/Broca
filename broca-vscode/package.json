@@ -20,7 +20,8 @@
     "onCommand:broca.logout",
     "onCommand:broca.configure",
     "onCommand:broca.submitCrew",
-    "onCommand:broca.openCrewList"
+    "onCommand:broca.openCrewList",
+    "onCommand:broca.toggleSessionFilter"
   ],
   "main": "./dist/extension/activation.js",
   "contributes": {
@@ -68,6 +69,11 @@
         "command": "broca.refreshSessions",
         "title": "Refresh Sessions",
         "icon": "$(refresh)"
+      },
+      {
+        "command": "broca.toggleSessionFilter",
+        "title": "Toggle Session Filter",
+        "icon": "$(filter)"
       },
       {
         "command": "broca.copySessionId",
