@@ -96,6 +96,17 @@ export interface TurnSummaryData {
   final_response: string
   is_reverted: boolean
   last_message_id: string | null
+  // 文件变更摘要（后端仅在 turn_end 中有变更数据时返回）
+  changed_files?: {
+    total_added: number
+    total_deleted: number
+    total_modified: number
+    files_added: string[]
+    files_deleted: string[]
+    files_modified: string[]
+    first_snapshot_hash?: string
+    last_snapshot_hash?: string
+  }
 }
 
 export interface TurnsResponse {

@@ -36,12 +36,14 @@ class FileLock:
     """
 
     # flock() 在这些 errno 下说明文件系统不支持，需要 fallback
-    _FLOCK_FALLBACK_ERRNOS = frozenset({
-        errno.ENOTSUP,    # Operation not supported (常见于 NFS)
-        errno.EOPNOTSUPP, # Operation not supported on socket
-        errno.EINVAL,     # Invalid argument (常见于 SMB 挂载)
-        errno.ENOSYS,     # Function not implemented
-    })
+    _FLOCK_FALLBACK_ERRNOS = frozenset(
+        {
+            errno.ENOTSUP,  # Operation not supported (常见于 NFS)
+            errno.EOPNOTSUPP,  # Operation not supported on socket
+            errno.EINVAL,  # Invalid argument (常见于 SMB 挂载)
+            errno.ENOSYS,  # Function not implemented
+        }
+    )
 
     def __init__(self, path: str):
         self._path = Path(path)
@@ -271,28 +273,24 @@ class GitManager:
 
     def initialize(self) -> None:
         """初始化 Git 仓库"""
-        self._lock.acquire(blocking=True)
+        # 创建目录
+        self.repo_path.mkdir(parents=True, exist_ok=True)
+
+        # 初始化 Git 仓库
         try:
-            # 创建目录
-            self.repo_path.mkdir(parents=True, exist_ok=True)
+            self.repo = git.Repo.init(self.repo_path)
+        except git.exc.InvalidGitRepositoryError:
+            self.repo = git.Repo(self.repo_path)
 
-            # 初始化 Git 仓库
-            try:
-                self.repo = git.Repo.init(self.repo_path)
-            except git.exc.InvalidGitRepositoryError:
-                self.repo = git.Repo(self.repo_path)
+        # 配置 Git
+        self._configure_git()
 
-            # 配置 Git
-            self._configure_git()
-
-            # 设置工作树（通过环境变量）
-            custom_env = {
-                "GIT_WORK_TREE": str(self.workspace_path),
-                "GIT_DIR": str(self.repo.git_dir),
-            }
-            self.repo.git.custom_environment(**custom_env)
-        finally:
-            self._lock.release()
+        # 设置工作树（通过环境变量）
+        custom_env = {
+            "GIT_WORK_TREE": str(self.workspace_path),
+            "GIT_DIR": str(self.repo.git_dir),
+        }
+        self.repo.git.custom_environment(**custom_env)
 
     def _configure_git(self) -> None:
         """配置 Git 仓库"""
@@ -308,14 +306,8 @@ class GitManager:
 
     def ensure_initialized(self) -> None:
         """确保 Git 仓库已初始化"""
-        if not self.repo_path.exists():
+        if not self.repo:
             self.initialize()
-        elif not self.repo:
-            self._lock.acquire(blocking=True)
-            try:
-                self.repo = git.Repo(self.repo_path)
-            finally:
-                self._lock.release()
 
     def acquire_lock(self, blocking: bool = True) -> bool:
         """

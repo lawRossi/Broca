@@ -65,9 +65,42 @@ class SnapshotTracker:
             logger.info("变更文件:" + ",".join(filtered_files)[:200] + "...")
 
             if not filtered_files:
-                # 没有变更，返回当前 HEAD 的 tree hash
-                logger.info("无变更，返回当前 HEAD 的 tree hash")
-                return await self._get_head_tree_hash()
+                # 没有可直接 stage 的变更文件，但需要检查索引 vs HEAD 是否有差异
+                # 场景 restore() + orphan cleanup 后，HEAD 树可能包含索引/工作区中
+                # 已不存在的文件（幽灵文件）。这些文件被 _filter_files 过滤掉了，
+                # 但索引与 HEAD 确实不同。此时应创建新树来反映真实状态。
+                has_index_diff = False
+                try:
+                    # diff-index --cached --quiet 返回 0=无差异, 非0=有差异
+                    await self.git_manager._run_git_command(
+                        "diff-index", "--cached", "--quiet", "HEAD", "--", "."
+                    )
+                except git.GitCommandError:
+                    has_index_diff = True
+
+                if has_index_diff:
+                    # 索引与 HEAD 不同，直接 write-tree 捕获当前索引状态
+                    tree_hash = (
+                        await self.git_manager._run_git_command("write-tree")
+                    ).strip()
+                    if tree_hash:
+                        commit_hash = (
+                            await self.git_manager._run_git_command(
+                                "commit-tree", tree_hash, "-m", "snapshot"
+                            )
+                        ).strip()
+                        await self.git_manager._run_git_command(
+                            "reset", "--mixed", commit_hash
+                        )
+                        logger.info(f"快照成功(索引变更): {tree_hash}")
+                        return tree_hash
+                    else:
+                        logger.warning("write-tree 返回空哈希")
+                        return await self._get_head_tree_hash()
+                else:
+                    # 没有变更，返回当前 HEAD 的 tree hash
+                    logger.info("无变更，返回当前 HEAD 的 tree hash")
+                    return await self._get_head_tree_hash()
 
             # 移除忽略文件
             ignored_files = set(changed_files) - set(filtered_files)
@@ -117,7 +150,7 @@ class SnapshotTracker:
         """发现变更文件"""
         changed_files = []
 
-        # 获取已跟踪文件的变更
+        # 获取已跟踪文件的变更（工作区 vs 索引）
         try:
             diff_files = (
                 await self.git_manager._run_git_command(
@@ -127,6 +160,23 @@ class SnapshotTracker:
             if diff_files:
                 changed_files.extend(f for f in diff_files.split("\x00") if f)
         except git.GitCommandError:
+            pass
+
+        # 获取暂存区变更（索引 vs HEAD）
+        # 关键：revert_patches 通过 git checkout <tree> -- <file> 恢复文件，
+        # 这会更新索引和工作区但不会更新 HEAD。如果漏掉此检查，track() 会
+        # 认为没有变更（diff-files 无差异）并返回过期的 HEAD 树哈希，
+        # 导致 undo/redo 保存错误的快照。
+        try:
+            staged_files = (
+                await self.git_manager._run_git_command(
+                    "diff-index", "--cached", "--name-only", "-z", "HEAD", "--", "."
+                )
+            ).strip()
+            if staged_files:
+                changed_files.extend(f for f in staged_files.split("\x00") if f)
+        except git.GitCommandError:
+            # HEAD 不存在（首次提交前）时静默忽略
             pass
 
         # 获取未跟踪文件
@@ -152,15 +202,28 @@ class SnapshotTracker:
             if await self.git_manager.is_ignored(file_path):
                 continue
 
-            # 检查文件大小
+            # 检查文件大小（仅对真实存在的文件）
             full_path = self.workspace_path / file_path
             if full_path.is_file():
                 try:
                     file_size = full_path.stat().st_size
-                    # 跳过大于 2MB 的文件
-                    if file_size > 2 * 1024 * 1024:  # 2MB
+                    if file_size > 2 * 1024 * 1024:  # 跳过大于 2MB 的文件
                         continue
                 except (OSError, FileNotFoundError):
+                    continue
+            else:
+                # 文件不在磁盘上：检查是否在索引中
+                # 场景：diff-index --cached HEAD 可能报告 HEAD 中存在但
+                # 索引/工作区都不存在的"幽灵文件"。对于此类文件，git add
+                # 会报 "pathspec did not match any files" 错误。
+                try:
+                    result = await self.git_manager._run_git_command(
+                        "ls-files", "--cached", file_path
+                    )
+                    if not result.strip():
+                        # 文件既不在磁盘也不在索引中，跳过
+                        continue
+                except git.GitCommandError:
                     continue
 
             filtered_files.append(file_path)

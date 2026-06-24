@@ -565,11 +565,16 @@ class Agent:
         arguments = message.data.get("arguments", {})
         logger.info(f"Received command: {command}")
 
+        # COMMAND 消息是系统级消息，不属于任何 turn。
+        # 若使用 self.turn_id（可能还指向上一个已完成的 turn），
+        # 会导致 undo/redo 的 redo 操作通过 _mark_messages_as_redone
+        # 错误地将该 turn 的 reverted 标记恢复为 False，
+        # 从而使前端展示一条只有标题栏的空卡片。
         await self.session_manager.save_message(
             role=MessageRole.SYSTEM,
             content=command,
             message_type=MessageType.COMMAND,
-            turn_id=self.turn_id,
+            turn_id=None,
             agent_id=self.agent_id,
         )
 
