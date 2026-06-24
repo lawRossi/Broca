@@ -17,6 +17,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from broca.logging_config import get_logger
 from broca.session.models import JobStatus, JobType, MessageProtocol
 from broca.session.service import get_job_execution_service, get_job_service
+from broca.utils.shell_security import validate_shell_command
 
 logger = get_logger(__name__)
 
@@ -439,12 +440,35 @@ class Scheduler:
                 f"Executing command job: {job_id}, command: {command}, agent_id: {agent_id}"
             )
 
-            import shlex
+            # ── 安全检查 ────────────────────────────────────────────
+            is_safe, reason, snippet = validate_shell_command(command)
+            if not is_safe:
+                warning_msg = (
+                    f"命令被安全策略拦截: {reason}\n"
+                    f"触发代码: {snippet}"
+                )
+                logger.warning(
+                    f"Command blocked by security policy: job={job_id}, "
+                    f"command={command!r}, reason={reason}"
+                )
+                if agent_id:
+                    try:
+                        await self._send_message_to_agent(agent_id, warning_msg)
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to send security warning to agent {agent_id}: {e}"
+                        )
+                await self.execution_service.create_execution(
+                    job_id=job_id, success=False, result=warning_msg
+                )
+                return
+
+            # ── 执行命令（使用 shell=True 以支持 cd 等内建命令） ──
             import subprocess
 
-            # 执行命令
             result = subprocess.run(
-                shlex.split(command),
+                command,
+                shell=True,
                 capture_output=True,
                 text=True,
                 timeout=300,  # 5分钟超时

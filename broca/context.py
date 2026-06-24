@@ -9,7 +9,7 @@ from broca.agent_configs import AgentConfig
 from broca.logging_config import get_logger
 from broca.session import MessageType, SessionManager
 from broca.skill_manager import SkillManager
-from broca.utils import scan_content_security
+from broca.utils.content_security import scan_content_security
 
 # 记忆存储路径和分隔符（与 broca/tools/memory.py 保持一致）
 MEMORY_DIR = Path(".broca") / "memories"

@@ -13,7 +13,7 @@ import json
 from pathlib import Path
 
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
-from broca.utils import scan_content_security
+from broca.utils.content_security import scan_content_security
 
 # 条目分隔符
 ENTRY_DELIMITER = "\n§\n"

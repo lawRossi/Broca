@@ -136,10 +136,20 @@ class Tool:
             "array": list,
             "object": dict,
         }
-        py_type = type_map.get(expected_type)
-        if py_type is None:
-            return True  # Unknown type, skip check
-        return isinstance(value, py_type)
+        if isinstance(expected_type, str):
+            py_type = type_map.get(expected_type)
+            if py_type is None:
+                return True  # Unknown type, skip check
+            return isinstance(value, py_type)
+        elif isinstance(expected_type, list):
+            for type_ in expected_type:
+                py_type = type_map.get(type_)
+                if py_type is None:
+                    continue  # Unknown type, skip check
+                if isinstance(value, py_type):
+                    return True
+
+        return False
 
     async def execute(self, arguments: str, context: ToolCallContext) -> ToolResult:
         try:
