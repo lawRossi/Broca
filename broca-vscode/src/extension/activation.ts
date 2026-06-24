@@ -29,6 +29,10 @@ export async function activate(context: vscode.ExtensionContext) {
     showCollapseAll: false,
   })
 
+  // Set workspace context for filter button visibility
+  const hasWorkspace = !!vscode.workspace.workspaceFolders?.[0]
+  vscode.commands.executeCommand('setContext', 'broca:hasWorkspace', hasWorkspace)
+
   // Initialize Chat WebView manager
   chatWebViewManager = new ChatWebViewManager(context, authManager, configManager, handleAuthError)
   apiClient = new ApiClient(configManager, () => authManager.token)
@@ -78,6 +82,12 @@ export async function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('broca.refreshSessions', () => {
       sessionTreeProvider.refresh()
+    })
+  )
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('broca.toggleSessionFilter', () => {
+      sessionTreeProvider.toggleShowAll()
     })
   )
 

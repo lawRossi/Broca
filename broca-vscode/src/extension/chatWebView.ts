@@ -352,6 +352,24 @@ export class ChatWebViewManager {
         case 'cancel':
           panel.dispose()
           break
+
+        case 'browseWorkspace':
+          try {
+            const defaultUri = workspacePath ? vscode.Uri.file(workspacePath) : undefined
+            const uris = await vscode.window.showOpenDialog({
+              canSelectFolders: true,
+              canSelectFiles: false,
+              canSelectMany: false,
+              defaultUri,
+              title: '选择工作空间目录',
+            })
+            if (uris && uris.length > 0) {
+              this.postToPanel(panel, { type: 'workspacePath', payload: uris[0].fsPath } as ExtensionToWebView)
+            }
+          } catch (error: any) {
+            this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
+          }
+          break
       }
     })
   }
@@ -504,6 +522,15 @@ export class ChatWebViewManager {
       <div class="hint">选择模型，留空则使用提供商默认模型</div>
     </div>
 
+    <div class="field">
+      <label for="workspace">工作空间</label>
+      <div style="display:flex;gap:6px;">
+        <input id="workspace" type="text" value="${workspacePath}" placeholder="工作空间路径" style="flex:1;" />
+        <button id="browseBtn" class="btn-secondary" style="white-space:nowrap;padding:8px 12px;flex-shrink:0;">浏览...</button>
+      </div>
+      <div class="hint">会话的工作目录，可直接输入或点击「浏览」选择文件夹</div>
+    </div>
+
     <div class="error" id="errorMsg"></div>
 
     <div class="buttons">
@@ -521,6 +548,8 @@ export class ChatWebViewManager {
       const cancelBtn = document.getElementById('cancelBtn');
       const errorMsg = document.getElementById('errorMsg');
       const descriptionInput = document.getElementById('description');
+      const workspaceInput = document.getElementById('workspace');
+      const browseBtn = document.getElementById('browseBtn');
       const categoryInputs = document.querySelectorAll('input[name="category"]');
 
       let providers = [];
@@ -553,6 +582,9 @@ export class ChatWebViewManager {
           case 'sessionCreated':
             createBtn.disabled = false;
             createBtn.textContent = '创建会话';
+            break;
+          case 'workspacePath':
+            workspaceInput.value = msg.payload;
             break;
           case 'error':
             createBtn.disabled = false;
@@ -597,6 +629,11 @@ export class ChatWebViewManager {
         }
       });
 
+      // Browse button — open VS Code directory picker
+      browseBtn.addEventListener('click', () => {
+        vscode.postMessage({ type: 'browseWorkspace' });
+      });
+
       createBtn.addEventListener('click', () => {
         createBtn.disabled = true;
         createBtn.textContent = '创建中...';
@@ -605,7 +642,7 @@ export class ChatWebViewManager {
         const description = descriptionInput.value.trim() || undefined;
         const provider = providerSelect.value || defaultProviderVal || undefined;
         const model = modelSelect.value || defaultModelVal || undefined;
-        const workspace = ${JSON.stringify(workspacePath)} || undefined;
+        const workspace = workspaceInput.value.trim() || undefined;
         const category = document.querySelector('input[name="category"]:checked')?.value || 'normal';
 
         vscode.postMessage({

@@ -76,6 +76,39 @@ class SessionTreeItem extends vscode.TreeItem {
   }
 }
 
+/**
+ * A special tree item displayed at the top of the session list to indicate
+ * the current filter state. Clicking it toggles between workspace-only and all sessions.
+ */
+class FilterStatusItem extends SessionTreeItem {
+  constructor(showAll: boolean, onClickCommand: string) {
+    const label = showAll
+      ? 'Showing: all sessions  (click to filter by workspace)'
+      : 'Filtering: current workspace  (click to show all)'
+    // Pass minimal session data — this is a fake item, not a real session
+    super({
+      session_id: '__filter_status__',
+      description: label,
+      workspace: '',
+      category: 'normal',
+      created_at: '',
+      runner_status: '',
+    } as Session, vscode.TreeItemCollapsibleState.None)
+
+    this.id = '__filter_status__'
+    this.contextValue = 'filterStatus'
+    this.iconPath = new vscode.ThemeIcon(showAll ? 'globe' : 'filter')
+    this.description = ''
+    this.tooltip = showAll
+      ? 'Currently showing all sessions. Click to filter by current workspace.'
+      : 'Currently filtering by current workspace. Click to show all sessions.'
+    this.command = {
+      command: onClickCommand,
+      title: 'Toggle Session Filter',
+    }
+  }
+}
+
 export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeItem> {
   private _onDidChangeTreeData = new vscode.EventEmitter<SessionTreeItem | undefined | null | void>()
   readonly onDidChangeTreeData: vscode.Event<SessionTreeItem | undefined | null | void> =
@@ -84,6 +117,7 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
   private apiClient: ApiClient
   private sessions: Session[] = []
   private refreshInterval: NodeJS.Timeout | null = null
+  private _showAllSessions: boolean = false
 
   constructor(
     private authManager: AuthManager,
@@ -93,8 +127,25 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
     this.apiClient = new ApiClient(configManager, () => authManager.token)
     this.apiClient.onAuthError = onAuthError ?? null
 
+    // Initialize context: filtering by workspace by default
+    vscode.commands.executeCommand('setContext', 'broca:showAllSessions', false)
+
     // Auto-refresh every 30 seconds
     this.refreshInterval = setInterval(() => this.refresh(), 30000)
+  }
+
+  get showAllSessions(): boolean {
+    return this._showAllSessions
+  }
+
+  toggleShowAll(): void {
+    // No-op if no workspace folder is open (already showing all sessions)
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath
+    if (!workspacePath) return
+
+    this._showAllSessions = !this._showAllSessions
+    vscode.commands.executeCommand('setContext', 'broca:showAllSessions', this._showAllSessions)
+    this.refresh()
   }
 
   getTreeItem(element: SessionTreeItem): vscode.TreeItem {
@@ -107,8 +158,13 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
       return []
     }
 
-    // Root level: return sessions
-    return this.sessions.map((s) => new SessionTreeItem(s, vscode.TreeItemCollapsibleState.None))
+    // Root level: return sessions with filter status at top
+    const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath
+    const items = this.sessions.map((s) => new SessionTreeItem(s, vscode.TreeItemCollapsibleState.None))
+    if (workspacePath) {
+      items.unshift(new FilterStatusItem(this._showAllSessions, 'broca.toggleSessionFilter'))
+    }
+    return items
   }
 
   async refresh(): Promise<void> {
@@ -128,9 +184,9 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
       const response = await this.apiClient.getSessions({ limit: 50 })
       let sessions = response.sessions || []
 
-      // Filter by current workspace path if available
+      // Filter by current workspace path if available (unless showing all)
       const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath
-      if (workspacePath) {
+      if (workspacePath && !this._showAllSessions) {
         sessions = sessions.filter((s) =>
           // Only include sessions whose workspace matches the current project directory
           !!s.workspace && s.workspace.startsWith(workspacePath)
