@@ -70,7 +70,7 @@ class AssignTask(Tool):
 
     async def _execute(self, arguments, context: ToolCallContext) -> ToolResult:
         from broca.agent_manager import AgentFactory
-        from broca.execution_engine import ExecutionStatus
+        from broca.loop_engine import ExecutionStatus
 
         agent = context.agent
         factory = AgentFactory()

@@ -320,7 +320,7 @@ class GraphOrchestrator(Orchestrator, ABC):
             namespace=self.namespace,
         )
 
-        from broca.execution_engine import ExecutionStatus as ExecStatus
+        from broca.loop_engine import ExecutionStatus as ExecStatus
 
         if execution_result.status == ExecStatus.COMPLETED:
             await check_blackboard_for_stop(self.context.blackboard)
@@ -445,7 +445,7 @@ class GraphOrchestrator(Orchestrator, ABC):
             trigger_message, from_agent=True, namespace=self.namespace
         )
 
-        from broca.execution_engine import ExecutionStatus as ExecStatus
+        from broca.loop_engine import ExecutionStatus as ExecStatus
 
         if execution_result.status != ExecStatus.COMPLETED:
             raise RuntimeError(
@@ -549,7 +549,7 @@ class GraphOrchestrator(Orchestrator, ABC):
             msg, from_agent=True, namespace=self.namespace
         )
 
-        from broca.execution_engine import ExecutionStatus as ES
+        from broca.loop_engine import ExecutionStatus as ES
 
         if exec_result.status != ES.COMPLETED:
             logger.warning(f"Agent routing failed: {exec_result.error}")

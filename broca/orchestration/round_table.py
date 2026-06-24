@@ -113,7 +113,7 @@ class RoundTableOrchestrator(Orchestrator):
         )
 
         try:
-            from broca.execution_engine import ExecutionStatus as ES
+            from broca.loop_engine import ExecutionStatus as ES
             from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=prompt)
@@ -468,7 +468,7 @@ class RoundTableOrchestrator(Orchestrator):
 
         prompt = PromptLoader.render("round_table", template, **kwargs)
 
-        from broca.execution_engine import ExecutionStatus as ES
+        from broca.loop_engine import ExecutionStatus as ES
         from broca.session import MessageProtocol
 
         trigger_message = MessageProtocol.create_user_message(content=prompt)
@@ -504,7 +504,7 @@ class RoundTableOrchestrator(Orchestrator):
     async def _get_agent_response(self, agent: Any, prompt: str) -> str:
         """获取 Agent 的讨论发言"""
         try:
-            from broca.execution_engine import ExecutionStatus
+            from broca.loop_engine import ExecutionStatus
             from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=prompt)
@@ -546,7 +546,7 @@ class RoundTableOrchestrator(Orchestrator):
         )
 
         try:
-            from broca.execution_engine import ExecutionStatus
+            from broca.loop_engine import ExecutionStatus
             from broca.session import MessageProtocol
 
             trigger_message = MessageProtocol.create_user_message(content=prompt)

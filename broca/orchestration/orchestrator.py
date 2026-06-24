@@ -309,7 +309,7 @@ async def execute_agents_in_parallel(
                 trigger_message, from_agent=True, namespace=namespace
             )
 
-            from broca.execution_engine import ExecutionStatus as ES
+            from broca.loop_engine import ExecutionStatus as ES
 
             if execution_result.status == ES.COMPLETED:
                 message = agent.context.get_latest_assistant_message()

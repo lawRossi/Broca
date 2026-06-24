@@ -81,7 +81,7 @@ class ExecutionResult:
         return f"ExecutionResult(status={self.status}, message={self.message})"
 
 
-class ExecutionEngine:
+class LoopEngine:
     """
     Execution Engine for agent operations
 
@@ -677,7 +677,7 @@ class ExecutionEngine:
         for tc in tool_calls:
             name = tc.function.name
             args = tc.function.arguments
-            normalized_args = ExecutionEngine._normalize_arguments(args)
+            normalized_args = LoopEngine._normalize_arguments(args)
             signatures.append(f"{name}({normalized_args})")
         return signatures
 

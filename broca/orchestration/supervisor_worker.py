@@ -269,7 +269,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             worker_count=len(self.worker_names),
         )
 
-        from broca.execution_engine import ExecutionStatus as ES
+        from broca.loop_engine import ExecutionStatus as ES
         from broca.session import MessageProtocol
 
         trigger_message = MessageProtocol.create_user_message(content=prompt)
@@ -361,7 +361,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             max_rounds=max_rounds,
         )
 
-        from broca.execution_engine import ExecutionStatus as ES
+        from broca.loop_engine import ExecutionStatus as ES
         from broca.session import MessageProtocol
 
         trigger_message = MessageProtocol.create_user_message(content=prompt)
@@ -407,7 +407,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             accumulated=accumulated_results,
         )
 
-        from broca.execution_engine import ExecutionStatus as ES
+        from broca.loop_engine import ExecutionStatus as ES
         from broca.session import MessageProtocol
 
         trigger_message = MessageProtocol.create_user_message(content=prompt)

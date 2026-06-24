@@ -13,7 +13,7 @@ from broca.agent_configs import AgentConfig
 from broca.communication.agent_communicator import AgentCommunicator
 from broca.context import Context
 from broca.error_handler import ErrorHandler
-from broca.execution_engine import ExecutionEngine, ExecutionResult, ExecutionStatus
+from broca.loop_engine import LoopEngine, ExecutionResult, ExecutionStatus
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
 from broca.permission_manager import PermissionManager
@@ -224,7 +224,7 @@ class Agent:
 
     def _setup_execution_engine(self):
         """Set up execution engine"""
-        self.execution_engine = ExecutionEngine(
+        self.execution_engine = LoopEngine(
             agent=self,
             llm_client=self.llm_client,
             context=self.context,
