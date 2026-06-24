@@ -4,11 +4,11 @@
         "api_key": "",
         "models": {
             "glm-4.7": {
-                "model": "openai/glm-4.7-flash",
+                "model": "openai/glm-4.7",
                 "temperature": 0.5,
                 "meta": {
                     "modality": {"text": ""},
-                    "context_window": 131072
+                    "context_window": 200000
                 }
             }
         }
@@ -26,7 +26,7 @@
                 "allowed_openai_params": ["reasoning_effort"],
                 "meta": {
                     "modality": {"text": ""},
-                    "context_window": 65536
+                    "context_window": 1000000
                 }
             },
             "deepseek-v4-flash": {
@@ -36,31 +36,24 @@
                 "extra_body": {"thinking": {"type": "disabled"}},
                 "meta": {
                     "modality": {"text": ""},
-                    "context_window": 65536
+                    "context_window": 1000000
                 }
             }
         }
     },
-    "openrouter": {
-        "base_url": "https://openrouter.ai/api/v1",
+    "Stepfun": {
+        "base_url": "https://api.stepfun.com/v1",
         "api_key": "",
         "models": {
-            "minimax": {
-                "model": "openai/minimax/minimax-m2.5:free",
+            "step-3.7-flash": {
+                "model": "openai/step-3.7-flash",
                 "temperature": 0.5,
-                "extra_body": {"reasoning": {"enabled": true}},
+                "reasoning_effort": "medium",
+                "max_tokens": 10000,
+                "allowed_openai_params": ["reasoning_effort"],
                 "meta": {
-                    "modality": {"text": ""},
-                    "context_window": 131072
-                }
-            },
-            "hy3-preview": {
-                "model": "openai/tencent/hy3-preview:free",
-                "temperature": 0.5,
-                "extra_body": {"reasoning": {"enabled": true}},
-                "meta": {
-                    "modality": {"text": ""},
-                    "context_window": 131072
+                    "modality": {"text": "", "image": {}},
+                    "context_window": 256000
                 }
             }
         }
