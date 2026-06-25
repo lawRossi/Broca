@@ -309,7 +309,7 @@ class Agent:
         # Use permission manager to handle the request with request_type="tool"
         async with self.error_handler.handle_permission_request():
             return await self.permission_manager.request_tool_permission(
-                f"Tool `{tool_name}` requires your permission."
+                f"工具 `{tool_name}` 需要你授权。"
             )
 
     async def _on_permission_response(self, message: Message):

@@ -24,7 +24,7 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
       <template v-if="isToolPermission">
         <div class="permission-grid">
           <div class="perm-btn" @click="chatStore.respondPermission(false, 'forbid')">
-            <span class="btn-label">🔒 当前Session都不允许</span>
+            <span class="btn-label">🔒 当前会话都不允许</span>
             <span class="btn-desc">后续不再询问</span>
           </div>
           <div class="perm-btn" @click="chatStore.respondPermission(false)">
@@ -36,7 +36,7 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
             <span class="btn-desc">仅本次执行</span>
           </div>
           <div class="perm-btn" @click="chatStore.respondPermission(true, 'allow')">
-            <span class="btn-label">🔓 当前Session都允许</span>
+            <span class="btn-label">🔓 当前会话都允许</span>
             <span class="btn-desc">后续不再询问</span>
           </div>
         </div>
@@ -44,8 +44,8 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
       <!-- General permission: 2 options (existing flow) -->
       <template v-else>
         <div class="flex justify-end gap-3">
-          <el-button @click="chatStore.respondPermission(false)"> Deny </el-button>
-          <el-button @click="chatStore.respondPermission(true)"> Allow </el-button>
+          <el-button @click="chatStore.respondPermission(false)"> 拒绝 </el-button>
+          <el-button @click="chatStore.respondPermission(true)"> 允许 </el-button>
         </div>
       </template>
     </template>

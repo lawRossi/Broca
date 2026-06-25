@@ -27,7 +27,7 @@ function handleClose() {
       <div class="dialog-container">
         <div class="dialog-header">
           <span class="dialog-icon">❓</span>
-          <span class="dialog-title">Agent Question</span>
+          <span class="dialog-title">Agent 提问</span>
           <button class="close-btn" @click="handleClose">✕</button>
         </div>
         <div class="dialog-body">
@@ -48,15 +48,15 @@ function handleClose() {
 
           <!-- Free text input (always visible) -->
           <div class="text-input-area" :class="{ 'with-options': chatStore.agentQueryDialog.options.length > 0 }">
-            <label v-if="chatStore.agentQueryDialog.options.length > 0" class="input-label">Or enter your own answer:</label>
-            <label v-else class="input-label">Enter your answer:</label>
+            <label v-if="chatStore.agentQueryDialog.options.length > 0" class="input-label">自定义回答:</label>
+            <label v-else class="input-label">自定义回答:</label>
             <textarea
               v-model="answer"
               class="answer-input"
-              placeholder="Type your answer..."
+              placeholder="输入你的回答... (Ctrl+Enter 提交)"
               rows="3"
             ></textarea>
-            <button class="btn btn-primary" @click="handleSubmit" :disabled="!answer.trim()">Submit</button>
+            <button class="btn btn-primary" @click="handleSubmit" :disabled="!answer.trim()">提交</button>
           </div>
         </div>
       </div>

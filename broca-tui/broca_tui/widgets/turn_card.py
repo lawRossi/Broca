@@ -499,7 +499,7 @@ class TurnCard(Widget):
             try:
                 resp_text = self.query_one("#response-text", Static)
                 now = time.time()
-                if now - self._last_response_update >= 0.2:
+                if now - self._last_response_update >= 0.025:
                     resp_text.update(
                         Markdown(
                             self._format_response(self._turn.final_response),
@@ -605,15 +605,13 @@ class TurnCard(Widget):
         except Exception:
             pass
 
-        # 更新 TODO 列表内容 — 替换容器内子元素（容器本身不重建）
+        # 更新 TODO 列表内容 — 预创建 Label，只 update + display 切换
+        MAX_TODO_ITEMS = 50
         if self._show_todo_list():
             try:
-                todo_container = self.query_one("#todo-list", Vertical)
-                # 保留标题 label，移除后面 todo 项
-                children = list(todo_container.children)
-                for child in children[1:]:  # 跳过第1个（"📝 任务" label）
-                    child.remove()
-                for todo in self._turn.current_todo_list:
+                for i, todo in enumerate(self._turn.current_todo_list):
+                    if i >= MAX_TODO_ITEMS:
+                        break
                     todo_name = todo.get("name", "")
                     todo_status = todo.get("status", "pending")
                     icon = (
@@ -621,9 +619,16 @@ class TurnCard(Widget):
                         if todo_status == "completed"
                         else ("⏳" if todo_status == "in_progress" else "⬜️")
                     )
-                    todo_container.mount(
-                        Label(f"{icon} {todo_name}", classes="turn-todo-item")
-                    )
+                    label = self.query_one(f"#todo-item-{i}", Label)
+                    label.update(f"{icon} {todo_name}")
+                    label.display = True
+                # 剩余预创建项隐藏
+                remaining = len(self._turn.current_todo_list)
+                for i in range(remaining, MAX_TODO_ITEMS):
+                    try:
+                        self.query_one(f"#todo-item-{i}", Label).display = False
+                    except Exception:
+                        pass
             except Exception:
                 pass
 
@@ -823,18 +828,12 @@ class TurnCard(Widget):
                     classes="turn-summary-value",
                     id="turn-steps-value",
                 )
-            # TODO 列表（容器始终存在，内部项通过 update_turn 动态更新）
+            # TODO 列表（容器始终存在，内部 Label 预先创建，通过 update + display 控制内容和显隐）
+            MAX_TODO_ITEMS = 50
             with Vertical(classes="turn-todo-list", id="todo-list"):
                 yield Label("📝 任务", classes="turn-summary-label")
-                for todo in self._turn.current_todo_list:
-                    todo_name = todo.get("name", "")
-                    todo_status = todo.get("status", "pending")
-                    icon = (
-                        "✅"
-                        if todo_status == "completed"
-                        else ("⏳" if todo_status == "in_progress" else "⬜️")
-                    )
-                    yield Label(f"{icon} {todo_name}", classes="turn-todo-item")
+                for i in range(MAX_TODO_ITEMS):
+                    yield Label("", classes="turn-todo-item", id=f"todo-item-{i}")
             # 工具调用统计
             with Horizontal(classes="turn-summary-row", id="tool-stats-row"):
                 yield Label("🔧 工具调用", classes="turn-summary-label")

@@ -123,6 +123,54 @@ const loadFilterOptions = async () => {
 
 const totalPages = computed(() => Math.max(1, Math.ceil(totalResults.value / pageSize.value)))
 
+/** Maximum number of page buttons to show before using ellipsis */
+const MAX_VISIBLE_PAGES = 8
+
+/**
+ * Generates the list of page numbers / ellipsis markers for pagination display.
+ * When totalPages <= MAX_VISIBLE_PAGES, shows all pages.
+ * Otherwise, shows: 1 ... current-1 current current+1 ... last
+ */
+const visiblePages = computed(() => {
+  const total = totalPages.value
+  if (total <= MAX_VISIBLE_PAGES) {
+    // Show all pages
+    return Array.from({ length: total }, (_, i) => i + 1)
+  }
+
+  const current = currentPage.value
+  const pages: (number | 'ellipsis-start' | 'ellipsis-end')[] = []
+
+  // Always show first page
+  pages.push(1)
+
+  // Determine the range around the current page
+  const rangeStart = Math.max(2, current - 1)
+  const rangeEnd = Math.min(total - 1, current + 1)
+
+  // Add ellipsis before range if there's a gap after page 1
+  if (rangeStart > 2) {
+    pages.push('ellipsis-start')
+  }
+
+  // Add pages around current
+  for (let i = rangeStart; i <= rangeEnd; i++) {
+    pages.push(i)
+  }
+
+  // Add ellipsis after range if there's a gap before last page
+  if (rangeEnd < total - 1) {
+    pages.push('ellipsis-end')
+  }
+
+  // Always show last page
+  if (total > 1) {
+    pages.push(total)
+  }
+
+  return pages
+})
+
 const handlePageChange = (page: number) => {
   currentPage.value = page
   doSearch()
@@ -534,13 +582,15 @@ watch(visible, (val) => {
               :disabled="currentPage <= 1"
               @click="handlePageChange(currentPage - 1)"
             >‹</button>
-            <button
-              v-for="p in totalPages"
-              :key="p"
-              class="page-btn"
-              :class="{ active: p === currentPage }"
-              @click="handlePageChange(p)"
-            >{{ p }}</button>
+            <template v-for="p in visiblePages" :key="p">
+              <span v-if="p === 'ellipsis-start' || p === 'ellipsis-end'" class="page-ellipsis">…</span>
+              <button
+                v-else
+                class="page-btn"
+                :class="{ active: p === currentPage }"
+                @click="handlePageChange(p)"
+              >{{ p }}</button>
+            </template>
             <button
               class="page-btn"
               :disabled="currentPage >= totalPages"
@@ -1077,6 +1127,18 @@ watch(visible, (val) => {
 .page-btn:disabled {
   opacity: 0.3;
   cursor: not-allowed;
+}
+
+.page-ellipsis {
+  min-width: 26px;
+  height: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  color: var(--text-secondary, #8b8b8b);
+  letter-spacing: 2px;
+  user-select: none;
 }
 
 /* ========== Scrollbar ========== */

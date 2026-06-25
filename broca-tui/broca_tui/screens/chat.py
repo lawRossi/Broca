@@ -67,6 +67,9 @@ class ChatScreen(Screen):
         # Track last rendered turn count
         self._last_turn_count = -1
 
+        # Track active dialog for auto-dismiss on new task messages
+        self._active_dialog: Optional["ModalScreen"] = None
+
     def compose(self) -> ComposeResult:
         """Create the three-panel layout."""
         is_orch = self._category == "agent-orchestration"
@@ -200,6 +203,11 @@ class ChatScreen(Screen):
         self._chat_store.on_message_received(lambda msg: self._on_message_received(msg))
         self._chat_store.on_connection_change(
             lambda connected: self._on_connection_change(connected)
+        )
+
+        # 收到 agent 任务进展时自动关闭对话框
+        self._chat_store.on_dismiss_dialogs(
+            lambda: self._dismiss_active_dialog()
         )
 
         # 简洁模式：注入 agent name 查询回调
@@ -420,11 +428,15 @@ class ChatScreen(Screen):
             sender_id=dialog_data.get("sender_id"),
             request_type=dialog_data.get("request_type", "general"),
         )
-        result = await self.app.push_screen_wait(dialog)
-        if result and result.get("action") == "permission_response":
-            granted = result.get("granted", False)
-            session_action = result.get("session_action")
-            await self._chat_store.respond_permission(granted, session_action)
+        self._active_dialog = dialog
+        try:
+            result = await self.app.push_screen_wait(dialog)
+            if result and result.get("action") == "permission_response":
+                granted = result.get("granted", False)
+                session_action = result.get("session_action")
+                await self._chat_store.respond_permission(granted, session_action)
+        finally:
+            self._active_dialog = None
 
     async def _show_agent_query_dialog(self, dialog_data: Dict[str, Any]):
         """Show agent query dialog.
@@ -438,9 +450,19 @@ class ChatScreen(Screen):
             request_id=dialog_data.get("request_id"),
             sender_id=dialog_data.get("sender_id"),
         )
-        result = await self.app.push_screen_wait(dialog)
-        if result and result.get("action") == "user_answer":
-            await self._chat_store.respond_user_answer(result.get("answer", ""))
+        self._active_dialog = dialog
+        try:
+            result = await self.app.push_screen_wait(dialog)
+            if result and result.get("action") == "user_answer":
+                await self._chat_store.respond_user_answer(result.get("answer", ""))
+        finally:
+            self._active_dialog = None
+
+    def _dismiss_active_dialog(self):
+        """Dismiss the currently active dialog (if any) when new task messages arrive."""
+        if self._active_dialog is not None:
+            self._active_dialog.dismiss(None)
+            self._active_dialog = None
 
     # ==================== Navigation ====================
 

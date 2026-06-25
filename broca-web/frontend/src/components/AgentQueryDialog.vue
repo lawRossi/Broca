@@ -30,7 +30,7 @@ const selectOption = (optionName: string) => {
 <template>
   <el-dialog
     v-model="chatStore.agentQueryDialog.visible"
-    title="Question"
+    title="Agent 提问"
     :width="chatStore.isMobile ? '90%' : '520px'"
     :close-on-click-modal="false"
     class="agent-query-dialog"
@@ -47,7 +47,7 @@ const selectOption = (optionName: string) => {
     </div>
 
     <div v-if="hasOptions" class="mt-5" :class="chatStore.isMobile ? 'pl-0' : 'pl-11'">
-      <div class="text-sm mb-3 options-label" :class="{ 'mb-2': chatStore.isMobile }">Options:</div>
+      <div class="text-sm mb-3 options-label" :class="{ 'mb-2': chatStore.isMobile }">快捷回答:</div>
       <div class="flex flex-col gap-2 sm:gap-3">
         <div
           v-for="option in chatStore.agentQueryDialog.options"
@@ -69,22 +69,20 @@ const selectOption = (optionName: string) => {
     </div>
 
     <div class="mt-5" :class="chatStore.isMobile ? 'pl-0' : 'pl-11'">
-      <div class="text-sm mb-2 answer-label">
-        {{ hasOptions ? 'Or enter your own answer:' : 'Enter your answer:' }}
-      </div>
+      <div class="text-sm mb-2 answer-label">自定义回答:</div>
       <el-input
         v-model="customAnswer"
         type="textarea"
         :rows="chatStore.isMobile ? 2 : 3"
-        placeholder="Type your answer here..."
+        placeholder="输入你的回答... (Ctrl+Enter 提交)"
         @keydown.enter.ctrl="handleSubmit"
       />
     </div>
 
     <template #footer>
       <div class="flex justify-end gap-2">
-        <el-button @click="submitAnswer('')"> Cancel </el-button>
-        <el-button :disabled="!customAnswer.trim()" type="primary" @click="handleSubmit"> Submit </el-button>
+        <el-button @click="submitAnswer('')"> 取消 </el-button>
+        <el-button :disabled="!customAnswer.trim()" type="primary" @click="handleSubmit"> 提交 </el-button>
       </div>
     </template>
   </el-dialog>

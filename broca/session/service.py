@@ -442,16 +442,20 @@ class TurnService(BaseService[Turn]):
                     try:
                         parsed = json.loads(content)
                         if isinstance(parsed, dict) and parsed.get("content"):
-                            # 不同 message_id（不同 LLM 调用）之间加空行分隔
-                            if stats["final_response"] and stats.get("_last_agent_msg_id") and stats["_last_agent_msg_id"] != m.message_id:
-                                stats["final_response"] += "\n\n"
+                            # 同一消息流拼接，新消息流替换（与 TUI chat_store 逻辑一致）
+                            is_new_message = stats.get("_last_agent_msg_id") and stats["_last_agent_msg_id"] != m.message_id
+                            if is_new_message:
+                                stats["final_response"] = parsed["content"]  # 新消息流，替换
+                            else:
+                                stats["final_response"] += parsed["content"]  # 同一消息流，拼接
                             stats["_last_agent_msg_id"] = m.message_id
-                            stats["final_response"] += parsed["content"]
                     except (json.JSONDecodeError, TypeError):
-                        if stats["final_response"] and stats.get("_last_agent_msg_id") and stats["_last_agent_msg_id"] != m.message_id:
-                            stats["final_response"] += "\n\n"
+                        is_new_message = stats.get("_last_agent_msg_id") and stats["_last_agent_msg_id"] != m.message_id
+                        if is_new_message:
+                            stats["final_response"] = str(content)  # 新消息流，替换
+                        else:
+                            stats["final_response"] += str(content)  # 同一消息流，拼接
                         stats["_last_agent_msg_id"] = m.message_id
-                        stats["final_response"] += str(content)
 
         stats["tool_call_stats"] = [
             {"tool_name": name, "count": count}

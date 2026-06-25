@@ -440,6 +440,9 @@ export const useChatStore = defineStore('chat', () => {
     if (message.message_type === 'agent_response' || message.message_type === 'tool_call') {
       const targetAgentId = message.sender_id || message.agent_id || defaultAgentId.value
       updateAgentStatus(targetAgentId, 'running')
+      // 收到 agent 任务进展时自动关闭对话框（对齐 Web/TUI 行为）
+      permissionDialog.value.visible = false
+      agentQueryDialog.value.visible = false
     }
 
     // 始终更新 turn 摘要（无论当前 displayMode），确保切换模式时数据已就绪
@@ -1202,13 +1205,15 @@ export const useChatStore = defineStore('chat', () => {
               const lastMsgId = _turnLastResponseMsgId.value.get(turn.turnId)
               const isNewResponse = lastMsgId !== message.message_id
 
-              // finalResponse：累加拼接
+              // finalResponse：同一消息流拼接，新消息流替换
               if (parsed.content) {
                 const prevContentMsgId = _turnContentMsgId.value.get(turn.turnId)
-                if (prevContentMsgId !== message.message_id && turn.finalResponse.length > 0) {
-                  turn.finalResponse += '\n\n'
+                const isNewMessage = prevContentMsgId !== undefined && prevContentMsgId !== message.message_id
+                if (isNewMessage) {
+                  turn.finalResponse = parsed.content  // 新消息流，替换
+                } else {
+                  turn.finalResponse += parsed.content  // 同一消息流，拼接
                 }
-                turn.finalResponse += parsed.content
                 _turnContentMsgId.value.set(turn.turnId, message.message_id)
               }
 
@@ -1228,8 +1233,15 @@ export const useChatStore = defineStore('chat', () => {
               _turnLastResponseMsgId.value.set(turn.turnId, message.message_id)
             }
           } catch {
-            // 非 JSON 格式，直接拼接
-            turn.finalResponse += content
+            // 非 JSON 格式：同一消息流拼接，新消息流替换
+            const prevContentMsgId = _turnContentMsgId.value.get(turn.turnId)
+            const isNewMessage = prevContentMsgId !== undefined && prevContentMsgId !== message.message_id
+            if (isNewMessage) {
+              turn.finalResponse = content  // 新消息流，替换
+            } else {
+              turn.finalResponse += content  // 同一消息流，拼接
+            }
+            _turnContentMsgId.value.set(turn.turnId, message.message_id)
           }
         }
         turn.lastMessageId = message.message_id

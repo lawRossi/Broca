@@ -19,6 +19,33 @@ from textual.widgets import Button, Label
 class PermissionDialog(ModalScreen):
     """Modal dialog for permission requests."""
 
+    DEFAULT_CSS = """
+    PermissionDialog .permission-grid {
+        grid-size: 2;
+        grid-gutter: 1;
+        height: auto;
+    }
+
+    PermissionDialog .permission-btn {
+        background: #f1f5f9;
+        border: solid #cbd5e1;
+        width: 1fr;
+        height: auto;
+        min-height: 3;
+        padding: 0 1;
+    }
+
+    PermissionDialog .permission-btn:focus {
+        background: #f1f5f9;
+        border: solid #cbd5e1;
+    }
+
+    PermissionDialog .permission-btn:hover {
+        background: #e2e8f0;
+        border: solid #7dd3fc;
+    }
+    """
+
     def __init__(
         self,
         message: str = "",
@@ -44,18 +71,19 @@ class PermissionDialog(ModalScreen):
     def compose(self) -> ComposeResult:
         """Create the dialog layout."""
         with Vertical(classes="dialog permission-dialog"):
-            title = "🔧 工具权限请求" if self._request_type == "tool" else "🔐 权限请求"
+            title = "工具权限请求" if self._request_type == "tool" else "权限请求"
             yield Label(title, classes="dialog-title")
 
             # Request message content
             with Vertical(classes="dialog-content"):
-                yield Label(self._message, classes="permission-message")
+                icon = "🔧" if self._request_type == "tool" else "🔐"
+                yield Label(f"{icon}  {self._message}", classes="permission-message")
 
             # Action buttons (2x2 grid, matching Web order: session-deny | deny-once / allow-once | session-allow)
             if self._request_type == "tool":
                 yield Grid(
                     Button(
-                        "🔒 当前Session不允许",
+                        "🔒 当前会话不允许",
                         id="btn-deny-session",
                         classes="permission-btn",
                     ),
@@ -66,7 +94,7 @@ class PermissionDialog(ModalScreen):
                         "✅ 单次允许", id="btn-allow-once", classes="permission-btn"
                     ),
                     Button(
-                        "🔓 当前Session允许",
+                        "🔓 当前会话允许",
                         id="btn-allow-session",
                         classes="permission-btn",
                     ),

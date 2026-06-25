@@ -127,6 +127,7 @@ class ChatStore:
         self._on_agent_query: Optional[Callable[[Dict[str, Any]], None]] = None
         self._on_message: Optional[Callable[[Dict[str, Any]], None]] = None
         self._on_connection_change: Optional[Callable[[bool], None]] = None
+        self._on_dismiss_dialogs: Optional[Callable[[], None]] = None
 
     def on_change(self, callback: Callable[[], None]):
         """Register callback for general state changes."""
@@ -151,6 +152,10 @@ class ChatStore:
     def on_connection_change(self, callback: Callable[[bool], None]):
         """Register callback for connection state changes."""
         self._on_connection_change = callback
+
+    def on_dismiss_dialogs(self, callback: Callable[[], None]):
+        """Register callback to dismiss active dialogs when new task messages arrive."""
+        self._on_dismiss_dialogs = callback
 
     def on_get_agent_name(self, callback: Callable[[str], Optional[str]]):
         """Register callback to get agent display name by ID."""
@@ -384,6 +389,8 @@ class ChatStore:
             # 收到 agent 任务进展时自动关闭对话框（对齐 Web 行为）
             self.permission_dialog["visible"] = False
             self.agent_query_dialog["visible"] = False
+            if self._on_dismiss_dialogs:
+                self._on_dismiss_dialogs()
 
         # ── 简洁模式：user_message 更新 turn 的用户消息 ──
         if msg_type == "user_message":
@@ -761,12 +768,13 @@ class ChatStore:
                     is_new_response = last_msg_id != message_id
 
                     if content:
-                        # 不同 message_id（不同 LLM 调用）之间加空行分隔
+                        # 同一消息流拼接，新消息流替换（与 reasoning_content 逻辑一致）
                         prev_msg_id = self._turn_content_msg_id.get(turn_id, "")
                         is_new_message = prev_msg_id != message_id
-                        if is_new_message and turn.final_response:
-                            turn.final_response += "\n\n"
-                        turn.final_response += content
+                        if is_new_message:
+                            turn.final_response = content  # 新消息流，替换
+                        else:
+                            turn.final_response += content  # 同一消息流，拼接
                         if message_id:
                             self._turn_content_msg_id[turn_id] = message_id
 
@@ -787,18 +795,20 @@ class ChatStore:
                 else:
                     prev_msg_id = self._turn_content_msg_id.get(turn_id, "")
                     is_new_message = prev_msg_id != message_id
-                    if is_new_message and turn.final_response:
-                        turn.final_response += "\n\n"
-                    turn.final_response += content_str
+                    if is_new_message:
+                        turn.final_response = content_str  # 新消息流，替换
+                    else:
+                        turn.final_response += content_str  # 同一消息流，拼接
                     if message_id:
                         self._turn_content_msg_id[turn_id] = message_id
                         self._turn_last_response_msg_id[turn_id] = message_id
             except (json.JSONDecodeError, TypeError):
                 prev_msg_id = self._turn_content_msg_id.get(turn_id, "")
                 is_new_message = prev_msg_id != message_id
-                if is_new_message and turn.final_response:
-                    turn.final_response += "\n\n"
-                turn.final_response += content_str
+                if is_new_message:
+                    turn.final_response = content_str  # 新消息流，替换
+                else:
+                    turn.final_response += content_str  # 同一消息流，拼接
                 if message_id:
                     self._turn_content_msg_id[turn_id] = message_id
                     self._turn_last_response_msg_id[turn_id] = message_id

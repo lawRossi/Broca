@@ -558,10 +558,12 @@ export const useChatStore = defineStore('chat', () => {
             // 因此用独立的 _turnContentMsgId 判断是否已对当前 message_id 追加过 content。
             if (parsed.content) {
               const prevContentMsgId = _turnContentMsgId.get(turnId)
-              if (prevContentMsgId !== message.message_id && turn.finalResponse.length > 0) {
-                turn.finalResponse += '\n\n'
+              const isNewMessage = prevContentMsgId !== undefined && prevContentMsgId !== message.message_id
+              if (isNewMessage) {
+                turn.finalResponse = parsed.content  // 新消息流，替换
+              } else {
+                turn.finalResponse += parsed.content  // 同一消息流，拼接
               }
-              turn.finalResponse += parsed.content
               _turnContentMsgId.set(turnId, message.message_id)
             }
 
@@ -584,7 +586,14 @@ export const useChatStore = defineStore('chat', () => {
             _turnLastResponseMsgId.set(turnId, message.message_id)
           }
         } catch {
-          turn.finalResponse += content
+          const prevContentMsgId = _turnContentMsgId.get(turnId)
+          const isNewMessage = prevContentMsgId !== undefined && prevContentMsgId !== message.message_id
+          if (isNewMessage) {
+            turn.finalResponse = content  // 新消息流，替换
+          } else {
+            turn.finalResponse += content  // 同一消息流，拼接
+          }
+          _turnContentMsgId.set(turnId, message.message_id)
         }
       }
       turn.status = 'thinking'
