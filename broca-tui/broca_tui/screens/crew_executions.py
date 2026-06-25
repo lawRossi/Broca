@@ -260,7 +260,7 @@ class CrewExecutionsScreen(Screen):
         Args:
             message: Error message
         """
-        self.notify(message, severity="error", timeout=5)
+        self.notify(message, severity="error", timeout=5, markup=False)
 
     def on_unmount(self) -> None:
         """Clean up timers on unmount."""
@@ -869,6 +869,7 @@ class CrewExecutionsScreen(Screen):
                 f"编排 {cfg.get('name', filename)} 提交成功",
                 severity="information",
                 timeout=3,
+                markup=False,
             )
             # Switch to executions tab to show the new execution
             self._switch_tab("executions")

@@ -16,7 +16,10 @@ function extractErrorMsg(data: any): string {
   return data.detail || data.msg || data.message || (typeof data === 'string' ? data : '')
 }
 
-/** 判断当前请求是否启用了静默模式 */
+// 判断当前请求是否为本地自动登录（静默处理，无错误提示）
+function isLocalLoginRequest(config: InternalAxiosRequestConfig | undefined): boolean {
+  return !!config?.url?.includes('/auth/local-login')
+}
 function isSilent(config: InternalAxiosRequestConfig | undefined): boolean {
   return !!(config as any)?.silent
 }
@@ -33,6 +36,10 @@ const request: AxiosInstance = axios.create({
 // 请求拦截器
 request.interceptors.request.use(
   (config) => {
+    // 本地自动登录请求自动设为静默模式（无错误提示）
+    if (config.url?.includes('/auth/local-login')) {
+      ;(config as any).silent = true
+    }
     // 在请求发送前添加 token 等逻辑
     const token = localStorage.getItem('token')
     if (token) {
@@ -56,10 +63,10 @@ request.interceptors.response.use(
     // 处理业务状态码
     if (data.code === 200) {
       return data.data
-    } else {
-      const errMsg = data.msg || '请求失败'
-      if (!silent) {
-        ElMessage.error(errMsg)
+      } else {
+        const errMsg = data.msg || '请求失败'
+        if (!silent && !isLocalLoginRequest(config)) {
+          ElMessage.error(errMsg)
       }
       return Promise.reject(new Error(errMsg))
     }
@@ -83,7 +90,7 @@ request.interceptors.response.use(
           router.push('/auth')
           break
         case 403:
-          if (!silent) ElMessage.error(detail || '拒绝访问')
+          if (!silent && !isLocalLoginRequest(config)) ElMessage.error(detail || '拒绝访问')
           break
         case 404:
           if (!silent) ElMessage.error(detail || '请求地址不存在')
@@ -92,10 +99,10 @@ request.interceptors.response.use(
           if (!silent) ElMessage.error(detail || '服务器内部错误，请稍后重试')
           break
         default:
-          if (!silent) ElMessage.error(detail || data?.msg || '网络连接失败')
+          if (!silent && !isLocalLoginRequest(config)) ElMessage.error(detail || data?.msg || '网络连接失败')
       }
     } else if (error.request) {
-      if (!silent) ElMessage.error('网络连接失败，请检查网络设置')
+      if (!silent && !isLocalLoginRequest(config)) ElMessage.error('网络连接失败，请检查网络设置')
     } else {
       console.error('请求配置错误:', error.message)
     }

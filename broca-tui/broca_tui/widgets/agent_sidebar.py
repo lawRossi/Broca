@@ -730,7 +730,7 @@ class AgentSidebar(Widget):
                 timeout=5,
             )
         except Exception as e:
-            self.notify(f"保存配置失败: {e}", severity="error", timeout=5)
+            self.notify(f"保存配置失败: {e}", severity="error", timeout=5, markup=False)
         finally:
             await api.close()
 

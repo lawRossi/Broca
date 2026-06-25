@@ -540,7 +540,7 @@ class SessionListScreen(Screen):
             await self._store.refresh()
             self.notify("描述已更新", severity="information", timeout=2)
         except Exception as e:
-            self.notify(f"保存失败: {e}", severity="error", timeout=5)
+            self.notify(f"保存失败: {e}", severity="error", timeout=5, markup=False)
         finally:
             await self._render_sessions()
 
@@ -646,7 +646,7 @@ class SessionListScreen(Screen):
             else:
                 error_msg = self._store.last_error or "创建会话失败"
                 self._store.last_error = None
-                self.notify(error_msg, severity="error", timeout=8)
+                self.notify(error_msg, severity="error", timeout=8, markup=False)
 
     async def _confirm_delete(self, session_id: str) -> None:
         """Show delete confirmation dialog.
@@ -673,7 +673,7 @@ class SessionListScreen(Screen):
             else:
                 error_msg = self._store.last_error or "删除会话失败"
                 self._store.last_error = None
-                self.notify(error_msg, severity="error", timeout=5)
+                self.notify(error_msg, severity="error", timeout=5, markup=False)
 
     async def _toggle_runner(self, session_id: str) -> None:
         """Start or stop the runner for a session.
@@ -709,7 +709,7 @@ class SessionListScreen(Screen):
         except Exception as e:
             await api.close()
             msg = getattr(e, "message", str(e))
-            self.notify(f"操作失败: {msg}", severity="error", timeout=5)
+            self.notify(f"操作失败: {msg}", severity="error", timeout=5, markup=False)
 
     def action_focus_search(self) -> None:
         """Focus the search input."""

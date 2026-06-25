@@ -169,13 +169,13 @@ class ChatScreen(Screen):
                 )
             await agent_sidebar.load_agents(self._session_id)
         except Exception as e:
-            self.notify(f"Agent 加载失败: {e}", severity="warning", timeout=5)
+            self.notify(f"Agent 加载失败: {e}", severity="warning", timeout=5, markup=False)
 
         # ── Path 3: Load turn history via HTTP — 即使 agents 加载失败也应继续
         try:
             await self._chat_store.load_turn_history(filter_execution_id=self._execution_id)
         except Exception as e:
-            self.notify(f"加载 Turn 历史失败: {e}", severity="error", timeout=5)
+            self.notify(f"加载 Turn 历史失败: {e}", severity="error", timeout=5, markup=False)
         finally:
             # 确保 loading 状态被清除，避免"消息加载中"卡死
             self._chat_store.loading = False
@@ -192,7 +192,7 @@ class ChatScreen(Screen):
         # Chat store → MessageList
         self._chat_store.on_change(lambda: self._on_chat_change())
         self._chat_store.on_error(
-            lambda msg: self.notify(msg, severity="error", timeout=5)
+            lambda msg: self.notify(msg, severity="error", timeout=5, markup=False)
         )
         self._chat_store.on_permission_request(
             lambda d: self.run_worker(self._show_permission_dialog(d))
@@ -412,7 +412,7 @@ class ChatScreen(Screen):
         except Exception as e:
             from broca_tui.debug_log import log
             log(f"_show_file_diff error: {e}")
-            self.notify(f"获取 diff 失败: {e}", severity="error", timeout=5)
+            self.notify(f"获取 diff 失败: {e}", severity="error", timeout=5, markup=False)
 
     # ==================== Dialog Handlers ====================
 

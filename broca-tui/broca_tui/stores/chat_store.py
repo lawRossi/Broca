@@ -95,6 +95,9 @@ class ChatStore:
         # Track last response message_id per turn (for reasoning delimiting and undo targeting)
         self._turn_last_response_msg_id: Dict[str, str] = {}
 
+        # 乐观更新：发送用户消息时预创建的 turn 信息（turn_start 到达后替换 turn_id）
+        self._pending_turn_id: Optional[str] = None
+
         # Input state
         self.input_text: str = ""
 
@@ -265,6 +268,16 @@ class ChatStore:
             # 简洁模式：创建 TurnSummary
             turn_id = message.data.get("turn_id") if message.data else None
             if turn_id:
+                # 乐观更新：如果有预创建的 pending turn，替换 turn_id 而非新建
+                if self._pending_turn_id:
+                    pending = self._find_turn(self._pending_turn_id)
+                    if pending:
+                        pending.turn_id = turn_id
+                        self._pending_turn_id = None
+                        self._notify_change(force=True)
+                        return
+                    self._pending_turn_id = None
+
                 agent_name = target_id or ""
                 if self._on_get_agent_name:
                     agent_name = self._on_get_agent_name(target_id) or agent_name
@@ -325,6 +338,24 @@ class ChatStore:
             self._notify_change()
             if self._on_connection_change:
                 self._on_connection_change(False)
+
+        @self._socket.on("error")
+        async def handle_error(data):
+            """Handle error messages from server."""
+            try:
+                if isinstance(data, str):
+                    msg = data
+                elif hasattr(data, "data") and isinstance(data.data, dict):
+                    # Message object: 取 error_message 或 message 字段
+                    msg = data.data.get("error_message") or data.data.get("message") or str(data.data)
+                elif isinstance(data, dict):
+                    msg = data.get("message", data.get("error", str(data)))
+                else:
+                    msg = str(data)
+                if msg:
+                    self._notify_error(msg)
+            except Exception:
+                pass
 
     # ==================== Message Handling ====================
 
@@ -917,8 +948,19 @@ class ChatStore:
         # Reset redo preservation when user sends a new message
         self._preserve_redo = False
 
-        # 简洁模式：无需乐观消息，turn_start 事件会创建 TurnSummary
-        self._notify_change()
+        # 乐观更新：立即创建 TurnSummary（使用临时 turn_id），不等 turn_start
+        agent_id = target_agent_id or ""
+        agent_name = agent_id
+        if agent_id and self._on_get_agent_name:
+            agent_name = self._on_get_agent_name(agent_id) or agent_id
+        temp_id = f"_pending_{int(time.time() * 1000)}"
+        self._pending_turn_id = temp_id
+        self.create_turn_summary(temp_id, agent_id, agent_name)
+        # 预填用户消息
+        turn = self._find_turn(temp_id)
+        if turn:
+            turn.user_message = content.strip()
+        self._notify_change(force=True)
 
         try:
             await self._socket.send_user_message(
@@ -928,6 +970,10 @@ class ChatStore:
             )
         except Exception as e:
             self._notify_error(f"发送消息失败: {e}")
+            # 发送失败，移除预创建的 turn
+            self.turn_summaries = [t for t in self.turn_summaries if t.turn_id != temp_id]
+            self._pending_turn_id = None
+            self._notify_change(force=True)
 
     async def send_abort(self, agent_id: Optional[str] = None):
         """Send abort command to an agent.

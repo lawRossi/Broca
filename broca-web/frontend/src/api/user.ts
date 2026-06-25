@@ -33,8 +33,8 @@ export const userApi = {
     return request.post('/user/add_info', data)
   },
 
-    /** 本地自动登录（仅对本机部署生效，静默模式） */
+    /** 本地自动登录（仅对本机部署生效，由请求拦截器自动设为静默模式） */
   localLogin(): Promise<AuthResult> {
-    return request.post('/auth/local-login', {}, { silent: true } as any)
+    return request.post('/auth/local-login')
   },
 }
