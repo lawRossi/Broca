@@ -76,11 +76,10 @@ request.interceptors.response.use(
 
       switch (status) {
         case 401:
-          // 清除本地 token 并跳转到登录页
+          // 清除本地 token 并跳转到登录页（静默处理，无错误提示）
           localStorage.removeItem('token')
           localStorage.removeItem('user_id')
           localStorage.removeItem('username')
-          if (!silent) ElMessage.error('登录已失效，请重新登录')
           router.push('/auth')
           break
         case 403:
