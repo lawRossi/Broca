@@ -82,8 +82,6 @@ class AsyncDatabaseManager:
             self._engine, class_=AsyncSession, expire_on_commit=False
         )
 
-        print(f"Async database initialized at: {DATABASE_PATH}")
-
     def get_engine(self):
         """获取异步数据库引擎"""
         return self._engine
