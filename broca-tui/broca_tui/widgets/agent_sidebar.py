@@ -606,6 +606,10 @@ class AgentSidebar(Widget):
             return
 
         agents = self._store.agents
+        # main_agent 排第一
+        main_id = self._store.current_agent_id
+        if main_id:
+            agents = sorted(agents, key=lambda a: a.get("agent_id") != main_id)
         existing_cards = list(container.children)
 
         # If card count matches, update in-place (avoid flickering)

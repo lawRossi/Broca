@@ -32,8 +32,20 @@ const availableProviders = ref<{ id: string; name: string }[]>([])
 const availableModels = ref<{ id: string; name: string }[]>([])
 const saving = ref(false)
 
-// 使用 computed 从 agentStore 获取 agents 列表
+// 使用 computed 从 agentStore 获取 agents 列表（main_agent 排第一）
 const agents = computed(() => agentStore.agents)
+
+const sortedAgents = computed(() => {
+  const list = [...agents.value]
+  const mainId = agentStore.currentAgentId
+  if (!mainId) return list
+  const idx = list.findIndex((a) => a.agent_id === mainId)
+  if (idx > 0) {
+    const [main] = list.splice(idx, 1)
+    list.unshift(main)
+  }
+  return list
+})
 
 // 使用 computed 从 agentStore 获取选中的 agent 配置
 const selectedAgentConfig = computed(() => agentStore.selectedAgentConfig)
@@ -316,7 +328,7 @@ onUnmounted(() => {
                 <span class="ml-1">全部</span>
               </el-dropdown-item>
               <el-dropdown-item
-                v-for="agent in agents"
+                v-for="agent in sortedAgents"
                 :key="agent.agent_id"
                 :command="agent.agent_id"
               >
@@ -336,7 +348,7 @@ onUnmounted(() => {
     <!-- Agent列表 -->
     <div class="space-y-3">
       <div
-        v-for="agent in agents"
+        v-for="agent in sortedAgents"
         :key="agent.agent_id"
         class="bg-white rounded-lg border p-3 shadow-sm hover:shadow-md transition-shadow duration-200 cursor-pointer"
         :class="{
