@@ -482,6 +482,18 @@ Label {
     max-height: 10;
 }
 
+.autocomplete > ListItem {
+    color: $gray-800;
+}
+
+.autocomplete > ListItem:hover {
+    background: $primary-100;
+}
+
+.autocomplete > ListItem:focus {
+    background: $primary-100;
+}
+
 /* ============================================================
    INFO SIDEBAR — 对齐 Web ChatInfoSidebar
    ============================================================ */
@@ -537,6 +549,7 @@ Label {
     color: $gray-800;
     width: 1fr;
     padding: 0 0 0 1;
+    text-align: right;
 }
 
 .runner-btns {

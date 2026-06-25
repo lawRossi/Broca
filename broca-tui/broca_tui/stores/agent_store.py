@@ -5,9 +5,40 @@ Manages agent list, status, visibility filtering, and selection state.
 Each chat page creates its own AgentStore instance.
 """
 
+import json
+import re
 from typing import Any, Callable, Dict, List, Optional
 
 from broca_tui.api.session import SessionAPI
+
+
+def _clean_error_message(raw: str) -> str:
+    """从 API 错误文本中提取用户可读的错误信息。"""
+    if not raw:
+        return raw
+    json_match = re.search(r'\{.*"detail"\s*:\s*"([^"]+)".*\}', raw, re.DOTALL)
+    if json_match:
+        return json_match.group(1)
+    api_msg_match = re.search(r'API error \d+: (.+)', raw)
+    if api_msg_match:
+        return api_msg_match.group(1).strip()
+    client_msg_match = re.search(r'Client error \d+ for [A-Z]+ [^:]+:\s*(.+)', raw)
+    if client_msg_match:
+        body = client_msg_match.group(1).strip()
+        if body.startswith("{"):
+            try:
+                parsed = json.loads(body)
+                if isinstance(parsed, dict):
+                    if "detail" in parsed:
+                        detail = parsed["detail"]
+                        return "; ".join(str(e) for e in detail) if isinstance(detail, list) else str(detail)
+                    for key in ("message", "error", "msg"):
+                        if key in parsed:
+                            return str(parsed[key])
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return body
+    return raw
 
 
 class AgentStore:
@@ -59,9 +90,9 @@ class AgentStore:
             self._on_visibility_change()
 
     def _notify_error(self, message: str):
-        """Notify UI of error."""
+        """Notify UI of error, with JSON cleaned from message."""
         if self._on_error:
-            self._on_error(message)
+            self._on_error(_clean_error_message(message))
 
     def set_visible_agent_ids(self, ids: List[str]):
         """Set visible agent IDs and notify both change and visibility listeners.

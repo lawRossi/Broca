@@ -549,6 +549,33 @@ class ChatScreen(Screen):
         """Handle agent abort from sidebar button (called directly by AgentCard)."""
         self.run_worker(self._chat_store.send_abort(agent_id))
 
+    # ==================== Leave/Resume (离开超5分钟自动刷新) ====================
+
+    _leave_timestamp: float = 0.0
+
+    def on_leave(self) -> None:
+        """Screen 被覆盖时记录离开时间。"""
+        import time
+        self._leave_timestamp = time.time()
+
+    def on_resume(self) -> None:
+        """Screen 恢复时检查是否超过5分钟，是则回到会话列表页。"""
+        import time
+        if self._leave_timestamp > 0:
+            elapsed = time.time() - self._leave_timestamp
+            self._leave_timestamp = 0.0
+            if elapsed >= 300:  # 5分钟
+                self.run_worker(self._refresh_on_return())
+
+    async def _refresh_on_return(self) -> None:
+        """离开超过5分钟后回到页面时重连刷新。"""
+        try:
+            await self._chat_store.disconnect()
+        except Exception:
+            pass
+        self._chat_store.clear_messages()
+        await self._connect()
+
     # ==================== Cleanup ====================
 
     async def stop_runner(self):

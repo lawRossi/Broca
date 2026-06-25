@@ -364,6 +364,12 @@ export const useChatStore = defineStore('chat', () => {
           console.error('Extension error:', data.payload.message)
           showError(data.payload.message || '操作失败', 'error')
           break
+
+        case 'refreshSession':
+          // 离开超过5分钟后回到页面，自动刷新（复用现有刷新按钮的重刷新逻辑）
+          console.log('[ChatStore] refreshSession triggered')
+          postMessage({ type: 'refreshChat' })
+          break
       }
     })
 

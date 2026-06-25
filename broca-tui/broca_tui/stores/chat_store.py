@@ -6,6 +6,7 @@ Each chat page creates its own ChatStore instance.
 """
 
 import json
+import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -16,6 +17,44 @@ from broca.session.models import Message, MessageProtocol
 from broca_tui.api.session import SessionAPI
 from broca_tui.config import get_config
 from broca_tui.debug_log import log
+
+
+def _clean_error_message(raw: str) -> str:
+    """从 API 错误文本中提取用户可读的错误信息，避免 JSON 原文暴露到 toast。
+
+    处理格式：
+    - "Client error 400 for POST /path: {\"detail\":\"msg\"}"
+    - "API error 400: some message"
+    - Raw JSON: {"detail": "msg"}
+    """
+    if not raw:
+        return raw
+    # 尝试提取 JSON detail
+    json_match = re.search(r'\{.*"detail"\s*:\s*"([^"]+)".*\}', raw, re.DOTALL)
+    if json_match:
+        return json_match.group(1)
+    # 尝试提取 "API error N: msg"
+    api_msg_match = re.search(r'API error \d+: (.+)', raw)
+    if api_msg_match:
+        return api_msg_match.group(1).strip()
+    # 尝试提取 "Client error N for METHOD path: body"
+    client_msg_match = re.search(r'Client error \d+ for [A-Z]+ [^:]+:\s*(.+)', raw)
+    if client_msg_match:
+        body = client_msg_match.group(1).strip()
+        if body.startswith("{"):
+            try:
+                parsed = json.loads(body)
+                if isinstance(parsed, dict):
+                    if "detail" in parsed:
+                        detail = parsed["detail"]
+                        return "; ".join(str(e) for e in detail) if isinstance(detail, list) else str(detail)
+                    for key in ("message", "error", "msg"):
+                        if key in parsed:
+                            return str(parsed[key])
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return body
+    return raw
 
 
 @dataclass
@@ -199,9 +238,9 @@ class ChatStore:
             self._on_change()
 
     def _notify_error(self, message: str):
-        """Notify UI of error."""
+        """Notify UI of error, with JSON cleaned from message."""
         if self._on_error:
-            self._on_error(message)
+            self._on_error(_clean_error_message(message))
 
     # ==================== Socket.IO Connection ====================
 

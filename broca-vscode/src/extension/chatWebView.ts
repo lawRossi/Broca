@@ -55,6 +55,9 @@ export class ChatWebViewManager {
     }
   }
 
+  // 记录每个 session 的 Webview 离开时间戳（用于离开超5分钟自动刷新）
+  private webviewLeaveTimestamps = new Map<string, number>()
+
   async openChat(sessionId: string, executionId?: string) {
     try {
       // Check if panel already exists and is not disposed
@@ -124,12 +127,19 @@ export class ChatWebViewManager {
         await this.handleWebViewMessage(sessionId, panel, message)
       })
 
-      // Handle view state changes (pause/resume polling)
+      // Handle view state changes (pause/resume polling, auto-refresh on long absence)
       panel.onDidChangeViewState((e) => {
         if (e.webviewPanel.visible) {
           this.startRunnerPolling(sessionId, panel)
+          // 检查离开是否超过5分钟，是则通知 Webview 刷新
+          const leaveTs = this.webviewLeaveTimestamps.get(sessionId) || 0
+          if (leaveTs > 0 && Date.now() - leaveTs >= 5 * 60 * 1000) {
+            this.postToPanel(panel, { type: 'refreshSession' } as ExtensionToWebView)
+          }
+          this.webviewLeaveTimestamps.delete(sessionId)
         } else {
           this.stopRunnerPolling(sessionId)
+          this.webviewLeaveTimestamps.set(sessionId, Date.now())
         }
       })
     } catch (error: any) {

@@ -67,13 +67,30 @@ watch(executionId, (newExecId, oldExecId) => {
   }
 })
 
+// 离开页面时间戳，用于检测是否超过5分钟自动刷新
+let _leaveTimestamp = 0
+
+function onVisibilityChange() {
+  if (document.hidden) {
+    _leaveTimestamp = Date.now()
+  } else {
+    const elapsed = Date.now() - _leaveTimestamp
+    if (_leaveTimestamp > 0 && elapsed >= 5 * 60 * 1000) {
+      location.reload()
+    }
+    _leaveTimestamp = 0
+  }
+}
+
 onMounted(() => {
   chatStore.init()
   chatStore.autoConnectAndSubscribe(executionId.value)
   loadSessionInfo()
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
 
 onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
   chatStore.cleanup()
 })
 </script>

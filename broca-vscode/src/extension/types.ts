@@ -258,7 +258,7 @@ export interface WebViewMessage {
 
 // Extension → WebView messages
 export interface ExtensionToWebView {
-  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'sessionStats' | 'session' | 'sessionCreated' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'commands' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted' | 'crewExecutions' | 'crewDetail' | 'crewEvent' | 'crewConfigs' | 'crewConfigDetail' | 'agentConfig' | 'agentConfigSaved' | 'turnsData' | 'searchMessages' | 'searchFilters' | 'fileDiffResult' | 'workspacePath'
+  type: 'connected' | 'message' | 'historyLoaded' | 'runnerStatus' | 'sessionStats' | 'session' | 'sessionCreated' | 'error' | 'config' | 'providers' | 'models' | 'saved' | 'agents' | 'runnerActionResult' | 'fileUploaded' | 'commands' | 'tasks' | 'taskDetail' | 'taskCreated' | 'taskUpdated' | 'taskDeleted' | 'taskCommentAdded' | 'jobs' | 'jobDetail' | 'jobExecuted' | 'jobPaused' | 'jobResumed' | 'jobDeleted' | 'crewExecutions' | 'crewDetail' | 'crewEvent' | 'crewConfigs' | 'crewConfigDetail' | 'agentConfig' | 'agentConfigSaved' | 'turnsData' | 'searchMessages' | 'searchFilters' | 'fileDiffResult' | 'workspacePath' | 'refreshSession'
   payload: any
 }
 
