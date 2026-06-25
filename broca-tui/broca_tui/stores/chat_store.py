@@ -262,12 +262,10 @@ class ChatStore:
 
         @self._socket.on("turn_start")
         async def handle_turn_start(message: Message):
-            # Update agent state to running
-            target_id = message.sender_id or message.agent_id
-
             # 简洁模式：创建 TurnSummary
             turn_id = message.data.get("turn_id") if message.data else None
             if turn_id:
+                target_id = message.sender_id or message.agent_id
                 # 乐观更新：如果有预创建的 pending turn，替换 turn_id 而非新建
                 if self._pending_turn_id:
                     pending = self._find_turn(self._pending_turn_id)
@@ -283,23 +281,14 @@ class ChatStore:
                     agent_name = self._on_get_agent_name(target_id) or agent_name
                 self.create_turn_summary(turn_id, target_id or "", agent_name)
 
-            if self._on_message:
-                self._on_message({"type": "turn_start", "agent_id": target_id})
-
         @self._socket.on("turn_end")
         async def handle_turn_end(message: Message):
-            # Update agent state to idle
-            target_id = message.sender_id or message.agent_id
-
             # 简洁模式：终结 TurnSummary
             turn_id = message.data.get("turn_id") if message.data else None
             if turn_id:
                 status = message.data.get("status") if message.data else None
                 changed_files = message.data.get("changed_files") if message.data else None
                 self.finalize_turn_summary(turn_id, status, turn_end_msg_id=message.message_id, changed_files=changed_files)
-
-            if self._on_message:
-                self._on_message({"type": "turn_end", "agent_id": target_id})
 
         @self._socket.on("permission_request")
         async def handle_permission(message: Message):
@@ -422,6 +411,17 @@ class ChatStore:
             self.agent_query_dialog["visible"] = False
             if self._on_dismiss_dialogs:
                 self._on_dismiss_dialogs()
+
+        # Agent status: turn_start / turn_end 也在 message 事件中处理（对齐 Web 版单一路径）
+        # 避免与 @self._socket.on("turn_start") / @self._socket.on("turn_end") 双路径竞争
+        if msg_type == "turn_start":
+            agent_id = msg_dict.get("sender_id", "") or msg_dict.get("agent_id", "")
+            if agent_id and self._on_message:
+                self._on_message({"type": "turn_start", "agent_id": agent_id})
+        elif msg_type == "turn_end":
+            agent_id = msg_dict.get("sender_id", "") or msg_dict.get("agent_id", "")
+            if agent_id and self._on_message:
+                self._on_message({"type": "turn_end", "agent_id": agent_id})
 
         # ── 简洁模式：user_message 更新 turn 的用户消息 ──
         if msg_type == "user_message":

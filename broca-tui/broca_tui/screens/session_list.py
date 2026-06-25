@@ -255,6 +255,11 @@ class SessionListScreen(Screen):
                 yield Static("", classes="header-spacer")
                 yield Label("", id="session-count", classes="session-count")
                 yield Button(
+                    "↻ 刷新",
+                    id="btn-refresh-sessions",
+                    classes="refresh-btn-header",
+                )
+                yield Button(
                     "＋ 新会话",
                     id="btn-create-session",
                     variant="primary",
@@ -273,9 +278,32 @@ class SessionListScreen(Screen):
                 yield Static("加载中...", classes="loading")
 
     def on_mount(self) -> None:
-        """Load sessions on mount and start scroll detection."""
+        """Load sessions on mount and start scroll detection and auto-refresh."""
         self.run_worker(self._load_sessions())
         self.set_interval(1 / 3, self._check_scroll_bottom)
+        # Auto-refresh every 60 seconds
+        self.set_interval(60, self._auto_refresh)
+
+    def _auto_refresh(self) -> None:
+        """Auto-refresh session list every 60 seconds."""
+        # Don't auto-refresh while user is searching or editing
+        focused = self.focused
+        if focused and isinstance(focused, Input) and focused.id and (
+            focused.id == "search-input" or focused.id.startswith("edit-name-")
+        ):
+            return
+        self.run_worker(self._load_sessions(keyword=self._store.keyword))
+
+    async def _manual_refresh(self) -> None:
+        """Manually refresh session list with visual feedback."""
+        self.notify("正在刷新会话列表...", timeout=2)
+        await self._store.refresh()
+        if self._store.last_error:
+            self.notify(f"刷新失败: {self._store.last_error}", severity="error", timeout=5, markup=False)
+            self._store.last_error = None
+        else:
+            await self._render_sessions()
+            self.notify("会话列表已刷新", severity="information", timeout=2)
 
     async def _load_sessions(self, keyword: Optional[str] = None):
         """Load sessions from store."""
@@ -620,7 +648,9 @@ class SessionListScreen(Screen):
         """
         btn_id = event.button.id or ""
 
-        if btn_id == "btn-create-session":
+        if btn_id == "btn-refresh-sessions":
+            self.run_worker(self._manual_refresh())
+        elif btn_id == "btn-create-session":
             self.run_worker(self.action_create_session())
         elif btn_id.startswith("delete-"):
             session_id = btn_id.replace("delete-", "")

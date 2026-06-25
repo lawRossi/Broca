@@ -17,6 +17,7 @@ References broca-web ChatInfoSidebar pattern:
 
 from __future__ import annotations
 
+import asyncio
 from typing import Optional
 
 from textual.app import ComposeResult
@@ -400,14 +401,12 @@ class InfoSidebar(Widget):
         except Exception:
             pass
 
-        # 4. Job & Task counts
+        # 4. Job & Task counts (并行获取，对齐 Web 版)
         try:
-            job_count = await self._api.get_job_count(self._session_id)
+            job_task = self._api.get_job_count(self._session_id)
+            task_task = self._api.get_task_count(self._session_id)
+            job_count, task_count = await asyncio.gather(job_task, task_task)
             self.query_one("#info-jobs", Label).update(str(job_count))
-        except Exception:
-            pass
-        try:
-            task_count = await self._api.get_task_count(self._session_id)
             self.query_one("#info-tasks", Label).update(str(task_count))
         except Exception:
             pass

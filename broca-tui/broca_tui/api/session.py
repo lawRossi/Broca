@@ -124,7 +124,7 @@ class SessionAPI:
     async def get_job_count(self, session_id: str) -> int:
         """Get job count for a session."""
         try:
-            result = await self._client.get("/jobs", params={"session_id": session_id, "limit": 1})
+            result = await self._client.get("/job/jobs", params={"session_id": session_id, "limit": 1})
             if isinstance(result, dict):
                 return result.get("total", 0)
             return 0
@@ -134,7 +134,7 @@ class SessionAPI:
     async def get_task_count(self, session_id: str) -> int:
         """Get task count for a session."""
         try:
-            result = await self._client.get("/tasks", params={"session_id": session_id, "limit": 1})
+            result = await self._client.get("/task/tasks", params={"session_id": session_id, "limit": 1})
             if isinstance(result, dict):
                 return result.get("total", 0)
             return 0

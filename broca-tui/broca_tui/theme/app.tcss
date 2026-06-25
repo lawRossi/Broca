@@ -885,6 +885,30 @@ Toast {
     background: $primary-600;
 }
 
+.refresh-btn-header {
+    min-width: 10;
+    background: transparent;
+    color: $gray-700;
+    border: solid $gray-300;
+    padding: 0 1;
+    margin-left: 1;
+    height: 3;
+    text-style: none;
+}
+
+.refresh-btn-header:hover {
+    background: $gray-200;
+    border: solid $primary-400;
+    color: $primary-700;
+    text-style: bold;
+}
+
+.refresh-btn-header:focus {
+    background: transparent;
+    border: solid $primary-400;
+    color: $gray-700;
+}
+
 .edit-name-input {
     width: 1fr;
     height: 3;

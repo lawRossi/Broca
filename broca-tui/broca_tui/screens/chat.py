@@ -117,6 +117,9 @@ class ChatScreen(Screen):
         # Connect stores to widgets
         self._setup_connections()
 
+        # Start periodic connection health check (every 15s)
+        self.set_interval(15, self._check_connection_health)
+
         # Defer connection to after layout is stable
         self.call_after_refresh(self._deferred_connect)
 
@@ -183,6 +186,37 @@ class ChatScreen(Screen):
             self._chat_store.on_get_agent_name(
                 lambda agent_id: self._agent_store.get_agent_name(agent_id)
             )
+
+    def _check_connection_health(self) -> None:
+        """Periodic connection health check (every 15s).
+
+        Web 版使用浏览器原生 socket.io-client，断连时 WebSocket 的 close 事件
+        会立即触发 disconnect。但 Python 版使用 python-socketio，其 engine.io
+        客户端的读写循环依赖超时检测（ping_interval + ping_timeout = 45s），
+        断连后最多需要 45s 才能触发 disconnect 事件。
+
+        此方法通过直接查询 engine.io 的底层连接状态来提前发现断连：
+        - eio.state 在读写循环检测到错误后会立即变为 'disconnected'
+        - socket.sio.connected 在 _handle_eio_disconnect 中被设为 False
+        """
+        try:
+            socket = self._chat_store._socket
+            if socket is None:
+                return
+            # 查询 engine.io 底层状态（比 socket.sio.connected 更及时）
+            eio = socket.sio.eio if hasattr(socket, 'sio') and hasattr(socket.sio, 'eio') else None
+            if eio is None:
+                return
+            is_connected = eio.state == 'connected' if hasattr(eio, 'state') else False
+            # 如果 engine.io 认为已断开但 ChatStore 仍标记为已连接，同步状态
+            if not is_connected and self._chat_store.connected:
+                self._chat_store.connected = False
+                header = self.query_one("#chat-header", ChatHeader)
+                header.connection_status = "disconnected"
+                if self._chat_store._on_connection_change:
+                    self._chat_store._on_connection_change(False)
+        except Exception:
+            pass
 
     def _setup_connections(self):
         """Connect stores to widgets and register callbacks."""
