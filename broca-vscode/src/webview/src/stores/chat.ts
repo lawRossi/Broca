@@ -1160,12 +1160,23 @@ export const useChatStore = defineStore('chat', () => {
           turn.currentTool = toolName
         }
 
-        // 更新工具调用统计（与 web 版一致处理）
-        const existing = turn.toolCallStats.find(s => s.toolName === toolName)
-        if (existing) {
-          existing.count++
-        } else {
-          turn.toolCallStats.push({ toolName, count: 1 })
+        // 更新工具调用统计（去重：同一 tool_call_id 会发送 preview→actual→result 三次）
+        const toolCallId = message.data?.tool_call_id
+        let isFirstSeen = true
+        if (toolCallId) {
+          if (_turnSeenToolCallIds.value.has(toolCallId)) {
+            isFirstSeen = false
+          } else {
+            _turnSeenToolCallIds.value.add(toolCallId)
+          }
+        }
+        if (isFirstSeen) {
+          const existing = turn.toolCallStats.find(s => s.toolName === toolName)
+          if (existing) {
+            existing.count++
+          } else {
+            turn.toolCallStats.push({ toolName, count: 1 })
+          }
         }
 
         // 提取文件路径（read_file/edit_file/write_file）

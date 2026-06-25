@@ -264,11 +264,6 @@ onUnmounted(() => {
 
 <template>
   <div class="info-sidebar" :class="{ open: isOpen }">
-    <div class="sidebar-header">
-      <span class="sidebar-title">📊 Info</span>
-      <button class="close-btn" @click="chatStore.toggleRightSidebar()">✕</button>
-    </div>
-
     <div class="sidebar-content">
       <!-- ==================== Session Info ==================== -->
       <div class="panel">
@@ -408,36 +403,6 @@ onUnmounted(() => {
   flex-direction: column;
   flex-shrink: 0;
   overflow-y: auto;
-}
-
-.sidebar-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 12px 14px;
-  border-bottom: 1px solid var(--border-color);
-}
-
-.sidebar-title {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--text-primary);
-}
-
-.close-btn {
-  background: none;
-  border: none;
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 14px;
-  padding: 2px 6px;
-  border-radius: 4px;
-  display: none;
-}
-
-.close-btn:hover {
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
 }
 
 .sidebar-content {
