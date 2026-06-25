@@ -7,16 +7,19 @@ const answer = ref('')
 const selectedOption = ref('')
 
 function handleSelectOption(option: string) {
+  answer.value = ''
   chatStore.respondAgentQuery(option)
 }
 
 function handleSubmit() {
-  if (answer.value.trim()) {
-    chatStore.respondAgentQuery(answer.value.trim())
-  }
+  const text = answer.value.trim()
+  answer.value = ''
+  if (!text) return
+  chatStore.respondAgentQuery(text)
 }
 
 function handleClose() {
+  answer.value = ''
   chatStore.respondAgentQuery('')
 }
 </script>

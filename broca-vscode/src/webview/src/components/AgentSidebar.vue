@@ -288,7 +288,18 @@ watch(
   }
 )
 
-// ==================== 侧栏状态 ====================
+// ==================== Agent 列表（main_agent 排第一） ====================
+const sortedAgents = computed(() => {
+  const agents = [...chatStore.agents]
+  const mainId = chatStore.defaultAgentId
+  if (!mainId) return agents
+  const mainIdx = agents.findIndex((a) => a.agent_id === mainId)
+  if (mainIdx > 0) {
+    const [main] = agents.splice(mainIdx, 1)
+    agents.unshift(main)
+  }
+  return agents
+})
 const isOpen = computed(() => chatStore.showLeftSidebar)
 </script>
 
@@ -301,7 +312,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
       </div>
       <div class="header-actions">
         <!-- Agent 消息过滤 -->
-        <div class="filter-dropdown" v-if="chatStore.agents.length > 0">
+        <div class="filter-dropdown" v-if="sortedAgents.length > 0">
           <button class="icon-btn filter-btn" title="过滤Agent消息" @click="showFilterDropdown = !showFilterDropdown">⚙️</button>
           <div v-if="showFilterDropdown" class="filter-menu" @click.stop>
             <label class="filter-item" @click="toggleAll">
@@ -325,11 +336,11 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
 
     <!-- Agent 列表 -->
     <div class="agent-list">
-      <div v-if="chatStore.agents.length === 0" class="empty-agents">
+      <div v-if="sortedAgents.length === 0" class="empty-agents">
         No agents available
       </div>
       <div
-        v-for="agent in chatStore.agents"
+        v-for="agent in sortedAgents"
         :key="agent.agent_id"
         class="agent-card"
         :class="{ 'card-main': agent.agent_id === chatStore.defaultAgentId }"

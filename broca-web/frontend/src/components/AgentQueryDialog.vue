@@ -11,8 +11,11 @@ const hasOptions = computed(() => {
 })
 
 const submitAnswer = (answer: string) => {
-  if (!answer.trim()) return
   customAnswer.value = ''
+  if (!answer.trim()) {
+    chatStore.respondUserAnswer('')
+    return
+  }
   chatStore.respondUserAnswer(answer)
 }
 
