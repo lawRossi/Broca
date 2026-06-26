@@ -1,6 +1,6 @@
 ---
 name: create-tests
-version: "1.1.0"
+version: "1.0.0"
 description: "Reads a plan document and creates a formal test suite for **one phase at a time**, derived from each task's acceptance criteria. Creates test files under `tests/{plan-name}/phase-{NN}/`, runs them, and produces results for the phase report. Use AFTER `execute-tasks` has completed implementation for the phase."
 ---
 

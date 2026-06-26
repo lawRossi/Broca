@@ -462,6 +462,18 @@ else
     warn "未找到默认工具权限配置: $PERM_SRC"
 fi
 
+# ---- 复制 Skills ----
+SKILLS_DST="$BROCA_HOME/skills"
+SKILLS_SRC="$PROJECT_ROOT/skills"
+
+if [[ -d "$SKILLS_SRC" ]]; then
+    mkdir -p "$SKILLS_DST"
+    rsync -a --delete "$SKILLS_SRC/" "$SKILLS_DST/" 2>/dev/null || cp -r "$SKILLS_SRC"/* "$SKILLS_DST/"
+    info "Skills 已部署: $SKILLS_DST"
+else
+    warn "未找到 Skills 目录: $SKILLS_SRC"
+fi
+
 echo ""
 
 # ============================================================================

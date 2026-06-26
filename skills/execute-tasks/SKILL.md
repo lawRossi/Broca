@@ -1,7 +1,7 @@
 ---
 name: execute-tasks
-version: "2.0.0"
-description: "Executes tasks following the full pipeline: `create-plan` → `create-tasks` → `execute-tasks` → `create-tests`. Reads plan-anchored tasks from the Task Management Tool, re-establishes context from the plan document, implements against acceptance criteria, writes tests on the spot, and handles errors via the 3-Strike Protocol."
+version: "1.0.0"
+description: "Executes tasks following the full pipeline: `create-plan` → `create-tasks` → `execute-tasks` → `create-tests`."
 ---
 
 # Execute Tasks

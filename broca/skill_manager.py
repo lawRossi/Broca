@@ -52,6 +52,7 @@ class SkillManager:
         boostrap_dirs = [
             Path(__file__).parent.parent / "skills",
             Path.home() / ".agents/skills",
+            Path.home() / ".broca/skills",
         ]
 
         self.skills: dict[str, dict] = {}
