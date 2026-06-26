@@ -34,11 +34,11 @@ def _clean_error_message(raw: str) -> str:
     if json_match:
         return json_match.group(1)
     # 尝试提取 "API error N: msg"
-    api_msg_match = re.search(r'API error \d+: (.+)', raw)
+    api_msg_match = re.search(r"API error \d+: (.+)", raw)
     if api_msg_match:
         return api_msg_match.group(1).strip()
     # 尝试提取 "Client error N for METHOD path: body"
-    client_msg_match = re.search(r'Client error \d+ for [A-Z]+ [^:]+:\s*(.+)', raw)
+    client_msg_match = re.search(r"Client error \d+ for [A-Z]+ [^:]+:\s*(.+)", raw)
     if client_msg_match:
         body = client_msg_match.group(1).strip()
         if body.startswith("{"):
@@ -47,7 +47,11 @@ def _clean_error_message(raw: str) -> str:
                 if isinstance(parsed, dict):
                     if "detail" in parsed:
                         detail = parsed["detail"]
-                        return "; ".join(str(e) for e in detail) if isinstance(detail, list) else str(detail)
+                        return (
+                            "; ".join(str(e) for e in detail)
+                            if isinstance(detail, list)
+                            else str(detail)
+                        )
                     for key in ("message", "error", "msg"):
                         if key in parsed:
                             return str(parsed[key])
@@ -326,8 +330,15 @@ class ChatStore:
             turn_id = message.data.get("turn_id") if message.data else None
             if turn_id:
                 status = message.data.get("status") if message.data else None
-                changed_files = message.data.get("changed_files") if message.data else None
-                self.finalize_turn_summary(turn_id, status, turn_end_msg_id=message.message_id, changed_files=changed_files)
+                changed_files = (
+                    message.data.get("changed_files") if message.data else None
+                )
+                self.finalize_turn_summary(
+                    turn_id,
+                    status,
+                    turn_end_msg_id=message.message_id,
+                    changed_files=changed_files,
+                )
 
         @self._socket.on("permission_request")
         async def handle_permission(message: Message):
@@ -374,10 +385,14 @@ class ChatStore:
                 if isinstance(data, str):
                     msg = data
                 elif hasattr(data, "data") and isinstance(data.data, dict):
-                    # Message object: 取 error_message 或 message 字段
-                    msg = data.data.get("error_message") or data.data.get("message") or str(data.data)
+                    # Message object: 取 content 或 message 字段
+                    msg = (
+                        data.data.get("content")
+                        or data.data.get("message")
+                        or str(data.data)
+                    )
                 elif isinstance(data, dict):
-                    msg = data.get("message", data.get("error", str(data)))
+                    msg = data.get("content", data.get("message", str(data)))
                 else:
                     msg = str(data)
                 if msg:
@@ -542,7 +557,9 @@ class ChatStore:
                     # Reload turn data (简洁模式: turn_summaries 替代 messages)
                     import asyncio
 
-                    asyncio.ensure_future(self.load_turn_history(filter_execution_id=self.execution_id))
+                    asyncio.ensure_future(
+                        self.load_turn_history(filter_execution_id=self.execution_id)
+                    )
                 return
 
         # Clear redo state on new messages (undo result is command_result, so it won't be cleared)
@@ -590,7 +607,9 @@ class ChatStore:
                 return t
         return None
 
-    async def load_turn_history(self, is_load_more: bool = False, filter_execution_id: Optional[str] = None):
+    async def load_turn_history(
+        self, is_load_more: bool = False, filter_execution_id: Optional[str] = None
+    ):
         """加载 turn 历史（简洁模式）。
 
         Args:
@@ -651,8 +670,11 @@ class ChatStore:
                 if started_at_raw:
                     try:
                         import datetime as _dt
+
                         # 统一按 UTC 解析，避免本地时区偏移
-                        d = _dt.datetime.fromisoformat(started_at_raw.replace("Z", "+00:00"))
+                        d = _dt.datetime.fromisoformat(
+                            started_at_raw.replace("Z", "+00:00")
+                        )
                         if d.tzinfo is None:
                             d = d.replace(tzinfo=_dt.timezone.utc)
                         started_at_ms = d.timestamp() * 1000
@@ -886,7 +908,13 @@ class ChatStore:
         turn.status = "thinking"
         self._notify_change()
 
-    def finalize_turn_summary(self, turn_id: str, status: Optional[str] = None, turn_end_msg_id: Optional[str] = None, changed_files: Optional[Dict[str, Any]] = None):
+    def finalize_turn_summary(
+        self,
+        turn_id: str,
+        status: Optional[str] = None,
+        turn_end_msg_id: Optional[str] = None,
+        changed_files: Optional[Dict[str, Any]] = None,
+    ):
         """终结 TurnSummary（turn_end 事件触发）。
 
         Args:
@@ -1010,7 +1038,9 @@ class ChatStore:
         except Exception as e:
             self._notify_error(f"发送消息失败: {e}")
             # 发送失败，移除预创建的 turn
-            self.turn_summaries = [t for t in self.turn_summaries if t.turn_id != temp_id]
+            self.turn_summaries = [
+                t for t in self.turn_summaries if t.turn_id != temp_id
+            ]
             self._pending_turn_id = None
             self._notify_change(force=True)
 
@@ -1024,9 +1054,7 @@ class ChatStore:
             return
         try:
             await self._socket.send_command(
-                command="abort",
-                arguments={},
-                receiver_id=agent_id
+                command="abort", arguments={}, receiver_id=agent_id
             )
         except Exception as e:
             self._notify_error(f"中止失败: {e}")

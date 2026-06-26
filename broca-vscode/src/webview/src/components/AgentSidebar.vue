@@ -519,6 +519,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   padding: 10px 12px;
   border-bottom: 1px solid var(--border-color);
   flex-shrink: 0;
+  margin-bottom: 4px;
 }
 
 .header-title {
@@ -589,7 +590,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   padding: 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 16px;
   overflow-y: auto;
 }
 
@@ -606,7 +607,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   background: var(--bg-primary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
-  padding: 10px 12px;
+  padding: 14px 16px;
   cursor: pointer;
   transition: all 0.15s ease;
 }

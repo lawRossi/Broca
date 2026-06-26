@@ -437,9 +437,7 @@ class AgentCard(Widget):
                     )
 
             # Abort button (始终创建，通过 CSS 显隐)
-            yield Button(
-                "停止", id=f"abort-{safe_id}", classes="abort-button"
-            )
+            yield Button("停止", id=f"abort-{safe_id}", classes="abort-button")
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle abort button press — directly calls screen."""
@@ -702,7 +700,9 @@ class AgentSidebar(Widget):
             try:
                 parsed_config = json.loads(config_content)
             except json.JSONDecodeError:
-                self.notify("配置 JSON 格式无效", severity="error", timeout=5)
+                self.notify(
+                    "配置JSON格式无效", severity="error", timeout=5, markup=False
+                )
                 return
 
             # 对齐 Web 版：后端只接收 { config_content: {完整配置对象} }
@@ -729,9 +729,10 @@ class AgentSidebar(Widget):
                 self._store._notify_change()
 
             self.notify(
-                "配置已保存，重启 Session 后生效",
+                "配置已保存，重启Session后生效",
                 severity="information",
                 timeout=5,
+                markup=False,
             )
         except Exception as e:
             self.notify(f"保存配置失败: {e}", severity="error", timeout=5, markup=False)

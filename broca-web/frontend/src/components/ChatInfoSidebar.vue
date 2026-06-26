@@ -253,11 +253,6 @@ const getRunnerConfig = (status: string | undefined) => {
         chatStore.isMobile && chatStore.showRightSidebar,
     }"
   >
-    <div v-if="chatStore.isMobile && chatStore.showRightSidebar" class="flex justify-between items-center lg:hidden">
-      <span class="text-sm font-semibold text-gray-700">Info</span>
-      <el-button size="small" @click="chatStore.showRightSidebar = false"> ✕ </el-button>
-    </div>
-
     <div class="bg-white rounded-lg border p-2 sm:p-3 shadow hover:shadow-md transition-shadow duration-200">
       <div class="text-sm font-semibold text-gray-900 mb-2">Session Info</div>
       <div class="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-2 border border-gray-100">
