@@ -729,13 +729,13 @@ class AgentSidebar(Widget):
                 self._store._notify_change()
 
             self.notify(
-                "配置已保存，重启Session后生效",
+                "已保存，重启后生效",
                 severity="information",
                 timeout=5,
                 markup=False,
             )
-        except Exception as e:
-            self.notify(f"保存配置失败: {e}", severity="error", timeout=5, markup=False)
+        except Exception:
+            self.notify("保存配置失败", severity="error", timeout=5, markup=False)
         finally:
             await api.close()
 
