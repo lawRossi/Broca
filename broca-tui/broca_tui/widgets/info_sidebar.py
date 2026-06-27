@@ -386,22 +386,14 @@ class InfoSidebar(Widget):
         except Exception:
             self.runner_status = "unknown"
 
-        # 2. Session Info refresh (workspace may change)
-        try:
-            session_info = await self._api.get_session(self._session_id)
-            workspace = session_info.get("workspace", "") or ""
-            self.query_one("#info-workspace", Label).update(workspace or "未设置")
-        except Exception:
-            pass
-
-        # 3. Message Statistics refresh (via API, not local messages)
+        # 2. Message Statistics refresh (via API, not local messages)
         try:
             stats_data = await self._api.get_session_stats(self._session_id)
             self._update_stats_from_api(stats_data)
         except Exception:
             pass
 
-        # 4. Job & Task counts (并行获取，对齐 Web 版)
+        # 3. Job & Task counts (并行获取，对齐 Web 版)
         try:
             job_task = self._api.get_job_count(self._session_id)
             task_task = self._api.get_task_count(self._session_id)
