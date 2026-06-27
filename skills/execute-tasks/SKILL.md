@@ -17,14 +17,6 @@ execute-tasks (skill)  → implement + write tests (execution & on-the-spot test
 create-tests (skill)   → tests/                  (formalize test suite)
 ```
 
-## Quick Start
-
-1. **Discover tasks**: Query tasks by plan name to find all plan-related tasks
-2. **Anchor on the plan**: Re-read the plan document section for context
-3. **Select next task**: Highest priority, all dependencies met, status = pending
-4. **Execute**: Follow the task's steps, verify acceptance criteria
-5. **Report**: Write a completion report and update status
-
 ## Core Principles
 
 ### Principle 1: Own the Quality
@@ -65,60 +57,6 @@ flowchart LR
 
 ## Execution Workflow
 
-### Step 1: Discover Tasks
-
-Tasks created by `create-tasks` follow the naming convention `{PlanName} / Phase {N}: {Name}` and `{PlanName} / Task {N.M}: {Name}`. Find them by plan name:
-
-```json
-// Search by plan name to discover all tasks for a plan
-{ "action": "search", "query": "{PlanName}" }
-
-// Or, if the master task ID is already known, get the full hierarchy
-{ "action": "get_children", "task_id": "MASTER_TASK_ID" }
-```
-
-### Step 2: Plan Anchor
-
-Every task references its plan document via `files` and `details`. Re-read the plan to re-establish context before executing:
-
-1. **Re-read the plan document** section relevant to this task
-2. **Re-establish acceptance criteria** from the plan
-3. **Confirm context**: related materials, expected outputs, steps
-
-```json
-// Read the plan document referenced in the task
-{ "action": "read_file", "path": "plans/{plan-name}.md" }
-```
-
-### Step 3: Select Next Task
-
-Choose the next task based on:
-
-| Criteria | Rule |
-|----------|------|
-| **Status** | Must be `pending` (or `blocked` if unblocking) |
-| **Dependencies** | All dependency task IDs must have status `completed` |
-| **Priority** | Higher priority first (high > medium > low) |
-| **Plan order** | Follow Phase/Task number order (Phase 1 → Task 1.1 → 1.2 → Phase 2 → ...) |
-
-```json
-// Check a task's dependencies
-// For each dependency ID:
-{ "action": "get", "task_id": "DEPENDENCY_TASK_ID" }
-// → confirm status is "completed"
-```
-
-### Step 4: Understand the Task
-
-For the selected task, gather all context by reading the plan document and task data:
-
-1. **Read the task**: `description`, `details`, `acceptance_criteria`, `files`, `links`, `notes`
-2. **Re-read the plan**: The corresponding section from the plan document (re-establish full context)
-3. **Explore references**: Read referenced files and fetch referenced links
-4. **Plan execution**: Break the task into concrete steps. If it involves multiple sub-steps, use `todo_management` to track progress
-
-### Step 5: Execute Tasks in the Phase
-
 Each Phase follows a 5-step cycle:
 
 ```
@@ -133,7 +71,7 @@ Each Phase follows a 5-step cycle:
 
 ---
 
-#### Step 5.1: Phase Anchor
+### Step 1: Phase Anchor
 
 At the start of each phase, **re-read the plan document** for this phase:
 
@@ -145,25 +83,47 @@ At the start of each phase, **re-read the plan document** for this phase:
 
 ---
 
-#### Step 5.2: Task Execution Loop
+### Step 2: Task Execution Loop
 
-For each task in the current phase, follow this sub-cycle:
+#### Discover Tasks
 
-##### 5.2.1 Task Anchor
+Tasks created by `create-tasks` follow the naming convention `{PlanName} / Phase {N}: {Name}` and `{PlanName} / Task {N.M}: {Name}`. Find them by plan name:
+
+```json
+// Search by plan name to discover all tasks for a plan
+{ "action": "search", "query": "{PlanName}" }
+
+// Or, if the master task ID is already known, get the full hierarchy
+{ "action": "get_children", "task_id": "MASTER_TASK_ID" }
+```
+
+
+#### Select Next Task
+
+Choose the next task based on:
+
+| Criteria         | Rule                                                                      |
+| ------------------| ---------------------------------------------------------------------------|
+| **Status**       | Must be `pending` (or `blocked` if unblocking)                            |
+| **Dependencies** | All dependency task IDs must have status `completed`                      |
+| **Priority**     | Higher priority first (high > medium > low)                               |
+| **Plan order**   | Follow Phase/Task number order (Phase 1 → Task 1.1 → 1.2 → Phase 2 → ...) |
+
+#### Task Anchor
 - Re-read the task's goal, steps, expected output, and **acceptance criteria**
 - Be crystal clear on "what counts as done"
 
-##### 5.2.2 Implement
+#### Implement
 - Follow the plan's steps strictly
 - **After each logical block, check against ACs**: "Am I moving toward satisfying the criteria?"
 - If the plan doesn't cover a situation, **use `ask_user`** — never decide alone
 - **No scope creep**: don't add features the plan doesn't ask for
 
-##### 5.2.3 Task-Level Verification
+#### Task-Level Verification
 - Note any ACs that need formal automated testing — use `create-tests` skill to create tests after implementation
 - **The task is done only when ALL its ACs are satisfied**
 
-##### 5.2.4 Deviation Detection
+#### Deviation Detection
 After completing the task, ask yourself:
 > "Does the implementation match the plan's description?"
 - If deviation found: **stop immediately**, use `ask_user` to report the deviation, get instructions before continuing
@@ -187,9 +147,11 @@ After completing the task, ask yourself:
 
 > **Task report = concise.** Just a brief summary of what was done and which ACs passed. Detailed analysis, test outputs, and deviations go into the **phase report** (Step 5.5).
 
+**Tips**: Use todo_management to trace the process of task execution.
+
 ---
 
-#### Step 5.3: Phase Self-Check
+### 3: Phase Self-Check
 
 After all tasks in the phase are complete:
 
@@ -203,7 +165,7 @@ After all tasks in the phase are complete:
 
 ---
 
-#### Step 5.4: Integration Check
+### Step 4: Integration Check
 
 Integrate the phase's results with existing work:
 
@@ -213,7 +175,7 @@ Integrate the phase's results with existing work:
 
 ---
 
-#### Step 5.5: Create and Run Tests (via create-tests)
+### Step 5: Create and Run Tests (via create-tests)
 
 After implementation and integration check, **run `create-tests`** to:
 1. Create formal test files from each task's acceptance criteria
@@ -224,7 +186,7 @@ After implementation and integration check, **run `create-tests`** to:
 
 ---
 
-#### Step 5.6: Phase Report + Review
+### Step 6: Phase Report + Review
 
 This is the **detailed report** — in contrast to concise task reports, the phase report captures everything:
 
@@ -374,23 +336,14 @@ Write phase reports to `plans/reports/execution/{plan-name}-phase-{N}.md`.
 { "action": "get_children", "task_id": "PHASE_TASK_ID" }
 ```
 
-### Add Comment to Task
-```json
-{
-    "action": "add_comment",
-    "task_id": "TASK_ID",
-    "content": "Progress update: {details}"
-}
-```
-
 ## Plan Task Reference
 
 Tasks created by `create-tasks` follow this structure:
 
-| Task Name Pattern | Meaning | What to Expect in `details` |
-|---|---|---|
-| `{PlanName} / Phase {N}: {Name}` | Phase parent task | Phase goal, phase ACs |
-| `{PlanName} / Task {N.M}: {Name}` | Individual task | Steps, expected output, plan reference |
+| Task Name Pattern                 | Meaning           | What to Expect in `details`            |
+| -----------------------------------| -------------------| ----------------------------------------|
+| `{PlanName} / Phase {N}: {Name}`  | Phase parent task | Phase goal, phase ACs                  |
+| `{PlanName} / Task {N.M}: {Name}` | Individual task   | Steps, expected output, plan reference |
 
 The task's `files` array will contain `["plans/{plan-name}.md"]` — use this to locate the plan document for anchoring.
 
@@ -401,12 +354,12 @@ The task's `details` field will contain:
 
 ## Anti-Patterns
 
-| Don't | Do Instead |
-|-------|------------|
-| Skip reading the plan document | Always re-read the relevant plan section for context |
-| Skip acceptance criteria verification | Verify EVERY acceptance criterion before marking complete |
-| Ignore dependencies | Check all dependencies are completed before starting |
-| Repeat failed approaches | Log failures, try different methods, use 3-Strike Protocol |
-| Work on tasks out of plan order | Follow Phase/Task numbering from the plan |
-| Skip progress tracking | Update status → in_progress → completed with report |
-| Write verbose task-level reports | Keep task reports concise; put details in the phase report instead |
+| Don't                                 | Do Instead                                                         |
+| ---------------------------------------| --------------------------------------------------------------------|
+| Skip reading the plan document        | Always re-read the relevant plan section for context               |
+| Skip acceptance criteria verification | Verify EVERY acceptance criterion before marking complete          |
+| Ignore dependencies                   | Check all dependencies are completed before starting               |
+| Repeat failed approaches              | Log failures, try different methods, use 3-Strike Protocol         |
+| Work on tasks out of plan order       | Follow Phase/Task numbering from the plan                          |
+| Skip progress tracking                | Update status → in_progress → completed with report                |
+| Write verbose task-level reports      | Keep task reports concise; put details in the phase report instead |
