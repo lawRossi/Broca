@@ -14,14 +14,21 @@ from broca.utils.content_security import scan_content_security
 # 记忆存储路径和分隔符（与 broca/tools/memory.py 保持一致）
 MEMORY_DIR = Path(".broca") / "memories"
 MEMORY_ENTRY_DELIMITER = "\n§\n"
-MEMORY_CHAR_LIMIT = 2200
-USER_CHAR_LIMIT = 1375
+MEMORY_CHAR_LIMIT = 2000
+USER_CHAR_LIMIT = 1000
 
 logger = get_logger(__name__)
 
 
 class Context:
-    BOOTSTRAP_FILES = ["AGENTS.md", "SOUL.md", ".agents/AGENTS.md", ".agents/SOUL.md"]
+    BOOTSTRAP_FILES = [
+        "AGENTS.md",
+        "SOUL.md",
+        ".agents/AGENTS.md",
+        ".agents/SOUL.md",
+        ".broca/AGENTS.md",
+        ".broca/SOUL.md",
+    ]
     STALE_TOOL_RESULT_PLACEHOLDER = "[Expired tool result has been cleared]"
 
     def __init__(
