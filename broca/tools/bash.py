@@ -24,7 +24,7 @@ class Bash(Tool):
 
     @property
     def description(self) -> str:
-        return "Use this tool to execute code using shell."
+        return "Use this tool to execute code using shell. When running python-related code, use the right python (virtualenv) environment."
 
     @property
     def parameters(self) -> dict:
