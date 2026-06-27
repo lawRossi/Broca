@@ -17,6 +17,7 @@ from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 
+from broca_tui.api.session import SessionAPI
 from broca_tui.stores.agent_store import AgentStore
 from broca_tui.stores.chat_store import ChatStore
 from broca_tui.widgets.agent_query_dialog import AgentQueryDialog
@@ -137,11 +138,19 @@ class ChatScreen(Screen):
             chat_input = self.query_one("#chat-input", ChatInput)
         agent_sidebar = self.query_one("#agent-sidebar", AgentSidebar)
 
-        # Set session info
+        # Set session info — 先取 workspace，让 info_sidebar 一开始就显示正确
+        workspace = ""
+        try:
+            session_api = SessionAPI()
+            session_info = await session_api.get_session(self._session_id)
+            workspace = session_info.get("workspace", "") or ""
+            await session_api.close()
+        except Exception:
+            pass
         header.set_session_id(self._session_id)
         header.is_agent_orchestration = is_orch
         message_list.set_session(self._session_id)
-        info_sidebar.set_session(self._session_id)
+        info_sidebar.set_session(self._session_id, workspace=workspace)
 
         # ── Path 1: Connect Socket.IO (best-effort, independent of turn loading) ──
         header.connection_status = "connecting"
