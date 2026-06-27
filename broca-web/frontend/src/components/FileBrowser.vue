@@ -725,15 +725,15 @@ defineExpose({
               Edit
             </el-button>
           </div>
-          <div class="bg-gray-900 rounded-lg overflow-auto max-h-[60vh] flex">
+          <div class="bg-gray-100 border border-gray-200 rounded-lg overflow-auto max-h-[60vh] flex">
             <!-- 行号 -->
-            <div class="bg-gray-800 text-gray-400 text-right py-4 px-3 select-none border-r border-gray-700">
+            <div class="bg-gray-200 text-gray-500 text-right py-4 px-3 select-none border-r border-gray-300">
               <div v-for="(_, index) in previewContent.split('\n')" :key="index" class="leading-6">
                 {{ index + 1 }}
               </div>
             </div>
             <!-- 内容 -->
-            <pre class="text-gray-100 p-4 text-sm font-mono whitespace-pre-wrap flex-1">{{ previewContent }}</pre>
+            <pre class="text-gray-800 p-4 text-sm font-mono whitespace-pre-wrap flex-1">{{ previewContent }}</pre>
           </div>
         </div>
 
@@ -752,10 +752,10 @@ defineExpose({
               <el-button type="primary" size="small" :loading="saveLoading" @click="confirmSave"> Save </el-button>
             </div>
           </div>
-          <div class="bg-gray-900 rounded-lg overflow-auto max-h-[60vh] flex border border-gray-700">
+          <div class="bg-gray-100 rounded-lg overflow-auto max-h-[60vh] flex border border-gray-300">
             <!-- 行号 -->
             <div
-              class="bg-gray-800 text-gray-400 text-right py-4 px-3 select-none border-r border-gray-700 flex-shrink-0"
+              class="bg-gray-200 text-gray-500 text-right py-4 px-3 select-none border-r border-gray-300 flex-shrink-0"
             >
               <div v-for="(_, index) in editedContent.split('\n')" :key="index" class="leading-6">
                 {{ index + 1 }}
@@ -764,7 +764,7 @@ defineExpose({
             <!-- 内容编辑区 -->
             <textarea
               v-model="editedContent"
-              class="flex-1 font-mono text-sm bg-gray-900 text-gray-100 p-4 resize-none focus:outline-none"
+              class="flex-1 font-mono text-sm bg-white text-gray-800 p-4 resize-none focus:outline-none"
               spellcheck="false"
               placeholder="Edit file content..."
               @input="handleContentChangeDebounced"

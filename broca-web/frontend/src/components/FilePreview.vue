@@ -410,15 +410,15 @@ defineExpose({
             </span>
           </div>
         </div>
-        <div class="bg-gray-900 rounded-lg overflow-auto max-h-[60vh] flex">
+        <div class="bg-gray-100 border border-gray-200 rounded-lg overflow-auto max-h-[60vh] flex">
           <!-- 行号 -->
-          <div class="bg-gray-800 text-gray-400 text-right py-4 px-3 select-none border-r border-gray-700">
+          <div class="bg-gray-200 text-gray-500 text-right py-4 px-3 select-none border-r border-gray-300">
             <div v-for="(_, index) in previewContent.split('\n')" :key="index" class="leading-6">
               {{ index + 1 }}
             </div>
           </div>
           <!-- 内容 -->
-          <pre class="text-gray-100 p-4 text-sm font-mono whitespace-pre-wrap flex-1">{{ previewContent }}</pre>
+          <pre class="text-gray-800 p-4 text-sm font-mono whitespace-pre-wrap flex-1">{{ previewContent }}</pre>
         </div>
       </div>
 
@@ -454,13 +454,13 @@ defineExpose({
   display: flex;
   align-items: center;
   justify-content: center;
-  background: #f5f5f5;
+  background: var(--color-gray-100);
   border-radius: 8px;
   padding: 16px;
 }
 
 .text-preview {
-  background: #f5f5f5;
+  background: var(--color-gray-50);
   border-radius: 8px;
   padding: 16px;
 }
@@ -470,25 +470,25 @@ defineExpose({
   padding: 16px 20px;
 }
 
-.bg-gray-900::-webkit-scrollbar,
-.bg-gray-800::-webkit-scrollbar {
+.bg-gray-100::-webkit-scrollbar,
+.bg-gray-200::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
-.bg-gray-900::-webkit-scrollbar-track,
-.bg-gray-800::-webkit-scrollbar-track {
-  background: #1f2937;
+.bg-gray-100::-webkit-scrollbar-track,
+.bg-gray-200::-webkit-scrollbar-track {
+  background: #f1f5f9;
 }
 
-.bg-gray-900::-webkit-scrollbar-thumb,
-.bg-gray-800::-webkit-scrollbar-thumb {
-  background: #4b5563;
+.bg-gray-100::-webkit-scrollbar-thumb,
+.bg-gray-200::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
   border-radius: 4px;
 }
 
-.bg-gray-900::-webkit-scrollbar-thumb:hover,
-.bg-gray-800::-webkit-scrollbar-thumb:hover {
-  background: #6b7280;
+.bg-gray-100::-webkit-scrollbar-thumb:hover,
+.bg-gray-200::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
 }
 </style>

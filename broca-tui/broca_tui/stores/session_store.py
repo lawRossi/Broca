@@ -116,16 +116,13 @@ class SessionStore:
         self._gen += 1
         gen = self._gen
 
-        # Reset pagination immediately so stale responses don't
-        # append to an already-reset list (generation guard below handles the rest)
+        # Always reset pagination for a fresh load
         if keyword is not None:
             self.keyword = keyword
-            self.skip = 0
-            self.sessions = []
-        elif keyword is None and self.keyword is not None:
+        elif self.keyword is not None:
             self.keyword = None
-            self.skip = 0
-            self.sessions = []
+        self.skip = 0
+        self.sessions = []
 
         self.loading = True
         self._notify_change()
@@ -141,11 +138,7 @@ class SessionStore:
             if gen != self._gen:
                 return
 
-            if self.skip == 0:
-                self.sessions = result.get("sessions", [])
-            else:
-                self.sessions.extend(result.get("sessions", []))
-
+            self.sessions = result.get("sessions", [])
             self.total = result.get("total", len(result.get("sessions", [])))
             self.skip += self.limit
             self.has_more = self.skip < self.total
@@ -162,7 +155,30 @@ class SessionStore:
         """Load next page of sessions (preserves current search keyword)."""
         if self.loading or not self.has_more:
             return
-        await self.load_sessions(keyword=self.keyword)
+        self._gen += 1
+        gen = self._gen
+        self.loading = True
+        self._notify_change()
+        try:
+            result = await self._api.list_sessions(
+                skip=self.skip,
+                limit=self.limit,
+                keyword=self.keyword,
+            )
+            if gen != self._gen:
+                return
+            self.sessions.extend(result.get("sessions", []))
+            self.total = result.get("total", len(result.get("sessions", [])))
+            self.skip += self.limit
+            self.has_more = self.skip < self.total
+        except asyncio.CancelledError:
+            raise
+        except Exception as e:
+            raw_msg = getattr(e, 'message', str(e))
+            self._set_error(f"加载更多会话失败: {_clean_error_message(raw_msg)}")
+        finally:
+            self.loading = False
+            self._notify_change()
 
     async def create_session(
         self,

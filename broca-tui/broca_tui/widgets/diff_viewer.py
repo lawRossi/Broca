@@ -7,11 +7,12 @@ DiffViewer — 独立的文件 diff 展示 ModalScreen。
 from __future__ import annotations
 
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from textual.app import ComposeResult
 from textual.containers import Vertical, Horizontal, ScrollableContainer
 from textual.screen import ModalScreen
+from rich.text import Text
 from textual.widgets import Static, Label, Button
 
 # unified diff @@ 头部正则：@@ -old_start,old_count +new_start,new_count @@
@@ -66,23 +67,6 @@ def _parse_diff_lines(diff_text: str) -> List[dict]:
     return lines
 
 
-def _line_display(line: dict) -> str:
-    """将解析后的行渲染为 Rich 标记字符串，包含行号和颜色。"""
-    text = line["text"]
-    typ = line["type"]
-    ln = line["line_num"]
-    line_num_str = f"{ln:>4}" if ln is not None else "    "
-
-    if typ == "add":
-        return f"[bold #055d20 on #e6ffec]{line_num_str} + {text}[/]"
-    elif typ == "del":
-        return f"[bold #82071e on #ffebe9]{line_num_str} - {text}[/]"
-    elif typ == "head":
-        return f"[#666 on #e8e8e8]{line_num_str}   {text}[/]"
-    else:
-        return f"{line_num_str}   {text}"
-
-
 class DiffViewer(ModalScreen):
     """全屏 ModalScreen，展示文件的 unified diff，支持按 q/Esc/关闭按钮关闭。"""
 
@@ -124,7 +108,30 @@ class DiffViewer(ModalScreen):
     #diff-content {
         width: 1fr;
         height: 1fr;
+        padding: 0 0;
+    }
+    #diff-content > .diff-line {
+        width: 1fr;
+        height: auto;
         padding: 0 1;
+    }
+    #diff-content > .diff-line.add {
+        background: #d4edda;
+        color: #1a1a1a;
+        text-style: bold;
+    }
+    #diff-content > .diff-line.del {
+        background: #f8d7da;
+        color: #1a1a1a;
+        text-style: bold;
+    }
+    #diff-content > .diff-line.head {
+        background: #e8e8e8;
+        color: #1a1a1a;
+        text-style: bold;
+    }
+    #diff-content > .diff-line.ctx {
+        color: #1a1a1a;
     }
     """
 
@@ -138,13 +145,23 @@ class DiffViewer(ModalScreen):
             with Horizontal(id="diff-header-bar"):
                 yield Static(f"Diff: {self._file_path}", id="diff-header-text")
                 yield Button("✕", id="diff-close-btn")
-            # 解析 unified diff 为带行号和颜色的 Rich 标记
-            rich_lines = [
-                _line_display(line)
-                for line in _parse_diff_lines(self._diff_text or "(无变更)")
-            ]
+            # 逐行渲染 diff，每行一个独立的 Label widget
+            # 使用 Textual CSS class (width: 1fr) 确保背景色铺满整行宽度
+            # 用 Text() 包裹避免 Rich 将 [ 和 ] 误解析为标记标签
             with ScrollableContainer(id="diff-content"):
-                yield Static("\n".join(rich_lines))
+                for line in _parse_diff_lines(self._diff_text or "(无变更)"):
+                    ln = line["line_num"]
+                    line_num_str = f"{ln:>4}" if ln is not None else "    "
+                    text = line["text"]
+                    typ = line["type"]
+                    if typ == "add":
+                        yield Label(Text(f"{line_num_str} + {text}"), classes="diff-line add")
+                    elif typ == "del":
+                        yield Label(Text(f"{line_num_str} - {text}"), classes="diff-line del")
+                    elif typ == "head":
+                        yield Label(Text(f"{line_num_str}   {text}"), classes="diff-line head")
+                    else:
+                        yield Label(Text(f"{line_num_str}   {text}"), classes="diff-line ctx")
 
     def on_key(self, event):
         if event.key in ("escape", "q"):

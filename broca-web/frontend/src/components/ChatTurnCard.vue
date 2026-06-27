@@ -813,7 +813,7 @@ const handleUndo = async () => {
   width: 72px;
   flex-shrink: 0;
   text-align: right;
-  color: #999;
+  color: #555;
   padding-right: 12px;
   user-select: none;
 }
@@ -823,13 +823,13 @@ const handleUndo = async () => {
   flex: 1;
 }
 
-.diff-line.add { background: #e6ffec; }
-.diff-line.del { background: #ffebe9; }
-.diff-line.head { background: #f0f0f0; color: #666; font-weight: 600; }
-.diff-line.ctx { color: #333; }
+.diff-line.add { background: #d4edda; }
+.diff-line.del { background: #f8d7da; }
+.diff-line.head { background: #f0f0f0; color: #1a1a1a; font-weight: 600; }
+.diff-line.ctx { color: #1a1a1a; }
 
-.diff-line.add .diff-line-content { color: #055d20; }
-.diff-line.del .diff-line-content { color: #82071e; }
+.diff-line.add .diff-line-content { color: #1a1a1a; font-weight: 500; }
+.diff-line.del .diff-line-content { color: #1a1a1a; font-weight: 500; }
 
 /* ==================== 展开按钮 ==================== */
 .expand-btn {

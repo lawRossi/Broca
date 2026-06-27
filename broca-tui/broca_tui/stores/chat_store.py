@@ -370,6 +370,15 @@ class ChatStore:
             self._notify_change()
             if self._on_connection_change:
                 self._on_connection_change(True)
+            # 重连后重新订阅 session 频道。
+            # 服务端在 disconnect 时会清除客户端的订阅状态，
+            # 因此 Socket.IO 自动重连后必须显式重新订阅，否则服务端无法将消息推送回来。
+            if self.session_id and self._socket:
+                try:
+                    await self._socket.subscribe(self.session_id)
+                    log(f"重连后重新订阅 session {self.session_id}")
+                except Exception as e:
+                    log(f"重连后重新订阅失败: {e}")
 
         @self._socket.on("disconnect")
         async def handle_disconnect():
