@@ -67,6 +67,15 @@ const isLongResponse = computed(() => {
   return text.split('\n').length > MAX_RESPONSE_LINES
 })
 
+// 折叠状态：用户输入超过 300 字符
+const showFullUserMessage = ref(false)
+const MAX_USER_CHARS = 300
+const isLongUserMessage = computed(() => {
+  const text = props.turn.userMessage
+  if (!text) return false
+  return text.length > MAX_USER_CHARS
+})
+
 // ====== 状态简化：只显示 进行中 / 已完成 / 中断 ======
 
 const simplifiedStatus = computed(() => {
@@ -343,7 +352,19 @@ const handleUndo = async () => {
     <div v-if="turn.userMessage" class="section-accent accent-user">
       <div class="flex items-start gap-2 text-xs sm:text-sm text-gray-600">
         <span class="flex-shrink-0">👤</span>
-        <div>{{ turn.userMessage }}</div>
+        <div class="flex-1 min-w-0">
+          <div
+            class="user-msg-text"
+            :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }"
+          >{{ turn.userMessage }}</div>
+          <button
+            v-if="isLongUserMessage"
+            class="expand-btn"
+            @click="showFullUserMessage = !showFullUserMessage"
+          >
+            {{ showFullUserMessage ? '收起 ▲' : '展开 ▼' }}
+          </button>
+        </div>
       </div>
     </div>
 
@@ -961,6 +982,24 @@ const handleUndo = async () => {
   left: 0;
   right: 0;
   height: 3em;
+  background: linear-gradient(transparent, var(--card-bg, #ffffff));
+  pointer-events: none;
+}
+
+/* ==================== 用户消息折叠 ==================== */
+.user-msg-collapsed {
+  max-height: 4.5em;
+  overflow: hidden;
+  position: relative;
+}
+
+.user-msg-collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2em;
   background: linear-gradient(transparent, var(--card-bg, #ffffff));
   pointer-events: none;
 }

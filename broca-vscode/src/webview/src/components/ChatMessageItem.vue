@@ -23,6 +23,16 @@ const showParameters = ref(false)
 const showResult = ref(false)
 const showReasoning = ref(false)
 
+// ==================== 用户消息折叠（超过 300 字符） ====================
+const showFullUserMessage = ref(false)
+const MAX_USER_CHARS = 300
+const isLongUserMessage = computed(() => {
+  if (!isUser.value) return false
+  const content = getContent(props.message)
+  if (!content) return false
+  return String(content).length > MAX_USER_CHARS
+})
+
 // ==================== 撤销按钮状态 ====================
 const showActions = ref(false)
 const showUndoConfirm = ref(false)
@@ -437,7 +447,19 @@ function toggleToolParams() {
 
     <!-- ==================== 用户消息 ==================== -->
     <template v-else-if="isUser">
-      <pre class="message-text">{{ getContent(props.message) }}</pre>
+      <div class="user-msg-wrapper">
+        <pre
+          class="message-text"
+          :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }"
+        >{{ getContent(props.message) }}</pre>
+        <button
+          v-if="isLongUserMessage"
+          class="expand-btn"
+          @click="showFullUserMessage = !showFullUserMessage"
+        >
+          {{ showFullUserMessage ? '收起 ▲' : '展开 ▼' }}
+        </button>
+      </div>
       <!-- 文件附件 -->
       <div v-if="files.length > 0" class="file-attachments">
         <div
@@ -1244,4 +1266,44 @@ function toggleToolParams() {
 :deep(.markdown-body strong) { font-weight: 600; }
 :deep(.markdown-body em) { font-style: italic; }
 
+/* ==================== 用户消息折叠 ==================== */
+.user-msg-wrapper {
+  position: relative;
+}
+
+.user-msg-collapsed {
+  max-height: 4.5em;
+  overflow: hidden;
+  position: relative;
+}
+
+.user-msg-collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2em;
+  background: linear-gradient(transparent, var(--vscode-editor-background, #fff));
+  pointer-events: none;
+}
+
+.user-msg-wrapper .expand-btn {
+  display: inline-block;
+  margin-top: 4px;
+  background: transparent;
+  border: none;
+  color: var(--vscode-textLink-foreground, #006ab1);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  cursor: pointer;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.user-msg-wrapper .expand-btn:hover {
+  opacity: 1;
+  background: transparent;
+}
 </style>

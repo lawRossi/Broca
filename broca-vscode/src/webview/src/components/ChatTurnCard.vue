@@ -44,6 +44,15 @@ const isLongResponse = computed(() => {
   return false
 })
 
+// ==================== 长用户输入检测（超过 300 字符） ====================
+const showFullUserMessage = ref(false)
+const MAX_USER_CHARS = 300
+const isLongUserMessage = computed(() => {
+  const text = props.turn.userMessage
+  if (!text) return false
+  return text.length > MAX_USER_CHARS
+})
+
 // ==================== 状态文本与颜色（与 web 版一致） ====================
 const simplifiedStatus = computed(() => {
   if (props.turn.status === 'completed') return 'completed'
@@ -290,8 +299,15 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
     <div v-if="turn.userMessage" class="user-message-section section-accent accent-user">
       <div class="user-message-row">
         <span class="user-icon">👤</span>
-        <div class="user-message-text">{{ turn.userMessage }}</div>
+        <div class="user-message-text" :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }">{{ turn.userMessage }}</div>
       </div>
+      <button
+        v-if="isLongUserMessage"
+        class="expand-btn"
+        @click="showFullUserMessage = !showFullUserMessage"
+      >
+        {{ showFullUserMessage ? '收起 ▲' : '展开 ▼' }}
+      </button>
     </div>
 
     <!-- ==================== 执行摘要（对齐 web 版结构） ==================== -->
@@ -1166,4 +1182,22 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 .diff-line.add .diff-line-content { color: #1a1a1a; font-weight: 500; }
 .diff-line.del .diff-line-content { color: #1a1a1a; font-weight: 500; }
 .diff-line.head .diff-line-content { color: #1a1a1a; font-weight: 600; }
+
+/* ==================== 用户消息折叠 ==================== */
+.user-msg-collapsed {
+  max-height: 4.5em;
+  overflow: hidden;
+  position: relative;
+}
+
+.user-msg-collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2em;
+  background: linear-gradient(transparent, var(--vscode-editor-background, #fff));
+  pointer-events: none;
+}
 </style>

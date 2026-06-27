@@ -176,6 +176,16 @@ class TurnCard(Widget):
         width: 1fr;
     }
 
+    .turn-user-msg-content {
+        height: auto;
+        width: 1fr;
+    }
+
+    .turn-user-msg-content.collapsed {
+        max-height: 6;
+        overflow: hidden;
+    }
+
     .turn-summary-section {
         height: auto;
         padding: 0;
@@ -429,6 +439,8 @@ class TurnCard(Widget):
         ] = {}  # idx → file_path, 用于点击文件查看 diff
         self._response_expanded = True  # 回复默认展开，过长时可折叠
         self._response_manually_toggled = False  # 用户是否手动切换过折叠状态（防止自动折叠覆盖）
+        self._user_msg_expanded = True  # 用户消息默认展开，超长时可折叠
+        self._user_msg_manually_toggled = False  # 用户是否手动切换过用户消息折叠状态
         self._last_reasoning_update = 0.0  # 推理内容节流时间戳
         self._last_response_update = 0.0  # 回复内容节流时间戳
         self._last_tool_update = 0.0  # 工具调用节流时间戳
@@ -770,6 +782,13 @@ class TurnCard(Widget):
             return False
         return content.count("\n") > 25
 
+    def _needs_user_fold(self) -> bool:
+        """判断用户消息是否需要折叠（超过 300 字符）。"""
+        content = (self._turn.user_message or "").strip()
+        if not content:
+            return False
+        return len(content) > 300
+
     def compose(self) -> ComposeResult:
         """创建 TurnCard 布局 — 所有区域始终创建，通过 display 控制显隐，避免 DOM 重建闪烁。"""
         simplified_status = self._get_simplified_status()
@@ -808,11 +827,13 @@ class TurnCard(Widget):
             id="user-msg-section",
         ):
             yield Label("👤", classes="turn-user-icon")
-            yield Label(
-                self._turn.user_message or "",
-                classes="turn-user-text",
-                id="user-msg-text",
-            )
+            with Vertical(classes="turn-user-msg-content", id="user-msg-content"):
+                yield Label(
+                    self._turn.user_message or "",
+                    classes="turn-user-text",
+                    id="user-msg-text",
+                )
+        yield Label("展开全部", id="toggle-user-msg", classes="turn-fold-label")
 
         # ===== 执行摘要（始终创建，初始隐藏） =====
         with Vertical(
@@ -934,7 +955,17 @@ class TurnCard(Widget):
         2. 文本内容更新（in-place）
         """
         # 用户消息
-        self._toggle_display("#user-msg-section", bool(self._turn.user_message))
+        has_user_msg = bool(self._turn.user_message)
+        self._toggle_display("#user-msg-section", has_user_msg)
+        needs_user_fold = has_user_msg and self._needs_user_fold()
+        self._toggle_display("#toggle-user-msg", needs_user_fold)
+        if has_user_msg:
+            if not self._user_msg_manually_toggled:
+                if needs_user_fold and self._user_msg_expanded:
+                    self._user_msg_expanded = False
+                elif not needs_user_fold and not self._user_msg_expanded:
+                    self._user_msg_expanded = True
+            self._update_user_msg_visibility()
 
         # 执行摘要整体
         has_tool = self._has_tool_execution()
@@ -1021,6 +1052,21 @@ class TurnCard(Widget):
         except Exception:
             pass
 
+    def _update_user_msg_visibility(self):
+        """更新用户消息的折叠状态。"""
+        try:
+            content = self.query_one("#user-msg-content", Vertical)
+            toggle = self.query_one("#toggle-user-msg", Label)
+            if content:
+                if self._user_msg_expanded:
+                    content.remove_class("collapsed")
+                else:
+                    content.add_class("collapsed")
+            if toggle:
+                toggle.update("折叠" if self._user_msg_expanded else "展开全部")
+        except Exception:
+            pass
+
     def on_click(self, event) -> None:
         """处理推理/回复/撤销的点击切换。"""
         if hasattr(event, "widget") and event.widget is not None:
@@ -1062,6 +1108,10 @@ class TurnCard(Widget):
                 self._response_expanded = not self._response_expanded
                 self._response_manually_toggled = True
                 self._update_response_visibility()
+            elif widget_id == "toggle-user-msg":
+                self._user_msg_expanded = not self._user_msg_expanded
+                self._user_msg_manually_toggled = True
+                self._update_user_msg_visibility()
             elif widget_id and widget_id.startswith("undo-"):
                 # 撤销按钮已改为 Button，由 on_button_pressed 处理
                 pass

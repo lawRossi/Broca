@@ -21,6 +21,16 @@ const previewFileUrl = ref<string>('')
 // 显示/隐藏撤销按钮
 const showActions = ref(false)
 
+// 折叠状态：用户输入超过 300 字符
+const showFullUserMessage = ref(false)
+const MAX_USER_CHARS = 300
+const isLongUserMessage = computed(() => {
+  if (props.message.message_type !== 'user_message' && props.message.role !== 'user') return false
+  const content = getContent(props.message)
+  if (!content) return false
+  return String(content).length > MAX_USER_CHARS
+})
+
 const props = defineProps<{
   message: Message
 }>()
@@ -593,11 +603,19 @@ const handleUndoToHere = async () => {
       <!-- 用户消息：内容 + 文件附件 -->
       <template v-if="message.message_type === 'user_message' || message.role === 'user'">
         <!-- 用户消息使用普通文本渲染，不使用 markdown -->
-        <pre
-          class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-2"
-          :class="getContentClass(message)"
-          >{{ getContent(message) }}</pre
-        >
+        <div class="user-msg-wrapper">
+          <pre
+            class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-0"
+            :class="[getContentClass(message), { 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }]"
+          >{{ getContent(message) }}</pre>
+          <button
+            v-if="isLongUserMessage"
+            class="user-msg-expand-btn"
+            @click="showFullUserMessage = !showFullUserMessage"
+          >
+            {{ showFullUserMessage ? '收起 ▲' : '展开 ▼' }}
+          </button>
+        </div>
 
         <!-- 文件附件显示 -->
         <div v-if="message.data?.files && message.data.files.length > 0" class="mt-2 space-y-2">
@@ -1154,4 +1172,45 @@ const handleUndoToHere = async () => {
 :deep(.markdown-content hr) { height: 0.25em; padding: 0; margin: 1.5em 0; background-color: var(--border-color, #e1e4e8); border: 0; }
 :deep(.markdown-content strong) { font-weight: 600; }
 :deep(.markdown-content em) { font-style: italic; }
+
+/* ==================== 用户消息折叠 ==================== */
+.user-msg-wrapper {
+  position: relative;
+}
+
+.user-msg-collapsed {
+  max-height: 4.5em;
+  overflow: hidden;
+  position: relative;
+}
+
+.user-msg-collapsed::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2em;
+  background: linear-gradient(transparent, var(--card-bg, #ffffff));
+  pointer-events: none;
+}
+
+.user-msg-expand-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-link, #3b82f6);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.user-msg-expand-btn:hover {
+  background: rgba(59, 130, 246, 0.08);
+}
 </style>
