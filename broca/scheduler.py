@@ -444,10 +444,7 @@ class Scheduler:
             # ── 安全检查 ────────────────────────────────────────────
             is_safe, reason, snippet = validate_shell_command(command)
             if not is_safe:
-                warning_msg = (
-                    f"命令被安全策略拦截: {reason}\n"
-                    f"触发代码: {snippet}"
-                )
+                warning_msg = f"命令被安全策略拦截: {reason}\n触发代码: {snippet}"
                 logger.warning(
                     f"Command blocked by security policy: job={job_id}, "
                     f"command={command!r}, reason={reason}"
@@ -502,21 +499,19 @@ class Scheduler:
                 return
 
             output = f"job id:{job_id}\n"
-            output += f"命令: {command}\n"
             output += f"返回码: {returncode}\n"
             output += f"输出: {stdout_text}\n"
             if stderr_text:
                 output += f"错误: {stderr_text}\n"
 
-            logger.info(
-                f"Executed command: {command}, return code: {returncode}"
-            )
+            logger.info(f"Executed command: {command}, return code: {returncode}")
 
             # 如果指定了agent_id，将执行结果发送给agent
             if agent_id:
                 try:
                     await self._send_message_to_agent(
-                        agent_id, f"命令执行完成:\n{output}"
+                        agent_id,
+                        f"命令{job_id}执行完成, 返回码: {returncode}，可通过cron工具查看详细结果",
                     )
                 except Exception as e:
                     logger.warning(
@@ -536,7 +531,7 @@ class Scheduler:
             if agent_id:
                 try:
                     await self._send_message_to_agent(
-                        agent_id, f"命令执行失败:\n{error_msg}"
+                        agent_id, f"命令{job_id}执行失败，可通过cron工具查看详细结果"
                     )
                 except Exception as e:
                     logger.warning(
