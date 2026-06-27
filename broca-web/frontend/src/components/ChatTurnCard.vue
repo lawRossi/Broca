@@ -340,9 +340,9 @@ const handleUndo = async () => {
         <span :class="['inline-block w-2.5 h-2.5 rounded-full flex-shrink-0', statusDotClass]"></span>
         <span class="font-semibold text-sm truncate" :class="headerTextClass">{{ turn.agentName }}</span>
         <span class="text-xs text-gray-600 flex-shrink-0">第{{ turn.sequenceNumber }}轮</span>
-        <span class="stat-status text-xs ml-auto flex-shrink-0" :class="statusColorClass">{{ statusText }}</span>
       </div>
       <div class="flex items-center gap-2 text-xs header-right justify-end sm:justify-start">
+        <span class="stat-status flex-shrink-0" :class="statusColorClass">{{ statusText }}</span>
         <span v-if="formattedCompletionTime" class="text-gray-500">🕐 {{ formattedCompletionTime }}</span>
         <span class="text-gray-500">⏱️ {{ formattedDuration }}</span>
       </div>
