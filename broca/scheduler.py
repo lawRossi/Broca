@@ -470,7 +470,7 @@ class Scheduler:
 
             try:
                 stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=300
+                    process.communicate(), timeout=600
                 )
                 returncode = process.returncode
                 stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
@@ -511,7 +511,7 @@ class Scheduler:
                 try:
                     await self._send_message_to_agent(
                         agent_id,
-                        f"命令{job_id}执行完成, 返回码: {returncode}，可通过cron工具查看详细结果",
+                        f"命令{job_id}执行完成, 返回码: {returncode}，可通过cron工具的get_job查看详细结果",
                     )
                 except Exception as e:
                     logger.warning(
@@ -531,7 +531,8 @@ class Scheduler:
             if agent_id:
                 try:
                     await self._send_message_to_agent(
-                        agent_id, f"命令{job_id}执行失败，可通过cron工具查看详细结果"
+                        agent_id,
+                        f"命令{job_id}执行失败，可通过cron工具的get_job查看详细结果",
                     )
                 except Exception as e:
                     logger.warning(

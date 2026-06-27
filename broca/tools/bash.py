@@ -5,9 +5,9 @@ from jinja2 import Template
 
 from broca.logging_config import get_logger
 from broca.scheduler import Scheduler
-from broca.utils.shell_security import init_tree_sitter, validate_shell_command
 from broca.session.models import JobType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+from broca.utils.shell_security import init_tree_sitter, validate_shell_command
 
 logger = get_logger(__name__)
 
@@ -115,7 +115,7 @@ class Bash(Tool):
             )
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                content=f"Code scheduled for background execution\nJob ID: {job_id}\nYou'll be notified when it's done. You can also use `cron` tool with `get_job` action to check execution result.",
+                content=f"Code scheduled for background execution\nJob ID: {job_id}\nYou'll be notified when it's done. ",
             )
         except Exception as e:
             logger.error(f"Failed to schedule background execution: {e}")
@@ -124,7 +124,7 @@ class Bash(Tool):
                 content=f"Failed to schedule background execution: {e}",
             )
 
-    async def _run_code_async(self, code: str, timeout: int = 300) -> ToolResult:
+    async def _run_code_async(self, code: str, timeout: int = 120) -> ToolResult:
         """异步执行代码"""
         status: ToolStatus = ToolStatus.SUCCESS
         try:

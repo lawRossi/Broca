@@ -102,7 +102,7 @@ class LoopEngine:
         tool_permission_manager: Optional[ToolPermissionManager] = None,
         step_max_errors=3,
         llm_retry_delay=10,
-        tool_call_timeout=600,
+        tool_call_timeout=120,
         assign_task_timeout=1800,
     ):
         """
