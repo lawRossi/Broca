@@ -4,6 +4,7 @@
 封装APScheduler，实现任务管理和持久化。
 """
 
+import asyncio
 import os
 import uuid
 from datetime import datetime
@@ -434,7 +435,7 @@ class Scheduler:
     async def _execute_command(
         self, job_id: str, command: str, agent_id: Optional[str] = None
     ):
-        """执行命令任务"""
+        """执行命令任务（异步非阻塞）"""
         try:
             logger.info(
                 f"Executing command job: {job_id}, command: {command}, agent_id: {agent_id}"
@@ -463,26 +464,52 @@ class Scheduler:
                 )
                 return
 
-            # ── 执行命令（使用 shell=True 以支持 cd 等内建命令） ──
-            import subprocess
-
-            result = subprocess.run(
+            # ── 异步执行命令（替代同步的 subprocess.run） ──
+            process = await asyncio.create_subprocess_shell(
                 command,
-                shell=True,
-                capture_output=True,
-                text=True,
-                timeout=300,  # 5分钟超时
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
             )
+
+            try:
+                stdout, stderr = await asyncio.wait_for(
+                    process.communicate(), timeout=300
+                )
+                returncode = process.returncode
+                stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
+                stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+
+            except asyncio.TimeoutError:
+                try:
+                    process.kill()
+                    await process.wait()
+                except Exception:
+                    pass
+                error_msg = f"命令执行超时: {command}"
+                logger.error(error_msg)
+                if agent_id:
+                    try:
+                        await self._send_message_to_agent(
+                            agent_id, f"命令执行超时: {command}"
+                        )
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to send timeout notification to agent {agent_id}: {e}"
+                        )
+                await self.execution_service.create_execution(
+                    job_id=job_id, success=False, result=error_msg
+                )
+                return
 
             output = f"job id:{job_id}\n"
             output += f"命令: {command}\n"
-            output += f"返回码: {result.returncode}\n"
-            output += f"输出: {result.stdout}\n"
-            if result.stderr:
-                output += f"错误: {result.stderr}\n"
+            output += f"返回码: {returncode}\n"
+            output += f"输出: {stdout_text}\n"
+            if stderr_text:
+                output += f"错误: {stderr_text}\n"
 
             logger.info(
-                f"Executed command: {command}, return code: {result.returncode}"
+                f"Executed command: {command}, return code: {returncode}"
             )
 
             # 如果指定了agent_id，将执行结果发送给agent
@@ -498,27 +525,7 @@ class Scheduler:
 
             # 记录执行结果
             await self.execution_service.create_execution(
-                job_id=job_id, success=result.returncode == 0, result=output
-            )
-
-        except subprocess.TimeoutExpired:
-            error_msg = f"命令执行超时: {command}"
-            logger.error(error_msg)
-
-            # 如果指定了agent_id，通知超时
-            if agent_id:
-                try:
-                    await self._send_message_to_agent(
-                        agent_id, f"命令执行超时: {command}"
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to send timeout notification to agent {agent_id}: {e}"
-                    )
-
-            # 记录执行失败
-            await self.execution_service.create_execution(
-                job_id=job_id, success=False, result=error_msg
+                job_id=job_id, success=returncode == 0, result=output
             )
 
         except Exception as e:
