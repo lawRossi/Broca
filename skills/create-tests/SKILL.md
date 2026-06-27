@@ -56,37 +56,34 @@ Every test must be traceable back to its originating plan task and AC. This enab
 
 ## Test File Organization
 
-Tests live under `tests/`, organized to mirror the plan structure:
+Tests live under `tests/`, organized by task (one test file per task):
 
 ```
 tests/
 ├── {plan-name}/
 │   ├── phase-01-{phase-name}/
-│   │   ├── task-01-{task-name}/
-│   │   │   ├── test_ac_01_{short_desc}.py    (or .sh, .md, etc.)
-│   │   │   ├── test_ac_02_{short_desc}.py
-│   │   │   └── ...
-│   │   ├── task-02-{task-name}/
-│   │   │   └── ...
-│   │   ├── phase-ac-tests/                   (phase-level integration tests)
+│   │   ├── test_task_01_{task_name}.py         (all AC tests for Task N.1)
+│   │   ├── test_task_02_{task_name}.py         (all AC tests for Task N.2)
+│   │   ├── ...
+│   │   ├── phase-ac-tests/                     (phase-level integration tests)
 │   │   │   └── test_phase_integration.py
-│   │   └── README.md                         (phase-level AC-to-test mapping)
+│   │   └── README.md                           (phase-level AC-to-test mapping)
 │   └── phase-02-{phase-name}/
 │       └── ...
 ```
 
 ### Naming Convention
 
-Test files use a naming scheme that encodes their origin:
+Test files use a naming scheme that encodes their task origin:
 
 ```
-test_{plan}_{phase}_{task}_{ac}.{ext}
+test_task_{NN}_{task_slug}.{ext}
 ```
 
 **Examples:**
-- `test_blog_p01_t01_ac01_user_registers_successfully.py`
-- `test_blog_p01_t01_ac02_email_verification.py`
-- `test_blog_p01_phase_ac01_all_crud_operations.sh`
+- `test_task_01_user_registration.py` — contains all AC tests for Task 1
+- `test_task_02_email_verification.py` — contains all AC tests for Task 2
+- `test_task_03_post_crud.py` — contains all AC tests for Task 3
 
 ## Per-Phase Workflow
 
@@ -124,64 +121,95 @@ Map each AC to a test type:
 
 ### Step 3: Create Test Files
 
-For each task in the plan, create its test directory and files:
+For each task in the plan, create **one test file** that contains all AC tests for that task.
 
-#### 3.1 Create the directory structure
+#### 3.1 Create the test file
+
+Create test files directly in the phase directory:
 
 ```
-tests/{plan-name}/phase-{NN}-{phase-slug}/task-{NN}-{task-slug}/
+tests/{plan-name}/phase-{NN}-{phase-slug}/test_task_{NN}_{task_slug}.py
 ```
 
-#### 3.2 Write individual AC test files
+#### 3.2 Write the task-level test file
 
-Each test file should be **self-documenting** — clearly stating which AC it verifies:
+Each test file contains **all AC tests for that task**, organized as separate test functions. The file header documents which task and ACs it covers:
 
-**Python example (unit test):**
+**Python example (unit test — multiple ACs in one file):**
 
 ```python
 """
-Test for: Task 1.1 - User Registration
-AC: "User can register with email and password"
-Plan: plans/blog-platform.md
+Tests for Task {N.M}: {Task Name}
+Plan: plans/{plan-name}.md
+
+AC 1: "User can register with email and password"
+AC 2: "Password is stored hashed"
+AC 3: "Duplicate email returns error"
 """
 import pytest
 from app.auth import register_user
+
+# --- AC 1 ---
 
 def test_ac01_user_registers_successfully():
     """AC: User can register with email and password"""
     result = register_user("test@example.com", "SecureP@ss1")
     assert result.success is True
     assert result.user.email == "test@example.com"
+
+# --- AC 2 ---
+
+def test_ac02_password_stored_hashed():
+    """AC: Password is stored hashed"""
+    user = register_user("test@example.com", "SecureP@ss1").user
+    assert user.password_hash != "SecureP@ss1"
+    assert user.password_hash.startswith("$2b$")  # bcrypt
+
+# --- AC 3 ---
+
+def test_ac03_duplicate_email_returns_error():
+    """AC: Duplicate email returns error"""
+    register_user("test@example.com", "SecureP@ss1")
+    with pytest.raises(DuplicateEmailError):
+        register_user("test@example.com", "AnotherP@ss1")
 ```
 
-**Shell example (infrastructure check):**
+**Shell example (infrastructure check — multiple ACs in one file):**
 
 ```bash
 #!/bin/bash
-# Test for: Task 2.3 - Database Migration
-# AC: "Migration runs without data loss"
+# Tests for Task 2.3 - Database Migration
 # Plan: plans/blog-platform.md
+# AC 1: "Migration runs without data loss"
+# AC 2: "Migration is idempotent"
 
 set -e
-echo "AC: Migration runs without data loss"
+echo "=== Task 2.3: Database Migration ==="
+
+echo "--- AC 1: Migration runs without data loss ---"
 echo "1. Taking pre-migration snapshot..."
 # ... run migration, compare snapshots
-echo "✅ AC verified: data preserved after migration"
+echo "✅ AC 1 verified: data preserved after migration"
+
+echo "--- AC 2: Migration is idempotent ---"
+echo "1. Running migration a second time..."
+# ... run migration again, verify no errors
+echo "✅ AC 2 verified: migration is idempotent"
 ```
 
-**Markdown example (review checklist):**
+**Markdown example (review checklist — multiple ACs in one file):**
 
 ```markdown
 # Task 3.2: API Documentation — AC Verification
 > Plan: plans/blog-platform.md
 
-## AC: "All public endpoints are documented"
+## AC 1: "All public endpoints are documented"
 - [ ] GET /api/users — documented
 - [ ] POST /api/users — documented
 - [ ] GET /api/posts — documented
 - [ ] Each endpoint has: description, params, response example
 
-## AC: "Documentation is accessible at /docs"
+## AC 2: "Documentation is accessible at /docs"
 - [ ] /docs returns 200
 - [ ] Swagger UI loads without errors
 ```
@@ -196,16 +224,16 @@ This serves as the AC-to-test mapping for all tasks in the phase, used by `execu
 
 ## Task {N.1}: {Task Name}
 
-| AC | Test File | Type | How to Run |
-|----|-----------|------|------------|
-| {AC description} | `test_ac_01_*.py` | Unit | `pytest tests/{plan}/phase-{NN}/task-{NN}-{slug}/test_ac_01_*.py` |
-| {AC description} | `test_ac_02_*.py` | Unit | `pytest tests/{plan}/phase-{NN}/task-{NN}-{slug}/test_ac_02_*.py` |
+| AC | Test Function | How to Run |
+|----|---------------|------------|
+| {AC description} | `test_ac01_*` | `pytest tests/{plan}/phase-{NN}/test_task_{NN}_{slug}.py::test_ac01_* -v` |
+| {AC description} | `test_ac02_*` | `pytest tests/{plan}/phase-{NN}/test_task_{NN}_{slug}.py::test_ac02_* -v` |
 
 ## Task {N.2}: {Task Name}
 
-| AC | Test File | Type | How to Run |
-|----|-----------|------|------------|
-| ... | ... | ... | ... |
+| AC | Test Function | How to Run |
+|----|---------------|------------|
+| ... | ... | ... |
 
 ## Phase Integration Tests
 
@@ -241,23 +269,23 @@ def test_phase_ac01_full_auth_flow():
 
 ### Step 5: Verify Completeness
 
-Cross-reference the plan's task list against the created test directories:
+Cross-reference the plan's task list against the created test files:
 
-- Every Task with ACs → has a test directory? ✅
-- Every AC → has at least one test file? ✅
+- Every Task with ACs → has a `test_task_{NN}_*.py` file? ✅
+- Every AC → has a corresponding test function inside the file? ✅
 - Every Phase → has a phase-level integration test? ✅
 
 ```bash
-# Example: list all tasks in plan and check for corresponding test dirs
+# Example: list all tasks in plan and check for corresponding test files
 grep "#### Task" plans/blog-platform.md | while read -r line; do
     task_num=$(echo "$line" | grep -oP 'Task \K[\d.]+')
     task_name=$(echo "$line" | grep -oP '(?<=: ).*')
     slug=$(echo "$task_name" | tr '[:upper:]' '[:lower:]' | tr ' ' '-')
-    test_dir="tests/blog-platform/phase-*/task-${task_num}-${slug}"
-    if ls $test_dir 2>/dev/null; then
-        echo "✅ Task $task_num: test dir exists"
+    test_file="tests/blog-platform/phase-*/test_task_${task_num}_${slug}.py"
+    if ls $test_file 2>/dev/null; then
+        echo "✅ Task $task_num: test file exists"
     else
-        echo "❌ Task $task_num: MISSING test dir"
+        echo "❌ Task $task_num: MISSING test file"
     fi
 done
 ```
@@ -286,7 +314,7 @@ These results will be included in the phase report's **Test Results** section.
 
 ```
 create-tasks naming:    {PlanName} / Task {N.M}: {Task Name}
-create-tests naming:    tests/{plan-name}/phase-{NN}/task-{NN}-{task-slug}/
+create-tests naming:    tests/{plan-name}/phase-{NN}/test_task_{NN}_{task_slug}.py
 ```
 
 Both use the plan's Phase/Task numbering as the common key.
@@ -401,9 +429,9 @@ If an AC involves manual verification (e.g., visual design review), document the
 If the plan changes, tests may become outdated:
 1. Re-read the updated plan document
 2. Compare old ACs vs new ACs
-3. For changed ACs: update or replace the corresponding test files
-4. For removed ACs: remove obsolete test files
-5. For new ACs: create new test files
+3. For changed ACs: update or add test functions in the corresponding task test file
+4. For removed ACs: remove or comment out the corresponding test functions
+5. For new ACs: add new test functions to the corresponding task test file
 6. Update the phase README.md mapping
 
 ## Anti-Patterns
@@ -411,9 +439,10 @@ If the plan changes, tests may become outdated:
 | Don't | Do Instead |
 |-------|------------|
 | Write tests without reading the plan first | Always anchor on the plan document's ACs |
-| Create one giant test file for all ACs | Organize tests per task/per AC for traceability |
+| Create one file per AC (too fine-grained, hard to manage) | Create one test file per task, with all ACs as separate test functions |
+| Create one giant test file for the whole phase | Organize tests per task for clear ownership and traceability |
 | Skip tests for "obvious" ACs | Every AC needs at least one test — no exceptions |
-| Write tests that don't map back to an AC | Every test file must state which AC it verifies |
+| Write tests that don't map back to an AC | Every test function must state which AC it verifies |
 | Forget to update tests when plan changes | Revisit tests whenever the plan is updated |
 | Write overly vague tests | Each test should precisely verify one AC |
 | Mix unit and integration tests arbitrarily | Separate task-level unit tests from phase-level integration tests |

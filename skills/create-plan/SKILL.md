@@ -6,20 +6,7 @@ description: "Generates a detailed, verifiable plan document based on user input
 
 # Create Plan
 
-Generate a comprehensive, verifiable plan document based on the user's goal.
-
-## The Complete Workflow
-
-```
-create-plan (skill)    → plans/*.md              (plan with ACs)
-create-tasks (skill)   → Task Management         (one phase at a time)
-create-tests (skill)   → tests/                  (per-phase tests from ACs)
-execute-tasks (skill)  → execute + verify        (per-phase execution)
-```
-
-## Task
-
-Your task is to take the user's input, conduct deep analysis and reasoning, and produce a **complete, verifiable plan document**.
+Take the user's input, conduct deep analysis and reasoning, and produce a **complete, verifiable plan document**.
 
 ## ⚠️ Core Constraint
 
@@ -27,7 +14,6 @@ Your task is to take the user's input, conduct deep analysis and reasoning, and 
 - Do not run any build, modification, deployment, or similar operations
 - Do not call any tool that changes system state or files (except writing the plan document itself)
 - Your sole output is a plan document (Markdown by default)
-- All key decisions must be confirmed with the user one at a time using `ask_user` — ask one question at a time to avoid information overload
 
 ## Core Principles
 
@@ -36,7 +22,8 @@ Your task is to take the user's input, conduct deep analysis and reasoning, and 
 - **AC-first**: Every task must have clear, specific, measurable **Acceptance Criteria**. Anyone executing the plan should be able to verify each criterion against the result.
 - **Executable**: Tasks must be broken down to directly actionable granularity. Steps must be unambiguous — the executor should never have to guess "how".
 - **Well-referenced**: The plan must cite relevant materials (requirements docs, API docs, reference code, design mockups, etc.) so the executor can quickly establish context.
-- **User-approved**: For unclear user goal, main risks and key decision ponts, you must use **ask_user** to communicate with the user. Ask only one question at a time to avoid information overload.
+- ** Thorough and Comprehensive **: All important aspects and details must be addressed.
+- ** Communicative**: Unclear requirements, important details, key risks, and key decisions must all be clearly communicated with the user using 'ask_user'. Ask only one question at a time to avoid information overload.
 
 ## Steps
 
@@ -153,7 +140,6 @@ After generating the plan document, summarize for the user:
 2. **Key decisions**: List the key decisions made in the plan
 3. **AC highlight**: Emphasize that every phase and task has explicit acceptance criteria
 4. **Materials check**: Ask the user to verify the referenced materials are accurate and complete
-5. **Next step**: Ask if they want to execute the plan or make adjustments
-6. Inform the user that `execute-plan` command can be used for execution
+5. **Next step**: Ask if they want to execute the plan or make adjustments. Inform the user that **execute-plan** command can be used for execution
 
 **Never start executing any plan steps without explicit user confirmation.**
