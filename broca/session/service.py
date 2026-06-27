@@ -802,7 +802,7 @@ class AgentConfigService(BaseService[AgentConfig]):
             session_id=session_id,
             name=name,
             config_content=config_content,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
 
     async def get_configs_by_session(self, session_id: str) -> List[AgentConfig]:
@@ -831,7 +831,7 @@ class AgentService(BaseService[Agent]):
             session_id=session_id,
             name=name,
             role=role,
-            created_at=datetime.utcnow(),
+            created_at=datetime.now(timezone.utc),
         )
 
     async def get_agents_by_session(self, session_id: str) -> List[Agent]:
@@ -903,6 +903,7 @@ class JobService(BaseService[ScheduledJob]):
         agent_id: Optional[str] = None,
     ) -> ScheduledJob:
         """创建新任务"""
+        now = datetime.now(timezone.utc)
         return await self.create(
             job_id=job_id,
             name=name,
@@ -913,8 +914,8 @@ class JobService(BaseService[ScheduledJob]):
             content=content,
             session_id=session_id,
             agent_id=agent_id,
-            created_at=datetime.utcnow(),
-            updated_at=datetime.utcnow(),
+            created_at=now,
+            updated_at=now,
         )
 
     async def get_active_jobs(
@@ -934,7 +935,7 @@ class JobService(BaseService[ScheduledJob]):
 
     async def update_job_status(self, job_id: str, status: JobStatus) -> bool:
         """更新任务状态"""
-        job = await self.update(job_id, status=status, updated_at=datetime.utcnow())
+        job = await self.update(job_id, status=status, updated_at=datetime.now(timezone.utc))
         return job is not None
 
     async def update_next_run_time(
@@ -942,7 +943,7 @@ class JobService(BaseService[ScheduledJob]):
     ) -> bool:
         """更新下次执行时间"""
         job = await self.update(
-            job_id, next_run_time=next_run_time, updated_at=datetime.utcnow()
+            job_id, next_run_time=next_run_time, updated_at=datetime.now(timezone.utc)
         )
         return job is not None
 
@@ -979,7 +980,7 @@ class JobExecutionService(BaseService[JobExecution]):
             job_id=job_id,
             success=success,
             result=result,
-            executed_at=datetime.utcnow(),
+            executed_at=datetime.now(timezone.utc),
         )
 
     async def get_executions_by_job(
