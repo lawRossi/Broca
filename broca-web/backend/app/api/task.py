@@ -6,6 +6,7 @@
 from typing import Any, List, Optional
 
 from broca.session.service import get_task_service, get_task_comment_service
+from broca.utils.datetime_util import serialize_dt
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
@@ -81,8 +82,8 @@ async def get_tasks(
                 "context_notes": task.context_notes,
                 "report": task.report,
                 "dependencies": task.dependencies,
-                "created_at": task.created_at.isoformat() if task.created_at else None,
-                "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+                "created_at": serialize_dt(task.created_at),
+                "updated_at": serialize_dt(task.updated_at),
             }
             task_list.append(task_dict)
 
@@ -113,7 +114,7 @@ async def get_task_detail(task_id: str, include_comments: bool = True) -> ApiRes
                     "comment_id": comment.comment_id,
                     "author": comment.author,
                     "content": comment.content,
-                    "created_at": comment.created_at.isoformat() if comment.created_at else None,
+                    "created_at": serialize_dt(comment.created_at),
                 })
 
         # 获取子任务
@@ -145,8 +146,8 @@ async def get_task_detail(task_id: str, include_comments: bool = True) -> ApiRes
             "context_notes": task.context_notes,
             "report": task.report,
             "dependencies": task.dependencies,
-            "created_at": task.created_at.isoformat() if task.created_at else None,
-            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "created_at": serialize_dt(task.created_at),
+            "updated_at": serialize_dt(task.updated_at),
         }
 
         return ApiResponse.success(
@@ -206,8 +207,8 @@ async def create_task(task_data: dict[str, Any]) -> ApiResponse:
             "assignee": task.assignee,
             "parent_id": task.parent_id,
             "session_id": task.session_id,
-            "created_at": task.created_at.isoformat() if task.created_at else None,
-            "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+            "created_at": serialize_dt(task.created_at),
+            "updated_at": serialize_dt(task.updated_at),
         }
 
         return ApiResponse.success({"task": task_dict}, msg="Task created successfully")
@@ -303,7 +304,7 @@ async def get_task_comments(
                 "comment_id": comment.comment_id,
                 "author": comment.author,
                 "content": comment.content,
-                "created_at": comment.created_at.isoformat() if comment.created_at else None,
+                "created_at": serialize_dt(comment.created_at),
             })
 
         return ApiResponse.success(
@@ -341,7 +342,7 @@ async def add_task_comment(task_id: str, comment_data: dict[str, Any]) -> ApiRes
             "comment_id": comment.comment_id,
             "author": comment.author,
             "content": comment.content,
-            "created_at": comment.created_at.isoformat() if comment.created_at else None,
+            "created_at": serialize_dt(comment.created_at),
         }
 
         return ApiResponse.success({"comment": comment_dict}, msg="Comment added successfully")
@@ -375,8 +376,8 @@ async def get_task_children(task_id: str) -> ApiResponse:
                 "status": child.status.value if hasattr(child.status, "value") else str(child.status),
                 "priority": child.priority.value if hasattr(child.priority, "value") else str(child.priority),
                 "assignee": child.assignee,
-                "created_at": child.created_at.isoformat() if child.created_at else None,
-                "updated_at": child.updated_at.isoformat() if child.updated_at else None,
+                "created_at": serialize_dt(child.created_at),
+                "updated_at": serialize_dt(child.updated_at),
             })
 
         return ApiResponse.success({"children": child_list})
@@ -417,8 +418,8 @@ async def search_tasks(
                 "assignee": task.assignee,
                 "parent_id": task.parent_id,
                 "session_id": task.session_id,
-                "created_at": task.created_at.isoformat() if task.created_at else None,
-                "updated_at": task.updated_at.isoformat() if task.updated_at else None,
+                "created_at": serialize_dt(task.created_at),
+                "updated_at": serialize_dt(task.updated_at),
             }
             task_list.append(task_dict)
 

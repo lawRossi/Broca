@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { useChatStore, useAgentStore, useSocketStore } from '@/stores'
 import type { Message } from '@/api/brocaSocket'
-import { formatBeijingTimeShort } from '@/utils/time'
+import { formatTimeShort } from '@/utils/time'
 import { marked } from 'marked'
 import { ref, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
@@ -560,7 +560,7 @@ const handleUndoToHere = async () => {
       
       <div class="flex items-center gap-2">
         <div class="text-xs text-gray-500">
-          {{ formatBeijingTimeShort(message.timestamp) }}
+          {{ formatTimeShort(message.timestamp) }}
         </div>
         
         <!-- 悬停撤销按钮（编排会话禁用） -->

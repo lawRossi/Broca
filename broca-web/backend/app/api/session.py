@@ -16,6 +16,7 @@ from broca.session.service import (
     get_session_service,
     get_turn_service,
 )
+from broca.utils.datetime_util import serialize_dt
 from broca.session_runner import RunnerManager
 from broca.session_runner.manager import RunnerManagerError
 from fastapi import APIRouter, HTTPException, Request
@@ -491,7 +492,7 @@ async def get_agent_config(session_id: str, agent_id: str) -> ApiResponse:
             "config_id": agent_config.config_id,
             "config_name": agent_config.name,
             "config_content": config_content,
-            "created_at": agent_config.created_at.isoformat() if agent_config.created_at else None,
+            "created_at": serialize_dt(agent_config.created_at),
             "raw_config_content": agent_config.config_content,
         }
 
@@ -564,7 +565,7 @@ async def update_agent_config(session_id: str, agent_id: str, request: Request) 
             "config_id": agent_config.config_id,
             "config_name": agent_config.name,
             "config_content": config_content,
-            "created_at": agent_config.created_at.isoformat() if agent_config.created_at else None,
+            "created_at": serialize_dt(agent_config.created_at),
         }
 
         return ApiResponse.success(config_data, msg="Agent config updated successfully")
@@ -654,10 +655,10 @@ async def get_session_turns(
                 "agent_id": t.agent_id,
                 "agent_name": agent.name if agent else None,
                 "status": turn_status,
-                "started_at": start_time.isoformat() if start_time else None,
-                "ended_at": end_time.isoformat() if end_time else None,
+                "started_at": serialize_dt(start_time),
+                "ended_at": serialize_dt(end_time),
                 "duration_seconds": round(duration, 1) if duration else None,
-                "created_at": t.created_at.isoformat() if t.created_at else None,
+                "created_at": serialize_dt(t.created_at),
                 # 统计数据
                 "is_reverted": stats.get("is_reverted", False),
                 "user_message": stats["user_message"],

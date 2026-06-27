@@ -7,7 +7,7 @@
 import asyncio
 import os
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
@@ -18,7 +18,19 @@ from apscheduler.triggers.interval import IntervalTrigger
 from broca.logging_config import get_logger
 from broca.session.models import JobStatus, JobType, MessageProtocol
 from broca.session.service import get_job_execution_service, get_job_service
+from broca.utils.datetime_util import serialize_dt
 from broca.utils.shell_security import validate_shell_command
+
+
+def _aps_to_utc(dt: datetime | None) -> datetime | None:
+    """将 APScheduler 的 timezone-aware datetime 转为 UTC naive datetime 以便存储。
+
+    APScheduler 返回的时间是本地时区（如 UTC+8），
+    而数据库所有字段统一用 UTC 存储，需在写入前转换。
+    """
+    if dt is None:
+        return None
+    return dt.astimezone(timezone.utc).replace(tzinfo=None)
 
 logger = get_logger(__name__)
 
@@ -146,9 +158,9 @@ class Scheduler:
                 replace_existing=True,
             )
 
-            # 更新下次执行时间
+            # 更新下次执行时间（转为 UTC 后存储，与其他模型字段一致）
             await self.job_service.update_next_run_time(
-                job.job_id, aps_job.next_run_time
+                job.job_id, _aps_to_utc(aps_job.next_run_time)
             )
 
             logger.info(f"Restored job: {job.name} (ID: {job.job_id})")
@@ -220,8 +232,8 @@ class Scheduler:
                 replace_existing=True,
             )
 
-            # 更新下次执行时间
-            await self.job_service.update_next_run_time(job_id, aps_job.next_run_time)
+            # 更新下次执行时间（转为 UTC 后存储，与其他模型字段一致）
+            await self.job_service.update_next_run_time(job_id, _aps_to_utc(aps_job.next_run_time))
 
             logger.info(
                 f"Added job: {name} (ID: {job_id}), next run: {aps_job.next_run_time}"
@@ -294,7 +306,7 @@ class Scheduler:
                     aps_job = self.apscheduler.get_job(job_id)
                     if aps_job:
                         await self.job_service.update_next_run_time(
-                            job_id, aps_job.next_run_time
+                            job_id, _aps_to_utc(aps_job.next_run_time)
                         )
 
                 logger.info(f"Resumed job: {job_id}")
@@ -324,10 +336,8 @@ class Scheduler:
                     "trigger_type": job.trigger_type,
                     "content": job.content,
                     "agent_id": job.agent_id,
-                    "created_at": job.created_at.isoformat()
-                    if job.created_at
-                    else None,
-                    "next_run_time": aps_job.next_run_time.isoformat()
+                    "created_at": serialize_dt(job.created_at, is_utc=True),
+                    "next_run_time": serialize_dt(aps_job.next_run_time)
                     if aps_job and aps_job.next_run_time
                     else None,
                 }
@@ -363,16 +373,14 @@ class Scheduler:
                 "content": job.content,
                 "session_id": job.session_id,
                 "agent_id": job.agent_id,
-                "created_at": job.created_at.isoformat() if job.created_at else None,
-                "updated_at": job.updated_at.isoformat() if job.updated_at else None,
-                "next_run_time": aps_job.next_run_time.isoformat()
+                "created_at": serialize_dt(job.created_at, is_utc=True),
+                "updated_at": serialize_dt(job.updated_at, is_utc=True),
+                "next_run_time": serialize_dt(aps_job.next_run_time)
                 if aps_job and aps_job.next_run_time
                 else None,
                 "execution_history": [
                     {
-                        "executed_at": exec.executed_at.isoformat()
-                        if exec.executed_at
-                        else None,
+                        "executed_at": serialize_dt(exec.executed_at, is_utc=True),
                         "success": exec.success,
                         "result": exec.result,
                     }

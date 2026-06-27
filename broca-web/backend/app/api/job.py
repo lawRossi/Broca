@@ -6,6 +6,7 @@
 from typing import Any
 
 from broca.session.service import get_job_execution_service, get_job_service
+from broca.utils.datetime_util import serialize_dt
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
@@ -68,9 +69,9 @@ async def get_jobs(
                 "content": job.content,
                 "session_id": job.session_id,
                 "agent_id": job.agent_id,
-                "created_at": job.created_at.isoformat() if job.created_at else None,
-                "updated_at": job.updated_at.isoformat() if job.updated_at else None,
-                "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None,
+                "created_at": serialize_dt(job.created_at, is_utc=True),
+                "updated_at": serialize_dt(job.updated_at, is_utc=True),
+                "next_run_time": serialize_dt(job.next_run_time),
             }
             job_list.append(job_dict)
 
@@ -106,9 +107,9 @@ async def get_job_detail(job_id: str, execution_limit: int = 10) -> ApiResponse:
             "content": job.content,
             "session_id": job.session_id,
             "agent_id": job.agent_id,
-            "created_at": job.created_at.isoformat() if job.created_at else None,
-            "updated_at": job.updated_at.isoformat() if job.updated_at else None,
-            "next_run_time": job.next_run_time.isoformat() if job.next_run_time else None,
+            "created_at": serialize_dt(job.created_at, is_utc=True),
+            "updated_at": serialize_dt(job.updated_at, is_utc=True),
+            "next_run_time": serialize_dt(job.next_run_time),
         }
 
         execution_list = []
@@ -116,7 +117,7 @@ async def get_job_detail(job_id: str, execution_limit: int = 10) -> ApiResponse:
             execution_list.append(
                 {
                     "execution_id": exec.execution_id,
-                    "executed_at": exec.executed_at.isoformat() if exec.executed_at else None,
+                    "executed_at": serialize_dt(exec.executed_at, is_utc=True),
                     "success": exec.success,
                     "result": exec.result,
                 }
@@ -176,7 +177,7 @@ async def get_job_executions(
                 execution_list.append(
                     {
                         "execution_id": exec.execution_id,
-                        "executed_at": exec.executed_at.isoformat() if exec.executed_at else None,
+                        "executed_at": serialize_dt(exec.executed_at, is_utc=True),
                         "success": exec.success,
                         "result": exec.result,
                     }

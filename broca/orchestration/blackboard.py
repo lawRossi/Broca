@@ -18,6 +18,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Callable, Dict, List, Optional
 
+from broca.utils.datetime_util import serialize_dt
+
 
 class BlackboardEventType(str, Enum):
     """黑板事件类型"""
@@ -44,7 +46,7 @@ class BlackboardEvent:
             "old_value": self._serialize_value(self.old_value),
             "new_value": self._serialize_value(self.new_value),
             "producer": self.producer,
-            "timestamp": self.timestamp.isoformat(),
+            "timestamp": serialize_dt(self.timestamp),
             "event_type": self.event_type.value,
         }
 
@@ -72,8 +74,8 @@ class BlackboardEntry:
             "value": copy.deepcopy(self.value),
             "version": self.version,
             "producer": self.producer,
-            "created_at": self.created_at.isoformat(),
-            "updated_at": self.updated_at.isoformat(),
+            "created_at": serialize_dt(self.created_at),
+            "updated_at": serialize_dt(self.updated_at),
         }
 
 
@@ -357,7 +359,7 @@ class Blackboard:
                         "key": event.key,
                         "event_type": event.event_type.value,
                         "producer": event.producer,
-                        "timestamp": event.timestamp.isoformat(),
+                        "timestamp": serialize_dt(event.timestamp),
                         "value": copy.deepcopy(event.new_value),
                     }
                 )

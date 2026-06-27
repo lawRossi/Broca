@@ -13,6 +13,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
+from datetime import datetime, timezone
+
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen, Screen
@@ -352,7 +354,15 @@ class CrewExecutionsScreen(Screen):
         crew_name = exec_item.get("crew_name", "Unknown Crew")
         orch_type = exec_item.get("orchestrator_type", "?")
         status = exec_item.get("status", "pending")
-        created_at = (exec_item.get("created_at", "") or "")[:19]
+        created_at_raw = exec_item.get("created_at", "") or ""
+        try:
+            utc_dt = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
+            if utc_dt.tzinfo is None:
+                utc_dt = utc_dt.replace(tzinfo=timezone.utc)
+            local_dt = utc_dt.astimezone()  # 使用系统当地时间
+            created_at = local_dt.strftime("%Y-%m-%d %H:%M")
+        except (ValueError, AttributeError):
+            created_at = created_at_raw[:19]
         agent_count = exec_item.get("agent_count", 0)
         description = exec_item.get("description", "")
         progress = exec_item.get("progress")

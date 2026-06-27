@@ -1,13 +1,13 @@
 /**
- * 时间格式化工具 - 北京时间 (UTC+8)
+ * 时间格式化工具 - 使用当地时间
  */
 
 /**
- * 将时间转换为北京时间
+ * 将输入转换为 Date 对象
  * @param date 日期对象或时间戳字符串
- * @returns 北京时间对象
+ * @returns Date 对象
  */
-export const toBeijingTime = (date: Date | string | number | null | undefined): Date => {
+export const toDate = (date: Date | string | number | null | undefined): Date => {
   // 处理 null 和 undefined
   if (date === null || date === undefined) {
     return new Date()
@@ -25,26 +25,23 @@ export const toBeijingTime = (date: Date | string | number | null | undefined): 
     return new Date()
   }
 
-  // 直接返回 Date 对象，不进行时区偏移
-  // 时区转换应在 toLocaleString 等格式化函数中通过 timeZone 参数处理
   return d
 }
 
 /**
- * 格式化时间为北京时间字符串
+ * 格式化为当地时间字符串
  * @param date 日期对象或时间戳字符串
  * @param options 格式化选项
- * @returns 格式化的北京时间字符串
+ * @returns 格式化的当地时间字符串
  */
-export const formatBeijingTime = (
+export const formatTime = (
   date: Date | string | number | null | undefined,
   options: Intl.DateTimeFormatOptions = {}
 ): string => {
   try {
-    const beijingTime = toBeijingTime(date)
+    const localDate = toDate(date)
 
     const defaultOptions: Intl.DateTimeFormatOptions = {
-      timeZone: 'Asia/Shanghai',
       hour12: false,
       year: 'numeric',
       month: '2-digit',
@@ -55,49 +52,46 @@ export const formatBeijingTime = (
       ...options,
     }
 
-    return beijingTime.toLocaleString('zh-CN', defaultOptions)
+    return localDate.toLocaleString(undefined, defaultOptions)
   } catch (error) {
-    console.error('Error formatting Beijing time:', error)
+    console.error('Error formatting time:', error)
     if (!date) {
       return '-'
     }
     const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
-    return d.toLocaleString('zh-CN')
+    return d.toLocaleString()
   }
 }
 
 /**
- * 格式化时间为简短的北京时间（今天显示时间，其他显示日期）
+ * 格式化为简短的时间字符串（今天显示时间，其他显示日期）
  * @param date 日期对象或时间戳字符串
- * @returns 简化的北京时间字符串
+ * @returns 简化的时间字符串
  */
-export const formatBeijingTimeShort = (date: Date | string | number | null | undefined): string => {
+export const formatTimeShort = (date: Date | string | number | null | undefined): string => {
   try {
-    const beijingTime = toBeijingTime(date)
+    const localDate = toDate(date)
 
     // 获取当前日期
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const messageDate = new Date(beijingTime.getFullYear(), beijingTime.getMonth(), beijingTime.getDate())
+    const messageDate = new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate())
 
     // 判断是否是今天
     if (messageDate.getTime() === today.getTime()) {
       // 今天：只显示时间
-      return beijingTime.toLocaleTimeString('zh-CN', {
-        timeZone: 'Asia/Shanghai',
+      return localDate.toLocaleTimeString(undefined, {
         hour12: false,
         hour: '2-digit',
         minute: '2-digit',
       })
     } else {
       // 不是今天：显示日期和时间
-      const dateStr = beijingTime.toLocaleDateString('zh-CN', {
-        timeZone: 'Asia/Shanghai',
+      const dateStr = localDate.toLocaleDateString(undefined, {
         month: '2-digit',
         day: '2-digit',
       })
-      const timeStr = beijingTime.toLocaleTimeString('zh-CN', {
-        timeZone: 'Asia/Shanghai',
+      const timeStr = localDate.toLocaleTimeString(undefined, {
         hour12: false,
         hour: '2-digit',
         minute: '2-digit',
@@ -105,7 +99,7 @@ export const formatBeijingTimeShort = (date: Date | string | number | null | und
       return `${dateStr} ${timeStr}`
     }
   } catch (error) {
-    console.error('Error formatting Beijing time short:', error)
+    console.error('Error formatting time short:', error)
     if (!date) {
       return '-'
     }
@@ -115,18 +109,18 @@ export const formatBeijingTimeShort = (date: Date | string | number | null | und
 }
 
 /**
- * 格式化日期为北京时间（只显示日期）
+ * 格式化日期（只显示日期）
  * @param date 日期对象或时间戳字符串
  * @returns 格式化的日期字符串
  */
-export const formatBeijingDate = (date: Date | string | number | null | undefined): string => {
+export const formatDate = (date: Date | string | number | null | undefined): string => {
   try {
-    const beijingTime = toBeijingTime(date)
+    const localDate = toDate(date)
 
     // 获取当前日期
     const now = new Date()
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-    const messageDate = new Date(beijingTime.getFullYear(), beijingTime.getMonth(), beijingTime.getDate())
+    const messageDate = new Date(localDate.getFullYear(), localDate.getMonth(), localDate.getDate())
 
     // 判断是否是今天
     if (messageDate.getTime() === today.getTime()) {
@@ -134,38 +128,37 @@ export const formatBeijingDate = (date: Date | string | number | null | undefine
       return '今天'
     } else {
       // 不是今天：显示日期
-      return beijingTime.toLocaleDateString('zh-CN', {
-        timeZone: 'Asia/Shanghai',
+      return localDate.toLocaleDateString(undefined, {
         month: '2-digit',
         day: '2-digit',
       })
     }
   } catch (error) {
-    console.error('Error formatting Beijing date:', error)
+    console.error('Error formatting date:', error)
     if (!date) {
       return '-'
     }
     const d = typeof date === 'string' || typeof date === 'number' ? new Date(date) : date
-    return d.toLocaleDateString('zh-CN')
+    return d.toLocaleDateString()
   }
 }
 
 /**
- * 格式化Unix时间戳为北京时间
+ * 格式化Unix时间戳为当地时间
  * @param timestamp Unix时间戳（秒）
- * @returns 格式化的北京时间字符串
+ * @returns 格式化的当地时间字符串
  */
-export const formatUnixTimestamp = (timestamp: number): string => {
+export const formatUnixTime = (timestamp: number): string => {
   // timestamp是秒数，需要乘以1000转换为毫秒
-  return formatBeijingTime(timestamp * 1000)
+  return formatTime(timestamp * 1000)
 }
 
 /**
- * 格式化Unix时间戳为简短的北京时间
+ * 格式化Unix时间戳为简短的当地时间
  * @param timestamp Unix时间戳（秒）
- * @returns 简化的北京时间字符串
+ * @returns 简化的当地时间字符串
  */
-export const formatUnixTimestampShort = (timestamp: number): string => {
+export const formatUnixTimeShort = (timestamp: number): string => {
   // timestamp是秒数，需要乘以1000转换为毫秒
-  return formatBeijingTimeShort(timestamp * 1000)
+  return formatTimeShort(timestamp * 1000)
 }

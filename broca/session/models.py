@@ -11,6 +11,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from broca.utils.datetime_util import serialize_dt
 from pydantic import ConfigDict
 from sqlalchemy import JSON, Column, Float, Integer, String
 from sqlmodel import Field, Relationship, SQLModel
@@ -19,6 +20,25 @@ from sqlmodel import Field, Relationship, SQLModel
 # 统一的 UTC 时间工厂函数（确保所有模型使用 timezone-aware datetime）
 def utc_now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+class BaseModel(SQLModel):
+    """所有数据模型的基类，统一配置 datetime 序列化时区处理。
+
+    SQLite 不保存时区信息，读出后 datetime 变为 naive。
+    Pydantic 默认序列化 naive datetime 时不带时区，导致前端 new Date() 错误解析。
+    此配置确保所有模型序列化时自动补回 +00:00 时区信息。
+    """
+
+    model_config = ConfigDict(
+        json_encoders={
+            datetime: lambda v: (
+                v.astimezone(timezone.utc).isoformat()
+                if v.tzinfo is not None
+                else v.isoformat() + "+00:00"
+            )
+        }
+    )
 
 
 class MessageRole(str, Enum):
@@ -81,7 +101,7 @@ class MessageType(str, Enum):
     PERMISSION_RESPONSE = "permission_response"
 
 
-class Turn(SQLModel, table=True):
+class Turn(BaseModel, table=True):
     """
     对话轮次模型
 
@@ -136,7 +156,7 @@ class SessionCategory(str, Enum):
     )
 
 
-class Session(SQLModel, table=True):
+class Session(BaseModel, table=True):
     """
     会话模型
 
@@ -182,7 +202,7 @@ class Session(SQLModel, table=True):
 # ============================================================================
 
 
-class SessionRunner(SQLModel, table=True):
+class SessionRunner(BaseModel, table=True):
     """
     Runner 进程记录模型
 
@@ -224,7 +244,7 @@ def generate_message_id() -> str:
     return "msg-" + str(uuid.uuid4())
 
 
-class Message(SQLModel, table=True):
+class Message(BaseModel, table=True):
     """统一的消息模型"""
 
     __tablename__ = "message"
@@ -311,19 +331,9 @@ class Message(SQLModel, table=True):
     turn: Optional["Turn"] = Relationship(back_populates="messages")
     agent: Optional["Agent"] = Relationship(back_populates="messages")
 
-    # Pydantic v2 配置：确保 datetime 序列化为带时区的 ISO 格式
-    model_config = ConfigDict(
-        json_encoders={
-            datetime: lambda v: (
-                v.astimezone(timezone.utc).isoformat()
-                if v.tzinfo is not None
-                else v.isoformat() + "+00:00"
-            )
-        }
-    )
 
 
-class AgentConfig(SQLModel, table=True):
+class AgentConfig(BaseModel, table=True):
     """
     Agent配置模型
 
@@ -348,7 +358,7 @@ class AgentConfig(SQLModel, table=True):
     agents: List["Agent"] = Relationship(back_populates="agent_config")
 
 
-class Agent(SQLModel, table=True):
+class Agent(BaseModel, table=True):
     """
     Agent模型
 
@@ -496,7 +506,7 @@ class MessageProtocol:
         result = {
             "message_id": message.message_id,
             "message_type": message.message_type,
-            "timestamp": message.timestamp.isoformat(),
+            "timestamp": serialize_dt(message.timestamp),
             "role": message.role,
             "data": message.data,
         }
@@ -774,7 +784,7 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"  # 任务取消
 
 
-class ScheduledJob(SQLModel, table=True):
+class ScheduledJob(BaseModel, table=True):
     """调度任务模型（简化版）"""
 
     __tablename__ = "scheduled_job"
@@ -822,7 +832,7 @@ class ScheduledJob(SQLModel, table=True):
     )
 
 
-class JobExecution(SQLModel, table=True):
+class JobExecution(BaseModel, table=True):
     """任务执行记录模型（简化版）"""
 
     __tablename__ = "job_execution"
@@ -874,7 +884,7 @@ def generate_comment_id() -> str:
     return "comment-" + str(uuid.uuid4())
 
 
-class TaskComment(SQLModel, table=True):
+class TaskComment(BaseModel, table=True):
     """任务评论模型"""
 
     __tablename__ = "task_comment"
@@ -895,7 +905,7 @@ class TaskComment(SQLModel, table=True):
     task: "Task" = Relationship(back_populates="comments")
 
 
-class Task(SQLModel, table=True):
+class Task(BaseModel, table=True):
     """
     任务模型
 
@@ -990,7 +1000,7 @@ class CrewExecutionStatus(str, Enum):
     ABORTED = "aborted"
 
 
-class CrewExecution(SQLModel, table=True):
+class CrewExecution(BaseModel, table=True):
     """
     编排执行记录模型
 
@@ -1054,7 +1064,7 @@ class CrewExecution(SQLModel, table=True):
     )
 
 
-class BlackboardEntry(SQLModel, table=True):
+class BlackboardEntry(BaseModel, table=True):
     """
     黑板条目持久化模型
 

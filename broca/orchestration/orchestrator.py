@@ -18,6 +18,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from broca.logging_config import get_logger
 from broca.orchestration.blackboard import Blackboard
+from broca.utils.datetime_util import serialize_dt
 from broca.orchestration.crew import (
     CrewConfig,
     OrchestratorType,
@@ -65,10 +66,8 @@ class PhaseResult:
             "agents": self.agents,
             "output": self.output,
             "error": self.error,
-            "started_at": self.started_at.isoformat() if self.started_at else None,
-            "completed_at": self.completed_at.isoformat()
-            if self.completed_at
-            else None,
+            "started_at": serialize_dt(self.started_at),
+            "completed_at": serialize_dt(self.completed_at),
         }
 
 
@@ -93,10 +92,8 @@ class OrchestrationResult:
             "blackboard_snapshot": self.blackboard_snapshot,
             "final_output": self.final_output,
             "error": self.error,
-            "started_at": self.started_at.isoformat(),
-            "completed_at": self.completed_at.isoformat()
-            if self.completed_at
-            else None,
+            "started_at": serialize_dt(self.started_at),
+            "completed_at": serialize_dt(self.completed_at),
         }
 
     @property

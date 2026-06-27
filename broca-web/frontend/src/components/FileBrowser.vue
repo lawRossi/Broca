@@ -12,7 +12,7 @@ const debounce = (fn: Function, delay: number) => {
 }
 import { Folder, Document, ArrowLeft, Refresh, Search, InfoFilled, Edit, Warning } from '@element-plus/icons-vue'
 import type { FileItem } from '@/api/files'
-import { formatUnixTimestamp } from '@/utils/time'
+import { formatUnixTime } from '@/utils/time'
 import { filesApi } from '@/api'
 
 // Props
@@ -217,7 +217,7 @@ const getFileSize = (file: FileItem) => {
 
 const getModifiedTime = (file: FileItem) => {
   if (!file.modified_time) return '-'
-  return formatUnixTimestamp(file.modified_time)
+  return formatUnixTime(file.modified_time)
 }
 
 const startEditing = () => {

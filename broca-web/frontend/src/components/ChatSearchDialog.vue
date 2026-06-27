@@ -4,7 +4,7 @@ import { Close } from '@element-plus/icons-vue'
 import { useChatStore, useAgentStore } from '@/stores'
 import { sessionApi } from '@/api/session'
 import type { Message } from '@/api/brocaSocket'
-import { formatBeijingTimeShort } from '@/utils/time'
+import { formatTimeShort } from '@/utils/time'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -441,7 +441,7 @@ watch(visible, (val) => {
                     {{ getSenderLabel(selectedMessage) }}
                   </span>
                   <span class="text-xs text-gray-400 ml-auto">
-                    {{ formatBeijingTimeShort(selectedMessage.timestamp) }}
+                    {{ formatTimeShort(selectedMessage.timestamp) }}
                   </span>
                 </div>
 
@@ -529,7 +529,7 @@ watch(visible, (val) => {
                         </span>
                       </div>
                       <span class="text-xs text-gray-400 whitespace-nowrap shrink-0">
-                        {{ formatBeijingTimeShort(m.timestamp) }}
+                        {{ formatTimeShort(m.timestamp) }}
                       </span>
                     </div>
                     <div class="mt-1.5 text-sm text-gray-600 line-clamp-2">
@@ -592,7 +592,7 @@ watch(visible, (val) => {
                         </td>
                         <td class="px-4 py-2.5 text-right">
                           <span class="text-xs text-gray-400 whitespace-nowrap">
-                            {{ formatBeijingTimeShort(m.timestamp) }}
+                            {{ formatTimeShort(m.timestamp) }}
                           </span>
                         </td>
                       </tr>

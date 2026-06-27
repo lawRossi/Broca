@@ -3,7 +3,7 @@ import { computed, ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
 import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close, WarningFilled, VideoPlay, VideoPause } from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { formatBeijingTime } from '@/utils/time'
+import { formatTime } from '@/utils/time'
 import type { Session } from '@/api/session'
 import { sessionApi } from '@/api/session'
 import { useSessionStore } from '@/stores'
@@ -332,7 +332,7 @@ const handleToggleRunner = async () => {
       </div>
 
       <span class="session-time">
-        🕐 {{ formatBeijingTime(session.created_at ? (session.created_at.includes('T') && !session.created_at.endsWith('Z') && !session.created_at.includes('+') ? session.created_at + 'Z' : session.created_at) : null).slice(0, 16) }}
+        🕐 {{ formatTime(session.created_at ? (session.created_at.includes('T') && !session.created_at.endsWith('Z') && !session.created_at.includes('+') ? session.created_at + 'Z' : session.created_at) : null).slice(0, 16) }}
       </span>
 
       <!-- 操作按钮组 -->

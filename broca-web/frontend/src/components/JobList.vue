@@ -81,7 +81,6 @@ const formatNextRunTime = (nextRunTime?: string): string => {
   if (!nextRunTime) return '未设置'
   const date = new Date(nextRunTime)
   return date.toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',
@@ -219,7 +218,7 @@ const getContentPreview = (content?: string): string => {
             <!-- 底部信息 -->
             <div class="flex items-center justify-between">
               <div class="text-xs text-gray-400">
-                {{ new Date(job.created_at).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' }) }}
+                {{ new Date(job.created_at).toLocaleString('zh-CN') }}
               </div>
 
               <!-- 操作按钮 -->

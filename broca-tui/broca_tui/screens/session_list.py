@@ -12,7 +12,7 @@ Features:
 from __future__ import annotations
 
 import os
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
 from textual.app import ComposeResult
@@ -403,13 +403,13 @@ class SessionListScreen(Screen):
         description = session.get("description") or session_id[:16]
         category = session.get("category", "normal")
         created_at_raw = session.get("created_at", "") or ""
-        # 后端存储 UTC 时间，转为北京时间 (UTC+8) 并显示到分钟
+        # 后端存储 UTC 时间，转为当地时间显示
         try:
             utc_dt = datetime.fromisoformat(created_at_raw.replace("Z", "+00:00"))
             if utc_dt.tzinfo is None:
                 utc_dt = utc_dt.replace(tzinfo=timezone.utc)
-            beijing_dt = utc_dt.astimezone(timezone(timedelta(hours=8)))
-            created_at = beijing_dt.strftime("%Y-%m-%d %H:%M")
+            local_dt = utc_dt.astimezone()  # 使用系统当地时间
+            created_at = local_dt.strftime("%Y-%m-%d %H:%M")
         except (ValueError, AttributeError):
             created_at = created_at_raw[:16]
         workspace = session.get("workspace", "")

@@ -8,7 +8,7 @@ import { Folder } from '@element-plus/icons-vue'
 import FileBrowser from '@/components/FileBrowser.vue'
 import type { FileItem } from '@/api/files'
 import { useUserStore } from '@/stores'
-import { formatUnixTimestamp } from '@/utils/time'
+import { formatUnixTime } from '@/utils/time'
 import { filesApi } from '@/api'
 
 const router = useRouter()
@@ -190,15 +190,15 @@ onUnmounted(() => {
           <div class="space-y-2 text-sm">
             <div class="flex justify-between">
               <span class="text-gray-600">Created:</span>
-              <span class="font-medium text-gray-900">{{ formatUnixTimestamp(fileInfo.created_time) }}</span>
+              <span class="font-medium text-gray-900">{{ formatUnixTime(fileInfo.created_time) }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-600">Modified:</span>
-              <span class="font-medium text-gray-900">{{ formatUnixTimestamp(fileInfo.modified_time) }}</span>
+              <span class="font-medium text-gray-900">{{ formatUnixTime(fileInfo.modified_time) }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-gray-600">Accessed:</span>
-              <span class="font-medium text-gray-900">{{ formatUnixTimestamp(fileInfo.accessed_time) }}</span>
+              <span class="font-medium text-gray-900">{{ formatUnixTime(fileInfo.accessed_time) }}</span>
             </div>
           </div>
         </div>

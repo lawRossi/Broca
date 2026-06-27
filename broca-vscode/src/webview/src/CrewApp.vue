@@ -104,8 +104,7 @@ function phaseStatusClass(status: string): string {
 function formatTime(timeStr?: string): string {
   if (!timeStr) return '-'
   const d = new Date(timeStr)
-  return d.toLocaleString('zh-CN', {
-    timeZone: 'Asia/Shanghai',
+  return d.toLocaleString(undefined, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -383,7 +382,7 @@ onUnmounted(() => {
           <div class="crew-card-meta">
             <span>Agent: {{ cfg.agent_count }} 个</span>
             <span v-if="cfg.agent_names.length">({{ cfg.agent_names.join(', ') }})</span>
-            <span>{{ new Date(cfg.modified_time * 1000).toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</span>
+            <span>{{ new Date(cfg.modified_time * 1000).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</span>
           </div>
 
           <div class="crew-card-actions" style="margin-top: 8px;">

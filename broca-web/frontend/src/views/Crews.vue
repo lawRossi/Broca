@@ -22,7 +22,7 @@ import {
   Upload,
 } from '@element-plus/icons-vue'
 
-import { formatBeijingTime } from '@/utils/time'
+import { formatTime } from '@/utils/time'
 import CrewYamlEditor from '@/components/CrewYamlEditor.vue'
 import CrewProgressDag from '@/components/CrewProgressDag.vue'
 
@@ -205,7 +205,7 @@ const handleQuickSubmit = async (cfg: CrewConfigFile) => {
 
 // 格式化文件修改时间
 const formatModTime = (timestamp: number): string => {
-  return formatBeijingTime(timestamp * 1000, {
+  return formatTime(timestamp * 1000, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -239,9 +239,9 @@ const clearSessionFilter = () => {
   router.replace('/crews')
 }
 
-const formatTime = (timeStr: string): string => {
+const formatExecTime = (timeStr: string): string => {
   if (!timeStr) return '-'
-  return formatBeijingTime(timeStr, {
+  return formatTime(timeStr, {
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
@@ -415,7 +415,7 @@ onMounted(async () => {
             <div class="mt-2 sm:mt-3 grid grid-cols-2 sm:flex sm:items-center gap-1 sm:gap-4 text-xs text-gray-400">
               <span>Agent: {{ exec.agent_count }} 个</span>
               <span v-if="exec.phases_total">阶段: {{ exec.phases.length }}/{{ exec.phases_total }}</span>
-              <span class="col-span-2 sm:col-auto">{{ formatTime(exec.created_at) }}</span>
+              <span class="col-span-2 sm:col-auto">{{ formatExecTime(exec.created_at) }}</span>
               <span v-if="exec.completed_at" class="col-span-2 sm:col-auto">耗时: {{ getDuration(exec) }}</span>
             </div>
 

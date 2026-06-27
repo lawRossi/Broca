@@ -1066,7 +1066,7 @@ class TaskService(BaseService[Task]):
         session_id: Optional[str] = None,
     ) -> Task:
         """创建新任务"""
-        now = datetime.now()
+        now = datetime.now(timezone.utc)
         return await self.create(
             name=name,
             description=description,
@@ -1173,7 +1173,7 @@ class TaskService(BaseService[Task]):
             update_data["report"] = report
 
         if update_data:
-            update_data["updated_at"] = datetime.now()
+            update_data["updated_at"] = datetime.now(timezone.utc)
 
         return await self.update(task_id, **update_data)
 
@@ -1225,11 +1225,11 @@ class TaskService(BaseService[Task]):
             task_id=task_id,
             author=author,
             content=content,
-            created_at=datetime.now(),
+            created_at=datetime.now(timezone.utc),
         )
 
         # 更新任务的updated_at
-        await self.update(task_id, updated_at=datetime.now())
+        await self.update(task_id, updated_at=datetime.now(timezone.utc))
 
         return comment
 

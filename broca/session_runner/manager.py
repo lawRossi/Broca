@@ -22,6 +22,7 @@ from broca.session_runner.ipc import (
     IPCTimeoutError,
     create_ipc_message,
 )
+from broca.utils.datetime_util import serialize_dt
 from broca.session_runner.models import (
     IPCMessage,
     IPCMessageType,
@@ -645,12 +646,10 @@ class RunnerManager:
             "session_id": info.session_id,
             "pid": info.pid,
             "status": info.status.value,
-            "started_at": info.started_at.isoformat() if info.started_at else None,
+            "started_at": serialize_dt(info.started_at),
             "ipc_address": info.ipc_address,
             "resource_usage": info.resource_usage,
-            "last_heartbeat": info.last_heartbeat.isoformat()
-            if info.last_heartbeat
-            else None,
+            "last_heartbeat": serialize_dt(info.last_heartbeat),
             "restart_count": info.restart_count,
             "error_message": info.error_message,
             "uptime_seconds": (
