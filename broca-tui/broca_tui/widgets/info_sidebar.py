@@ -42,6 +42,12 @@ class InfoSidebar(Widget):
       - starting → disabled + "◐ 启动中"
     """
 
+    DEFAULT_CSS = """
+    Tooltip {
+        background: #e0e0e0;
+    }
+    """
+
     runner_status = reactive("unknown")
     runner_uptime = reactive("")
     runner_action_loading = reactive(False)
@@ -158,16 +164,21 @@ class InfoSidebar(Widget):
             workspace: Workspace path
         """
         self._session_id = session_id
-        self.query_one("#info-session-id", Label).update(
+        session_label = self.query_one("#info-session-id", Label)
+        session_label.update(
             session_id[:20] + "..."
             if session_id and len(session_id) > 20
             else (session_id or "未设置")
         )
-        self.query_one("#info-workspace", Label).update(
+        session_label.tooltip = session_id if session_id else "未设置"
+
+        workspace_label = self.query_one("#info-workspace", Label)
+        workspace_label.update(
             workspace[:20] + "..."
             if workspace and len(workspace) > 20
             else (workspace or "未设置")
         )
+        workspace_label.tooltip = workspace if workspace else "未设置"
         self._start_polling()
         # 立即做一次初始状态获取，不等20s后的第一次轮询
         self.run_worker(self._poll_runner_status())
