@@ -646,8 +646,9 @@ async def get_session_turns(
             stats = await turn_service.get_turn_stats(t.turn_id)
 
             # turn 状态：'active', 'completed', 'error'
-            # 兼容旧数据：None → 'completed'
-            turn_status = t.status or "completed"
+            # 兼容旧数据/活跃 turn：None → 'active'
+            # 只有调用了 process_turn_end 后 status 才会被设为 'completed' 或 'error'
+            turn_status = t.status or "active"
 
             turn_list.append({
                 "turn_id": t.turn_id,
