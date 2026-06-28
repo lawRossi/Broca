@@ -1,30 +1,28 @@
 ---
 name: create-tasks
 version: "2.1.0"
-description: "Parses a plan document and creates the task hierarchy **one phase at a time** in the Task Management Tool. Use AFTER `create-plan`, in a loop with `create-tests` and `execute-tasks`."
+description: "Parses a plan document and creates the task hierarchy **one phase at a time** in the Task Management Tool. Use AFTER `create-plan`, in a loop with `execute-tasks`."
 ---
 
 # Create Tasks from Plan Document
 
-This skill reads the plan document and creates tasks in the Task Management Tool **one phase at a time** — not all at once. Each phase's tasks are created, executed, and tested before moving to the next.
+This skill reads the plan document and creates tasks in the Task Management Tool **one phase at a time** — not all at once. Each phase's tasks are created, executed, and reviewed before moving to the next.
 
 ## The Complete Workflow
 
 ```
-create-plan (skill)    → plans/*.md              (plan document)
-                          │
-create-tasks (skill)   → create Master Task      (once)
-                          │
-             ┌────────────┴──────────────────┐
-             ▼  per phase, in a loop        │
-create-tasks │  → create Phase N tasks       │
-execute-tasks│  → implement Phase N          │
-create-tests │  → create + run Phase N tests │
-             │  → ⏸️ phase report, wait for  │
-             │    user review                │
-             └────────────┬──────────────────┘
-                          │
-                          ▼  next phase (after approval)...
+create-plan (skill)          → plans/*.md              (plan document)
+                               │
+create-tasks (skill)         → create Master Task      (once)
+                               │
+             ┌──────────────────┴──────────────────┐
+             ▼  per phase, in a loop              │
+create-tasks │  → create Phase N tasks             │
+execute-tasks│  → implement Phase N (impl. only)   │
+             │    wait for user approval                    │
+             └──────────────────┬──────────────────┘
+                                │
+                                ▼  next phase (after approval)...
 ```
 
 ## ⚠️ Core Rule: One Phase at a Time
@@ -32,14 +30,14 @@ create-tests │  → create + run Phase N tests │
 **Never create tasks for all phases at once.** The workflow is incremental per phase:
 
 ```
-Phase 1:  create-tasks → execute-tasks → create-tests → ⏸️ review → (user approves) → 
-Phase 2:  create-tasks → execute-tasks → create-tests → ⏸️ review → (user approves) → 
+Phase 1:  create-tasks → execute-tasks → ⏸️ review → (user approves) → 
+Phase 2:  create-tasks → execute-tasks → ⏸️ review → (user approves) → 
 Phase 3:  ...
 ```
 
-Each phase ends with a **review pause** — after the phase report is presented, you must wait for the user to review and approve before proceeding. Unless the user explicitly says "continue without pausing" or "complete all phases."
+Each phase ends with a **review pause** — after the review report is presented, you must wait for the user to review and approve before proceeding. Unless the user explicitly says "continue without pausing" or "complete all phases."
 
-Each invocation of `create-tasks` only handles **one phase**. After creating that phase's tasks, hand off to `execute-tasks` and `create-tests`. When that phase is complete and approved, come back to `create-tasks` for the next phase.
+Each invocation of `create-tasks` only handles **one phase**. After creating that phase's tasks, hand off to `execute-tasks`. When that phase is complete and approved, come back to `create-tasks` for the next phase.
 
 ## Quick Start
 
@@ -49,7 +47,7 @@ Each invocation of `create-tasks` only handles **one phase**. After creating tha
    - Create the Phase parent task
    - Create each Task under this Phase
    - Verify this phase's task completeness
-   - → Hand off to `create-tests` → `execute-tasks` for this phase
+   - → Hand off to `execute-tasks` for this phase
    - → Return for the next phase
 
 ## Core Principles

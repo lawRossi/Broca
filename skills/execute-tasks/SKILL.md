@@ -1,20 +1,20 @@
 ---
 name: execute-tasks
 version: "1.0.0"
-description: "Executes tasks following the full pipeline: `create-plan` → `create-tasks` → `execute-tasks` → `create-tests`."
+description: "Executes implementation tasks from a plan. "
 ---
 
 # Execute Tasks
 
-Execute tasks that were created by the `create-tasks` skill from a `create-plan`-generated plan document.
+Execute tasks that were created by the `create-tasks` skill from a plan document.
 
 ## The Complete Workflow
 
 ```
-create-plan (skill)    → plans/*.md              (plan document)
-create-tasks (skill)   → Task Management         (actionable task hierarchy)
-execute-tasks (skill)  → implement + write tests (execution & on-the-spot testing)
-create-tests (skill)   → tests/                  (formalize test suite)
+create-plan (skill)          → plans/*.md              (plan document)
+create-tasks (skill)         → Task Management         (actionable task hierarchy)
+execute-tasks (skill)        → implement Phase N       (implementation only)
+user                         → tests + review report
 ```
 
 ## Core Principles
@@ -120,7 +120,7 @@ Choose the next task based on:
 - **No scope creep**: don't add features the plan doesn't ask for
 
 #### Task-Level Verification
-- Note any ACs that need formal automated testing — use `create-tests` skill to create tests after implementation
+- Manually verify each AC against the implementation
 - **The task is done only when ALL its ACs are satisfied**
 
 #### Deviation Detection
@@ -175,23 +175,12 @@ Integrate the phase's results with existing work:
 
 ---
 
-### Step 5: Create and Run Tests (via create-tests)
-
-After implementation and integration check, **run `create-tests`** to:
-1. Create formal test files from each task's acceptance criteria
-2. Run all tests and collect results
-3. The test results will be included in the phase report
-
-> The `create-tests` skill reads the same plan document, derives test cases from ACs, and executes them against the implementation.
-
----
-
-### Step 6: Phase Report + Review
+### Step 5: Phase Report + Review
 
 This is the **detailed report** — in contrast to concise task reports, the phase report captures everything:
 
 1. Write a **detailed phase report** to `plans/reports/execution/{plan-name}-phase-{N}.md`
-2. Use the Phase Report Template below — include test results from `create-tests`, deviation explanations, AC-by-AC outcomes
+2. Use the Phase Report Template below — include deviation explanations, AC-by-AC outcomes
 3. Present the report to the user and **stop. Wait for the user's review decision.**
 
 > ⚠️ **Do not auto-proceed to the next phase.** You must wait for the user to review and approve the phase report. Only if the user explicitly says "proceed" or "continue all phases" should you move on.
@@ -296,25 +285,13 @@ Write phase reports to `plans/reports/execution/{plan-name}-phase-{N}.md`.
 
 {If any deviation from plan, describe: what, why, and whether user approved}
 
-## Test Results
-
-### Unit Tests
-```
-{command and output}
-```
-
-### Integration Tests
-```
-{command and output}
-```
-
 ## Quality Checklist
 
 - [ ] All phase-level ACs satisfied
 - [ ] All task-level ACs satisfied
 - [ ] No missing tasks (cross-referenced against plan)
 - [ ] No extra functionality (only what the plan asked for)
-- [ ] All tests pass
+- [ ] Manually verified key behaviors
 - [ ] Code follows project conventions
 - [ ] Compatible with existing work
 ```

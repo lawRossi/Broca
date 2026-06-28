@@ -1,32 +1,16 @@
 ---
-name: create-tests
+name: create-and-run-tests
 version: "1.0.0"
-description: "Reads a plan document and creates a formal test suite for **one phase at a time**, derived from each task's acceptance criteria. Creates test files under `tests/{plan-name}/phase-{NN}/`, runs them, and produces results for the phase report. Use AFTER `execute-tasks` has completed implementation for the phase."
+description: "Creates formal tests from plan ACs, runs them, then reviews execution quality against the plan — producing a comprehensive review report. "
 ---
 
-# Create Tests from Plan Document
+# Create, Run Tests & Review Execution
 
-This skill reads a plan document, derives **concrete, executable test cases** from each task's acceptance criteria, creates them under `tests/`, runs them, and produces results for the phase report — **one phase at a time**. It is invoked AFTER `execute-tasks` has completed implementation for the phase.
+This skill reads a plan document and an execution report, derives **concrete, executable test cases** from each task's acceptance criteria, creates them, runs them, and then reviews the overall execution quality against the plan — producing a **comprehensive review report**.
 
-## The Complete Workflow
+## ⚠️ Core Constraint
 
-```
-create-plan (skill)    → plans/*.md                  (plan with ACs)
-                          │
-create-tasks (skill)   → create Phase N tasks
-execute-tasks (skill)  → implement Phase N
-create-tests (skill)   → create + run Phase N tests
-                      → ⏸️ results → phase report → wait for review
-                          │
-                          ▼  next phase...
-```
-
-## Quick Start
-
-1. **Read the plan document** (or re-read the current phase section): Understand each task's acceptance criteria for this phase
-2. **For each AC, derive test cases**: Turn "what must be true" into "how to verify it"
-3. **Create test files under `tests/{plan-name}/phase-{NN}/`**: Organized per task, with clear AC-to-test mappings
-4. **Cross-reference**: Each test links back to its source plan task and AC
+**you only do test, review and report issues but never try to fix any issue**
 
 ## Core Principles
 
@@ -42,17 +26,18 @@ create-tests (skill)   → create + run Phase N tests
 
 ### 2. Tests Verify Implementation Against ACs
 
-This skill creates tests from the plan document's ACs **after** implementation is complete. Running these tests against the implementation objectively determines whether each AC is satisfied.
+Tests are created from the plan document's ACs **after** implementation is complete. Running these tests against the implementation objectively determines whether each AC is satisfied.
 
 - All tests passing = all ACs satisfied ✅
 - Any test failing = corresponding AC not met ❌ → implementation needs fixing
 
 ### 3. Traceability
 
-Every test must be traceable back to its originating plan task and AC. This enables:
-- `execute-tasks` to know which tests to run for which task
-- Clear reporting on which ACs pass/fail
-- Impact analysis when the plan changes
+Every test must be traceable back to its originating plan task and AC. This enables clear reporting on which ACs pass/fail.
+
+### 4. Review Quality
+
+After running tests, the skill performs a thorough quality review: plan anchoring, AC satisfaction, completeness, correctness, test quality, integration quality, and report honesty.
 
 ## Test File Organization
 
@@ -87,8 +72,6 @@ test_task_{NN}_{task_slug}.{ext}
 
 ## Per-Phase Workflow
 
-This skill is invoked **once per phase**, AFTER `execute-tasks` has completed implementation. It creates tests from the plan's ACs, runs them, and produces results for the phase report.
-
 ### Step 1: Read the Plan Document (Current Phase Section)
 
 Read the plan document at `plans/{plan-name}.md`. Focus on the **current phase's section**:
@@ -117,7 +100,10 @@ Map each AC to a test type:
 | **Security** | "Unauthenticated access returns 401" | Security test: call without auth, assert 401 |
 | **Integration** | "Order service calls payment service" | Integration test: mock payment, call order, assert interaction |
 | **Verification** | "Config file is valid YAML" | Validation script: parse file, assert no error |
-| **UI/UX** | "Button is accessible via keyboard" | Accessibility test: tab to element, assert focus |
+| **UI/UX** | "Button is accessible via keyboard" | Component test + a11y test |
+| **Visual** | "Layout matches design mockup" | Visual regression test with screenshot comparison |
+
+> 🎯 **Frontend is equally important!** For frontend tasks, refer to the [Frontend Testing Guide](#-frontend-testing-guide) below for component tests, E2E tests, accessibility tests, and more.
 
 ### Step 3: Create Test Files
 
@@ -216,7 +202,7 @@ echo "✅ AC 2 verified: migration is idempotent"
 
 #### 3.3 Create a README.md per phase directory
 
-This serves as the AC-to-test mapping for all tasks in the phase, used by `execute-tasks` during phase execution:
+This serves as the AC-to-test mapping for all tasks in the phase:
 
 ```markdown
 # Phase {N}: {Phase Name} — Test Mapping
@@ -292,7 +278,7 @@ done
 
 ### Step 6: Run Tests and Collect Results
 
-Run the created tests and capture the results for the phase report:
+Run the created tests and capture the results:
 
 ```bash
 # Run all tests for this phase
@@ -304,81 +290,121 @@ Record the output:
 - Any test failures with details
 - Phase-level integration test results
 
-These results will be included in the phase report's **Test Results** section.
+### Step 7: Review Execution Quality (7-Dimension Review)
 
-## Integration with Other Skills
+After running tests, perform a thorough quality review against the plan. This is the same review methodology formerly in `/review-execution`.
 
-### With create-tasks
+#### 7.1 Evaluate 7 Quality Dimensions
 
-`create-tasks` creates the task hierarchy in Task Management. `create-tests` should reference the same task numbering:
+Use workspace exploration (glob/grep/read_file) to gather evidence for each dimension, **not just what's in the report**:
 
-```
-create-tasks naming:    {PlanName} / Task {N.M}: {Task Name}
-create-tests naming:    tests/{plan-name}/phase-{NN}/test_task_{NN}_{task_slug}.py
-```
+| # | Dimension | Core Question |
+|:-:|-----------|---------------|
+| 1 | 📌 **Plan Anchoring** | Was execution always anchored to the plan? Any unapproved deviations? |
+| 2 | 🎯 **AC Achievement Rate** | Are plan ACs met one by one? Any standard-lowering? |
+| 3 | 📦 **Completeness** | All expected outputs produced? Any omissions or extras? |
+| 4 | ✅ **Correctness** | Does implementation logic match the plan's technical approach? |
+| 5 | 🧪 **Test Quality** | Test coverage, assertion quality, all passing? |
+| 6 | 🔗 **Integration Quality** | Modules integrate correctly? Full regression passes? |
+| 7 | 📋 **Report & Deviation Handling** | Phase report honest? Deviations properly recorded and approved? |
 
-Both use the plan's Phase/Task numbering as the common key.
+#### 7.2 Generate the Review Report
 
-### With execute-tasks
+Write a structured review report to `reports/review/{plan-name}-phase-{N}-review.md`:
 
-`create-tests` runs AFTER `execute-tasks` has completed implementation for the phase. The integration is tight:
+```markdown
+# {Plan Title} — Phase {N}: {Phase Name} — Review Report
 
-```
-execute-tasks finishes implementing Phase N
-  → all tasks marked complete (manual AC verification done)
-  → create-tests creates formal tests from plan ACs
-  → create-tests runs all tests
-  → test results feed into the phase report
-  → phase report includes: AC-by-AC results, test outputs, pass/fail summary
-```
+## Overview
 
-The phase report template in `execute-tasks` includes a **Test Results** section that should be populated with the output from this skill's Step 6.
+| Item | Content |
+|------|---------|
+| Plan File | {plan file path} |
+| Phase | Phase {N}: {Phase Name} |
+| Execution Report | {execution report path (if any)} |
 
-### With the Phase Report
+### Dimension Scores
 
-The phase report (written by `execute-tasks` Step 5.6) includes a "Test Results" section populated by this skill:
+| # | Dimension | Score | Key Finding |
+|:-:|-----------|:-----:|-------------|
+| 1 | 📌 Plan Anchoring | ⭐/5 | {summary} |
+| 2 | 🎯 AC Achievement Rate | ⭐/5 | {summary} |
+| 3 | 📦 Completeness | ⭐/5 | {summary} |
+| 4 | ✅ Correctness | ⭐/5 | {summary} |
+| 5 | 🧪 Test Quality | ⭐/5 | {summary} |
+| 6 | 🔗 Integration Quality | ⭐/5 | {summary} |
+| 7 | 📋 Report & Deviation Handling | ⭐/5 | {summary} |
+| | **Overall** | **⭐/5** | **{summary}** |
 
-```
+## AC Verification
+
+### Phase {N}: {Phase Name}
+
+**Phase-level ACs**:
+| # | AC | Met? | Evidence |
+|:-:|----|:----:|----------|
+| 1 | {AC description} | ✅/⚠️/❌ | {evidence} |
+
+#### Task {N.1}: {Task Name}
+
+| # | AC | Met? | Evidence |
+|:-:|----|:----:|----------|
+| 1 | {AC description} | ✅/⚠️/❌ | {evidence} |
+| — | **AC Rate**: {N}/{M} | | |
+
+#### Task {N.2}: {Task Name}
+...
+
 ## Test Results
 
 ### Unit Tests
 ```
-pytest tests/blog-platform/phase-01/ --tb=short
-→ 12 passed, 0 failed
+{command output}
+→ {N} passed, {N} failed, {N} skipped
 ```
 
 ### Integration Tests
 ```
-pytest tests/blog-platform/phase-01/phase-ac-tests/ --tb=short
-→ 3 passed, 0 failed
-```
-```
-
-### With the Phase Report
-
-The phase report template in `execute-tasks` includes a "Test Results" section:
-
-```
-## Test Results
-
-### Unit Tests
-```
-pytest tests/blog-platform/phase-01/ --tb=short
-→ 12 passed, 0 failed
+{command output}
+→ {N} passed, {N} failed, {N} skipped
 ```
 
-### Integration Tests
+## Issues Found
+
+### 🔴 Critical (must fix)
+| # | Task | Dimension | Issue | Suggestion |
+|:-:|:----:|:---------:|-------|------------|
+| 1 | {task} | {dim} | {issue} | {fix} |
+
+### 🟡 Medium (should fix)
+| # | Task | Dimension | Issue | Suggestion |
+|:-:|:----:|:---------:|-------|------------|
+| 1 | {task} | {dim} | {issue} | {fix} |
+
+### 🟢 Minor (reference)
+| # | Task | Dimension | Issue | Suggestion |
+|:-:|:----:|:---------:|-------|------------|
+| 1 | {task} | {dim} | {issue} | {fix} |
+
+## Conclusion
+
+**AC Achievement Rate**: {N}% ({passed}/{total})
+
+**Overall**: ✅ Pass / ⚠️ Conditional Pass / ❌ Fail
+
+**Next Step**: {recommendation}
 ```
-pytest tests/blog-platform/phase-01/phase-ac-tests/ --tb=short
-→ 3 passed, 0 failed
-```
-```
+
+### Step 8: Report to User
+
+Present the results to the user: just say that your job is done and provide the location of the review report.
+Do not be verbose.
 
 ## Handle Special Cases
 
 ### Case: Non-code tasks (documentation, research, design)
 
-Not all tasks produce code. For non-code tasks, use verification checklists instead:
+Use verification checklists instead:
 
 ```markdown
 # tests/{plan-name}/phase-{NN}/README.md
@@ -387,21 +413,17 @@ Not all tasks produce code. For non-code tasks, use verification checklists inst
 ### AC: "All endpoints are documented with request/response schemas"
 - [x] GET /users — documented with response schema
 - [x] POST /users — documented with request + response schema
-- [x] DELETE /users/{id} — documented
 ### AC: "Design follows RESTful conventions"
 - [x] Resource URLs are nouns, not verbs
-- [x] HTTP methods used correctly (GET=read, POST=create, etc.)
-- [x] Status codes follow standards (200, 201, 400, 404, 500)
+- [x] HTTP methods used correctly
 ```
 
 ### Case: Test requires external dependencies (DB, API, service)
 
-Document the setup requirements in the test file or a `conftest.py`:
+Document setup requirements in `conftest.py`:
 
 ```python
-# conftest.py
 import pytest
-import os
 
 @pytest.fixture
 def db_session():
@@ -412,37 +434,35 @@ def db_session():
 
 ### Case: AC cannot be fully automated
 
-If an AC involves manual verification (e.g., visual design review), document the manual steps:
+Document manual verification steps alongside automated checks:
 
 ```markdown
 ## AC: "Color contrast meets WCAG AA standard"
 ### Automated check
 - Run: `npx axe --stdout http://localhost:3000`
 - Expect: no color-contrast violations
-### Manual check (supplemental)
+### Manual check
 - [ ] Review: text against background meets 4.5:1 ratio
-- [ ] Review: large text meets 3:1 ratio
 ```
 
 ### Case: Plan is updated after tests are created
 
-If the plan changes, tests may become outdated:
-1. Re-read the updated plan document
+If the plan changes:
+1. Re-read the updated plan
 2. Compare old ACs vs new ACs
-3. For changed ACs: update or add test functions in the corresponding task test file
-4. For removed ACs: remove or comment out the corresponding test functions
-5. For new ACs: add new test functions to the corresponding task test file
-6. Update the phase README.md mapping
+3. Update/add/remove test functions accordingly
+4. Update the phase README.md mapping
 
 ## Anti-Patterns
 
 | Don't | Do Instead |
 |-------|------------|
 | Write tests without reading the plan first | Always anchor on the plan document's ACs |
-| Create one file per AC (too fine-grained, hard to manage) | Create one test file per task, with all ACs as separate test functions |
-| Create one giant test file for the whole phase | Organize tests per task for clear ownership and traceability |
-| Skip tests for "obvious" ACs | Every AC needs at least one test — no exceptions |
-| Write tests that don't map back to an AC | Every test function must state which AC it verifies |
-| Forget to update tests when plan changes | Revisit tests whenever the plan is updated |
-| Write overly vague tests | Each test should precisely verify one AC |
-| Mix unit and integration tests arbitrarily | Separate task-level unit tests from phase-level integration tests |
+| Create one file per AC (too fine-grained) | One test file per task, ACs as separate functions |
+| Create one giant test file for the whole phase | Organize per task for traceability |
+| Skip tests for "obvious" ACs | Every AC needs at least one test |
+| Write tests that don't map back to an AC | Every test must state which AC it verifies |
+| Only test the happy path | Cover error states, edge cases, and empty states |
+| Write review conclusions without evidence | Every score and finding must have concrete evidence |
+| Rely solely on the execution report | Explore workspace directly to verify claims |
+| Skip testing frontend components | Frontend tests are equally important as backend tests |

@@ -24,6 +24,7 @@ Take the user's input, conduct deep analysis and reasoning, and produce a **comp
 - **Well-referenced**: The plan must cite relevant materials (requirements docs, API docs, reference code, design mockups, etc.) so the executor can quickly establish context.
 - ** Thorough and Comprehensive **: All important aspects and details must be addressed.
 - ** Communicative**: Unclear requirements, important details, key risks, and key decisions must all be clearly communicated with the user using 'ask_user'. Ask only one question at a time to avoid information overload.
+- ** Proportionate to Complexity**: Simple tasks MUST NOT be over-engineered. If a task is straightforward, use a **single phase** with a few tasks. Multiple phases are only needed for complex, multi-step projects. Resist the urge to artificially inflate the plan.
 
 ## Steps
 
@@ -45,6 +46,8 @@ Organize the plan into a clear hierarchy. **Every element must be verifiable.**
 
 #### Phase
 Each phase is a major milestone, ordered logically. Each phase must have explicit **phase-level acceptance criteria** — what counts as "done" for this phase.
+
+**⚠️ Simplicity Rule**: For simple tasks, use **exactly one phase**. Do not split into multiple phases just to follow the template. A single-phase plan with 2-5 focused tasks is perfect for straightforward work. Multiple phases only when the work truly spans multiple distinct milestones (e.g., "Setup" → "Core Feature" → "Testing & Polish").
 
 #### Task
 Each phase contains concrete tasks. Every task must include:
@@ -119,7 +122,7 @@ Write the complete plan to a Markdown file under `plans/`.
   - [ ] {具体可衡量的验收标准2}
   - [ ] ...
 
-### Phase 2: {阶段名称}
+### Phase 2: {阶段名称（简单任务不需要）}
 ...
 
 ## 风险与应对
