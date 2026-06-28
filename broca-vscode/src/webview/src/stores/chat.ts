@@ -858,13 +858,14 @@ export const useChatStore = defineStore('chat', () => {
       saveDisplayMode(sessionId.value, newMode)
 
       if (newMode === 'concise') {
-        // 切换到简洁模式：如有活跃 turn，启动计时器
+        // 每次切换到简洁模式时都重新加载 turn 数据，确保：
+        // 1. 从 API 获取完整数据（socket 事件可能未覆盖所有字段）
+        // 2. 与 socket 实时事件产生的 turn 正确合并（去重）
+        // 3. 活跃 turn 的状态正确显示（避免 socket/API 数据不一致导致的状态显示错误）
+        // 注意：loadTurnHistory 内部 merge 逻辑会正确处理与现有 turnSummaries 的去重
+        await loadTurnHistory(sessionId.value, false, executionId.value)
         if (turnSummaries.value.some(t => t.isActive)) {
           startDurationTimer()
-        }
-        // 首次加载 turn 数据
-        if (turnSummaries.value.length === 0) {
-          await loadTurnHistory(sessionId.value, false, executionId.value)
         }
       } else {
         // 切换到明细模式：停止计时器
@@ -973,9 +974,23 @@ export const useChatStore = defineStore('chat', () => {
         // 捕获当前 turnSummaries 中所有未被 API 数据覆盖的 turn
         // 包含：(1) API 调用前就活跃的 turn (2) API 调用期间 socket 新添加的 turn
         const currentLive = turnSummaries.value.filter(t => !seenIds.has(t.turnId))
-        turnSummaries.value = [...turnList, ...currentLive]
+        // 合并后按 turnId 去重（防御性措施，防止极端时序下出现重复）
+        const merged = [...turnList, ...currentLive]
+        const dedupMap = new Map<string, TurnSummary>()
+        for (const t of merged) {
+          dedupMap.set(t.turnId, t)
+        }
+        turnSummaries.value = Array.from(dedupMap.values())
       } else {
-        turnSummaries.value = [...turnList, ...turnSummaries.value]
+        // isLoadMore：新 turn 在前，旧 turn 在后，按 turnId 去重
+        const merged = [...turnList, ...turnSummaries.value]
+        const dedupMap = new Map<string, TurnSummary>()
+        for (const t of merged) {
+          if (!dedupMap.has(t.turnId)) {
+            dedupMap.set(t.turnId, t)
+          }
+        }
+        turnSummaries.value = Array.from(dedupMap.values())
       }
 
       turnHistorySkip.value = responseSkip + turnList.length

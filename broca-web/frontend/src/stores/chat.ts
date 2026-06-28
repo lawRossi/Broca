@@ -970,7 +970,11 @@ export const useChatStore = defineStore('chat', () => {
           agentId: t.agent_id,
           agentName: t.agent_name || 'Unknown',
           userMessage: t.user_message,
-          status: (t.status === 'error' ? 'error' : 'completed') as const,
+          // 使用 ended_at 判断活跃状态：ended_at 为 null 表示 turn 仍在进行中
+          // 后端 status 字段只有 turn_end 时才会被设为 'completed'/'error'，
+          // 未结束的 turn 该字段为 None（被后端映射为 'completed'），
+          // 故不能仅依赖后端 status 字段判断活跃状态。
+          status: t.status === 'error' ? 'error' : (!t.ended_at ? 'active' : 'completed'),
           currentTool: null,
           currentFilePath: t.current_file_path,
           currentTodoList: (t.current_todo_list || []) as TodoItem[],
@@ -997,7 +1001,15 @@ export const useChatStore = defineStore('chat', () => {
         }))
 
       if (isLoadMore) {
-        turnSummaries.value = [...newSummaries, ...turnSummaries.value]
+        // isLoadMore：新 turn 在前，旧 turn 在后，按 turnId 去重
+        const merged = [...newSummaries, ...turnSummaries.value]
+        const dedupMap = new Map<string, TurnSummary>()
+        for (const t of merged) {
+          if (!dedupMap.has(t.turnId)) {
+            dedupMap.set(t.turnId, t)
+          }
+        }
+        turnSummaries.value = Array.from(dedupMap.values())
       } else {
         // 合并 API 返回的 turn 和当前存在的活跃 turn（去重，活跃 turn 放最后）
         // 注意：不能只使用 API 调用前保存的 activeTurns，因为在 await 期间，
@@ -1007,7 +1019,13 @@ export const useChatStore = defineStore('chat', () => {
         // 捕获当前 turnSummaries 中所有未被 API 数据覆盖的 turn
         // 包含：(1) API 调用前就活跃的 turn (2) API 调用期间 socket 新添加的 turn
         const currentLive = turnSummaries.value.filter(t => !seenIds.has(t.turnId))
-        turnSummaries.value = [...newSummaries, ...currentLive]
+        // 合并后再次按 turnId 去重（防御性措施，防止极端时序下出现重复）
+        const merged = [...newSummaries, ...currentLive]
+        const dedupMap = new Map<string, TurnSummary>()
+        for (const t of merged) {
+          dedupMap.set(t.turnId, t)
+        }
+        turnSummaries.value = Array.from(dedupMap.values())
       }
 
       // 检测活跃 turn
@@ -1061,10 +1079,13 @@ export const useChatStore = defineStore('chat', () => {
       displayMode.value = newMode
       saveDisplayMode(sessionId.value, newMode)
 
-      if (newMode === 'concise' && turnSummaries.value.length === 0) {
+      if (newMode === 'concise') {
+        // 每次切换到简洁模式时都重新加载 turn 数据，确保：
+        // 1. 从 API 获取完整数据（socket 事件可能未覆盖所有字段）
+        // 2. 与 socket 实时事件产生的 turn 正确合并（去重）
+        // 3. 活跃 turn 的状态正确显示（避免 socket/API 数据不一致导致的状态显示错误）
+        // 注意：loadTurnHistory 内部 merge 逻辑会正确处理与现有 turnSummaries 的去重
         await loadTurnHistory(sessionId.value, false, executionId.value)
-        startDurationTimer()
-      } else if (newMode === 'concise') {
         startDurationTimer()
       } else if (newMode === 'detail') {
         stopDurationTimer()

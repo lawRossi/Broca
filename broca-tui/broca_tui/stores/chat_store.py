@@ -690,13 +690,27 @@ class ChatStore:
                     except Exception:
                         pass
 
+                # 判断 turn 是否活跃：ended_at 为 null 表示 turn 仍在进行中
+                # 后端 status 字段只有 turn_end 时才会被设为 'completed'/'error'，
+                # 未结束的 turn 该字段为 None（被后端映射为 'completed'），
+                # 故不能仅依赖后端 status 字段判断活跃状态。
+                ended_at = t.get("ended_at")
+                is_active_turn = not bool(ended_at)
+                raw_status = t.get("status", "completed")
+                if raw_status == "error":
+                    status = "error"
+                elif is_active_turn:
+                    status = "active"
+                else:
+                    status = "completed"
+
                 summary = TurnSummary(
                     turn_id=t.get("turn_id", ""),
                     sequence_number=t.get("sequence_number", 0),
                     agent_id=t.get("agent_id", ""),
                     agent_name=t.get("agent_name", ""),
                     user_message=t.get("user_message"),
-                    status=t.get("status", "completed"),  # 从数据库读取持久化状态
+                    status=status,
                     current_tool=t.get("current_tool"),
                     current_file_path=t.get("current_file_path"),
                     current_todo_list=t.get("current_todo_list", []),
@@ -704,7 +718,7 @@ class ChatStore:
                     total_steps=t.get("total_steps", 0),
                     tool_call_stats=t.get("tool_call_stats", []),
                     final_response=t.get("final_response", ""),
-                    is_active=False,
+                    is_active=is_active_turn,
                     started_at=started_at_ms,
                     created_at=t.get("created_at", ""),
                     last_message_id=t.get("last_message_id"),

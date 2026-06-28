@@ -87,6 +87,8 @@ export interface TurnSummaryData {
   ended_at: string | null
   duration_seconds: number | null
   created_at: string | null
+  // turn 状态：'active'（进行中）/ 'completed'（已完成）/ 'error'（中断）
+  status: string
   // 后端计算的统计数据
   user_message: string | null
   total_steps: number
