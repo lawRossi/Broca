@@ -1,8 +1,9 @@
 import asyncio
 import inspect
 import json
+import time
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple
 
 from socketio import AsyncServer
 
@@ -57,11 +58,107 @@ class SocketIOServer:
         # 添加锁保护共享状态访问
         self._lock = asyncio.Lock()
 
+        # 待处理消息缓存：subscription → {msg_key: {message, expire_at, request_id}}
+        # 用于缓存 PERMISSION_REQUEST / AGENT_QUERY，供后续订阅的客户端接收
+        self._pending_messages: Dict[str, Dict[str, dict]] = {}
+        # 反向索引：request_id → (subscription, msg_key)，O(1) 定位清理
+        self._request_to_subscription: Dict[str, Tuple[str, str]] = {}
+
         # 保存 runner 引用以便正确清理
         self._runner = None
 
         self._setup_event_handlers()
         logger.info(f"Socket.io server initialized on {host}:{port}")
+
+    async def _cache_pending_message(self, subscription: str, message: Message):
+        """缓存待处理的消息（PERMISSION_REQUEST / AGENT_QUERY）
+
+        消息缓存后，后续订阅该频道的客户端会收到此消息。
+        缓存条目有 TTL（600s），收到对应响应或过期后清理。
+
+        Args:
+            subscription: 订阅频道名称（通常是 session_id）
+            message: 待缓存的消息
+        """
+        request_id = (message.data or {}).get("request_id")
+        if not request_id:
+            return
+
+        msg_key = f"{message.message_type}_{request_id}"
+        expire_at = time.time() + 600  # TTL 600s
+
+        async with self._lock:
+            entry = {
+                "message": message,
+                "expire_at": expire_at,
+                "request_id": request_id,
+            }
+            self._pending_messages.setdefault(subscription, {})[msg_key] = entry
+            self._request_to_subscription[request_id] = (subscription, msg_key)
+            logger.info(
+                f"Cached {message.message_type} [{request_id}] for {subscription}"
+            )
+
+    async def _deliver_pending_messages(self, subscription: str, sid: str):
+        """投递指定频道的所有未过期缓存消息给指定客户端
+
+        遍历该频道的缓存条目，跳过已过期的，未过期的通过正常 message 事件发送。
+        投递后不清空缓存，保持供后续订阅的客户端使用。
+
+        Args:
+            subscription: 订阅频道名称
+            sid: 目标客户端的 Socket.IO session ID
+        """
+        async with self._lock:
+            entries = self._pending_messages.get(subscription, {})
+            if not entries:
+                return
+
+            now = time.time()
+            delivered = 0
+            for msg_key, entry in list(entries.items()):
+                if now > entry["expire_at"]:
+                    continue
+                try:
+                    await self.sio.emit(
+                        "message",
+                        MessageProtocol.to_dict(entry["message"]),
+                        room=sid,
+                    )
+                    delivered += 1
+                except Exception as e:
+                    logger.error(
+                        f"Failed to deliver pending message {msg_key}: {e}"
+                    )
+
+        if delivered > 0:
+            logger.info(
+                f"Delivered {delivered} pending messages for subscription "
+                f"{subscription}"
+            )
+
+    async def _remove_pending_message_by_request_id(self, request_id: str):
+        """通过 request_id 移除缓存的待处理消息
+
+        在收到 PERMISSION_RESPONSE 或 USER_ANSWER 时调用。
+
+        Args:
+            request_id: 要移除的请求 ID
+        """
+        async with self._lock:
+            if request_id not in self._request_to_subscription:
+                return
+
+            subscription, msg_key = self._request_to_subscription.pop(request_id)
+            sub_entries = self._pending_messages.get(subscription)
+            if sub_entries:
+                sub_entries.pop(msg_key, None)
+                if not sub_entries:
+                    del self._pending_messages[subscription]
+
+            logger.debug(
+                f"Removed pending message [{request_id}] from {subscription}"
+            )
 
     def _setup_event_handlers(self):
         """Setup Socket.io event handlers"""
@@ -206,6 +303,10 @@ class SocketIOServer:
             )
             await self.sio.emit("message", MessageProtocol.to_dict(ack_msg), room=sid)
 
+            # 订阅成功后，投递该频道的所有未过期缓存消息
+            if subscribe:
+                await self._deliver_pending_messages(subscription, sid)
+
         except Exception as e:
             error_code = f"{'SUBSCRIBE' if subscribe else 'UNSUBSCRIBE'}_ERROR"
             await self._send_error(sid, error_code, f"Error processing: {e}")
@@ -249,6 +350,15 @@ class SocketIOServer:
             result = await self._send_to_subscription(message.subscription, message)
         else:
             result = await self._broadcast(message)
+
+        # 收到 PERMISSION_RESPONSE 或 USER_ANSWER 时，清理缓存中的对应待处理请求
+        if message.message_type in (
+            MessageType.PERMISSION_RESPONSE,
+            MessageType.USER_ANSWER,
+        ):
+            request_id = (message.data or {}).get("request_id")
+            if request_id:
+                await self._remove_pending_message_by_request_id(request_id)
 
         # 记录发送状态
         if result:
@@ -312,6 +422,8 @@ class SocketIOServer:
         """
         if subscription not in self.subscriptions:
             logger.debug(f"Subscription {subscription} not found")
+            # 无订阅者时仍需缓存，供后续订阅的客户端接收
+            await self._maybe_cache_pending_message(subscription, message)
             return {"total": 0, "sent": 0, "failed": 0}
 
         # 收集所有有效的 SID
@@ -324,6 +436,8 @@ class SocketIOServer:
         total_clients = len(sids)
         if not sids:
             logger.debug(f"Subscription {subscription} has no connected clients")
+            # 无在线客户端时仍需缓存，供后续订阅的客户端接收
+            await self._maybe_cache_pending_message(subscription, message)
             return {"total": 0, "sent": 0, "failed": 0}
 
         try:
@@ -335,10 +449,25 @@ class SocketIOServer:
             logger.debug(
                 f"Sent message to subscription {subscription} ({total_clients} clients)"
             )
+            # 发送后同时缓存，供后续订阅的客户端接收
+            await self._maybe_cache_pending_message(subscription, message)
             return {"total": total_clients, "sent": total_clients, "failed": 0}
         except Exception as e:
             logger.error(f"Failed to send message to subscription {subscription}: {e}")
+            # 发送失败时也缓存，供后续订阅的客户端接收
+            await self._maybe_cache_pending_message(subscription, message)
             return {"total": total_clients, "sent": 0, "failed": total_clients}
+
+    async def _maybe_cache_pending_message(self, subscription: str, message: Message):
+        """如果是 PERMISSION_REQUEST 或 AGENT_QUERY，则缓存消息
+
+        抽取为辅助方法，避免在 _send_to_subscription 的多个返回点重复判断逻辑。
+        """
+        if message.message_type in (
+            MessageType.PERMISSION_REQUEST,
+            MessageType.AGENT_QUERY,
+        ):
+            await self._cache_pending_message(subscription, message)
 
     async def _broadcast(self, message: Message) -> Dict[str, int]:
         """Broadcast message to all clients
