@@ -181,7 +181,8 @@ This is the **detailed report** — in contrast to concise task reports, the pha
 
 1. Write a **detailed phase report** to `plans/reports/execution/{plan-name}-phase-{N}.md`
 2. Use the Phase Report Template below — include deviation explanations, AC-by-AC outcomes
-3. Present the report to the user and **stop. Wait for the user's review decision.**
+3. Just present the report location to the user and **stop. Wait for the user's review decision.**
+Never be verbose. (Your report contains all details)
 
 > ⚠️ **Do not auto-proceed to the next phase.** You must wait for the user to review and approve the phase report. Only if the user explicitly says "proceed" or "continue all phases" should you move on.
 

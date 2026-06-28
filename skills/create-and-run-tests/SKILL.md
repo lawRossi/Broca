@@ -210,22 +210,22 @@ This serves as the AC-to-test mapping for all tasks in the phase:
 
 ## Task {N.1}: {Task Name}
 
-| AC | Test Function | How to Run |
-|----|---------------|------------|
-| {AC description} | `test_ac01_*` | `pytest tests/{plan}/phase-{NN}/test_task_{NN}_{slug}.py::test_ac01_* -v` |
-| {AC description} | `test_ac02_*` | `pytest tests/{plan}/phase-{NN}/test_task_{NN}_{slug}.py::test_ac02_* -v` |
+| AC | Test Function | 
+|----|---------------|
+| {AC description} | `test_ac01_*` |
+| {AC description} | `test_ac02_*` |
 
 ## Task {N.2}: {Task Name}
 
-| AC | Test Function | How to Run |
-|----|---------------|------------|
+| AC | Test Function |
+|----|---------------|
 | ... | ... | ... |
 
 ## Phase Integration Tests
 
-| Test File | What It Verifies | How to Run |
-|-----------|------------------|------------|
-| `test_phase_integration.py` | {phase AC description} | `pytest tests/{plan}/phase-{NN}/phase-ac-tests/` |
+| Test File | What It Verifies |
+|-----------|------------------|
+| `test_phase_integration.py` | {phase AC description} |
 ```
 
 ### Step 4: Create Phase-Level Integration Tests
@@ -397,8 +397,8 @@ Write a structured review report to `reports/review/{plan-name}-phase-{N}-review
 
 ### Step 8: Report to User
 
-Present the results to the user: just say that your job is done and provide the location of the review report.
-Do not be verbose.
+Present the results to the user: Just provide the location of the review report.
+Never be verbose. (Your report contains all details)
 
 ## Handle Special Cases
 
