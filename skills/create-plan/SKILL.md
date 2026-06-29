@@ -1,7 +1,7 @@
 ---
 name: create-plan
 version: "1.0.0"
-description: "Generates a detailed, verifiable plan document based on user input. Use as the first step of the workflow, BEFORE `create-tasks`."
+description: "Generates a detailed, verifiable plan document based on user input. Always use this skill when you're asked to perform complex task, such as developing a system from scratch, creating significant features, system refactoring, etc.
 ---
 
 # Create Plan
