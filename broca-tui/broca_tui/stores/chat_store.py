@@ -282,8 +282,8 @@ class ChatStore:
             await self._socket.connect()
             self.connected = True
 
-            # Subscribe to session channel
-            await self._socket.subscribe(session_id)
+            # 订阅由 @self._socket.on("connect") 的 handle_connect 自动完成
+            # （包含首次连接和断线重连两种场景，避免重复订阅）
 
             # Start Runner polling
             await self._fetch_runner_status()
@@ -370,15 +370,16 @@ class ChatStore:
             self._notify_change()
             if self._on_connection_change:
                 self._on_connection_change(True)
-            # 重连后重新订阅 session 频道。
+            # 订阅 session 频道（首次连接和断线重连均走此路径）。
             # 服务端在 disconnect 时会清除客户端的订阅状态，
-            # 因此 Socket.IO 自动重连后必须显式重新订阅，否则服务端无法将消息推送回来。
+            # 因此 Socket.IO 连接后必须显式订阅，否则服务端无法将消息推送回来。
+            # 注意：connect() 方法不再额外调用 subscribe，避免重复订阅。
             if self.session_id and self._socket:
                 try:
                     await self._socket.subscribe(self.session_id)
-                    log(f"重连后重新订阅 session {self.session_id}")
+                    log(f"已订阅 session {self.session_id}")
                 except Exception as e:
-                    log(f"重连后重新订阅失败: {e}")
+                    log(f"订阅 session {self.session_id} 失败: {e}")
 
         @self._socket.on("disconnect")
         async def handle_disconnect():
