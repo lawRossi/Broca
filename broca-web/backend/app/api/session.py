@@ -650,12 +650,16 @@ async def get_session_turns(
             # 只有调用了 process_turn_end 后 status 才会被设为 'completed' 或 'error'
             turn_status = t.status or "active"
 
+            # is_active: 没有 turn_end 消息且状态为 active 的 turn 为活跃 turn
+            is_active = turn_status == "active" and end_time is None
+
             turn_list.append({
                 "turn_id": t.turn_id,
                 "sequence_number": t.sequence_number,
                 "agent_id": t.agent_id,
                 "agent_name": agent.name if agent else None,
                 "status": turn_status,
+                "is_active": is_active,
                 "started_at": serialize_dt(start_time),
                 "ended_at": serialize_dt(end_time),
                 "duration_seconds": round(duration, 1) if duration else None,

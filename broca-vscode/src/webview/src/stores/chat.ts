@@ -860,8 +860,9 @@ export const useChatStore = defineStore('chat', () => {
       return
     }
     _togglingDisplayMode = true
+    const modeAtStart = displayMode.value
     try {
-      const newMode = displayMode.value === 'detail' ? 'concise' : 'detail'
+      const newMode = modeAtStart === 'detail' ? 'concise' : 'detail'
       displayMode.value = newMode
       saveDisplayMode(sessionId.value, newMode)
 
@@ -872,6 +873,12 @@ export const useChatStore = defineStore('chat', () => {
         // 3. 活跃 turn 的状态正确显示（避免 socket/API 数据不一致导致的状态显示错误）
         // 注意：loadTurnHistory 内部 merge 逻辑会正确处理与现有 turnSummaries 的去重
         await loadTurnHistory(sessionId.value, false, executionId.value)
+        // await 期间用户可能再次切换模式（虽然并发防护阻止了 toggleDisplayMode
+        // 的重复调用，但外部代码可能直接修改 displayMode），跳过后处理
+        if (displayMode.value !== 'concise') {
+          console.debug('toggleDisplayMode: 模式在 await 期间已变回 detail，跳过活跃 turn 处理')
+          return
+        }
         if (turnSummaries.value.some(t => t.isActive)) {
           startDurationTimer()
         }
@@ -959,7 +966,7 @@ export const useChatStore = defineStore('chat', () => {
         })),
         finalResponse: t.final_response || '',
         reasoningContent: t.reasoning_content || '',
-        isActive: t.is_active || false,
+        isActive: t.is_active ?? (t.status === 'active' && !t.ended_at),
         startedAt: t.started_at ? new Date(t.started_at).getTime() : Date.now(),
         createdAt: t.created_at || new Date().toISOString(),
         lastMessageId: t.last_message_id || null,
@@ -982,12 +989,29 @@ export const useChatStore = defineStore('chat', () => {
         // 捕获当前 turnSummaries 中所有未被 API 数据覆盖的 turn
         // 包含：(1) API 调用前就活跃的 turn (2) API 调用期间 socket 新添加的 turn
         const currentLive = turnSummaries.value.filter(t => !seenIds.has(t.turnId))
-        // 合并后按 turnId 去重（防御性措施，防止极端时序下出现重复）
+
+        // 策略：API 数据是数据库快照，保证完整性；socket 数据有实时流式更新。
+        // 对于同 turnId 的 turn，以 API 为 base，再将 socket 的流式字段叠加上去。
         const merged = [...turnList, ...currentLive]
         const dedupMap = new Map<string, TurnSummary>()
+
+        // 先放入所有 turn（API + currentLive），同 turnId 时 currentLive 覆盖 API
         for (const t of merged) {
           dedupMap.set(t.turnId, t)
         }
+
+        // 活跃 turn 的流式字段：以 API 版本为 base，叠加 socket 的实时数据
+        for (const socketTurn of turnSummaries.value) {
+          const apiTurn = dedupMap.get(socketTurn.turnId)
+          if (!apiTurn || !socketTurn.isActive) continue
+          // 只覆盖实时流式字段，其余字段（如 finalResponse、status）以 API 为准
+          apiTurn.totalDuration = socketTurn.totalDuration
+          apiTurn.currentTool = socketTurn.currentTool || apiTurn.currentTool
+          apiTurn.currentFilePath = socketTurn.currentFilePath || apiTurn.currentFilePath
+          apiTurn.currentTodoList = socketTurn.currentTodoList.length > 0 ? socketTurn.currentTodoList : apiTurn.currentTodoList
+          apiTurn.isActive = true  // socket 标记为活跃说明 turn 仍在进行中
+        }
+
         turnSummaries.value = Array.from(dedupMap.values())
       } else {
         // isLoadMore：新 turn 在前，旧 turn 在后，按 turnId 去重
