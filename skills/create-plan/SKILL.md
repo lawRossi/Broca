@@ -22,9 +22,9 @@ Take the user's input, conduct deep analysis and reasoning, and produce a **comp
 - **AC-first**: Every task must have clear, specific, measurable **Acceptance Criteria**. Anyone executing the plan should be able to verify each criterion against the result.
 - **Executable**: Tasks must be broken down to directly actionable granularity. Steps must be unambiguous — the executor should never have to guess "how".
 - **Well-referenced**: The plan must cite relevant materials (requirements docs, API docs, reference code, design mockups, etc.) so the executor can quickly establish context.
-- ** Thorough and Comprehensive **: All important aspects and details must be addressed.
-- ** Communicative**: Unclear requirements, important details, key risks, and key decisions must all be clearly communicated with the user using 'ask_user'. Ask only one question at a time to avoid information overload.
-- ** Proportionate to Complexity**: Simple tasks MUST NOT be over-engineered. If a task is straightforward, use a **single phase** with a few tasks. Multiple phases are only needed for complex, multi-step projects. Resist the urge to artificially inflate the plan.
+- **Thorough and Comprehensive**: All important aspects and details must be addressed.
+- **Communicative**: Unclear requirements, important details, and key decisions must all be clearly communicated with the user using 'ask_user'. Ask only one question at a time to avoid information overload.
+- **Proportionate to Complexity**: Simple tasks MUST NOT be over-engineered. If a task is straightforward, use a **single phase** with a few tasks. Multiple phases are only needed for complex, multi-step projects. 
 
 ## Steps
 
