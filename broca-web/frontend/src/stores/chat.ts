@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed, reactive } from 'vue'
 import { useRoute } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useAgentStore, useSocketStore } from '@/stores'
 import { type Message } from '@/api/brocaSocket'
 import { sessionApi, type RunnerInfo } from '@/api/session'
@@ -1175,7 +1176,6 @@ export const useChatStore = defineStore('chat', () => {
 
       // clear_context: 提示上下文已清空
       if (m.message_type === 'command_result' && m.data?.command === 'clear_context') {
-        const { ElMessage } = await import('element-plus')
         ElMessage.success('上下文已清空')
         addMessage(m)
         return
@@ -1183,7 +1183,6 @@ export const useChatStore = defineStore('chat', () => {
 
       // clear_history: 提示并重新加载消息列表（消息已被标记为 reverted）
       if (m.message_type === 'command_result' && m.data?.command === 'clear_history') {
-        const { ElMessage } = await import('element-plus')
         ElMessage.success('历史记录已清空')
         loadHistory(sessionId.value, false, executionId.value)
         loadTurnHistory(sessionId.value, false, executionId.value, true) // reset=true: 数据已改变
