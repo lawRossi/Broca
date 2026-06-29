@@ -1,7 +1,7 @@
 ---
 name: create-and-run-tests
 version: "1.0.0"
-description: "Creates formal tests from plan ACs, runs them, then reviews execution quality against the plan — producing a comprehensive review report. "
+description: "Creates formal tests, runs them, then reviews execution quality against the plan — producing a comprehensive review report. Use this skill when you are given an execution report to review."
 ---
 
 # Create, Run Tests & Review Execution
@@ -103,7 +103,7 @@ Map each AC to a test type:
 | **UI/UX** | "Button is accessible via keyboard" | Component test + a11y test |
 | **Visual** | "Layout matches design mockup" | Visual regression test with screenshot comparison |
 
-> 🎯 **Frontend is equally important!** For frontend tasks, refer to the [Frontend Testing Guide](#-frontend-testing-guide) below for component tests, E2E tests, accessibility tests, and more.
+> 🎯 **Frontend is important!** For frontend tasks, refer to the [Frontend Testing Guide] in `frontend_test_guide.md`
 
 ### Step 3: Create Test Files
 
@@ -455,14 +455,14 @@ If the plan changes:
 
 ## Anti-Patterns
 
-| Don't | Do Instead |
-|-------|------------|
-| Write tests without reading the plan first | Always anchor on the plan document's ACs |
-| Create one file per AC (too fine-grained) | One test file per task, ACs as separate functions |
-| Create one giant test file for the whole phase | Organize per task for traceability |
-| Skip tests for "obvious" ACs | Every AC needs at least one test |
-| Write tests that don't map back to an AC | Every test must state which AC it verifies |
-| Only test the happy path | Cover error states, edge cases, and empty states |
-| Write review conclusions without evidence | Every score and finding must have concrete evidence |
-| Rely solely on the execution report | Explore workspace directly to verify claims |
-| Skip testing frontend components | Frontend tests are equally important as backend tests |
+| Don't                                          | Do Instead                                            |
+| ------------------------------------------------| -------------------------------------------------------|
+| Write tests without reading the plan first     | Always anchor on the plan document's ACs              |
+| Create one file per AC (too fine-grained)      | One test file per task, ACs as separate functions     |
+| Create one giant test file for the whole phase | Organize per task for traceability                    |
+| Skip tests for "obvious" ACs                   | Every AC needs at least one test                      |
+| Write tests that don't map back to an AC       | Every test must state which AC it verifies            |
+| Only test the happy path                       | Cover error states, edge cases, and empty states      |
+| Write review conclusions without evidence      | Every score and finding must have concrete evidence   |
+| Rely solely on the execution report            | Explore workspace directly to verify claims           |
+| Skip testing frontend components               | Frontend tests are equally important as backend tests |

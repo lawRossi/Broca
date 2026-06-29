@@ -4,14 +4,14 @@ Frontend testing is **equally important** as backend testing. Many plans involve
 
 ### Frontend vs Backend: What's Different
 
-| Aspect | Backend Tests | Frontend Tests |
-|--------|---------------|----------------|
-| **What's tested** | API endpoints, business logic, data layer | Components, pages, user interactions, visuals |
-| **Test runner** | pytest (Python) | Vitest, Playwright, Cypress, Jest (JS/TS) |
-| **DOM required?** | No | Yes (jsdom for unit, real browser for E2E) |
-| **Async patterns** | `async/await` on DB/HTTP calls | `userEvent`, `waitFor`, `findBy*` for user interactions |
-| **Assertions** | `assert x == y` | `expect(screen.getByText('...')).toBeVisible()` |
-| **Mocking** | `unittest.mock`, `pytest-mock` | `vi.mock()`, MSW (Mock Service Worker) for API mocking |
+| Aspect             | Backend Tests                             | Frontend Tests                                          |
+| --------------------| -------------------------------------------| ---------------------------------------------------------|
+| **What's tested**  | API endpoints, business logic, data layer | Components, pages, user interactions, visuals           |
+| **Test runner**    | pytest (Python)                           | Vitest, Playwright, Cypress, Jest (JS/TS)               |
+| **DOM required?**  | No                                        | Yes (jsdom for unit, real browser for E2E)              |
+| **Async patterns** | `async/await` on DB/HTTP calls            | `userEvent`, `waitFor`, `findBy*` for user interactions |
+| **Assertions**     | `assert x == y`                           | `expect(screen.getByText('...')).toBeVisible()`         |
+| **Mocking**        | `unittest.mock`, `pytest-mock`            | `vi.mock()`, MSW (Mock Service Worker) for API mocking  |
 
 ### Frontend Test Types
 
