@@ -24,7 +24,12 @@ class Bash(Tool):
 
     @property
     def description(self) -> str:
-        return "Use this tool to execute code using shell. When running python-related code, use the right python (virtualenv) environment."
+        return (
+            "Use this tool to execute code using shell. "
+            "**Note**: 1. Your default python path points to a specical standalone python environment. "
+            "When running python-related code, use the correct python environment.\n"
+            "2. Only run shell code supported by the current platform."
+        )
 
     @property
     def parameters(self) -> dict:

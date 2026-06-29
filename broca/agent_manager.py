@@ -2,6 +2,8 @@ import asyncio
 import json
 import os
 import platform
+import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
@@ -251,7 +253,155 @@ class AgentFactory:
         return agent
 
     def _init_environment(self, config: AgentConfig) -> str:
-        return f"System: {platform.system()}\nWorkspace: {config.workspace}"
+        lines = [
+            f"System: {platform.system()}",
+            f"Workspace: {config.workspace}",
+        ]
+
+        # --- Python environment ---
+        active_ver, active_path = self._detect_active_python()
+        lines.append(f"Your default Python: {active_ver} ({active_path})")
+
+        sys_ver, sys_path = self._detect_system_python(active_path)
+        if sys_path:
+            lines.append(f"System Python: {sys_ver} ({sys_path})")
+        else:
+            lines.append("System Python: (not found outside current environment)")
+
+        venvs = self._detect_workspace_venvs(config.workspace)
+        if venvs:
+            lines.append("Workspace Python virtual environments:")
+            for name, ver in venvs:
+                ver_info = f" ({ver})" if ver else ""
+                lines.append(f"  - {name}{ver_info}")
+        else:
+            lines.append("Wrokspace Python virtual environments: (none detected)")
+
+        return "\n".join(lines)
+
+    @staticmethod
+    def _detect_active_python() -> tuple[str, str]:
+        """Detect the currently active Python environment."""
+        ver = f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        return ver, sys.executable
+
+    @staticmethod
+    def _get_python_version(python_path: str) -> str:
+        """Run `python --version` and return the version string."""
+        try:
+            result = subprocess.run(
+                [python_path, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            return (result.stdout or result.stderr).strip()
+        except Exception:
+            return ""
+
+    @staticmethod
+    def _detect_system_python(active_path: str) -> tuple[str, str]:
+        """Detect system-global Python, skipping the current active one.
+
+        Returns (version_string, path) or ("", "") if not found.
+        """
+        real_active = os.path.realpath(active_path)
+        candidates: list[str] = []
+
+        # 1. Well-known system paths (Linux / macOS)
+        candidates.extend(
+            [
+                "/usr/bin/python3",
+                "/usr/bin/python",
+                "/usr/local/bin/python3",
+                "/usr/local/bin/python",
+                "/opt/homebrew/bin/python3",
+                "/opt/homebrew/bin/python",
+            ]
+        )
+
+        # 2. `which -a` (Linux/macOS) / `where` (Windows): discover all PATH entries
+        for exe_name in ("python3", "python"):
+            try:
+                cmd = (
+                    ["where", exe_name]
+                    if platform.system() == "Windows"
+                    else ["which", "-a", exe_name]
+                )
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                if result.returncode == 0:
+                    for p in result.stdout.strip().split("\n"):
+                        p = p.strip()
+                        if p and p not in candidates:
+                            candidates.append(p)
+            except Exception:
+                continue
+
+        # 3. Windows: common installation directories
+        if platform.system() == "Windows":
+            for drive in ("C:", "D:"):
+                for ver_dir in sorted(Path(drive).glob("Python3*"), reverse=True):
+                    py_exe = str(ver_dir / "python.exe")
+                    if py_exe not in candidates:
+                        candidates.append(py_exe)
+
+        # Try each candidate, skip duplicates and the active interpreter
+        seen_real = set()
+        for candidate in candidates:
+            if not os.path.exists(candidate):
+                continue
+            try:
+                real_candidate = os.path.realpath(candidate)
+            except Exception:
+                continue
+            if real_candidate in seen_real:
+                continue
+            seen_real.add(real_candidate)
+            if real_candidate == real_active:
+                continue
+            ver = AgentFactory._get_python_version(candidate)
+            if ver:
+                return ver, candidate
+
+        return "", ""
+
+    @staticmethod
+    def _detect_workspace_venvs(workspace: str) -> list[tuple[str, str]]:
+        """Scan workspace for common Python virtual environment directories.
+
+        Returns list of (directory_name, version_string).
+        """
+        venv_dirs: list[tuple[str, str]] = []
+        ws_path = Path(workspace) if workspace else None
+        if not ws_path or not ws_path.is_dir():
+            return venv_dirs
+
+        for candidate in ("venv", ".venv", "env", ".env", "virtualenv"):
+            venv_path = ws_path / candidate
+            if not venv_path.is_dir():
+                continue
+
+            # Linux/macOS: bin/python or bin/python3
+            bin_dir = venv_path / "bin"
+            bin_python = bin_dir / "python"
+            bin_python3 = bin_dir / "python3"
+            # Windows: Scripts/python.exe
+            scripts_dir = venv_path / "Scripts"
+            scripts_python = scripts_dir / "python.exe"
+
+            if bin_python.exists():
+                venv_py = str(bin_python)
+            elif bin_python3.exists():
+                venv_py = str(bin_python3)
+            elif scripts_python.exists():
+                venv_py = str(scripts_python)
+            else:
+                continue
+
+            ver = AgentFactory._get_python_version(venv_py)
+            venv_dirs.append((candidate, ver))
+
+        return venv_dirs
 
     def _load_agent_configs(self, config_dir):
         configs = []
