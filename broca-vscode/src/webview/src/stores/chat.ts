@@ -1091,16 +1091,21 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleTurnEndMessage(message: Message) {
-    const turnId = message.turn_id || ''
-    const turn = turnSummaries.value.find(t => t.turnId === turnId) ||
-                 turnSummaries.value.find(t => t.isActive)
+    const turnId = message.turn_id || message.data?.turn_id
+    if (!turnId) return
 
-    if (!turn) return
+    const idx = turnSummaries.value.findIndex(t => t.turnId === turnId)
+    if (idx === -1) return
 
+    const turn = turnSummaries.value[idx]
     turn.isActive = false
-    turn.totalDuration = Math.floor((Date.now() - turn.startedAt) / 1000)
+    turn.totalDuration = (Date.now() - turn.startedAt) / 1000
     turn.status = message.data?.status === 'error' || message.data?.status === 'aborted' ? 'error' : 'completed'
-    stopDurationTimer()
+
+    if (activeTurnIndex.value === idx) {
+      activeTurnIndex.value = -1
+      stopDurationTimer()
+    }
 
     // 保存 turn_end 消息 ID 用于撤销定位（始终安全，后端可能已删除最后响应消息）
     turn.lastMessageId = message.message_id || ''
