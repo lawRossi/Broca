@@ -981,35 +981,31 @@ export const useChatStore = defineStore('chat', () => {
       }))
 
       if (skip === 0) {
-        // 合并 API 返回的 turn 和当前存在的 turn（去重，非 API 的 turn 放最后）。
-        // 注意：不能只使用 API 调用前保存的 activeTurns，因为在 await 期间，
-        // socket 事件（handleTurnStartMessage）可能向 turnSummaries 添加了新的活跃 turn。
-        // 如果只合并 activeTurns，这些中途添加的 turn 会被下面的赋值语句覆盖丢失。
+        // 以 API 数据为权威，重建 turn 列表。每次切换简洁模式时都重新加载，
+        // 确保数据完整性（API 来自数据库，不会因 socket 断连而缺失）。
         const seenIds = new Set(turnList.map(t => t.turnId))
-        // 捕获当前 turnSummaries 中所有未被 API 数据覆盖的 turn
-        // 包含：(1) API 调用前就活跃的 turn (2) API 调用期间 socket 新添加的 turn
-        const currentLive = turnSummaries.value.filter(t => !seenIds.has(t.turnId))
 
-        // 策略：API 数据是数据库快照，保证完整性；socket 数据有实时流式更新。
-        // 对于同 turnId 的 turn，以 API 为 base，再将 socket 的流式字段叠加上去。
-        const merged = [...turnList, ...currentLive]
+        // 只保留 socket 独有的活跃 turn（API 尚未返回的），
+        // 不保留已完成 turn（它们可以通过上滑重新加载）。
+        // 这样避免了新旧数据混合导致的重复卡片问题。
+        const socketOnlyActive = turnSummaries.value.filter(t => t.isActive && !seenIds.has(t.turnId))
+        const merged = [...turnList, ...socketOnlyActive]
+
+        // 按 turnId 去重（防御性措施）
         const dedupMap = new Map<string, TurnSummary>()
-
-        // 先放入所有 turn（API + currentLive），同 turnId 时 currentLive 覆盖 API
         for (const t of merged) {
           dedupMap.set(t.turnId, t)
         }
 
-        // 活跃 turn 的流式字段：以 API 版本为 base，叠加 socket 的实时数据
+        // 活跃 turn 的流式字段：API 版本为 base，叠加 socket 实时数据
         for (const socketTurn of turnSummaries.value) {
           const apiTurn = dedupMap.get(socketTurn.turnId)
           if (!apiTurn || !socketTurn.isActive) continue
-          // 只覆盖实时流式字段，其余字段（如 finalResponse、status）以 API 为准
           apiTurn.totalDuration = socketTurn.totalDuration
           apiTurn.currentTool = socketTurn.currentTool || apiTurn.currentTool
           apiTurn.currentFilePath = socketTurn.currentFilePath || apiTurn.currentFilePath
           apiTurn.currentTodoList = socketTurn.currentTodoList.length > 0 ? socketTurn.currentTodoList : apiTurn.currentTodoList
-          apiTurn.isActive = true  // socket 标记为活跃说明 turn 仍在进行中
+          apiTurn.isActive = true
         }
 
         turnSummaries.value = Array.from(dedupMap.values())

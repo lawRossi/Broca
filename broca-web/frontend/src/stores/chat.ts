@@ -1012,17 +1012,14 @@ export const useChatStore = defineStore('chat', () => {
         }
         turnSummaries.value = Array.from(dedupMap.values())
       } else {
-        // 合并 API 返回的 turn 和当前存在的活跃 turn（去重，活跃 turn 放最后）
-        // 注意：不能只使用 API 调用前保存的 activeTurns，因为在 await 期间，
-        // socket 事件（handleTurnStart）可能向 turnSummaries 添加了新的活跃 turn。
-        // 如果只合并 activeTurns，这些中途添加的 turn 会被下面的赋值语句覆盖丢失。
+        // 以 API 数据为权威，重建 turn 列表。每次切换简洁模式时都重新加载，
+        // 确保数据完整性（API 来自数据库，不会因 socket 断连而缺失）。
         const seenIds = new Set(newSummaries.map(t => t.turnId))
-        // 捕获当前 turnSummaries 中所有未被 API 数据覆盖的 turn
-        // 包含：(1) API 调用前就活跃的 turn (2) API 调用期间 socket 新添加的 turn
-        const currentLive = turnSummaries.value.filter(t => !seenIds.has(t.turnId))
+        // 只保留 socket 独有的活跃 turn（API 尚未返回的），不保留已完成 turn。
+        const socketOnlyActive = turnSummaries.value.filter(t => t.isActive && !seenIds.has(t.turnId))
         // 策略：API 数据是数据库快照，保证完整性；socket 数据有实时流式更新。
         // 以 API 为 base，再将 socket 的流式字段叠加上去。
-        const merged = [...newSummaries, ...currentLive]
+        const merged = [...newSummaries, ...socketOnlyActive]
         const dedupMap = new Map<string, TurnSummary>()
         for (const t of merged) {
           dedupMap.set(t.turnId, t)
