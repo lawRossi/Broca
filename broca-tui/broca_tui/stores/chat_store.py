@@ -169,6 +169,7 @@ class ChatStore:
         # Callbacks
         self._on_change: Optional[Callable[[], None]] = None
         self._on_error: Optional[Callable[[str], None]] = None
+        self._on_info: Optional[Callable[[str], None]] = None
         self._on_permission: Optional[Callable[[Dict[str, Any]], None]] = None
         self._on_agent_query: Optional[Callable[[Dict[str, Any]], None]] = None
         self._on_message: Optional[Callable[[Dict[str, Any]], None]] = None
@@ -182,6 +183,10 @@ class ChatStore:
     def on_error(self, callback: Callable[[str], None]):
         """Register callback for errors."""
         self._on_error = callback
+
+    def on_info(self, callback: Callable[[str], None]):
+        """Register callback for info/success notifications."""
+        self._on_info = callback
 
     def on_permission_request(self, callback: Callable[[Dict[str, Any]], None]):
         """Register callback for permission requests."""
@@ -245,6 +250,11 @@ class ChatStore:
         """Notify UI of error, with JSON cleaned from message."""
         if self._on_error:
             self._on_error(_clean_error_message(message))
+
+    def _notify_info(self, message: str):
+        """Notify UI with info/success message."""
+        if self._on_info:
+            self._on_info(message)
 
     # ==================== Socket.IO Connection ====================
 
@@ -570,6 +580,16 @@ class ChatStore:
                     asyncio.ensure_future(
                         self.load_turn_history(filter_execution_id=self.execution_id)
                     )
+                return
+            elif command == "clear_context":
+                self._notify_info("上下文已清空")
+                return
+            elif command == "clear_history":
+                self._notify_info("历史记录已清空")
+                import asyncio
+                asyncio.ensure_future(
+                    self.load_turn_history(filter_execution_id=self.execution_id)
+                )
                 return
 
         # Clear redo state on new messages (undo result is command_result, so it won't be cleared)

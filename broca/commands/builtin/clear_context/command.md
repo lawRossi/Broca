@@ -4,5 +4,5 @@ description: Clear all context messages (mark as compressed), optionally clear s
 argument_hint: ""
 type: local
 is_hidden: true
-show_result: false
+show_result: true
 ---

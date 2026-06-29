@@ -237,6 +237,9 @@ class ChatScreen(Screen):
         self._chat_store.on_error(
             lambda msg: self.notify(msg, severity="error", timeout=5, markup=False)
         )
+        self._chat_store.on_info(
+            lambda msg: self.notify(msg, severity="information", timeout=3, markup=False)
+        )
         self._chat_store.on_permission_request(
             lambda d: self.run_worker(self._show_permission_dialog(d))
         )

@@ -494,6 +494,14 @@ export const useChatStore = defineStore('chat', () => {
         // 简洁模式：重新加载 turn 历史（reset=true 清空旧数据，因为底层数据已改变）
         if (sessionId.value) loadTurnHistory(sessionId.value, false, executionId.value, true)
         return
+      } else if (message.data?.command === 'clear_context') {
+        showError('上下文已清空', 'info', 3000)
+        return
+      } else if (message.data?.command === 'clear_history') {
+        showError('历史记录已清空', 'info', 3000)
+        loadHistory(0, 50)
+        if (sessionId.value) loadTurnHistory(sessionId.value, false, executionId.value, true)
+        return
       }
     }
 

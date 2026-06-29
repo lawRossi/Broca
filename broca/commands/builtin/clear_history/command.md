@@ -4,5 +4,5 @@ description: Mark all agent messages as reverted, optionally clear session memor
 argument_hint: ""
 type: local
 is_hidden: true
-show_result: false
+show_result: true
 ---

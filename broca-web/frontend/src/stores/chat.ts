@@ -1173,6 +1173,24 @@ export const useChatStore = defineStore('chat', () => {
         return
       }
 
+      // clear_context: 提示上下文已清空
+      if (m.message_type === 'command_result' && m.data?.command === 'clear_context') {
+        const { ElMessage } = await import('element-plus')
+        ElMessage.success('上下文已清空')
+        addMessage(m)
+        return
+      }
+
+      // clear_history: 提示并重新加载消息列表（消息已被标记为 reverted）
+      if (m.message_type === 'command_result' && m.data?.command === 'clear_history') {
+        const { ElMessage } = await import('element-plus')
+        ElMessage.success('历史记录已清空')
+        loadHistory(sessionId.value, false, executionId.value)
+        loadTurnHistory(sessionId.value, false, executionId.value, true) // reset=true: 数据已改变
+        addMessage(m)
+        return
+      }
+
       // 如果是新消息（非命令结果），清除重做状态
       if (m.message_type !== 'command_result') {
         showRedoButton.value = false
