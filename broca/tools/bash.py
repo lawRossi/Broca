@@ -26,9 +26,12 @@ class Bash(Tool):
     def description(self) -> str:
         return (
             "Use this tool to execute code using shell. "
-            "**Note**: 1. Your default python path points to a specical standalone python environment. "
+            "**Note**: 1. Your default python path points to a special standalone python environment. "
             "When running python-related code, use the correct python environment.\n"
-            "2. Only run shell code supported by the current platform."
+            "2. Only run shell code supported by the current platform.\n"
+            "3. For long-running commands (dev servers, watchers, etc.), "
+            "set `background: true` to run in background without timeout. "
+            "The command output will be saved to files for later inspection."
         )
 
     @property
@@ -42,7 +45,13 @@ class Bash(Tool):
                 },
                 "background": {
                     "type": "boolean",
-                    "description": "Run in background via scheduler. Use for long-running commands or when user explicitly requests background execution. When true, returns immediately with a job ID for tracking instead of waiting for completion.",
+                    "description": "Run in background without timeout. Use for long-running commands like dev servers, file watchers, or any command that doesn't terminate. The output is redirected to files and can be tracked via cron tool. When False (default), commands have a 120s timeout.",
+                    "default": False
+                },
+                "notify": {
+                    "type": "boolean",
+                    "description": "When background=True, whether to send a notification when the process completes. Default: False (no notification). Use cron tool's get_job to check status instead.",
+                    "default": False
                 },
             },
             "required": ["code"],
@@ -51,9 +60,15 @@ class Bash(Tool):
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         code = arguments["code"]
         background = arguments.get("background", False)
+        notify = arguments.get("notify", False)
 
-        if background:
-            return await self._run_background(code, context)
+        # 检测命令是否包含 &（shell background operator）
+        has_shell_bg = self._detect_background_ampersand(code)
+
+        if background or has_shell_bg:
+            if has_shell_bg:
+                code = self._strip_background_ampersand(code)
+            return await self._run_background(code, context, notify=notify)
 
         is_safe, reason, snippet = self._validate_code(code)
         if not is_safe:
@@ -103,7 +118,35 @@ class Bash(Tool):
                 return True
         return False
 
-    async def _run_background(self, code: str, context: ToolCallContext) -> ToolResult:
+    def _detect_background_ampersand(self, code: str) -> bool:
+        """检测命令是否以 shell background operator & 结尾
+
+        检测规则：
+        - 代码去除首尾空白后以 & 结尾
+        - 允许结尾有分号、空格、注释（# 后内容被忽略）
+        """
+        stripped = code.strip()
+        # 去掉注释
+        if "#" in stripped:
+            stripped = stripped.rsplit("#", 1)[0]
+        return stripped.rstrip().rstrip(";").rstrip().endswith("&")
+
+    def _strip_background_ampersand(self, code: str) -> str:
+        """去除命令末尾的 & 和尾随空白"""
+        # 先去除注释
+        lines = code.rsplit("#", 1)
+        main_code = lines[0]
+        # 处理 &、;、空格的各种组合（如 "cmd &"、"cmd &;"、"cmd ;&"）
+        while main_code and main_code[-1] in ";& ":
+            main_code = main_code.rstrip(";& ").rstrip()
+        # 如果本来有注释，保留它
+        if len(lines) > 1:
+            return main_code + "  # " + lines[1]
+        return main_code
+
+    async def _run_background(
+        self, code: str, context: ToolCallContext, notify: bool = False
+    ) -> ToolResult:
         """Schedule code execution via the scheduler for background running."""
         try:
             scheduler = Scheduler()
@@ -117,10 +160,17 @@ class Bash(Tool):
                 trigger_config={},
                 content=code,
                 agent_id=context.agent.agent_id,
+                notify=notify,
             )
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                content=f"Code scheduled for background execution\nJob ID: {job_id}\nYou'll be notified when it's done. ",
+                content=(
+                    f"Code scheduled for background execution\n"
+                    f"Job ID: {job_id}\n"
+                    f"Output will be saved to .broca/process_outputs/\n"
+                    f"Use `cron` tool with action='get_job' to check status\n"
+                    f"Use `read_file` to view output files"
+                ),
             )
         except Exception as e:
             logger.error(f"Failed to schedule background execution: {e}")

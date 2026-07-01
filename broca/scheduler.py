@@ -16,6 +16,7 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from broca.logging_config import get_logger
+from broca.process_manager import ProcessManager, ProcessStatus
 from broca.session.models import JobStatus, JobType, MessageProtocol
 from broca.session.service import get_job_execution_service, get_job_service
 from broca.utils.datetime_util import serialize_dt
@@ -51,6 +52,8 @@ class Scheduler:
             self.apscheduler = AsyncIOScheduler()
             self.job_service = get_job_service()
             self.execution_service = get_job_execution_service()
+            self._job_process_map: Dict[str, str] = {}  # job_id → process_id
+            self._job_notify_map: Dict[str, bool] = {}  # job_id → notify flag
             logger.info("Scheduler initialized")
 
     @property
@@ -177,6 +180,7 @@ class Scheduler:
         trigger_config: Dict[str, Any],
         content: str,
         agent_id: Optional[str] = None,
+        notify: bool = False,
     ) -> str:
         """
         添加任务
@@ -188,6 +192,7 @@ class Scheduler:
             trigger_config: 触发器配置
             content: 执行内容（消息或命令）
             agent_id: 关联的Agent ID（可选）
+            notify: 命令执行完成后是否通知 Agent（仅 COMMAND 类型有效）
 
         Returns:
             任务ID
@@ -235,8 +240,12 @@ class Scheduler:
             # 更新下次执行时间（转为 UTC 后存储，与其他模型字段一致）
             await self.job_service.update_next_run_time(job_id, _aps_to_utc(aps_job.next_run_time))
 
+            # 存储 notify 标志（仅 COMMAND 类型）
+            if job_type == JobType.COMMAND and notify:
+                self._job_notify_map[job_id] = True
+
             logger.info(
-                f"Added job: {name} (ID: {job_id}), next run: {aps_job.next_run_time}"
+                f"Added job: {name} (ID: {job_id}), next run: {aps_job.next_run_time}, notify={notify}"
             )
 
             return job_id
@@ -363,7 +372,7 @@ class Scheduler:
                 job_id, limit=5
             )
 
-            return {
+            result = {
                 "job_id": job.job_id,
                 "name": job.name,
                 "type": job.job_type.value,
@@ -387,6 +396,26 @@ class Scheduler:
                     for exec in executions
                 ],
             }
+
+            # 如果有关联的运行中进程，添加进程状态信息
+            process_id = self._job_process_map.get(job_id)
+            if process_id:
+                pm = ProcessManager()
+                pinfo = pm.get_status(process_id)
+                if pinfo:
+                    elapsed = (
+                        datetime.now(timezone.utc) - pinfo.start_time
+                    ).total_seconds() if pinfo.start_time else 0
+                    result["process_status"] = {
+                        "process_id": pinfo.process_id,
+                        "pid": pinfo.pid,
+                        "status": pinfo.status.value,
+                        "running_seconds": int(elapsed),
+                        "stdout_path": str(pinfo.stdout_path) if pinfo.stdout_path else None,
+                        "stderr_path": str(pinfo.stderr_path) if pinfo.stderr_path else None,
+                    }
+
+            return result
 
         except Exception as e:
             logger.error(f"Failed to get job {job_id}: {e}")
@@ -443,7 +472,7 @@ class Scheduler:
     async def _execute_command(
         self, job_id: str, command: str, agent_id: Optional[str] = None
     ):
-        """执行命令任务（异步非阻塞）"""
+        """执行命令任务（通过 ProcessManager，无超时，异步非阻塞）"""
         try:
             logger.info(
                 f"Executing command job: {job_id}, command: {command}, agent_id: {agent_id}"
@@ -469,73 +498,35 @@ class Scheduler:
                 )
                 return
 
-            # ── 异步执行命令（替代同步的 subprocess.run） ──
-            process = await asyncio.create_subprocess_shell(
-                command,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            # ── 使用 ProcessManager 启动进程（取消 600s 硬超时） ──
+            pm = ProcessManager()
+            info = await pm.start_process(command)
+            self._job_process_map[job_id] = info.process_id
 
-            try:
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=600
-                )
-                returncode = process.returncode
-                stdout_text = stdout.decode("utf-8", errors="replace") if stdout else ""
-                stderr_text = stderr.decode("utf-8", errors="replace") if stderr else ""
+            notify = self._job_notify_map.get(job_id, False)
 
-            except asyncio.TimeoutError:
-                try:
-                    process.kill()
-                    await process.wait()
-                except Exception:
-                    pass
-                error_msg = f"命令执行超时: {command}"
-                logger.error(error_msg)
-                if agent_id:
-                    try:
-                        await self._send_message_to_agent(
-                            agent_id, f"命令执行超时: {command}"
-                        )
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to send timeout notification to agent {agent_id}: {e}"
-                        )
-                await self.execution_service.create_execution(
-                    job_id=job_id, success=False, result=error_msg
-                )
-                return
-
-            output = f"job id:{job_id}\n"
-            output += f"返回码: {returncode}\n"
-            output += f"输出: {stdout_text}\n"
-            if stderr_text:
-                output += f"错误: {stderr_text}\n"
-
-            logger.info(f"Executed command: {command}, return code: {returncode}")
-
-            # 如果指定了agent_id，将执行结果发送给agent
-            if agent_id:
+            # 如果设置了 notify，通知 Agent 进程已启动
+            if notify and agent_id:
                 try:
                     await self._send_message_to_agent(
                         agent_id,
-                        f"命令{job_id}执行完成, 返回码: {returncode}，可通过cron工具的get_job查看详细结果",
+                        f"后台命令已启动 (Job: {job_id}, PID: {info.pid})\n"
+                        f"输出文件: {info.stdout_path}",
                     )
                 except Exception as e:
                     logger.warning(
-                        f"Failed to send command result to agent {agent_id}: {e}"
+                        f"Failed to send start notification to agent {agent_id}: {e}"
                     )
 
-            # 记录执行结果
-            await self.execution_service.create_execution(
-                job_id=job_id, success=returncode == 0, result=output
+            # 后台等待进程结束（不阻塞 APScheduler 调度循环）
+            asyncio.create_task(
+                self._wait_and_record(job_id, info, agent_id)
             )
 
         except Exception as e:
             error_msg = f"命令执行失败: {command}, 错误: {str(e)}"
             logger.error(error_msg)
 
-            # 如果指定了agent_id，通知错误
             if agent_id:
                 try:
                     await self._send_message_to_agent(
@@ -547,13 +538,141 @@ class Scheduler:
                         f"Failed to send error notification to agent {agent_id}: {e}"
                     )
 
-            # 记录执行失败
             await self.execution_service.create_execution(
                 job_id=job_id, success=False, result=error_msg
             )
 
-        # 清理一次性任务
-        await self._cleanup_one_time_job(job_id)
+    async def _wait_and_record(
+        self,
+        job_id: str,
+        process_info: Any,
+        agent_id: Optional[str] = None,
+    ):
+        """后台等待进程结束，记录执行结果"""
+        try:
+            # 等待进程结束（无超时）
+            exit_code = await process_info._process.wait()
+
+            # 更新进程状态（仅在未被 stop_process 中断过时修改）
+            # 如果 cancel_job_execution 已设置 STOPPED/KILLED，保留原状态
+            from broca.process_manager import ProcessStatus
+            if process_info.status == ProcessStatus.RUNNING:
+                if exit_code == 0:
+                    process_info.status = ProcessStatus.COMPLETED
+                else:
+                    process_info.status = ProcessStatus.FAILED
+            process_info.exit_code = exit_code
+
+            # 读取输出文件摘要（尾部 500 字节）
+            stdout_preview = ""
+            stderr_preview = ""
+            try:
+                if process_info.stdout_path and process_info.stdout_path.exists():
+                    stdout_preview = self._tail_file(
+                        process_info.stdout_path, 500
+                    )
+                if process_info.stderr_path and process_info.stderr_path.exists():
+                    stderr_preview = self._tail_file(
+                        process_info.stderr_path, 200
+                    )
+            except Exception:
+                pass
+
+            output = (
+                f"job id: {job_id}\n"
+                f"返回码: {exit_code}\n"
+                f"输出文件: {process_info.stdout_path}\n"
+                f"错误文件: {process_info.stderr_path}\n"
+            )
+            if stdout_preview:
+                output += f"输出预览: {stdout_preview}\n"
+            if stderr_preview:
+                output += f"错误预览: {stderr_preview}\n"
+
+            logger.info(
+                f"Command job {job_id} finished: exit_code={exit_code}"
+            )
+
+            # 如果设置了 notify，通知 Agent
+            notify = self._job_notify_map.get(job_id, False)
+            if notify and agent_id:
+                try:
+                    await self._send_message_to_agent(
+                        agent_id,
+                        f"命令 {job_id} 执行完成, "
+                        f"返回码: {exit_code}",
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to send completion to agent {agent_id}: {e}"
+                    )
+
+            # 记录执行结果
+            await self.execution_service.create_execution(
+                job_id=job_id,
+                success=exit_code == 0,
+                result=output,
+            )
+
+        except Exception as e:
+            error_msg = f"等待命令 {job_id} 完成时出错: {e}"
+            logger.error(error_msg)
+            await self.execution_service.create_execution(
+                job_id=job_id, success=False, result=error_msg,
+            )
+
+        finally:
+            # 清理映射关系
+            self._job_process_map.pop(job_id, None)
+            self._job_notify_map.pop(job_id, None)
+
+            # 清理一次性任务
+            await self._cleanup_one_time_job(job_id)
+
+    def _tail_file(self, path, max_bytes: int = 500) -> str:
+        """读取文件尾部内容"""
+        try:
+            file_size = path.stat().st_size
+            if file_size == 0:
+                return ""
+            with open(path, "r") as f:
+                if file_size <= max_bytes:
+                    return f.read()
+                f.seek(file_size - max_bytes)
+                # 跳过不完整的行
+                f.readline()
+                return f.read()
+        except Exception:
+            return ""
+
+    async def cancel_job_execution(self, job_id: str) -> bool:
+        """取消正在运行的命令执行
+
+        Args:
+            job_id: 任务 ID
+
+        Returns:
+            是否成功取消
+        """
+        process_id = self._job_process_map.get(job_id)
+        if not process_id:
+            logger.warning(
+                f"No running process found for job {job_id}"
+            )
+            return False
+
+        pm = ProcessManager()
+        success = await pm.stop_process(process_id, force=True)
+        if success:
+            logger.info(
+                f"Cancelled job execution: {job_id} (process: {process_id})"
+            )
+            await self.execution_service.create_execution(
+                job_id=job_id,
+                success=False,
+                result=f"Job execution cancelled by user",
+            )
+        return success
 
     async def _send_message_to_agent(self, agent_id: str, content: str):
         """向指定agent发送消息"""
@@ -634,5 +753,12 @@ class Scheduler:
 
     async def cleanup(self):
         """清理资源"""
+        # 清理 ProcessManager 中的所有存活进程
+        pm = ProcessManager()
+        await pm.cleanup()
+
+        self._job_process_map.clear()
+        self._job_notify_map.clear()
+
         await self.shutdown()
         logger.info("Scheduler cleaned up")

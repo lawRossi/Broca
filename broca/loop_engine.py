@@ -571,17 +571,22 @@ class LoopEngine:
                             async with self.error_handler.handle_tool_execution(
                                 tool_name=tool_name, context="tool_call_processing"
                             ):
-                                timeout = (
-                                    self.assign_task_timeout
-                                    if tool_name == "assign_task"
-                                    else self.tool_call_timeout
-                                )
-                                tool_result = await asyncio.wait_for(
-                                    self.tool_mapping[tool_name].execute(
+                                if self._should_skip_tool_timeout(tool_name, arguments):
+                                    tool_result = await self.tool_mapping[tool_name].execute(
                                         arguments, context
-                                    ),
-                                    timeout=timeout,
-                                )
+                                    )
+                                else:
+                                    timeout = (
+                                        self.assign_task_timeout
+                                        if tool_name == "assign_task"
+                                        else self.tool_call_timeout
+                                    )
+                                    tool_result = await asyncio.wait_for(
+                                        self.tool_mapping[tool_name].execute(
+                                            arguments, context
+                                        ),
+                                        timeout=timeout,
+                                    )
                         except AgentError as e:
                             logger.error(
                                 f"Tool execution failed with {e.error_type}: {e.message}"
@@ -614,17 +619,22 @@ class LoopEngine:
                         async with self.error_handler.handle_tool_execution(
                             tool_name=tool_name, context="tool_call_processing"
                         ):
-                            timeout = (
-                                self.assign_task_timeout
-                                if tool_name == "assign_task"
-                                else self.tool_call_timeout
-                            )
-                            tool_result = await asyncio.wait_for(
-                                self.tool_mapping[tool_name].execute(
+                            if self._should_skip_tool_timeout(tool_name, arguments):
+                                tool_result = await self.tool_mapping[tool_name].execute(
                                     arguments, context
-                                ),
-                                timeout=timeout,
-                            )
+                                )
+                            else:
+                                timeout = (
+                                    self.assign_task_timeout
+                                    if tool_name == "assign_task"
+                                    else self.tool_call_timeout
+                                )
+                                tool_result = await asyncio.wait_for(
+                                    self.tool_mapping[tool_name].execute(
+                                        arguments, context
+                                    ),
+                                    timeout=timeout,
+                                )
                     except AgentError as e:
                         logger.error(
                             f"Tool execution failed with {e.error_type}: {e.message}"
@@ -639,6 +649,18 @@ class LoopEngine:
 
             if not await self.process_tool_call_result(tool_call, tool_result):
                 raise Exception("Tool call result processing failed")
+
+    def _should_skip_tool_timeout(self, tool_name: str, arguments: dict) -> bool:
+        """判断是否应跳过工具执行的外层超时
+
+        bash 工具的 background 模式在工具内部快速通过 Scheduler 异步返回，
+        不需要 LoopEngine 的外层 wait_for 限制。
+        """
+        return (
+            tool_name == "bash"
+            and isinstance(arguments, dict)
+            and arguments.get("background", False)
+        )
 
     def check_step_has_write_operations(self, tool_calls: List[Any]):
         """
