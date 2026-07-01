@@ -1022,6 +1022,11 @@ export const useChatStore = defineStore('chat', () => {
         turnSummaries.value = Array.from(dedupMap.values())
       }
 
+      // 按 sequenceNumber 排序，确保正确的时序顺序
+      // 历史背景：merge 时 newSummaries（最近 turn）在前、currentLive（旧 turn）在后，
+      // 导致旧 turn 被放置在列表末尾，出现已完成的旧 turn 排在新 turn 后方的错误时序。
+      turnSummaries.value.sort((a, b) => a.sequenceNumber - b.sequenceNumber)
+
       turnHistorySkip.value = responseSkip + turnList.length
       hasMoreTurns.value = turnHistorySkip.value < (total || 0)
     } catch (err: any) {
