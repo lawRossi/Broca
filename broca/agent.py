@@ -193,6 +193,9 @@ class Agent:
         self.communicator.register_event_handler(
             "permission_response", self._on_permission_response
         )
+        # 注册断连事件：SocketIO 底层检测到连接断开时，
+        # 立即将 agent 状态持久化为 disconnected
+        self.communicator.register_event_handler("disconnect", self._on_disconnected)
 
         from broca.tools.agent_interaction import AskUserToolManager
 
@@ -259,6 +262,18 @@ class Agent:
         """Handle error from Socket.io"""
         # Error handling is now centralized in ErrorHandler
         pass
+
+    async def _on_disconnected(self):
+        """Handle Socket.io disconnect event — immediately mark as disconnected.
+
+        SocketIOClient 在检测到底层连接断开时触发 "disconnect" 事件。
+        此处理器将 agent 状态持久化为 disconnected，确保即使进程
+        后续能重连，中间状态也能被正确记录。
+        """
+        logger.info(
+            "Agent %s socket disconnected, marking as disconnected", self.agent_id
+        )
+        await self._set_status(self.STATUS_DISCONNECTED)
 
     async def ask_for_permission(self, message: str) -> bool:
         """
@@ -332,6 +347,8 @@ class Agent:
                 if not self.is_connected():
                     if not await self.connect():
                         logger.error("Failed to connect to server")
+                        # 重连失败，将状态持久化为 disconnected
+                        await self._set_status(self.STATUS_DISCONNECTED)
                         self.running = False
                         break
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)

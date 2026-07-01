@@ -861,17 +861,51 @@ class RunnerManager:
                     )
                     runner_info.status = RunnerStatus.ERROR
                     runner_info.error_message = f"Process exited with code {poll}"
-                    dead_sessions.append(session_id)
                 else:
                     # 进程还在但心跳超时
                     runner_info.status = RunnerStatus.ERROR
                     runner_info.error_message = f"Heartbeat timeout ({elapsed:.0f}s)"
 
-        # 触发事件
+                dead_sessions.append(session_id)
+
+        # 触发事件 & 更新 Agent DB 状态
         for session_id in dead_sessions:
             runner_info = self._runners.get(session_id)
             if runner_info:
                 await self._trigger_event("session_crashed", runner_info)
+                # 将对应 session 的所有 agent 标记为 disconnected
+                await self._mark_session_agents_disconnected(session_id)
+
+    async def _mark_session_agents_disconnected(self, session_id: str) -> None:
+        """当 Runner 进程死亡时，将该 Session 下所有 Agent 标记为 disconnected
+
+        Args:
+            session_id: 要标记的 Session ID
+        """
+        try:
+            from sqlmodel import select
+
+            from broca.session.database import db_manager
+            from broca.session.models import Agent
+
+            async with db_manager.get_session() as session:
+                stmt = select(Agent).where(Agent.session_id == session_id)
+                result = await session.exec(stmt)
+                agents = result.all()
+                for agent in agents:
+                    agent.agent_status = "disconnected"
+                session.add_all(agents)
+                await session.commit()
+                if agents:
+                    logger.info(
+                        "Marked %d agents as disconnected for session %s",
+                        len(agents), session_id,
+                    )
+        except Exception as e:
+            logger.error(
+                "Failed to mark agents disconnected for session %s: %s",
+                session_id, e,
+            )
 
     async def _ipc_listener_loop(self, session_id: str) -> None:
         """

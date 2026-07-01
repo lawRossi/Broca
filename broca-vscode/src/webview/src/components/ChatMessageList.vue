@@ -171,7 +171,12 @@ const handleScroll = () => {
 
 // ==================== 生命周期 ====================
 onMounted(() => {
-  scrollToBottom()
+  // 首次挂载时，用户从其他页面切回来期望看到最新消息，
+  // 此时 scrollTop 为 0，isNearBottom() 检查不通过，
+  // 必须用 scrollToBottomImmediate 强制滚动到底部。
+  nextTick(() => {
+    scrollToBottomImmediate()
+  })
 })
 
 onUnmounted(() => {

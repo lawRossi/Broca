@@ -222,7 +222,8 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
             response_agent = db_agent.model_dump()
             # 直接使用数据库中持久化的 agent_status（由 Runner 心跳同步更新）
             # 可能的值: idle / running / disconnected
-            response_agent["status"] = response_agent.pop("agent_status", "disconnected")
+            # 保留 agent_status 供 TUI 客户端使用，同时添加 status 别名供 Web 前端使用
+            response_agent["status"] = response_agent.get("agent_status", "disconnected")
             response_agents.append(response_agent)
 
         return ApiResponse.success(response_agents)

@@ -168,9 +168,10 @@ class ChatScreen(Screen):
         try:
             await self._agent_store.fetch_agents(self._session_id)
 
-            # Default loaded agents to "idle"
+            # Default loaded agents to "idle" only when status is unknown
+            # (不要覆盖 "disconnected"，让后端正确管理连接状态)
             for agent in self._agent_store.agents:
-                if agent.get("agent_status") in (None, "", "disconnected"):
+                if agent.get("agent_status") in (None, ""):
                     agent["agent_status"] = "idle"
             self._agent_store._notify_change()
 
