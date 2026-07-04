@@ -87,7 +87,7 @@ class InfoSidebar(Widget):
                     yield Label("Agent Task:", classes="info-label")
                     yield Label("0", classes="info-value", id="info-tasks")
                 with Horizontal(classes="info-row"):
-                    yield Label("定时Job:", classes="info-label")
+                    yield Label("后台Job:", classes="info-label")
                     yield Label("0", classes="info-value", id="info-jobs")
 
             # ===== Runner Status =====

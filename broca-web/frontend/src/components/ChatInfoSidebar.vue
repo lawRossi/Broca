@@ -290,7 +290,7 @@ const getRunnerConfig = (status: string | undefined) => {
             title="Click to view jobs for this session"
           >
             <span class="text-gray-700">
-              定时Job:
+              后台Job:
             </span>
             <div class="flex items-center gap-2">
               <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
