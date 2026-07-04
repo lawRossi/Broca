@@ -20,7 +20,7 @@ from broca.process_manager import ProcessManager, ProcessStatus
 from broca.session.models import JobStatus, JobType, MessageProtocol
 from broca.session.service import get_job_execution_service, get_job_service
 from broca.utils.datetime_util import serialize_dt
-from broca.utils.shell_security import validate_shell_command
+
 
 
 def _aps_to_utc(dt: datetime | None) -> datetime | None:
@@ -478,45 +478,10 @@ class Scheduler:
                 f"Executing command job: {job_id}, command: {command}, agent_id: {agent_id}"
             )
 
-            # ── 安全检查 ────────────────────────────────────────────
-            is_safe, reason, snippet = validate_shell_command(command)
-            if not is_safe:
-                warning_msg = f"命令被安全策略拦截: {reason}\n触发代码: {snippet}"
-                logger.warning(
-                    f"Command blocked by security policy: job={job_id}, "
-                    f"command={command!r}, reason={reason}"
-                )
-                if agent_id:
-                    try:
-                        await self._send_message_to_agent(agent_id, warning_msg)
-                    except Exception as e:
-                        logger.warning(
-                            f"Failed to send security warning to agent {agent_id}: {e}"
-                        )
-                await self.execution_service.create_execution(
-                    job_id=job_id, success=False, result=warning_msg
-                )
-                return
-
             # ── 使用 ProcessManager 启动进程（取消 600s 硬超时） ──
             pm = ProcessManager()
-            info = await pm.start_process(command)
+            info = await pm.start_process(command, process_id=job_id)
             self._job_process_map[job_id] = info.process_id
-
-            notify = self._job_notify_map.get(job_id, False)
-
-            # 如果设置了 notify，通知 Agent 进程已启动
-            if notify and agent_id:
-                try:
-                    await self._send_message_to_agent(
-                        agent_id,
-                        f"后台命令已启动 (Job: {job_id}, PID: {info.pid})\n"
-                        f"输出文件: {info.stdout_path}",
-                    )
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to send start notification to agent {agent_id}: {e}"
-                    )
 
             # 后台等待进程结束（不阻塞 APScheduler 调度循环）
             asyncio.create_task(

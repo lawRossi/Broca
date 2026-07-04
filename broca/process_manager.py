@@ -102,17 +102,20 @@ class ProcessManager:
         self,
         command: str,
         cwd: Optional[str] = None,
+        process_id: Optional[str] = None,
     ) -> ProcessInfo:
         """启动一个长时间运行的进程
 
         Args:
             command: 要执行的 shell 命令
             cwd: 工作目录（默认为当前目录）
+            process_id: 自定义进程 ID（可选）。若不提供则自动生成。
 
         Returns:
             ProcessInfo: 进程信息，包含 process_id
         """
-        process_id = f"proc_{uuid.uuid4().hex[:12]}"
+        if process_id is None:
+            process_id = f"proc_{uuid.uuid4().hex[:12]}"
         proc_dir = self.OUTPUT_DIR / process_id
         proc_dir.mkdir(parents=True, exist_ok=True)
 

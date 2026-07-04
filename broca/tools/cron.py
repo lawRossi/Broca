@@ -16,6 +16,7 @@ from broca.process_manager import ProcessManager, ProcessStatus
 from broca.scheduler import Scheduler
 from broca.session.models import JobType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+from broca.utils.shell_security import validate_shell_command
 
 logger = get_logger(__name__)
 
@@ -254,6 +255,20 @@ class CronTool(Tool):
         trigger_type = arguments["trigger_type"]
         trigger = arguments["trigger"]
         agent_id = arguments.get("agent_id")
+
+        # ── 安全检查（请求用户授权） ──────────────────────
+        is_safe, reason, snippet = validate_shell_command(command)
+        if not is_safe:
+            agent = context.agent
+            permission_message = (
+                f"Schedule potentially dangerous command: {reason}\n\n"
+                f"```bash\n{snippet}\n```"
+            )
+            if not await agent.ask_for_permission(permission_message):
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content="User refused to schedule potentially dangerous command",
+                )
 
         try:
             # 解析触发器配置

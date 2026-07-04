@@ -4,6 +4,7 @@ from datetime import datetime
 from jinja2 import Template
 
 from broca.logging_config import get_logger
+from broca.process_manager import ProcessManager
 from broca.scheduler import Scheduler
 from broca.session.models import JobType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
@@ -46,12 +47,12 @@ class Bash(Tool):
                 "background": {
                     "type": "boolean",
                     "description": "Run in background without timeout. Use for long-running commands like dev servers, file watchers, or any command that doesn't terminate. The output is redirected to files and can be tracked via cron tool. When False (default), commands have a 120s timeout.",
-                    "default": False
+                    "default": False,
                 },
                 "notify": {
                     "type": "boolean",
                     "description": "When background=True, whether to send a notification when the process completes. Default: False (no notification). Use cron tool's get_job to check status instead.",
-                    "default": False
+                    "default": False,
                 },
             },
             "required": ["code"],
@@ -162,14 +163,16 @@ class Bash(Tool):
                 agent_id=context.agent.agent_id,
                 notify=notify,
             )
+            # 基于 job_id 预测输出路径
+            stdout_path = ProcessManager.OUTPUT_DIR / job_id / "stdout.log"
+            stderr_path = ProcessManager.OUTPUT_DIR / job_id / "stderr.log"
             return ToolResult(
                 status=ToolStatus.SUCCESS,
                 content=(
                     f"Code scheduled for background execution\n"
                     f"Job ID: {job_id}\n"
-                    f"Output will be saved to .broca/process_outputs/\n"
-                    f"Use `cron` tool with action='get_job' to check status\n"
-                    f"Use `read_file` to view output files"
+                    f"stdout: {stdout_path}\n"
+                    f"stderr: {stderr_path}\n"
                 ),
             )
         except Exception as e:
