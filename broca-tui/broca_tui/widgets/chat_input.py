@@ -27,19 +27,21 @@ class _ChatTextArea(TextArea):
         super().__init__(**kwargs)
         self._on_send = on_send
 
-    def _on_key(self, event: Key) -> None:
-        if event.key == "enter":
+    async def _on_key(self, event: Key) -> None:
+        """Override TextArea._on_key to send on Enter instead of newline."""
+        key = event.key
+        if key == "enter":
             event.stop()
-            # Enter → send message
+            event.prevent_default()
             if self._on_send:
                 self._on_send()
             return
-        if event.key == "shift+enter":
+        if key == "shift+enter":
             event.stop()
-            # Shift+Enter → insert newline
+            event.prevent_default()
             self.insert("\n")
             return
-        super()._on_key(event)
+        await super()._on_key(event)
 
 
 from broca_tui.api.session import SessionAPI
@@ -225,6 +227,14 @@ class ChatInput(Vertical):
         """Focus the input field."""
         self.query_one("#chat-input-field", _ChatTextArea).focus()
 
+    def _move_cursor_to_end(self):
+        """Move cursor to end of text."""
+        try:
+            input_field = self.query_one("#chat-input-field", _ChatTextArea)
+            input_field.action_cursor_line_end()
+        except Exception:
+            pass
+
     def _show_autocomplete(self, items: List[Any], type: str):
         """Show the autocomplete dropdown.
 
@@ -292,7 +302,25 @@ class ChatInput(Vertical):
             # Find the last @ in the text
             at_index = value.rfind("@")
             if at_index >= 0:
-                mention_text = value[at_index + 1 :].split(" ")[0]
+                after_at = value[at_index + 1 :]
+                mention_text = after_at.split(" ")[0]
+
+                # 如果 @ 后面有空格，说明 mention 已补全完成（名字后已有空格）
+                if " " in after_at:
+                    self._hide_autocomplete()
+                    return
+
+                # 如果 mention 文本已精确匹配某个 agent 名字，不再弹出
+                if mention_text:
+                    exact_match = any(
+                        mention_text.lower() == agent.get("name", "").lower()
+                        or mention_text.lower() == agent.get("agent_id", "").lower()
+                        for agent in self._agents
+                    )
+                    if exact_match:
+                        self._hide_autocomplete()
+                        return
+
                 matches = [
                     agent
                     for agent in self._agents
@@ -340,15 +368,8 @@ class ChatInput(Vertical):
         self._suppress_next_change = True
         self._hide_autocomplete()
         self._focus_input()
-        # 补全后将光标移到末尾
-        try:
-            input_field = self.query_one("#chat-input-field", _ChatTextArea)
-            input_field.cursor = (
-                len(input_field.text.split("\n")) - 1,
-                len(input_field.text.split("\n")[-1]),
-            )
-        except Exception:
-            pass
+        # 补全后将光标移到末尾（延迟执行，确保文本渲染完成）
+        self.set_timer(0.01, self._move_cursor_to_end)
 
     def _send_message(self):
         """Send the current message.
