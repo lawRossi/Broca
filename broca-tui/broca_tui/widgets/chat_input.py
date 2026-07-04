@@ -23,13 +23,23 @@ from textual.widgets import Button, Label, ListItem, ListView, TextArea
 class _ChatTextArea(TextArea):
     """TextArea subclass: Enter sends message, Shift+Enter inserts newline."""
 
-    def __init__(self, on_send=None, **kwargs):
+    def __init__(self, on_send=None, nav_autocomplete=None, **kwargs):
         super().__init__(**kwargs)
         self._on_send = on_send
+        self._nav_autocomplete = nav_autocomplete
 
     async def _on_key(self, event: Key) -> None:
         """Override TextArea._on_key to send on Enter instead of newline."""
         key = event.key
+        if key in ("up", "down"):
+            # 上下键优先导航补全列表
+            if self._nav_autocomplete and self._nav_autocomplete(key):
+                event.stop()
+                event.prevent_default()
+                return
+            # 无补全列表时走默认行为
+            await super()._on_key(event)
+            return
         if key == "enter":
             event.stop()
             event.prevent_default()
@@ -95,6 +105,7 @@ class ChatInput(Vertical):
         background: transparent;
         padding: 0 1;
         margin: 0;
+        color: #075985;
     }
     """
 
@@ -136,6 +147,7 @@ class ChatInput(Vertical):
             with Horizontal(classes="input-row"):
                 yield _ChatTextArea(
                     on_send=self._send_message,
+                    nav_autocomplete=self._navigate_autocomplete,
                     id="chat-input-field",
                     classes="chat-input-field",
                     soft_wrap=True,
@@ -234,6 +246,29 @@ class ChatInput(Vertical):
             input_field.action_cursor_line_end()
         except Exception:
             pass
+
+    def _navigate_autocomplete(self, direction: str) -> bool:
+        """Navigate autocomplete list with up/down keys.
+
+        Args:
+            direction: "up" or "down"
+
+        Returns:
+            True if autocomplete was navigated, False if no autocomplete visible
+        """
+        if not self._autocomplete_type or not self._filtered_items:
+            return False
+        list_view = self.query_one("#autocomplete-list", ListView)
+        if not list_view.display:
+            return False
+
+        current = list_view.index or 0
+        total = len(self._filtered_items)
+        if direction == "up":
+            list_view.index = max(0, current - 1)
+        elif direction == "down":
+            list_view.index = min(total - 1, current + 1)
+        return True
 
     def _show_autocomplete(self, items: List[Any], type: str):
         """Show the autocomplete dropdown.
