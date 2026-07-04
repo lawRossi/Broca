@@ -15,12 +15,34 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
+from textual.events import Key
 from textual.reactive import reactive
-from textual.widgets import Button, Input, Label, ListView, ListItem
-from textual.widget import Widget
+from textual.widgets import Button, Label, ListItem, ListView, TextArea
+
+
+class _ChatTextArea(TextArea):
+    """TextArea subclass: Enter sends message, Shift+Enter inserts newline."""
+
+    def __init__(self, on_send=None, **kwargs):
+        super().__init__(**kwargs)
+        self._on_send = on_send
+
+    def _on_key(self, event: Key) -> None:
+        if event.key == "enter":
+            event.stop()
+            # Enter → send message
+            if self._on_send:
+                self._on_send()
+            return
+        if event.key == "shift+enter":
+            event.stop()
+            # Shift+Enter → insert newline
+            self.insert("\n")
+            return
+        super()._on_key(event)
+
 
 from broca_tui.api.session import SessionAPI
-
 
 # Fallback commands (used when API call fails)
 FALLBACK_COMMANDS: List[Tuple[str, str, str]] = [
@@ -63,6 +85,15 @@ class ChatInput(Vertical):
         layout: vertical;
         overflow: hidden hidden;
     }
+    TextArea#chat-input-field {
+        height: auto;
+        max-height: 8;
+        min-height: 1;
+        border: none;
+        background: transparent;
+        padding: 0 1;
+        margin: 0;
+    }
     """
 
     disabled = reactive(False)
@@ -101,12 +132,15 @@ class ChatInput(Vertical):
 
             # Input row
             with Horizontal(classes="input-row"):
-                yield Input(
-                    placeholder=self._placeholder,
+                yield _ChatTextArea(
+                    on_send=self._send_message,
                     id="chat-input-field",
                     classes="chat-input-field",
+                    soft_wrap=True,
                 )
-                yield Button("发送", id="btn-send", variant="primary", classes="send-button")
+                yield Button(
+                    "发送", id="btn-send", variant="primary", classes="send-button"
+                )
 
     def set_agents(self, agents: List[Dict[str, Any]], main_agent_id: str = ""):
         """Set available agents for @mention, and optionally set the main agent ID.
@@ -141,7 +175,7 @@ class ChatInput(Vertical):
         Args:
             is_disabled: Whether input is disabled
         """
-        input_field = self.query_one("#chat-input-field", Input)
+        input_field = self.query_one("#chat-input-field", _ChatTextArea)
         input_field.disabled = is_disabled
         send_btn = self.query_one("#btn-send", Button)
         send_btn.disabled = is_disabled
@@ -181,15 +215,15 @@ class ChatInput(Vertical):
 
     def _get_input_value(self) -> str:
         """Get current input value."""
-        return self.query_one("#chat-input-field", Input).value
+        return self.query_one("#chat-input-field", _ChatTextArea).text
 
     def _set_input_value(self, value: str):
         """Set input value."""
-        self.query_one("#chat-input-field", Input).value = value
+        self.query_one("#chat-input-field", _ChatTextArea).text = value
 
     def _focus_input(self):
         """Focus the input field."""
-        self.query_one("#chat-input-field", Input).focus()
+        self.query_one("#chat-input-field", _ChatTextArea).focus()
 
     def _show_autocomplete(self, items: List[Any], type: str):
         """Show the autocomplete dropdown.
@@ -248,8 +282,7 @@ class ChatInput(Vertical):
             if len(parts) == 1:
                 cmd_prefix = parts[0].lower()
                 matches = [
-                    cmd for cmd in self._commands
-                    if cmd[0].startswith(cmd_prefix)
+                    cmd for cmd in self._commands if cmd[0].startswith(cmd_prefix)
                 ]
                 self._show_autocomplete(matches, "command")
                 return
@@ -259,9 +292,10 @@ class ChatInput(Vertical):
             # Find the last @ in the text
             at_index = value.rfind("@")
             if at_index >= 0:
-                mention_text = value[at_index + 1:].split(" ")[0]
+                mention_text = value[at_index + 1 :].split(" ")[0]
                 matches = [
-                    agent for agent in self._agents
+                    agent
+                    for agent in self._agents
                     if not mention_text  # 无过滤文本时匹配全部
                     or mention_text.lower() in agent.get("name", "").lower()
                     or mention_text.lower() in agent.get("agent_id", "").lower()
@@ -302,14 +336,17 @@ class ChatInput(Vertical):
                 rest = after[1] if len(after) > 1 else ""
                 self._set_input_value(f"{before}@{agent_name} {rest}")
 
-        # 抑制本次补全触发的 Input.Changed 重新弹出下拉
+        # 抑制本次补全触发的 Changed 事件重新弹出下拉
         self._suppress_next_change = True
         self._hide_autocomplete()
         self._focus_input()
         # 补全后将光标移到末尾
         try:
-            input_field = self.query_one("#chat-input-field", Input)
-            input_field.cursor_position = len(input_field.value)
+            input_field = self.query_one("#chat-input-field", _ChatTextArea)
+            input_field.cursor = (
+                len(input_field.text.split("\n")) - 1,
+                len(input_field.text.split("\n")[-1]),
+            )
         except Exception:
             pass
 
@@ -318,6 +355,10 @@ class ChatInput(Vertical):
 
         Parses @mention from text to determine target agent.
         """
+        if self._autocomplete_type and self._filtered_items:
+            self._select_autocomplete()
+            return
+
         if self.disabled:
             return
 
@@ -333,6 +374,7 @@ class ChatInput(Vertical):
         clean_text = value
         if "@" in value:
             import re
+
             mention_match = re.search(r"@(\S+)", value)
             if mention_match:
                 mention = mention_match.group(1)
@@ -353,28 +395,14 @@ class ChatInput(Vertical):
         if self._on_send:
             self._on_send(clean_text, target_agent_id)
 
-    def on_input_changed(self, event: Input.Changed) -> None:
+    def on_text_area_changed(self, event: TextArea.Changed) -> None:
         """Handle input text changes.
 
         Args:
-            event: Input changed event
+            event: TextArea changed event
         """
-        if event.input.id == "chat-input-field":
-            self._handle_input_change(event.value)
-
-    def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle Enter key (send message).
-
-        Args:
-            event: Input submitted event
-        """
-        if event.input.id == "chat-input-field":
-            # Don't send if autocomplete is visible
-            list_view = self.query_one("#autocomplete-list", ListView)
-            if list_view.display:
-                self._select_autocomplete()
-            else:
-                self._send_message()
+        if event.text_area.id == "chat-input-field":
+            self._handle_input_change(event.text_area.text)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle send button press.

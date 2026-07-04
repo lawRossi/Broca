@@ -450,7 +450,6 @@ Label {
 
 .chat-input-container {
     border-top: solid $gray-200;
-    padding: 0 1 1 1;
     height: auto;
 }
 

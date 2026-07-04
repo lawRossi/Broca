@@ -672,10 +672,11 @@ const handleSendMessage = async () => {
 
         <el-input
           v-model="chatStore.input"
+          type="textarea"
+          :autosize="{ minRows: 1, maxRows: 6 }"
           :placeholder="chatStore.runnerAlive ? 'Type message... 使用 / 执行命令，@ 指定agent' : '进程未运行，无法发送消息'"
           :disabled="!chatStore.runnerAlive || isUploading"
           size="default"
-          clearable
           @keydown="handleKeyDown"
         />
 
