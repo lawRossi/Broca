@@ -64,6 +64,7 @@ class AgentQueryDialog(ModalScreen):
         background: transparent;
         border: solid $border;
         text-align: left;
+        content-align: left middle;
         margin: 0 0 1 0;
     }
 
@@ -125,10 +126,9 @@ class AgentQueryDialog(ModalScreen):
                         name = opt.get("name", "")
                         desc = opt.get("description", "")
                         label = Text()
-                        label.append(f"● {name}", style="bold")
+                        label.append(f"● {name}\n", style="bold")
                         if desc:
-                            label.append(f"\n")
-                            label.append(desc, style="italic")
+                            label.append(desc, style="")
                         yield Button(label, id=f"opt-{i}", classes="option-btn")
 
                 # Custom input
