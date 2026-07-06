@@ -28,6 +28,7 @@ class ToolManager:
         "task_management",
         "todo_management",
         "cron",
+        "process_management",
         "read_blackboard",
         "list_blackboard",
         "blackboard_changes",

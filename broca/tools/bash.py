@@ -32,7 +32,6 @@ class Bash(Tool):
             "2. Only run shell code supported by the current platform.\n"
             "3. For long-running commands (dev servers, watchers, etc.), "
             "set `background: true` to run in background without timeout. "
-            "The command output will be saved to files for later inspection."
         )
 
     @property
@@ -46,12 +45,12 @@ class Bash(Tool):
                 },
                 "background": {
                     "type": "boolean",
-                    "description": "Run in background without timeout. Use for long-running commands like dev servers, file watchers, or any command that doesn't terminate. The output is redirected to files and can be tracked via cron tool. When False (default), commands have a 120s timeout.",
+                    "description": "Run in background without timeout. Use for long-running commands like dev servers, file watchers, or any command that doesn't terminate. The output is redirected to files and can be tracked via process tool. When False (default), commands have a 120s timeout.",
                     "default": False,
                 },
                 "notify": {
                     "type": "boolean",
-                    "description": "When background=True, whether to send a notification when the process completes. Default: False (no notification). Use cron tool's get_job to check status instead.",
+                    "description": "When background=True, whether to send a notification when the process completes. Default: False (no notification). Use process tool to check status instead.",
                     "default": False,
                 },
             },
