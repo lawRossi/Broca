@@ -109,9 +109,7 @@ class PermissionManager:
             - granted: True if permission is granted, False otherwise
             - session_action: None (once only), "allow" (session allow), "forbid" (session forbid)
         """
-        return await self._request_permission_impl(
-            message=message, request_type="tool"
-        )
+        return await self._request_permission_impl(message=message, request_type="tool")
 
     async def _request_permission_impl(
         self, message: str, request_type: str = "general"
@@ -154,7 +152,7 @@ class PermissionManager:
 
             # Wait for response with timeout
             try:
-                await asyncio.wait_for(response_event.wait(), timeout=60)
+                await asyncio.wait_for(response_event.wait(), timeout=90)
             except asyncio.TimeoutError:
                 logger.warning(f"Permission request {request_id} timed out")
                 await self._log_permission_timeout(request_id)
@@ -165,9 +163,7 @@ class PermissionManager:
                 request_data = self._permission_requests.get(request_id, {})
                 granted = request_data.get("granted", False) or False
                 session_action = request_data.get("session_action")
-                await self._log_permission_response(
-                    request_id, granted, session_action
-                )
+                await self._log_permission_response(request_id, granted, session_action)
                 return granted, session_action
 
         except Exception as e:

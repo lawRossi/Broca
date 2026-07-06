@@ -52,22 +52,24 @@ const selectOption = (optionName: string) => {
     <div v-if="hasOptions" class="mt-5" :class="chatStore.isMobile ? 'pl-0' : 'pl-11'">
       <div class="text-sm mb-3 options-label" :class="{ 'mb-2': chatStore.isMobile }">快捷回答:</div>
       <div class="flex flex-col gap-2 sm:gap-3">
-        <div
-          v-for="option in chatStore.agentQueryDialog.options"
-          :key="option.name"
-          class="option-card"
-          @click="selectOption(option.name)"
-        >
+      <div
+        v-for="option in chatStore.agentQueryDialog.options"
+        :key="option.name"
+        class="option-card"
+        @click="selectOption(option.name)"
+      >
+        <div class="option-text">
           <div class="option-name">
             {{ option.name }}
           </div>
           <div v-if="option.description" class="option-desc">
             {{ option.description }}
           </div>
-          <el-icon class="option-arrow">
-            <ArrowRight />
-          </el-icon>
         </div>
+        <el-icon class="option-arrow">
+          <ArrowRight />
+        </el-icon>
+      </div>
       </div>
     </div>
 
@@ -98,9 +100,13 @@ const selectOption = (optionName: string) => {
 }
 
 .option-card {
-  @apply flex items-center justify-between p-3 sm:p-4 rounded-lg border border-gray-200 bg-white cursor-pointer;
+  @apply flex items-start justify-between p-3 sm:p-4 rounded-lg border border-gray-200 bg-white cursor-pointer;
   @apply transition-all duration-200 hover:border-primary-300 hover:shadow-sm hover:bg-primary-50/50;
   min-height: 52px;
+}
+
+.option-text {
+  @apply flex flex-col min-w-0 flex-1;
 }
 
 .option-name {
@@ -110,7 +116,7 @@ const selectOption = (optionName: string) => {
 }
 
 .option-desc {
-  @apply text-gray-500 text-xs sm:text-sm mt-0.5;
+  @apply text-gray-500 text-xs sm:text-sm mt-1;
   word-break: break-word;
   overflow-wrap: break-word;
 }

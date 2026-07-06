@@ -185,7 +185,7 @@ class AskUser(Tool):
             )
 
             try:
-                await asyncio.wait_for(response_event.wait(), timeout=300)
+                await asyncio.wait_for(response_event.wait(), timeout=180)
             except asyncio.TimeoutError:
                 logger.warning(f"User question {request_id} timed out")
                 return ToolResult(

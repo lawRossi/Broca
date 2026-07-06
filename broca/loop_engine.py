@@ -653,14 +653,15 @@ class LoopEngine:
     def _should_skip_tool_timeout(self, tool_name: str, arguments: dict) -> bool:
         """判断是否应跳过工具执行的外层超时
 
-        bash 工具的 background 模式在工具内部快速通过 Scheduler 异步返回，
-        不需要 LoopEngine 的外层 wait_for 限制。
+        以下工具由自身内部 timeout 控制，不需要 LoopEngine 的外层 wait_for 限制：
+        - bash 的 background 模式：在工具内部快速通过 Scheduler 异步返回
+        - ask_user：等待用户回答，由内部 timeout（当前 180s）控制
         """
-        return (
-            tool_name == "bash"
-            and isinstance(arguments, dict)
-            and arguments.get("background", False)
-        )
+        if tool_name == "bash":
+            return isinstance(arguments, dict) and arguments.get("background", False)
+        if tool_name == "ask_user":
+            return True
+        return False
 
     def check_step_has_write_operations(self, tool_calls: List[Any]):
         """

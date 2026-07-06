@@ -57,7 +57,8 @@ class AgentQueryDialog(ModalScreen):
 
     AgentQueryDialog .option-btn {
         width: 1fr;
-        height: 3;
+        height: auto;
+        min-height: 3;
         padding: 0 1;
         background: transparent;
         border: solid $border;
@@ -124,7 +125,7 @@ class AgentQueryDialog(ModalScreen):
                         desc = opt.get("description", "")
                         label = f"● {name}"
                         if desc:
-                            label += f" — {desc}"
+                            label += f"\n{desc}"
                         yield Button(label, id=f"opt-{i}", classes="option-btn")
 
                 # Custom input
