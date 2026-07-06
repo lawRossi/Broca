@@ -511,7 +511,7 @@ class TurnCard(Widget):
             try:
                 resp_text = self.query_one("#response-text", Static)
                 now = time.time()
-                if now - self._last_response_update >= 0.025:
+                if now - self._last_response_update >= 0.020:
                     resp_text.update(
                         Markdown(
                             self._format_response(self._turn.final_response),

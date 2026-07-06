@@ -65,6 +65,7 @@ class AgentQueryDialog(ModalScreen):
         border: solid $border;
         text-align: left;
         content-align: left middle;
+        color: $text;
         margin: 0 0 1 0;
     }
 
