@@ -3,7 +3,7 @@ AgentQueryDialog (ModalScreen)
 
 Handles agent queries/questions to the user:
 - Displays question text with ❓ icon
-- Preset option cards (clickable via on_click)
+- Preset option cards (clickable via Button)
 - Custom input box (Ctrl+Enter to submit)
 - Cancel / Submit buttons
 """
@@ -12,10 +12,11 @@ from __future__ import annotations
 
 from typing import Dict, List, Optional
 
+from rich.text import Text
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label
+from textual.widgets import Button, Input, Label, Static
 
 
 class AgentQueryDialog(ModalScreen):
@@ -27,7 +28,7 @@ class AgentQueryDialog(ModalScreen):
     }
 
     AgentQueryDialog > .dialog {
-        width: 60;
+        width: 72;
         height: auto;
         max-height: 80%;
         background: $surface;
@@ -114,18 +115,20 @@ class AgentQueryDialog(ModalScreen):
             yield Label("❓ Agent 提问", classes="dialog-title")
 
             with ScrollableContainer(classes="dialog-content"):
-                # Question text
-                yield Label(self._question, classes="query-question")
+                # Question text (use Static for proper auto-wrapping)
+                yield Static(self._question, classes="query-question")
 
-                # Preset options as clickable buttons (reliable click handling)
+                # Preset options as clickable buttons with styled text
                 if self._options:
                     yield Label("快捷回答:", classes="query-options-label")
                     for i, opt in enumerate(self._options):
                         name = opt.get("name", "")
                         desc = opt.get("description", "")
-                        label = f"● {name}"
+                        label = Text()
+                        label.append(f"● {name}", style="bold")
                         if desc:
-                            label += f"\n{desc}"
+                            label.append(f"\n")
+                            label.append(desc, style="italic")
                         yield Button(label, id=f"opt-{i}", classes="option-btn")
 
                 # Custom input
