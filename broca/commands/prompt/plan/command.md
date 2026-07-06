@@ -1,9 +1,10 @@
 ---
 name: plan
-description: Generate a detailed plan using the create-plan skill.
+description: 使用create-plan skill生成详细的实施计划文档
+short_description: 生成计划文档
 type: prompt
 use_sub_agent: false
-argument_hint: "<你的目标或想法描述>"
+argument_hint: "<目标或想法描述>"
 ---
 # 制定计划
 

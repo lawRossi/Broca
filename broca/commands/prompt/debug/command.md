@@ -1,6 +1,7 @@
 ---
 name: debug
-description: Debug a bug with systematic methodology - reproduce, isolate, understand, fix, verify.
+description: 使用系统化的方法论对Bug进行复现、隔离、定位、修复和验证
+short_description: 系统化方法Debug
 type: prompt
 use_sub_agent: false
 argument_hint: "<bug描述|错误信息|相关文件>"

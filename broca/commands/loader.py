@@ -81,6 +81,9 @@ def _build_command_from_md(cmd_dir: Path) -> Optional[CommandBase]:
     # Override attributes from command.md header
     instance.name = header.get("name", instance.name)
     instance.description = header.get("description", instance.description)
+    instance.short_description = header.get(
+        "short_description", instance.short_description
+    )
     instance.argument_hint = header.get("argument_hint", instance.argument_hint)
     instance.type = header.get("type", instance.type)
     instance.is_hidden = header.get("is_hidden", instance.is_hidden)

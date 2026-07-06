@@ -27,7 +27,8 @@ class CommandBase:
     """Base class for all commands"""
 
     name: str = ""  # Command name (e.g., "help", "abort")
-    description: str = ""  # Description text for help display
+    description: str = ""  # Full description text for /help display
+    short_description: str = ""  # Short description for autocomplete display in frontend
     argument_hint: Optional[str] = None  # Argument hint (e.g., "[command_name]")
     type: str = ""  # "prompt" or "local"
     loaded_from: str = "builtin"  # Source: builtin / custom

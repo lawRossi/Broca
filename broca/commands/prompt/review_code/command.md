@@ -1,6 +1,7 @@
 ---
 name: review-code
-description: Review code quality with systematic methodology - bug detection, security, code smells, style & best practices.
+description: 对指定代码进行系统化的六维评审——正确性、安全、可读性、设计、性能、测试
+short_description: 代码评审
 type: prompt
 use_sub_agent: false
 argument_hint: "<文件路径|目录路径> [--focus=bug|security|style|all] [--depth=light|normal|deep]"

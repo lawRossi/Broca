@@ -1,6 +1,7 @@
 ---
 name: review-plan
-description: Review a plan document for completeness, clarity, feasibility, AC quality, and overall soundness before execution. Use after create-plan and before executing tasks.
+description: 在执⾏前评审计划文档的完整性、清晰度、可行性、AC 质量和整体稳健性
+short_description: 预执行计划评审
 type: prompt
 use_sub_agent: true
 sub_agent_name: assistant

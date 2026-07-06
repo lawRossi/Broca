@@ -57,34 +57,36 @@ class _ChatTextArea(TextArea):
 from broca_tui.api.session import SessionAPI
 
 # Fallback commands (used when API call fails)
-FALLBACK_COMMANDS: List[Tuple[str, str, str]] = [
-    ("/help", "显示帮助信息", "local"),
-    ("/abort", "中止当前操作", "local"),
-    ("/undo", "撤销上一步操作", "local"),
-    ("/redo", "重做已撤销的操作", "local"),
-    ("/plan", "制定执行计划", "prompt"),
-    ("/ask", "询问问题", "prompt"),
-    ("/init", "初始化项目", "prompt"),
+FALLBACK_COMMANDS: List[Tuple[str, str]] = [
+    ("/help", "显示命令帮助"),
+    ("/abort", "中止当前执行"),
+    ("/undo", "撤销上一步操作"),
+    ("/redo", "重做上一步撤销"),
+    ("/plan", "生成实施计划文档"),
+    ("/init", "初始化项目并生成概要"),
+    ("/clear_context", "清除当前 Agent 的上下文"),
+    ("/clear_all_context", "清除所有 Agent 的上下文"),
+    ("/clear_history", "清除所有 Agent 的消息历史"),
+    ("/execute-plan", "按阶段执行计划文档"),
+    ("/review-code", "系统化代码评审"),
+    ("/debug", "系统化 Debug 修复 Bug"),
 ]
 
 
-def _format_command_tuple(cmd: Dict[str, str]) -> Tuple[str, str, str]:
-    """Convert API command dict to (name, description, type) tuple.
+def _format_command_tuple(cmd: Dict[str, str]) -> Tuple[str, str]:
+    """Convert API command dict to (name, short_description) tuple.
 
     Args:
         cmd: Command dict from API
 
     Returns:
-        Tuple of (name, description, type)
+        Tuple of (name, short_description)
     """
     name = cmd.get("name", "/unknown")
     if not name.startswith("/"):
         name = f"/{name}"
-    return (
-        name,
-        cmd.get("description", ""),
-        cmd.get("type", "local"),
-    )
+    short_desc = cmd.get("short_description", "") or cmd.get("description", "")
+    return (name, short_desc)
 
 
 class ChatInput(Vertical):
@@ -126,7 +128,7 @@ class ChatInput(Vertical):
         self._placeholder = placeholder
         self._agents: List[Dict[str, Any]] = []
         self._main_agent_id: str = ""
-        self._commands: List[Tuple[str, str, str]] = list(FALLBACK_COMMANDS)
+        self._commands: List[Tuple[str, str]] = list(FALLBACK_COMMANDS)
         self._autocomplete_type: Optional[str] = None  # "command" or "mention"
         self._filtered_items: List[Any] = []
         self._selected_index: int = 0
@@ -290,8 +292,8 @@ class ChatInput(Vertical):
 
         for item in items:
             if type == "command":
-                cmd_name, cmd_desc, cmd_type = item
-                label = f"{cmd_name}  — {cmd_desc}  [{cmd_type}]"
+                cmd_name, cmd_desc = item
+                label = f"{cmd_name}  — {cmd_desc}"
             else:
                 agent_name = item.get("name", item.get("agent_id", "Unknown"))
                 label = f"@{agent_name}"

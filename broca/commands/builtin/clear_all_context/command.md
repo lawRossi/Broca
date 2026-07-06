@@ -1,6 +1,7 @@
 ---
 name: clear_all_context
-description: Clear context for ALL agents in the session — marks all messages as compressed, clears session memory, and rebuilds every agent's context
+description: 清除会话中所有 Agent 的上下文——标记所有消息为压缩、清理会话记忆、重建所有 Agent 的上下文
+short_description: 清除所有 Agent 的上下文
 argument_hint: ""
 type: local
 is_hidden: false

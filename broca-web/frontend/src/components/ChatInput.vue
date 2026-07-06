@@ -54,10 +54,9 @@ const fetchCommands = async () => {
     console.warn('获取命令列表失败:', e)
     // 后端不可用时使用静态命令列表
     allCommands.value = [
-      { name: 'help', description: 'Show available commands', type: 'local', argument_hint: '[command_name]' },
-      { name: 'ask', description: 'Answer questions only, no modifications', type: 'prompt', argument_hint: '<your question>' },
-      { name: 'init', description: 'Initialize project and generate summary', type: 'prompt', argument_hint: '' },
-      { name: 'plan', description: 'Create a plan document without executing', type: 'prompt', argument_hint: '<your goal>' },
+      { name: 'help', description: '显示命令帮助', short_description: '显示命令帮助', type: 'local', argument_hint: '[command_name]' },
+      { name: 'init', description: '初始化项目', short_description: '初始化项目', type: 'prompt', argument_hint: '' },
+      { name: 'plan', description: '生成计划文档', short_description: '生成计划文档', type: 'prompt', argument_hint: '<目标描述>' },
     ]
   }
 }
@@ -687,27 +686,21 @@ const handleSendMessage = async () => {
           class="absolute bottom-full left-0 right-0 mb-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto"
           @click.stop
         >
-          <div
-            v-for="(suggestion, index) in commandSuggestions"
-            :key="suggestion.name"
-            class="px-3 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
-            :class="{ 'bg-blue-50': index === selectedCommandIndex }"
-            @click="handleCommandClick($event, suggestion.name)"
-          >
-            <div class="flex items-center gap-2">
-              <span class="text-green-600 font-mono font-bold">/</span>
-              <div class="flex-1 min-w-0">
-                <div class="font-medium text-gray-900 font-mono">{{ suggestion.name }}</div>
-                <div class="text-xs text-gray-500 truncate">{{ suggestion.description }}</div>
+            <div
+              v-for="(suggestion, index) in commandSuggestions"
+              :key="suggestion.name"
+              class="px-3 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+              :class="{ 'bg-blue-50': index === selectedCommandIndex }"
+              @click="handleCommandClick($event, suggestion.name)"
+            >
+              <div class="flex items-center gap-2">
+                <span class="text-green-600 font-mono font-bold">/</span>
+                <div class="flex-1 min-w-0">
+                  <div class="font-medium text-gray-900 font-mono">{{ suggestion.name }}</div>
+                  <div class="text-xs text-gray-500 truncate">{{ suggestion.short_description || suggestion.description }}</div>
+                </div>
               </div>
-              <span
-                class="text-xs px-1.5 py-0.5 rounded"
-                :class="suggestion.type === 'local' ? 'bg-blue-100 text-blue-700' : 'bg-purple-100 text-purple-700'"
-              >
-                {{ suggestion.type }}
-              </span>
             </div>
-          </div>
         </div>
 
         <!-- @mention 建议列表 -->

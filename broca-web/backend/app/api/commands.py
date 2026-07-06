@@ -35,6 +35,7 @@ def _load_commands() -> list[dict]:
                     {
                         "name": cmd.name,
                         "description": cmd.description,
+                        "short_description": getattr(cmd, "short_description", ""),
                         "type": cmd.type,
                         "argument_hint": getattr(cmd, "argument_hint", ""),
                         "show_result": getattr(cmd, "show_result", False),

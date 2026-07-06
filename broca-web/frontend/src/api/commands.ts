@@ -3,6 +3,7 @@ import request from '@/utils/request'
 export interface CommandInfo {
   name: string
   description: string
+  short_description: string
   type: string
   argument_hint: string
 }

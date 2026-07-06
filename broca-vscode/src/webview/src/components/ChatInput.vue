@@ -20,6 +20,7 @@ const justSelectedMention = ref(false)
 interface CommandInfo {
   name: string
   description: string
+  short_description: string
   type: string
   argument_hint: string
 }
@@ -28,14 +29,13 @@ const allCommands = ref<CommandInfo[]>([])
 
 // Fallback commands when backend is not available
 const fallbackCommands: CommandInfo[] = [
-  { name: 'help', description: 'Show available commands', type: 'local', argument_hint: '[command_name]' },
-  { name: 'abort', description: 'Abort current operation', type: 'local', argument_hint: '' },
-  { name: 'undo', description: 'Undo last change', type: 'local', argument_hint: '' },
-  { name: 'redo', description: 'Redo last undone change', type: 'local', argument_hint: '' },
-  { name: 'ask', description: 'Answer questions only, no modifications', type: 'prompt', argument_hint: '<your question>' },
-  { name: 'init', description: 'Initialize project and generate summary', type: 'prompt', argument_hint: '' },
-  { name: 'plan', description: 'Create a plan document without executing', type: 'prompt', argument_hint: '<your goal>' },
-  { name: 'execute-plan', description: 'Execute a plan document', type: 'prompt', argument_hint: '' },
+  { name: 'help', description: '显示命令帮助', short_description: '显示命令帮助', type: 'local', argument_hint: '[command_name]' },
+  { name: 'abort', description: '中止当前执行', short_description: '中止当前执行', type: 'local', argument_hint: '' },
+  { name: 'undo', description: '撤销上一步操作', short_description: '撤销上一步操作', type: 'local', argument_hint: '' },
+  { name: 'redo', description: '重做上一步撤销', short_description: '重做上一步撤销', type: 'local', argument_hint: '' },
+  { name: 'init', description: '初始化项目并生成概要', short_description: '初始化项目并生成概要', type: 'prompt', argument_hint: '' },
+  { name: 'plan', description: '生成实施计划文档', short_description: '生成实施计划文档', type: 'prompt', argument_hint: '<目标描述>' },
+  { name: 'execute-plan', description: '按阶段执行计划文档', short_description: '按阶段执行计划文档', type: 'prompt', argument_hint: '' },
 ]
 
 // Fetch commands from the backend via extension host
@@ -588,12 +588,8 @@ const targetAgentDisplay = computed(() => {
             <span class="command-prefix">/</span>
             <div class="command-info">
               <span class="command-name">{{ suggestion.name }}</span>
-              <span class="command-desc">{{ suggestion.description }}</span>
+              <span class="command-desc">{{ suggestion.short_description || suggestion.description }}</span>
             </div>
-            <span
-              class="command-type"
-              :class="suggestion.type === 'local' ? 'type-local' : 'type-prompt'"
-            >{{ suggestion.type }}</span>
           </div>
         </div>
 

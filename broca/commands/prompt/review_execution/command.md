@@ -1,6 +1,7 @@
 ---
 name: review-execution
-description: Review the quality of plan execution against the plan file, using the create-and-run-tests skill.
+description: 对照计划文件评审执行质量——运行测试、七维评估、生成评审报告
+short_description: 评审计划文档质量
 type: prompt
 use_sub_agent: true
 sub_agent_name: assistant

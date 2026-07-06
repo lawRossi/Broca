@@ -1,9 +1,10 @@
 ---
 name: execute-plan
-description: Orchestrate per-phase plan execution using create-tasks, execute-tasks in a loop, with review pauses between phases.
+description: 按阶段循环执行计划——使用create-tasks和execute-tasks，阶段间暂停等待评审
+short_description: 执行计划文档
 type: prompt
 use_sub_agent: false
-argument_hint: "<你的计划文件>"
+argument_hint: "<计划文件路径>"
 ---
 # 执行计划
 

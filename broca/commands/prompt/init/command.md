@@ -1,6 +1,7 @@
 ---
 name: init
-description: Initialize project by reading workspace files and writing a summary to ./agents/AGENTS.md
+description: 初始化项目——扫描工作区文件，生成项目概要写入 .agents/AGENTS.md
+short_description: 初始化项目并生成概要
 type: prompt
 use_sub_agent: true
 sub_agent_name: assistant
