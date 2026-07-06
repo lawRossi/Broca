@@ -1,10 +1,12 @@
 """
 Clear Context Command
 
-Clears all agent messages in context by:
+Clears the **current agent's** context by:
 1. Marking all agent messages as compressed (is_expired=True, is_truncated=True) in database
 2. If it's the main agent (has session_memory_manager), also clears session memory
 3. Rebuilds context from scratch via build_history_from_session
+
+Use /clear_all_context to clear context for ALL agents in the session.
 """
 
 from pathlib import Path
@@ -17,7 +19,7 @@ logger = get_logger(__name__)
 
 
 class ClearContextCommand(LocalCommand):
-    """Clear all context messages, optionally clear session memory, and rebuild context"""
+    """Clear the current agent's context messages, clear session memory, and rebuild context"""
 
     async def execute(self, args: str, ctx: CommandContext) -> Optional[CommandResult]:
         # Check agent status
@@ -31,6 +33,7 @@ class ClearContextCommand(LocalCommand):
             agent = ctx.agent
             context = ctx.context
             session_manager = agent.session_manager
+            agent_name = agent.config.name or agent.agent_id
 
             # ================================================================
             # 1. Mark all agent messages as compressed in database
@@ -43,7 +46,9 @@ class ClearContextCommand(LocalCommand):
                     all_ids, is_expired=True, is_truncated=True
                 )
 
-            logger.info(f"Marked {len(all_ids)} messages as compressed for agent {agent.agent_id}")
+            logger.info(
+                f"Marked {len(all_ids)} messages as compressed for agent {agent.agent_id}"
+            )
 
             # ================================================================
             # 2. Clear session memory (if this is the main agent)
@@ -55,7 +60,9 @@ class ClearContextCommand(LocalCommand):
 
                     from broca.session_memory.memory_prompts import DEFAULT_MEMORY_TEMPLATE
 
-                    snapshot_path = Path(agent.session_memory_manager.snapshot_memory_path)
+                    snapshot_path = Path(
+                        agent.session_memory_manager.snapshot_memory_path
+                    )
                     if snapshot_path.exists():
                         snapshot_path.write_text(
                             DEFAULT_MEMORY_TEMPLATE.strip(), encoding="utf-8"
@@ -79,9 +86,30 @@ class ClearContextCommand(LocalCommand):
                 agent.agent_id, rebuild_system_prompt=True
             )
 
-            logger.info("Context rebuilt after clear_context command")
+            logger.info(
+                "Context rebuilt for agent %s after clear_context", agent_name
+            )
 
-            parts = [f"Marked {len(all_ids)} messages as compressed"]
+            # ================================================================
+            # 4. Send frontend notification with clear agent identification
+            # ================================================================
+            try:
+                await agent.communicator.send_agent_system_message(
+                    content=f"🧹 Context cleared for agent: **{agent_name}**",
+                    subscription=agent.session_id,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to send frontend notification for clear_context: %s", e
+                )
+
+            # ================================================================
+            # 5. Build result
+            # ================================================================
+            parts = [
+                f"Context cleared for agent: {agent_name}",
+                f"Marked {len(all_ids)} messages as compressed",
+            ]
             if cleared_session_memory:
                 parts.append("Session memory cleared")
             parts.append("Context rebuilt")

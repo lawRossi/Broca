@@ -1,10 +1,12 @@
 """
-Clear History Command
+Clear All Context Command
 
-Clears **all agents'** history in the same session by:
-1. Marking ALL messages and turns (across all agents) as reverted=True in database
+Clears **all agents'** context in the same session by:
+1. Marking ALL messages (across all agents) as compressed (is_expired=True, is_truncated=True)
 2. Clearing session memory (shared across agents in the session)
-3. Rebuilding context for ALL agents in the session via build_history_from_session
+3. Rebuilding context for ALL agents via build_history_from_session
+
+Use /clear_context to clear context for a single agent.
 """
 
 from pathlib import Path
@@ -16,56 +18,51 @@ from broca.logging_config import get_logger
 logger = get_logger(__name__)
 
 
-class ClearHistoryCommand(LocalCommand):
-    """Mark ALL agents' messages/turns in the session as reverted, clear session memory, and rebuild ALL agents' contexts"""
+class ClearAllContextCommand(LocalCommand):
+    """Clear ALL agents' context messages, clear session memory, and rebuild ALL agents' contexts"""
 
     async def execute(self, args: str, ctx: CommandContext) -> Optional[CommandResult]:
         if ctx.agent.status == ctx.agent.STATUS_RUNNING:
             return CommandResult(
                 type="error",
-                value="Agent is currently running, cannot clear history",
+                value="Agent is currently running, cannot clear all context",
             )
 
         try:
             agent = ctx.agent
-            context = ctx.context
             session_manager = agent.session_manager
             session_id = session_manager.session_id
 
             # ================================================================
-            # 1. Mark ALL messages in the session (all agents) as reverted
+            # 1. Mark ALL messages in the session (all agents) as compressed
             # ================================================================
-            all_messages = await session_manager.message_service.get_messages_by_session(
-                session_id, ignore_reverted=False
+            all_messages = (
+                await session_manager.message_service.get_messages_by_session(
+                    session_id, ignore_reverted=False
+                )
             )
-            msg_ids = [m.message_id for m in all_messages if m.message_id]
-            if msg_ids:
-                await session_manager.batch_update_messages(msg_ids, reverted=True)
-
-            # ================================================================
-            # 2. Mark ALL turns in the session (all agents) as reverted
-            # ================================================================
-            all_turns = await session_manager.turn_service.get_batch(
-                filters={"session_id": session_id}
-            )
-            turn_ids = [t.turn_id for t in all_turns if t.turn_id]
-            if turn_ids:
-                await session_manager.batch_update_turns(turn_ids, reverted=True)
+            all_ids = [m.message_id for m in all_messages if m.message_id]
+            if all_ids:
+                await session_manager.batch_update_messages(
+                    all_ids, is_expired=True, is_truncated=True
+                )
 
             logger.info(
-                f"Marked {len(msg_ids)} messages and {len(turn_ids)} turns "
-                f"as reverted for session {session_id} (all agents)"
+                f"Marked {len(all_ids)} messages as compressed for session "
+                f"{session_id} (all agents)"
             )
 
             # ================================================================
-            # 3. Clear session memory (shared across agents in the session)
+            # 2. Clear session memory (shared across agents in the session)
             # ================================================================
             cleared_session_memory = False
             if agent.session_memory_manager is not None:
                 try:
                     agent.session_memory_manager.reset()
 
-                    from broca.session_memory.memory_prompts import DEFAULT_MEMORY_TEMPLATE
+                    from broca.session_memory.memory_prompts import (
+                        DEFAULT_MEMORY_TEMPLATE,
+                    )
 
                     snapshot_path = Path(
                         agent.session_memory_manager.snapshot_memory_path
@@ -87,10 +84,8 @@ class ClearHistoryCommand(LocalCommand):
                     logger.error(f"Failed to clear session memory: {e}")
 
             # ================================================================
-            # 4. Rebuild context for ALL agents in the session
+            # 3. Rebuild context for ALL agents in the session
             # ================================================================
-            # AgentFactory._session_agents[session_id] maps agent_name -> Agent,
-            # covering all agents (main, sub, explorer, custom, etc.) in this session.
             rebuilt_agents: List[str] = []
             try:
                 from broca.agent_manager import AgentFactory
@@ -106,7 +101,7 @@ class ClearHistoryCommand(LocalCommand):
                         )
                         rebuilt_agents.append(a.agent_id)
                         logger.info(
-                            "Context rebuilt for agent %s after clear_history",
+                            "Context rebuilt for agent %s after clear_all_context",
                             a.agent_id,
                         )
                     except Exception as e:
@@ -122,30 +117,39 @@ class ClearHistoryCommand(LocalCommand):
                     "rebuilding only current agent's context",
                     e,
                 )
-                await context.build_history_from_session(
+                await agent.context.build_history_from_session(
                     agent.agent_id, rebuild_system_prompt=True
                 )
                 rebuilt_agents.append(agent.agent_id)
 
             # ================================================================
-            # 5. Report result
+            # 4. Send frontend notification with clear agent identification
             # ================================================================
-            try:
-                agents_in_session = (
-                    await session_manager.agent_service.get_agents_by_session(
-                        session_id
-                    )
-                )
-                agent_names = [
-                    a.name or a.agent_id[:8] for a in agents_in_session
-                ]
-                agents_info = f" ({', '.join(agent_names)})"
-            except Exception:
-                agents_info = ""
+            agent_names = [
+                a.config.name or a.agent_id[:8] for a in all_agents
+            ] if all_agents else [agent.config.name or agent.agent_id]
 
+            try:
+                await agent.communicator.send_agent_system_message(
+                    content=(
+                        f"🧹 Context cleared for **all agents**"
+                        f" ({', '.join(agent_names)})"
+                    ),
+                    subscription=agent.session_id,
+                )
+            except Exception as e:
+                logger.warning(
+                    "Failed to send frontend notification for "
+                    "clear_all_context: %s",
+                    e,
+                )
+
+            # ================================================================
+            # 5. Build result
+            # ================================================================
             parts = [
-                f"Marked {len(msg_ids)} messages and {len(turn_ids)} turns as reverted"
-                f"{agents_info}"
+                f"Context cleared for all agents ({', '.join(agent_names)})",
+                f"Marked {len(all_ids)} messages as compressed",
             ]
             if cleared_session_memory:
                 parts.append("Session memory cleared")
@@ -159,8 +163,8 @@ class ClearHistoryCommand(LocalCommand):
             )
 
         except Exception as e:
-            logger.error(f"Error executing clear_history command: {e}")
+            logger.error(f"Error executing clear_all_context command: {e}")
             return CommandResult(
                 type="error",
-                value=f"Failed to clear history: {e}",
+                value=f"Failed to clear all context: {e}",
             )
