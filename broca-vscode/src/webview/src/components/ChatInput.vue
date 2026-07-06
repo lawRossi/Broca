@@ -566,7 +566,7 @@ const targetAgentDisplay = computed(() => {
           ref="inputRef"
           v-model="chatStore.inputText"
           class="chat-input"
-          placeholder="Type a message... (use @ to mention an agent)"
+          :placeholder="chatStore.runnerAlive ? '输入/执行命令，@指定agent' : '进程未运行，无法发送消息'"
           rows="1"
           @keydown="handleKeydown"
           :disabled="!chatStore.runnerAlive"

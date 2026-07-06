@@ -92,6 +92,11 @@ const selectOption = (optionName: string) => {
 </template>
 
 <style scoped>
+.question-text {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
 .option-card {
   @apply flex items-center justify-between p-3 sm:p-4 rounded-lg border border-gray-200 bg-white cursor-pointer;
   @apply transition-all duration-200 hover:border-primary-300 hover:shadow-sm hover:bg-primary-50/50;
@@ -100,10 +105,14 @@ const selectOption = (optionName: string) => {
 
 .option-name {
   @apply font-medium text-gray-800 text-sm sm:text-base;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .option-desc {
   @apply text-gray-500 text-xs sm:text-sm mt-0.5;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .option-arrow {

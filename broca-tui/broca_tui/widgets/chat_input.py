@@ -114,7 +114,7 @@ class ChatInput(Vertical):
 
     def __init__(
         self,
-        placeholder: str = "输入消息... (Enter 发送, @ 提及 Agent)",
+        placeholder: str = "输入/执行命令，@指定agent",
         **kwargs,
     ):
         """Initialize chat input.
