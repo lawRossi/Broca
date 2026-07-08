@@ -83,6 +83,7 @@ class Agent:
         agent._setup_context(**kwargs)
         agent._setup_communicator()
         agent._setup_session_memory()
+        agent._setup_persistent_memory()
         agent._setup_permission_manager()
         agent._setup_tool_permission_manager()
         await agent._setup_tools()
@@ -217,6 +218,22 @@ class Agent:
             workspace=self.config.workspace,
             agent=self,
             config=self.config.session_memory_config,
+        )
+
+    def _setup_persistent_memory(self):
+        """Set up persistent memory manager"""
+        if not self.config.track_persistent_memory:
+            self.persistent_memory_manager = None
+            return
+
+        logger.debug("Initializing persistent memory manager")
+
+        from broca.persistent_memory import PersistentMemoryManager
+
+        self.persistent_memory_manager = PersistentMemoryManager(
+            workspace=self.config.workspace,
+            agent=self,
+            config=self.config.persistent_memory_config,
         )
 
     def _setup_tool_permission_manager(self):

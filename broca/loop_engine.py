@@ -125,6 +125,7 @@ class LoopEngine:
         self.communicator = communicator
         self.session_manager = session_manager
         self.session_memory_manager = session_memory_manager
+        self.persistent_memory_manager = getattr(agent, 'persistent_memory_manager', None)
         self.tool_permission_manager = tool_permission_manager or ToolPermissionManager(
             workspace=config.workspace if config else None
         )
@@ -411,6 +412,17 @@ class LoopEngine:
             self.session_memory_manager.increment_step()
             task = asyncio.create_task(
                 self.session_memory_manager.check_and_extract(
+                    context=self.context,
+                )
+            )
+            task.add_done_callback(
+                lambda t: t.exception() if not t.cancelled() else None
+            )
+
+        if self.persistent_memory_manager:
+            self.persistent_memory_manager.increment_step()
+            task = asyncio.create_task(
+                self.persistent_memory_manager.check_and_extract(
                     context=self.context,
                 )
             )

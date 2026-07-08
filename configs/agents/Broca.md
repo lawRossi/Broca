@@ -47,16 +47,10 @@ assistant: A helpful agent that can aid you with general tasks.
 {{bootstrap_content}}
 {%- endif -%}
 
-{% if memory_content -%}
+{% if memory_index -%}
 ## Persistent Memory
 
-{{memory_content}}
-{%- endif %}
-
-{% if user_content -%}
-## User Profile
-
-{{user_content}}
+{{memory_index}}
 {%- endif %}
 
 {% if session_memory -%}

@@ -15,6 +15,19 @@ DEFAULT_SESSION_MEMORY_CONFIG = SessionMemoryConfig()
 
 
 @dataclass
+class PersistentMemoryConfig:
+    """持久化记忆提取配置"""
+
+    minimum_messages_to_init: int = 50
+    minimum_messages_between_update: int = 30
+    steps_between_updates: int = 20
+    freshness_warning_days: int = 7
+
+
+DEFAULT_PERSISTENT_MEMORY_CONFIG = PersistentMemoryConfig()
+
+
+@dataclass
 class ContextCompactConfig:
     """上下文压缩全局配置"""
 
@@ -54,6 +67,8 @@ class AgentConfig:
         self.workspace = ""
         self.track_session_momory = False
         self.session_memory_config = DEFAULT_SESSION_MEMORY_CONFIG
+        self.track_persistent_memory = False
+        self.persistent_memory_config = DEFAULT_PERSISTENT_MEMORY_CONFIG
         self.enable_context_compression = False
         self.compact_config = DEFAULT_COMPACT_CONFIG
 
@@ -70,6 +85,11 @@ class AgentConfig:
                     )
                 elif isinstance(config[key], SessionMemoryConfig):
                     agent_config.session_memory_config = config[key]
+            elif key == "persistent_memory_config":
+                if isinstance(config[key], dict):
+                    agent_config.persistent_memory_config = PersistentMemoryConfig(**config[key])
+                elif isinstance(config[key], PersistentMemoryConfig):
+                    agent_config.persistent_memory_config = config[key]
             elif key == "compact_config":
                 if isinstance(config[key], dict):
                     agent_config.compact_config = ContextCompactConfig(**config[key])
@@ -83,6 +103,7 @@ class AgentConfig:
     def to_json(self) -> str:
         data = self.to_dict()
         data["session_memory_config"] = asdict(self.session_memory_config)
+        data["persistent_memory_config"] = asdict(self.persistent_memory_config)
         data["compact_config"] = asdict(self.compact_config)
         return json.dumps(data, ensure_ascii=False, indent=4)
 

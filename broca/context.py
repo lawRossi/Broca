@@ -11,12 +11,6 @@ from broca.session import MessageType, SessionManager
 from broca.skill_manager import SkillManager
 from broca.utils.content_security import scan_content_security
 
-# 记忆存储路径和分隔符（与 broca/tools/memory.py 保持一致）
-MEMORY_DIR = Path(".broca") / "memories"
-MEMORY_ENTRY_DELIMITER = "\n§\n"
-MEMORY_CHAR_LIMIT = 2000
-USER_CHAR_LIMIT = 1000
-
 logger = get_logger(__name__)
 
 
@@ -99,11 +93,9 @@ class Context:
         session_memory = self._load_session_memory()
         if session_memory:
             kwargs["session_memory"] = session_memory
-        memory_content, user_content = self._load_memory_store()
-        if memory_content:
-            kwargs["memory_content"] = memory_content
-        if user_content:
-            kwargs["user_content"] = user_content
+        memory_index = self._load_memory_index()
+        if memory_index:
+            kwargs["memory_index"] = memory_index
         return Template(prompt_template).render(**kwargs).strip()
 
     def _format_skills(self, skills: dict[str, dict]) -> str:
@@ -122,63 +114,40 @@ class Context:
             return session_memeory_path.read_text(encoding="utf-8").strip()
         return ""
 
-    def _load_memory_store(self) -> tuple[str, str]:
+    def _load_memory_index(self) -> str:
         """
-        加载持久化记忆存储（MEMORY.md 和 USER.md），
-        格式化为 system prompt 可注入的文本块。
+        加载 MEMORY.md 索引内容，格式化为 system prompt 可注入的文本块。
+
+        返回 MEMORY.md 的完整文本（含新鲜度标注和老化总览）。
+        无记忆时返回空字符串。
 
         Returns:
-            (memory_block, user_block): 格式化后的记忆文本块，无内容时返回空字符串
+            格式化后的记忆索引文本块
         """
-        mem_dir = MEMORY_DIR
-        if not mem_dir.exists():
-            return "", ""
+        from broca.persistent_memory import MemoryStore
 
-        memory_entries = Context._read_memory_file(mem_dir / "MEMORY.md")
-        user_entries = Context._read_memory_file(mem_dir / "USER.md")
-
-        memory_block = Context._format_memory_block(
-            "memory", memory_entries, MEMORY_CHAR_LIMIT
+        workspace = self.agent_config.workspace
+        store = MemoryStore(
+            memory_dir=Path(workspace) / ".broca" / "memories",
         )
-        user_block = Context._format_memory_block("user", user_entries, USER_CHAR_LIMIT)
-        return memory_block, user_block
-
-    @staticmethod
-    def _read_memory_file(path: Path) -> list[str]:
-        """读取记忆文件并拆分为条目列表"""
-        if not path.exists():
-            return []
-        try:
-            raw = path.read_text(encoding="utf-8")
-        except (OSError, IOError):
-            return []
-        if not raw.strip():
-            return []
-        entries = [e.strip() for e in raw.split(MEMORY_ENTRY_DELIMITER)]
-        return [e for e in entries if e]
-
-    @staticmethod
-    def _format_memory_block(target: str, entries: list[str], char_limit: int) -> str:
-        """将记忆条目格式化为 system prompt 文本块"""
-        if not entries:
+        if not store.index_path.exists():
             return ""
 
-        content = MEMORY_ENTRY_DELIMITER.join(entries)
-        current = len(content)
-        pct = min(100, int((current / char_limit) * 100)) if char_limit > 0 else 0
+        content = store._read_file(store.index_path)
+        if not content.strip():
+            return ""
 
-        if target == "user":
-            header = (
-                f"USER PROFILE (who the user is) "
-                f"[{pct}% — {current:,}/{char_limit:,} chars]"
-            )
-        else:
-            header = (
-                f"MEMORY (your personal notes) "
-                f"[{pct}% — {current:,}/{char_limit:,} chars]"
-            )
+        # 统计条目数
+        index_entries = store.read_index()
         separator = "═" * 46
-        return f"{separator}\n{header}\n{separator}\n{content}"
+        total = len(index_entries)
+        header = (
+            f"{separator}\n"
+            f"MEMORY INDEX (loaded from .broca/memories/MEMORY.md)\n"
+            f"[{total} entries]\n"
+            f"{separator}"
+        )
+        return f"{header}\n{content.strip()}"
 
     def _load_bootstrap_files(self, workspace: str) -> str | None:
         boostrap_content = ""
