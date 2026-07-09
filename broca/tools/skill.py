@@ -1,6 +1,3 @@
-import os
-from pathlib import Path
-
 from broca.tools.skill_store import SkillStore, clean_skill_name
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
@@ -9,6 +6,7 @@ class LoadSkill(Tool):
     def __init__(self):
         super().__init__(max_content_length=45000)
         from broca.skill_manager import SkillManager
+
         self.skill_manager = SkillManager()
 
     @property
@@ -62,8 +60,9 @@ class SkillManage(Tool):
     def description(self) -> str:
         return (
             "Manage skills: create a new skill, patch an existing one, "
-            "delete (archive) a skill, or manage files under its references/templates/scripts directory. "
-            "Use this when the user asks you to create or modify a skill."
+            "delete (archive) a skill, list all skills, "
+            "or manage files under its references/templates/scripts directory. "
+            "Use this when the user asks you to create, modify, or list skills."
         )
 
     @property
@@ -74,11 +73,11 @@ class SkillManage(Tool):
                 "action": {
                     "type": "string",
                     "description": "The operation to perform",
-                    "enum": ["create", "patch", "delete", "write_file", "remove_file"],
+                    "enum": ["create", "patch", "delete", "list", "write_file", "remove_file"],
                 },
                 "name": {
                     "type": "string",
-                    "description": "Skill name (will be auto-cleaned to slug format for 'create')",
+                    "description": "Skill name (will be auto-cleaned to slug format for 'create'). Not required for 'list'.",
                 },
                 "content": {
                     "type": "string",
@@ -97,17 +96,17 @@ class SkillManage(Tool):
                     "description": "When deleting, declare which umbrella skill this is being merged into",
                 },
             },
-            "required": ["action", "name"],
+            "required": ["action"],
         }
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         action = arguments["action"]
-        name = arguments["name"]
 
         handlers = {
             "create": self._handle_create,
             "patch": self._handle_patch,
             "delete": self._handle_delete,
+            "list": self._handle_list,
             "write_file": self._handle_write_file,
             "remove_file": self._handle_remove_file,
         }
@@ -116,14 +115,12 @@ class SkillManage(Tool):
         if not handler:
             return ToolResult(
                 status=ToolStatus.ERROR,
-                content=f"Unknown action: '{action}'. Valid: create, patch, delete, write_file, remove_file",
+                content=f"Unknown action: '{action}'. Valid: create, patch, delete, list, write_file, remove_file",
             )
 
         return await handler(arguments, context)
 
-    async def _handle_create(
-        self, args: dict, context: ToolCallContext
-    ) -> ToolResult:
+    async def _handle_create(self, args: dict, context: ToolCallContext) -> ToolResult:
         name = args["name"]
         content = args.get("content", "")
 
@@ -161,9 +158,7 @@ class SkillManage(Tool):
             content=f"Skill '{slug}' created at {skill_dir}.",
         )
 
-    async def _handle_patch(
-        self, args: dict, context: ToolCallContext
-    ) -> ToolResult:
+    async def _handle_patch(self, args: dict, context: ToolCallContext) -> ToolResult:
         name = args["name"]
         content = args.get("content", "")
 
@@ -197,9 +192,7 @@ class SkillManage(Tool):
             content=f"Skill '{name}' patched successfully.",
         )
 
-    async def _handle_delete(
-        self, args: dict, context: ToolCallContext
-    ) -> ToolResult:
+    async def _handle_delete(self, args: dict, context: ToolCallContext) -> ToolResult:
         name = args["name"]
         absorbed = args.get("absorbed_into", "")
 
@@ -214,6 +207,29 @@ class SkillManage(Tool):
 
         self._refresh_index()
         return ToolResult(status=ToolStatus.SUCCESS, content=result)
+
+    async def _handle_list(self, args: dict, context: ToolCallContext) -> ToolResult:
+        """列出所有 Skill 及其状态。"""
+        skills_info = self.store.list_all_skills()
+        store_data = self.store.read()
+
+        if not skills_info:
+            return ToolResult(
+                status=ToolStatus.SUCCESS, content="No skills found."
+            )
+
+        lines = ["Available skills:\n"]
+        for s in sorted(skills_info, key=lambda x: x["name"]):
+            name = s["name"]
+            state = s.get("state", "unknown")
+            meta = store_data.get(name, {})
+            source = meta.get("created_by", "unknown")
+            uses = meta.get("use_count", 0)
+            lines.append(f"  - {name}  (state={state}, source={source}, uses={uses})")
+
+        return ToolResult(
+            status=ToolStatus.SUCCESS, content="\n".join(lines)
+        )
 
     async def _handle_write_file(
         self, args: dict, context: ToolCallContext
@@ -285,6 +301,4 @@ class SkillManage(Tool):
         except Exception as e:
             import logging
 
-            logging.getLogger(__name__).warning(
-                f"Failed to refresh skill index: {e}"
-            )
+            logging.getLogger(__name__).warning(f"Failed to refresh skill index: {e}")
