@@ -23,9 +23,6 @@ class LoginResponse(BaseModel):
     username: str
 
 
-# 注册功能已移除：请在安装时通过 scripts/setup_admin.py 创建账户
-
-
 @router.post("/login", response_model=ApiResponse)
 async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> ApiResponse:
     """用户登录"""
@@ -42,7 +39,7 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> ApiRe
             msg="登录成功",
         )
     except AuthError as e:
-        raise HTTPException(status_code=401, detail=str(e)) from e
+        raise HTTPException(status_code=401, detail="用户名或密码错误") from e
     except Exception as e:
         logger.exception("Login error")
         raise HTTPException(status_code=500, detail="登录失败，请稍后重试") from e

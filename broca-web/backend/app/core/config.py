@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     # JWT 配置（自有认证系统）
     jwt_secret: str = os.getenv("JWT_SECRET", "broca-default-dev-secret-change-in-production")
     jwt_algorithm: str = "HS256"
-    jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "1440"))  # 默认24小时
+    jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "2880"))
 
     class Config:  # noqa: D106
         env_file = [".env.local", ".env.production", ".env.development"]
