@@ -2,7 +2,7 @@ from jinja2 import Template
 
 from broca.commands.base import CommandContext, CommandResult, LocalCommand
 from broca.logging_config import get_logger
-from broca.tools.skill_evolution import run_skill_sub_agent
+from broca.skill.skill_evolution import run_skill_sub_agent
 
 logger = get_logger(__name__)
 
@@ -90,22 +90,6 @@ class SkillCreateCommand(LocalCommand):
         parts = args.strip().split(None, 1)
         skill_name = parts[0] if parts else ""
         description = parts[1] if len(parts) > 1 else ""
-
-        if skill_name in ("--help", "-h"):
-            return CommandResult(
-                type="text",
-                value="""## /skill-create — 创建新 Skill
-
-**用法**: `/skill-create [skill-name] [description]`
-
-- `skill-name` 可选：不指定时子 Agent 会根据会话内容自动命名
-- `description` 可选：对 Skill 用途的简短描述
-
-**示例**:
-  `/skill-create`                          子 Agent 自动分析命名
-  `/skill-create code-review`              指定名称
-  `/skill-create code-review "PR 审查流程"`  指定名称和描述""",
-            )
 
         prompt = CREATE_PROMPT_TEMPLATE.render(
             skill_name=skill_name if skill_name else None,

@@ -3,7 +3,7 @@ from pathlib import Path
 
 from broca.commands.base import LocalCommand, CommandContext, CommandResult
 from broca.logging_config import get_logger
-from broca.tools.skill_store import SkillStore
+from broca.skill.skill_store import SkillStore
 
 logger = get_logger(__name__)
 

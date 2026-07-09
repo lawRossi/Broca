@@ -61,9 +61,7 @@ async def run_skill_sub_agent(
                 session_manager.session_id, agent_config["name"]
             )
             if sub_agent is None:
-                sub_agent = await agent_factory.restore_agent(
-                    agent_id, session_manager
-                )
+                sub_agent = await agent_factory.restore_agent(agent_id, session_manager)
 
         # 确保子 Agent 在运行
         if not sub_agent.running:

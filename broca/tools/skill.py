@@ -1,4 +1,4 @@
-from broca.tools.skill_store import SkillStore, clean_skill_name
+from broca.skill.skill_store import SkillStore, clean_skill_name
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 

@@ -3,8 +3,8 @@ from datetime import datetime, timezone
 
 from broca.commands.base import LocalCommand, CommandContext, CommandResult
 from broca.logging_config import get_logger
-from broca.tools.skill_evolution import run_skill_sub_agent
-from broca.tools.skill_store import SkillStore
+from broca.skill.skill_evolution import run_skill_sub_agent
+from broca.skill.skill_store import SkillStore
 
 logger = get_logger(__name__)
 

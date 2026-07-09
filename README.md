@@ -1322,8 +1322,10 @@ broca/
 │   │   ├── memory.py               # 记忆工具（触发提取，原增删改已移除）
 │   │   ├── bash.py                 # 命令执行工具
 │   │   ├── skill.py                # 技能加载 + 管理工具（LoadSkill / SkillManage）
+│   ├── skill/                      # Skill 系统
+│   │   ├── __init__.py
 │   │   ├── skill_store.py          # Skill 元数据管理（来源标记/状态/统计/归档恢复）
-│   │   ├── skill_evolution.py      # 子 Agent Skill 进化工具函数
+│   │   └── skill_evolution.py      # 子 Agent Skill 进化工具函数
 │   │   ├── task.py                 # 任务管理工具
 │   │   ├── cron.py                 # 定时任务工具
 │   │   └── ...                     # 其他工具

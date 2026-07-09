@@ -8,11 +8,10 @@ import fcntl
 import json
 import os
 import shutil
-import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 from broca.logging_config import get_logger
 
@@ -130,11 +129,21 @@ class SkillStore:
 
     def record_use(self, name: str):
         """记录一次使用。"""
-        self.update(name, use_count=self.get(name)["use_count"] + 1, last_used_at=_now_iso(), updated_at=_now_iso())
+        self.update(
+            name,
+            use_count=self.get(name)["use_count"] + 1,
+            last_used_at=_now_iso(),
+            updated_at=_now_iso(),
+        )
 
     def record_view(self, name: str):
         """记录一次查看。"""
-        self.update(name, view_count=self.get(name)["view_count"] + 1, last_viewed_at=_now_iso(), updated_at=_now_iso())
+        self.update(
+            name,
+            view_count=self.get(name)["view_count"] + 1,
+            last_viewed_at=_now_iso(),
+            updated_at=_now_iso(),
+        )
 
     # ─── 归档/恢复 ────────────────────────────────────
 
@@ -144,7 +153,10 @@ class SkillStore:
         if meta is None:
             return False, f"Skill '{name}' not found in store."
         if meta.get("created_by") != "agent":
-            return False, f"Skill '{name}' is {meta.get('created_by')}, only agent-created skills can be modified."
+            return (
+                False,
+                f"Skill '{name}' is {meta.get('created_by')}, only agent-created skills can be modified.",
+            )
         return True, ""
 
     def archive_skill(self, name: str) -> tuple[bool, str]:
@@ -247,6 +259,7 @@ class SkillStore:
             if len(parts) < 3:
                 return None
             import yaml
+
             header = yaml.safe_load(parts[1].strip())
             if isinstance(header, dict):
                 return header.get("name")
@@ -266,6 +279,7 @@ def _now_iso() -> str:
 def clean_skill_name(name: str) -> str:
     """清洗 Skill 名称：只保留 a-z0-9-。"""
     import re
+
     slug = re.sub(r"[^a-z0-9-]", "-", name.lower())
     slug = re.sub(r"-{2,}", "-", slug).strip("-")
     return slug
