@@ -63,7 +63,7 @@ Broca 是一个用 Python 构建的Agent系统，核心设计理念是 **模块�
 - **子进程隔离**：每个会话在独立子进程中运行，支持心跳监控
 - **快照与撤销**：基于Git的文件系统快照，实现操作级撤销/重做
 - **上下文压缩**：智能管理长对话上下文，自动压缩过期内容
-- **Skill插件系统**：通过 Markdown 文件定义可复用的技能
+- **Skill插件系统**：通过 Markdown 文件定义可复用的技能，支持 Agent 自主创建、生命周期管理和改进建议
 - **多客户端**：TUI 终端界面、Web 界面、VS Code 扩展
 - **多智能体编排**：4 种拓扑（Pipeline/Supervisor-Worker/Round-Table/Composite），基于有向图（Graph）驱动，共享黑板通信，支持 static/agent 路由、并行扇出/汇聚、条件跳转、循环控制、人在环路（HITL）
 - **一键安装**：通过安装脚本一键安装，支持supervisor进行服务管理
@@ -1012,13 +1012,75 @@ kickoff (TASK: 发布协调员)
 
 ### 10. Skill 系统
 
-**核心文件**: `broca/skill_manager.py`, `skills/`
+**核心文件**: `broca/skill_manager.py`, `broca/tools/skill.py`, `broca/tools/skill_store.py`, `broca/tools/skill_evolution.py`, `skills/`
 
-Skill 是可复用的能力单元，以 Markdown 文件定义：
-- **YAML 头部**: 技能名称、描述等元信息
-- **Markdown 正文**: 技能详细规范（注入到 system prompt 中）
-- **加载路径**: 全局 (`~/.agents/skills/`) 或项目内 (`skills/`, `.agents/skills/`)
+Skill 是可复用的能力单元，以 Markdown 文件定义。系统提供一套完整的 Skill 创建、维护和进化能力。
+
+#### 10.1 Skill 定义与加载
+
+- **格式**: YAML frontmatter（名称、描述、版本、触发器）+ Markdown 正文（使用说明、步骤、注意事项）
+- **加载路径**: 全局 (`~/.broca/skills/`) 或项目内 (`skills/`, `.agents/skills/`)
 - **Workspace 覆盖**: 工作区技能可扩展全局技能
+- **按需注入**: `load_skill` 工具可在运行时加载指定 Skill，内容注入到 Agent 上下文中
+
+#### 10.2 Skill 来源管理（SkillStore）
+
+**核心文件**: `broca/tools/skill_store.py`
+
+SkillStore 负责 Skill 的元数据管理和生命周期维护，**纯代码实现，不依赖 LLM**：
+
+- **来源标记**: 区分 `builtin`（内置）和 `agent`（Agent 创建）两种来源
+- **生命周期状态**: `active`（活跃）/ `archived`（已归档）
+- **使用统计**: `use_count` / `view_count` 自动追踪
+- **归档/恢复**: `archive_skill()` 将 Skill 目录移入 `.archive/`；`restore_skill()` 从 `.archive/` 恢复
+- **来源隔离**: 归档/恢复操作只对 `agent` 来源的 Skill 生效，内置 Skill 受保护
+- **并发安全**: 使用 `fcntl.flock` 文件锁保证 `.skill_store.json` 的并发读写安全
+
+```
+~/.broca/skills/
+├── my-skill/
+│   └── SKILL.md              # 标准入口
+├── .archive/                 # 归档目录（可恢复）
+└── .skill_store.json         # 元数据：来源/状态/统计
+```
+
+#### 10.3 Skill 管理 Tool（SkillManage）
+
+**核心文件**: `broca/tools/skill.py`
+
+`skill_manage` 工具是 Agent 创建和维护 Skill 的接口，支持以下操作：
+
+| 操作 | 说明 |
+|------|------|
+| `create` | 创建新 Skill：名称自动清洗为 slug，写入 SKILL.md，注册来源标记 |
+| `patch` | 修改已有 Skill 的内容 |
+| `delete` | 归档 Skill（移入 `.archive/`，而非真删除） |
+| `write_file` | 在 Skill 的 `references/templates/scripts` 下写入辅助文件 |
+| `remove_file` | 删除 Skill 下的辅助文件 |
+
+**安全机制**：
+- 名称清洗：只保留 `a-z0-9-` 字符
+- 路径穿越防护：所有文件操作通过 `Path.resolve()` 校验，确保路径不逃逸 Skill 目录
+- 来源检查：delete 操作只对 `agent` 来源的 Skill 生效
+
+#### 10.4 子 Agent Skill 进化模式
+
+**核心文件**: `broca/tools/skill_evolution.py`
+
+参考 Memory 管理（`SessionMemoryManager` / `PersistentMemoryManager`）的子 Agent 模式，Skill 的创建和改进建议通过独立子 Agent 执行：
+
+```
+run_skill_sub_agent(agent, prompt, allowed_tools)
+  │
+  ├─ AgentFactory → 创建/恢复子 Agent（ID: session_id + "#skill-evolution-agent"）
+  ├─ Fork 主 Agent 的 context history
+  ├─ 限制工具集（allowed_tools 参数）
+  ├─ asyncio.wait_for 超时控制（默认 120s）
+  └─ 错误处理与通知
+```
+
+**技能创建**（`/skill-create`）：子 Agent 分析当前会话，识别可复用的模式/流程，自动生成 SKILL.md
+**改进建议**（`/skill-suggest`）：子 Agent 分析现有 Skill，输出改进文档到 `plans/` 目录，不直接修改 Skill
 
 ### 11. 命令系统
 
@@ -1098,6 +1160,9 @@ class HelpCommand(LocalCommand):
 | `/review-code` | prompt | 代码评审 — 检查 Bug、安全、代码异味、风格和最佳实践 |
 | `/review-execution` | prompt | 评审计划执行质量，对比计划文件与实际执行结果 |
 | `/execute-plan` | prompt | 执行已制定的计划文件 |
+| `/skill` | local | Skill 管理：`list` 列出所有 Skill / `view` 查看内容 / `archive` 归档 / `restore` 恢复 |
+| `/skill-create` | local | 基于当前会话创建一个新的 Skill（通过子 Agent 分析会话并生成 SKILL.md） |
+| `/skill-suggest` | local | 分析现有 Skill 并提出改进建议（输出到 `plans/`，不直接修改 Skill） |
 
 #### 前端集成
 
@@ -1256,7 +1321,9 @@ broca/
 │   │   ├── web.py                  # 网络工具
 │   │   ├── memory.py               # 记忆工具（触发提取，原增删改已移除）
 │   │   ├── bash.py                 # 命令执行工具
-│   │   ├── skill.py                # 技能加载工具
+│   │   ├── skill.py                # 技能加载 + 管理工具（LoadSkill / SkillManage）
+│   │   ├── skill_store.py          # Skill 元数据管理（来源标记/状态/统计/归档恢复）
+│   │   ├── skill_evolution.py      # 子 Agent Skill 进化工具函数
 │   │   ├── task.py                 # 任务管理工具
 │   │   ├── cron.py                 # 定时任务工具
 │   │   └── ...                     # 其他工具
@@ -1290,7 +1357,7 @@ broca/
 │   │   ├── loader.py               # 命令自动加载器
 │   │   ├── dispatcher.py           # 命令分发器
 │   │   ├── manager.py              # 命令管理器
-│   │   ├── builtin/                # 内置本地命令（help/abort/undo/redo）
+│   │   ├── builtin/                # 内置本地命令（help/abort/undo/redo/skill/skill-create/skill-suggest）
 │   │   └── prompt/                 # 内置提示命令（init/plan/debug/review-code/review-execution/execute-plan）
 │   ├── context.py                  # 上下文管理
 │   ├── context_compressor.py       # 上下文压缩
