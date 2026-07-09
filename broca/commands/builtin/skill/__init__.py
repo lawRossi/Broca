@@ -172,7 +172,7 @@ class SkillCommand(LocalCommand):
     def _refresh_skill_index(self):
         """刷新 SkillManager 的索引。"""
         try:
-            from broca.skill_manager import SkillManager
+            from broca.skill.skill_manager import SkillManager
             SkillManager().refresh_index()
         except Exception as e:
             logger.warning(f"Failed to refresh skill index: {e}")

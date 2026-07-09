@@ -1012,7 +1012,7 @@ kickoff (TASK: 发布协调员)
 
 ### 10. Skill 系统
 
-**核心文件**: `broca/skill_manager.py`, `broca/tools/skill.py`, `broca/tools/skill_store.py`, `broca/tools/skill_evolution.py`, `skills/`
+**核心文件**: `broca/skill/skill_manager.py`, `broca/tools/skill.py`, `broca/skill/skill_store.py`, `broca/skill/skill_evolution.py`, `skills/`
 
 Skill 是可复用的能力单元，以 Markdown 文件定义。系统提供一套完整的 Skill 创建、维护和进化能力。
 
@@ -1324,6 +1324,7 @@ broca/
 │   │   ├── skill.py                # 技能加载 + 管理工具（LoadSkill / SkillManage）
 │   ├── skill/                      # Skill 系统
 │   │   ├── __init__.py
+│   │   ├── skill_manager.py        # Skill 加载/解析/索引管理
 │   │   ├── skill_store.py          # Skill 元数据管理（来源标记/状态/统计/归档恢复）
 │   │   └── skill_evolution.py      # 子 Agent Skill 进化工具函数
 │   │   ├── task.py                 # 任务管理工具
@@ -1364,7 +1365,7 @@ broca/
 │   ├── context.py                  # 上下文管理
 │   ├── context_compressor.py       # 上下文压缩
 │   ├── llm.py                      # LLM 客户端
-│   ├── skill_manager.py            # Skill 管理器
+│   ├── skill/                      # Skill 系统（skill_manager/skill_store/skill_evolution）
 │   ├── scheduler.py                # 任务调度器
 │   ├── permission_manager.py       # 权限管理
 │   ├── error_handler.py            # 错误处理

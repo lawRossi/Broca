@@ -8,7 +8,7 @@ from litellm import Message
 from broca.agent_configs import AgentConfig
 from broca.logging_config import get_logger
 from broca.session import MessageType, SessionManager
-from broca.skill_manager import SkillManager
+from broca.skill.skill_manager import SkillManager
 from broca.utils.content_security import scan_content_security
 
 logger = get_logger(__name__)

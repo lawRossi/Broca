@@ -5,7 +5,7 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 class LoadSkill(Tool):
     def __init__(self):
         super().__init__(max_content_length=45000)
-        from broca.skill.skill_manager import SkillManager
+        from broca.skill_manager import SkillManager
 
         self.skill_manager = SkillManager()
 
@@ -295,7 +295,7 @@ class SkillManage(Tool):
 
     def _refresh_index(self):
         try:
-            from broca.skill.skill_manager import SkillManager
+            from broca.skill_manager import SkillManager
 
             SkillManager().refresh_index()
         except Exception as e:
