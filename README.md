@@ -383,7 +383,7 @@ SocketIOServer 是一个多端通信服务器，支持：
 
 ### 7. 上下文与记忆
 
-**核心文件**: `broca/context.py`, `broca/context_compressor.py`, `broca/session_memory/`
+**核心文件**: `broca/context.py`, `broca/context_compressor.py`, `broca/session_memory/`, `broca/persistent_memory/`
 
 **Context** 负责：
 - 组装 system prompt（角色定义、环境信息、Skills、配置文件、记忆、用户画像）
@@ -395,9 +395,24 @@ SocketIOServer 是一个多端通信服务器，支持：
 - **策略A**: 清理过期的工具执行结果，替换为占位符
 - **策略B**: 基于 Session Memory 截断早期对话，释放上下文窗口
 
-**Session Memory** 实现长期记忆：
-- 在上下文中注入历史摘要
-- 每次 LLM 调用后自动检查并提取关键信息
+**Session Memory**（会话短期记忆）：
+- 在上下文中注入当前会话的历史摘要
+- 后台子 Agent（`session-memory-agent`）每次 LLM 调用后自动提取关键信息
+- 存储在 `.broca/{session_id}/session-memory.md`
+
+**Persistent Memory**（跨会话持久化记忆）：
+- 基于 `mem_tech.md` 设计理念，采用**独立子 Agent 提取**模式
+- 每条记忆独立存储为 `.md` 文件，带 YAML frontmatter（含 `name`、`description`、`type`、`created`、`updated`）
+- `MEMORY.md` 做索引，始终加载到系统提示词中，含**新鲜度标注**和**老化总览警告**
+- 四种记忆类型：`user`（用户画像）、`feedback`（行为指导）、`project`（项目上下文）、`reference`（外部系统指针）
+- 两种提取方式：
+  - **自动提取**：每轮结束后按阈值（消息数/步数）触发，由 `PersistentMemoryManager` 控制节流
+  - **On-demand 提取**：主 Agent 调用 `memory` 工具（可带可选 `hint` 参数）直接触发
+- 提取子 Agent（`persistent-memory-agent`）工具权限收窄：仅允许只读工具（`read_file`/`glob`/`grep`/`list_dir`/`tree_dir`）+ 记忆目录内的 `edit_file`/`write_file`
+- 索引文件硬约束：200 行上限，超出自动截断
+- 路径安全防护：基于 `Path.resolve()` 防止穿越攻击
+- 可配置：提取频率阈值、新鲜度警告天数
+- 启用方式：Agent 配置中设置 `track_persistent_memory: true`
 
 ### 8. 快照与撤销系统
 
@@ -1212,9 +1227,16 @@ broca/
 │   │   ├── session_manager.py      # 会话管理器
 │   │   ├── revert_service.py       # 撤销/重做服务
 │   │   └── db_migration.py         # 数据库迁移
-│   ├── session_memory/             # 长期记忆
-│   │   ├── memory_manager.py       # 记忆管理器
-│   │   └── memory_prompts.py       # 记忆提示词
+│   ├── session_memory/             # 会话短期记忆
+│   │   ├── memory_manager.py       # 会话记忆管理器（子 Agent 提取）
+│   │   └── memory_prompts.py       # 会话记忆提示词
+│   ├── persistent_memory/          # 跨会话持久化记忆
+│   │   ├── types.py                # 数据结构（MemoryType/MemoryEntry + frontmatter 解析）
+│   │   ├── store.py                # 存储管理器（CRUD + 索引 + 新鲜度 + 路径安全）
+│   │   ├── state.py                # 提取状态管理
+│   │   ├── manager.py              # 提取管理器（自动 + on-demand 触发）
+│   │   └── prompts.py              # 提取子 Agent 提示词
+│   ├── snapshot/                   # 快照系统
 │   ├── session_runner/             # 子进程 Runner
 │   │   ├── manager.py              # 进程管理器
 │   │   ├── runner.py               # 子进程入口
@@ -1232,7 +1254,7 @@ broca/
 │   │   ├── tool_manager.py         # 工具管理器
 │   │   ├── filesystem.py           # 文件操作工具
 │   │   ├── web.py                  # 网络工具
-│   │   ├── memory.py               # 记忆工具
+│   │   ├── memory.py               # 记忆工具（触发提取，原增删改已移除）
 │   │   ├── bash.py                 # 命令执行工具
 │   │   ├── skill.py                # 技能加载工具
 │   │   ├── task.py                 # 任务管理工具
