@@ -84,6 +84,8 @@ class SkillManager:
             for dirname in os.listdir(skills_dir):
                 if not os.path.isdir(os.path.join(skills_dir, dirname)):
                     continue
+                if dirname.startswith("."):
+                    continue
                 skill_file = os.path.join(skills_dir, dirname, "SKILL.md")
                 skill = self._load_skill(skill_file)
                 if "name" in skill:
@@ -122,6 +124,12 @@ class SkillManager:
             return self._wrap_skill(workspace_skills[skill_name])
 
         raise ValueError(f"Skill '{skill_name}' not found.")
+
+    def refresh_index(self):
+        """重新扫描所有 Skill 目录，刷新索引。"""
+        self._initialized = False
+        self._load_installed_skills()
+        logger.info("Skill index refreshed.")
 
     def _wrap_skill(self, skill):
         skill_spec = skill["spec"]
