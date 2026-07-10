@@ -276,8 +276,15 @@ class PersistentMemoryManager:
             task = asyncio.create_task(sub_agent.start())
             task.add_done_callback(lambda t, a=sub_agent: a.stop())
 
-        # Fork 当前上下文
-        sub_agent.context.history = copy.copy(context.history)
+        # Fork 当前上下文，去掉末尾带 tool_calls 的 assistant 消息
+        history = copy.copy(context.history)
+        if history:
+            last = history[-1]
+            role = last.get("role") if isinstance(last, dict) else getattr(last, "role", None)
+            tool_calls = last.get("tool_calls") if isinstance(last, dict) else getattr(last, "tool_calls", None)
+            if role == "assistant" and tool_calls:
+                history = history[:-1]
+        sub_agent.context.history = history
 
         # 触发提取
         trigger_message = MessageProtocol.create_user_message(content=user_prompt)
