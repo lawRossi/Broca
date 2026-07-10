@@ -419,7 +419,7 @@ class LoopEngine:
                 lambda t: t.exception() if not t.cancelled() else None
             )
 
-        if self.persistent_memory_manager:
+        if self.persistent_memory_manager and getattr(self.config, 'persistent_memory_config', None) and self.config.persistent_memory_config.auto_extract:
             self.persistent_memory_manager.increment_step()
             task = asyncio.create_task(
                 self.persistent_memory_manager.check_and_extract(

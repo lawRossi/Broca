@@ -229,10 +229,6 @@ class Agent:
 
     def _setup_persistent_memory(self):
         """Set up persistent memory manager"""
-        if not self.config.track_persistent_memory:
-            self.persistent_memory_manager = None
-            return
-
         logger.debug("Initializing persistent memory manager")
 
         from broca.persistent_memory import PersistentMemoryManager

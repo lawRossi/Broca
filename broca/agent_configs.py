@@ -18,6 +18,7 @@ DEFAULT_SESSION_MEMORY_CONFIG = SessionMemoryConfig()
 class PersistentMemoryConfig:
     """持久化记忆提取配置"""
 
+    auto_extract: bool = True
     minimum_messages_to_init: int = 50
     minimum_messages_between_update: int = 30
     steps_between_updates: int = 20
@@ -67,7 +68,6 @@ class AgentConfig:
         self.workspace = ""
         self.track_session_momory = False
         self.session_memory_config = DEFAULT_SESSION_MEMORY_CONFIG
-        self.track_persistent_memory = False
         self.persistent_memory_config = DEFAULT_PERSISTENT_MEMORY_CONFIG
         self.enable_context_compression = False
         self.compact_config = DEFAULT_COMPACT_CONFIG

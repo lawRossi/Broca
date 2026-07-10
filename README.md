@@ -411,8 +411,8 @@ SocketIOServer 是一个多端通信服务器，支持：
 - 提取子 Agent（`persistent-memory-agent`）工具权限收窄：仅允许只读工具（`read_file`/`glob`/`grep`/`list_dir`/`tree_dir`）+ 记忆目录内的 `edit_file`/`write_file`
 - 索引文件硬约束：200 行上限，超出自动截断
 - 路径安全防护：基于 `Path.resolve()` 防止穿越攻击
-- 可配置：提取频率阈值、新鲜度警告天数
-- 启用方式：Agent 配置中设置 `track_persistent_memory: true`
+- 可配置：自动提取开关 (`auto_extract`)、提取频率阈值、新鲜度警告天数
+- `memory` 工具始终可用（不受 `auto_extract` 影响），自动提取可通过 `persistent_memory_config.auto_extract: false` 关闭
 
 ### 8. 快照与撤销系统
 
