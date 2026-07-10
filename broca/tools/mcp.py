@@ -70,6 +70,7 @@ class MCPTool(Tool):
         """
         super().__init__()
         self._client = client
+        self.server_name = server_name
         self._original_name = tool_def.name
         self._name = (
             f"mcp_{_sanitize_name(server_name)}_{_sanitize_name(tool_def.name)}"

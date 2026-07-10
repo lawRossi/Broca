@@ -163,15 +163,22 @@ class Agent:
         self.context = Context(self.config, self.session_manager, **kwargs)
 
     async def _setup_tools(self):
-        """Set up tools for the agent, including auto-discovered built-in tools
-        and custom tools from {workspace}/.broca/tool.py."""
+        """Set up tools for the agent, including auto-discovered built-in tools,
+        custom tools from {workspace}/.broca/tool.py, and MCP tools from
+        configured MCP servers.
+
+        MCP servers are loaded and connected by ToolManager.init() (called at
+        a higher level, e.g., AgentFactory). This method only fetches the
+        appropriate MCP tools for this agent based on its ``mcp_servers`` config.
+        """
         tool_manager = ToolManager()
-        tool_manager.load_custom_tools(self.config.workspace)
-        if self.config.mcp_configs:
-            mcp_tools = await tool_manager.setup_mcp(self.config.mcp_configs)
+        if self.config.mcp_servers:
+            mcp_tools = tool_manager.get_mcp_tools(self.config.mcp_servers)
+            mcp_tool_names = [tool.name for tool in mcp_tools]
         else:
-            mcp_tools = []
-        tool_names = self.config.tools + mcp_tools
+            mcp_tool_names = []
+
+        tool_names = self.config.tools + mcp_tool_names
         tools = tool_manager.get_tools(tool_names=tool_names)
         self.tools = [tool.format() for tool in tools]
         self.tool_mapping = {tool.name: tool for tool in tools}

@@ -1,5 +1,6 @@
 import importlib
 import inspect
+import json
 import pkgutil
 from contextlib import AsyncExitStack
 from pathlib import Path
@@ -54,6 +55,9 @@ class ToolManager:
             self.tools = {}
             self.stack = AsyncExitStack()
             self._custom_tools_loaded = False
+            self._mcp_config: dict = {}
+            self._mcp_connected: bool = False
+            self._mcp_servers_tools: dict[str, list[Tool]] = {}
             self._scan_builtin_tools()
 
     def _scan_builtin_tools(self):
@@ -143,18 +147,135 @@ class ToolManager:
                 self.tools[instance.name] = instance
                 logger.info(f"Loaded custom tool: {instance.name}")
 
+    def _load_mcp_config(self, workspace: Optional[str] = None):
+        """
+        Load MCP server configuration from config files (internal).
+
+        Reads configuration in the following order (later overrides earlier):
+        1. ``{workspace}/.broca/mcp_config.json`` — workspace-level config (highest priority)
+        2. ``~/.broca/configs/mcp_config.json`` — global/user-level config (fallback)
+
+        If workspace config exists, it takes full precedence and global config is ignored.
+        """
+        if self._mcp_config:
+            return  # Already loaded
+
+        config: dict = {}
+
+        # 1. Workspace config ({workspace}/.broca/mcp_config.json) — highest priority
+        if workspace:
+            workspace_path = Path(workspace) / ".broca" / "mcp_config.json"
+            if workspace_path.exists():
+                try:
+                    with open(workspace_path, encoding="utf-8") as f:
+                        data = json.load(f)
+                    if isinstance(data, dict):
+                        config = data
+                        logger.info("Loaded MCP config from {}", workspace_path)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to load MCP config from {}: {}", workspace_path, e
+                    )
+
+        # 2. Global config (~/.broca/configs/mcp_config.json) — fallback, only if no workspace config
+        if not config:
+            global_path = Path.home() / ".broca" / "configs" / "mcp_config.json"
+            if global_path.exists():
+                try:
+                    with open(global_path, encoding="utf-8") as f:
+                        data = json.load(f)
+                    if isinstance(data, dict):
+                        config = data
+                        logger.info("Loaded MCP config from {}", global_path)
+                except Exception as e:
+                    logger.warning(
+                        "Failed to load MCP config from {}: {}", global_path, e
+                    )
+
+        self._mcp_config = config
+        if not config:
+            logger.info("No MCP configuration found (no config files)")
+
+    async def _connect_mcp(self):
+        """
+        Connect all MCP servers defined in the loaded configuration (internal).
+
+        Idempotent: will only connect once. After connection, tools are
+        registered in ``self.tools`` and grouped by server name in
+        ``self._mcp_servers_tools``.
+        """
+        if not self._mcp_config or self._mcp_connected:
+            return
+
+        mcp_tools = await connect_mcp_servers(self._mcp_config, self.stack)
+
+        # Group by server_name
+        self._mcp_servers_tools = {}
+        for tool in mcp_tools:
+            server = getattr(tool, "server_name", "unknown")
+            if server not in self._mcp_servers_tools:
+                self._mcp_servers_tools[server] = []
+            self._mcp_servers_tools[server].append(tool)
+            self._add_tool(tool)
+
+        self._mcp_connected = True
+        total = len(mcp_tools)
+        logger.info(
+            "MCP connected: {} server(s), {} tool(s) registered",
+            len(self._mcp_servers_tools),
+            total,
+        )
+
+    async def init(self, workspace: Optional[str] = None):
+        """
+        Initialize the ToolManager with workspace context.
+
+        Performs the following (all idempotent):
+        1. Load custom tools from ``{workspace}/.broca/tools.py``
+        2. Load MCP configuration from config files
+        3. Connect all configured MCP servers
+
+        Args:
+            workspace: Path to the workspace directory. If None, only global
+                       MCP config is loaded and no custom tools are loaded.
+        """
+        self.load_custom_tools(workspace)
+        self._load_mcp_config(workspace)
+        await self._connect_mcp()
+
+    def get_mcp_tools(
+        self, server_names: Optional[list[str]] = None
+    ) -> list[Tool]:
+        """
+        Get MCP tool instances, optionally filtered by server names.
+
+        Args:
+            server_names: List of server names to include. If None or empty,
+                          returns all MCP tools from all connected servers.
+
+        Returns:
+            List of Tool instances matching the specified servers.
+        """
+        if not server_names:
+            result = []
+            for tools in self._mcp_servers_tools.values():
+                result.extend(tools)
+            return result
+
+        result = []
+        for name in server_names:
+            tools = self._mcp_servers_tools.get(name)
+            if tools:
+                result.extend(tools)
+            else:
+                logger.warning("MCP server '{}' is not connected", name)
+        return result
+
     def _add_tool(self, tool: Tool):
-        """Legacy method kept for backward compatibility (e.g. MCP tools)."""
+        """Register a tool instance. Raises ValueError on name conflict."""
         if tool.name in self.tools:
             raise ValueError(f"Tool with name '{tool.name}' already exists")
         self.tools[tool.name] = tool
-
-    async def setup_mcp(self, mcp_configs: dict) -> list[str]:
-        mcp_tools = await connect_mcp_servers(mcp_configs, self.stack)
-        for tool in mcp_tools:
-            self._add_tool(tool)
-        tool_names = [tool.name for tool in mcp_tools]
-        return tool_names
 
     async def cleanup(self):
         await self.stack.aclose()

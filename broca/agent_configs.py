@@ -59,7 +59,7 @@ class AgentConfig:
         self.system_prompt_template = None
         self.tools = None
         self.skills = None
-        self.mcp_configs = None
+        self.mcp_servers = None
         self.server_url = "http://localhost:6868"
         self.interactive = True
         self.save_history = True

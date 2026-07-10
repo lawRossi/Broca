@@ -1263,10 +1263,56 @@ name: Broca
 role: main-agent
 tools: ask_user,assign_task,edit_file,glob,grep,read_file,...
 skills: all
+mcp_servers: ["stock", "weather"]  # 可选，指定该 Agent 使用哪些 MCP 服务器
 ---
 ## Role
 ...
 ```
+
+### MCP 配置
+
+Broca 支持通过 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) 接入外部工具服务器。
+
+MCP 配置从以下位置读取（覆盖模式）：
+
+| 优先级 | 位置 | 说明 |
+|:------:|------|------|
+| 1（高） | `{workspace}/.broca/mcp_config.json` | 工作区级配置，存在时完全覆盖全局配置 |
+| 2（低） | `~/.broca/configs/mcp_config.json` | 全局/用户级配置，仅当工作区配置不存在时使用 |
+
+**配置格式**：一个 JSON 对象，每个 key 是服务器名称（供 Agent 的 `mcp_servers` 引用），value 是服务器连接配置：
+
+```json
+{
+  "stock": {
+    "command": "python",
+    "args": ["stock_mcp_server.py"],
+    "env": {"API_KEY": "xxx"},
+    "cwd": "/path/to/server",
+    "tool_timeout": 15
+  },
+  "weather": {
+    "url": "https://api.example.com/mcp",
+    "headers": {"Authorization": "Bearer xxx"},
+    "tool_timeout": 30
+  }
+}
+```
+
+**传输协议**：
+
+| 方式 | 必须字段 | 说明 |
+|------|----------|------|
+| **stdio** | `command` + `args` | 通过子进程标准输入/输出通信 |
+| **HTTP (SSE)** | `url` | 通过 HTTP 连接通信 |
+
+**可选字段**：
+- `env` — 环境变量（仅 stdio）
+- `cwd` — 工作目录（仅 stdio）
+- `headers` — HTTP 请求头（仅 SSE）
+- `tool_timeout` — 单次工具调用超时秒数（默认 10s）
+
+Agent 通过 `mcp_servers` 配置指定要使用哪些 MCP 服务器（对应配置文件中的 key），系统自动将对应服务器的所有工具注入到该 Agent 的工具列表中。工具名格式为 `mcp_{server_name}_{tool_name}`。
 
 ### 运行配置
 

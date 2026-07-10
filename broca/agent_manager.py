@@ -13,6 +13,7 @@ from broca.agent import Agent, AgentConfig
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
 from broca.session import SessionManager
+from broca.tools.tool_manager import ToolManager
 
 logger = get_logger(__name__)
 
@@ -164,6 +165,10 @@ class AgentFactory:
         if not config.workspace:
             config.workspace = os.getcwd()
 
+        # Initialize ToolManager (loads custom tools + MCP servers).
+        # Idempotent: only happens once across all agents in this process.
+        await ToolManager().init(config.workspace)
+
         # 覆盖 LLM provider 和 model（如果提供了的话）
         if provider is not None:
             config.provider = provider
@@ -240,6 +245,9 @@ class AgentFactory:
             config.update(cached_config)
         logger.info(f"Restoring agent from config: {config}, agent_id: {agent_id}")
         agent_config = AgentConfig.from_config(config)
+
+        # Ensure ToolManager is initialized (idempotent — safe to call on restore)
+        await ToolManager().init(agent_config.workspace)
 
         llm_client = LLMClient()
         agent = await Agent.create(
