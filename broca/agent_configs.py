@@ -18,7 +18,7 @@ DEFAULT_SESSION_MEMORY_CONFIG = SessionMemoryConfig()
 class PersistentMemoryConfig:
     """持久化记忆提取配置"""
 
-    auto_extract: bool = True
+    auto_extract: bool = False
     minimum_messages_to_init: int = 50
     minimum_messages_between_update: int = 30
     steps_between_updates: int = 20
@@ -87,7 +87,9 @@ class AgentConfig:
                     agent_config.session_memory_config = config[key]
             elif key == "persistent_memory_config":
                 if isinstance(config[key], dict):
-                    agent_config.persistent_memory_config = PersistentMemoryConfig(**config[key])
+                    agent_config.persistent_memory_config = PersistentMemoryConfig(
+                        **config[key]
+                    )
                 elif isinstance(config[key], PersistentMemoryConfig):
                     agent_config.persistent_memory_config = config[key]
             elif key == "compact_config":
