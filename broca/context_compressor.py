@@ -107,17 +107,18 @@ class ContextCompressor:
         return absolute_threshold
 
     async def check_and_compress(
-        self, context, execution_engine, agent: "Agent"
+        self, context, execution_engine, agent: "Agent", force: bool = False
     ) -> CompressionStats:
         """
         检查 context token 数并触发压缩。
 
-        在 execute_step 完成后调用。
+        在 execute_step 完成后调用。当 force=True 时，跳过 token 阈值检查直接执行压缩。
 
         Args:
             context: Context 实例
             execution_engine: ExecutionEngine 实例（用于获取 step 信息和写操作）
             agent: Agent
+            force: 是否强制压缩（跳过 token 阈值检查）
 
         Returns:
             CompressionStats: 压缩统计信息
@@ -131,32 +132,47 @@ class ContextCompressor:
 
         # 策略A：清理过期工具调用结果
         if compact_config.enable_stale_tool_cleanup:
-            effective_threshold = self._get_effective_threshold(
-                compact_config.stale_cleanup_threshold,
-                compact_config.stale_cleanup_percentage,
-                agent,
-            )
-            if total_tokens > effective_threshold:
+            if force:
                 await self._cleanup_stale_tool_results(
                     context=context,
                     execution_engine=execution_engine,
                     config=compact_config,
                 )
+            else:
+                effective_threshold = self._get_effective_threshold(
+                    compact_config.stale_cleanup_threshold,
+                    compact_config.stale_cleanup_percentage,
+                    agent,
+                )
+                if total_tokens > effective_threshold:
+                    await self._cleanup_stale_tool_results(
+                        context=context,
+                        execution_engine=execution_engine,
+                        config=compact_config,
+                    )
 
         # 策略B：Session Memory 截断
         if compact_config.enable_session_memory_truncation:
-            effective_threshold = self._get_effective_threshold(
-                compact_config.session_trunc_threshold,
-                compact_config.session_trunc_percentage,
-                agent,
-            )
-            if total_tokens > effective_threshold:
+            if force:
                 await self._try_session_memory_truncation(
                     context=context,
                     execution_engine=execution_engine,
                     agent=agent,
                     config=compact_config,
                 )
+            else:
+                effective_threshold = self._get_effective_threshold(
+                    compact_config.session_trunc_threshold,
+                    compact_config.session_trunc_percentage,
+                    agent,
+                )
+                if total_tokens > effective_threshold:
+                    await self._try_session_memory_truncation(
+                        context=context,
+                        execution_engine=execution_engine,
+                        agent=agent,
+                        config=compact_config,
+                    )
 
         return self.stats
 

@@ -1,7 +1,6 @@
-import time
 from datetime import datetime, timezone
 
-from broca.commands.base import LocalCommand, CommandContext, CommandResult
+from broca.commands.base import CommandContext, CommandResult, LocalCommand
 from broca.logging_config import get_logger
 from broca.skill.skill_evolution import run_skill_sub_agent
 from broca.skill.skill_store import SkillStore
@@ -18,13 +17,14 @@ ALLOWED_TOOLS = [
     "write_file",
 ]
 
-SUGGEST_PROMPT_TEMPLATE = """\
-Your task is to analyze existing skills and propose improvements.
+SUGGEST_PROMPT_TEMPLATE = """
+user input: {{ user_input }}
+
+Your task is to analyze existing skills and propose improvements based on the conversation above and the user‘s input. 
 
 ## Instructions
 
-1. Load and review the following skill(s): {skill_names}
-   - Use `load_skill` to read each skill's content
+1. Identify the skills used in the conversation:
 
 2. Analyze each skill for improvement opportunities:
    - Is the `description` clear and accurate for search matching?
@@ -33,7 +33,7 @@ Your task is to analyze existing skills and propose improvements.
    - Does this session reveal scenarios the skill should cover but doesn't?
 
 3. Write your improvement suggestions to a file using `write_file`:
-   - Path: `plans/skill-suggest-{timestamp}.md`
+   - Path: `plans/skills/skill-suggest-{timestamp}.md`
    - Use the format below
 
 ## Output Format
@@ -42,7 +42,6 @@ Your task is to analyze existing skills and propose improvements.
 # Skill 改进建议: {skill-name}
 
 - **提出时间**: {timestamp}
-- **会话**: {session_id}
 
 ## 当前问题
 
@@ -65,7 +64,7 @@ Your task is to analyze existing skills and propose improvements.
 
 - **DO NOT** modify any skill files directly
 - **DO NOT** call `skill_manage` or `edit_file` on skill directories
-- Only use `write_file` to write the suggestion document to the `plans/` directory
+- Only use `write_file` to write the suggestion document to the `plans/skills` directory
 - Be constructive and specific in your suggestions
 """
 

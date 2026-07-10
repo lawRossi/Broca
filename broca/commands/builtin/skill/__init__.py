@@ -1,7 +1,4 @@
-import os
-from pathlib import Path
-
-from broca.commands.base import LocalCommand, CommandContext, CommandResult
+from broca.commands.base import CommandContext, CommandResult, LocalCommand
 from broca.logging_config import get_logger
 from broca.skill.skill_store import SkillStore
 
@@ -108,9 +105,7 @@ class SkillCommand(LocalCommand):
                 break
 
         if not skill_path:
-            return CommandResult(
-                type="error", value=f"Skill '{name}' not found."
-            )
+            return CommandResult(type="error", value=f"Skill '{name}' not found.")
 
         # 读取 SKILL.md
         skill_file = skill_path / "SKILL.md"
@@ -140,9 +135,7 @@ class SkillCommand(LocalCommand):
         if name in self.store.read():
             self.store.record_view(name)
 
-        return CommandResult(
-            type="text", value="\n".join(meta_lines) + content
-        )
+        return CommandResult(type="text", value="\n".join(meta_lines) + content)
 
     async def _handle_archive(self, rest: str, ctx: CommandContext) -> CommandResult:
         if not rest:
@@ -173,6 +166,7 @@ class SkillCommand(LocalCommand):
         """刷新 SkillManager 的索引。"""
         try:
             from broca.skill.skill_manager import SkillManager
+
             SkillManager().refresh_index()
         except Exception as e:
             logger.warning(f"Failed to refresh skill index: {e}")
