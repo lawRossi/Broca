@@ -497,14 +497,14 @@ export class ChatWebViewManager {
           <input type="radio" name="category" value="normal" checked>
           <div>
             <div class="category-label">普通会话</div>
-            <div class="category-desc">创建内置 Agent（Broca、sub-agent、explorer），适合日常对话和任务</div>
+            <div class="category-desc">创建内置Agent，适合日常对话和任务</div>
           </div>
         </div>
         <div class="category-option" data-category="agent-orchestration" onclick="selectCategory(this)">
           <input type="radio" name="category" value="agent-orchestration">
           <div>
-            <div class="category-label">Agent 编排会话</div>
-            <div class="category-desc">不创建内置 Agent，从工作空间加载自定义 Agent，适合多 Agent 编排工作流</div>
+            <div class="category-label">Agent编排会话</div>
+            <div class="category-desc">从工作空间加载自定义Agent，适合多Agent编排工作流</div>
           </div>
         </div>
       </div>

@@ -718,17 +718,22 @@ const handleUndo = async () => {
   display: flex;
   align-items: flex-start;
   gap: 6px;
+  min-width: 0;
 }
 
 .todo-icon {
   font-size: 13px;
   line-height: 1.5;
+  flex-shrink: 0;
 }
 
 .todo-name {
   font-size: 12px;
   color: var(--text-secondary, #64748b);
   font-weight: 500;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 /* ==================== Todo 列表 ==================== */
@@ -738,6 +743,9 @@ const handleUndo = async () => {
   border-radius: 4px;
   background: rgba(201, 168, 76, 0.06);
   margin-left: 20px;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
 }
 
 /* ==================== 变更文件 ==================== */
@@ -987,6 +995,11 @@ const handleUndo = async () => {
 }
 
 /* ==================== 用户消息折叠 ==================== */
+.user-msg-text {
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
 .user-msg-collapsed {
   max-height: 4.5em;
   overflow: hidden;
@@ -1003,4 +1016,5 @@ const handleUndo = async () => {
   background: linear-gradient(transparent, var(--card-bg, #ffffff));
   pointer-events: none;
 }
+
 </style>

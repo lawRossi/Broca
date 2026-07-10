@@ -170,13 +170,13 @@ const handleCreate = () => {
           <el-radio value="normal" class="category-radio">
             <div class="flex flex-col">
               <span class="font-medium">普通会话</span>
-              <span class="text-xs text-gray-400">创建内置 Agent（Broca、sub-agent、explorer），适合日常对话和任务</span>
+              <span class="text-xs text-gray-400">创建内置Agent，适合日常对话和任务</span>
             </div>
           </el-radio>
           <el-radio value="agent-orchestration" class="category-radio">
             <div class="flex flex-col">
-              <span class="font-medium">Agent 编排会话</span>
-              <span class="text-xs text-gray-400">不创建内置 Agent，从工作空间加载自定义 Agent，适合多 Agent 编排工作流</span>
+              <span class="font-medium">Agent编排会话</span>
+              <span class="text-xs text-gray-400">从工作空间加载自定义Agent，适合多Agent编排工作流</span>
             </div>
           </el-radio>
         </el-radio-group>
@@ -269,6 +269,13 @@ const handleCreate = () => {
   width: 100%;
 }
 
+/* el-radio-group 确保占满宽度 */
+:deep(.el-radio-group.w-full) {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
 /* 会话分类单选样式 */
 .category-radio {
   display: flex;
@@ -276,10 +283,13 @@ const handleCreate = () => {
   height: auto !important;
   padding: 12px 16px;
   margin-bottom: 8px;
+  margin-right: 0;
   border: 1px solid var(--el-border-color-light);
   border-radius: 8px;
   transition: all 0.2s;
   width: 100%;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 .category-radio:hover {
@@ -295,6 +305,16 @@ const handleCreate = () => {
 .category-radio :deep(.el-radio__label) {
   width: 100%;
   padding-left: 8px;
+  min-width: 0;
+  flex: 1;
+  word-break: break-word;
+  overflow-wrap: break-word;
+}
+
+.category-radio :deep(.el-radio__label .flex) {
+  min-width: 0;
+  word-break: break-word;
+  overflow-wrap: break-word;
 }
 
 /* 移动端优化 */
@@ -358,6 +378,34 @@ const handleCreate = () => {
 
   :deep(.el-autocomplete .el-input__inner) {
     padding-right: 40px;
+  }
+
+  /* 移动端：会话类型卡片优化 - 防止文字溢出并增强可读性 */
+  .category-radio {
+    padding: 14px 16px;
+    margin-right: 0;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .category-radio :deep(.el-radio__label) {
+    min-width: 0;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .category-radio :deep(.el-radio__label .flex) {
+    min-width: 0;
+    word-break: break-word;
+    overflow-wrap: break-word;
+  }
+
+  .category-radio :deep(.el-radio__label span:last-child) {
+    font-size: 13px;
+    color: var(--el-text-color-secondary);
+    line-height: 1.5;
+    word-break: break-word;
+    overflow-wrap: break-word;
   }
 }
 </style>

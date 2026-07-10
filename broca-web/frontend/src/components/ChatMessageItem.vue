@@ -975,6 +975,14 @@ const handleUndoToHere = async () => {
 .params-todo-name {
   font-size: 12px;
   font-weight: 500;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  min-width: 0;
+}
+
+/* todo_management 内部 flex-1 容器需要 min-width: 0 以支持收缩换行 */
+.params-inner .flex-1 {
+  min-width: 0;
 }
 
 /* ==================== Diff 展示 ==================== */
