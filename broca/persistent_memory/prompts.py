@@ -37,7 +37,6 @@ def build_extraction_prompt(
         "- Read-only tools: read_file, glob, grep, list_dir, tree_dir\n"
         "- Write tools: edit_file, write_file (only for paths inside the memory directory)\n"
         "- All other tools are DENIED.\n"
-        "- Bash rm is not permitted.\n\n"
         "Efficient strategy: turn 1 — read all files you might update in parallel; "
         "turn 2 — write/edit all files in parallel."
     )
@@ -143,8 +142,7 @@ def build_extraction_prompt(
     # ── 约束提醒 ──
     parts.append(
         "## Constraints\n"
-        "- You ONLY have data from the recent messages above. Do NOT investigate "
-        "further (no grepping source files, no reading code).\n"
+        "- You ONLY have data from the recent messages above. \n"
         "- If nothing worth saving was said, do nothing and stop.\n"
         "- Make all edits in parallel where possible, then stop.\n"
         "- Do not continue after the edits."
