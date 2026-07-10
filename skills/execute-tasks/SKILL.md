@@ -185,53 +185,12 @@ This is the **detailed report** — in contrast to concise task reports, the pha
 - For manual review (by default), just provide the report location to the user and inform that `review_execution` command  can be used for report review, then **stop and wait for the user's review decision.** Never be verbose. (Your report contains all details)
 - If user specifies to use auto-review, assign the review task to `assistant`(task: "review execution report: {report path}").
 
-> ⚠️ **Do not auto-proceed to the next phase.** You must wait for the review result. Only if the user explicitly says "proceed" or "continue all phases" should you move on.
+> ⚠️ **Do not auto-proceed to the next phase.** You must wait for the review result. Only if the user explicitly says "proceed" or "continue all phases" should you move on (phase reports are still required).
 
 **Review outcomes:**
 - ✅ **Pass (user approves)** → Proceed to the next phase (back to Step 5.1)
 - ❌ **Issues found (user requests fixes)** → Fix each issue → Update report → Re-submit for review
-- 🏁 **User says "complete all phases"** → Continue through remaining phases without pausing for review after each
-
-## The 3-Strike Error Protocol
-
-When encountering errors during execution:
-
-```
-ATTEMPT 1: Diagnose & Fix
-  → Read task details carefully
-  → Identify what's blocking
-  → Apply targeted fix
-  → Update task with resolution notes
-
-ATTEMPT 2: Alternative Approach
-  → Same error? Try a different method
-  → NEVER repeat the exact same failing action
-
-ATTEMPT 3: Broader Rethink
-  → Review the approach fundamentally
-  → May need more investigation
-
-AFTER 3 FAILURES: Escalate
-  → Explain what was tried
-  → Share the specific error
-  → Add comment to task with attempts
-  → Mark task as "blocked"
-  → Ask user for guidance
-```
-
-```json
-// Escalation pattern
-{
-    "action": "add_comment",
-    "task_id": "TASK_ID",
-    "content": "3-Strike Protocol triggered.\n\nAttempt 1: {what was tried}\nResult: {error}\n\nAttempt 2: {what was tried}\nResult: {error}\n\nAttempt 3: {what was tried}\nResult: {error}\n\nRequesting user guidance."
-}
-{
-    "action": "update",
-    "task_id": "TASK_ID",
-    "status": "blocked"
-}
-```
+- 🏁 **User says "complete all phases"** → Continue through remaining phases without pausing for review after each (phase reports are still required)
 
 ## Deviation Handling
 
