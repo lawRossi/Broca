@@ -73,7 +73,14 @@ class SkillManage(Tool):
                 "action": {
                     "type": "string",
                     "description": "The operation to perform",
-                    "enum": ["create", "patch", "delete", "list", "write_file", "remove_file"],
+                    "enum": [
+                        "create",
+                        "patch",
+                        "delete",
+                        "list",
+                        "write_file",
+                        "remove_file",
+                    ],
                 },
                 "name": {
                     "type": "string",
@@ -214,9 +221,7 @@ class SkillManage(Tool):
         store_data = self.store.read()
 
         if not skills_info:
-            return ToolResult(
-                status=ToolStatus.SUCCESS, content="No skills found."
-            )
+            return ToolResult(status=ToolStatus.SUCCESS, content="No skills found.")
 
         lines = ["Available skills:\n"]
         for s in sorted(skills_info, key=lambda x: x["name"]):
@@ -227,9 +232,7 @@ class SkillManage(Tool):
             uses = meta.get("use_count", 0)
             lines.append(f"  - {name}  (state={state}, source={source}, uses={uses})")
 
-        return ToolResult(
-            status=ToolStatus.SUCCESS, content="\n".join(lines)
-        )
+        return ToolResult(status=ToolStatus.SUCCESS, content="\n".join(lines))
 
     async def _handle_write_file(
         self, args: dict, context: ToolCallContext

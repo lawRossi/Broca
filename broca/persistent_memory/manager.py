@@ -23,7 +23,6 @@ from broca.session import MessageProtocol
 from .prompts import build_extraction_prompt
 from .state import PersistentMemoryState
 from .store import MemoryStore
-from .types import MemoryEntry
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +35,7 @@ ALLOWED_TOOLS = [
     "tree_dir",
     "edit_file",
     "write_file",
+    "load_skill",
 ]
 
 AGENT_ID_POSTFIX = "#persistent-memory-agent"
@@ -92,9 +92,7 @@ class PersistentMemoryManager:
         logger.info("Persistent memory auto-extraction triggered")
         await self._trigger_internal(context, hint=None)
 
-    async def trigger_extraction(
-        self, context: Context, hint: Optional[str] = None
-    ):
+    async def trigger_extraction(self, context: Context, hint: Optional[str] = None):
         """
         On-demand 提取入口——被 memory 工具调用。
 
@@ -267,9 +265,7 @@ class PersistentMemoryManager:
                 session_manager.session_id, agent_config["name"]
             )
             if sub_agent is None:
-                sub_agent = await agent_factory.restore_agent(
-                    agent_id, session_manager
-                )
+                sub_agent = await agent_factory.restore_agent(agent_id, session_manager)
 
         # 确保子 Agent 在运行
         if not sub_agent.running:
@@ -280,8 +276,16 @@ class PersistentMemoryManager:
         history = copy.copy(context.history)
         if history:
             last = history[-1]
-            role = last.get("role") if isinstance(last, dict) else getattr(last, "role", None)
-            tool_calls = last.get("tool_calls") if isinstance(last, dict) else getattr(last, "tool_calls", None)
+            role = (
+                last.get("role")
+                if isinstance(last, dict)
+                else getattr(last, "role", None)
+            )
+            tool_calls = (
+                last.get("tool_calls")
+                if isinstance(last, dict)
+                else getattr(last, "tool_calls", None)
+            )
             if role == "assistant" and tool_calls:
                 history = history[:-1]
         sub_agent.context.history = history
@@ -303,9 +307,7 @@ class PersistentMemoryManager:
             )
             return False
 
-        logger.info(
-            f"Persistent memory extraction completed in {elapsed}s"
-        )
+        logger.info(f"Persistent memory extraction completed in {elapsed}s")
         return True
 
     def reset(self):
