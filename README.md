@@ -6,16 +6,17 @@
 
 </div>
 
-### PC端web界面
-![PC端Web界面](resource/web_snapshot.png)
+### Web Demo
 
-### 移动端web界面
+<img width="1920" height="1201" alt="Web UI" src="https://github.com/user-attachments/assets/6e8e40ed-15ca-4a7c-9c41-9bd3ed92780e" />
 
-<img src="resource/phone_snapshot.jpeg" alt="移动端Web界面" width="50%"/>
+### Vscode Demo
 
-### VS Code插件界面
+<img width="1600" height="1001" alt="Vscode UI" src="https://github.com/user-attachments/assets/b1d7abe2-314f-4fbb-894d-06d2d830c491" />
 
-![VS Code插件界面](resource/vscode_snapshot.png)
+### TUI Demo
+
+<img width="1920" height="1201" alt="TUI" src="https://github.com/user-attachments/assets/eb8fb062-cea1-487b-95c9-8f94fe2e0fbb" />
 
 ---
 
