@@ -243,7 +243,7 @@ class AgentFactory:
             for field in un_modifiable_fields:
                 del cached_config[field]
             config.update(cached_config)
-        logger.info(f"Restoring agent from config: {config}, agent_id: {agent_id}")
+        logger.debug(f"Restoring agent from config: {config}, agent_id: {agent_id}")
         agent_config = AgentConfig.from_config(config)
 
         # Ensure ToolManager is initialized (idempotent — safe to call on restore)
