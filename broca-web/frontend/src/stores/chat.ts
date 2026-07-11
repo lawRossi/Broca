@@ -1205,6 +1205,13 @@ export const useChatStore = defineStore('chat', () => {
         return
       }
 
+      // clear_all_context: 提示所有上下文已清空
+      if (m.message_type === 'command_result' && m.data?.command === 'clear_all_context') {
+        ElMessage.success('所有 Agent 的上下文已清空')
+        addMessage(m)
+        return
+      }
+
       // clear_history: 提示并重新加载消息列表（消息已被标记为 reverted）
       if (m.message_type === 'command_result' && m.data?.command === 'clear_history') {
         ElMessage.success('历史记录已清空')

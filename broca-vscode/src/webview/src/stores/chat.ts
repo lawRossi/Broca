@@ -497,6 +497,9 @@ export const useChatStore = defineStore('chat', () => {
       } else if (message.data?.command === 'clear_context') {
         showError('上下文已清空', 'info', 3000)
         return
+      } else if (message.data?.command === 'clear_all_context') {
+        showError('所有 Agent 的上下文已清空', 'info', 3000)
+        return
       } else if (message.data?.command === 'clear_history') {
         showError('历史记录已清空', 'info', 3000)
         loadHistory(0, 50)

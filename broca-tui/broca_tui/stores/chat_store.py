@@ -591,6 +591,9 @@ class ChatStore:
             elif command == "clear_context":
                 self._notify_info("上下文已清空")
                 return
+            elif command == "clear_all_context":
+                self._notify_info("所有 Agent 的上下文已清空")
+                return
             elif command == "clear_history":
                 self._notify_info("历史记录已清空")
                 import asyncio
@@ -1067,18 +1070,23 @@ class ChatStore:
         self._preserve_redo = False
 
         # 乐观更新：立即创建 TurnSummary（使用临时 turn_id），不等 turn_start
-        agent_id = target_agent_id or ""
-        agent_name = agent_id
-        if agent_id and self._on_get_agent_name:
-            agent_name = self._on_get_agent_name(agent_id) or agent_id
-        temp_id = f"_pending_{int(time.time() * 1000)}"
-        self._pending_turn_id = temp_id
-        self.create_turn_summary(temp_id, agent_id, agent_name)
-        # 预填用户消息
-        turn = self._find_turn(temp_id)
-        if turn:
-            turn.user_message = content.strip()
-        self._notify_change(force=True)
+        # 注意：命令（以 / 开头）不做乐观更新，因为后端可能将命令分派给不同于 target_agent_id 的
+        # sub-agent，前端无法预判正确 agent 名。命令的 turn card 等真实的 turn_start 事件创建。
+        is_command = content.strip().startswith("/")
+        temp_id = None
+        if not is_command:
+            agent_id = target_agent_id or ""
+            agent_name = agent_id
+            if agent_id and self._on_get_agent_name:
+                agent_name = self._on_get_agent_name(agent_id) or agent_id
+            temp_id = f"_pending_{int(time.time() * 1000)}"
+            self._pending_turn_id = temp_id
+            self.create_turn_summary(temp_id, agent_id, agent_name)
+            # 预填用户消息
+            turn = self._find_turn(temp_id)
+            if turn:
+                turn.user_message = content.strip()
+            self._notify_change(force=True)
 
         try:
             await self._socket.send_user_message(
@@ -1088,10 +1096,11 @@ class ChatStore:
             )
         except Exception as e:
             self._notify_error(f"发送消息失败: {e}")
-            # 发送失败，移除预创建的 turn
-            self.turn_summaries = [
-                t for t in self.turn_summaries if t.turn_id != temp_id
-            ]
+            # 发送失败，移除预创建的 turn（如有）
+            if temp_id:
+                self.turn_summaries = [
+                    t for t in self.turn_summaries if t.turn_id != temp_id
+                ]
             self._pending_turn_id = None
             self._notify_change(force=True)
 

@@ -12,7 +12,7 @@ Use /clear_context to clear context for a single agent.
 from pathlib import Path
 from typing import List, Optional
 
-from broca.commands.base import LocalCommand, CommandContext, CommandResult
+from broca.commands.base import CommandContext, CommandResult, LocalCommand
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -101,8 +101,7 @@ class ClearAllContextCommand(LocalCommand):
                         )
                         rebuilt_agents.append(a.agent_id)
                         logger.info(
-                            "Context rebuilt for agent %s after clear_all_context",
-                            a.agent_id,
+                            f"Context rebuilt for agent {a.agent_id} after clear_all_context"
                         )
                     except Exception as e:
                         logger.error(
@@ -112,35 +111,23 @@ class ClearAllContextCommand(LocalCommand):
                         )
             except Exception as e:
                 # Fallback: rebuild only the current agent's context
-                logger.warning(
+                logger.error(
                     "Could not get all agents from AgentFactory (%s), "
                     "rebuilding only current agent's context",
                     e,
                 )
-                await agent.context.build_history_from_session(
-                    agent.agent_id, rebuild_system_prompt=True
-                )
-                rebuilt_agents.append(agent.agent_id)
 
             # ================================================================
             # 4. Send frontend notification with clear agent identification
             # ================================================================
-            agent_names = [
-                a.config.name or a.agent_id[:8] for a in all_agents
-            ] if all_agents else [agent.config.name or agent.agent_id]
-
             try:
                 await agent.communicator.send_agent_system_message(
-                    content=(
-                        f"🧹 Context cleared for **all agents**"
-                        f" ({', '.join(agent_names)})"
-                    ),
+                    content="🧹 Context cleared for all agents",
                     subscription=agent.session_id,
                 )
             except Exception as e:
                 logger.warning(
-                    "Failed to send frontend notification for "
-                    "clear_all_context: %s",
+                    "Failed to send frontend notification for clear_all_context: %s",
                     e,
                 )
 
@@ -148,14 +135,12 @@ class ClearAllContextCommand(LocalCommand):
             # 5. Build result
             # ================================================================
             parts = [
-                f"Context cleared for all agents ({', '.join(agent_names)})",
+                "Context cleared for all agents",
                 f"Marked {len(all_ids)} messages as compressed",
             ]
             if cleared_session_memory:
                 parts.append("Session memory cleared")
-            parts.append(
-                f"Context rebuilt for {len(rebuilt_agents)} agent(s)"
-            )
+            parts.append(f"Context rebuilt for {len(rebuilt_agents)} agent(s)")
 
             return CommandResult(
                 type="text",
