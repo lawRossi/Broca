@@ -319,11 +319,18 @@ class ChatStore:
             turn_id = message.data.get("turn_id") if message.data else None
             if turn_id:
                 target_id = message.sender_id or message.agent_id
-                # 乐观更新：如果有预创建的 pending turn，替换 turn_id 而非新建
+                # 乐观更新：如果有预创建的 pending turn，替换 turn_id 并更新 agent 信息
+                # 注意：必须同时更新 agent_id/agent_name，因为指令（如 /init）可能被分派给
+                # 与乐观更新时假设的不同的 agent（如 sub-agent），否则 turn card 会一直显示错误的 agent 名。
                 if self._pending_turn_id:
                     pending = self._find_turn(self._pending_turn_id)
                     if pending:
                         pending.turn_id = turn_id
+                        pending.agent_id = target_id or ""
+                        if self._on_get_agent_name and target_id:
+                            pending.agent_name = self._on_get_agent_name(target_id) or target_id
+                        else:
+                            pending.agent_name = target_id or ""
                         self._pending_turn_id = None
                         self._notify_change(force=True)
                         return
