@@ -50,7 +50,6 @@ class SkillManager:
 
     def _load_installed_skills(self) -> None:
         boostrap_dirs = [
-            Path(__file__).parent.parent / "skills",
             Path.home() / ".agents/skills",
             Path.home() / ".broca/skills",
         ]
