@@ -425,18 +425,16 @@ fi
 
 # ---- 复制 llm_config.json ----
 LLM_DST="$BROCA_HOME/configs/llm_config_template.json"
+LLM_CONFIG="$BROCA_HOME/configs/llm_config.json"
 LLM_SRC="$PROJECT_ROOT/configs/llm_config_template.json"
 
-if [[ ! -f "$LLM_DST" ]]; then
-    if [[ -f "$LLM_SRC" ]]; then
-        cp "$LLM_SRC" "$LLM_DST"
-        info "已创建用户 LLM 配置: $LLM_DST"
-    else
-        warn "未找到默认 LLM 配置: $LLM_SRC"
-        echo "  请手动创建 $LLM_DST"
-    fi
+cp "$LLM_SRC" "$LLM_DST"
+
+if [[ ! -f "$LLM_CONFIG" ]]; then
+    cp "$LLM_SRC" "$LLM_CONFIG"
+    info "已创建用户 LLM 配置: $LLM_CONFIG"
 else
-        info "用户 LLM 配置已存在: ${LLM_DST}（跳过）"
+    info "用户 LLM 配置已存在: ${LLM_CONFIG}（跳过）"
 fi
 
 # ---- 复制 Agent 配置 ----
