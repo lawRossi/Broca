@@ -8,10 +8,26 @@ description: "Analyze conversation and update persistent memory. Always use this
 
 Analyze the conversation above and update the persistent memory system.
 
+## Memory Storage
+
+All persistent memory files are stored under `{workspace}/.broca/memories/`:
+- **Memory files**: Individual `.md` files for each memory entry
+- **Index file**: `MEMORY.md` — the index of all memory entries (always loaded in context)
+
+The memory directory structure:
+```
+{workspace}/.broca/memories/
+├── MEMORY.md          # Index file, always loaded in agent context
+├── user-*.md          # User-related memories
+├── feedback-*.md      # Feedback memories
+├── project-*.md       # Project memories
+└── reference-*.md     # Reference memories
+```
+
 ## Available Tools
 
 - Read-only tools: read_file, glob, grep, list_dir, tree_dir
-- Write tools: edit_file, write_file (only for paths inside the memory directory)
+- Write tools: edit_file, write_file (only for paths inside `{workspace}/.broca/memories/`)
 - All other tools are DENIED.
 - Efficient strategy: turn 1 — read all files you might update in parallel; turn 2 — write/edit all files in parallel.
 
