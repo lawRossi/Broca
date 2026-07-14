@@ -7,7 +7,7 @@ MemoryStore — 持久化记忆存储管理器
 from __future__ import annotations
 
 import logging
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 from typing import Optional
 
@@ -15,10 +15,7 @@ from .types import (
     INDEX_LINE_RE,
     MemoryEntry,
     MemoryIndexEntry,
-    MemoryType,
     build_memory_file,
-    days_old,
-    freshness_label,
     freshness_warning,
     parse_memory_file,
 )
@@ -96,7 +93,12 @@ class MemoryStore:
 
         for line in raw.split("\n"):
             line = line.strip()
-            if not line or line.startswith("#") or line.startswith("<!--") or line.startswith("═"):
+            if (
+                not line
+                or line.startswith("#")
+                or line.startswith("<!--")
+                or line.startswith("═")
+            ):
                 continue
             match = INDEX_LINE_RE.match(line)
             if not match:
@@ -106,12 +108,14 @@ class MemoryStore:
             description = match.group(3).strip()
             # 解析日期（可选）
             updated = _parse_date_from_str(match.group(4))
-            entries.append(MemoryIndexEntry(
-                name=name,
-                filepath=filepath,
-                description=description,
-                updated=updated,
-            ))
+            entries.append(
+                MemoryIndexEntry(
+                    name=name,
+                    filepath=filepath,
+                    description=description,
+                    updated=updated,
+                )
+            )
 
         entries.sort(key=lambda e: e.updated, reverse=True)
         return entries
@@ -239,9 +243,7 @@ class MemoryStore:
         """
         resolved = path.resolve()
         if not str(resolved).startswith(str(self.memory_dir)):
-            raise PermissionError(
-                f"路径 {resolved} 不在记忆目录 {self.memory_dir} 内"
-            )
+            raise PermissionError(f"路径 {resolved} 不在记忆目录 {self.memory_dir} 内")
 
     def _build_index_text(self, entries: list[MemoryIndexEntry]) -> str:
         """
@@ -255,8 +257,7 @@ class MemoryStore:
         for entry in entries:
             date_str = entry.updated.isoformat()
             line = (
-                f"- [{entry.name}]({entry.filepath})"
-                f" — {entry.description} ({date_str})"
+                f"- [{entry.name}]({entry.filepath}) — {entry.description} ({date_str})"
             )
             lines.append(line)
 

@@ -4,6 +4,7 @@ import os
 import platform
 import subprocess
 import sys
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
@@ -261,8 +262,10 @@ class AgentFactory:
         return agent
 
     def _init_environment(self, config: AgentConfig) -> str:
+        now = datetime.now()
         lines = [
             f"System: {platform.system()}",
+            f"Date: {now.strftime('%Y-%m-%d')}",
             f"Workspace: {config.workspace}",
         ]
 
