@@ -212,6 +212,12 @@ Label {
     text-style: bold;
 }
 
+.nav-button:focus {
+    background: $primary-700;
+    text-style: bold;
+    border: none;
+}
+
 /* ============================================================
    SIDEBARS
    ============================================================ */

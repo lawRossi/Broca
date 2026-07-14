@@ -552,6 +552,12 @@ class ChatScreen(Screen):
         """Handle navigation to sessions from header."""
         self.action_go_to_sessions()
 
+    def on_chat_header_refresh_requested(
+        self, event: ChatHeader.RefreshRequested
+    ) -> None:
+        """Handle refresh from header button — reconnects and reloads all data."""
+        self.run_worker(self._refresh_on_return())
+
     def on_orchestration_banner_navigate_to_crew(
         self, event: OrchestrationBanner.NavigateToCrew
     ) -> None:
@@ -588,6 +594,17 @@ class ChatScreen(Screen):
             pass
         self._chat_store.clear_messages()
         await self._connect()
+
+        # 刷新完成后将焦点从按钮移到聊天输入区，避免按钮 focus 样式残留
+        try:
+            if self._category != "agent-orchestration":
+                chat_input = self.query_one("#chat-input", ChatInput)
+                chat_input.focus()
+            else:
+                message_list = self.query_one("#message-list", MessageList)
+                message_list.focus()
+        except Exception:
+            pass
 
     # ==================== Cleanup ====================
 

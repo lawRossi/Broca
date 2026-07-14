@@ -33,6 +33,9 @@ class ChatHeader(Widget):
     class NavigateToSessions(Message, bubble=True):
         """Message posted when user wants to go to sessions list."""
 
+    class RefreshRequested(Message, bubble=True):
+        """Message posted when user clicks the refresh button."""
+
     def __init__(
         self,
         session_id: str = "",
@@ -57,6 +60,7 @@ class ChatHeader(Widget):
 
             # Right section: Navigation buttons
             with Horizontal(classes="header-right"):
+                yield Button("🔄 刷新", id="btn-refresh", classes="nav-button")
                 yield Button("← 会话列表", id="btn-sessions", classes="nav-button")
 
     def on_mount(self) -> None:
@@ -105,6 +109,10 @@ class ChatHeader(Widget):
         """Navigate back to session list."""
         self.post_message(self.NavigateToSessions())
 
+    def action_refresh(self) -> None:
+        """Trigger page refresh."""
+        self.post_message(self.RefreshRequested())
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses.
 
@@ -113,3 +121,5 @@ class ChatHeader(Widget):
         """
         if event.button.id == "btn-sessions":
             self.action_go_to_sessions()
+        elif event.button.id == "btn-refresh":
+            self.action_refresh()
