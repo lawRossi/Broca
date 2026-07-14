@@ -85,26 +85,12 @@ Broca 是一个用 Python 构建的Agent系统，核心设计理念是 **模块�
 
 ```bash
 # 克隆项目
-git clone <repo-url> && cd broca
+git clone https://github.com/lawRossi/Broca && cd broca
 
 # 一键安装
 sh scripts/install.sh
 ```
 
-安装脚本会依次执行：
-
-| 步骤　| 内容　　　　　　　　　　　　　　　　　　　　　　　　　　　 |
-| :-----:| ------------------------------------------------------------|
-| 1/10　| 检查系统依赖（Python ≥3.12、pnpm、nginx）　　　　　　　　　|
-| 2/10　| 安装 broca Python 模块 + supervisor　　　　　　　　　　　　|
-| 3/10　| 数据库迁移（broca 主数据库 + 后端数据库）　　　　　　　　　|
-| 4/10　| 创建管理员账户（交互式）　　　　　　　　　　　　　　　　　 |
-| 5/10　| 配置文件上传存储（可选，支持 Cloudflare R2 / Supabase S3） |
-| 6/10　| 安装前端依赖并构建　　　　　　　　　　　　　　　　　　　　 |
-| 7/10　| 打包 VS Code 插件　　　　　　　　　　　　　　　　　　　　　|
-| 8/10　| 配置 nginx 站点（生成代理配置 + 部署静态文件）　　　　　　 |
-| 9/10　| 创建 supervisor 进程管理配置　　　　　　　　　　　　　　　 |
-| 10/10 | 完成安装　　　　　　　　　　　　　　　　　　　　　　　　　 |
 
 安装目录结构：
 
@@ -133,7 +119,7 @@ sh scripts/install.sh
 └── nginx-broca.conf              # nginx 配置
 ```
 
-**注意**: 首次安装需要将~/.broca/configs/llm_config_template.json改成llm_config.json，并填写相关api key。
+**注意**: 首次安装需要在～/.broca/llm_config.json填写相关api key。
 
 ### 服务管理
 
