@@ -130,9 +130,15 @@ export const useChatStore = defineStore('chat', () => {
       restartingRunner.value = true
       const { ElMessage } = await import('element-plus')
       await sessionApi.restartRunner(sessionId.value)
-      ElMessage.success('进程重启成功')
-      // 立刻刷新状态
-      await fetchRunnerStatus()
+      ElMessage.success('进程启动成功')
+      // 轮询等待 runner 真正变为 alive（最多等 30 秒，每 2 秒检查一次）
+      // 避免立即 fetchRunnerStatus() 时 runner 尚在 'starting' 状态，
+      // 导致 runnerAlive 未变为 true，AgentSidebar 的自动轮询无法启动
+      for (let i = 0; i < 15; i++) {
+        await fetchRunnerStatus()
+        if (runnerInfo.value?.status === 'alive') break
+        await new Promise(r => setTimeout(r, 2000))
+      }
     } catch (error: any) {
       const { ElMessage } = await import('element-plus')
       ElMessage.error('重启失败: ' + (error.message || '未知错误'))

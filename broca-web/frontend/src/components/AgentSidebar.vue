@@ -276,6 +276,21 @@ watch(
   { immediate: true }
 )
 
+// 额外监听 runner status 变化作为后备：当 status 变为 'alive' 时确保自动轮询启动
+// 与 runnerAlive watcher 互补，处理 computed 可能因竞态未触发的边界情况
+watch(
+  () => chatStore.runnerInfo?.status,
+  (newStatus) => {
+    if (newStatus === 'alive' && chatStore.sessionId) {
+      // 先立即刷新一次 agent 数据，确保用户点击"启动进程"后能看到最新数据
+      if (!autoRefreshInterval.value) {
+        refreshAgents()
+        startAutoRefresh(10000)
+      }
+    }
+  }
+)
+
 // 监听 session 变化，当 runner 运行时自动刷新 agents
 watch(
   () => chatStore.sessionId,

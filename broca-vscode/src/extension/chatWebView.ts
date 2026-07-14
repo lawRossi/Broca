@@ -1107,15 +1107,34 @@ export class ChatWebViewManager {
       if (payload.action === 'stop') {
         await this.apiClient.stopRunner(sessionId)
         vscode.window.showInformationMessage('Runner stopped')
+        // 延迟刷新状态
+        setTimeout(async () => {
+          try {
+            const status = await this.apiClient.getRunnerStatus(sessionId)
+            if (status) {
+              this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
+            }
+          } catch {}
+        }, 3000)
       } else {
         await this.apiClient.restartRunner(sessionId)
-        vscode.window.showInformationMessage('Runner restarting...')
+        vscode.window.showInformationMessage('Runner starting...')
+        // 轮询等待 runner 真正变为 alive（最多等 30 秒，每 2 秒检查一次）
+        // 避免立即 getRunnerStatus() 时 runner 尚在 'starting' 状态，
+        // 导致 WebView 中 runnerAlive computed 未变为 true，AgentSidebar 的自动轮询无法启动
+        for (let i = 0; i < 15; i++) {
+          try {
+            const status = await this.apiClient.getRunnerStatus(sessionId)
+            if (status) {
+              this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
+              if (status.status === 'alive') {
+                break
+              }
+            }
+          } catch {}
+          await new Promise(r => setTimeout(r, 2000))
+        }
       }
-      // Immediately refresh status
-      try {
-        const status = await this.apiClient.getRunnerStatus(sessionId)
-        this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
-      } catch {}
       this.postToPanel(panel, { type: 'runnerActionResult', payload: { success: true } } as ExtensionToWebView)
     } catch (error: any) {
       showErrorNotification(error, 'Runner action failed')

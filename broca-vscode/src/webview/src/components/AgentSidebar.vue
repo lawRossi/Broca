@@ -243,6 +243,20 @@ watch(
   { immediate: true }
 )
 
+// 额外监听 runner status 变化作为后备：当 status 变为 'alive' 时确保自动轮询启动
+// 与 runnerAlive watcher 互补，处理 computed 可能因竞态未触发的边界情况
+watch(
+  () => chatStore.runnerInfo?.status,
+  (newStatus) => {
+    if (newStatus === 'alive' && chatStore.sessionId) {
+      if (!autoRefreshInterval.value) {
+        refreshAgents()
+        startAutoRefresh(30000)
+      }
+    }
+  }
+)
+
 onUnmounted(() => {
   stopAutoRefresh()
   document.removeEventListener('click', handleDocumentClick)
