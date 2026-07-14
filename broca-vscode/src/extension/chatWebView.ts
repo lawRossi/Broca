@@ -25,8 +25,18 @@ export class ChatWebViewManager {
     this.apiClient = new ApiClient(configManager, () => authManager.token)
     this.apiClient.onAuthError = onAuthError ?? null
     this._onAuthError = onAuthError ?? null
+
+    // 监听 VS Code 窗口焦点变化（Alt+Tab 切出/切回）
+    this._windowStateDisposable = vscode.window.onDidChangeWindowState((e) => {
+      if (e.focused) {
+        this._onWindowFocus()
+      } else {
+        this._onWindowBlur()
+      }
+    })
   }
 
+  private _windowStateDisposable: vscode.Disposable | null = null
   private _onAuthError: (() => void) | null = null
 
   /**
@@ -55,8 +65,11 @@ export class ChatWebViewManager {
     }
   }
 
-  // 记录每个 session 的 Webview 离开时间戳（用于离开超5分钟自动刷新）
+  // 离开页面检测：用户离开页面超过超时时间（1分钟），回来时自动刷新
+  private static readonly LEAVE_TIMEOUT_MS = 60 * 1000 // 1 分钟
   private webviewLeaveTimestamps = new Map<string, number>()
+  // 记录 panel 创建时间，兜底后台打开 panel 的场景
+  private panelCreatedTimestamps = new Map<string, number>()
 
   async openChat(sessionId: string, executionId?: string) {
     try {
@@ -101,6 +114,8 @@ export class ChatWebViewManager {
 
       // Store panel reference
       this.panels.set(sessionId, panel)
+      // 记录 panel 创建时间，兜底后台打开 panel 的场景
+      this.panelCreatedTimestamps.set(sessionId, Date.now())
 
       // Handle panel disposal
       panel.onDidDispose(() => {
@@ -119,6 +134,7 @@ export class ChatWebViewManager {
         }
         this.sessionExecutionIds.delete(sessionId)
         this.panels.delete(sessionId)
+        this.panelCreatedTimestamps.delete(sessionId)
       })
 
       // Handle messages from WebView
@@ -131,9 +147,11 @@ export class ChatWebViewManager {
       panel.onDidChangeViewState((e) => {
         if (e.webviewPanel.visible) {
           this.startRunnerPolling(sessionId, panel)
-          // 检查离开是否超过5分钟，是则通知 Webview 刷新
+          // 检查是否超时：取离开时间和 panel 创建时间的较晚者
           const leaveTs = this.webviewLeaveTimestamps.get(sessionId) || 0
-          if (leaveTs > 0 && Date.now() - leaveTs >= 5 * 60 * 1000) {
+          const createTs = this.panelCreatedTimestamps.get(sessionId) || 0
+          const lastHidden = Math.max(leaveTs, createTs)
+          if (lastHidden > 0 && Date.now() - lastHidden >= ChatWebViewManager.LEAVE_TIMEOUT_MS) {
             this.postToPanel(panel, { type: 'refreshSession' } as ExtensionToWebView)
           }
           this.webviewLeaveTimestamps.delete(sessionId)
@@ -144,6 +162,28 @@ export class ChatWebViewManager {
       })
     } catch (error: any) {
       showErrorNotification(error, '打开聊天失败')
+    }
+  }
+
+  // 窗口失去焦点（Alt+Tab 切到其他应用）：记录所有激活 panel 的离开时间
+  private _onWindowBlur(): void {
+    const now = Date.now()
+    for (const [sessionId] of this.panels) {
+      this.webviewLeaveTimestamps.set(sessionId, now)
+    }
+  }
+
+  // 窗口恢复焦点（切回 VS Code）：检查所有激活 panel 是否需要刷新
+  private _onWindowFocus(): void {
+    const now = Date.now()
+    for (const [sessionId, panel] of this.panels) {
+      const leaveTs = this.webviewLeaveTimestamps.get(sessionId) || 0
+      const createTs = this.panelCreatedTimestamps.get(sessionId) || 0
+      const lastHidden = Math.max(leaveTs, createTs)
+      if (lastHidden > 0 && now - lastHidden >= ChatWebViewManager.LEAVE_TIMEOUT_MS) {
+        this.postToPanel(panel, { type: 'refreshSession' } as ExtensionToWebView)
+      }
+      this.webviewLeaveTimestamps.delete(sessionId)
     }
   }
 
@@ -1951,5 +1991,10 @@ export class ChatWebViewManager {
       this.disposeSession(sessionId)
     }
     this.panels.clear()
+    // Cleanup window state listener
+    if (this._windowStateDisposable) {
+      this._windowStateDisposable.dispose()
+      this._windowStateDisposable = null
+    }
   }
 }

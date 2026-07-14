@@ -11,6 +11,7 @@ Manages Socket.IO lifecycle, event callbacks, and navigation.
 
 from __future__ import annotations
 
+import time
 from typing import Any, Dict, Optional
 
 from textual.app import ComposeResult
@@ -70,6 +71,10 @@ class ChatScreen(Screen):
 
         # Track active dialog for auto-dismiss on new task messages
         self._active_dialog: Optional["ModalScreen"] = None
+
+        # 离开页面检测：记录 screen 创建时间，兜底后台打开的场景
+        self._leave_timestamp: float = 0.0
+        self._screen_created_timestamp: float = time.time()
 
     def compose(self) -> ComposeResult:
         """Create the three-panel layout."""
@@ -568,26 +573,45 @@ class ChatScreen(Screen):
         """Handle agent abort from sidebar button (called directly by AgentCard)."""
         self.run_worker(self._chat_store.send_abort(agent_id))
 
-    # ==================== Leave/Resume (离开超5分钟自动刷新) ====================
+    # ==================== Leave/Resume (离开超1分钟自动刷新) ====================
 
     _leave_timestamp: float = 0.0
+    _screen_created_timestamp: float = 0.0
+    _LEAVE_TIMEOUT_SECONDS: float = 60  # 1 分钟
 
     def on_leave(self) -> None:
         """Screen 被覆盖时记录离开时间。"""
-        import time
         self._leave_timestamp = time.time()
 
     def on_resume(self) -> None:
-        """Screen 恢复时检查是否超过5分钟，是则回到会话列表页。"""
-        import time
-        if self._leave_timestamp > 0:
-            elapsed = time.time() - self._leave_timestamp
+        """Screen 恢复时检查是否超过1分钟，是则重连刷新。
+
+        取离开时间和 screen 创建时间的较晚者，兜底后台打开 screen 的场景。
+        """
+        self._check_auto_refresh()
+
+    def on_terminal_blur(self) -> None:
+        """Terminal 窗口失去焦点（切到其他 App）。"""
+        self._leave_timestamp = time.time()
+
+    def on_terminal_focus(self) -> None:
+        """Terminal 窗口恢复焦点（从其他 App 切回来）。"""
+        self._check_auto_refresh()
+
+    def _check_auto_refresh(self) -> None:
+        """检查是否超时，是则重连刷新。
+
+        取离开时间和 screen 创建时间的较晚者，兜底各种漏判场景。
+        """
+        if self._leave_timestamp > 0 or self._screen_created_timestamp > 0:
+            last_hidden = max(self._leave_timestamp, self._screen_created_timestamp)
+            elapsed = time.time() - last_hidden
             self._leave_timestamp = 0.0
-            if elapsed >= 300:  # 5分钟
+            if elapsed >= self._LEAVE_TIMEOUT_SECONDS:
                 self.run_worker(self._refresh_on_return())
 
     async def _refresh_on_return(self) -> None:
-        """离开超过5分钟后回到页面时重连刷新。"""
+        """离开超过1分钟后回到页面时重连刷新。"""
         try:
             await self._chat_store.disconnect()
         except Exception:

@@ -67,18 +67,27 @@ watch(executionId, (newExecId, oldExecId) => {
   }
 })
 
-// 离开页面时间戳，用于检测是否超过5分钟自动刷新
+// 离开页面检测：用户离开页面超过超时时间（1分钟），回来时自动刷新
+const LEAVE_TIMEOUT_MS = 60 * 1000 // 1 分钟
+
 let _leaveTimestamp = 0
+// 记录页面加载时间，兜底后台打开标签页的场景
+const _pageLoadTimestamp = Date.now()
+
+function checkAndReload() {
+  const lastHidden = Math.max(_leaveTimestamp, _pageLoadTimestamp)
+  const elapsed = Date.now() - lastHidden
+  if (elapsed >= LEAVE_TIMEOUT_MS) {
+    location.reload()
+  }
+  _leaveTimestamp = 0
+}
 
 function onVisibilityChange() {
   if (document.hidden) {
     _leaveTimestamp = Date.now()
   } else {
-    const elapsed = Date.now() - _leaveTimestamp
-    if (_leaveTimestamp > 0 && elapsed >= 5 * 60 * 1000) {
-      location.reload()
-    }
-    _leaveTimestamp = 0
+    checkAndReload()
   }
 }
 
@@ -86,11 +95,26 @@ onMounted(() => {
   chatStore.init()
   chatStore.autoConnectAndSubscribe(executionId.value)
   loadSessionInfo()
+
+  // 标准 visibilitychange 监听
   document.addEventListener('visibilitychange', onVisibilityChange)
+  // bfcache 恢复兜底（前进/后退缓存）
+  window.addEventListener('pageshow', onPageShow)
+  // 如果页面加载时就已经在后台，立即记录时间
+  if (document.hidden) {
+    _leaveTimestamp = Date.now()
+  }
 })
+
+function onPageShow() {
+  if (document.visibilityState === 'visible') {
+    checkAndReload()
+  }
+}
 
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
+  window.removeEventListener('pageshow', onPageShow)
   chatStore.cleanup()
 })
 </script>

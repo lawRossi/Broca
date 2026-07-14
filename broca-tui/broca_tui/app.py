@@ -12,6 +12,7 @@ from typing import Optional
 
 from textual.app import App
 from textual.binding import Binding
+from textual.events import AppBlur, AppFocus
 from textual.reactive import reactive
 
 from broca_tui.config import get_config
@@ -72,6 +73,20 @@ class BrocaTUIApp(App):
             self._open_chat(self._session_id)
         else:
             self.push_screen(SessionListScreen())
+
+    async def _on_app_focus(self, event: AppFocus) -> None:
+        """Terminal 窗口恢复焦点（从其他 App 切回来）。"""
+        await super()._on_app_focus(event)
+        from broca_tui.screens.chat import ChatScreen
+        if isinstance(self.screen, ChatScreen):
+            self.screen.on_terminal_focus()
+
+    async def _on_app_blur(self, event: AppBlur) -> None:
+        """Terminal 窗口失去焦点（切到其他 App）。"""
+        await super()._on_app_blur(event)
+        from broca_tui.screens.chat import ChatScreen
+        if isinstance(self.screen, ChatScreen):
+            self.screen.on_terminal_blur()
 
     def on_session_list_screen_session_selected(self, event):
         """Handle session selection from SessionListScreen."""
