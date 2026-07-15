@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, List, Optional
 
+from broca.errors import OrchestrationError, ValidationError
 from broca.logging_config import get_logger
 from broca.orchestration.crew import (
     CrewConfig,
@@ -118,11 +119,11 @@ class CompositeOrchestrator(GraphOrchestrator):
     async def _execute_crew_node(self, node: Node) -> Any:
         """执行子 Crew 节点，返回子编排的最终输出。"""
         if not node.crew_ref:
-            raise ValueError(f"CREW node '{node.name}' missing 'crew_ref'")
+            raise ValidationError(f"CREW node '{node.name}' missing 'crew_ref'")
 
         sub_crew = self._resolve_sub_crew(node.crew_ref)
         if not sub_crew:
-            raise ValueError(
+            raise ValidationError(
                 f"CREW node '{node.name}': sub-crew '{node.crew_ref}' not found"
             )
 
@@ -168,12 +169,12 @@ class CompositeOrchestrator(GraphOrchestrator):
 
         if sub_result.status == ExecutionStatus.ABORTED:
             await self.abort()
-            raise RuntimeError(
+            raise OrchestrationError(
                 f"Sub-crew '{sub_crew.name}' aborted: {sub_result.error}"
             )
 
         if sub_result.status == ExecutionStatus.FAILED:
-            raise RuntimeError(f"Sub-crew '{sub_crew.name}' failed: {sub_result.error}")
+            raise OrchestrationError(f"Sub-crew '{sub_crew.name}' failed: {sub_result.error}")
 
         return sub_result.final_output
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, Optional
 
+from broca.errors import OrchestrationError
 from broca.logging_config import get_logger
 from broca.orchestration.blackboard import Blackboard
 from broca.orchestration.crew import CrewConfig
@@ -229,7 +230,7 @@ class CrewOrchestratorRunner:
     async def _run_with_progress(self) -> OrchestrationResult:
         """带进度推送的编排执行"""
         if not self._orchestrator:
-            raise RuntimeError("Orchestrator not initialized")
+            raise OrchestrationError("Orchestrator not initialized")
 
         # 订阅黑板事件以推送进度
         unsubscribe = self._orchestrator.context.blackboard.subscribe(

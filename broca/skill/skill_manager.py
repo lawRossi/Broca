@@ -4,6 +4,7 @@ from pathlib import Path
 import yaml
 
 from broca.logging_config import get_logger
+from broca.errors import ValidationError
 
 logger = get_logger(__name__)
 
@@ -45,7 +46,7 @@ class SkillManager:
                     if name in workspace_skills:
                         skills[name] = workspace_skills[name]
                     else:
-                        raise ValueError(f"Skill '{name}' not found.")
+                        raise ValidationError(f"Skill '{name}' not found.")
         return skills
 
     def _load_installed_skills(self) -> None:
@@ -122,7 +123,7 @@ class SkillManager:
         if skill_name in workspace_skills:
             return self._wrap_skill(workspace_skills[skill_name])
 
-        raise ValueError(f"Skill '{skill_name}' not found.")
+        raise ValidationError(f"Skill '{skill_name}' not found.")
 
     def refresh_index(self):
         """重新扫描所有 Skill 目录，刷新索引。"""

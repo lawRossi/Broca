@@ -26,6 +26,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from broca.logging_config import get_logger
+from broca.errors import BrocaError
 
 logger = get_logger(__name__)
 
@@ -140,7 +141,7 @@ def _call_supervisorctl(args: List[str]) -> Tuple[int, str, str]:
     """调用 supervisorctl 并返回 (returncode, stdout, stderr)"""
     cmd = _find_supervisorctl()
     if not cmd:
-        raise RuntimeError("supervisorctl 未找到，请先执行 'broca service install'")
+        raise BrocaError("supervisorctl 未找到，请先执行 'broca service install'")
 
     full_cmd = (
         cmd.split()

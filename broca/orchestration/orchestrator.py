@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional, Tuple
 
+from broca.errors import ErrorCode, ValidationError
 from broca.logging_config import get_logger
-from broca.orchestration.blackboard import Blackboard
 from broca.utils.datetime_util import serialize_dt
 from broca.orchestration.crew import (
     CrewConfig,
@@ -423,7 +423,7 @@ class OrchestratorFactory:
 
         mapping = OrchestratorFactory._ORCHESTRATOR_MAP
         if otype not in mapping:
-            raise ValueError(f"Unsupported orchestrator type: {otype}")
+            raise ValidationError(f"Unsupported orchestrator type: {otype}", error_code=ErrorCode.VALIDATION_CONFIG_ERROR)
 
         module_path, class_name = mapping[otype]
         try:

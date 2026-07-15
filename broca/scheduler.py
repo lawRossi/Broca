@@ -16,6 +16,7 @@ from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from broca.logging_config import get_logger
+from broca.errors import ValidationError
 from broca.process_manager import ProcessManager, ProcessStatus
 from broca.session.models import JobStatus, JobType, MessageProtocol
 from broca.session.service import get_job_execution_service, get_job_service
@@ -88,22 +89,22 @@ class Scheduler:
             if isinstance(config, dict):
                 return CronTrigger(**config)
             else:
-                raise ValueError(f"Invalid trigger config for cron: {config}")
+                raise ValidationError(f"Invalid trigger config for cron: {config}")
 
         elif trigger_type == "interval":
             if isinstance(config, dict):
                 return IntervalTrigger(**config)
             else:
-                raise ValueError(f"Invalid trigger config for interval: {config}")
+                raise ValidationError(f"Invalid trigger config for interval: {config}")
 
         elif trigger_type == "date":
             if isinstance(config, dict):
                 return DateTrigger(**config)
             else:
-                raise ValueError(f"Invalid trigger config for date: {config}")
+                raise ValidationError(f"Invalid trigger config for date: {config}")
 
         else:
-            raise ValueError(f"Unknown trigger type: {trigger_type}")
+            raise ValidationError(f"Unknown trigger type: {trigger_type}")
 
     async def start(self):
         """启动调度器，从数据库恢复任务"""
@@ -225,7 +226,7 @@ class Scheduler:
             elif job_type == JobType.COMMAND:
                 func = self._execute_command
             else:
-                raise ValueError(f"Unsupported job type: {job_type}")
+                raise ValidationError(f"Unsupported job type: {job_type}")
 
             # 添加到APScheduler
             aps_job = self.apscheduler.add_job(

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from broca.logging_config import get_logger
+from broca.errors import ValidationError
 
 logger = get_logger(__name__)
 
@@ -121,7 +122,7 @@ class ToolPermissionManager:
             permission: One of "allow", "forbidden"
         """
         if permission not in {"allow", "forbidden"}:
-            raise ValueError(
+            raise ValidationError(
                 f"Session override must be 'allow' or 'forbidden', got '{permission}'"
             )
         self._session_overrides[tool_name] = permission

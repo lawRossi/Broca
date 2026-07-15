@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional
 from socketio import AsyncClient
 
 from broca.logging_config import get_logger
+from broca.errors import CommunicationError
 from broca.session.models import Message, MessageProtocol, MessageRole, MessageType
 
 logger = get_logger(__name__)
@@ -343,7 +344,7 @@ class SocketIOClient:
             except asyncio.TimeoutError:
                 logger.error(f"Connection timeout after {timeout}s")
                 await self.sio.disconnect()
-                raise RuntimeError(f"Connection timeout after {timeout}s")
+                raise CommunicationError(f"Connection timeout after {timeout}s")
                 return False
 
             logger.debug(f"Connected to server at {self.server_url}")
@@ -414,12 +415,12 @@ class SocketIOClient:
                     await self.connect()
                 except Exception as e:
                     logger.error(f"Failed to reconnect: {e}")
-                    raise RuntimeError(
+                    raise CommunicationError(
                         "Not connected to server and reconnection failed"
                     )
             else:
                 logger.error("Not connected to server")
-                raise RuntimeError("Not connected to server")
+                raise CommunicationError("Not connected to server")
 
         # Set sender ID if not set
         if not message.sender_id:
@@ -677,17 +678,20 @@ class SocketIOClient:
 
     async def send_error(
         self,
-        error_message: str,
-        error_code: Optional[str] = None,
+        error_info: dict,
         receiver_id: Optional[str] = None,
         room: Optional[str] = None,
         subscription: Optional[str] = None,
         callback: Optional[Callable] = None,
     ) -> str:
-        """Send error message"""
+        """发送结构化错误消息到前端
+
+        Args:
+            error_info: 来自 BrocaError.to_dict() 的结构化错误信息，
+                       包含 code / severity / message / recovery_hint / details / cause / traceback
+        """
         msg = MessageProtocol.create_error_message(
-            content=error_message,
-            error_code=error_code,
+            error_info=error_info,
             sender_id=self.client_id,
             receiver_id=receiver_id,
             room=room,
@@ -780,7 +784,7 @@ class SocketIOClient:
             Message ID
         """
         if not self.connection_info.connected:
-            raise RuntimeError("Not connected to server")
+            raise CommunicationError("Not connected to server")
 
         message = MessageProtocol.create_subscribe(
             subscription=subscription, sender_id=self.client_id
@@ -811,7 +815,7 @@ class SocketIOClient:
             Message ID
         """
         if not self.connection_info.connected:
-            raise RuntimeError("Not connected to server")
+            raise CommunicationError("Not connected to server")
 
         message = MessageProtocol.create_unsubscribe(
             subscription=subscription, sender_id=self.client_id

@@ -16,6 +16,7 @@ from broca.commands.base import (
     PromptCommand,
 )
 from broca.commands.registry import CommandRegistry
+from broca.errors import BrocaError
 from broca.logging_config import get_logger
 from broca.session import MessageProtocol
 
@@ -65,46 +66,53 @@ async def dispatch_command(
             type="error", value=f"Command '{name}' is currently disabled."
         )
 
-    if isinstance(cmd, PromptCommand):
-        prompt_text = await cmd.build_prompt(args, ctx)
+    try:
+        if isinstance(cmd, PromptCommand):
+            prompt_text = await cmd.build_prompt(args, ctx)
 
-        # Build message, reusing the original message_id for message chain consistency
-        message = MessageProtocol.create_user_message(
-            content=prompt_text,
-            session_id=ctx.session_id,
-            agent_id=ctx.agent_id,
-        )
-        if ctx.original_message_id:
-            message.message_id = ctx.original_message_id
-        if ctx.raw_input:
-            message.data["raw_input"] = ctx.raw_input
+            # Build message, reusing the original message_id for message chain consistency
+            message = MessageProtocol.create_user_message(
+                content=prompt_text,
+                session_id=ctx.session_id,
+                agent_id=ctx.agent_id,
+            )
+            if ctx.original_message_id:
+                message.message_id = ctx.original_message_id
+            if ctx.raw_input:
+                message.data["raw_input"] = ctx.raw_input
 
-        if cmd.use_sub_agent:
-            # Sub Agent execution: async dispatch, non-blocking
-            from broca.agent_manager import AgentFactory
+            if cmd.use_sub_agent:
+                # Sub Agent execution: async dispatch, non-blocking
+                from broca.agent_manager import AgentFactory
 
-            factory = AgentFactory()
-            sub_agent = factory.get_agent(ctx.session_id, cmd.sub_agent_name)
-            if sub_agent:
-                asyncio.create_task(sub_agent.run(message))
+                factory = AgentFactory()
+                sub_agent = factory.get_agent(ctx.session_id, cmd.sub_agent_name)
+                if sub_agent:
+                    asyncio.create_task(sub_agent.run(message))
+                    return CommandResult(
+                        type="text",
+                        value=f"Task dispatched to {cmd.sub_agent_name} via /{name}",
+                    )
+                else:
+                    return CommandResult(
+                        type="error",
+                        value=f"Sub-agent '{cmd.sub_agent_name}' not found",
+                    )
+            else:
+                # Current Agent execution: blocking wait
+                result = await ctx.agent.run(message)
                 return CommandResult(
                     type="text",
-                    value=f"Task dispatched to {cmd.sub_agent_name} via /{name}",
+                    value=result.message or f"Command /{name} completed",
                 )
-            else:
-                return CommandResult(
-                    type="error",
-                    value=f"Sub-agent '{cmd.sub_agent_name}' not found",
-                )
-        else:
-            # Current Agent execution: blocking wait
-            result = await ctx.agent.run(message)
-            return CommandResult(
-                type="text",
-                value=result.message or f"Command /{name} completed",
-            )
 
-    elif isinstance(cmd, LocalCommand):
-        return await cmd.execute(args, ctx)
+        elif isinstance(cmd, LocalCommand):
+            return await cmd.execute(args, ctx)
 
-    return None
+        return None
+    except BrocaError as e:
+        logger.error(f"Command /{name} failed: {e}")
+        return CommandResult(
+            type="error",
+            value=e.to_user_message(),
+        )

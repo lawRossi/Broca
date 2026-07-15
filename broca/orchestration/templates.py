@@ -4,6 +4,7 @@
 预置的编排模板，可直接用于常见场景。
 """
 
+from broca.errors import ValidationError
 from broca.orchestration.crew import (
     AgentRole,
     AgentRoleConfig,
@@ -361,7 +362,7 @@ def create_from_template(template_id: str, **kwargs) -> CrewConfig:
         ValueError: 模板不存在或缺少必填参数
     """
     if template_id not in TEMPLATE_REGISTRY:
-        raise ValueError(
+        raise ValidationError(
             f"Unknown template '{template_id}'. "
             f"Available: {list(TEMPLATE_REGISTRY.keys())}"
         )
@@ -371,7 +372,7 @@ def create_from_template(template_id: str, **kwargs) -> CrewConfig:
 
     missing = [p for p in required if p not in kwargs or not kwargs[p]]
     if missing:
-        raise ValueError(
+        raise ValidationError(
             f"Missing required parameters for template '{template_id}': {missing}"
         )
 

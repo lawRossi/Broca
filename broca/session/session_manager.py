@@ -12,6 +12,8 @@ from typing import Any, Dict, List, Optional
 
 from litellm import Message as LLMMessage
 
+from broca.errors import SessionError, ValidationError
+from broca.errors import SessionError, ValidationError, ErrorCode
 from broca.logging_config import get_logger
 from broca.session.models import Message, MessageRole, MessageType
 from broca.session.service import (
@@ -216,7 +218,7 @@ class SessionManager:
         try:
             if not agent_id:
                 if not self.session_id:
-                    raise ValueError(
+                    raise SessionError(
                         "No session ID provided. Call create_session() first."
                     )
                 messages = await self.message_service.get_messages_by_session(
@@ -419,7 +421,7 @@ class SessionManager:
 
     async def save_agent(self, agent: "Agent") -> None:
         if not self.session_id:
-            raise ValueError("No session ID provided. Call create_session() first.")
+            raise SessionError("No session ID provided. Call create_session() first.")
         await self._ensure_initialized()
         agent_config = agent.config
         config_content = agent_config.to_json()

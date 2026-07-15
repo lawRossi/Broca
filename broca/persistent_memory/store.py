@@ -308,7 +308,7 @@ class MemoryStore:
         try:
             path.write_text(content, encoding="utf-8")
         except (OSError, IOError) as e:
-            raise RuntimeError(f"写入文件 {path} 失败: {e}")
+            raise BrocaError(f"写入文件 {path} 失败: {e}")
 
 
 # ──────────────────────────────────────────────

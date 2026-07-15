@@ -19,6 +19,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from broca.errors import OrchestrationError
 from broca.logging_config import get_logger
 from broca.orchestration.crew import AgentRole, CrewConfig
 from broca.orchestration.orchestrator import (
@@ -256,7 +257,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
         """
         supervisor_agent = self.supervisor
         if supervisor_agent is None:
-            raise RuntimeError(
+            raise OrchestrationError(
                 "No Supervisor Agent found. Supervisor-Worker requires "
                 "a supervisor agent (role=supervisor)."
             )
@@ -278,7 +279,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
         )
 
         if exec_result.status != ES.COMPLETED:
-            raise RuntimeError(f"Supervisor Agent failed: {exec_result.error}")
+            raise OrchestrationError(f"Supervisor Agent failed: {exec_result.error}")
 
     # ═══════════════════════════════════════════════
     # Phase B: Worker 并行执行
@@ -288,7 +289,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
         """从黑板读取 Supervisor 写入的任务分配。"""
         assignments = await self.context.blackboard.get(self._ns("task_assignments"))
         if not assignments:
-            raise RuntimeError(
+            raise OrchestrationError(
                 "Supervisor completed but no task assignments found "
                 "in blackboard key 'task_assignments'"
             )
@@ -303,7 +304,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
                 sub_tasks.append({"agent": worker_name, "task_id": task_id})
 
         if not sub_tasks:
-            raise RuntimeError(
+            raise OrchestrationError(
                 "Supervisor completed but no new task assignments found "
                 "in blackboard key 'task_assignments'"
             )
@@ -373,7 +374,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
             logger.error(
                 f"Combined check & plan failed: {exec_result.error}, assuming acceptable"
             )
-            raise RuntimeError(exec_result.error)
+            raise OrchestrationError(exec_result.error)
 
         progress_tag = await self.blackboard.get(self._ns(self.progress_check_key))
         return str(progress_tag).lower() == "true"

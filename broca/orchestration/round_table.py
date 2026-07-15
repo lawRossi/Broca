@@ -21,6 +21,7 @@ import random
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from broca.errors import OrchestrationError
 from broca.logging_config import get_logger
 from broca.orchestration.crew import AgentRole, CrewConfig
 from broca.orchestration.orchestrator import (
@@ -167,7 +168,7 @@ class RoundTableOrchestrator(Orchestrator):
                 if name in self.participant_names:
                     candidates.append(name)
                 else:
-                    raise ValueError(f"Participant '{name}' not found")
+                    raise OrchestrationError(f"Participant '{name}' not found")
         elif roles:
             role_set = set(roles)
             for p in self.participants:
@@ -258,7 +259,7 @@ class RoundTableOrchestrator(Orchestrator):
                 order = await self._resolve_round_speakers(round_num, round_config)
                 if not order:
                     logger.error(f"Round {round_num} has no speakers")
-                    raise ValueError
+                    raise OrchestrationError("Round table error")
 
                 phase = PhaseResult(
                     name=phase_name,

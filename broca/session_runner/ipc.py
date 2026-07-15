@@ -25,13 +25,16 @@ from broca.session_runner.models import (
 logger = logging.getLogger(__name__)
 
 
-class IPCConnectionError(Exception):
+from broca.errors import CommunicationError, SessionError
+
+
+class IPCConnectionError(CommunicationError):
     """IPC 连接异常"""
 
     pass
 
 
-class IPCTimeoutError(Exception):
+class IPCTimeoutError(CommunicationError):
     """IPC 超时异常"""
 
     pass

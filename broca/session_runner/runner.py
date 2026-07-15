@@ -21,6 +21,7 @@ import time
 from typing import Any, Dict, List, Optional
 
 from broca.agent_manager import AgentFactory
+from broca.errors import BrocaError, ValidationError
 from broca.session_runner.ipc import (
     IPCClient,
     IPCConnectionError,
@@ -220,7 +221,7 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
             elif yaml_path:
                 crew_config = CrewConfig.from_yaml_file(yaml_path)
             else:
-                raise ValueError("Either yaml_content or yaml_path is required")
+                raise ValidationError("Either yaml_content or yaml_path is required")
 
             # 收集 Agent 引用
             agent_refs = {}
@@ -597,6 +598,21 @@ async def async_main(args: argparse.Namespace, ipc_client: IPCClient) -> None:
             pass
 
         logger.info("Runner shutdown complete")
+
+    except BrocaError as e:
+        logger.error("Runner BrocaError: %s", e, exc_info=True)
+        try:
+            ipc_client.send_message(
+                create_ipc_message(
+                    IPCMessageType.EVT_ERROR,
+                    args.session_id,
+                    payload=e.to_dict(),
+                    status=IPCStatusCode.ERROR,
+                )
+            )
+        except Exception:
+            pass
+        raise
 
     except Exception as e:
         logger.error("Runner fatal error: %s", e, exc_info=True)

@@ -14,6 +14,7 @@ from sqlalchemy import String, and_, cast, desc, func, or_, select, text
 from sqlalchemy import update as sql_update
 from sqlmodel import SQLModel, and_
 
+from broca.errors import SessionError, ValidationError
 from broca.logging_config import get_logger
 from broca.session.database import db_manager
 from broca.snapshot.patch import PatchCalculator

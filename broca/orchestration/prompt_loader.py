@@ -12,6 +12,7 @@ from typing import Any, Dict, Optional
 
 from jinja2 import Environment, FileSystemLoader, TemplateNotFound
 
+from broca.errors import ValidationError
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -47,7 +48,7 @@ class PromptLoader:
         if orchestrator_type not in cls._envs:
             template_dir = os.path.join(_PROMPTS_DIR, orchestrator_type)
             if not os.path.isdir(template_dir):
-                raise ValueError(
+                raise ValidationError(
                     f"Prompt directory not found for orchestrator type "
                     f"'{orchestrator_type}': {template_dir}"
                 )
@@ -85,7 +86,7 @@ class PromptLoader:
             template = env.get_template(template_name)
             return template.render(**kwargs)
         except TemplateNotFound as e:
-            raise ValueError(
+            raise ValidationError(
                 f"Template '{template_name}' not found for orchestrator type "
                 f"'{orchestrator_type}'. Available templates: "
                 f"{os.listdir(os.path.join(_PROMPTS_DIR, orchestrator_type))}"

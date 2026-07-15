@@ -9,6 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional
 
 from broca.logging_config import get_logger
+from broca.errors import ValidationError
 from broca.scheduler import Scheduler
 from broca.session.models import JobType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
@@ -93,7 +94,7 @@ class CronTool(Tool):
                 # 解析cron表达式为字典
                 parts = trigger.split()
                 if len(parts) != 5:
-                    raise ValueError(
+                    raise ValidationError(
                         f"Invalid cron expression: {trigger}. Expected 5 parts."
                     )
 
@@ -108,13 +109,13 @@ class CronTool(Tool):
             elif isinstance(trigger, dict):
                 return trigger
             else:
-                raise ValueError(f"Invalid trigger config for cron: {trigger}")
+                raise ValidationError(f"Invalid trigger config for cron: {trigger}")
 
         elif trigger_type == "interval":
             if isinstance(trigger, dict):
                 return trigger
             else:
-                raise ValueError(f"Invalid trigger config for interval: {trigger}")
+                raise ValidationError(f"Invalid trigger config for interval: {trigger}")
 
         elif trigger_type == "date":
             if isinstance(trigger, str):
@@ -130,9 +131,9 @@ class CronTool(Tool):
             elif isinstance(trigger, dict):
                 return trigger
             else:
-                raise ValueError(f"Invalid trigger config for date: {trigger}")
+                raise ValidationError(f"Invalid trigger config for date: {trigger}")
         else:
-            raise ValueError(f"Unknown trigger type: {trigger_type}")
+            raise ValidationError(f"Unknown trigger type: {trigger_type}")
 
     async def initialize(self):
         """初始化调度器"""

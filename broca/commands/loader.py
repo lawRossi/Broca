@@ -14,6 +14,7 @@ import yaml
 
 from broca.commands.base import CommandBase, LocalCommand, PromptCommand
 from broca.logging_config import get_logger
+from broca.errors import ValidationError
 
 if TYPE_CHECKING:
     from broca.commands.registry import CommandRegistry
@@ -28,7 +29,7 @@ def _parse_command_md(md_path: Path) -> tuple[dict, str]:
 
     parts = content.split("---", 2)
     if len(parts) < 3:
-        raise ValueError(f"Invalid command.md format: {md_path}")
+        raise ValidationError(f"Invalid command.md format: {md_path}")
 
     header = yaml.safe_load(parts[1].strip()) or {}
     body = parts[2].strip()
@@ -54,7 +55,7 @@ def _import_command_class(py_path: Path) -> type[CommandBase]:
         ):
             return obj
 
-    raise ValueError(f"No concrete Command subclass found in {py_path}")
+    raise ValidationError(f"No concrete Command subclass found in {py_path}")
 
 
 def _build_command_from_md(cmd_dir: Path) -> Optional[CommandBase]:

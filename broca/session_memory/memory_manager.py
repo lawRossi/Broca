@@ -15,6 +15,7 @@ from broca.agent_configs import SessionMemoryConfig
 from broca.agent_manager import AgentFactory
 from broca.context import Context
 from broca.loop_engine import ExecutionStatus
+from broca.errors import BrocaError
 from broca.logging_config import get_logger
 from broca.session import MessageProtocol
 from broca.session_memory.memory_prompts import (

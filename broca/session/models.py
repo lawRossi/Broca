@@ -664,13 +664,24 @@ class MessageProtocol:
 
     @staticmethod
     def create_error_message(
-        content: str, error_code: str | None = None, **kwargs
+        error_info: dict, **kwargs
     ) -> Message:
-        """创建错误消息"""
+        """创建结构化的错误消息
+
+        Args:
+            error_info: 来自 BrocaError.to_dict() 的结构化错误信息，
+                        包含 code / severity / message / recovery_hint / details / cause / traceback
+        """
         return Message(
             message_type=MessageType.ERROR,
             role=MessageRole.AGENT_SYSTEM,
-            data={"content": content, "error_code": error_code},
+            data={
+                "content": error_info.get("message", ""),
+                "error_code": error_info.get("code"),
+                "severity": error_info.get("severity"),
+                "recovery_hint": error_info.get("recovery_hint"),
+                "details": error_info.get("details"),
+            },
             **kwargs,
         )
 

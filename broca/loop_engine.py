@@ -20,7 +20,7 @@ from litellm import Message as LLMMessage
 
 from broca.context import Context
 from broca.context_compressor import ContextCompressor
-from broca.error_handler import AgentError, ErrorHandler, ErrorType
+from broca.errors import BrocaError, LLMError, ToolError, ValidationError
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
 from broca.session import (
@@ -125,13 +125,11 @@ class LoopEngine:
         self.communicator = communicator
         self.session_manager = session_manager
         self.session_memory_manager = session_memory_manager
-        self.persistent_memory_manager = getattr(agent, 'persistent_memory_manager', None)
+        self.persistent_memory_manager = getattr(
+            agent, "persistent_memory_manager", None
+        )
         self.tool_permission_manager = tool_permission_manager or ToolPermissionManager(
             workspace=config.workspace if config else None
-        )
-
-        self.error_handler = ErrorHandler(
-            session_manager=session_manager, turn_id=None, agent_id=None
         )
 
         self.abort_event = asyncio.Event()
@@ -328,25 +326,45 @@ class LoopEngine:
                 return ExecutionStatus.ABORTED
 
             try:
-                async with self.error_handler.handle_llm_call(context="execute_step"):
-                    response = await asyncio.wait_for(
-                        self._call_llm_streaming(), timeout=300
-                    )
-                    if not response:
-                        raise AgentError(ErrorType.LLM_ERROR, "LLM call failed")
-                    break
-            except AgentError as e:
+                response = await asyncio.wait_for(
+                    self._call_llm_streaming(), timeout=300
+                )
+                if not response:
+                    raise LLMError("LLM 调用返回空响应")
+                break
+            except LLMError:
+                raise
+            except asyncio.TimeoutError:
                 errors += 1
-                logger.error(f"LLM call failed with error: {e}")
-                if errors == self.step_max_errors:
-                    logger.error(f"Too many errors ({e.error_type}), aborting...")
-                    return ExecutionStatus.ERROR
-                if e.error_type == ErrorType.LLM_RATE_LIMIT_ERROR:
-                    await asyncio.sleep(self.llm_retry_delay)
+                logger.error("LLM call timed out")
                 if self.config.interactive:
                     await self.communicator.send_error(
-                        "calling LLM failed, retrying...", subscription=self.session_id
+                        {
+                            "message": "LLM 调用超时，自动重试中...",
+                            "code": "LLM_TIMEOUT",
+                            "severity": "warning",
+                        },
+                        subscription=self.session_id,
                     )
+                if errors < self.step_max_errors:
+                    continue
+                return ExecutionStatus.ERROR
+            except Exception as e:
+                errors += 1
+                logger.error(f"LLM call failed: {e}")
+                if errors == self.step_max_errors:
+                    logger.error("Too many LLM errors, aborting...")
+                    return ExecutionStatus.ERROR
+                if self.config.interactive:
+                    await self.communicator.send_error(
+                        {
+                            "message": "LLM 调用失败，正在重试...",
+                            "code": "LLM_ERROR",
+                            "severity": "error",
+                        },
+                        subscription=self.session_id,
+                    )
+                await asyncio.sleep(self.llm_retry_delay)
             except asyncio.CancelledError:
                 logger.info("Agent execution cancelled by user during LLM call")
                 return ExecutionStatus.ABORTED
@@ -419,7 +437,11 @@ class LoopEngine:
                 lambda t: t.exception() if not t.cancelled() else None
             )
 
-        if self.persistent_memory_manager and getattr(self.config, 'persistent_memory_config', None) and self.config.persistent_memory_config.auto_extract:
+        if (
+            self.persistent_memory_manager
+            and getattr(self.config, "persistent_memory_config", None)
+            and self.config.persistent_memory_config.auto_extract
+        ):
             self.persistent_memory_manager.increment_step()
             task = asyncio.create_task(
                 self.persistent_memory_manager.check_and_extract(
@@ -584,9 +606,9 @@ class LoopEngine:
                                 tool_name=tool_name, context="tool_call_processing"
                             ):
                                 if self._should_skip_tool_timeout(tool_name, arguments):
-                                    tool_result = await self.tool_mapping[tool_name].execute(
-                                        arguments, context
-                                    )
+                                    tool_result = await self.tool_mapping[
+                                        tool_name
+                                    ].execute(arguments, context)
                                 else:
                                     timeout = (
                                         self.assign_task_timeout
@@ -599,13 +621,11 @@ class LoopEngine:
                                         ),
                                         timeout=timeout,
                                     )
-                        except AgentError as e:
-                            logger.error(
-                                f"Tool execution failed with {e.error_type}: {e.message}"
-                            )
+                        except (ToolError, BrocaError) as e:
+                            logger.error(f"Tool execution failed: {e}")
                             tool_result = ToolResult(
                                 status=ToolStatus.ERROR,
-                                content=f"Tool {tool_name} execution failed: {e.message}",
+                                content=e.to_user_message(),
                             )
                         except asyncio.CancelledError:
                             logger.info("Tool execution cancelled by user")
@@ -628,32 +648,27 @@ class LoopEngine:
                         )
                 else:  # "allow"
                     try:
-                        async with self.error_handler.handle_tool_execution(
-                            tool_name=tool_name, context="tool_call_processing"
-                        ):
-                            if self._should_skip_tool_timeout(tool_name, arguments):
-                                tool_result = await self.tool_mapping[tool_name].execute(
+                        if self._should_skip_tool_timeout(tool_name, arguments):
+                            tool_result = await self.tool_mapping[tool_name].execute(
+                                arguments, context
+                            )
+                        else:
+                            timeout = (
+                                self.assign_task_timeout
+                                if tool_name == "assign_task"
+                                else self.tool_call_timeout
+                            )
+                            tool_result = await asyncio.wait_for(
+                                self.tool_mapping[tool_name].execute(
                                     arguments, context
-                                )
-                            else:
-                                timeout = (
-                                    self.assign_task_timeout
-                                    if tool_name == "assign_task"
-                                    else self.tool_call_timeout
-                                )
-                                tool_result = await asyncio.wait_for(
-                                    self.tool_mapping[tool_name].execute(
-                                        arguments, context
-                                    ),
-                                    timeout=timeout,
-                                )
-                    except AgentError as e:
-                        logger.error(
-                            f"Tool execution failed with {e.error_type}: {e.message}"
-                        )
+                                ),
+                                timeout=timeout,
+                            )
+                    except (ToolError, BrocaError) as e:
+                        logger.error(f"Tool execution failed: {e}")
                         tool_result = ToolResult(
                             status=ToolStatus.ERROR,
-                            content=f"Tool {tool_name} execution failed: {e.message}",
+                            content=e.to_user_message(),
                         )
                     except asyncio.CancelledError:
                         logger.info("Tool execution cancelled by user")
@@ -804,39 +819,42 @@ class LoopEngine:
                 raise asyncio.CancelledError("Execution aborted by user")
 
             try:
-                async with self.error_handler.handle_execution_step(step_number=steps):
-                    status = await self.execute_step()
-                    steps += 1
+                status = await self.execute_step()
+                steps += 1
 
-                    if status == ExecutionStatus.COMPLETED:
-                        return ExecutionResult(
-                            status=ExecutionStatus.COMPLETED,
-                            message=f"Round completed after {steps} steps",
-                        )
-                    elif status == ExecutionStatus.ABORTED:
-                        return ExecutionResult(
-                            status=ExecutionStatus.ABORTED,
-                            message=f"Round aborted by user after {steps} steps",
-                        )
-                    elif status == ExecutionStatus.ERROR:
-                        return ExecutionResult(
-                            status=ExecutionStatus.ERROR,
-                            message=f"Round failed after {steps} steps",
-                        )
-                    elif status == ExecutionStatus.DEAD_LOOP:
-                        return ExecutionResult(
-                            status=ExecutionStatus.DEAD_LOOP,
-                            message=f"Dead loop detected after {steps} steps: last 3 tool calls are identical",
-                        )
-                    if max_steps is not None and steps >= max_steps:
-                        return ExecutionResult(
-                            status=ExecutionStatus.LIMIT_EXCEEDED,
-                            message=f"Max steps ({max_steps}) reached",
-                        )
-            except AgentError as e:
+                if status == ExecutionStatus.COMPLETED:
+                    return ExecutionResult(
+                        status=ExecutionStatus.COMPLETED,
+                        message=f"Round completed after {steps} steps",
+                    )
+                elif status == ExecutionStatus.ABORTED:
+                    return ExecutionResult(
+                        status=ExecutionStatus.ABORTED,
+                        message=f"Round aborted by user after {steps} steps",
+                    )
+                elif status == ExecutionStatus.ERROR:
+                    return ExecutionResult(
+                        status=ExecutionStatus.ERROR,
+                        message=f"Round failed after {steps} steps",
+                    )
+                elif status == ExecutionStatus.DEAD_LOOP:
+                    return ExecutionResult(
+                        status=ExecutionStatus.DEAD_LOOP,
+                        message=f"Dead loop detected after {steps} steps: last 3 tool calls are identical",
+                    )
+                if max_steps is not None and steps >= max_steps:
+                    return ExecutionResult(
+                        status=ExecutionStatus.LIMIT_EXCEEDED,
+                        message=f"Max steps ({max_steps}) reached",
+                    )
+            except BrocaError as e:
+                if self.config.interactive:
+                    await self.communicator.send_error(
+                        e.to_dict(), subscription=self.session_id
+                    )
                 return ExecutionResult(
                     status=ExecutionStatus.ERROR,
-                    message=f"Round failed with {e.error_type}: {e.message}",
+                    message=e.to_user_message(),
                 )
             except asyncio.CancelledError:
                 return ExecutionResult(
@@ -872,27 +890,58 @@ class LoopEngine:
         self.abort_event.clear()
         self._recent_tool_call_signatures.clear()
 
-        if not await self._setup_execution_context(message, from_agent):
+        try:
+            if not await self._setup_execution_context(message, from_agent):
+                if self.config.interactive:
+                    await self.communicator.send_error(
+                        {
+                            "message": "执行上下文设置失败",
+                            "code": "SESSION_ERROR",
+                            "severity": "error",
+                        },
+                        subscription=self.session_id,
+                    )
+                return ExecutionResult(
+                    status=ExecutionStatus.ERROR,
+                    message="Error setting up execution context",
+                )
+            result = await self.execute_round(max_steps)
+        except ValidationError as e:
+            logger.error(f"ValidationError in execute: {e}")
             if self.config.interactive:
                 await self.communicator.send_error(
-                    "Error setting up execution context",
-                    subscription=self.session_id,
+                    e.to_dict(), subscription=self.session_id
                 )
-            return ExecutionResult(
-                status=ExecutionStatus.ERROR,
-                message="Error setting up execution context",
+            result = ExecutionResult(
+                status=ExecutionStatus.ERROR, message=e.to_user_message()
             )
-        try:
-            result = await self.execute_round(max_steps)
         except asyncio.CancelledError:
             logger.info("Execution cancelled by user")
             result = ExecutionResult(
                 status=ExecutionStatus.ABORTED, message="Execution cancelled by user"
             )
-        except Exception as e:
-            logger.error(f"Error in execute: {e}")
+        except BrocaError as e:
+            logger.error(f"BrocaError in execute: {e}")
+            if self.config.interactive:
+                await self.communicator.send_error(
+                    e.to_dict(), subscription=self.session_id
+                )
             result = ExecutionResult(
-                status=ExecutionStatus.ERROR, message=f"Error in execute: {e}"
+                status=ExecutionStatus.ERROR, message=e.to_user_message()
+            )
+        except Exception as e:
+            logger.error(f"Unexpected error in execute: {e}")
+            if self.config.interactive:
+                await self.communicator.send_error(
+                    {
+                        "message": f"执行异常: {e}",
+                        "code": "UNKNOWN_ERROR",
+                        "severity": "error",
+                    },
+                    subscription=self.session_id,
+                )
+            result = ExecutionResult(
+                status=ExecutionStatus.ERROR, message=f"Unexpected error: {e}"
             )
 
         if not await self.process_turn_end(result):
@@ -980,9 +1029,17 @@ class LoopEngine:
 
             if result.status != ExecutionStatus.COMPLETED:
                 if self.config.interactive:
+                    error_info = {
+                        "code": "EXECUTION_ERROR",
+                        "severity": "error",
+                        "message": message,
+                        "recovery_hint": None,
+                        "details": {"status": result.status.value},
+                        "cause": None,
+                        "traceback": None,
+                    }
                     await self.communicator.send_error(
-                        message,
-                        subscription=self.session_id,
+                        error_info=error_info, subscription=self.session_id
                     )
 
             return saved
@@ -998,6 +1055,9 @@ class LoopEngine:
 
         Args:
             message: The message to process
+
+        Raises:
+            ValidationError: If provider or model configuration is invalid
         """
         try:
             user_message = self.llm_client.parse_message(
@@ -1014,11 +1074,6 @@ class LoopEngine:
 
             self.turn_id = turn_id
             self.agent.turn_id = turn_id
-            self.error_handler.set_context(
-                turn_id=turn_id,
-                agent_id=self.agent_id,
-                session_manager=self.session_manager,
-            )
 
             message_content = user_message.get("content")
             if self.config.interactive:
@@ -1060,6 +1115,9 @@ class LoopEngine:
 
             await self.context.add_message(user_message, message_id)
             return True
+        except ValidationError:
+            # Provider/model 配置错误直接传播，由 execute 的 BrocaError 处理器展示具体错误
+            raise
         except Exception as e:
             logger.error(f"Error in _setup_execution_context: {e}")
             return False

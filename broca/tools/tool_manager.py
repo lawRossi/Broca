@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from broca.logging_config import get_logger
+from broca.errors import ErrorCode, ToolError, ValidationError
 from broca.tools.mcp import connect_mcp_servers
 from broca.tools.tool import Tool
 
@@ -92,13 +93,13 @@ class ToolManager:
                 try:
                     instance = obj()
                     if instance.name in self.tools:
-                        raise ValueError(
+                        raise ValidationError(
                             f"Tool with name '{instance.name}' already exists "
                             f"(defined in {module.__name__}). Tool names must be unique."
                         )
                     self.tools[instance.name] = instance
                 except Exception as e:
-                    raise ValueError(
+                    raise ValidationError(
                         f"Failed to instantiate tool class '{name}' from {module.__name__}: {e}"
                     )
 
@@ -139,7 +140,7 @@ class ToolManager:
             ):
                 instance = obj()
                 if instance.name in self.tools:
-                    raise ValueError(
+                    raise ValidationError(
                         f"Custom tool '{instance.name}' from {tool_py} conflicts with "
                         f"an already registered tool. Custom tool names must be unique "
                         f"and must not overlap with built-in tools."
@@ -274,7 +275,7 @@ class ToolManager:
     def _add_tool(self, tool: Tool):
         """Register a tool instance. Raises ValueError on name conflict."""
         if tool.name in self.tools:
-            raise ValueError(f"Tool with name '{tool.name}' already exists")
+            raise ValidationError(f"Tool with name '{tool.name}' already exists")
         self.tools[tool.name] = tool
 
     async def cleanup(self):
@@ -285,7 +286,11 @@ class ToolManager:
             tools = []
             for tool_name in tool_names:
                 if tool_name not in self.tools:
-                    raise ValueError(f"Tool '{tool_name}' not found.")
+                    raise ValidationError(
+                        f"Tool '{tool_name}' not found.",
+                        error_code=ErrorCode.VALIDATION_CONFIG_ERROR,
+                        details={"available_tools": list(self.tools.keys())},
+                    )
                 tools.append(self.tools[tool_name])
             return tools
         else:

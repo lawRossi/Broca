@@ -7,6 +7,7 @@ SessionRevert 服务
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
+from broca.errors import SessionError
 from broca.logging_config import get_logger
 from broca.session.models import Message, MessageType
 from broca.session.session_manager import SessionManager
@@ -57,7 +58,7 @@ class SessionRevertService:
         # 验证会话状态
         session = await self.session_manager.get_session(session_id)
         if not session:
-            raise ValueError(f"会话不存在: {session_id}")
+            raise SessionError(f"会话不存在: {session_id}")
 
         # 获取agent所有消息
         messages = await self.session_manager.get_messages(agent_id)
@@ -131,7 +132,7 @@ class SessionRevertService:
         # 验证会话状态
         session = await self.session_manager.get_session(session_id)
         if not session:
-            raise ValueError(f"会话不存在: {session_id}")
+            raise SessionError(f"会话不存在: {session_id}")
 
         # 从 undo 栈顶获取最新的撤销记录
         if not self.undo_stack:

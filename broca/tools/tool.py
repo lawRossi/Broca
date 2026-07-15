@@ -1,9 +1,11 @@
+import asyncio
 import json
 import uuid
 from enum import Enum
 from pathlib import Path
 from typing import Optional
 
+from broca.errors import BrocaError, ToolError
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -172,8 +174,15 @@ class Tool:
         try:
             result = await self._execute(args_dict, context)
             return self._post_process_result(result)
+        except asyncio.CancelledError:
+            raise
+        except BrocaError as e:
+            logger.error(f"Tool {self.name} error: {e}")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=e.to_user_message()
+            )
         except Exception as e:
-            logger.error(f"Error executing tool: {e}")
+            logger.error(f"Error executing tool {self.name}: {e}")
             return ToolResult(
                 status=ToolStatus.ERROR, content=f"Error executing tool: {e}"
             )

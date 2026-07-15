@@ -233,21 +233,21 @@ class SocketIOServer:
                 if not message.message_type:
                     error_msg = "Message type is required"
                     await self._send_error(
-                        sid, "VALIDATION_ERROR", error_msg, message.sender_id
+                        sid, {"message": error_msg, "code": "VALIDATION_ERROR", "severity": "error"}, message.sender_id
                     )
                     return
 
                 await self._process_message(sid, message)
             except json.JSONDecodeError as e:
                 await self._send_error(
-                    sid, "PARSE_ERROR", f"Failed to parse message: {e}"
+                    sid, {"message": f"Failed to parse message: {e}", "code": "PARSE_ERROR", "severity": "error"}
                 )
             except Exception as e:
                 import traceback
 
                 logger.error(traceback.format_exc())
                 await self._send_error(
-                    sid, "PROCESS_ERROR", f"Error processing message: {e}"
+                    sid, {"message": f"Error processing message: {e}", "code": "PROCESS_ERROR", "severity": "error"}
                 )
 
         @self.sio.event
@@ -266,12 +266,12 @@ class SocketIOServer:
 
             if not subscription:
                 await self._send_error(
-                    sid, "MISSING_SUBSCRIPTION", "Subscription name is required"
+                    sid, {"message": "Subscription name is required", "code": "MISSING_SUBSCRIPTION", "severity": "error"}
                 )
                 return
 
             if sid not in self.clients:
-                await self._send_error(sid, "CLIENT_NOT_FOUND", "Client not found")
+                await self._send_error(sid, {"message": "Client not found", "code": "CLIENT_NOT_FOUND", "severity": "error"})
                 return
 
             client_info = self.clients[sid]
@@ -309,23 +309,31 @@ class SocketIOServer:
 
         except Exception as e:
             error_code = f"{'SUBSCRIBE' if subscribe else 'UNSUBSCRIBE'}_ERROR"
-            await self._send_error(sid, error_code, f"Error processing: {e}")
+            await self._send_error(sid, {"message": f"Error processing: {e}", "code": error_code, "severity": "error"})
 
     async def _send_error(
         self,
         sid: str,
-        error_code: str,
-        error_message: str,
+        error_info: dict,
         receiver_id: Optional[str] = None,
     ):
-        """Send error message to client"""
+        """发送结构化错误消息到客户端
+
+        Args:
+            error_info: 来自 BrocaError.to_dict() 的结构化错误信息
+        """
         error_response = Message(
             message_type=MessageType.ERROR,
             role=MessageRole.SYSTEM,
             sender_id="server",
             receiver_id=receiver_id,
-            error_code=error_code,
-            data={"error_message": error_message},
+            data={
+                "content": error_info.get("message", ""),
+                "error_code": error_info.get("code"),
+                "severity": error_info.get("severity"),
+                "recovery_hint": error_info.get("recovery_hint"),
+                "details": error_info.get("details"),
+            },
         )
         await self.sio.emit(
             "message", MessageProtocol.to_dict(error_response), room=sid

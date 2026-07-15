@@ -253,7 +253,7 @@ class CrewConfig:
 
         data = yaml.safe_load(yaml_content)
         if not data:
-            raise ValueError("Empty YAML content")
+            raise ValidationError("Empty YAML content")
         return cls.from_dict(data)
 
     @classmethod
@@ -264,7 +264,7 @@ class CrewConfig:
         with open(file_path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
         if not data:
-            raise ValueError(f"Empty YAML file: {file_path}")
+            raise ValidationError(f"Empty YAML file: {file_path}")
         return cls.from_dict(data)
 
 

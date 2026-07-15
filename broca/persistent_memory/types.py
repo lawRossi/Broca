@@ -95,11 +95,11 @@ def parse_frontmatter(text: str) -> dict:
     """
     match = YAML_FRONTMATTER_RE.match(text)
     if not match:
-        raise ValueError("未找到有效的 YAML frontmatter（需要 --- 包裹）")
+        raise ValidationError("未找到有效的 YAML frontmatter（需要 --- 包裹）")
 
     raw = match.group(1).strip()
     if not raw:
-        raise ValueError("frontmatter 内容为空")
+        raise ValidationError("frontmatter 内容为空")
 
     result: dict = {}
     for line in raw.split("\n"):
@@ -118,11 +118,11 @@ def parse_frontmatter(text: str) -> dict:
     required = ["name", "description", "type"]
     missing = [f for f in required if f not in result]
     if missing:
-        raise ValueError(f"frontmatter 缺少必填字段: {', '.join(missing)}")
+        raise ValidationError(f"frontmatter 缺少必填字段: {', '.join(missing)}")
 
     # type 校验
     if result["type"] not in MemoryType.values():
-        raise ValueError(
+        raise ValidationError(
             f"无效的记忆类型 '{result['type']}'，"
             f"必须为 {', '.join(MemoryType.values())}"
         )

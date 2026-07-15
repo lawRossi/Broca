@@ -12,7 +12,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from broca.agent_configs import AgentConfig
 from broca.communication.agent_communicator import AgentCommunicator
 from broca.context import Context
-from broca.error_handler import ErrorHandler
+
 from broca.loop_engine import LoopEngine, ExecutionResult, ExecutionStatus
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
@@ -60,7 +60,6 @@ class Agent:
         self.last_context_length: Optional[int] = None
 
         self.message_queue: asyncio.Queue = asyncio.Queue(3)
-        self.error_handler = ErrorHandler()
 
         self._abort_task: Optional[asyncio.Task] = None
         self.running = False
@@ -196,7 +195,6 @@ class Agent:
         self.communicator.register_event_handler("task_start", self._receive_message)
         self.communicator.register_event_handler("task_complete", self._receive_message)
         self.communicator.register_event_handler("task_error", self._receive_message)
-        self.communicator.register_event_handler("error", self._on_error)
         self.communicator.register_event_handler("command", self._on_command)
         self.communicator.register_event_handler(
             "permission_response", self._on_permission_response
@@ -278,11 +276,6 @@ class Agent:
         logger.info(f"Received message {message.message_type}")
         await self.message_queue.put(message)
 
-    async def _on_error(self, message: Message):
-        """Handle error from Socket.io"""
-        # Error handling is now centralized in ErrorHandler
-        pass
-
     async def _on_disconnected(self):
         """Handle Socket.io disconnect event — immediately mark as disconnected.
 
@@ -313,8 +306,7 @@ class Agent:
         )
 
         # Use permission manager to handle the request
-        async with self.error_handler.handle_permission_request():
-            return await self.permission_manager.request_permission(message)
+        return await self.permission_manager.request_permission(message)
 
     async def ask_for_tool_permission(
         self, tool_name: str, arguments: str
@@ -342,10 +334,9 @@ class Agent:
         )
 
         # Use permission manager to handle the request with request_type="tool"
-        async with self.error_handler.handle_permission_request():
-            return await self.permission_manager.request_tool_permission(
-                f"工具 `{tool_name}` 需要你授权。"
-            )
+        return await self.permission_manager.request_tool_permission(
+            f"工具 `{tool_name}` 需要你授权。"
+        )
 
     async def _on_permission_response(self, message: Message):
         """
@@ -478,7 +469,8 @@ class Agent:
 
         if result.type == "error":
             await self.communicator.send_error(
-                result.value, subscription=self.session_id
+                {"message": result.value, "code": "COMMAND_ERROR", "severity": "error"},
+                subscription=self.session_id,
             )
         else:
             # Send successful command result back to the client for display commands.
@@ -635,7 +627,8 @@ class Agent:
                 return
         else:
             await self.communicator.send_error(
-                f"Unknown command: {command}", subscription=self.session_id
+                {"message": f"未知命令: {command}", "code": "COMMAND_ERROR", "severity": "error"},
+                subscription=self.session_id,
             )
 
     async def disconnect(self):

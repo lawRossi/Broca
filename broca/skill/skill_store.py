@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Optional
 
 from broca.logging_config import get_logger
+from broca.errors import ValidationError
 
 logger = get_logger(__name__)
 
@@ -103,7 +104,7 @@ class SkillStore:
         """更新指定 Skill 的字段。"""
         data = self.read()
         if name not in data:
-            raise ValueError(f"Skill '{name}' not found in store.")
+            raise ValidationError(f"Skill '{name}' not found in store.")
         data[name].update(fields)
         self.save(data)
 

@@ -19,8 +19,8 @@ from abc import ABC, abstractmethod
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from broca.errors import ErrorCode, OrchestrationError, ValidationError
 from broca.logging_config import get_logger
-from broca.orchestration.crew import CrewConfig
 from broca.orchestration.graph_model import (
     Graph,
     GraphBuilder,
@@ -264,7 +264,7 @@ class GraphOrchestrator(Orchestrator, ABC):
         if not node.agent:
             return None
         if not node.task:
-            raise ValueError(f"Task node '{node.name}' requires 'task' field")
+            raise ValidationError(f"Task node '{node.name}' requires 'task' field", error_code=ErrorCode.VALIDATION_ERROR)
 
         agg_strategy = node.extras.get("aggregation_strategy")
         if agg_strategy:
@@ -305,7 +305,7 @@ class GraphOrchestrator(Orchestrator, ABC):
     async def _execute_agent(self, agent_name: str, task_context: str) -> str:
         target_agent = self.context.get_agent(agent_name)
         if target_agent is None:
-            raise ValueError(f"Agent '{agent_name}' not found in Crew context")
+            raise ValidationError(f"Agent '{agent_name}' not found in Crew context", error_code=ErrorCode.ORCHESTRATION_AGENT_NOT_FOUND)
 
         full_task = PromptLoader.render(
             "graph",
@@ -327,9 +327,9 @@ class GraphOrchestrator(Orchestrator, ABC):
             message = target_agent.context.get_latest_assistant_message() or ""
             return message or "Task completed (no output message)"
         elif execution_result.status == ExecStatus.ABORTED:
-            raise RuntimeError("Execution was aborted by user")
+            raise OrchestrationError("Execution was aborted by user")
         else:
-            raise RuntimeError(f"Execution failed: {execution_result.error}")
+            raise OrchestrationError(f"Execution failed: {execution_result.error}")
 
     # ═══════════════════════════════════════════════
     # 汇聚节点执行
@@ -362,8 +362,9 @@ class GraphOrchestrator(Orchestrator, ABC):
             return dict(source_data)
         elif strategy == "agent":
             if not node.agent:
-                raise ValueError(
-                    f"Aggregation node '{node.name}' needs 'agent' for agent strategy"
+                raise ValidationError(
+                    f"Aggregation node '{node.name}' needs 'agent' for agent strategy",
+                    error_code=ErrorCode.VALIDATION_ERROR,
                 )
             input_text = "\n\n".join(
                 f"[{name}]:\n{val}" for name, val in source_data.items()
@@ -385,18 +386,19 @@ class GraphOrchestrator(Orchestrator, ABC):
 
     async def _execute_human(self, node: Node) -> str:
         if not node.question:
-            raise ValueError(f"Human node '{node.name}' missing 'question'")
+            raise ValidationError(f"Human node '{node.name}' missing 'question'", error_code=ErrorCode.VALIDATION_ERROR)
         if not node.response_field:
-            raise ValueError(f"Human node '{node.name}' missing 'response_field'")
+            raise ValidationError(f"Human node '{node.name}' missing 'response_field'", error_code=ErrorCode.VALIDATION_ERROR)
 
         agent_name = None
         if node.router and node.router.evaluator:
             agent_name = node.router.evaluator
 
         if not agent_name:
-            raise ValueError(
+            raise ValidationError(
                 f"Human node '{node.name}': no agent available to ask user. "
-                f"Either set router.evaluator or register at least one agent."
+                f"Either set router.evaluator or register at least one agent.",
+                error_code=ErrorCode.VALIDATION_ERROR,
             )
 
         context_str = ""
@@ -432,7 +434,7 @@ class GraphOrchestrator(Orchestrator, ABC):
         )
         target_agent = self.context.get_agent(agent_name)
         if target_agent is None:
-            raise ValueError(f"Agent '{agent_name}' not found for human node")
+            raise ValidationError(f"Agent '{agent_name}' not found for human node", error_code=ErrorCode.ORCHESTRATION_AGENT_NOT_FOUND)
 
         full_task = PromptLoader.render(
             "graph",
@@ -448,7 +450,7 @@ class GraphOrchestrator(Orchestrator, ABC):
         from broca.loop_engine import ExecutionStatus as ExecStatus
 
         if execution_result.status != ExecStatus.COMPLETED:
-            raise RuntimeError(
+            raise OrchestrationError(
                 f"Human node '{node.name}': agent execution failed: {execution_result.error}"
             )
 

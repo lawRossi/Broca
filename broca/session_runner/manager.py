@@ -33,7 +33,10 @@ from broca.session_runner.models import (
 logger = logging.getLogger(__name__)
 
 
-class RunnerManagerError(Exception):
+from broca.errors import SessionError
+
+
+class RunnerManagerError(SessionError):
     """Runner Manager 异常"""
 
     pass
@@ -289,25 +292,54 @@ class RunnerManager:
                 await loop.run_in_executor(None, ipc_server.accept, 15.0)
                 logger.info("Runner for session %s connected via IPC", session_id)
 
-                # 等待 READY 事件（同样在线程池中执行）
-                ready_msg = await loop.run_in_executor(
-                    None, ipc_server.receive_message, 15.0
-                )
-                if ready_msg and ready_msg.type == IPCMessageType.EVT_READY:
+                # 等待 Runner 的首条消息（READY 或 ERROR），最多等 30 秒
+                # 用循环 + 短超时代替单次长超时，避免 poll() 在某些情况下误判
+                first_msg = None
+                for attempt in range(6):  # 6 × 5s = 30s 总超时
+                    first_msg = await loop.run_in_executor(
+                        None, ipc_server.receive_message, 5.0
+                    )
+                    if first_msg is not None:
+                        break
+                    logger.debug(
+                        "Waiting for first message from runner (attempt %d/6)...", attempt + 1
+                    )
+
+                if first_msg and first_msg.type == IPCMessageType.EVT_READY:
                     runner_info.status = RunnerStatus.ALIVE
                     runner_info.last_heartbeat = datetime.now(timezone.utc)
                     logger.info(
                         "Session %s runner READY (agents: %s)",
                         session_id,
-                        ready_msg.payload.get("agent_count", 0),
+                        first_msg.payload.get("agent_count", 0),
                     )
+                elif first_msg and first_msg.type == IPCMessageType.EVT_ERROR:
+                    # Runner 初始化失败（如无效 tool 配置），立即抛出错误
+                    error_payload = first_msg.payload
+                    logger.error(
+                        "Session %s runner initialization failed: %s",
+                        session_id, error_payload,
+                    )
+                    runner_info.status = RunnerStatus.ERROR
+                    runner_info.error_message = error_payload.get("message") or str(error_payload)
+                    runner_info.recovery_hint = error_payload.get("recovery_hint")
+                    # 先通知前端，再清理
+                    await self._trigger_event("runner_error", runner_info)
+                    await self._kill_runner(session_id)
+                    await self._cleanup_runner(session_id)
+                    raise RunnerManagerError(runner_info.error_message)
                 else:
-                    logger.warning(
-                        "Session %s runner did not send READY, got: %s",
-                        session_id,
-                        ready_msg.type.value if ready_msg else "None",
+                    # 超时或未知消息类型
+                    msg_type = first_msg.type.value if first_msg else "None"
+                    logger.error(
+                        "Session %s runner did not send READY in time (got: %s), aborting",
+                        session_id, msg_type,
                     )
-                    runner_info.status = RunnerStatus.ALIVE
+                    await self._kill_runner(session_id)
+                    await self._cleanup_runner(session_id)
+                    raise RunnerManagerError(
+                        f"Runner for session {session_id} did not send READY within 30s (got: {msg_type})"
+                    )
 
             except IPCTimeoutError:
                 logger.error("Session %s runner connection timeout", session_id)
@@ -545,7 +577,7 @@ class RunnerManager:
         session_manager = SessionManager()
         session = await session_manager.get_session(session_id)
         if not session:
-            raise ValueError(f"Session {session_id} not found")
+            raise ValidationError(f"Session {session_id} not found")
         workspace = session.workspace
 
         # 停止旧的（兼容内存和 DB 两种场景）
@@ -697,11 +729,17 @@ class RunnerManager:
 
         elif msg.type == IPCMessageType.EVT_ERROR:
             runner_info.status = RunnerStatus.ERROR
-            runner_info.error_message = msg.payload.get("error", "Unknown error")
+            error_payload = msg.payload
+            runner_info.error_message = error_payload.get("message") or str(error_payload)
+            runner_info.recovery_hint = error_payload.get("recovery_hint")
             logger.error(
                 "Runner error for session %s: %s",
                 session_id,
                 runner_info.error_message,
+            )
+            # 触发 runner_error 事件，通知前端
+            asyncio.ensure_future(
+                self._trigger_event("runner_error", runner_info)
             )
 
         elif msg.type == IPCMessageType.EVT_SHUTDOWN_COMPLETE:

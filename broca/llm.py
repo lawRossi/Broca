@@ -7,7 +7,21 @@ from typing import AsyncGenerator
 
 from litellm import Message as LLMMessage
 from litellm import acompletion
+from litellm.exceptions import (
+    APIConnectionError,
+    AuthenticationError,
+    BadRequestError,
+    BudgetExceededError,
+    ContentPolicyViolationError,
+    ContextWindowExceededError,
+    InternalServerError,
+    InvalidRequestError,
+    RateLimitError,
+    ServiceUnavailableError,
+    Timeout,
+)
 
+from broca.errors import ErrorCode, LLMError, ValidationError
 from broca.logging_config import get_logger
 from broca.session.models import Message, MessageType
 
@@ -83,9 +97,15 @@ class LLMClient:
         """
 
         if provider not in self.config:
-            raise ValueError(f"Unknown provider: {provider}")
+            raise ValidationError(
+                f"未知 LLM 提供商: {provider}",
+                error_code=ErrorCode.VALIDATION_CONFIG_ERROR,
+            )
         if model not in self.config[provider].get("models", {}):
-            raise ValueError(f"Unknown model: {model}")
+            raise ValidationError(
+                f"未知 LLM 模型: {model} (提供商: {provider})",
+                error_code=ErrorCode.VALIDATION_CONFIG_ERROR,
+            )
 
         modality = self.config[provider]["models"][model]["meta"]["modality"]
         raw_input = message.data.get("raw_input") if message.data else None
@@ -154,27 +174,136 @@ class LLMClient:
         timeout=300,
     ) -> AsyncGenerator[dict, None]:
         if provider not in self.config:
-            raise ValueError(f"Unknown provider: {provider}")
+            raise ValidationError(
+                f"未知 LLM 提供商: {provider}",
+                error_code=ErrorCode.VALIDATION_CONFIG_ERROR,
+            )
         if model not in self.config[provider].get("models", {}):
-            raise ValueError(f"Unknown model: {model}")
+            raise ValidationError(
+                f"未知 LLM 模型: {model} (提供商: {provider})",
+                error_code=ErrorCode.VALIDATION_CONFIG_ERROR,
+            )
         args = copy.deepcopy(self.config[provider]["models"][model])
         del args["meta"]
 
-        response = await acompletion(
-            base_url=self.config[provider]["base_url"],
-            api_key=self.config[provider]["api_key"],
-            messages=messages,
-            tools=tools,
-            stream=True,
-            stream_options={"include_usage": True},
-            stream_timeout=first_chunk_timeout,
-            timeout=timeout,
-            **args,
-        )
+        model_name = args.get("model", model)
+        try:
+            response = await acompletion(
+                base_url=self.config[provider]["base_url"],
+                api_key=self.config[provider]["api_key"],
+                messages=messages,
+                tools=tools,
+                stream=True,
+                stream_options={"include_usage": True},
+                stream_timeout=first_chunk_timeout,
+                timeout=timeout,
+                **args,
+            )
 
-        async for chunk in response:
-            async for result in self._process_chunk(chunk):
-                yield result
+            async for chunk in response:
+                async for result in self._process_chunk(chunk):
+                    yield result
+        except AuthenticationError as e:
+            raise LLMError(
+                message=f"API Key 认证失败 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_AUTH_ERROR,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except BudgetExceededError as e:
+            raise LLMError(
+                message=f"API 额度不足 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_QUOTA_EXCEEDED,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except RateLimitError as e:
+            raise LLMError(
+                message=f"请求频率过高，触发限流 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_RATE_LIMIT,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except ContextWindowExceededError as e:
+            raise LLMError(
+                message=f"对话超出上下文长度限制 (provider: {provider}, model: {model_name}): {e}",
+                error_code=ErrorCode.LLM_CONTEXT_WINDOW_EXCEEDED,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except (InternalServerError, ServiceUnavailableError) as e:
+            raise LLMError(
+                message=f"LLM 服务暂不可用 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_SERVICE_UNAVAILABLE,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except Timeout as e:
+            raise LLMError(
+                message=f"LLM 请求超时 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_TIMEOUT,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except InvalidRequestError as e:
+            # 模型不存在/不可用等请求参数错误
+            error_msg = str(e).lower()
+            if "model" in error_msg and (
+                "not found" in error_msg
+                or "not exist" in error_msg
+                or "not support" in error_msg
+                or "does not exist" in error_msg
+            ):
+                raise LLMError(
+                    message=f"模型不可用 (provider: {provider}, model: {model_name}): {e}",
+                    error_code=ErrorCode.LLM_INVALID_MODEL,
+                    details={"provider": provider, "model": model_name},
+                    cause=e,
+                )
+            raise LLMError(
+                message=f"LLM 请求参数错误 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_ERROR,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except APIConnectionError as e:
+            raise LLMError(
+                message=f"无法连接到 LLM 服务 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_SERVICE_UNAVAILABLE,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except ContentPolicyViolationError as e:
+            raise LLMError(
+                message=f"LLM 内容安全策略拒绝请求 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_ERROR,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except BadRequestError as e:
+            # 某些提供商（如 OpenAI）对无效 API Key 返回 400 BadRequest 而非 401
+            error_msg_lower = str(e).lower()
+            if "auth" in error_msg_lower or "api key" in error_msg_lower or "invalid" in error_msg_lower:
+                raise LLMError(
+                    message=f"API Key 认证失败 (provider: {provider}): {e}",
+                    error_code=ErrorCode.LLM_AUTH_ERROR,
+                    details={"provider": provider, "model": model_name},
+                    cause=e,
+                )
+            raise LLMError(
+                message=f"LLM 请求错误 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_ERROR,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        except Exception as e:
+            # 兜底：所有未归类异常统一包装为 LLMError，避免原始异常被 execute_step 的重试逻辑吞掉
+            raise LLMError(
+                message=f"LLM 请求失败 (provider: {provider}, model: {model_name}): {e}",
+                error_code=ErrorCode.LLM_ERROR,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
 
     async def _process_chunk(self, chunk) -> AsyncGenerator[dict, None]:
         if hasattr(chunk, "usage") and chunk.usage:
