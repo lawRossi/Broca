@@ -44,7 +44,10 @@ const previewFileUrl = ref('')
 
 // ==================== 消息类型判断 ====================
 const isUser = computed(() => props.message.message_type === 'user_message' || props.message.role === 'user')
-const isSystem = computed(() => props.message.message_type === 'system_message' || props.message.message_type === 'command_result' || props.message.role === 'agent_system' || props.message.role === 'system')
+const isSystem = computed(() => {
+  if (props.message.message_type === 'error' || props.message.message_type === 'agent_error') return false
+  return props.message.message_type === 'system_message' || props.message.message_type === 'command_result' || props.message.role === 'agent_system' || props.message.role === 'system'
+})
 const isToolCall = computed(() => props.message.message_type === 'tool_call')
 const isAgentResponse = computed(() => props.message.message_type === 'agent_response' || props.message.role === 'assistant')
 const isError = computed(() => props.message.message_type === 'error' || props.message.message_type === 'agent_error')
@@ -99,10 +102,33 @@ const messageIcon = computed(() => {
 // ==================== 消息背景色 ====================
 const bgClass = computed(() => {
   if (isUser.value) return 'message-user'
-  if (isError.value) return 'message-error'
+  if (isError.value) {
+    const severity = props.message.data?.severity
+    if (severity === 'warning') return 'message-error message-error-warning'
+    if (severity === 'critical') return 'message-error message-error-critical'
+    return 'message-error'
+  }
   if (isToolCall.value) return 'message-tool'
   if (isSystem.value) return 'message-system'
   return 'message-agent'
+})
+
+// ==================== 错误严重级别 CSS class ====================
+const errorHeaderClass = computed(() => {
+  if (!isError.value) return ''
+  const severity = props.message.data?.severity
+  if (severity === 'warning') return 'error-warning'
+  if (severity === 'critical') return 'error-critical'
+  return 'error-default'
+})
+
+// 发送者名字颜色（对齐 web 版 getHeaderColor）
+const senderHeaderClass = computed(() => {
+  if (!isError.value) return ''
+  const severity = props.message.data?.severity
+  if (severity === 'warning') return 'sender-error-warning'
+  if (severity === 'critical') return 'sender-error-critical'
+  return 'sender-error-default'
 })
 
 // ==================== 时间戳 ====================
@@ -424,7 +450,7 @@ function toggleToolParams() {
     <div v-if="!isSystem" class="message-header">
       <div class="header-left">
         <span class="message-icon">{{ messageIcon }}</span>
-        <span class="sender-name">{{ senderName }}</span>
+        <span class="sender-name" :class="senderHeaderClass">{{ senderName }}</span>
       </div>
       <div class="header-right">
         <span class="message-time">{{ timestamp }}</span>
@@ -598,7 +624,10 @@ function toggleToolParams() {
 
     <!-- ==================== 错误消息 ==================== -->
     <template v-else-if="isError">
-      <pre class="message-text error-text">{{ props.message.data?.content || props.message.data?.message }}</pre>
+      <pre class="error-message-text">{{ getContent(props.message) }}</pre>
+      <div v-if="props.message.data?.recovery_hint" class="recovery-hint" :class="errorHeaderClass">
+        💡 {{ props.message.data.recovery_hint }}
+      </div>
     </template>
 
     <!-- ==================== 撤销确认弹窗 ==================== -->
@@ -667,9 +696,18 @@ function toggleToolParams() {
 }
 
 .message-error {
-  background: var(--message-error-bg, transparent);
+  text-align: center;
   border-left: 4px solid var(--message-error-border, #c95a5a);
-  color: var(--error-fg);
+}
+
+.message-error-warning {
+  border-left-color: #e6a23c;
+  background: #fef6e6;
+}
+
+.message-error-critical {
+  border-left-color: #b91c1c;
+  background: #fef2f2;
 }
 
 /* 用户消息：名字灰色，与灰色边框一致 */
@@ -743,6 +781,7 @@ function toggleToolParams() {
   margin: 0;
   white-space: pre-wrap;
   word-break: break-word;
+  overflow-wrap: break-word;
   font-family: inherit;
   font-size: inherit;
   color: var(--text-primary);
@@ -755,8 +794,49 @@ function toggleToolParams() {
   padding: 4px 0;
 }
 
-.error-text {
-  color: var(--error-fg);
+.error-message-text {
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: break-word;
+  font-family: inherit;
+  font-size: 12px;
+  line-height: 1.625;
+  margin-bottom: 4px;
+}
+
+.error-default {
+  color: #dc2626;
+}
+
+.error-warning {
+  color: #b45309;
+}
+
+.error-critical {
+  color: #991b1b;
+  font-weight: 600;
+}
+
+/* 发送者名字颜色 — 对齐 web 版 getHeaderColor（text-red-600 / text-yellow-600 / text-red-900） */
+.sender-error-default {
+  color: #dc2626;
+}
+
+.sender-error-warning {
+  color: #d97706;
+}
+
+.sender-error-critical {
+  color: #7f1d1d;
+}
+
+.recovery-hint {
+  font-size: 12px;
+  margin-top: 6px;
+  opacity: 0.8;
+  overflow-wrap: break-word;
+  display: block;
 }
 
 /* ==================== 推理内容 ==================== */

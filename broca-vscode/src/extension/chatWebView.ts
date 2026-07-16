@@ -938,7 +938,15 @@ export class ChatWebViewManager {
           this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
         })
         existingClient.on('onError', 'chat', (error) => {
-          this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
+          const errorInfo = (error as any)?.data || {}
+          this.postToPanel(panel, {
+            type: 'error',
+            payload: {
+              message: errorInfo.content || errorInfo.message || extractErrorMessage(error),
+              severity: errorInfo.severity || 'error',
+              recovery_hint: errorInfo.recovery_hint,
+            }
+          } as ExtensionToWebView)
         })
         // Still need to fetch agents and history for the chat panel
         await this.fetchAgentsAndHistory(sessionId, panel)
@@ -970,7 +978,15 @@ export class ChatWebViewManager {
           this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
         },
         onError: (error) => {
-          this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
+          const errorInfo = (error as any)?.data || {}
+          this.postToPanel(panel, {
+            type: 'error',
+            payload: {
+              message: errorInfo.content || errorInfo.message || extractErrorMessage(error),
+              severity: errorInfo.severity || 'error',
+              recovery_hint: errorInfo.recovery_hint,
+            }
+          } as ExtensionToWebView)
         },
       })
 

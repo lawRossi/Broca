@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { ref, watch, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, watch, onMounted, onUnmounted, nextTick, computed } from 'vue'
 import { useChatStore } from '../stores/chat'
 import ChatMessageItem from './ChatMessageItem.vue'
 import ChatTurnCard from './ChatTurnCard.vue'
 
 const chatStore = useChatStore()
 const containerRef = ref<HTMLElement>()
+
+// 简洁模式下独立渲染的错误消息（不绑定到 TurnCard）
+const standaloneErrorMessages = computed(() => {
+  return chatStore.messages.filter(
+    m => m.message_type === 'error' || m.message_type === 'agent_error'
+  )
+})
 
 // 防抖定时器（分开管理，避免互相干扰）
 const loadMoreTimer = ref<number | null>(null)
@@ -220,6 +227,11 @@ onUnmounted(() => {
         class="message-wrapper"
       >
         <ChatTurnCard :turn="turn" :consecutiveAgent="isConsecutiveAgent(turn, index)" />
+      </div>
+
+      <!-- 独立错误消息（简洁模式，不与 TurnCard 绑定） -->
+      <div v-for="m in standaloneErrorMessages" :key="m.message_id" class="message-wrapper">
+        <ChatMessageItem :message="m" />
       </div>
 
       <!-- Redo button (简洁模式) -->

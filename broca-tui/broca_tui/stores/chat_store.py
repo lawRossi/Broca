@@ -87,6 +87,9 @@ class TurnSummary:
     created_at: str = ""
     last_message_id: Optional[str] = None
     changed_files: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+    error_severity: Optional[str] = None
+    recovery_hint: Optional[str] = None
 
 
 class ChatStore:
@@ -168,7 +171,7 @@ class ChatStore:
 
         # Callbacks
         self._on_change: Optional[Callable[[], None]] = None
-        self._on_error: Optional[Callable[[str], None]] = None
+        self._on_error: Optional[Callable[..., None]] = None
         self._on_info: Optional[Callable[[str], None]] = None
         self._on_permission: Optional[Callable[[Dict[str, Any]], None]] = None
         self._on_agent_query: Optional[Callable[[Dict[str, Any]], None]] = None
@@ -180,7 +183,7 @@ class ChatStore:
         """Register callback for general state changes."""
         self._on_change = callback
 
-    def on_error(self, callback: Callable[[str], None]):
+    def on_error(self, callback: Callable[..., None]):
         """Register callback for errors."""
         self._on_error = callback
 
@@ -246,10 +249,15 @@ class ChatStore:
         if self._on_change:
             self._on_change()
 
-    def _notify_error(self, message: str):
-        """Notify UI of error, with JSON cleaned from message."""
+    def _notify_error(self, message: str, severity: str = "error"):
+        """Notify UI of error, with JSON cleaned from message.
+
+        Args:
+            message: Error message text
+            severity: One of 'warning', 'error', 'critical'
+        """
         if self._on_error:
-            self._on_error(_clean_error_message(message))
+            self._on_error(_clean_error_message(message), severity)
 
     def _notify_info(self, message: str):
         """Notify UI with info/success message."""
@@ -403,29 +411,9 @@ class ChatStore:
             self.connected = False
             self._notify_change()
             if self._on_connection_change:
-                self._on_connection_change(False)
+                                self._on_connection_change(False)
 
-        @self._socket.on("error")
-        async def handle_error(data):
-            """Handle error messages from server."""
-            try:
-                if isinstance(data, str):
-                    msg = data
-                elif hasattr(data, "data") and isinstance(data.data, dict):
-                    # Message object: 取 content 或 message 字段
-                    msg = (
-                        data.data.get("content")
-                        or data.data.get("message")
-                        or str(data.data)
-                    )
-                elif isinstance(data, dict):
-                    msg = data.get("content", data.get("message", str(data)))
-                else:
-                    msg = str(data)
-                if msg:
-                    self._notify_error(msg)
-            except Exception:
-                pass
+                    
 
     # ==================== Message Handling ====================
 
@@ -474,6 +462,32 @@ class ChatStore:
                 self.update_turn_on_agent_response(
                     turn_id, msg_dict.get("data", {}), message_id
                 )
+
+        # ── 简洁模式：error/agent_error 更新 turn 错误信息 ──
+        if msg_type in ("error", "agent_error"):
+            turn_id = msg_dict.get("turn_id", "") or msg_dict.get("data", {}).get(
+                "turn_id", ""
+            )
+            data = msg_dict.get("data", {}) or {}
+            if turn_id:
+                turn = self._find_turn(turn_id)
+                if turn:
+                    turn.status = "error"
+                    turn.error_message = data.get("content") or data.get(
+                        "message", "Unknown error"
+                    )
+                    turn.error_severity = data.get("severity", None)
+                    turn.recovery_hint = data.get("recovery_hint", None)
+                    turn.is_active = False
+                    self._notify_change(force=True)
+            else:
+                # 没有 turn_id 的错误：作为 toast 通知
+                error_msg = data.get("content") or data.get("message", "Unknown error")
+                severity = data.get("severity", "error")
+                recovery_hint = data.get("recovery_hint")
+                if recovery_hint:
+                    error_msg = f"{error_msg}\n💡 {recovery_hint}"
+                self._notify_error(error_msg, severity)
 
         # Notify agent status: tool_call / agent_response → agent is active (running)
         if msg_type in ("tool_call", "agent_response"):

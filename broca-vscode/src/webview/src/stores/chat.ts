@@ -45,6 +45,12 @@ interface TurnSummary {
   lastMessageId: string | null
   /** 文件变更摘要 */
   changedFiles: ChangedFiles | null
+  /** 错误消息内容（仅 status === 'error' 时有效） */
+  errorMessage: string | null
+  /** 错误严重级别：'warning' | 'critical' | null（默认） */
+  errorSeverity: string | null
+  /** 错误恢复建议 */
+  recoveryHint: string | null
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -93,6 +99,8 @@ export const useChatStore = defineStore('chat', () => {
         return isAllSelected
       }
       if (m.role === 'system' || m.message_type === 'system_message') return true
+      // 错误消息始终显示，无论 Agent 筛选状态
+      if (m.message_type === 'error' || m.message_type === 'agent_error') return true
       if (m.sender_id && visibleIds.includes(m.sender_id)) return true
       if (m.agent_id && visibleIds.includes(m.agent_id)) return true
       return false
@@ -362,7 +370,7 @@ export const useChatStore = defineStore('chat', () => {
 
         case 'error':
           console.error('Extension error:', data.payload.message)
-          showError(data.payload.message || '操作失败', 'error')
+          showError(data.payload.message || '操作失败', data.payload.severity || 'error')
           break
 
         case 'refreshSession':
@@ -456,7 +464,9 @@ export const useChatStore = defineStore('chat', () => {
       message.message_type === 'agent_response' ||
       message.message_type === 'user_message' ||
       message.message_type === 'tool_call' ||
-      message.message_type === 'reasoning_content'
+      message.message_type === 'reasoning_content' ||
+      message.message_type === 'error' ||
+      message.message_type === 'agent_error'
     ) {
       updateTurnSummaryOnMessage(message)
     }
@@ -1120,6 +1130,9 @@ export const useChatStore = defineStore('chat', () => {
       createdAt: message.timestamp || new Date().toISOString(),
       lastMessageId: null,
       changedFiles: null,
+      errorMessage: null,
+      errorSeverity: null,
+      recoveryHint: null,
     }
 
     turnSummaries.value.push(summary)
@@ -1326,6 +1339,17 @@ export const useChatStore = defineStore('chat', () => {
         if (message.data?.content) {
           turn.reasoningContent += message.data.content
         }
+        turn.lastMessageId = message.message_id
+        break
+
+      case 'error':
+      case 'agent_error':
+        // 错误消息：记录错误内容、严重级别和恢复建议
+        turn.status = 'error'
+        turn.errorMessage = message.data?.content || message.data?.message || 'Unknown error'
+        turn.errorSeverity = message.data?.severity || null
+        turn.recoveryHint = message.data?.recovery_hint || null
+        turn.isActive = false
         turn.lastMessageId = message.message_id
         break
     }

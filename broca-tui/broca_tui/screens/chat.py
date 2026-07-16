@@ -241,7 +241,7 @@ class ChatScreen(Screen):
         # Chat store → MessageList
         self._chat_store.on_change(lambda: self._on_chat_change())
         self._chat_store.on_error(
-            lambda msg: self.notify(msg, severity="error", timeout=5, markup=False)
+            lambda msg, sev="error": self.notify(msg, severity=sev, timeout=5, markup=False)
         )
         self._chat_store.on_info(
             lambda msg: self.notify(msg, severity="information", timeout=3, markup=False)

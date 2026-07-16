@@ -161,6 +161,36 @@ class TurnCard(Widget):
         border-left: solid #5a8fc9;
     }
 
+    .accent-error {
+        border-left: solid #c95a5a;
+    }
+
+    .turn-error-text {
+        color: #c95a5a;
+        height: auto;
+        width: 1fr;
+    }
+
+    .turn-error-text.error-default {
+        color: #c95a5a;
+    }
+
+    .turn-error-text.error-warning {
+        color: #e6a23c;
+    }
+
+    .turn-error-text.error-critical {
+        color: #b91c1c;
+        text-style: bold;
+    }
+
+    .turn-recovery-hint {
+        height: auto;
+        width: 1fr;
+        color: #c95a5a;
+        margin-top: 1;
+    }
+
     .turn-user-message {
         height: auto;
         padding: 0;
@@ -914,6 +944,24 @@ class TurnCard(Widget):
                 )
         yield Label("展开全部", id="toggle-response", classes="turn-fold-label")
 
+        # ===== 错误消息区域（与详细模式对齐） =====
+        with Horizontal(
+            classes="turn-response-section section-accent accent-error",
+            id="error-section",
+        ):
+            yield Label("⚠️", classes="turn-response-icon")
+            with Vertical(classes="turn-response-content", id="error-content"):
+                yield Label(
+                    self._turn.error_message or "",
+                    classes="turn-error-text",
+                    id="error-text",
+                )
+                yield Label(
+                    "",
+                    classes="turn-recovery-hint",
+                    id="recovery-hint-text",
+                )
+
         # ===== 当前调用（始终创建，初始隐藏） =====
         with Horizontal(classes="turn-current-call", id="current-call-section"):
             yield Label("⏳ 当前调用:", classes="turn-current-call-label")
@@ -998,6 +1046,33 @@ class TurnCard(Widget):
                     # 内容被缩短到阈值以下，自动展开
                     self._response_expanded = True
             self._update_response_visibility()
+
+        # 错误消息区域 — 仅在 status === 'error' 且有 error_message 时显示
+        show_error = bool(
+            self._turn.status == "error" and self._turn.error_message
+        )
+        self._toggle_display("#error-section", show_error)
+        if show_error:
+            try:
+                error_text = self.query_one("#error-text", Label)
+                error_text.update(self._turn.error_message)
+                # 根据严重级别设置样式
+                severity = self._turn.error_severity
+                if severity == "warning":
+                    error_text.classes = "turn-error-text error-warning"
+                elif severity == "critical":
+                    error_text.classes = "turn-error-text error-critical"
+                else:
+                    error_text.classes = "turn-error-text error-default"
+                # 恢复建议
+                hint_text = self.query_one("#recovery-hint-text", Label)
+                if self._turn.recovery_hint:
+                    hint_text.update(f"💡 {self._turn.recovery_hint}")
+                    hint_text.display = True
+                else:
+                    hint_text.display = False
+            except Exception:
+                pass
 
         # 当前调用 — 仅在 actively calling a tool 时显示
         # 不依赖 current_tool 的清空（已对齐 Web 版不清空行为），用 status 精确判断

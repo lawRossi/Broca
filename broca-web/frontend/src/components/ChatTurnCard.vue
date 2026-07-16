@@ -47,6 +47,12 @@ interface TurnSummary {
   createdAt: string
   lastMessageId: string | null
   changedFiles: ChangedFileInfo | null
+  /** 错误消息内容（仅 status === 'error' 时有效） */
+  errorMessage: string | null
+  /** 错误严重级别：'warning' | 'critical' | null（默认） */
+  errorSeverity: string | null
+  /** 错误恢复建议 */
+  recoveryHint: string | null
 }
 
 const props = defineProps<{

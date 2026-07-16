@@ -48,6 +48,12 @@ interface TurnSummary {
   lastMessageId: string | null
   /** 文件变更摘要 */
   changedFiles: ChangedFiles | null
+  /** 错误消息内容（仅 status === 'error' 时有效） */
+  errorMessage: string | null
+  /** 错误严重级别：'warning' | 'critical' | null（默认） */
+  errorSeverity: string | null
+  /** 错误恢复建议 */
+  recoveryHint: string | null
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -232,6 +238,8 @@ export const useChatStore = defineStore('chat', () => {
       }
       // 系统消息始终显示
       if (m.role === 'system' || m.message_type === 'system_message') return true
+      // 错误消息始终显示，无论 Agent 筛选状态
+      if (m.message_type === 'error' || m.message_type === 'agent_error') return true
       // 根据 sender_id 或 agent_id 过滤
       if (m.sender_id && visibleIds.includes(m.sender_id)) return true
       if (m.agent_id && visibleIds.includes(m.agent_id)) return true
@@ -604,6 +612,13 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
       turn.status = 'thinking'
+    } else if (message.message_type === 'error' || message.message_type === 'agent_error') {
+      // 错误消息：记录错误内容、严重级别和恢复建议
+      turn.status = 'error'
+      turn.errorMessage = message.data?.content || message.data?.message || 'Unknown error'
+      turn.errorSeverity = message.data?.severity || null
+      turn.recoveryHint = message.data?.recovery_hint || null
+      turn.isActive = false
     }
   }
 
@@ -640,6 +655,9 @@ export const useChatStore = defineStore('chat', () => {
       createdAt: new Date().toISOString(),
       lastMessageId: null,
       changedFiles: null,
+      errorMessage: null,
+      errorSeverity: null,
+      recoveryHint: null,
     }
 
     turnSummaries.value.push(newSummary)
@@ -1177,7 +1195,7 @@ export const useChatStore = defineStore('chat', () => {
           handleTurnStart(m)
         } else if (m.message_type === 'turn_end') {
           handleTurnEnd(m)
-        } else if (m.message_type === 'tool_call' || m.message_type === 'agent_response' || m.message_type === 'user_message') {
+        } else if (m.message_type === 'tool_call' || m.message_type === 'agent_response' || m.message_type === 'user_message' || m.message_type === 'error' || m.message_type === 'agent_error') {
           updateTurnSummaryOnMessage(m)
         }
         return
@@ -1247,8 +1265,8 @@ export const useChatStore = defineStore('chat', () => {
         handleTurnEnd(m)
       }
 
-      // tool_call、agent_response 和 user_message 同时更新 TurnSummary
-      if (m.message_type === 'tool_call' || m.message_type === 'agent_response' || m.message_type === 'user_message') {
+      // tool_call、agent_response、user_message、error 同时更新 TurnSummary
+      if (m.message_type === 'tool_call' || m.message_type === 'agent_response' || m.message_type === 'user_message' || m.message_type === 'error' || m.message_type === 'agent_error') {
         updateTurnSummaryOnMessage(m)
       }
     })

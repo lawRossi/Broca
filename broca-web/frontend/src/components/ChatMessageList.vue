@@ -9,6 +9,13 @@ const socketStore = useSocketStore()
 const containerRef = ref<HTMLElement>()
 const isRestoringScroll = ref(false)
 
+// 简洁模式下独立渲染的错误消息（不绑定到 TurnCard）
+const standaloneErrorMessages = computed(() => {
+  return chatStore.messages.filter(
+    m => m.message_type === 'error' || m.message_type === 'agent_error'
+  )
+})
+
 // 简洁模式状态
 const isConciseMode = computed(() => chatStore.displayMode === 'concise')
 
@@ -218,6 +225,11 @@ const handleRedo = () => {
           :turn="turn"
           :consecutive-agent="idx > 0 && turn.agentId === chatStore.filteredTurnSummaries[idx - 1].agentId"
         />
+      </div>
+
+      <!-- 独立错误消息（简洁模式，不与 TurnCard 绑定） -->
+      <div v-for="m in standaloneErrorMessages" :key="m.message_id" class="mt-3">
+        <ChatMessageItem :message="m" />
       </div>
     </template>
 

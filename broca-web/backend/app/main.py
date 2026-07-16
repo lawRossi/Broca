@@ -131,6 +131,39 @@ async def setup() -> None:
 
         crew_service = get_crew_service()
         runner_manager.on("crew_event", crew_service.handle_crew_event)
+
+        # 注册 Runner 错误事件处理器（转发到前端）
+        async def _on_runner_error(runner_info):
+            """Runner 进程初始化失败或运行异常时，通过 SocketIO 通知前端"""
+            socketio_runtime = getattr(app.state, "socketio_runtime", None)
+            if not socketio_runtime or not socketio_runtime._server:
+                return
+            error_msg = getattr(runner_info, "error_message", None) or "Unknown runner error"
+            recovery_hint = getattr(runner_info, "recovery_hint", None)
+            session_id = getattr(runner_info, "session_id", None)
+            if not session_id:
+                return
+            try:
+                from broca.communication.socketio_server import MessageProtocol
+                from broca.session.models import Message, MessageType, MessageRole
+
+                data = {"content": error_msg, "code": "RUNNER_ERROR", "severity": "error"}
+                if recovery_hint:
+                    data["recovery_hint"] = recovery_hint
+                msg = Message(
+                    message_type=MessageType.AGENT_ERROR,
+                    role=MessageRole.SYSTEM,
+                    subscription=session_id,
+                    session_id=session_id,
+                    data=data,
+                )
+                await socketio_runtime._server.send_message(msg, subscription=session_id)
+                logger.info("Runner error forwarded to frontend: %s", error_msg)
+            except Exception as e:
+                logger.error("Failed to forward runner error to frontend: %s", e)
+
+        runner_manager.on("runner_error", _on_runner_error)
+
         # 注入 SocketIO 服务器引用，用于实时推送编排进度到前端
         if app.state.socketio_runtime and app.state.socketio_runtime._server:
             set_socketio_server(app.state.socketio_runtime._server)

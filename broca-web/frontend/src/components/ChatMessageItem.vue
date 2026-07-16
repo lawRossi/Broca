@@ -102,6 +102,9 @@ const getHeaderColor = (message: Message) => {
   } else if (message.message_type === 'agent_response' || message.role === 'assistant') {
     return 'text-blue-600'
   } else if (message.message_type === 'error' || message.message_type === 'agent_error') {
+    const severity = message.data?.severity
+    if (severity === 'warning') return 'text-yellow-600'
+    if (severity === 'critical') return 'text-red-900'
     return 'text-red-600'
   } else if (message.message_type === 'tool_call') {
     return 'text-amber-700'
@@ -117,6 +120,9 @@ const getBgClass = (message: Message) => {
   } else if (message.message_type === 'agent_system_message' || message.role === 'agent_system') {
     return 'msg-system'
   } else if (message.message_type === 'error' || message.message_type === 'agent_error') {
+    const severity = message.data?.severity
+    if (severity === 'warning') return 'msg-error msg-error-warning'
+    if (severity === 'critical') return 'msg-error msg-error-critical'
     return 'msg-error'
   } else if (message.message_type === 'tool_call') {
     return 'msg-tool'
@@ -135,6 +141,13 @@ const getContentClass = (message: Message) => {
     return ''
   }
   return ''
+}
+
+const getSeverityHintClass = (message: Message) => {
+  const severity = message.data?.severity
+  if (severity === 'warning') return 'text-yellow-700'
+  if (severity === 'critical') return 'text-red-800 font-semibold'
+  return 'text-red-600'
 }
 
 const getContent = (message: Message) => {
@@ -658,6 +671,21 @@ const handleUndoToHere = async () => {
         v-html="renderMarkdown(getContent(message))"
       ></div>
 
+      <!-- error 消息：内容 + 恢复建议 -->
+      <template v-else-if="message.message_type === 'error' || message.message_type === 'agent_error'">
+        <pre
+          class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-1"
+          :class="getContentClass(message)"
+        >{{ getContent(message) }}</pre>
+        <div
+          v-if="message.data?.recovery_hint"
+          class="text-xs mt-1 opacity-80"
+          :class="getSeverityHintClass(message)"
+        >
+          💡 {{ message.data.recovery_hint }}
+        </div>
+      </template>
+
       <!-- 其他消息类型 -->
       <pre
         v-else
@@ -848,6 +876,16 @@ const handleUndoToHere = async () => {
 .msg-error {
   border-left: 4px solid #c95a5a;
   color: var(--error-fg, #c95a5a);
+}
+
+.msg-error-warning {
+  border-left-color: #e6a23c;
+  background-color: #fef6e6;
+}
+
+.msg-error-critical {
+  border-left-color: #b91c1c;
+  background-color: #fef2f2;
 }
 
 /* 发送者名字 */
