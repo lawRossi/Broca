@@ -1052,9 +1052,18 @@ export const useChatStore = defineStore('chat', () => {
   function startDurationTimer() {
     stopDurationTimer()
     durationTimer.value = setInterval(() => {
-      const activeTurn = turnSummaries.value.find(t => t.isActive)
-      if (activeTurn) {
-        activeTurn.totalDuration = Math.floor((Date.now() - activeTurn.startedAt) / 1000)
+      const now = Date.now()
+      // 更新所有活跃 turn 的耗时，而非仅第一个（编排场景下可能有多个并发 turn）
+      let hasActive = false
+      for (const turn of turnSummaries.value) {
+        if (turn.isActive) {
+          turn.totalDuration = Math.floor((now - turn.startedAt) / 1000)
+          hasActive = true
+        }
+      }
+      // 如果没有活跃 turn 了，自动停止计时器
+      if (!hasActive) {
+        stopDurationTimer()
       }
     }, 500)
   }
@@ -1152,9 +1161,9 @@ export const useChatStore = defineStore('chat', () => {
     turn.totalDuration = (Date.now() - turn.startedAt) / 1000
     turn.status = message.data?.status === 'error' || message.data?.status === 'aborted' ? 'error' : 'completed'
 
+    // 更新 activeTurnIndex：如果结束的正是当前活跃 turn，重置它
     if (activeTurnIndex.value === idx) {
       activeTurnIndex.value = -1
-      stopDurationTimer()
     }
 
     // 保存 turn_end 消息 ID 用于撤销定位（始终安全，后端可能已删除最后响应消息）
@@ -1173,7 +1182,10 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
-    activeTurnIndex.value = -1
+    // 如果没有任何活跃 turn 了，停止计时器（timer 自身也会检测，这里做双重保障）
+    if (!turnSummaries.value.some(t => t.isActive)) {
+      stopDurationTimer()
+    }
   }
 
   function updateTurnSummaryOnStepEvent(message: Message) {

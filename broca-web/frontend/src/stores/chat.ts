@@ -680,6 +680,9 @@ export const useChatStore = defineStore('chat', () => {
 
     if (activeTurnIndex.value === idx) {
       activeTurnIndex.value = -1
+    }
+    // 如果没有任何活跃 turn 了，停止计时器（timer 自身也会检测，这里做双重保障）
+    if (!turnSummaries.value.some(t => t.isActive)) {
       stopDurationTimer()
     }
     // 保存 turn_end 消息 ID 用于撤销定位（始终安全，后端可能已删除最后响应消息）
@@ -1090,11 +1093,18 @@ export const useChatStore = defineStore('chat', () => {
   const startDurationTimer = () => {
     stopDurationTimer()
     durationTimer = setInterval(() => {
-      if (activeTurnIndex.value >= 0 && activeTurnIndex.value < turnSummaries.value.length) {
-        const turn = turnSummaries.value[activeTurnIndex.value]
+      // 更新所有活跃 turn 的耗时，而非仅 activeTurnIndex 指向的一个
+      // （编排场景下可能有多个并发 turn 同时执行）
+      let hasActive = false
+      for (const turn of turnSummaries.value) {
         if (turn.isActive) {
           turn.totalDuration = (Date.now() - turn.startedAt) / 1000
+          hasActive = true
         }
+      }
+      // 无活跃 turn 时自动停止计时器
+      if (!hasActive) {
+        stopDurationTimer()
       }
     }, 500)
   }

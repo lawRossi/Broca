@@ -775,7 +775,7 @@ const targetAgentDisplay = computed(() => {
 }
 
 .chat-input::placeholder {
-  color: var(--text-secondary);
+  color: var(--vscode-input-placeholderForeground, var(--text-secondary));
 }
 
 /* ==================== /command 建议列表 ==================== */

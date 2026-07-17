@@ -444,14 +444,28 @@ class InfoSidebar(Widget):
             self.run_worker(self._do_start_runner(session_id))
 
     async def _do_start_runner(self, session_id: str):
-        """Start (or restart) the runner."""
+        """Start (or restart) the runner.
+
+        Handles three failure scenarios:
+        1. restart_runner() catches error internally → checks return value
+        2. Polling detects "error" status → sets runner_status = "error"
+        3. Polling times out (60s) → runner_status falls through to "error"
+        """
         try:
             self.runner_status = "starting"
+
+            # Attempt to start/restart the runner
             if self._chat_store:
-                await self._chat_store.restart_runner()
+                result = await self._chat_store.restart_runner()
+                if result is None:
+                    # restart_runner caught an error internally (network/API/etc.)
+                    self.runner_status = "error"
+                    return
             else:
                 await self._api.restart_runner(session_id)
+
             # Poll until runner is alive (or timeout)
+            alive = False
             for _ in range(12):  # 12 * 5 = 60 seconds max
                 await self._sleep(5)
                 try:
@@ -463,11 +477,16 @@ class InfoSidebar(Widget):
                         uptime=self._get_runner_uptime(info.get("uptime_seconds")),
                     )
                     if s == "alive":
+                        alive = True
                         break
                     if s == "error":
                         break
                 except Exception:
                     pass
+
+            # If polling ended without reaching alive or error, set to error
+            if not alive and self.runner_status not in ("alive", "error"):
+                self.runner_status = "error"
         except Exception:
             self.runner_status = "error"
         finally:
