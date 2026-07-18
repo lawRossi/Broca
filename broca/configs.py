@@ -20,6 +20,20 @@ class BrocaConfig:
         return agent_config
 
 
+def _load_config_file(config_file: Path) -> BrocaConfig | None:
+    """尝试从文件加载配置，如果文件不存在或 JSON 解析失败则返回 None"""
+    try:
+        if config_file.exists():
+            with open(config_file) as f:
+                return BrocaConfig.from_config(json.load(f))
+    except (json.JSONDecodeError, OSError) as e:
+        import logging
+        logging.getLogger(__name__).warning(
+            f"Failed to load config from {config_file}: {e}"
+        )
+    return None
+
+
 def get_configs() -> BrocaConfig:
     """
     读取配置，优先级:
@@ -30,22 +44,19 @@ def get_configs() -> BrocaConfig:
     # 1. 环境变量
     env_path = os.getenv("BROCA_CONFIG")
     if env_path:
-        config_file = Path(env_path)
-        if config_file.exists():
-            with open(config_file) as f:
-                return BrocaConfig.from_config(json.load(f))
+        config = _load_config_file(Path(env_path))
+        if config is not None:
+            return config
 
     # 2. 用户配置 ~/.broca/configs.json
-    user_config = Path.home() / ".broca" / "configs.json"
-    if user_config.exists():
-        with open(user_config) as f:
-            return BrocaConfig.from_config(json.load(f))
+    config = _load_config_file(Path.home() / ".broca" / "configs.json")
+    if config is not None:
+        return config
 
     # 3. 项目默认配置
-    project_config = Path(__file__).parent.parent / "configs" / "configs.json"
-    if project_config.exists():
-        with open(project_config) as f:
-            return BrocaConfig.from_config(json.load(f))
+    config = _load_config_file(Path(__file__).parent.parent / "configs" / "configs.json")
+    if config is not None:
+        return config
 
     # 4. 都不存在时返回默认值
     return BrocaConfig()

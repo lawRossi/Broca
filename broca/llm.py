@@ -109,11 +109,15 @@ class LLMClient:
 
         modality = self.config[provider]["models"][model]["meta"]["modality"]
         raw_input = message.data.get("raw_input") if message.data else None
+
+        # Initialize content containers for all message types
+        text_content = ""
+        image_content = []
+        audio_content = []
+        video_content = []
+
         if message.message_type == MessageType.USER_MESSAGE:
             text_content = message.data.get("content", "")
-            image_content = []
-            audio_content = []
-            video_content = []
             files = message.data.get("files")
             if files:
                 file_info_parts = []
