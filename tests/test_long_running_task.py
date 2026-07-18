@@ -21,7 +21,7 @@ import pytest_asyncio
 from broca.process_manager import ProcessManager, ProcessStatus
 from broca.scheduler import Scheduler
 from broca.session.models import JobType
-from broca.tools.cron import CronTool
+from broca.tools.process import ProcessTool
 from broca.tools.tool import ToolCallContext
 
 
@@ -114,16 +114,16 @@ async def test_scheduler_with_process_manager():
 
 
 @pytest.mark.asyncio
-async def test_cron_tool_track_process():
-    """场景 3: CronTool 查询进程状态"""
+async def test_process_tool_track_process():
+    """场景 3: ProcessTool 查询进程状态"""
     pm = ProcessManager()
     info = await pm.start_process("sleep 20")
 
-    ct = CronTool()
+    pt = ProcessTool()
     ctx = ToolCallContext()
 
     # 查询运行中进程
-    result = await ct._track_process({"process_id": info.process_id}, ctx)
+    result = await pt._track_process({"process_id": info.process_id}, ctx)
     assert result.status.value == "success"
     assert "running" in result.content.lower() or "RUNNING" in result.content
 
@@ -132,38 +132,38 @@ async def test_cron_tool_track_process():
     await asyncio.sleep(0.3)
 
     # 查询已停止进程
-    result = await ct._track_process({"process_id": info.process_id}, ctx)
+    result = await pt._track_process({"process_id": info.process_id}, ctx)
     assert result.status.value == "success"
 
     # 查询不存在的进程
-    result = await ct._track_process({"process_id": "nonexistent"}, ctx)
+    result = await pt._track_process({"process_id": "nonexistent"}, ctx)
     assert result.status.value == "error"
 
 
 @pytest.mark.asyncio
-async def test_cron_tool_list_and_stop_processes():
-    """场景 4: CronTool 列举和停止进程"""
+async def test_process_tool_list_and_stop_processes():
+    """场景 4: ProcessTool 列举和停止进程"""
     pm = ProcessManager()
     info1 = await pm.start_process("sleep 20")
     info2 = await pm.start_process("sleep 20")
 
-    ct = CronTool()
+    pt = ProcessTool()
     ctx = ToolCallContext()
 
     # 列举进程
-    result = await ct._list_processes({}, ctx)
+    result = await pt._list_processes({}, ctx)
     assert result.status.value == "success"
     assert info1.process_id in result.content
     assert info2.process_id in result.content
 
     # 优雅停止
-    result = await ct._stop_process({"process_id": info1.process_id, "force": False}, ctx)
+    result = await pt._stop_process({"process_id": info1.process_id, "force": False}, ctx)
     assert result.status.value == "success"
     await asyncio.sleep(0.3)
     assert pm.get_status(info1.process_id).status == ProcessStatus.STOPPED
 
     # 强制停止
-    result = await ct._stop_process({"process_id": info2.process_id, "force": True}, ctx)
+    result = await pt._stop_process({"process_id": info2.process_id, "force": True}, ctx)
     assert result.status.value == "success"
     await asyncio.sleep(0.3)
     assert pm.get_status(info2.process_id).status == ProcessStatus.KILLED
