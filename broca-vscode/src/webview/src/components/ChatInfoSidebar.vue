@@ -107,7 +107,6 @@ function stopCountsPolling() {
   }
 }
 
-
 const userMessagesFromApi = computed(() => {
   if (!stats.value?.messages_by_type) return 0
   return stats.value.messages_by_type['MessageType.USER_MESSAGE'] || stats.value.messages_by_type['USER_MESSAGE'] || 0
@@ -186,13 +185,17 @@ const wsCopyFeedback = ref(false)
 function copySessionId() {
   navigator.clipboard.writeText(chatStore.sessionId || '')
   copyFeedback.value = true
-  setTimeout(() => { copyFeedback.value = false }, 2000)
+  setTimeout(() => {
+    copyFeedback.value = false
+  }, 2000)
 }
 
 function copyWorkspace() {
   navigator.clipboard.writeText(workspace.value || '')
   wsCopyFeedback.value = true
-  setTimeout(() => { wsCopyFeedback.value = false }, 2000)
+  setTimeout(() => {
+    wsCopyFeedback.value = false
+  }, 2000)
 }
 
 // ==================== 侧栏状态 ====================
@@ -255,14 +258,29 @@ onUnmounted(() => {
             <span class="info-label">Session ID</span>
             <div class="session-id-group">
               <span class="session-id-text mono" :title="chatStore.sessionId">{{ chatStore.sessionId }}</span>
-              <button class="copy-btn" :class="{ 'copied': copyFeedback }" @click="copySessionId" :title="copyFeedback ? '已复制' : '复制 Session ID'">{{ copyFeedback ? '✓' : '📋' }}</button>
+              <button
+                class="copy-btn"
+                :class="{ copied: copyFeedback }"
+                :title="copyFeedback ? '已复制' : '复制 Session ID'"
+                @click="copySessionId"
+              >
+                {{ copyFeedback ? '✓' : '📋' }}
+              </button>
             </div>
           </div>
           <div class="workspace-section">
             <span class="info-label">Workspace</span>
             <div class="session-id-group">
               <span class="session-id-text mono" :title="workspace">{{ workspace || '未设置' }}</span>
-              <button v-if="workspace" class="copy-btn" :class="{ 'copied': wsCopyFeedback }" @click="copyWorkspace" :title="wsCopyFeedback ? '已复制' : '复制 Workspace'">{{ wsCopyFeedback ? '✓' : '📋' }}</button>
+              <button
+                v-if="workspace"
+                class="copy-btn"
+                :class="{ copied: wsCopyFeedback }"
+                :title="wsCopyFeedback ? '已复制' : '复制 Workspace'"
+                @click="copyWorkspace"
+              >
+                {{ wsCopyFeedback ? '✓' : '📋' }}
+              </button>
             </div>
           </div>
           <button class="nav-btn" @click="emit('navigate', 'tasks')">
@@ -280,7 +298,7 @@ onUnmounted(() => {
       <div class="panel">
         <div class="panel-title">
           <span>Runner Status</span>
-          <button class="refresh-btn" @click="handleRefreshRunner" title="刷新">🔄</button>
+          <button class="refresh-btn" title="刷新" @click="handleRefreshRunner">🔄</button>
         </div>
         <div class="panel-body">
           <div class="info-row">
@@ -307,11 +325,7 @@ onUnmounted(() => {
           </div>
           <div class="runner-actions">
             <div v-if="runnerInfo?.status === 'alive'">
-              <button
-                class="action-btn btn-danger"
-                :disabled="chatStore.runnerActionLoading"
-                @click="handleStopRunner"
-              >
+              <button class="action-btn btn-danger" :disabled="chatStore.runnerActionLoading" @click="handleStopRunner">
                 <span v-if="chatStore.runnerActionLoading" class="btn-spinner"></span>
                 {{ chatStore.runnerActionLoading ? '处理中...' : '停止进程' }}
               </button>
@@ -360,7 +374,9 @@ onUnmounted(() => {
           </div>
           <div class="stat-item">
             <span class="stat-label">Tool Call Errors</span>
-            <span class="stat-value" :class="{ 'error-value': toolCallErrorsFromApi > 0 }">{{ toolCallErrorsFromApi }}</span>
+            <span class="stat-value" :class="{ 'error-value': toolCallErrorsFromApi > 0 }">{{
+              toolCallErrorsFromApi
+            }}</span>
           </div>
           <div v-if="statsLoading" class="stat-loading">
             <span class="loading-spinner"></span>
@@ -629,7 +645,9 @@ onUnmounted(() => {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 /* ==================== Stat Item ==================== */
@@ -648,11 +666,21 @@ onUnmounted(() => {
   flex-shrink: 0;
 }
 
-.dot-blue { background: #3b82f6; }
-.dot-green { background: #22c55e; }
-.dot-gray { background: #6b7280; }
-.dot-purple { background: #a855f7; }
-.dot-red { background: #ef4444; }
+.dot-blue {
+  background: #3b82f6;
+}
+.dot-green {
+  background: #22c55e;
+}
+.dot-gray {
+  background: #6b7280;
+}
+.dot-purple {
+  background: #a855f7;
+}
+.dot-red {
+  background: #ef4444;
+}
 
 .stat-label {
   flex: 1;

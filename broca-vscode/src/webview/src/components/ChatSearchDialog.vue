@@ -253,7 +253,9 @@ const getContentPreview = (m: Message): string => {
         }
         return parsed.content || JSON.stringify(parsed).slice(0, 200)
       }
-    } catch { /* not json */ }
+    } catch {
+      /* not json */
+    }
     return content.slice(0, 300)
   }
   return String(content).slice(0, 300)
@@ -266,28 +268,41 @@ const getDataPreview = (m: Message): string => {
 
 const getTypeBadgeClass = (messageType: string): string => {
   switch (messageType) {
-    case 'user_message': return 'type-user'
-    case 'agent_response': return 'type-agent'
-    case 'tool_call': return 'type-tool'
+    case 'user_message':
+      return 'type-user'
+    case 'agent_response':
+      return 'type-agent'
+    case 'tool_call':
+      return 'type-tool'
     case 'error':
-    case 'agent_error': return 'type-error'
+    case 'agent_error':
+      return 'type-error'
     case 'system_message':
-    case 'agent_system_message': return 'type-system'
-    default: return 'type-default'
+    case 'agent_system_message':
+      return 'type-system'
+    default:
+      return 'type-default'
   }
 }
 
 const getTypeLabel = (messageType: string): string => {
   switch (messageType) {
-    case 'user_message': return 'User'
-    case 'agent_response': return 'Agent'
-    case 'tool_call': return 'Tool'
+    case 'user_message':
+      return 'User'
+    case 'agent_response':
+      return 'Agent'
+    case 'tool_call':
+      return 'Tool'
     case 'error':
-    case 'agent_error': return 'Error'
+    case 'agent_error':
+      return 'Error'
     case 'system_message':
-    case 'agent_system_message': return 'System'
-    case 'command_result': return 'Cmd'
-    default: return messageType
+    case 'agent_system_message':
+      return 'System'
+    case 'command_result':
+      return 'Cmd'
+    default:
+      return messageType
   }
 }
 
@@ -364,11 +379,7 @@ watch(visible, (val) => {
 
 <template>
   <Transition name="search-fade">
-    <div
-      v-if="visible"
-      class="search-overlay"
-      @click.self="handleClose"
-    >
+    <div v-if="visible" class="search-overlay" @click.self="handleClose">
       <div class="search-dialog">
         <!-- Header -->
         <div class="dialog-header">
@@ -398,48 +409,29 @@ watch(visible, (val) => {
             </div>
 
             <!-- Agent filter -->
-            <select
-              v-model="selectedAgentId"
-              class="filter-select"
-            >
+            <select v-model="selectedAgentId" class="filter-select">
               <option value="">Agent</option>
-              <option
-                v-for="opt in agentOptions"
-                :key="opt.value"
-                :value="opt.value"
-              >{{ opt.label }}</option>
+              <option v-for="opt in agentOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
 
             <!-- Message type -->
-            <select
-              v-model="selectedMessageType"
-              class="filter-select"
-            >
+            <select v-model="selectedMessageType" class="filter-select">
               <option value="">类型</option>
-              <option
-                v-for="opt in messageTypeOptions"
-                :key="opt.value"
-                :value="opt.value"
-              >{{ opt.label }}</option>
+              <option v-for="opt in messageTypeOptions" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
             </select>
 
             <!-- Tool name -->
-            <select
-              v-model="selectedToolName"
-              class="filter-select"
-            >
+            <select v-model="selectedToolName" class="filter-select">
               <option value="">工具</option>
-              <option
-                v-for="name in toolNameOptions"
-                :key="name"
-                :value="name"
-              >{{ name }}</option>
+              <option v-for="name in toolNameOptions" :key="name" :value="name">{{ name }}</option>
             </select>
 
             <!-- Result count -->
             <span class="result-count">
               <template v-if="loading">⏳</template>
-              <template v-else>共 <strong>{{ totalResults }}</strong> 条</template>
+              <template v-else
+                >共 <strong>{{ totalResults }}</strong> 条</template
+              >
             </span>
           </div>
         </div>
@@ -449,15 +441,10 @@ watch(visible, (val) => {
           <!-- ====== Message Detail View ====== -->
           <template v-if="selectedMessage">
             <div class="detail-view">
-              <button class="back-btn" @click="closeDetail">
-                ← 返回搜索结果
-              </button>
+              <button class="back-btn" @click="closeDetail">← 返回搜索结果</button>
 
               <div class="detail-header">
-                <span
-                  class="type-badge"
-                  :class="getTypeBadgeClass(selectedMessage.message_type)"
-                >
+                <span class="type-badge" :class="getTypeBadgeClass(selectedMessage.message_type)">
                   {{ getTypeLabel(selectedMessage.message_type) }}
                 </span>
                 <span class="detail-sender">{{ getSenderLabel(selectedMessage) }}</span>
@@ -467,23 +454,18 @@ watch(visible, (val) => {
               <div class="detail-content-box">
                 <div class="detail-content-header">
                   <span class="detail-content-title">内容</span>
-                  <button
-                    class="btn btn-text btn-sm"
-                    @click="showRawJson = !showRawJson"
-                  >
+                  <button class="btn btn-text btn-sm" @click="showRawJson = !showRawJson">
                     {{ showRawJson ? '友好视图' : '查看原始 JSON' }}
                   </button>
                 </div>
 
                 <div v-if="!showRawJson" class="detail-fields">
                   <template v-if="selectedMessage.data">
-                    <div
-                      v-for="(value, key) in selectedMessage.data"
-                      :key="String(key)"
-                      class="detail-field"
-                    >
+                    <div v-for="(value, key) in selectedMessage.data" :key="String(key)" class="detail-field">
                       <span class="field-key">{{ key }}</span>
-                      <span class="field-value">{{ typeof value === 'object' ? formatJson(value) : String(value) }}</span>
+                      <span class="field-value">{{
+                        typeof value === 'object' ? formatJson(value) : String(value)
+                      }}</span>
                     </div>
                   </template>
                   <div v-else class="detail-empty">无数据</div>
@@ -499,19 +481,13 @@ watch(visible, (val) => {
           <!-- ====== List View ====== -->
           <template v-else>
             <!-- Loading -->
-            <div
-              v-if="loading && results.length === 0"
-              class="state-empty"
-            >
+            <div v-if="loading && results.length === 0" class="state-empty">
               <div class="state-icon">⏳</div>
               <div class="state-text">搜索中...</div>
             </div>
 
             <!-- Empty state -->
-            <div
-              v-else-if="results.length === 0"
-              class="state-empty"
-            >
+            <div v-else-if="results.length === 0" class="state-empty">
               <div class="state-icon">📭</div>
               <div class="state-text">没有匹配的消息</div>
               <div class="state-hint">尝试修改筛选条件或关键词</div>
@@ -525,10 +501,7 @@ watch(visible, (val) => {
                     <th class="col-sender">发送者</th>
                     <th class="col-type">类型</th>
                     <th class="col-content">内容预览</th>
-                    <th
-                      class="col-time sortable"
-                      @click="sortOrder = sortOrder === 'desc' ? 'asc' : 'desc'"
-                    >
+                    <th class="col-time sortable" @click="sortOrder = sortOrder === 'desc' ? 'asc' : 'desc'">
                       <span class="sort-header">
                         时间
                         <span class="sort-indicator">{{ sortOrder === 'desc' ? '↓' : '↑' }}</span>
@@ -547,18 +520,13 @@ watch(visible, (val) => {
                       <span class="sender-name">{{ getSenderLabel(m) }}</span>
                     </td>
                     <td class="col-type">
-                      <span
-                        class="type-badge"
-                        :class="getTypeBadgeClass(m.message_type)"
-                      >
+                      <span class="type-badge" :class="getTypeBadgeClass(m.message_type)">
                         {{ getTypeLabel(m.message_type) }}
                       </span>
                     </td>
                     <td class="col-content">
                       <div class="data-preview">{{ getDataPreview(m) }}</div>
-                      <div v-if="isFileTool(m) && getFilePath(m)" class="file-path">
-                        📁 {{ getFilePath(m) }}
-                      </div>
+                      <div v-if="isFileTool(m) && getFilePath(m)" class="file-path">📁 {{ getFilePath(m) }}</div>
                     </td>
                     <td class="col-time">
                       <span class="time-text">{{ formatBeijingTimeShort(m.timestamp) }}</span>
@@ -571,31 +539,19 @@ watch(visible, (val) => {
         </div>
 
         <!-- Footer: Pagination -->
-        <div
-          v-if="totalPages > 1 && !selectedMessage"
-          class="dialog-footer"
-        >
+        <div v-if="totalPages > 1 && !selectedMessage" class="dialog-footer">
           <span class="page-info">第 {{ currentPage }}/{{ totalPages }} 页</span>
           <div class="pagination">
-            <button
-              class="page-btn"
-              :disabled="currentPage <= 1"
-              @click="handlePageChange(currentPage - 1)"
-            >‹</button>
+            <button class="page-btn" :disabled="currentPage <= 1" @click="handlePageChange(currentPage - 1)">‹</button>
             <template v-for="p in visiblePages" :key="p">
               <span v-if="p === 'ellipsis-start' || p === 'ellipsis-end'" class="page-ellipsis">…</span>
-              <button
-                v-else
-                class="page-btn"
-                :class="{ active: p === currentPage }"
-                @click="handlePageChange(p)"
-              >{{ p }}</button>
+              <button v-else class="page-btn" :class="{ active: p === currentPage }" @click="handlePageChange(p)">
+                {{ p }}
+              </button>
             </template>
-            <button
-              class="page-btn"
-              :disabled="currentPage >= totalPages"
-              @click="handlePageChange(currentPage + 1)"
-            >›</button>
+            <button class="page-btn" :disabled="currentPage >= totalPages" @click="handlePageChange(currentPage + 1)">
+              ›
+            </button>
           </div>
         </div>
       </div>
@@ -842,10 +798,19 @@ watch(visible, (val) => {
   z-index: 1;
 }
 
-.col-sender { width: 120px; }
-.col-type { width: 80px; }
-.col-content { min-width: 200px; }
-.col-time { width: 120px; text-align: right; }
+.col-sender {
+  width: 120px;
+}
+.col-type {
+  width: 80px;
+}
+.col-content {
+  min-width: 200px;
+}
+.col-time {
+  width: 120px;
+  text-align: right;
+}
 
 .sortable {
   cursor: pointer;

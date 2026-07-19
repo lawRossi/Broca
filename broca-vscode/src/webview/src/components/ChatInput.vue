@@ -29,13 +29,49 @@ const allCommands = ref<CommandInfo[]>([])
 
 // Fallback commands when backend is not available
 const fallbackCommands: CommandInfo[] = [
-  { name: 'help', description: '显示命令帮助', short_description: '显示命令帮助', type: 'local', argument_hint: '[command_name]' },
+  {
+    name: 'help',
+    description: '显示命令帮助',
+    short_description: '显示命令帮助',
+    type: 'local',
+    argument_hint: '[command_name]',
+  },
   { name: 'abort', description: '中止当前执行', short_description: '中止当前执行', type: 'local', argument_hint: '' },
-  { name: 'undo', description: '撤销上一步操作', short_description: '撤销上一步操作', type: 'local', argument_hint: '' },
-  { name: 'redo', description: '重做上一步撤销', short_description: '重做上一步撤销', type: 'local', argument_hint: '' },
-  { name: 'init', description: '初始化项目并生成概要', short_description: '初始化项目并生成概要', type: 'prompt', argument_hint: '' },
-  { name: 'plan', description: '生成实施计划文档', short_description: '生成实施计划文档', type: 'prompt', argument_hint: '<目标描述>' },
-  { name: 'execute-plan', description: '按阶段执行计划文档', short_description: '按阶段执行计划文档', type: 'prompt', argument_hint: '' },
+  {
+    name: 'undo',
+    description: '撤销上一步操作',
+    short_description: '撤销上一步操作',
+    type: 'local',
+    argument_hint: '',
+  },
+  {
+    name: 'redo',
+    description: '重做上一步撤销',
+    short_description: '重做上一步撤销',
+    type: 'local',
+    argument_hint: '',
+  },
+  {
+    name: 'init',
+    description: '初始化项目并生成概要',
+    short_description: '初始化项目并生成概要',
+    type: 'prompt',
+    argument_hint: '',
+  },
+  {
+    name: 'plan',
+    description: '生成实施计划文档',
+    short_description: '生成实施计划文档',
+    type: 'prompt',
+    argument_hint: '<目标描述>',
+  },
+  {
+    name: 'execute-plan',
+    description: '按阶段执行计划文档',
+    short_description: '按阶段执行计划文档',
+    type: 'prompt',
+    argument_hint: '',
+  },
 ]
 
 // Fetch commands from the backend via extension host
@@ -81,8 +117,8 @@ watch(
         if (afterSlash.length > 0) {
           const searchTerm = afterSlash
           commandSearch.value = searchTerm
-          commandSuggestions.value = allCommands.value.filter(
-            (cmd) => cmd.name.toLowerCase().startsWith(searchTerm.toLowerCase())
+          commandSuggestions.value = allCommands.value.filter((cmd) =>
+            cmd.name.toLowerCase().startsWith(searchTerm.toLowerCase())
           )
           if (commandSuggestions.value.length > 0) {
             showMentionSuggestions.value = false
@@ -107,9 +143,7 @@ watch(
       } else if (spaceIndex > 0) {
         // /后面有内容后有空格，检查精确匹配
         const searchTerm = afterSlash.substring(0, spaceIndex)
-        const isExactMatch = allCommands.value.some(
-          (cmd) => cmd.name.toLowerCase() === searchTerm.toLowerCase()
-        )
+        const isExactMatch = allCommands.value.some((cmd) => cmd.name.toLowerCase() === searchTerm.toLowerCase())
         if (isExactMatch) {
           showCommandSuggestions.value = false
         } else {
@@ -136,8 +170,7 @@ watch(
         if (spaceIndex !== -1) {
           const isExactMatch = Object.entries(chatStore.agentNames).some(
             ([id, name]) =>
-              name.toLowerCase() === searchTerm.toLowerCase() ||
-              id.toLowerCase() === searchTerm.toLowerCase()
+              name.toLowerCase() === searchTerm.toLowerCase() || id.toLowerCase() === searchTerm.toLowerCase()
           )
           if (isExactMatch) {
             showMentionSuggestions.value = false
@@ -148,9 +181,10 @@ watch(
         // Filter agents
         const agentEntries = Object.entries(chatStore.agentNames)
         mentionSuggestions.value = agentEntries
-          .filter(([id, name]) =>
-            name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-            id.toLowerCase().includes(searchTerm.toLowerCase())
+          .filter(
+            ([id, name]) =>
+              name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+              id.toLowerCase().includes(searchTerm.toLowerCase())
           )
           .map(([id, name]) => ({ id, name }))
 
@@ -288,20 +322,22 @@ onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
 })
 
-const pendingFiles = ref<Array<{
-  file: File
-  id: string
-  status: 'pending' | 'uploading' | 'success' | 'error'
-  progress: number
-  error?: string
-  uploadedData?: {
-    name: string
-    url: string
-    path: string
-    size: number
-    type: string
-  }
-}>>([])
+const pendingFiles = ref<
+  Array<{
+    file: File
+    id: string
+    status: 'pending' | 'uploading' | 'success' | 'error'
+    progress: number
+    error?: string
+    uploadedData?: {
+      name: string
+      url: string
+      path: string
+      size: number
+      type: string
+    }
+  }>
+>([])
 
 const isUploading = ref(false)
 
@@ -310,7 +346,7 @@ const uploadingFileIds = ref<Set<string>>(new Set())
 
 const canSend = computed(() => {
   const text = chatStore.inputText.trim()
-  return text.length > 0 || pendingFiles.value.some(f => f.status === 'success')
+  return text.length > 0 || pendingFiles.value.some((f) => f.status === 'success')
 })
 
 function triggerFileSelect() {
@@ -332,7 +368,7 @@ async function handleFileChange(event: Event) {
 }
 
 function removePendingFile(id: string) {
-  const idx = pendingFiles.value.findIndex(f => f.id === id)
+  const idx = pendingFiles.value.findIndex((f) => f.id === id)
   if (idx !== -1) {
     const record = pendingFiles.value[idx]
     if (record && record.status !== 'uploading') {
@@ -384,8 +420,8 @@ function handleSend() {
   }
 
   const uploadedFiles = pendingFiles.value
-    .filter(f => f.status === 'success' && f.uploadedData)
-    .map(f => ({
+    .filter((f) => f.status === 'success' && f.uploadedData)
+    .map((f) => ({
       name: f.uploadedData!.name,
       url: f.uploadedData!.url,
       path: f.uploadedData!.path,
@@ -406,11 +442,11 @@ function handleSend() {
     cleanText = text.replace(/@[\w-]+\s*/, '').trim()
 
     // 反向查找：从 agentNames (agent_id → name) 中找到匹配的 agent_id
-    const matchedEntry = Object.entries(chatStore.agentNames).find(([id, name]) =>
-      name.toLowerCase() === mentionName || id.toLowerCase() === mentionName
+    const matchedEntry = Object.entries(chatStore.agentNames).find(
+      ([id, name]) => name.toLowerCase() === mentionName || id.toLowerCase() === mentionName
     )
     if (matchedEntry) {
-      targetAgentId = matchedEntry[0]  // 使用真实的 agent_id
+      targetAgentId = matchedEntry[0] // 使用真实的 agent_id
     } else {
       // 如果没找到匹配的 agent，就用原始文本（兼容直接输入 agent_id 的情况）
       targetAgentId = mentionMatch[1]
@@ -422,7 +458,7 @@ function handleSend() {
   chatStore.inputText = ''
 
   // Clear uploaded files
-  pendingFiles.value = pendingFiles.value.filter(f => f.status !== 'success')
+  pendingFiles.value = pendingFiles.value.filter((f) => f.status !== 'success')
 
   // Re-focus input
   inputRef.value?.focus()
@@ -514,8 +550,8 @@ const targetAgentDisplay = computed(() => {
   const mentionMatch = text.match(/@([\w-]+)/)
   if (mentionMatch) {
     const mentionName = mentionMatch[1].toLowerCase()
-    const agentEntry = Object.entries(chatStore.agentNames).find(([id, name]) =>
-      name.toLowerCase() === mentionName || id.toLowerCase() === mentionName
+    const agentEntry = Object.entries(chatStore.agentNames).find(
+      ([id, name]) => name.toLowerCase() === mentionName || id.toLowerCase() === mentionName
     )
     return agentEntry ? agentEntry[1] : mentionMatch[1]
   }
@@ -527,7 +563,7 @@ const targetAgentDisplay = computed(() => {
 <template>
   <div class="input-container">
     <!-- 目标 Agent 提示 -->
-    <div class="target-agent-hint" v-if="chatStore.runnerAlive">
+    <div v-if="chatStore.runnerAlive" class="target-agent-hint">
       发送给: <span class="target-agent-name">@{{ targetAgentDisplay }}</span>
     </div>
 
@@ -551,11 +587,9 @@ const targetAgentDisplay = computed(() => {
         <div v-if="record.status === 'uploading'" class="progress-bar">
           <div class="progress-fill" :style="{ width: record.progress + '%' }"></div>
         </div>
-        <button
-          v-if="record.status !== 'uploading'"
-          class="file-remove"
-          @click="removePendingFile(record.id)"
-        >✕</button>
+        <button v-if="record.status !== 'uploading'" class="file-remove" @click="removePendingFile(record.id)">
+          ✕
+        </button>
       </div>
     </div>
 
@@ -568,8 +602,8 @@ const targetAgentDisplay = computed(() => {
           class="chat-input"
           :placeholder="chatStore.runnerAlive ? '输入/执行命令，@指定agent' : '进程未运行，无法发送消息'"
           rows="1"
-          @keydown="handleKeydown"
           :disabled="!chatStore.runnerAlive"
+          @keydown="handleKeydown"
         ></textarea>
 
         <!-- /command 建议列表 -->
@@ -612,31 +646,13 @@ const targetAgentDisplay = computed(() => {
         </div>
       </div>
 
-      <button
-        class="tool-button"
-        title="Attach file"
-        :disabled="!chatStore.runnerAlive"
-        @click="triggerFileSelect"
-      >
+      <button class="tool-button" title="Attach file" :disabled="!chatStore.runnerAlive" @click="triggerFileSelect">
         📎
       </button>
-      <input
-        ref="fileInputRef"
-        type="file"
-        multiple
-        class="hidden"
-        @change="handleFileChange"
-      />
+      <input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileChange" />
 
-      <button
-        class="send-button"
-        :disabled="!canSend || !chatStore.runnerAlive"
-        @click="handleSend"
-      >
-        Send
-      </button>
+      <button class="send-button" :disabled="!canSend || !chatStore.runnerAlive" @click="handleSend">Send</button>
     </div>
-
   </div>
 </template>
 

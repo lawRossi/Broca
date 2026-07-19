@@ -20,11 +20,13 @@ export async function activate(context: vscode.ExtensionContext) {
   authManager = new AuthManager(context, configManager)
 
   // Shared auth error handler: when any 401 is detected, auto-logout and show login prompt
-  const handleAuthError = () => { authManager.handleAuthError() }
+  const handleAuthError = () => {
+    authManager.handleAuthError()
+  }
 
   // Initialize session tree provider
   sessionTreeProvider = new SessionTreeProvider(authManager, configManager, handleAuthError)
-  const treeView = vscode.window.createTreeView('broca.sessionManager', {
+  vscode.window.createTreeView('broca.sessionManager', {
     treeDataProvider: sessionTreeProvider,
     showCollapseAll: false,
   })

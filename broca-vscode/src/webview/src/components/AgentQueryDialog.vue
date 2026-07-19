@@ -59,7 +59,7 @@ function handleClose() {
               placeholder="输入你的回答... (Ctrl+Enter 提交)"
               rows="3"
             ></textarea>
-            <button class="btn btn-primary" @click="handleSubmit" :disabled="!answer.trim()">提交</button>
+            <button class="btn btn-primary" :disabled="!answer.trim()" @click="handleSubmit">提交</button>
           </div>
         </div>
       </div>
@@ -98,7 +98,9 @@ function handleClose() {
   margin-bottom: 12px;
 }
 
-.dialog-icon { font-size: 20px; }
+.dialog-icon {
+  font-size: 20px;
+}
 
 .dialog-title {
   font-weight: 600;

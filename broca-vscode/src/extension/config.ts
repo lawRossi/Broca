@@ -63,7 +63,12 @@ export class ConfigManager {
    * 检测可用的存储后端类型
    */
   get storageType(): 'cloudflare' | 'supabase' | 'none' {
-    if (this.cloudflareAccountId && this.cloudflareAccessKeyId && this.cloudflareSecretAccessKey && this.cloudflareBucket) {
+    if (
+      this.cloudflareAccountId &&
+      this.cloudflareAccessKeyId &&
+      this.cloudflareSecretAccessKey &&
+      this.cloudflareBucket
+    ) {
       return 'cloudflare'
     }
     if (this.supabaseUrl && this.supabaseS3AccessKeyId && this.supabaseS3SecretAccessKey) {

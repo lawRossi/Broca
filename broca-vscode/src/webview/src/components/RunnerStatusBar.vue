@@ -15,7 +15,9 @@ function handleRefresh() {
   refreshing.value = true
   postMessage({ type: 'refreshChat' })
   // Reset refresh spinner after a timeout
-  setTimeout(() => { refreshing.value = false }, 3000)
+  setTimeout(() => {
+    refreshing.value = false
+  }, 3000)
 }
 </script>
 
@@ -33,11 +35,7 @@ function handleRefresh() {
     </div>
     <div class="status-right">
       <!-- Search button -->
-      <button
-        class="search-btn"
-        title="搜索消息"
-        @click="emit('openSearch')"
-      >🔍</button>
+      <button class="search-btn" title="搜索消息" @click="emit('openSearch')">🔍</button>
       <!-- Mode toggle -->
       <button
         class="mode-toggle-btn"
@@ -54,7 +52,9 @@ function handleRefresh() {
         :disabled="refreshing"
         title="Refresh chat"
         @click="handleRefresh"
-      >🔄</button>
+      >
+        🔄
+      </button>
     </div>
   </div>
 </template>
@@ -160,6 +160,8 @@ function handleRefresh() {
 }
 
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>

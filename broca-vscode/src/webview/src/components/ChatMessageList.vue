@@ -9,9 +9,7 @@ const containerRef = ref<HTMLElement>()
 
 // 简洁模式下独立渲染的错误消息（不绑定到 TurnCard）
 const standaloneErrorMessages = computed(() => {
-  return chatStore.messages.filter(
-    m => m.message_type === 'error' || m.message_type === 'agent_error'
-  )
+  return chatStore.messages.filter((m) => m.message_type === 'error' || m.message_type === 'agent_error')
 })
 
 // 时间轴合并：将 turn 和独立错误消息按时间顺序合并成一个列表
@@ -138,7 +136,7 @@ watch(
 // Also watch for agent_response content changes (streaming updates)
 // 加防抖避免高频 chunk 导致页面抖动
 watch(
-  () => chatStore.filteredMessages.map(m => m.data?.content).join(''),
+  () => chatStore.filteredMessages.map((m) => m.data?.content).join(''),
   () => {
     if (isRestoringScroll.value) return
     if (contentScrollTimer.value) clearTimeout(contentScrollTimer.value)
@@ -178,7 +176,7 @@ watch(
   }
 )
 
-  // ==================== 滚动加载更多（明细模式 + 简洁模式上滑刷新） ====================
+// ==================== 滚动加载更多（明细模式 + 简洁模式上滑刷新） ====================
 const handleScroll = () => {
   const container = containerRef.value
   if (!container) return
@@ -233,21 +231,14 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div
-    ref="containerRef"
-    class="message-list"
-    @scroll="handleScroll"
-  >
+  <div ref="containerRef" class="message-list" @scroll="handleScroll">
     <!-- 简洁模式：Turn 摘要视图 -->
     <template v-if="chatStore.displayMode === 'concise'">
       <!-- Loading more (turn history) -->
       <div v-if="chatStore.loadingMoreTurns" class="load-more-indicator">
         <span>加载中...</span>
       </div>
-      <div
-        v-else-if="!chatStore.hasMoreTurns && chatStore.turnSummaries.length > 0"
-        class="end-of-history-marker"
-      >
+      <div v-else-if="!chatStore.hasMoreTurns && chatStore.turnSummaries.length > 0" class="end-of-history-marker">
         <span>没有更多历史轮次了</span>
       </div>
 
@@ -262,7 +253,7 @@ onUnmounted(() => {
       <!-- 时间轴：turn 与独立错误消息按时间顺序交错排列 -->
       <template v-for="(item, idx) in timelineItems" :key="item.key">
         <div v-if="item.type === 'turn' && item.turn" class="message-wrapper">
-          <ChatTurnCard :turn="item.turn" :consecutiveAgent="isConsecutiveAgentTurn(timelineItems, idx)" />
+          <ChatTurnCard :turn="item.turn" :consecutive-agent="isConsecutiveAgentTurn(timelineItems, idx)" />
         </div>
         <div v-else-if="item.type === 'error' && item.message" class="message-wrapper">
           <ChatMessageItem :message="item.message" />
@@ -271,9 +262,7 @@ onUnmounted(() => {
 
       <!-- Redo button (简洁模式) -->
       <div v-if="chatStore.showRedoButton" class="redo-container">
-        <button class="redo-button" @click="chatStore.sendRedo()">
-          ↩️ Redo
-        </button>
+        <button class="redo-button" @click="chatStore.sendRedo()">↩️ Redo</button>
       </div>
     </template>
 
@@ -283,10 +272,7 @@ onUnmounted(() => {
       <div v-if="chatStore.loadingMore" class="load-more-indicator">
         <span>加载中...</span>
       </div>
-      <div
-        v-else-if="!chatStore.hasMoreHistory && chatStore.filteredMessages.length > 0"
-        class="end-of-history-marker"
-      >
+      <div v-else-if="!chatStore.hasMoreHistory && chatStore.filteredMessages.length > 0" class="end-of-history-marker">
         <span>没有更多历史消息了</span>
       </div>
 
@@ -304,9 +290,7 @@ onUnmounted(() => {
 
       <!-- Redo button -->
       <div v-if="chatStore.showRedoButton" class="redo-container">
-        <button class="redo-button" @click="chatStore.sendRedo()">
-          ↩️ Redo
-        </button>
+        <button class="redo-button" @click="chatStore.sendRedo()">↩️ Redo</button>
       </div>
     </template>
   </div>
@@ -382,6 +366,4 @@ onUnmounted(() => {
 .redo-button:hover {
   background: var(--button-hover-bg);
 }
-
-
 </style>

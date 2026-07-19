@@ -46,10 +46,17 @@ const previewFileUrl = ref('')
 const isUser = computed(() => props.message.message_type === 'user_message' || props.message.role === 'user')
 const isSystem = computed(() => {
   if (props.message.message_type === 'error' || props.message.message_type === 'agent_error') return false
-  return props.message.message_type === 'system_message' || props.message.message_type === 'command_result' || props.message.role === 'agent_system' || props.message.role === 'system'
+  return (
+    props.message.message_type === 'system_message' ||
+    props.message.message_type === 'command_result' ||
+    props.message.role === 'agent_system' ||
+    props.message.role === 'system'
+  )
 })
 const isToolCall = computed(() => props.message.message_type === 'tool_call')
-const isAgentResponse = computed(() => props.message.message_type === 'agent_response' || props.message.role === 'assistant')
+const isAgentResponse = computed(
+  () => props.message.message_type === 'agent_response' || props.message.role === 'assistant'
+)
 const isError = computed(() => props.message.message_type === 'error' || props.message.message_type === 'agent_error')
 
 // ==================== 特殊工具检测 ====================
@@ -145,7 +152,8 @@ function formatTime(date: Date): string {
   const mm = String(date.getMinutes()).padStart(2, '0')
   const ss = String(date.getSeconds()).padStart(2, '0')
   if (isToday) return `${hh}:${mm}:${ss}`
-  if (isThisYear) return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${hh}:${mm}`
+  if (isThisYear)
+    return `${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${hh}:${mm}`
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${hh}:${mm}`
 }
 
@@ -175,7 +183,10 @@ function getContent(message: Message): string {
       const parsed = JSON.parse(content)
       if (parsed && typeof parsed === 'object' && parsed.content !== undefined) {
         if (Array.isArray(parsed.content)) {
-          return parsed.content.filter((part: any) => part.type === 'text').map((part: any) => part.text).join('')
+          return parsed.content
+            .filter((part: any) => part.type === 'text')
+            .map((part: any) => part.text)
+            .join('')
         } else {
           if (message.message_type == 'user_message') {
             const idx = parsed.content.indexOf('[附件文件]:')
@@ -440,12 +451,7 @@ function toggleToolParams() {
 </script>
 
 <template>
-  <div
-    class="message-item"
-    :class="[bgClass]"
-    @mouseenter="showActions = true"
-    @mouseleave="showActions = false"
-  >
+  <div class="message-item" :class="[bgClass]" @mouseenter="showActions = true" @mouseleave="showActions = false">
     <!-- ==================== 消息头 ==================== -->
     <div v-if="!isSystem" class="message-header">
       <div class="header-left">
@@ -456,7 +462,7 @@ function toggleToolParams() {
         <span class="message-time">{{ timestamp }}</span>
         <!-- 撤销按钮 -->
         <div v-if="showActions && canUndo" class="hover-actions">
-          <button class="undo-btn" @click.stop="handleUndo" title="撤销此操作">↩️ 撤销</button>
+          <button class="undo-btn" title="撤销此操作" @click.stop="handleUndo">↩️ 撤销</button>
         </div>
       </div>
     </div>
@@ -474,26 +480,16 @@ function toggleToolParams() {
     <!-- ==================== 用户消息 ==================== -->
     <template v-else-if="isUser">
       <div class="user-msg-wrapper">
-        <pre
-          class="message-text"
-          :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }"
-        >{{ getContent(props.message) }}</pre>
-        <button
-          v-if="isLongUserMessage"
-          class="expand-btn"
-          @click="showFullUserMessage = !showFullUserMessage"
-        >
+        <pre class="message-text" :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }">{{
+          getContent(props.message)
+        }}</pre>
+        <button v-if="isLongUserMessage" class="expand-btn" @click="showFullUserMessage = !showFullUserMessage">
           {{ showFullUserMessage ? '收起 ▲' : '展开 ▼' }}
         </button>
       </div>
       <!-- 文件附件 -->
       <div v-if="files.length > 0" class="file-attachments">
-        <div
-          v-for="(file, index) in files"
-          :key="index"
-          class="file-attachment"
-          @click="openFilePreview(file)"
-        >
+        <div v-for="(file, index) in files" :key="index" class="file-attachment" @click="openFilePreview(file)">
           <span class="file-icon">{{ getFileIcon(file.type, file.name) }}</span>
           <div class="file-info">
             <span class="file-name">{{ file.name }}</span>
@@ -575,7 +571,9 @@ function toggleToolParams() {
                 'diff-removed': line.type === 'removed',
                 'diff-unchanged': line.type === 'unchanged',
               }"
-            >{{ line.content }}</div>
+            >
+              {{ line.content }}
+            </div>
           </div>
         </div>
       </div>
@@ -1289,13 +1287,31 @@ function toggleToolParams() {
   line-height: 1.25;
 }
 
-:deep(.markdown-body h1) { font-size: 1.5em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
-:deep(.markdown-body h2) { font-size: 1.3em; border-bottom: 1px solid var(--border-color); padding-bottom: 0.3em; }
-:deep(.markdown-body h3) { font-size: 1.1em; }
-:deep(.markdown-body p) { margin-bottom: 1em; line-height: 1.6; }
+:deep(.markdown-body h1) {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.3em;
+}
+:deep(.markdown-body h2) {
+  font-size: 1.3em;
+  border-bottom: 1px solid var(--border-color);
+  padding-bottom: 0.3em;
+}
+:deep(.markdown-body h3) {
+  font-size: 1.1em;
+}
+:deep(.markdown-body p) {
+  margin-bottom: 1em;
+  line-height: 1.6;
+}
 :deep(.markdown-body ul),
-:deep(.markdown-body ol) { padding-left: 2em; margin-bottom: 1em; }
-:deep(.markdown-body li) { margin-bottom: 0.25em; }
+:deep(.markdown-body ol) {
+  padding-left: 2em;
+  margin-bottom: 1em;
+}
+:deep(.markdown-body li) {
+  margin-bottom: 0.25em;
+}
 :deep(.markdown-body blockquote) {
   margin: 1em 0;
   padding: 0.5em 1em;
@@ -1339,12 +1355,30 @@ function toggleToolParams() {
   font-weight: 600;
   background: var(--bg-tertiary);
 }
-:deep(.markdown-body a) { color: var(--text-link); text-decoration: none; }
-:deep(.markdown-body a:hover) { text-decoration: underline; }
-:deep(.markdown-body img) { max-width: 100%; height: auto; }
-:deep(.markdown-body hr) { height: 0.25em; padding: 0; margin: 1.5em 0; background-color: var(--border-color); border: 0; }
-:deep(.markdown-body strong) { font-weight: 600; }
-:deep(.markdown-body em) { font-style: italic; }
+:deep(.markdown-body a) {
+  color: var(--text-link);
+  text-decoration: none;
+}
+:deep(.markdown-body a:hover) {
+  text-decoration: underline;
+}
+:deep(.markdown-body img) {
+  max-width: 100%;
+  height: auto;
+}
+:deep(.markdown-body hr) {
+  height: 0.25em;
+  padding: 0;
+  margin: 1.5em 0;
+  background-color: var(--border-color);
+  border: 0;
+}
+:deep(.markdown-body strong) {
+  font-weight: 600;
+}
+:deep(.markdown-body em) {
+  font-style: italic;
+}
 
 /* ==================== 用户消息折叠 ==================== */
 .user-msg-wrapper {

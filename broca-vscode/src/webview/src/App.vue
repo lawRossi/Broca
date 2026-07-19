@@ -63,11 +63,7 @@ onUnmounted(() => {
       <RunnerStatusBar @open-search="handleOpenSearch" />
 
       <!-- Search Dialog -->
-      <ChatSearchDialog
-        ref="searchDialogRef"
-        v-model:visible="searchDialogVisible"
-        @close="handleCloseSearch"
-      />
+      <ChatSearchDialog ref="searchDialogRef" v-model:visible="searchDialogVisible" @close="handleCloseSearch" />
 
       <!-- Main Content Area: Three-Column Layout -->
       <div class="chat-body">
@@ -132,7 +128,8 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   overflow: hidden;
   font-family: var(--font-family);

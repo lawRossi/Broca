@@ -41,12 +41,8 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
           </template>
           <!-- General permission: 2 options -->
           <template v-else>
-            <button class="btn btn-secondary" @click="chatStore.respondPermission(false)">
-              拒绝
-            </button>
-            <button class="btn btn-primary" @click="chatStore.respondPermission(true)">
-              允许
-            </button>
+            <button class="btn btn-secondary" @click="chatStore.respondPermission(false)">拒绝</button>
+            <button class="btn btn-primary" @click="chatStore.respondPermission(true)">允许</button>
           </template>
         </div>
       </div>
@@ -85,7 +81,9 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
   margin-bottom: 12px;
 }
 
-.dialog-icon { font-size: 18px; }
+.dialog-icon {
+  font-size: 18px;
+}
 
 .dialog-title {
   font-weight: 600;
@@ -125,7 +123,9 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
   cursor: pointer;
   font-family: inherit;
   line-height: 1.3;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
 }
 
 .perm-btn:hover {

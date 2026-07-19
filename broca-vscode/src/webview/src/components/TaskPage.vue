@@ -82,20 +82,29 @@ const priorityLabels: Record<string, string> = {
 
 function getStatusClass(status: string): string {
   switch (status) {
-    case 'pending': return 'status-pending'
-    case 'in_progress': return 'status-progress'
-    case 'blocked': return 'status-blocked'
-    case 'completed': return 'status-completed'
-    default: return ''
+    case 'pending':
+      return 'status-pending'
+    case 'in_progress':
+      return 'status-progress'
+    case 'blocked':
+      return 'status-blocked'
+    case 'completed':
+      return 'status-completed'
+    default:
+      return ''
   }
 }
 
 function getPriorityClass(priority: string): string {
   switch (priority) {
-    case 'low': return 'priority-low'
-    case 'medium': return 'priority-medium'
-    case 'high': return 'priority-high'
-    default: return 'priority-medium'
+    case 'low':
+      return 'priority-low'
+    case 'medium':
+      return 'priority-medium'
+    case 'high':
+      return 'priority-high'
+    default:
+      return 'priority-medium'
   }
 }
 
@@ -263,9 +272,12 @@ onMounted(() => {
 })
 
 // 当 sessionId 变化时重新加载
-watch(() => props.sessionId, () => {
-  fetchTasks()
-})
+watch(
+  () => props.sessionId,
+  () => {
+    fetchTasks()
+  }
+)
 </script>
 
 <template>
@@ -304,13 +316,7 @@ watch(() => props.sessionId, () => {
       <div v-if="loading" class="loading-state">加载中...</div>
       <div v-else-if="errorMsg" class="error-state">{{ errorMsg }}</div>
       <div v-else-if="tasks.length === 0" class="empty-state">暂无任务</div>
-      <div
-        v-for="task in tasks"
-        v-else
-        :key="task.task_id"
-        class="task-item"
-        @click="openDetail(task.task_id)"
-      >
+      <div v-for="task in tasks" v-else :key="task.task_id" class="task-item" @click="openDetail(task.task_id)">
         <div class="task-main">
           <div class="task-status-dot" :class="getStatusClass(task.status)"></div>
           <div class="task-content">
@@ -320,7 +326,9 @@ watch(() => props.sessionId, () => {
         </div>
         <div class="task-meta">
           <span class="tag" :class="getStatusClass(task.status)">{{ statusLabels[task.status] || task.status }}</span>
-          <span class="tag" :class="getPriorityClass(task.priority)">{{ priorityLabels[task.priority] || task.priority }}</span>
+          <span class="tag" :class="getPriorityClass(task.priority)">{{
+            priorityLabels[task.priority] || task.priority
+          }}</span>
           <span class="task-time">{{ formatDate(task.updated_at) }}</span>
         </div>
       </div>
@@ -354,7 +362,12 @@ watch(() => props.sessionId, () => {
             <div class="detail-section">
               <div v-if="editing" class="edit-form">
                 <input v-model="editForm.name" class="dialog-input" placeholder="任务名称" />
-                <textarea v-model="editForm.description" class="dialog-textarea" placeholder="任务描述" rows="2"></textarea>
+                <textarea
+                  v-model="editForm.description"
+                  class="dialog-textarea"
+                  placeholder="任务描述"
+                  rows="2"
+                ></textarea>
                 <textarea v-model="editForm.details" class="dialog-textarea" placeholder="详细描述" rows="4"></textarea>
                 <div class="edit-actions">
                   <button class="btn btn-primary" @click="handleSaveEdit">保存</button>
@@ -408,7 +421,9 @@ watch(() => props.sessionId, () => {
                   <option value="medium">🟡 中优先级</option>
                   <option value="high">🔴 高优先级</option>
                 </select>
-                <button class="btn btn-danger btn-sm" @click="handleDeleteTask(taskDetail.task.task_id)">🗑️ 删除</button>
+                <button class="btn btn-danger btn-sm" @click="handleDeleteTask(taskDetail.task.task_id)">
+                  🗑️ 删除
+                </button>
               </div>
             </div>
 
@@ -473,7 +488,18 @@ watch(() => props.sessionId, () => {
       <p>{{ confirmDialog.message }}</p>
       <div class="dialog-actions">
         <button class="btn btn-secondary" @click="confirmDialog.visible = false">取消</button>
-        <button class="btn btn-danger" @click="() => { const cb = confirmDialog.onConfirm; confirmDialog.visible = false; cb?.(); }">确定删除</button>
+        <button
+          class="btn btn-danger"
+          @click="
+            () => {
+              const cb = confirmDialog.onConfirm
+              confirmDialog.visible = false
+              cb?.()
+            }
+          "
+        >
+          确定删除
+        </button>
       </div>
     </div>
   </div>
@@ -659,10 +685,18 @@ watch(() => props.sessionId, () => {
   flex-shrink: 0;
 }
 
-.task-status-dot.status-pending { background: #3b82f6; }
-.task-status-dot.status-progress { background: #8b5cf6; }
-.task-status-dot.status-blocked { background: #f59e0b; }
-.task-status-dot.status-completed { background: #22c55e; }
+.task-status-dot.status-pending {
+  background: #3b82f6;
+}
+.task-status-dot.status-progress {
+  background: #8b5cf6;
+}
+.task-status-dot.status-blocked {
+  background: #f59e0b;
+}
+.task-status-dot.status-completed {
+  background: #22c55e;
+}
 
 .task-content {
   flex: 1;
@@ -708,20 +742,44 @@ watch(() => props.sessionId, () => {
   white-space: nowrap;
 }
 
-.tag.status-pending { background: rgba(59, 130, 246, 0.15); color: #3b82f6; }
-.tag.status-progress { background: rgba(139, 92, 246, 0.15); color: #8b5cf6; }
-.tag.status-blocked { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
-.tag.status-completed { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-.tag.priority-low { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-.tag.priority-medium { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-.tag.priority-high { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-.tag-assignee { background: rgba(99, 102, 241, 0.1); color: #6366f1; }
+.tag.status-pending {
+  background: rgba(59, 130, 246, 0.15);
+  color: #3b82f6;
+}
+.tag.status-progress {
+  background: rgba(139, 92, 246, 0.15);
+  color: #8b5cf6;
+}
+.tag.status-blocked {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+.tag.status-completed {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+.tag.priority-low {
+  background: rgba(34, 197, 94, 0.1);
+  color: #22c55e;
+}
+.tag.priority-medium {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+}
+.tag.priority-high {
+  background: rgba(239, 68, 68, 0.1);
+  color: #ef4444;
+}
+.tag-assignee {
+  background: rgba(99, 102, 241, 0.1);
+  color: #6366f1;
+}
 
 /* ==================== Dialog ==================== */
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -746,7 +804,8 @@ watch(() => props.sessionId, () => {
   color: var(--text-primary);
 }
 
-.dialog-input, .dialog-textarea {
+.dialog-input,
+.dialog-textarea {
   width: 100%;
   background: var(--input-bg);
   color: var(--input-text);
@@ -758,7 +817,8 @@ watch(() => props.sessionId, () => {
   font-family: inherit;
 }
 
-.dialog-input:focus, .dialog-textarea:focus {
+.dialog-input:focus,
+.dialog-textarea:focus {
   border-color: var(--focus-border);
 }
 
@@ -776,7 +836,7 @@ watch(() => props.sessionId, () => {
 .drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
   z-index: 100;
   display: flex;
   justify-content: flex-end;
@@ -962,7 +1022,8 @@ watch(() => props.sessionId, () => {
 }
 
 /* ==================== States ==================== */
-.loading-state, .empty-state {
+.loading-state,
+.empty-state {
   display: flex;
   align-items: center;
   justify-content: center;

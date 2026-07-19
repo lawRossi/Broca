@@ -31,12 +31,17 @@ let errorToastTimer: ReturnType<typeof setTimeout> | null = null
 function showError(message: string, duration = 5000) {
   errorToast.value = { visible: true, message }
   if (errorToastTimer) clearTimeout(errorToastTimer)
-  errorToastTimer = setTimeout(() => { errorToast.value.visible = false }, duration)
+  errorToastTimer = setTimeout(() => {
+    errorToast.value.visible = false
+  }, duration)
 }
 
 function hideError() {
   errorToast.value.visible = false
-  if (errorToastTimer) { clearTimeout(errorToastTimer); errorToastTimer = null }
+  if (errorToastTimer) {
+    clearTimeout(errorToastTimer)
+    errorToastTimer = null
+  }
 }
 
 onMounted(() => {
@@ -146,7 +151,12 @@ function saveConfig() {
         </div>
         <div class="field">
           <label class="field-label">Secret Access Key</label>
-          <input v-model="config.cloudflareSecretAccessKey" class="field-input" type="password" placeholder="your-secret-access-key" />
+          <input
+            v-model="config.cloudflareSecretAccessKey"
+            class="field-input"
+            type="password"
+            placeholder="your-secret-access-key"
+          />
         </div>
         <div class="field">
           <label class="field-label">Bucket Name</label>
@@ -175,7 +185,12 @@ function saveConfig() {
         </div>
         <div class="field">
           <label class="field-label">S3 Secret Access Key</label>
-          <input v-model="config.supabaseS3SecretAccessKey" class="field-input" type="password" placeholder="your-s3-secret-key" />
+          <input
+            v-model="config.supabaseS3SecretAccessKey"
+            class="field-input"
+            type="password"
+            placeholder="your-s3-secret-key"
+          />
         </div>
       </div>
     </section>
@@ -217,7 +232,8 @@ function saveConfig() {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   font-family: var(--font-family);
   font-size: var(--font-size);

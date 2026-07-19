@@ -57,7 +57,7 @@ const isLongUserMessage = computed(() => {
 const simplifiedStatus = computed(() => {
   if (props.turn.status === 'completed') return 'completed'
   if (props.turn.status === 'error') return 'error'
-  return 'active'  // active / thinking / calling_tool 统一为"进行中"
+  return 'active' // active / thinking / calling_tool 统一为"进行中"
 })
 
 const statusText = computed(() => {
@@ -107,11 +107,7 @@ const formattedCompletionTime = computed(() => {
   const now = new Date()
   const pad = (n: number) => n.toString().padStart(2, '0')
   const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
-  if (
-    d.getFullYear() !== now.getFullYear() ||
-    d.getMonth() !== now.getMonth() ||
-    d.getDate() !== now.getDate()
-  ) {
+  if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth() || d.getDate() !== now.getDate()) {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`
   }
   return time
@@ -122,9 +118,11 @@ const currentToolText = computed(() => props.turn.currentTool || '')
 
 // 文件路径只在 read/edit/write_file 工具时显示（与 web 版一致）
 const showFilePath = computed(() => {
-  return props.turn.currentFilePath &&
+  return (
+    props.turn.currentFilePath &&
     props.turn.currentTool &&
     ['read_file', 'edit_file', 'write_file'].includes(props.turn.currentTool)
+  )
 })
 
 const showTodoList = computed(() => {
@@ -148,11 +146,13 @@ const toggleChangedFiles = () => {
 }
 
 const hasToolExecution = computed(() => {
-  return showToolStats.value || !!currentToolText.value || showFilePath.value || showTodoList.value || showChangedFiles.value
+  return (
+    showToolStats.value || !!currentToolText.value || showFilePath.value || showTodoList.value || showChangedFiles.value
+  )
 })
 
 const toolStatsText = computed(() => {
-  return props.turn.toolCallStats.map(s => `${s.toolName} (${s.count}次)`).join(', ')
+  return props.turn.toolCallStats.map((s) => `${s.toolName} (${s.count}次)`).join(', ')
 })
 
 // ==================== 文件 Diff ====================
@@ -161,7 +161,11 @@ const diffContent = ref('')
 const diffFileName = ref('')
 const diffLoading = ref(false)
 
-interface DiffLine { text: string; type: 'add' | 'del' | 'ctx' | 'head'; lineNum: number | null }
+interface DiffLine {
+  text: string
+  type: 'add' | 'del' | 'ctx' | 'head'
+  lineNum: number | null
+}
 const parsedDiffLines = computed<DiffLine[]>(() => {
   if (!diffContent.value) return [{ text: '(无变更)', type: 'ctx', lineNum: null }]
   const lines: DiffLine[] = []
@@ -183,7 +187,8 @@ const parsedDiffLines = computed<DiffLine[]>(() => {
       raw.startsWith('copy to') ||
       raw.startsWith('similarity index') ||
       raw.startsWith('Binary files')
-    ) continue
+    )
+      continue
 
     if (raw.startsWith('@@')) {
       // @@ 头部：仅解析行号，不展示
@@ -290,7 +295,9 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
       <div class="header-right">
         <span :class="['header-stat', 'stat-status', statusColorClass]">{{ statusText }}</span>
         <span class="header-sep">|</span>
-        <span v-if="formattedCompletionTime" class="completion-time" :title="'完成于 ' + formattedCompletionTime">🕐 {{ formattedCompletionTime }}</span>
+        <span v-if="formattedCompletionTime" class="completion-time" :title="'完成于 ' + formattedCompletionTime"
+          >🕐 {{ formattedCompletionTime }}</span
+        >
         <span class="duration">⏱️ {{ formattedDuration }}</span>
       </div>
     </div>
@@ -299,13 +306,11 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
     <div v-if="turn.userMessage" class="user-message-section section-accent accent-user">
       <div class="user-message-row">
         <span class="user-icon">👤</span>
-        <div class="user-message-text" :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }">{{ turn.userMessage }}</div>
+        <div class="user-message-text" :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }">
+          {{ turn.userMessage }}
+        </div>
       </div>
-      <button
-        v-if="isLongUserMessage"
-        class="expand-btn"
-        @click="showFullUserMessage = !showFullUserMessage"
-      >
+      <button v-if="isLongUserMessage" class="expand-btn" @click="showFullUserMessage = !showFullUserMessage">
         {{ showFullUserMessage ? '收起 ▲' : '展开 ▼' }}
       </button>
     </div>
@@ -357,19 +362,19 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
           <div v-if="turn.changedFiles.filesAdded.length" class="cf-group">
             <div class="cf-group-label cf-added-label">新增</div>
             <div v-for="f in turn.changedFiles.filesAdded" :key="f" class="cf-file-item cf-added-file">
-              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">{{ f }}</span>
+              <span class="cf-file-link" title="查看 diff" @click="openFileDiff(f)">{{ f }}</span>
             </div>
           </div>
           <div v-if="turn.changedFiles.filesDeleted.length" class="cf-group">
             <div class="cf-group-label cf-deleted-label">删除</div>
             <div v-for="f in turn.changedFiles.filesDeleted" :key="f" class="cf-file-item cf-deleted-file">
-              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">{{ f }}</span>
+              <span class="cf-file-link" title="查看 diff" @click="openFileDiff(f)">{{ f }}</span>
             </div>
           </div>
           <div v-if="turn.changedFiles.filesModified.length" class="cf-group">
             <div class="cf-group-label cf-modified-label">修改</div>
             <div v-for="f in turn.changedFiles.filesModified" :key="f" class="cf-file-item cf-modified-file">
-              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">{{ f }}</span>
+              <span class="cf-file-link" title="查看 diff" @click="openFileDiff(f)">{{ f }}</span>
             </div>
           </div>
         </div>
@@ -386,11 +391,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
             :class="{ 'response-collapsed': isLongResponse && !showFullResponse }"
             v-html="renderedResponse"
           ></div>
-          <button
-            v-if="isLongResponse"
-            class="expand-btn"
-            @click="showFullResponse = !showFullResponse"
-          >
+          <button v-if="isLongResponse" class="expand-btn" @click="showFullResponse = !showFullResponse">
             {{ showFullResponse ? '收起 ▲' : '展开 ▼' }}
           </button>
         </div>
@@ -407,10 +408,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
     </div>
     <!-- 未调用工具时：展示思考（可折叠） -->
     <div v-else-if="hasReasoning" class="reasoning-section">
-      <button
-        class="reasoning-toggle"
-        @click="showReasoning = !showReasoning"
-      >
+      <button class="reasoning-toggle" @click="showReasoning = !showReasoning">
         <span>{{ showReasoning ? '▼' : '▶' }}</span>
         <span class="reasoning-label">思考</span>
         <span v-if="!showReasoning && simplifiedStatus === 'active'" class="reasoning-dots">...</span>
@@ -422,7 +420,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 
     <!-- ==================== 悬停撤销按钮（底部右对齐，对齐 web 版） ==================== -->
     <div v-if="showActions && canUndo" class="undo-section">
-      <button class="undo-btn" @click.stop="handleUndo" title="撤销此轮操作">↩️ 撤销</button>
+      <button class="undo-btn" title="撤销此轮操作" @click.stop="handleUndo">↩️ 撤销</button>
     </div>
 
     <!-- ==================== 撤销确认弹窗 ==================== -->
@@ -450,11 +448,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
           <div class="diff-body">
             <div v-if="diffLoading" class="diff-loading">加载中...</div>
             <div v-else class="diff-view">
-              <div
-                v-for="(line, idx) in parsedDiffLines"
-                :key="idx"
-                :class="['diff-line', line.type]"
-              >
+              <div v-for="(line, idx) in parsedDiffLines" :key="idx" :class="['diff-line', line.type]">
                 <span class="diff-line-num">{{ line.lineNum ?? '' }}</span>
                 <span class="diff-line-content">{{ line.text }}</span>
               </div>
@@ -489,9 +483,15 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 }
 
 /* 状态边框颜色 */
-.border-l-blue { border-left-color: #5a8fc9; }
-.border-l-green { border-left-color: var(--vscode-widget-border, #b0b0b0); }
-.border-l-red { border-left-color: #c95a5a; }
+.border-l-blue {
+  border-left-color: #5a8fc9;
+}
+.border-l-green {
+  border-left-color: var(--vscode-widget-border, #b0b0b0);
+}
+.border-l-red {
+  border-left-color: #c95a5a;
+}
 
 /* ==================== 标题栏 ==================== */
 .turn-header {
@@ -668,10 +668,21 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   opacity: 0.8;
 }
 
-.cf-added { color: #16a34a; font-weight: 600; }
-.cf-deleted { color: #dc2626; font-weight: 600; }
-.cf-modified { color: #ca8a04; font-weight: 600; }
-.cf-sep { margin: 0 2px; }
+.cf-added {
+  color: #16a34a;
+  font-weight: 600;
+}
+.cf-deleted {
+  color: #dc2626;
+  font-weight: 600;
+}
+.cf-modified {
+  color: #ca8a04;
+  font-weight: 600;
+}
+.cf-sep {
+  margin: 0 2px;
+}
 .cf-expand-icon {
   font-size: 10px;
   margin-left: 4px;
@@ -701,9 +712,15 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   margin-bottom: 2px;
 }
 
-.cf-added-label { color: #16a34a; }
-.cf-deleted-label { color: #dc2626; }
-.cf-modified-label { color: #ca8a04; }
+.cf-added-label {
+  color: #16a34a;
+}
+.cf-deleted-label {
+  color: #dc2626;
+}
+.cf-modified-label {
+  color: #ca8a04;
+}
 
 .cf-file-item {
   padding: 1px 0 1px 8px;
@@ -713,9 +730,15 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   word-break: break-all;
 }
 
-.cf-added-file { color: #15803d; }
-.cf-deleted-file { color: #b91c1c; }
-.cf-modified-file { color: #a16207; }
+.cf-added-file {
+  color: #15803d;
+}
+.cf-deleted-file {
+  color: #b91c1c;
+}
+.cf-modified-file {
+  color: #a16207;
+}
 
 .cf-file-link {
   cursor: pointer;
@@ -836,8 +859,15 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
 }
 
 @keyframes pulse-spin {
-  0%, 100% { opacity: 1; transform: rotate(0deg); }
-  50% { opacity: 0.6; transform: rotate(15deg); }
+  0%,
+  100% {
+    opacity: 1;
+    transform: rotate(0deg);
+  }
+  50% {
+    opacity: 0.6;
+    transform: rotate(15deg);
+  }
 }
 
 .tool-calling-name {
@@ -951,13 +981,30 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   line-height: 1.25;
 }
 
-:deep(.markdown-body h1) { font-size: 1.5em; border-bottom: 1px solid var(--vscode-widget-border, #e0e0e0); padding-bottom: 0.3em; }
-:deep(.markdown-body h2) { font-size: 1.3em; border-bottom: 1px solid var(--vscode-widget-border, #e0e0e0); padding-bottom: 0.3em; }
-:deep(.markdown-body h3) { font-size: 1.1em; }
-:deep(.markdown-body p) { margin-bottom: 1em; }
+:deep(.markdown-body h1) {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--vscode-widget-border, #e0e0e0);
+  padding-bottom: 0.3em;
+}
+:deep(.markdown-body h2) {
+  font-size: 1.3em;
+  border-bottom: 1px solid var(--vscode-widget-border, #e0e0e0);
+  padding-bottom: 0.3em;
+}
+:deep(.markdown-body h3) {
+  font-size: 1.1em;
+}
+:deep(.markdown-body p) {
+  margin-bottom: 1em;
+}
 :deep(.markdown-body ul),
-:deep(.markdown-body ol) { padding-left: 2em; margin-bottom: 1em; }
-:deep(.markdown-body li) { margin-bottom: 0.25em; }
+:deep(.markdown-body ol) {
+  padding-left: 2em;
+  margin-bottom: 1em;
+}
+:deep(.markdown-body li) {
+  margin-bottom: 0.25em;
+}
 :deep(.markdown-body blockquote) {
   margin: 1em 0;
   padding: 0.5em 1em;
@@ -1001,12 +1048,30 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   font-weight: 600;
   background: var(--vscode-sideBar-background, #f3f3f3);
 }
-:deep(.markdown-body a) { color: var(--vscode-textLink-foreground, #006ab1); text-decoration: none; }
-:deep(.markdown-body a:hover) { text-decoration: underline; }
-:deep(.markdown-body img) { max-width: 100%; height: auto; }
-:deep(.markdown-body hr) { height: 0.25em; padding: 0; margin: 1.5em 0; background-color: var(--vscode-widget-border, #e0e0e0); border: 0; }
-:deep(.markdown-body strong) { font-weight: 600; }
-:deep(.markdown-body em) { font-style: italic; }
+:deep(.markdown-body a) {
+  color: var(--vscode-textLink-foreground, #006ab1);
+  text-decoration: none;
+}
+:deep(.markdown-body a:hover) {
+  text-decoration: underline;
+}
+:deep(.markdown-body img) {
+  max-width: 100%;
+  height: auto;
+}
+:deep(.markdown-body hr) {
+  height: 0.25em;
+  padding: 0;
+  margin: 1.5em 0;
+  background-color: var(--vscode-widget-border, #e0e0e0);
+  border: 0;
+}
+:deep(.markdown-body strong) {
+  font-weight: 600;
+}
+:deep(.markdown-body em) {
+  font-style: italic;
+}
 
 /* ==================== 撤销确认弹窗 ==================== */
 .dialog-overlay {
@@ -1174,14 +1239,33 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   flex: 1;
 }
 
-.diff-line.add { background: #d4edda; }
-.diff-line.del { background: #f8d7da; }
-.diff-line.head { background: #f0f0f0; color: #1a1a1a; font-weight: 600; }
-.diff-line.ctx { color: #1a1a1a; }
+.diff-line.add {
+  background: #d4edda;
+}
+.diff-line.del {
+  background: #f8d7da;
+}
+.diff-line.head {
+  background: #f0f0f0;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+.diff-line.ctx {
+  color: #1a1a1a;
+}
 
-.diff-line.add .diff-line-content { color: #1a1a1a; font-weight: 500; }
-.diff-line.del .diff-line-content { color: #1a1a1a; font-weight: 500; }
-.diff-line.head .diff-line-content { color: #1a1a1a; font-weight: 600; }
+.diff-line.add .diff-line-content {
+  color: #1a1a1a;
+  font-weight: 500;
+}
+.diff-line.del .diff-line-content {
+  color: #1a1a1a;
+  font-weight: 500;
+}
+.diff-line.head .diff-line-content {
+  color: #1a1a1a;
+  font-weight: 600;
+}
 
 /* ==================== 用户消息折叠 ==================== */
 .user-msg-collapsed {

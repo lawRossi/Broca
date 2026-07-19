@@ -59,7 +59,7 @@ export class ApiClient {
         // If the backend wraps in { code: 200, data: { ... }, msg: "..." }
         if (body && typeof body === 'object' && 'code' in body) {
           if (body.code === 200) {
-            response.data = body.data  // replace response.data with inner data
+            response.data = body.data // replace response.data with inner data
             return response
           } else {
             return Promise.reject(new Error(body.msg || 'Request failed'))
@@ -148,8 +148,14 @@ export class ApiClient {
     return response.data
   }
 
-  async updateAgentConfig(sessionId: string, agentId: string, configContent: Record<string, any>): Promise<AgentConfig> {
-    const response = await this.client.put(`/session/${sessionId}/agents/${agentId}/config`, { config_content: configContent })
+  async updateAgentConfig(
+    sessionId: string,
+    agentId: string,
+    configContent: Record<string, any>
+  ): Promise<AgentConfig> {
+    const response = await this.client.put(`/session/${sessionId}/agents/${agentId}/config`, {
+      config_content: configContent,
+    })
     return response.data
   }
 
@@ -162,7 +168,12 @@ export class ApiClient {
 
   // ==================== Message API ====================
 
-  async getSessionMessages(sessionId: string, skip: number = 0, limit: number = 50, executionId?: string): Promise<MessagesResponse> {
+  async getSessionMessages(
+    sessionId: string,
+    skip: number = 0,
+    limit: number = 50,
+    executionId?: string
+  ): Promise<MessagesResponse> {
     const params: Record<string, any> = { skip, limit }
     if (executionId) {
       params.execution_id = executionId
@@ -173,7 +184,12 @@ export class ApiClient {
 
   // ==================== Turns (Concise Mode) API ====================
 
-  async getSessionTurns(sessionId: string, skip: number = 0, limit: number = 3, executionId?: string): Promise<TurnsResponse> {
+  async getSessionTurns(
+    sessionId: string,
+    skip: number = 0,
+    limit: number = 3,
+    executionId?: string
+  ): Promise<TurnsResponse> {
     const params: Record<string, any> = { skip, limit }
     if (executionId) {
       params.execution_id = executionId
@@ -232,12 +248,18 @@ export class ApiClient {
     return response.data
   }
 
-  async validateCrew(data: { yaml_content?: string; yaml_path?: string }): Promise<{ valid: boolean; errors: string[]; error_count: number }> {
+  async validateCrew(data: {
+    yaml_content?: string
+    yaml_path?: string
+  }): Promise<{ valid: boolean; errors: string[]; error_count: number }> {
     const response = await this.client.post('/crews/validate', data)
     return response.data
   }
 
-  async getCrews(params?: { session_id?: string; status?: string }): Promise<{ executions: CrewExecution[]; total: number }> {
+  async getCrews(params?: {
+    session_id?: string
+    status?: string
+  }): Promise<{ executions: CrewExecution[]; total: number }> {
     const response = await this.client.get('/crews', { params })
     return response.data
   }

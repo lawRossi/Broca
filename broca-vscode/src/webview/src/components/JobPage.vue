@@ -71,11 +71,16 @@ const typeLabels: Record<string, string> = {
 
 function getStatusClass(status: string): string {
   switch (status) {
-    case 'active': return 'status-active'
-    case 'paused': return 'status-paused'
-    case 'completed': return 'status-completed'
-    case 'cancelled': return 'status-cancelled'
-    default: return ''
+    case 'active':
+      return 'status-active'
+    case 'paused':
+      return 'status-paused'
+    case 'completed':
+      return 'status-completed'
+    case 'cancelled':
+      return 'status-cancelled'
+    default:
+      return ''
   }
 }
 
@@ -121,8 +126,12 @@ function formatDateTime(dateStr?: string): string {
   if (!dateStr) return '未设置'
   try {
     return new Date(dateStr).toLocaleString('zh-CN', {
-      year: 'numeric', month: '2-digit', day: '2-digit',
-      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
     })
   } catch {
     return dateStr
@@ -242,9 +251,12 @@ onMounted(() => {
 })
 
 // 当 sessionId 变化时重新加载
-watch(() => props.sessionId, () => {
-  fetchJobs()
-})
+watch(
+  () => props.sessionId,
+  () => {
+    fetchJobs()
+  }
+)
 </script>
 
 <template>
@@ -282,13 +294,7 @@ watch(() => props.sessionId, () => {
       <div v-if="loading" class="loading-state">加载中...</div>
       <div v-else-if="errorMsg" class="error-state">{{ errorMsg }}</div>
       <div v-else-if="jobs.length === 0" class="empty-state">暂无定时任务</div>
-      <div
-        v-for="job in jobs"
-        v-else
-        :key="job.job_id"
-        class="job-item"
-        @click="openDetail(job.job_id)"
-      >
+      <div v-for="job in jobs" v-else :key="job.job_id" class="job-item" @click="openDetail(job.job_id)">
         <div class="job-main">
           <span class="job-icon">{{ typeIcons[job.job_type] || '📋' }}</span>
           <div class="job-content">
@@ -375,7 +381,7 @@ watch(() => props.sessionId, () => {
                 <button
                   v-if="jobDetail.job.status === 'active'"
                   class="btn btn-sm"
-                  style="background: rgba(245,158,11,0.15);color:#f59e0b;border-color:rgba(245,158,11,0.3)"
+                  style="background: rgba(245, 158, 11, 0.15); color: #f59e0b; border-color: rgba(245, 158, 11, 0.3)"
                   @click="handlePause(jobDetail.job.job_id)"
                 >
                   ⏸️ 暂停
@@ -383,7 +389,7 @@ watch(() => props.sessionId, () => {
                 <button
                   v-if="jobDetail.job.status === 'paused'"
                   class="btn btn-sm"
-                  style="background: rgba(34,197,94,0.15);color:#22c55e;border-color:rgba(34,197,94,0.3)"
+                  style="background: rgba(34, 197, 94, 0.15); color: #22c55e; border-color: rgba(34, 197, 94, 0.3)"
                   @click="handleResume(jobDetail.job.job_id)"
                 >
                   ▶️ 恢复
@@ -395,7 +401,9 @@ watch(() => props.sessionId, () => {
             <!-- Execution History -->
             <div class="detail-section">
               <h5>执行历史 ({{ jobDetail.executions?.length || 0 }})</h5>
-              <div v-if="!jobDetail.executions || jobDetail.executions.length === 0" class="empty-state-sm">暂无执行记录</div>
+              <div v-if="!jobDetail.executions || jobDetail.executions.length === 0" class="empty-state-sm">
+                暂无执行记录
+              </div>
               <div v-for="exec in jobDetail.executions" :key="exec.execution_id" class="exec-item">
                 <div class="exec-header">
                   <span class="tag" :class="exec.success ? 'status-completed' : 'status-blocked'">
@@ -410,7 +418,6 @@ watch(() => props.sessionId, () => {
         </div>
       </div>
     </div>
-
   </div>
 
   <!-- Confirm Dialog -->
@@ -419,7 +426,18 @@ watch(() => props.sessionId, () => {
       <p>{{ confirmDialog.message }}</p>
       <div class="dialog-actions">
         <button class="btn btn-secondary" @click="confirmDialog.visible = false">取消</button>
-        <button class="btn btn-danger" @click="() => { const cb = confirmDialog.onConfirm; confirmDialog.visible = false; cb?.(); }">确定</button>
+        <button
+          class="btn btn-danger"
+          @click="
+            () => {
+              const cb = confirmDialog.onConfirm
+              confirmDialog.visible = false
+              cb?.()
+            }
+          "
+        >
+          确定
+        </button>
       </div>
     </div>
   </div>
@@ -647,17 +665,32 @@ watch(() => props.sessionId, () => {
   white-space: nowrap;
 }
 
-.tag.status-active { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-.tag.status-paused { background: rgba(245, 158, 11, 0.15); color: #f59e0b; }
-.tag.status-completed { background: rgba(99, 102, 241, 0.15); color: #6366f1; }
-.tag.status-cancelled { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-.tag-type { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
+.tag.status-active {
+  background: rgba(34, 197, 94, 0.15);
+  color: #22c55e;
+}
+.tag.status-paused {
+  background: rgba(245, 158, 11, 0.15);
+  color: #f59e0b;
+}
+.tag.status-completed {
+  background: rgba(99, 102, 241, 0.15);
+  color: #6366f1;
+}
+.tag.status-cancelled {
+  background: rgba(239, 68, 68, 0.15);
+  color: #ef4444;
+}
+.tag-type {
+  background: rgba(59, 130, 246, 0.1);
+  color: #3b82f6;
+}
 
 /* ==================== Drawer ==================== */
 .drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.3);
+  background: rgba(0, 0, 0, 0.3);
   z-index: 100;
   display: flex;
   justify-content: flex-end;
@@ -797,7 +830,8 @@ watch(() => props.sessionId, () => {
 }
 
 /* ==================== States ==================== */
-.loading-state, .empty-state {
+.loading-state,
+.empty-state {
   display: flex;
   align-items: center;
   justify-content: center;
@@ -845,7 +879,7 @@ watch(() => props.sessionId, () => {
 .dialog-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.4);
+  background: rgba(0, 0, 0, 0.4);
   display: flex;
   align-items: center;
   justify-content: center;

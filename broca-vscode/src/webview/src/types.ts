@@ -1,16 +1,34 @@
 // WebView-side types (mirrors extension/types.ts)
 
 export type MessageType =
-  | 'agent_system_message' | 'connect' | 'disconnect' | 'ping' | 'pong' | 'error'
-  | 'user_message' | 'agent_response' | 'agent_error' | 'system_message'
+  | 'agent_system_message'
+  | 'connect'
+  | 'disconnect'
+  | 'ping'
+  | 'pong'
+  | 'error'
+  | 'user_message'
+  | 'agent_response'
+  | 'agent_error'
+  | 'system_message'
   | 'tool_call'
-  | 'task_start' | 'task_complete' | 'task_error'
-  | 'turn_start' | 'turn_end' | 'step_start' | 'step_end'
+  | 'task_start'
+  | 'task_complete'
+  | 'task_error'
+  | 'turn_start'
+  | 'turn_end'
+  | 'step_start'
+  | 'step_end'
   | 'reasoning_content'
-  | 'subscribe' | 'unsubscribe' | 'broadcast'
-  | 'command' | 'command_result'
-  | 'permission_request' | 'permission_response'
-  | 'agent_query' | 'user_answer'
+  | 'subscribe'
+  | 'unsubscribe'
+  | 'broadcast'
+  | 'command'
+  | 'command_result'
+  | 'permission_request'
+  | 'permission_response'
+  | 'agent_query'
+  | 'user_answer'
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool' | 'agent_system' | 'agent'
 
@@ -61,7 +79,8 @@ export interface LLMModel {
 
 // ==================== Crew (Orchestration) Types ====================
 
-export type OrchestratorType = 'pipeline' | 'supervisor-worker' | 'round-table' | 'broadcast' | 'consensus' | 'composite'
+export type OrchestratorType =
+  'pipeline' | 'supervisor-worker' | 'round-table' | 'broadcast' | 'consensus' | 'composite'
 
 export type ExecutionStatus = 'pending' | 'running' | 'completed' | 'failed' | 'aborted'
 

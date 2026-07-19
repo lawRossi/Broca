@@ -43,7 +43,7 @@ const configFilesLoading = ref(false)
 
 function isConfigExecuting(cfg: CrewConfigFile): boolean {
   // Check if there's a pending/running execution with the same crew name
-  return executions.value.some(e => e.crew_name === cfg.name && (e.status === 'pending' || e.status === 'running'))
+  return executions.value.some((e) => e.crew_name === cfg.name && (e.status === 'pending' || e.status === 'running'))
 }
 
 // ==================== Status helpers ====================
@@ -75,29 +75,42 @@ const orchestratorLabels: Record<string, string> = {
 
 function statusClass(status: string): string {
   switch (status) {
-    case 'running': return 'status-running'
-    case 'completed': return 'status-completed'
-    case 'failed': return 'status-failed'
-    case 'aborted': return 'status-aborted'
-    default: return 'status-pending'
+    case 'running':
+      return 'status-running'
+    case 'completed':
+      return 'status-completed'
+    case 'failed':
+      return 'status-failed'
+    case 'aborted':
+      return 'status-aborted'
+    default:
+      return 'status-pending'
   }
 }
 
 function phaseStatusIcon(status: string): string {
   switch (status) {
-    case 'completed': return '✓'
-    case 'running': return '⟳'
-    case 'failed': return '✕'
-    default: return '○'
+    case 'completed':
+      return '✓'
+    case 'running':
+      return '⟳'
+    case 'failed':
+      return '✕'
+    default:
+      return '○'
   }
 }
 
 function phaseStatusClass(status: string): string {
   switch (status) {
-    case 'completed': return 'phase-completed'
-    case 'running': return 'phase-running'
-    case 'failed': return 'phase-failed'
-    default: return 'phase-pending'
+    case 'completed':
+      return 'phase-completed'
+    case 'running':
+      return 'phase-running'
+    case 'failed':
+      return 'phase-failed'
+    default:
+      return 'phase-pending'
   }
 }
 
@@ -157,7 +170,10 @@ function abortCrew(executionId: string) {
 }
 
 function deleteCrew(executionId: string) {
-  postMessage({ type: 'confirmAction', payload: { action: 'deleteCrew', executionId, message: '确定要删除此编排记录吗？' } })
+  postMessage({
+    type: 'confirmAction',
+    payload: { action: 'deleteCrew', executionId, message: '确定要删除此编排记录吗？' },
+  })
 }
 
 function viewChatLog(exec: CrewExecution) {
@@ -201,7 +217,7 @@ onMounted(() => {
         // Update execution in list
         const event = data.payload
         if (event.execution_id) {
-          const idx = executions.value.findIndex(e => e.execution_id === event.execution_id)
+          const idx = executions.value.findIndex((e) => e.execution_id === event.execution_id)
           if (idx >= 0) {
             if (event.event === 'deleted') {
               // Remove from list immediately
@@ -255,14 +271,18 @@ onUnmounted(() => {
 
     <!-- Tab Bar -->
     <div class="crew-tab-bar">
-      <button
-        :class="['crew-tab', { active: activeTab === 'executions' }]"
-        @click="activeTab = 'executions'"
-      >执行记录</button>
+      <button :class="['crew-tab', { active: activeTab === 'executions' }]" @click="activeTab = 'executions'">
+        执行记录
+      </button>
       <button
         :class="['crew-tab', { active: activeTab === 'configs' }]"
-        @click="fetchConfigFiles(); activeTab = 'configs'"
-      >已有编排</button>
+        @click="
+          fetchConfigFiles()
+          activeTab = 'configs'
+        "
+      >
+        已有编排
+      </button>
     </div>
 
     <!-- ==================== List View (Executions) ==================== -->
@@ -271,7 +291,7 @@ onUnmounted(() => {
       <div class="crew-header">
         <h1 class="crew-title">⚡ 编排管理</h1>
         <div class="crew-header-actions">
-          <button class="btn btn-secondary" @click="fetchExecutions" :disabled="loading">
+          <button class="btn btn-secondary" :disabled="loading" @click="fetchExecutions">
             {{ loading ? '⟳' : '🔄' }} 刷新
           </button>
         </div>
@@ -288,9 +308,7 @@ onUnmounted(() => {
       </div>
 
       <!-- Execution list -->
-      <div v-if="loading && !executions.length" class="crew-loading">
-        加载中...
-      </div>
+      <div v-if="loading && !executions.length" class="crew-loading">加载中...</div>
 
       <div v-else-if="!executions.length" class="crew-empty">
         <p>暂无编排执行记录</p>
@@ -305,7 +323,7 @@ onUnmounted(() => {
                 {{ statusLabels[exec.status] || exec.status }}
               </span>
               <span class="crew-card-name">{{ exec.crew_name }}</span>
-              <span class="crew-card-type" v-if="exec.orchestrator_type">
+              <span v-if="exec.orchestrator_type" class="crew-card-type">
                 {{ orchestratorLabels[exec.orchestrator_type] || exec.orchestrator_type }}
               </span>
             </div>
@@ -324,7 +342,9 @@ onUnmounted(() => {
           <div v-if="exec.progress !== undefined" class="crew-progress-bar-container">
             <div
               class="crew-progress-bar"
-              :class="exec.status === 'failed' ? 'progress-failed' : exec.status === 'completed' ? 'progress-completed' : ''"
+              :class="
+                exec.status === 'failed' ? 'progress-failed' : exec.status === 'completed' ? 'progress-completed' : ''
+              "
               :style="{ width: Math.round(exec.progress * 100) + '%' }"
             ></div>
             <span class="crew-progress-text">{{ Math.round(exec.progress * 100) }}%</span>
@@ -333,7 +353,13 @@ onUnmounted(() => {
           <!-- Action buttons -->
           <div class="crew-card-actions">
             <button class="btn btn-secondary btn-sm" @click.stop="viewChatLog(exec)">查看聊天日志</button>
-            <button v-if="exec.status === 'running'" class="btn btn-danger btn-sm" @click.stop="abortCrew(exec.execution_id)">中止</button>
+            <button
+              v-if="exec.status === 'running'"
+              class="btn btn-danger btn-sm"
+              @click.stop="abortCrew(exec.execution_id)"
+            >
+              中止
+            </button>
             <button class="btn btn-danger btn-sm" @click.stop="deleteCrew(exec.execution_id)">删除</button>
           </div>
         </div>
@@ -345,7 +371,7 @@ onUnmounted(() => {
       <div class="crew-header">
         <h1 class="crew-title">📄 已有编排</h1>
         <div class="crew-header-actions">
-          <button class="btn btn-secondary" @click="fetchConfigFiles" :disabled="configFilesLoading">
+          <button class="btn btn-secondary" :disabled="configFilesLoading" @click="fetchConfigFiles">
             {{ configFilesLoading ? '⟳' : '🔄' }} 刷新
           </button>
         </div>
@@ -355,9 +381,7 @@ onUnmounted(() => {
         <span class="filter-count">{{ configFiles.length }} 个配置文件</span>
       </div>
 
-      <div v-if="configFilesLoading && !configFiles.length" class="crew-loading">
-        加载中...
-      </div>
+      <div v-if="configFilesLoading && !configFiles.length" class="crew-loading">加载中...</div>
 
       <div v-else-if="!configFiles.length" class="crew-empty">
         <p>该工作空间下没有编排配置文件</p>
@@ -382,15 +406,18 @@ onUnmounted(() => {
           <div class="crew-card-meta">
             <span>Agent: {{ cfg.agent_count }} 个</span>
             <span v-if="cfg.agent_names.length">({{ cfg.agent_names.join(', ') }})</span>
-            <span>{{ new Date(cfg.modified_time * 1000).toLocaleString(undefined, { month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }) }}</span>
+            <span>{{
+              new Date(cfg.modified_time * 1000).toLocaleString(undefined, {
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+              })
+            }}</span>
           </div>
 
-          <div class="crew-card-actions" style="margin-top: 8px;">
-            <button
-              class="btn btn-primary"
-              :disabled="isConfigExecuting(cfg)"
-              @click.stop="submitConfigFile(cfg)"
-            >
+          <div class="crew-card-actions" style="margin-top: 8px">
+            <button class="btn btn-primary" :disabled="isConfigExecuting(cfg)" @click.stop="submitConfigFile(cfg)">
               {{ isConfigExecuting(cfg) ? '执行中...' : '执行' }}
             </button>
             <span v-if="cfg.parse_error" class="crew-status-badge status-failed">解析失败</span>
@@ -413,7 +440,7 @@ onUnmounted(() => {
           <span :class="['crew-status-badge', statusClass(selectedExecution.status)]">
             {{ statusLabels[selectedExecution.status] || selectedExecution.status }}
           </span>
-          <span class="crew-detail-label" v-if="selectedExecution.orchestrator_type">
+          <span v-if="selectedExecution.orchestrator_type" class="crew-detail-label">
             拓扑: {{ orchestratorLabels[selectedExecution.orchestrator_type] || selectedExecution.orchestrator_type }}
           </span>
           <span class="crew-detail-label">Agent: {{ selectedExecution.agent_count }} 个</span>
@@ -424,20 +451,29 @@ onUnmounted(() => {
           <div class="crew-progress-bar-container detail-progress">
             <div
               class="crew-progress-bar"
-              :class="selectedExecution.status === 'failed' ? 'progress-failed' : selectedExecution.status === 'completed' ? 'progress-completed' : ''"
+              :class="
+                selectedExecution.status === 'failed'
+                  ? 'progress-failed'
+                  : selectedExecution.status === 'completed'
+                    ? 'progress-completed'
+                    : ''
+              "
               :style="{ width: Math.round((selectedExecution.progress || 0) * 100) + '%' }"
             ></div>
             <span class="crew-progress-text">{{ Math.round((selectedExecution.progress || 0) * 100) }}%</span>
           </div>
-            <span v-if="selectedExecution.completed_at" class="crew-detail-duration">
-              耗时: {{ getDuration(selectedExecution) }}
-            </span>
+          <span v-if="selectedExecution.completed_at" class="crew-detail-duration">
+            耗时: {{ getDuration(selectedExecution) }}
+          </span>
         </div>
       </div>
 
       <!-- DAG: Phase List -->
       <div class="crew-dag">
-        <div v-if="!detailLoading && (!selectedExecution.phases || !selectedExecution.phases.length)" class="crew-empty">
+        <div
+          v-if="!detailLoading && (!selectedExecution.phases || !selectedExecution.phases.length)"
+          class="crew-empty"
+        >
           <p>暂无阶段信息</p>
         </div>
 
@@ -445,11 +481,7 @@ onUnmounted(() => {
           <!-- Connection line -->
           <div v-if="(selectedExecution.phases?.length || 0) > 1" class="crew-dag-line"></div>
 
-          <div
-            v-for="(phase, index) in selectedExecution.phases"
-            :key="phase.name"
-            class="crew-dag-node"
-          >
+          <div v-for="(phase, index) in selectedExecution.phases" :key="phase.name" class="crew-dag-node">
             <div class="crew-dag-dot">
               <div :class="['crew-dag-dot-inner', phaseStatusClass(phase.status)]"></div>
             </div>
@@ -468,7 +500,9 @@ onUnmounted(() => {
               <div v-if="phase.error" class="crew-dag-error">
                 {{ phase.error }}
               </div>
-              <div class="crew-dag-step-num">步骤 {{ index + 1 }} / {{ selectedExecution.phases_total || selectedExecution.phases?.length }}</div>
+              <div class="crew-dag-step-num">
+                步骤 {{ index + 1 }} / {{ selectedExecution.phases_total || selectedExecution.phases?.length }}
+              </div>
             </div>
           </div>
         </div>
@@ -482,9 +516,7 @@ onUnmounted(() => {
 
       <!-- Action buttons -->
       <div class="crew-detail-actions">
-        <button class="btn btn-primary" @click="viewChatLog(selectedExecution!)">
-          查看聊天日志
-        </button>
+        <button class="btn btn-primary" @click="viewChatLog(selectedExecution!)">查看聊天日志</button>
         <button
           v-if="selectedExecution.status === 'running'"
           class="btn btn-danger"
@@ -492,9 +524,7 @@ onUnmounted(() => {
         >
           中止
         </button>
-        <button class="btn btn-danger" @click="deleteCrew(selectedExecution.execution_id)">
-          删除
-        </button>
+        <button class="btn btn-danger" @click="deleteCrew(selectedExecution.execution_id)">删除</button>
       </div>
     </div>
   </div>
@@ -507,7 +537,8 @@ onUnmounted(() => {
   box-sizing: border-box;
 }
 
-html, body {
+html,
+body {
   height: 100%;
   overflow: hidden;
   font-family: var(--font-family, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
@@ -562,7 +593,9 @@ html, body {
   font-size: 12px;
   font-weight: 500;
   cursor: pointer;
-  transition: color 0.2s, border-color 0.2s;
+  transition:
+    color 0.2s,
+    border-color 0.2s;
 }
 
 .crew-tab:hover {
@@ -637,7 +670,9 @@ html, body {
   border: 1px solid var(--border-color, #333);
   border-radius: 8px;
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
   background: var(--bg-secondary, #252526);
 }
 
@@ -712,11 +747,26 @@ html, body {
   white-space: nowrap;
 }
 
-.status-pending { background: var(--badge-pending-bg, #4d4d4d); color: var(--badge-pending-fg, #cccccc); }
-.status-running { background: var(--badge-running-bg, #0e639c); color: var(--badge-running-fg, #ffffff); }
-.status-completed { background: var(--badge-completed-bg, #73c991); color: var(--badge-completed-fg, #ffffff); }
-.status-failed { background: var(--badge-failed-bg, #f14c4c); color: var(--badge-failed-fg, #ffffff); }
-.status-aborted { background: var(--badge-aborted-bg, #cca700); color: var(--badge-aborted-fg, #ffffff); }
+.status-pending {
+  background: var(--badge-pending-bg, #4d4d4d);
+  color: var(--badge-pending-fg, #cccccc);
+}
+.status-running {
+  background: var(--badge-running-bg, #0e639c);
+  color: var(--badge-running-fg, #ffffff);
+}
+.status-completed {
+  background: var(--badge-completed-bg, #73c991);
+  color: var(--badge-completed-fg, #ffffff);
+}
+.status-failed {
+  background: var(--badge-failed-bg, #f14c4c);
+  color: var(--badge-failed-fg, #ffffff);
+}
+.status-aborted {
+  background: var(--badge-aborted-bg, #cca700);
+  color: var(--badge-aborted-fg, #ffffff);
+}
 
 /* ==================== Progress Bar ==================== */
 .crew-progress-bar-container {
@@ -852,10 +902,22 @@ html, body {
   border: 2px solid var(--border-color, #555);
 }
 
-.crew-dag-dot-inner.phase-completed { background: var(--phase-completed, #73c991); border-color: var(--phase-completed, #73c991); }
-.crew-dag-dot-inner.phase-running { background: var(--phase-running, #0e639c); border-color: var(--phase-running, #0e639c); }
-.crew-dag-dot-inner.phase-failed { background: var(--phase-failed, #f14c4c); border-color: var(--phase-failed, #f14c4c); }
-.crew-dag-dot-inner.phase-pending { background: transparent; border-color: var(--phase-pending, #8b8b8b); }
+.crew-dag-dot-inner.phase-completed {
+  background: var(--phase-completed, #73c991);
+  border-color: var(--phase-completed, #73c991);
+}
+.crew-dag-dot-inner.phase-running {
+  background: var(--phase-running, #0e639c);
+  border-color: var(--phase-running, #0e639c);
+}
+.crew-dag-dot-inner.phase-failed {
+  background: var(--phase-failed, #f14c4c);
+  border-color: var(--phase-failed, #f14c4c);
+}
+.crew-dag-dot-inner.phase-pending {
+  background: transparent;
+  border-color: var(--phase-pending, #8b8b8b);
+}
 
 .crew-dag-card {
   flex: 1;
@@ -865,9 +927,18 @@ html, body {
   background: var(--bg-secondary, #252526);
 }
 
-.crew-dag-card.phase-completed { border-color: color-mix(in srgb, var(--phase-completed, #73c991) 25%, transparent); background: color-mix(in srgb, var(--phase-completed, #73c991) 8%, transparent); }
-.crew-dag-card.phase-running { border-color: color-mix(in srgb, var(--phase-running, #0e639c) 25%, transparent); background: color-mix(in srgb, var(--phase-running, #0e639c) 8%, transparent); }
-.crew-dag-card.phase-failed { border-color: color-mix(in srgb, var(--phase-failed, #f14c4c) 25%, transparent); background: color-mix(in srgb, var(--phase-failed, #f14c4c) 8%, transparent); }
+.crew-dag-card.phase-completed {
+  border-color: color-mix(in srgb, var(--phase-completed, #73c991) 25%, transparent);
+  background: color-mix(in srgb, var(--phase-completed, #73c991) 8%, transparent);
+}
+.crew-dag-card.phase-running {
+  border-color: color-mix(in srgb, var(--phase-running, #0e639c) 25%, transparent);
+  background: color-mix(in srgb, var(--phase-running, #0e639c) 8%, transparent);
+}
+.crew-dag-card.phase-failed {
+  border-color: color-mix(in srgb, var(--phase-failed, #f14c4c) 25%, transparent);
+  background: color-mix(in srgb, var(--phase-failed, #f14c4c) 8%, transparent);
+}
 
 .crew-dag-card-header {
   display: flex;
@@ -887,10 +958,18 @@ html, body {
   border-radius: 3px;
 }
 
-.crew-dag-phase-status.phase-completed { color: var(--phase-completed, #73c991); }
-.crew-dag-phase-status.phase-running { color: var(--phase-running, #0e639c); }
-.crew-dag-phase-status.phase-failed { color: var(--phase-failed, #f14c4c); }
-.crew-dag-phase-status.phase-pending { color: var(--phase-pending, #8b8b8b); }
+.crew-dag-phase-status.phase-completed {
+  color: var(--phase-completed, #73c991);
+}
+.crew-dag-phase-status.phase-running {
+  color: var(--phase-running, #0e639c);
+}
+.crew-dag-phase-status.phase-failed {
+  color: var(--phase-failed, #f14c4c);
+}
+.crew-dag-phase-status.phase-pending {
+  color: var(--phase-pending, #8b8b8b);
+}
 
 .crew-dag-agents {
   display: flex;

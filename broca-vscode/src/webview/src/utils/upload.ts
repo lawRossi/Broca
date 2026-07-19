@@ -80,10 +80,13 @@ export function uploadFile(file: File): Promise<UploadResult> {
       })
 
       // 超时处理（5分钟）
-      setTimeout(() => {
-        window.removeEventListener('message', messageHandler)
-        reject(new Error('上传超时'))
-      }, 5 * 60 * 1000)
+      setTimeout(
+        () => {
+          window.removeEventListener('message', messageHandler)
+          reject(new Error('上传超时'))
+        },
+        5 * 60 * 1000
+      )
     } catch (error: any) {
       reject(error)
     }

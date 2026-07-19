@@ -185,11 +185,16 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   // ==================== 消息状态管理 ====================
-  const messageStates = ref<Map<string, {
-    showParameters: boolean
-    showResult: boolean
-    showReasoning: boolean
-  }>>(new Map())
+  const messageStates = ref<
+    Map<
+      string,
+      {
+        showParameters: boolean
+        showResult: boolean
+        showReasoning: boolean
+      }
+    >
+  >(new Map())
 
   function getMessageState(messageId: string) {
     let state = messageStates.value.get(messageId)
@@ -264,7 +269,7 @@ export const useChatStore = defineStore('chat', () => {
 
   // ==================== 简洁模式计算属性 ====================
   const filteredTurnSummaries = computed(() => {
-    return turnSummaries.value.filter(t => !(t.isActive && t.status === 'error'))
+    return turnSummaries.value.filter((t) => !(t.isActive && t.status === 'error'))
   })
 
   // ==================== 消息处理 ====================
@@ -303,7 +308,7 @@ export const useChatStore = defineStore('chat', () => {
   // Initialize: listen for messages from extension host
   function init() {
     console.log('[ChatStore] init, sessionId:', sessionId.value, 'connected:', connected.value)
-    
+
     onMessage((data: any) => {
       console.log('[ChatStore] received from extension:', data.type)
       switch (data.type) {
@@ -433,7 +438,7 @@ export const useChatStore = defineStore('chat', () => {
       updateAgentStatus(targetAgentId, 'running')
       // 简洁模式：创建新的 turn summary
       handleTurnStartMessage(message)
-      return  // turn_start 不需要显示在消息列表中
+      return // turn_start 不需要显示在消息列表中
     }
 
     if (message.message_type === 'turn_end') {
@@ -441,13 +446,13 @@ export const useChatStore = defineStore('chat', () => {
       updateAgentStatus(targetAgentId, 'idle')
       // 简洁模式：标记 turn 完成
       handleTurnEndMessage(message)
-      return  // turn_end 不需要显示在消息列表中
+      return // turn_end 不需要显示在消息列表中
     }
 
     // 简洁模式：step_start / step_end 在 processMessage 过滤前更新 turn 摘���，然后提前返回
     if (message.message_type === 'step_start' || message.message_type === 'step_end') {
       updateTurnSummaryOnStepEvent(message)
-      return  // 不显示在消息列表中
+      return // 不显示在消息列表中
     }
 
     // agent_response 和 tool_call 也更新 Agent 状态为 running
@@ -535,13 +540,24 @@ export const useChatStore = defineStore('chat', () => {
   function processMessage(msg: Message): Message | null {
     // Filter out internal message types
     const filteredTypes = [
-      'turn_start', 'turn_end', 'command',
-      'permission_request', 'permission_response',
-      'agent_query', 'user_answer',
-      'subscribe', 'unsubscribe', 'connect', 'disconnect',
-      'ping', 'pong',
-      'task_start', 'task_complete', 'task_error',
-      'step_start', 'step_end',
+      'turn_start',
+      'turn_end',
+      'command',
+      'permission_request',
+      'permission_response',
+      'agent_query',
+      'user_answer',
+      'subscribe',
+      'unsubscribe',
+      'connect',
+      'disconnect',
+      'ping',
+      'pong',
+      'task_start',
+      'task_complete',
+      'task_error',
+      'step_start',
+      'step_end',
     ]
     if (filteredTypes.includes(msg.message_type)) return null
 
@@ -557,10 +573,11 @@ export const useChatStore = defineStore('chat', () => {
       if (typeof contentStr === 'string') {
         try {
           const parsed = JSON.parse(contentStr)
-          const empty = (
+          const empty =
             (parsed.content === null || parsed.content === undefined || parsed.content === '') &&
-            (parsed.reasoning_content === null || parsed.reasoning_content === undefined || parsed.reasoning_content === '')
-          )
+            (parsed.reasoning_content === null ||
+              parsed.reasoning_content === undefined ||
+              parsed.reasoning_content === '')
           if (empty) return null
           // Fix: if content is a nested JSON string, unwrap it
           if (typeof parsed.content === 'string' && parsed.content.startsWith('{')) {
@@ -595,14 +612,9 @@ export const useChatStore = defineStore('chat', () => {
     return msg
   }
 
-  function handleHistoryLoaded(payload: {
-    messages: Message[]
-    total: number
-    skip: number
-    limit: number
-  }) {
+  function handleHistoryLoaded(payload: { messages: Message[]; total: number; skip: number; limit: number }) {
     // Filter history messages through processMessage
-    const filtered = (payload.messages || []).filter(m => processMessage(m) !== null)
+    const filtered = (payload.messages || []).filter((m) => processMessage(m) !== null)
 
     if (payload.skip === 0) {
       // Initial load - replace all messages
@@ -685,7 +697,7 @@ export const useChatStore = defineStore('chat', () => {
     // 用户消息按 message_id 去重：agent 开始处理时会重新广播用户消息
     if (message.message_type === 'user_message') {
       const existingUserMsg = messages.value.findIndex(
-        m => m.message_type === 'user_message' && m.message_id === message.message_id
+        (m) => m.message_type === 'user_message' && m.message_id === message.message_id
       )
       if (existingUserMsg !== -1) {
         // 更新 data（保留位置不变）
@@ -699,7 +711,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // 通用去重：按 message_id 检查是否已存在
-    const existing = messages.value.findIndex(m => m.message_id === message.message_id)
+    const existing = messages.value.findIndex((m) => m.message_id === message.message_id)
     if (existing !== -1) {
       messages.value[existing] = {
         ...messages.value[existing],
@@ -726,7 +738,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // Generate messageId for optimistic update AND to share with extension
     const messageId = `msg_${Date.now()}_${Math.random().toString(16).slice(2)}`
-    
+
     const targetReceiver = receiverId || defaultAgentId.value
     console.log('[ChatStore] sendMessage:', { messageId, content, targetReceiver, filesCount: files?.length })
 
@@ -748,7 +760,7 @@ export const useChatStore = defineStore('chat', () => {
 
     // Send to extension host
     console.log('[ChatStore] posting sendMessage to extension')
-    
+
     postMessage({
       type: 'sendMessage',
       payload: { content, receiverId: targetReceiver, files, messageId },
@@ -892,7 +904,7 @@ export const useChatStore = defineStore('chat', () => {
           console.debug('toggleDisplayMode: 模式在 await 期间已变回 detail，跳过活跃 turn 处理')
           return
         }
-        if (turnSummaries.value.some(t => t.isActive)) {
+        if (turnSummaries.value.some((t) => t.isActive)) {
           startDurationTimer()
         }
       } else {
@@ -904,7 +916,12 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  async function loadTurnHistory(sessionId: string, isLoadMore: boolean, filterExecutionId?: string, reset: boolean = false) {
+  async function loadTurnHistory(
+    sessionId: string,
+    isLoadMore: boolean,
+    filterExecutionId?: string,
+    reset: boolean = false
+  ) {
     if (isLoadMore) {
       if (loadingMoreTurns.value || !hasMoreTurns.value) return
       loadingMoreTurns.value = true
@@ -983,14 +1000,16 @@ export const useChatStore = defineStore('chat', () => {
         startedAt: t.started_at ? new Date(t.started_at).getTime() : Date.now(),
         createdAt: t.created_at || new Date().toISOString(),
         lastMessageId: t.last_message_id || null,
-        changedFiles: t.changed_files ? {
-          totalAdded: t.changed_files.total_added || 0,
-          totalDeleted: t.changed_files.total_deleted || 0,
-          totalModified: t.changed_files.total_modified || 0,
-          filesAdded: t.changed_files.files_added || [],
-          filesDeleted: t.changed_files.files_deleted || [],
-          filesModified: t.changed_files.files_modified || [],
-        } : null,
+        changedFiles: t.changed_files
+          ? {
+              totalAdded: t.changed_files.total_added || 0,
+              totalDeleted: t.changed_files.total_deleted || 0,
+              totalModified: t.changed_files.total_modified || 0,
+              filesAdded: t.changed_files.files_added || [],
+              filesDeleted: t.changed_files.files_deleted || [],
+              filesModified: t.changed_files.files_modified || [],
+            }
+          : null,
       }))
 
       if (skip === 0) {
@@ -998,8 +1017,8 @@ export const useChatStore = defineStore('chat', () => {
         // 注意：不能只使用 API 调用前保存的 activeTurns，因为在 await 期间，
         // socket 事件可能向 turnSummaries 添加了新的活跃 turn，也可能会
         // 发生 turn_end 将活跃 turn 标记为完成。因此需要保留所有 API 未覆盖的 turn。
-        const seenIds = new Set(turnList.map(t => t.turnId))
-        const currentLive = turnSummaries.value.filter(t => !seenIds.has(t.turnId))
+        const seenIds = new Set(turnList.map((t) => t.turnId))
+        const currentLive = turnSummaries.value.filter((t) => !seenIds.has(t.turnId))
         const merged = [...turnList, ...currentLive]
 
         // 强力去重：按 turnId 去重，防御极端时序下的重复
@@ -1018,7 +1037,8 @@ export const useChatStore = defineStore('chat', () => {
           apiTurn.totalDuration = socketTurn.totalDuration
           apiTurn.currentTool = socketTurn.currentTool || apiTurn.currentTool
           apiTurn.currentFilePath = socketTurn.currentFilePath || apiTurn.currentFilePath
-          apiTurn.currentTodoList = socketTurn.currentTodoList.length > 0 ? socketTurn.currentTodoList : apiTurn.currentTodoList
+          apiTurn.currentTodoList =
+            socketTurn.currentTodoList.length > 0 ? socketTurn.currentTodoList : apiTurn.currentTodoList
           apiTurn.isActive = true
         }
 
@@ -1090,25 +1110,25 @@ export const useChatStore = defineStore('chat', () => {
 
   /**
    * 查找消息所属的 turnId
-   * 
+   *
    * 与 web 版一致：优先用消息自带的 turn_id，但需要验证该 turn 确实存在；
    * 若不存在则回退到活跃 turn（解决 turn_start 可能无 turn_id 导致 ID 不一致的问题）。
    */
   function _turnIdForMessage(message: Message): string | null {
     // 1. 尝试消息自带的 turn_id，但需验证该 turn 确实存在
     const msgTurnId = message.turn_id || message.data?.turn_id
-    if (msgTurnId && turnSummaries.value.some(t => t.turnId === msgTurnId)) {
+    if (msgTurnId && turnSummaries.value.some((t) => t.turnId === msgTurnId)) {
       return msgTurnId
     }
     // 2. 回退到活跃 turn（turn_start 可能无 turn_id 时，后续消息用此兜底）
-    const activeTurn = turnSummaries.value.find(t => t.isActive)
+    const activeTurn = turnSummaries.value.find((t) => t.isActive)
     if (activeTurn) return activeTurn.turnId
     // 3. 仍无匹配，尝试通过 timestamp 找最近的 completed turn
     if (!message.timestamp) return null
     const msgTime = new Date(message.timestamp).getTime()
     const recentTurn = [...turnSummaries.value]
       .reverse()
-      .find(t => !t.isActive && Math.abs(new Date(t.createdAt).getTime() - msgTime) < 60000)
+      .find((t) => !t.isActive && Math.abs(new Date(t.createdAt).getTime() - msgTime) < 60000)
     return recentTurn?.turnId || null
   }
 
@@ -1117,7 +1137,7 @@ export const useChatStore = defineStore('chat', () => {
     const agentId = message.sender_id || message.agent_id || defaultAgentId.value || ''
 
     // 幂等检查：防止重复创建
-    if (turnSummaries.value.some(t => t.turnId === turnId)) return
+    if (turnSummaries.value.some((t) => t.turnId === turnId)) return
 
     const summary: TurnSummary = {
       turnId,
@@ -1153,7 +1173,7 @@ export const useChatStore = defineStore('chat', () => {
     const turnId = message.turn_id || message.data?.turn_id
     if (!turnId) return
 
-    const idx = turnSummaries.value.findIndex(t => t.turnId === turnId)
+    const idx = turnSummaries.value.findIndex((t) => t.turnId === turnId)
     if (idx === -1) return
 
     const turn = turnSummaries.value[idx]
@@ -1183,7 +1203,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // 如果没有任何活跃 turn 了，停止计时器（timer 自身也会检测，这里做双重保障）
-    if (!turnSummaries.value.some(t => t.isActive)) {
+    if (!turnSummaries.value.some((t) => t.isActive)) {
       stopDurationTimer()
     }
   }
@@ -1191,7 +1211,7 @@ export const useChatStore = defineStore('chat', () => {
   function updateTurnSummaryOnStepEvent(message: Message) {
     const turnId = _turnIdForMessage(message)
     if (!turnId) return
-    const turn = turnSummaries.value.find(t => t.turnId === turnId)
+    const turn = turnSummaries.value.find((t) => t.turnId === turnId)
     if (!turn) return
 
     if (message.message_type === 'step_start') {
@@ -1205,7 +1225,7 @@ export const useChatStore = defineStore('chat', () => {
   function updateTurnSummaryOnMessage(message: Message) {
     const turnId = _turnIdForMessage(message)
     if (!turnId) return
-    const turn = turnSummaries.value.find(t => t.turnId === turnId)
+    const turn = turnSummaries.value.find((t) => t.turnId === turnId)
     if (!turn) return
 
     switch (message.message_type) {
@@ -1253,7 +1273,7 @@ export const useChatStore = defineStore('chat', () => {
           }
         }
         if (isFirstSeen) {
-          const existing = turn.toolCallStats.find(s => s.toolName === toolName)
+          const existing = turn.toolCallStats.find((s) => s.toolName === toolName)
           if (existing) {
             existing.count++
           } else {
@@ -1309,9 +1329,9 @@ export const useChatStore = defineStore('chat', () => {
                 const prevContentMsgId = _turnContentMsgId.value.get(turn.turnId)
                 const isNewMessage = prevContentMsgId !== undefined && prevContentMsgId !== message.message_id
                 if (isNewMessage) {
-                  turn.finalResponse = parsed.content  // 新消息流，替换
+                  turn.finalResponse = parsed.content // 新消息流，替换
                 } else {
-                  turn.finalResponse += parsed.content  // 同一消息流，拼接
+                  turn.finalResponse += parsed.content // 同一消息流，拼接
                 }
                 _turnContentMsgId.value.set(turn.turnId, message.message_id)
               }
@@ -1336,9 +1356,9 @@ export const useChatStore = defineStore('chat', () => {
             const prevContentMsgId = _turnContentMsgId.value.get(turn.turnId)
             const isNewMessage = prevContentMsgId !== undefined && prevContentMsgId !== message.message_id
             if (isNewMessage) {
-              turn.finalResponse = content  // 新消息流，替换
+              turn.finalResponse = content // 新消息流，替换
             } else {
-              turn.finalResponse += content  // 同一消息流，拼接
+              turn.finalResponse += content // 同一消息流，拼接
             }
             _turnContentMsgId.value.set(turn.turnId, message.message_id)
           }

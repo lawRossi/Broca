@@ -46,11 +46,19 @@ export class ChatWebViewManager {
   closeSessionPanel(sessionId: string) {
     const panel = this.panels.get(sessionId)
     if (panel) {
-      try { panel.dispose() } catch { /* already disposed */ }
+      try {
+        panel.dispose()
+      } catch {
+        /* already disposed */
+      }
     }
     const crewPanel = this.crewPanels.get(sessionId)
     if (crewPanel) {
-      try { crewPanel.dispose() } catch { /* already disposed */ }
+      try {
+        crewPanel.dispose()
+      } catch {
+        /* already disposed */
+      }
     }
   }
 
@@ -91,18 +99,11 @@ export class ChatWebViewManager {
       const category = sessionInfo?.category || 'normal'
 
       // Create new WebView panel
-      const panel = vscode.window.createWebviewPanel(
-        'broca.chat',
-        `Broca: ${title}`,
-        vscode.ViewColumn.One,
-        {
-          enableScripts: true,
-          retainContextWhenHidden: true,
-          localResourceRoots: [
-            vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
-          ],
-        }
-      )
+      const panel = vscode.window.createWebviewPanel('broca.chat', `Broca: ${title}`, vscode.ViewColumn.One, {
+        enableScripts: true,
+        retainContextWhenHidden: true,
+        localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')],
+      })
 
       // Set HTML content with category and executionId
       panel.webview.html = this.getWebviewContent(panel.webview, sessionId, category, executionId)
@@ -139,7 +140,11 @@ export class ChatWebViewManager {
 
       // Handle messages from WebView
       panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
-        console.log('[ChatWebView] received from WebView:', message.type, message.payload ? Object.keys(message.payload) : '')
+        console.log(
+          '[ChatWebView] received from WebView:',
+          message.type,
+          message.payload ? Object.keys(message.payload) : ''
+        )
         await this.handleWebViewMessage(sessionId, panel, message)
       })
 
@@ -188,18 +193,11 @@ export class ChatWebViewManager {
   }
 
   async openConfigPage() {
-    const panel = vscode.window.createWebviewPanel(
-      'broca.config',
-      'Broca Settings',
-      vscode.ViewColumn.One,
-      {
-        enableScripts: true,
-        retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
-        ],
-      }
-    )
+    const panel = vscode.window.createWebviewPanel('broca.config', 'Broca Settings', vscode.ViewColumn.One, {
+      enableScripts: true,
+      retainContextWhenHidden: true,
+      localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')],
+    })
 
     panel.webview.html = this.getConfigWebviewContent(panel.webview)
 
@@ -220,7 +218,10 @@ export class ChatWebViewManager {
         } catch (error: any) {
           console.error('[ChatWebView] Failed to save config:', error)
           showErrorNotification(error, 'Failed to save configuration')
-          this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
+          this.postToPanel(panel, {
+            type: 'error',
+            payload: { message: extractErrorMessage(error) },
+          } as ExtensionToWebView)
         }
       } else if (message.type === 'getProviders') {
         try {
@@ -264,9 +265,7 @@ export class ChatWebViewManager {
         {
           enableScripts: true,
           retainContextWhenHidden: true,
-          localResourceRoots: [
-            vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
-          ],
+          localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')],
         }
       )
 
@@ -335,7 +334,9 @@ export class ChatWebViewManager {
   async openCreateSessionDialog(onSessionCreated?: () => void) {
     // Close existing panel if any
     if (this.createSessionPanel) {
-      try { this.createSessionPanel.dispose() } catch {}
+      try {
+        this.createSessionPanel.dispose()
+      } catch {}
       this.createSessionPanel = null
     }
 
@@ -346,14 +347,14 @@ export class ChatWebViewManager {
       {
         enableScripts: true,
         retainContextWhenHidden: true,
-        localResourceRoots: [
-          vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview'),
-        ],
+        localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')],
       }
     )
 
     this.createSessionPanel = panel
-    panel.onDidDispose(() => { this.createSessionPanel = null })
+    panel.onDidDispose(() => {
+      this.createSessionPanel = null
+    })
 
     // Get workspace path for pre-fill
     const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || ''
@@ -371,7 +372,10 @@ export class ChatWebViewManager {
             const providers = await this.apiClient.getLLMProviders()
             this.postToPanel(panel, { type: 'providers', payload: providers } as ExtensionToWebView)
           } catch (error: any) {
-            this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
+            this.postToPanel(panel, {
+              type: 'error',
+              payload: { message: extractErrorMessage(error) },
+            } as ExtensionToWebView)
           }
           break
 
@@ -380,7 +384,10 @@ export class ChatWebViewManager {
             const models = await this.apiClient.getLLMModels(message.payload.provider)
             this.postToPanel(panel, { type: 'models', payload: models } as ExtensionToWebView)
           } catch (error: any) {
-            this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
+            this.postToPanel(panel, {
+              type: 'error',
+              payload: { message: extractErrorMessage(error) },
+            } as ExtensionToWebView)
           }
           break
 
@@ -417,7 +424,10 @@ export class ChatWebViewManager {
               this.postToPanel(panel, { type: 'workspacePath', payload: uris[0].fsPath } as ExtensionToWebView)
             }
           } catch (error: any) {
-            this.postToPanel(panel, { type: 'error', payload: { message: extractErrorMessage(error) } } as ExtensionToWebView)
+            this.postToPanel(panel, {
+              type: 'error',
+              payload: { message: extractErrorMessage(error) },
+            } as ExtensionToWebView)
           }
           break
       }
@@ -710,11 +720,7 @@ export class ChatWebViewManager {
 </html>`
   }
 
-  private async handleWebViewMessage(
-    sessionId: string,
-    panel: vscode.WebviewPanel,
-    message: WebViewMessage
-  ) {
+  private async handleWebViewMessage(sessionId: string, panel: vscode.WebviewPanel, message: WebViewMessage) {
     switch (message.type) {
       case 'ready':
         await this.initializeSession(sessionId, panel)
@@ -945,7 +951,7 @@ export class ChatWebViewManager {
               message: errorInfo.content || errorInfo.message || extractErrorMessage(error),
               severity: errorInfo.severity || 'error',
               recovery_hint: errorInfo.recovery_hint,
-            }
+            },
           } as ExtensionToWebView)
         })
         // Still need to fetch agents and history for the chat panel
@@ -972,7 +978,7 @@ export class ChatWebViewManager {
             const crewPanel = this.crewPanels.get(sessionId)
             if (crewPanel) {
               this.postToPanel(crewPanel, { type: 'crewEvent', payload: msg.data.payload } as ExtensionToWebView)
-              return  // Don't forward crew events to chat panel
+              return // Don't forward crew events to chat panel
             }
           }
           this.postToPanel(panel, { type: 'message', payload: msg } as ExtensionToWebView)
@@ -985,7 +991,7 @@ export class ChatWebViewManager {
               message: errorInfo.content || errorInfo.message || extractErrorMessage(error),
               severity: errorInfo.severity || 'error',
               recovery_hint: errorInfo.recovery_hint,
-            }
+            },
           } as ExtensionToWebView)
         },
       })
@@ -1000,7 +1006,6 @@ export class ChatWebViewManager {
 
       // Fetch session agents, history, and start polling
       await this.fetchAgentsAndHistory(sessionId, panel)
-
     } catch (error: any) {
       this.postToPanel(panel, {
         type: 'error',
@@ -1014,14 +1019,17 @@ export class ChatWebViewManager {
     try {
       console.log('[ChatWebView] Fetching agents for', sessionId)
       const agents = await this.apiClient.getSessionAgents(sessionId)
-      console.log('[ChatWebView] Agents:', JSON.stringify(agents.map((a: any) => ({ id: a.agent_id, role: a.role, name: a.name }))))
-      const defaultAgentId = agents.find((a: any) => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id
-                            || agents[0]?.agent_id
+      console.log(
+        '[ChatWebView] Agents:',
+        JSON.stringify(agents.map((a: any) => ({ id: a.agent_id, role: a.role, name: a.name })))
+      )
+      const defaultAgentId =
+        agents.find((a: any) => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id || agents[0]?.agent_id
       console.log('[ChatWebView] defaultAgentId:', defaultAgentId)
       if (defaultAgentId) {
         this.postToPanel(panel, {
           type: 'agents',
-          payload: { agents, defaultAgentId }
+          payload: { agents, defaultAgentId },
         } as ExtensionToWebView)
       }
     } catch (e) {
@@ -1042,7 +1050,13 @@ export class ChatWebViewManager {
     payload: { content: string; receiverId?: string; subscription?: string; files?: any[]; messageId?: string }
   ) {
     const socketClient = this.socketClients.get(sessionId)
-    console.log('[ChatWebView] handleSendMessage:', { sessionId, hasSocket: !!socketClient, receiverId: payload.receiverId, subscription: payload.subscription, content: payload.content?.substring(0, 50) })
+    console.log('[ChatWebView] handleSendMessage:', {
+      sessionId,
+      hasSocket: !!socketClient,
+      receiverId: payload.receiverId,
+      subscription: payload.subscription,
+      content: payload.content?.substring(0, 50),
+    })
 
     if (!socketClient) {
       console.log('[ChatWebView] No socket client for session:', sessionId)
@@ -1078,7 +1092,12 @@ export class ChatWebViewManager {
     payload: { skip: number; limit: number; executionId?: string }
   ) {
     try {
-      const response = await this.apiClient.getSessionMessages(sessionId, payload.skip, payload.limit, payload.executionId)
+      const response = await this.apiClient.getSessionMessages(
+        sessionId,
+        payload.skip,
+        payload.limit,
+        payload.executionId
+      )
       this.postToPanel(panel, {
         type: 'historyLoaded',
         payload: {
@@ -1188,7 +1207,7 @@ export class ChatWebViewManager {
               }
             }
           } catch {}
-          await new Promise(r => setTimeout(r, 2000))
+          await new Promise((r) => setTimeout(r, 2000))
         }
       }
       this.postToPanel(panel, { type: 'runnerActionResult', payload: { success: true } } as ExtensionToWebView)
@@ -1231,8 +1250,8 @@ export class ChatWebViewManager {
   private async handleFetchAgents(sessionId: string, panel: vscode.WebviewPanel) {
     try {
       const agents = await this.apiClient.getSessionAgents(sessionId)
-      const defaultAgentId = agents.find((a: any) => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id
-                            || agents[0]?.agent_id
+      const defaultAgentId =
+        agents.find((a: any) => a.role === 'main_agent' || a.role === 'main-agent')?.agent_id || agents[0]?.agent_id
       this.postToPanel(panel, {
         type: 'agents',
         payload: { agents, defaultAgentId },
@@ -1242,7 +1261,10 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleFetchTurns(panel: vscode.WebviewPanel, payload: { sessionId: string; skip: number; limit: number; executionId?: string }) {
+  private async handleFetchTurns(
+    panel: vscode.WebviewPanel,
+    payload: { sessionId: string; skip: number; limit: number; executionId?: string }
+  ) {
     try {
       const { sessionId, skip, limit, executionId } = payload
       const execId = executionId || this.sessionExecutionIds.get(sessionId)
@@ -1250,7 +1272,10 @@ export class ChatWebViewManager {
       this.postToPanel(panel, { type: 'turnsData', payload: response } as ExtensionToWebView)
     } catch (error: any) {
       console.error('Failed to fetch turns:', error)
-      this.postToPanel(panel, { type: 'error', payload: { message: error.message || 'Failed to fetch turns' } } as ExtensionToWebView)
+      this.postToPanel(panel, {
+        type: 'error',
+        payload: { message: error.message || 'Failed to fetch turns' },
+      } as ExtensionToWebView)
     }
   }
 
@@ -1273,9 +1298,7 @@ export class ChatWebViewManager {
       const uniqueId = Math.random().toString(36).substring(6)
       // 使用 encodeURIComponent 编码非 ASCII 字符（如中文），避免 S3 Key 编码问题
       const sanitizedName = encodeURIComponent(nameWithoutExt)
-      const safeFilename = extension
-        ? `${sanitizedName}_${uniqueId}.${extension}`
-        : `${sanitizedName}_${uniqueId}`
+      const safeFilename = extension ? `${sanitizedName}_${uniqueId}.${extension}` : `${sanitizedName}_${uniqueId}`
 
       const now = new Date()
       const year = now.getFullYear()
@@ -1310,7 +1333,9 @@ export class ChatWebViewManager {
         const s3AccessKey = this.configManager.supabaseS3AccessKeyId
         const s3SecretKey = this.configManager.supabaseS3SecretAccessKey
         if (!supabaseUrl || !s3AccessKey || !s3SecretKey) {
-          throw new Error('Supabase S3 configuration incomplete. Set supabaseUrl, supabaseS3AccessKeyId and supabaseS3SecretAccessKey.')
+          throw new Error(
+            'Supabase S3 configuration incomplete. Set supabaseUrl, supabaseS3AccessKeyId and supabaseS3SecretAccessKey.'
+          )
         }
         s3Endpoint = `${supabaseUrl}/storage/v1/s3`
         s3Bucket = 'upload'
@@ -1329,12 +1354,14 @@ export class ChatWebViewManager {
         forcePathStyle: true,
       })
 
-      await s3Client.send(new PutObjectCommand({
-        Bucket: s3Bucket,
-        Key: path,
-        Body: buffer,
-        ContentType: payload.fileType,
-      }))
+      await s3Client.send(
+        new PutObjectCommand({
+          Bucket: s3Bucket,
+          Key: path,
+          Body: buffer,
+          ContentType: payload.fileType,
+        })
+      )
 
       const url = `${publicUrlBase}/${path}`
 
@@ -1367,7 +1394,14 @@ export class ChatWebViewManager {
 
   private async handleFetchTasks(
     panel: vscode.WebviewPanel,
-    payload: { skip?: number; limit?: number; status?: string; priority?: string; keyword?: string; session_id?: string }
+    payload: {
+      skip?: number
+      limit?: number
+      status?: string
+      priority?: string
+      keyword?: string
+      session_id?: string
+    }
   ) {
     try {
       const response = await this.apiClient.client.get('/task/tasks', {
@@ -1387,10 +1421,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleFetchTaskDetail(
-    panel: vscode.WebviewPanel,
-    payload: { taskId: string }
-  ) {
+  private async handleFetchTaskDetail(panel: vscode.WebviewPanel, payload: { taskId: string }) {
     try {
       const response = await this.apiClient.client.get(`/task/${payload.taskId}`, {
         params: { include_comments: true },
@@ -1401,10 +1432,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleCreateTask(
-    panel: vscode.WebviewPanel,
-    payload: any
-  ) {
+  private async handleCreateTask(panel: vscode.WebviewPanel, payload: any) {
     try {
       const response = await this.apiClient.client.post('/task/', payload)
       this.postToPanel(panel, { type: 'taskCreated', payload: response.data } as ExtensionToWebView)
@@ -1413,10 +1441,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleUpdateTask(
-    panel: vscode.WebviewPanel,
-    payload: { taskId: string; data: any }
-  ) {
+  private async handleUpdateTask(panel: vscode.WebviewPanel, payload: { taskId: string; data: any }) {
     try {
       await this.apiClient.client.put(`/task/${payload.taskId}`, payload.data)
       this.postToPanel(panel, { type: 'taskUpdated', payload: { taskId: payload.taskId } } as ExtensionToWebView)
@@ -1425,10 +1450,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleDeleteTask(
-    panel: vscode.WebviewPanel,
-    payload: { taskId: string }
-  ) {
+  private async handleDeleteTask(panel: vscode.WebviewPanel, payload: { taskId: string }) {
     try {
       await this.apiClient.client.delete(`/task/${payload.taskId}`)
       this.postToPanel(panel, { type: 'taskDeleted', payload: { taskId: payload.taskId } } as ExtensionToWebView)
@@ -1454,7 +1476,14 @@ export class ChatWebViewManager {
 
   private async handleFetchJobs(
     panel: vscode.WebviewPanel,
-    payload: { skip?: number; limit?: number; status?: string; job_type?: string; keyword?: string; session_id?: string }
+    payload: {
+      skip?: number
+      limit?: number
+      status?: string
+      job_type?: string
+      keyword?: string
+      session_id?: string
+    }
   ) {
     try {
       const response = await this.apiClient.client.get('/job/jobs', {
@@ -1474,10 +1503,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleFetchJobDetail(
-    panel: vscode.WebviewPanel,
-    payload: { jobId: string }
-  ) {
+  private async handleFetchJobDetail(panel: vscode.WebviewPanel, payload: { jobId: string }) {
     try {
       const response = await this.apiClient.client.get(`/job/${payload.jobId}`, {
         params: { execution_limit: 50 },
@@ -1488,10 +1514,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleExecuteJob(
-    panel: vscode.WebviewPanel,
-    payload: { jobId: string }
-  ) {
+  private async handleExecuteJob(panel: vscode.WebviewPanel, payload: { jobId: string }) {
     try {
       await this.apiClient.client.post(`/job/${payload.jobId}/execute`)
       this.postToPanel(panel, { type: 'jobExecuted', payload: { jobId: payload.jobId } } as ExtensionToWebView)
@@ -1500,10 +1523,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handlePauseJob(
-    panel: vscode.WebviewPanel,
-    payload: { jobId: string }
-  ) {
+  private async handlePauseJob(panel: vscode.WebviewPanel, payload: { jobId: string }) {
     try {
       await this.apiClient.client.post(`/job/${payload.jobId}/pause`)
       this.postToPanel(panel, { type: 'jobPaused', payload: { jobId: payload.jobId } } as ExtensionToWebView)
@@ -1512,10 +1532,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleResumeJob(
-    panel: vscode.WebviewPanel,
-    payload: { jobId: string }
-  ) {
+  private async handleResumeJob(panel: vscode.WebviewPanel, payload: { jobId: string }) {
     try {
       await this.apiClient.client.post(`/job/${payload.jobId}/resume`)
       this.postToPanel(panel, { type: 'jobResumed', payload: { jobId: payload.jobId } } as ExtensionToWebView)
@@ -1524,10 +1541,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleDeleteJob(
-    panel: vscode.WebviewPanel,
-    payload: { jobId: string }
-  ) {
+  private async handleDeleteJob(panel: vscode.WebviewPanel, payload: { jobId: string }) {
     try {
       await this.apiClient.client.delete(`/job/${payload.jobId}`)
       this.postToPanel(panel, { type: 'jobDeleted', payload: { jobId: payload.jobId } } as ExtensionToWebView)
@@ -1538,7 +1552,10 @@ export class ChatWebViewManager {
 
   // ==================== Crew Handler Methods ====================
 
-  private async handleFetchCrewExecutions(panel: vscode.WebviewPanel, payload?: { session_id?: string; status?: string }) {
+  private async handleFetchCrewExecutions(
+    panel: vscode.WebviewPanel,
+    payload?: { session_id?: string; status?: string }
+  ) {
     try {
       const result = await this.apiClient.getCrews(payload)
       this.postToPanel(panel, { type: 'crewExecutions', payload: result } as ExtensionToWebView)
@@ -1556,7 +1573,10 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleSubmitCrew(panel: vscode.WebviewPanel, payload: { yaml_content?: string; yaml_path?: string; session_id: string }) {
+  private async handleSubmitCrew(
+    panel: vscode.WebviewPanel,
+    payload: { yaml_content?: string; yaml_path?: string; session_id: string }
+  ) {
     try {
       await this.apiClient.submitCrew(payload)
       // Fetch full execution list to get all records (including previous ones)
@@ -1570,7 +1590,10 @@ export class ChatWebViewManager {
   private async handleAbortCrew(panel: vscode.WebviewPanel, payload: { executionId: string }) {
     try {
       await this.apiClient.abortCrew(payload.executionId)
-      this.postToPanel(panel, { type: 'crewEvent', payload: { event: 'aborted', execution_id: payload.executionId, status: 'aborted' } } as ExtensionToWebView)
+      this.postToPanel(panel, {
+        type: 'crewEvent',
+        payload: { event: 'aborted', execution_id: payload.executionId, status: 'aborted' },
+      } as ExtensionToWebView)
       vscode.window.showInformationMessage('编排已中止')
     } catch (error: any) {
       showErrorNotification(error, '中止失败')
@@ -1581,7 +1604,10 @@ export class ChatWebViewManager {
   private async handleDeleteCrew(panel: vscode.WebviewPanel, payload: { executionId: string }) {
     try {
       await this.apiClient.deleteCrew(payload.executionId)
-      this.postToPanel(panel, { type: 'crewEvent', payload: { event: 'deleted', execution_id: payload.executionId } } as ExtensionToWebView)
+      this.postToPanel(panel, {
+        type: 'crewEvent',
+        payload: { event: 'deleted', execution_id: payload.executionId },
+      } as ExtensionToWebView)
       vscode.window.showInformationMessage('编排已删除')
     } catch (error: any) {
       showErrorNotification(error, '删除失败')
@@ -1589,7 +1615,10 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleFetchCrewConfigs(panel: vscode.WebviewPanel, payload: { workspace?: string; session_id?: string }) {
+  private async handleFetchCrewConfigs(
+    panel: vscode.WebviewPanel,
+    payload: { workspace?: string; session_id?: string }
+  ) {
     try {
       // Resolve workspace from session_id if not provided directly
       let workspace = payload.workspace
@@ -1608,7 +1637,10 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleFetchCrewConfigDetail(panel: vscode.WebviewPanel, payload: { filename: string; workspace: string }) {
+  private async handleFetchCrewConfigDetail(
+    panel: vscode.WebviewPanel,
+    payload: { filename: string; workspace: string }
+  ) {
     try {
       const result = await this.apiClient.getCrewConfig(payload.filename, payload.workspace)
       this.postToPanel(panel, { type: 'crewConfigDetail', payload: result } as ExtensionToWebView)
@@ -1617,7 +1649,10 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleSaveCrewConfig(panel: vscode.WebviewPanel, payload: { filename: string; workspace: string; content: string }) {
+  private async handleSaveCrewConfig(
+    panel: vscode.WebviewPanel,
+    payload: { filename: string; workspace: string; content: string }
+  ) {
     try {
       const result = await this.apiClient.saveCrewConfig(payload.filename, payload.workspace, payload.content)
       this.postToPanel(panel, { type: 'crewConfigDetail', payload: result } as ExtensionToWebView)
@@ -1638,7 +1673,7 @@ export class ChatWebViewManager {
 
       // List crew configs and find matching file
       const result = await this.apiClient.listCrewConfigs(workspace)
-      const matching = result.configs.find(cfg => cfg.name === payload.crewName)
+      const matching = result.configs.find((cfg) => cfg.name === payload.crewName)
       if (!matching) {
         vscode.window.showErrorMessage(`未找到编排 '${payload.crewName}' 对应的配置文件`)
         return
@@ -1652,7 +1687,10 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleConfirmAction(panel: vscode.WebviewPanel, payload: { action: string; executionId: string; message: string }) {
+  private async handleConfirmAction(
+    panel: vscode.WebviewPanel,
+    payload: { action: string; executionId: string; message: string }
+  ) {
     const confirmed = await vscode.window.showWarningMessage(payload.message, { modal: true }, '确定')
     if (confirmed !== '确定') return
 
@@ -1669,18 +1707,6 @@ export class ChatWebViewManager {
 
   private async startRunnerPolling(sessionId: string, panel: vscode.WebviewPanel) {
     this.stopRunnerPolling(sessionId)
-
-    const poll = async () => {
-      try {
-        const status = await this.apiClient.getRunnerStatus(sessionId)
-        this.postToPanel(panel, {
-          type: 'runnerStatus',
-          payload: status,
-        } as ExtensionToWebView)
-      } catch {
-        // Ignore polling errors
-      }
-    }
 
     // Initial fetch
     try {
@@ -1732,7 +1758,12 @@ export class ChatWebViewManager {
     }
   }
 
-  private getWebviewContent(webview: vscode.Webview, sessionId: string, category?: string, executionId?: string): string {
+  private getWebviewContent(
+    webview: vscode.Webview,
+    sessionId: string,
+    category?: string,
+    executionId?: string
+  ): string {
     const webviewDist = vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')
     const htmlPath = vscode.Uri.joinPath(webviewDist, 'index.html')
 
@@ -1828,13 +1859,10 @@ export class ChatWebViewManager {
   private transformResourcePaths(webview: vscode.Webview, distPath: vscode.Uri, html: string): string {
     // Replace relative asset paths with webview URIs
     // Match: src="./assets/..." or href="./assets/..."
-    return html.replace(
-      /(src|href)=(["'])(\.\/assets\/[^"']+)\2/g,
-      (_, attr, quote, relativePath) => {
-        const uri = webview.asWebviewUri(vscode.Uri.joinPath(distPath, relativePath.replace(/^\.\//, '')))
-        return `${attr}=${quote}${uri}${quote}`
-      }
-    )
+    return html.replace(/(src|href)=(["'])(\.\/assets\/[^"']+)\2/g, (_, attr, quote, relativePath) => {
+      const uri = webview.asWebviewUri(vscode.Uri.joinPath(distPath, relativePath.replace(/^\.\//, '')))
+      return `${attr}=${quote}${uri}${quote}`
+    })
   }
 
   private addCSP(webview: vscode.Webview, html: string): string {
@@ -1869,7 +1897,11 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleUpdateAgentConfig(sessionId: string, panel: vscode.WebviewPanel, payload: { agentId: string; config_content: Record<string, any> }) {
+  private async handleUpdateAgentConfig(
+    sessionId: string,
+    panel: vscode.WebviewPanel,
+    payload: { agentId: string; config_content: Record<string, any> }
+  ) {
     try {
       const config = await this.apiClient.updateAgentConfig(sessionId, payload.agentId, payload.config_content)
       this.postToPanel(panel, {
@@ -1932,15 +1964,19 @@ export class ChatWebViewManager {
 
   // ==================== Search handlers ====================
 
-  private async handleSearchMessages(panel: vscode.WebviewPanel, sessionId: string, payload: {
-    keyword?: string
-    message_type?: string
-    sender_id?: string
-    tool_name?: string
-    order?: string
-    skip?: number
-    limit?: number
-  }) {
+  private async handleSearchMessages(
+    panel: vscode.WebviewPanel,
+    sessionId: string,
+    payload: {
+      keyword?: string
+      message_type?: string
+      sender_id?: string
+      tool_name?: string
+      order?: string
+      skip?: number
+      limit?: number
+    }
+  ) {
     try {
       const result = await this.apiClient.searchSessionMessages(sessionId, {
         keyword: payload.keyword,
@@ -1978,7 +2014,11 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleViewFileDiff(panel: vscode.WebviewPanel, sessionId: string, payload: { turnId: string; filePath: string }) {
+  private async handleViewFileDiff(
+    panel: vscode.WebviewPanel,
+    sessionId: string,
+    payload: { turnId: string; filePath: string }
+  ) {
     const { turnId, filePath } = payload
     try {
       if (!sessionId) {
@@ -1993,7 +2033,7 @@ export class ChatWebViewManager {
         type: 'fileDiffResult',
         payload: { filePath, diff: result.diff || '' },
       } as ExtensionToWebView)
-    } catch (error: any) {
+    } catch {
       this.postToPanel(panel, {
         type: 'fileDiffResult',
         payload: { filePath, diff: '' },

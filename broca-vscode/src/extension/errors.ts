@@ -33,10 +33,7 @@ interface ErrorLike {
  * @param error  The caught error (any shape)
  * @param fallback  Fallback message if nothing can be extracted
  */
-export function extractErrorMessage(
-  error: ErrorLike | null | undefined,
-  fallback: string = 'Unknown error'
-): string {
+export function extractErrorMessage(error: ErrorLike | null | undefined, fallback: string = 'Unknown error'): string {
   if (!error) return fallback
 
   // No response → network-level failure

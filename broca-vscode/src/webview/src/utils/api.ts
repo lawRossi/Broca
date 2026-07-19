@@ -13,13 +13,23 @@ interface PendingRequest {
 }
 
 const pendingMap = new Map<string, PendingRequest>()
-let requestCounter = 0
 
 // Response types that contain task/job data
 const RESPONSE_TYPES = new Set([
-  'tasks', 'taskDetail', 'taskCreated', 'taskUpdated', 'taskDeleted', 'taskCommentAdded',
-  'jobs', 'jobDetail', 'jobExecuted', 'jobPaused', 'jobResumed', 'jobDeleted',
-  'searchMessages', 'searchFilters',
+  'tasks',
+  'taskDetail',
+  'taskCreated',
+  'taskUpdated',
+  'taskDeleted',
+  'taskCommentAdded',
+  'jobs',
+  'jobDetail',
+  'jobExecuted',
+  'jobPaused',
+  'jobResumed',
+  'jobDeleted',
+  'searchMessages',
+  'searchFilters',
 ])
 
 let listenerInitialized = false
@@ -72,9 +82,16 @@ function sendRequest(requestType: string, responseType: string, payload: any): P
 // ==================== Task API ====================
 
 export const taskApi = {
-  getTasks(params: {
-    skip?: number; limit?: number; status?: string; priority?: string; keyword?: string; session_id?: string
-  } = {}) {
+  getTasks(
+    params: {
+      skip?: number
+      limit?: number
+      status?: string
+      priority?: string
+      keyword?: string
+      session_id?: string
+    } = {}
+  ) {
     return sendRequest('fetchTasks', 'tasks', {
       skip: params.skip ?? 0,
       limit: params.limit ?? 50,
@@ -109,9 +126,16 @@ export const taskApi = {
 // ==================== Job API ====================
 
 export const jobApi = {
-  getJobs(params: {
-    skip?: number; limit?: number; status?: string; job_type?: string; keyword?: string; session_id?: string
-  } = {}) {
+  getJobs(
+    params: {
+      skip?: number
+      limit?: number
+      status?: string
+      job_type?: string
+      keyword?: string
+      session_id?: string
+    } = {}
+  ) {
     return sendRequest('fetchJobs', 'jobs', {
       skip: params.skip ?? 0,
       limit: params.limit ?? 50,

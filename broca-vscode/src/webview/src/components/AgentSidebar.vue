@@ -326,8 +326,10 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
       </div>
       <div class="header-actions">
         <!-- Agent 消息过滤 -->
-        <div class="filter-dropdown" v-if="sortedAgents.length > 0">
-          <button class="icon-btn filter-btn" title="过滤Agent消息" @click="showFilterDropdown = !showFilterDropdown">⚙️</button>
+        <div v-if="sortedAgents.length > 0" class="filter-dropdown">
+          <button class="icon-btn filter-btn" title="过滤Agent消息" @click="showFilterDropdown = !showFilterDropdown">
+            ⚙️
+          </button>
           <div v-if="showFilterDropdown" class="filter-menu" @click.stop>
             <label class="filter-item" @click="toggleAll">
               <input type="checkbox" :checked="allVisible" />
@@ -350,9 +352,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
 
     <!-- Agent 列表 -->
     <div class="agent-list">
-      <div v-if="sortedAgents.length === 0" class="empty-agents">
-        No agents available
-      </div>
+      <div v-if="sortedAgents.length === 0" class="empty-agents">No agents available</div>
       <div
         v-for="agent in sortedAgents"
         :key="agent.agent_id"
@@ -376,10 +376,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                 background: statusConfig[getStatus(agent.agent_id)]?.bg,
               }"
             >
-              <span
-                class="status-dot"
-                :class="{ 'dot-pulse': getStatus(agent.agent_id) === 'running' }"
-              ></span>
+              <span class="status-dot" :class="{ 'dot-pulse': getStatus(agent.agent_id) === 'running' }"></span>
               {{ statusConfig[getStatus(agent.agent_id)]?.label || '断开' }}
             </span>
             <button
@@ -387,7 +384,9 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
               class="abort-btn"
               title="中断此 Agent"
               @click.stop="handleAbort(agent.agent_id)"
-            >⏹</button>
+            >
+              ⏹
+            </button>
           </div>
         </div>
 
@@ -397,31 +396,35 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
         <!-- LLM 统计信息 -->
         <div class="stats-section">
           <div class="stat-item">
-            <span class="stat-icon" style="background:rgba(59,130,246,0.12)">💬</span>
+            <span class="stat-icon" style="background: rgba(59, 130, 246, 0.12)">💬</span>
             <div class="stat-text">
               <span class="stat-label">调用次数</span>
-              <span class="stat-value" style="color:var(--text-link)">{{ agent.total_llm_calls || 0 }}</span>
+              <span class="stat-value" style="color: var(--text-link)">{{ agent.total_llm_calls || 0 }}</span>
             </div>
           </div>
           <div v-if="agent.last_context_length !== undefined" class="stat-item">
-            <span class="stat-icon" style="background:rgba(168,85,247,0.12)">📄</span>
+            <span class="stat-icon" style="background: rgba(168, 85, 247, 0.12)">📄</span>
             <div class="stat-text">
               <span class="stat-label">上下文</span>
-              <span class="stat-value" style="color:#a855f7">{{ agent.last_context_length || 0 }}</span>
+              <span class="stat-value" style="color: #a855f7">{{ agent.last_context_length || 0 }}</span>
             </div>
           </div>
           <div class="stat-item">
-            <span class="stat-icon" style="background:rgba(34,197,94,0.12)">⬇️</span>
+            <span class="stat-icon" style="background: rgba(34, 197, 94, 0.12)">⬇️</span>
             <div class="stat-text">
               <span class="stat-label">输入 Token</span>
-              <span class="stat-value" style="color:var(--success-fg)">{{ (agent.total_input_tokens || 0).toLocaleString() }}</span>
+              <span class="stat-value" style="color: var(--success-fg)">{{
+                (agent.total_input_tokens || 0).toLocaleString()
+              }}</span>
             </div>
           </div>
           <div class="stat-item">
-            <span class="stat-icon" style="background:rgba(234,179,8,0.12)">⬆️</span>
+            <span class="stat-icon" style="background: rgba(234, 179, 8, 0.12)">⬆️</span>
             <div class="stat-text">
               <span class="stat-label">输出 Token</span>
-              <span class="stat-value" style="color:var(--warning-fg)">{{ (agent.total_output_tokens || 0).toLocaleString() }}</span>
+              <span class="stat-value" style="color: var(--warning-fg)">{{
+                (agent.total_output_tokens || 0).toLocaleString()
+              }}</span>
             </div>
           </div>
         </div>
@@ -439,7 +442,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
           <div class="dialog-body">
             <!-- 刷新配置按钮 -->
             <div class="config-toolbar">
-              <button class="btn btn-secondary btn-small" @click="refreshConfig" :disabled="configLoading">
+              <button class="btn btn-secondary btn-small" :disabled="configLoading" @click="refreshConfig">
                 🔄 刷新配置
               </button>
               <span v-if="agentConfig" class="loaded-badge">已加载</span>
@@ -500,11 +503,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
           </div>
           <div class="dialog-footer">
             <button class="btn btn-secondary" @click="closeConfigDialog">关闭</button>
-            <button
-              class="btn btn-primary"
-              :disabled="!agentConfig || saving"
-              @click="saveConfig"
-            >
+            <button class="btn btn-primary" :disabled="!agentConfig || saving" @click="saveConfig">
               {{ saving ? '保存中...' : '保存' }}
             </button>
           </div>
@@ -563,8 +562,13 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
 }
 
 @keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.3; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 
 .header-actions {
@@ -583,8 +587,14 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   border-radius: 3px;
 }
 
-.icon-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
-.icon-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.icon-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+.icon-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
 
 .close-btn {
   background: none;
@@ -596,7 +606,10 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   border-radius: 4px;
   display: none;
 }
-.close-btn:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+.close-btn:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
 
 /* ==================== Agent 列表 ==================== */
 .agent-list {
@@ -629,7 +642,10 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   border-color: var(--focus-border);
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.1);
 }
-.card-main { border-color: var(--focus-border); border-width: 1.5px; }
+.card-main {
+  border-color: var(--focus-border);
+  border-width: 1.5px;
+}
 
 .card-header {
   display: flex;
@@ -646,9 +662,16 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   flex: 1;
 }
 
-.type-icon { font-size: 18px; line-height: 1; flex-shrink: 0; }
+.type-icon {
+  font-size: 18px;
+  line-height: 1;
+  flex-shrink: 0;
+}
 
-.agent-name-group { min-width: 0; flex: 1; }
+.agent-name-group {
+  min-width: 0;
+  flex: 1;
+}
 
 .agent-name {
   font-size: 13px;
@@ -685,8 +708,14 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   white-space: nowrap;
 }
 
-.status-dot { width: 6px; height: 6px; border-radius: 50%; }
-.dot-pulse { animation: pulse 1.2s ease-in-out infinite; }
+.status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+.dot-pulse {
+  animation: pulse 1.2s ease-in-out infinite;
+}
 
 /* ==================== Abort 按钮 ==================== */
 .abort-btn {
@@ -699,7 +728,9 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   border-radius: 4px;
   line-height: 1;
 }
-.abort-btn:hover { background: rgba(239, 68, 68, 0.25); }
+.abort-btn:hover {
+  background: rgba(239, 68, 68, 0.25);
+}
 
 /* ==================== 描述 ==================== */
 .agent-desc {
@@ -743,9 +774,22 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   flex-shrink: 0;
 }
 
-.stat-text { display: flex; flex-direction: column; min-width: 0; }
-.stat-label { font-size: 9px; color: var(--text-secondary); line-height: 1.1; }
-.stat-value { font-size: 11px; font-weight: 600; font-family: var(--code-font-family); line-height: 1.2; }
+.stat-text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+.stat-label {
+  font-size: 9px;
+  color: var(--text-secondary);
+  line-height: 1.1;
+}
+.stat-value {
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--code-font-family);
+  line-height: 1.2;
+}
 
 /* ==================== 配置弹窗 ==================== */
 .dialog-overlay {
@@ -781,11 +825,23 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   border-bottom: 1px solid var(--border-color);
 }
 
-.dialog-title { font-weight: 600; font-size: 14px; color: var(--text-primary); }
+.dialog-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-primary);
+}
 
-.dialog-body { flex: 1; overflow-y: auto; padding: 16px 18px; }
+.dialog-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 18px;
+}
 
-.config-content { display: flex; flex-direction: column; gap: 8px; }
+.config-content {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
 
 .config-row {
   display: flex;
@@ -795,9 +851,13 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   font-size: 13px;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
-.config-row:last-child { border-bottom: none; }
+.config-row:last-child {
+  border-bottom: none;
+}
 
-.config-label { color: var(--text-secondary); }
+.config-label {
+  color: var(--text-secondary);
+}
 
 .config-value {
   color: var(--text-primary);
@@ -808,7 +868,10 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   text-overflow: ellipsis;
   white-space: nowrap;
 }
-.config-value.mono { font-family: var(--code-font-family); font-size: 12px; }
+.config-value.mono {
+  font-family: var(--code-font-family);
+  font-size: 12px;
+}
 
 .dialog-footer {
   display: flex;
@@ -827,10 +890,21 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   font-weight: 500;
 }
 
-.btn-secondary { background: var(--bg-tertiary); color: var(--text-primary); border: 1px solid var(--border-color); }
-.btn-secondary:hover { background: var(--border-color); }
-.btn-primary { background: var(--button-bg); color: var(--button-text); }
-.btn-primary:hover { background: var(--button-hover-bg); }
+.btn-secondary {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+}
+.btn-secondary:hover {
+  background: var(--border-color);
+}
+.btn-primary {
+  background: var(--button-bg);
+  color: var(--button-text);
+}
+.btn-primary:hover {
+  background: var(--button-hover-bg);
+}
 
 /* ==================== 配置弹窗新样式 ==================== */
 
@@ -1006,7 +1080,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
   background: var(--list-hover-background, rgba(255, 255, 255, 0.06));
 }
 
-.filter-item input[type="checkbox"] {
+.filter-item input[type='checkbox'] {
   flex-shrink: 0;
   margin: 0;
   cursor: pointer;
@@ -1031,8 +1105,12 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
     transition: left 0.2s ease;
     box-shadow: 2px 0 8px rgba(0, 0, 0, 0.2);
   }
-  .agent-sidebar.open { left: 0; }
-  .close-btn { display: block; }
+  .agent-sidebar.open {
+    left: 0;
+  }
+  .close-btn {
+    display: block;
+  }
   .config-dialog {
     width: 100vw;
     max-width: 100vw;

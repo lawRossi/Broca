@@ -93,7 +93,7 @@ export class AuthManager {
       console.log('[Auth] Local auto-login succeeded')
       this.onDidChangeEvent.fire()
       return true
-    } catch (error: any) {
+    } catch {
       console.log('[Auth] Local auto-login not available (non-local deployment or server error)')
       return false
     }
@@ -175,7 +175,6 @@ export class AuthManager {
    */
   async handleAuthError(): Promise<void> {
     // 1. Clear session silently (no "已登出" toast — confusing in error scenario)
-    const wasLoggedIn = this._isLoggedIn
     this._isLoggedIn = false
     this._token = null
     this._userId = null

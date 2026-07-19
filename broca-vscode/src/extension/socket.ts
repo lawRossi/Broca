@@ -40,7 +40,9 @@ export class SocketClient {
   onAuthError: (() => void) | null = null
 
   /** 获取事件对应的 Map（非空，因为初始化时已定义所有 key） */
-  private _getHandlerMap<K extends keyof SocketEventHandler>(event: K): Map<string, NonNullable<SocketEventHandler[K]>> {
+  private _getHandlerMap<K extends keyof SocketEventHandler>(
+    event: K
+  ): Map<string, NonNullable<SocketEventHandler[K]>> {
     return this._handlers[event]!
   }
 
@@ -57,7 +59,9 @@ export class SocketClient {
     handler: NonNullable<SocketEventHandler[K]>
   ): () => void {
     this._getHandlerMap(event).set(id, handler)
-    return () => { this._getHandlerMap(event).delete(id) }
+    return () => {
+      this._getHandlerMap(event).delete(id)
+    }
   }
 
   /** 取消注册事件处理器 */
@@ -98,7 +102,7 @@ export class SocketClient {
 
     this.socket.on('connect', () => {
       console.log('Socket connected')
-      this._getHandlerMap('onConnect').forEach(h => h())
+      this._getHandlerMap('onConnect').forEach((h) => h())
 
       // 重连后重新订阅所有此前已订阅的频道。
       // 服务端在 disconnect 时会清除客户端的订阅状态，
@@ -112,7 +116,7 @@ export class SocketClient {
 
     this.socket.on('disconnect', (reason) => {
       console.log('Socket disconnected:', reason)
-      this._getHandlerMap('onDisconnect').forEach(h => h())
+      this._getHandlerMap('onDisconnect').forEach((h) => h())
     })
 
     this.socket.on('connect_error', (error) => {
@@ -120,21 +124,20 @@ export class SocketClient {
 
       // Detect authentication errors (401 or auth-related messages)
       const isAuthError =
-        (error as any)?.data?.status === 401 ||
-        /401|unauthorized|authentication|jwt|token/i.test(error.message || '')
+        (error as any)?.data?.status === 401 || /401|unauthorized|authentication|jwt|token/i.test(error.message || '')
 
       if (isAuthError) {
         console.error('[Socket] Authentication error detected, triggering auto-logout')
         this.onAuthError?.()
       }
 
-      this._getHandlerMap('onError').forEach(h => h(error))
+      this._getHandlerMap('onError').forEach((h) => h(error))
     })
 
     this.socket.on('message', (data: any) => {
       try {
         const message = this.parseMessage(data)
-        this._getHandlerMap('onMessage').forEach(h => h(message))
+        this._getHandlerMap('onMessage').forEach((h) => h(message))
       } catch (error) {
         console.error('Failed to parse message:', error)
       }
@@ -238,7 +241,11 @@ export class SocketClient {
       },
     }
 
-    console.log('[Socket] Emitting message:', { messageId: params.messageId, receiverId: params.receiverId, subscription: params.subscription })
+    console.log('[Socket] Emitting message:', {
+      messageId: params.messageId,
+      receiverId: params.receiverId,
+      subscription: params.subscription,
+    })
 
     return new Promise((resolve, reject) => {
       this.socket!.emit('message', message, (response: any) => {
@@ -318,11 +325,7 @@ export class SocketClient {
     })
   }
 
-  async sendUserAnswer(params: {
-    answer: string
-    requestId?: string
-    receiverId?: string
-  }): Promise<void> {
+  async sendUserAnswer(params: { answer: string; requestId?: string; receiverId?: string }): Promise<void> {
     if (!this.socket?.connected) throw new Error('Not connected')
 
     const message: Message = {

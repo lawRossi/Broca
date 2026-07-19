@@ -86,14 +86,17 @@ class FilterStatusItem extends SessionTreeItem {
       ? 'Showing: all sessions  (click to filter by workspace)'
       : 'Filtering: current workspace  (click to show all)'
     // Pass minimal session data — this is a fake item, not a real session
-    super({
-      session_id: '__filter_status__',
-      description: label,
-      workspace: '',
-      category: 'normal',
-      created_at: '',
-      runner_status: '',
-    } as Session, vscode.TreeItemCollapsibleState.None)
+    super(
+      {
+        session_id: '__filter_status__',
+        description: label,
+        workspace: '',
+        category: 'normal',
+        created_at: '',
+        runner_status: '',
+      } as Session,
+      vscode.TreeItemCollapsibleState.None
+    )
 
     this.id = '__filter_status__'
     this.contextValue = 'filterStatus'
@@ -187,13 +190,16 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
       // Filter by current workspace path if available (unless showing all)
       const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath
       if (workspacePath && !this._showAllSessions) {
-        sessions = sessions.filter((s) =>
-          // Only include sessions whose workspace matches the current project directory
-          !!s.workspace && s.workspace.startsWith(workspacePath)
+        sessions = sessions.filter(
+          (s) =>
+            // Only include sessions whose workspace matches the current project directory
+            !!s.workspace && s.workspace.startsWith(workspacePath)
         )
       }
 
-      console.log(`[SessionTree] Fetched ${response.sessions?.length || 0} sessions, showing ${sessions.length} after filter`)
+      console.log(
+        `[SessionTree] Fetched ${response.sessions?.length || 0} sessions, showing ${sessions.length} after filter`
+      )
       this.sessions = sessions
     } catch (error: any) {
       console.error('Failed to fetch sessions:', error)
@@ -207,10 +213,19 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
       let message: string
       if (!error?.response) {
         // No HTTP response received — server unreachable or network issue
-        message = error.code === 'ECONNABORTED' ? 'Request timed out' : 'Cannot connect to server, please check if the service is running'
+        message =
+          error.code === 'ECONNABORTED'
+            ? 'Request timed out'
+            : 'Cannot connect to server, please check if the service is running'
       } else {
         const respData = error?.response?.data
-        message = respData?.detail || respData?.msg || respData?.message || (typeof respData === 'string' ? respData : null) || error.message || 'Unknown error'
+        message =
+          respData?.detail ||
+          respData?.msg ||
+          respData?.message ||
+          (typeof respData === 'string' ? respData : null) ||
+          error.message ||
+          'Unknown error'
       }
       vscode.window.showErrorMessage(`Failed to fetch sessions: ${message}`)
       // Don't clear existing sessions on error to avoid flickering
