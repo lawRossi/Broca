@@ -120,24 +120,6 @@ const assistantMessagesFromApi = computed(() => {
   )
 })
 
-const systemMessagesFromApi = computed(() => {
-  if (!stats.value?.messages_by_type) return 0
-  let count = 0
-  const typeMap = stats.value.messages_by_type
-  count += typeMap['MessageType.SYSTEM_MESSAGE'] || typeMap['SYSTEM_MESSAGE'] || 0
-  count += typeMap['MessageType.AGENT_SYSTEM_MESSAGE'] || typeMap['AGENT_SYSTEM_MESSAGE'] || 0
-  count += typeMap['MessageType.COMMAND'] || typeMap['COMMAND'] || 0
-  count += typeMap['MessageType.COMMAND_RESULT'] || typeMap['COMMAND_RESULT'] || 0
-  count += typeMap['MessageType.PERMISSION_REQUEST'] || typeMap['PERMISSION_REQUEST'] || 0
-  count += typeMap['MessageType.PERMISSION_RESPONSE'] || typeMap['PERMISSION_RESPONSE'] || 0
-  count += typeMap['MessageType.SUBSCRIBE'] || typeMap['SUBSCRIBE'] || 0
-  count += typeMap['MessageType.UNSUBSCRIBE'] || typeMap['UNSUBSCRIBE'] || 0
-  count += typeMap['MessageType.BROADCAST'] || typeMap['BROADCAST'] || 0
-  count += typeMap['MessageType.TURN_START'] || typeMap['TURN_START'] || 0
-  count += typeMap['MessageType.TURN_END'] || typeMap['TURN_END'] || 0
-  return count
-})
-
 const toolCallsFromApi = computed(() => {
   if (!stats.value?.messages_by_type) return 0
   return stats.value.messages_by_type['MessageType.TOOL_CALL'] || stats.value.messages_by_type['TOOL_CALL'] || 0
@@ -371,10 +353,6 @@ onUnmounted(() => {
           <div class="stat-item">
             <span class="stat-label">Assistant Responses</span>
             <span class="stat-value">{{ assistantMessagesFromApi }}</span>
-          </div>
-          <div class="stat-item">
-            <span class="stat-label">System Messages</span>
-            <span class="stat-value">{{ systemMessagesFromApi }}</span>
           </div>
           <div class="stat-item">
             <span class="stat-label">Tool Calls</span>

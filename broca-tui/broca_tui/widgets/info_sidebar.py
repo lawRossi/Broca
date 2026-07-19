@@ -142,9 +142,6 @@ class InfoSidebar(Widget):
                     yield Label("Assistant Responses", classes="stat-label")
                     yield Label("0", classes="stat-value", id="stat-agent")
                 with Horizontal(classes="stat-row"):
-                    yield Label("System Messages", classes="stat-label")
-                    yield Label("0", classes="stat-value", id="stat-system")
-                with Horizontal(classes="stat-row"):
                     yield Label("Tool Calls", classes="stat-label")
                     yield Label("0", classes="stat-value", id="stat-tool-calls")
                 with Horizontal(classes="stat-row"):
@@ -309,25 +306,9 @@ class InfoSidebar(Widget):
         user_count = _get("USER_MESSAGE")
         agent_count = _get("AGENT_RESPONSE")
         tool_count = _get("TOOL_CALL")
-        # 系统消息：包含 SYSTEM_MESSAGE + AGENT_SYSTEM_MESSAGE + COMMAND + 其他系统类（对齐 Web）
-        system_count = (
-            _get("SYSTEM_MESSAGE")
-            + _get("AGENT_SYSTEM_MESSAGE")
-            + _get("COMMAND")
-            + _get("COMMAND_RESULT")
-            + _get("PERMISSION_REQUEST")
-            + _get("PERMISSION_RESPONSE")
-            + _get("SUBSCRIBE")
-            + _get("UNSUBSCRIBE")
-            + _get("BROADCAST")
-            + _get("TURN_START")
-            + _get("TURN_END")
-        )
-
         self.query_one("#stat-user", Label).update(str(user_count))
         self.query_one("#stat-agent", Label).update(str(agent_count))
         self.query_one("#stat-tool-calls", Label).update(str(tool_count))
-        self.query_one("#stat-system", Label).update(str(system_count))
         # Tool Call Errors — 大于 0 时红色加粗（对齐 Web）
         err_label = self.query_one("#stat-errors", Label)
         err_label.update(str(error_count))
