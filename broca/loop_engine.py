@@ -927,6 +927,16 @@ class LoopEngine:
 
     async def _compute_turn_level_diff(self) -> dict | None:
         """计算 turn 级全量文件变更"""
+        # 如果 turn 有开始快照但无结束快照（异常终止），捕获当前状态作为结束快照
+        if (self.patch_calculator
+                and self._turn_first_snapshot_hash
+                and not self._turn_last_snapshot_hash):
+            try:
+                end_snapshot_hash = await self.snapshot_tracker.track()
+                self._turn_last_snapshot_hash = end_snapshot_hash
+            except Exception as e:
+                logger.warning(f"Error capturing final snapshot for abnormal turn end: {e}")
+
         if not (self.patch_calculator
                 and self._turn_first_snapshot_hash
                 and self._turn_last_snapshot_hash
