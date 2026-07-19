@@ -16,6 +16,53 @@ const standaloneErrorMessages = computed(() => {
   )
 })
 
+// 时间轴合并：将 turn 和独立错误消息按时间顺序合并成一个列表
+interface TimelineItem {
+  type: 'turn' | 'error'
+  key: string
+  turn?: (typeof chatStore.filteredTurnSummaries.value)[0]
+  message?: (typeof standaloneErrorMessages.value)[0]
+  timestamp: number
+}
+const timelineItems = computed<TimelineItem[]>(() => {
+  const items: TimelineItem[] = []
+
+  // 添加 turn
+  for (const turn of chatStore.filteredTurnSummaries) {
+    const ts = new Date(turn.createdAt || turn.startedAt || 0).getTime()
+    items.push({
+      type: 'turn',
+      key: `turn-${turn.turnId}`,
+      turn,
+      timestamp: isNaN(ts) ? 0 : ts,
+    })
+  }
+
+  // 添加独立错误消息
+  for (const msg of standaloneErrorMessages.value) {
+    const ts = new Date(msg.timestamp || 0).getTime()
+    items.push({
+      type: 'error',
+      key: `error-${msg.message_id}`,
+      message: msg,
+      timestamp: isNaN(ts) ? 0 : ts,
+    })
+  }
+
+  // 按时间戳升序排列
+  items.sort((a, b) => a.timestamp - b.timestamp)
+
+  return items
+})
+
+// 判断简洁模式下两个相邻项是否为同一 agent 的连续 turn
+const isConsecutiveAgentTurn = (items: TimelineItem[], idx: number): boolean => {
+  if (idx <= 0) return false
+  const prev = items[idx - 1]
+  const curr = items[idx]
+  return prev?.type === 'turn' && curr?.type === 'turn' && curr.turn?.agentId === prev.turn?.agentId
+}
+
 // 简洁模式状态
 const isConciseMode = computed(() => chatStore.displayMode === 'concise')
 
@@ -219,17 +266,17 @@ const handleRedo = () => {
       </div>
 
       <div class="space-y-3">
-        <ChatTurnCard
-          v-for="(turn, idx) in chatStore.filteredTurnSummaries"
-          :key="turn.turnId"
-          :turn="turn"
-          :consecutive-agent="idx > 0 && turn.agentId === chatStore.filteredTurnSummaries[idx - 1].agentId"
-        />
-      </div>
-
-      <!-- 独立错误消息（简洁模式，不与 TurnCard 绑定） -->
-      <div v-for="m in standaloneErrorMessages" :key="m.message_id" class="mt-3">
-        <ChatMessageItem :message="m" />
+        <template v-for="(item, idx) in timelineItems" :key="item.key">
+          <ChatTurnCard
+            v-if="item.type === 'turn' && item.turn"
+            :turn="item.turn"
+            :consecutive-agent="isConsecutiveAgentTurn(timelineItems, idx)"
+          />
+          <ChatMessageItem
+            v-else-if="item.type === 'error' && item.message"
+            :message="item.message"
+          />
+        </template>
       </div>
     </template>
 

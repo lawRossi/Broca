@@ -14,6 +14,53 @@ const standaloneErrorMessages = computed(() => {
   )
 })
 
+// 时间轴合并：将 turn 和独立错误消息按时间顺序合并成一个列表
+interface TimelineItem {
+  type: 'turn' | 'error'
+  key: string
+  turn?: (typeof chatStore.turnSummaries.value)[0]
+  message?: (typeof standaloneErrorMessages.value)[0]
+  timestamp: number
+}
+const timelineItems = computed<TimelineItem[]>(() => {
+  const items: TimelineItem[] = []
+
+  // 添加 turn
+  for (const turn of chatStore.filteredTurnSummaries) {
+    const ts = new Date(turn.createdAt || turn.startedAt || 0).getTime()
+    items.push({
+      type: 'turn',
+      key: `turn-${turn.turnId}`,
+      turn,
+      timestamp: isNaN(ts) ? 0 : ts,
+    })
+  }
+
+  // 添加独立错误消息
+  for (const msg of standaloneErrorMessages.value) {
+    const ts = new Date(msg.timestamp || 0).getTime()
+    items.push({
+      type: 'error',
+      key: `error-${msg.message_id}`,
+      message: msg,
+      timestamp: isNaN(ts) ? 0 : ts,
+    })
+  }
+
+  // 按时间戳升序排列
+  items.sort((a, b) => a.timestamp - b.timestamp)
+
+  return items
+})
+
+// 判断简洁模式下两个相邻项是否为同一 agent 的连续 turn
+function isConsecutiveAgentTurn(items: TimelineItem[], idx: number): boolean {
+  if (idx <= 0) return false
+  const prev = items[idx - 1]
+  const curr = items[idx]
+  return prev?.type === 'turn' && curr?.type === 'turn' && curr.turn?.agentId === prev.turn?.agentId
+}
+
 // 防抖定时器（分开管理，避免互相干扰）
 const loadMoreTimer = ref<number | null>(null)
 const restoreTimer = ref<number | null>(null)
@@ -24,14 +71,6 @@ const isRestoringScroll = ref(false)
 
 // 模式切换时的滚动位置保留
 const pendingScrollPercentage = ref<number | null>(null)
-
-// 判断两个 turn 是否来自同一个 agent
-function isConsecutiveAgent(turn: any, index: number): boolean {
-  if (index === 0) return false
-  const prevTurn = chatStore.turnSummaries[index - 1]
-  if (!prevTurn) return false
-  return prevTurn.agentId === turn.agentId
-}
 
 // 判断用户是否在底部附近（阈值 150px）
 function isNearBottom(): boolean {
@@ -220,19 +259,15 @@ onUnmounted(() => {
         <div v-else class="empty-text">未设置 session_id。请通过 URL 参数传入。</div>
       </div>
 
-      <!-- Turn cards -->
-      <div
-        v-for="(turn, index) in chatStore.filteredTurnSummaries"
-        :key="turn.turnId"
-        class="message-wrapper"
-      >
-        <ChatTurnCard :turn="turn" :consecutiveAgent="isConsecutiveAgent(turn, index)" />
-      </div>
-
-      <!-- 独立错误消息（简洁模式，不与 TurnCard 绑定） -->
-      <div v-for="m in standaloneErrorMessages" :key="m.message_id" class="message-wrapper">
-        <ChatMessageItem :message="m" />
-      </div>
+      <!-- 时间轴：turn 与独立错误消息按时间顺序交错排列 -->
+      <template v-for="(item, idx) in timelineItems" :key="item.key">
+        <div v-if="item.type === 'turn' && item.turn" class="message-wrapper">
+          <ChatTurnCard :turn="item.turn" :consecutiveAgent="isConsecutiveAgentTurn(timelineItems, idx)" />
+        </div>
+        <div v-else-if="item.type === 'error' && item.message" class="message-wrapper">
+          <ChatMessageItem :message="item.message" />
+        </div>
+      </template>
 
       <!-- Redo button (简洁模式) -->
       <div v-if="chatStore.showRedoButton" class="redo-container">
