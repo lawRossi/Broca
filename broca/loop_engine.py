@@ -228,8 +228,12 @@ class LoopEngine:
 
     async def _compute_step_end_patch(self) -> tuple[str, dict]:
         """计算 step 结束时的 patch，返回 (snapshot_hash, patch)"""
-        if not (self.snapshot_tracker and self.patch_calculator
-                and self.current_snapshot_hash and self._step_has_write_operations):
+        if not (
+            self.snapshot_tracker
+            and self.patch_calculator
+            and self.current_snapshot_hash
+            and self._step_has_write_operations
+        ):
             return ("", {})
 
         try:
@@ -320,7 +324,9 @@ class LoopEngine:
             except asyncio.TimeoutError:
                 errors += 1
                 logger.error("LLM call timed out")
-                await self._send_llm_error("LLM 调用超时，自动重试中...", "LLM_TIMEOUT", "warning")
+                await self._send_llm_error(
+                    "LLM 调用超时，自动重试中...", "LLM_TIMEOUT", "warning"
+                )
                 if errors < self.step_max_errors:
                     continue
                 return None
@@ -333,7 +339,9 @@ class LoopEngine:
                 if errors == self.step_max_errors:
                     logger.error("Too many LLM errors, aborting...")
                     return None
-                await self._send_llm_error("LLM 调用失败，正在重试...", "LLM_ERROR", "error")
+                await self._send_llm_error(
+                    "LLM 调用失败，正在重试...", "LLM_ERROR", "error"
+                )
                 await asyncio.sleep(self.llm_retry_delay)
         return None
 
@@ -364,7 +372,10 @@ class LoopEngine:
         """保存 LLM 响应，处理工具调用，返回步骤执行状态"""
         message_id = response.message_id
         if not await self.session_manager.save_agent_response(
-            response, self.turn_id, self.agent_id, self.step_id,
+            response,
+            self.turn_id,
+            self.agent_id,
+            self.step_id,
             message_id=response.message_id,
         ):
             logger.error("Failed to save agent response")
@@ -394,9 +405,11 @@ class LoopEngine:
                 lambda t: t.exception() if not t.cancelled() else None
             )
 
-        if (self.persistent_memory_manager
-                and getattr(self.config, "persistent_memory_config", None)
-                and self.config.persistent_memory_config.auto_extract):
+        if (
+            self.persistent_memory_manager
+            and getattr(self.config, "persistent_memory_config", None)
+            and self.config.persistent_memory_config.auto_extract
+        ):
             self.persistent_memory_manager.increment_step()
             task = asyncio.create_task(
                 self.persistent_memory_manager.check_and_extract(context=self.context)
@@ -442,35 +455,54 @@ class LoopEngine:
         await self._trigger_post_step_hooks()
         return status
 
-    async def _process_content_chunk(self, chunk: dict, content_chunks: list, index: int, message_id: str) -> int:
+    async def _process_content_chunk(
+        self, chunk: dict, content_chunks: list, index: int, message_id: str
+    ) -> int:
         """处理内容/推理内容块，广播到前端"""
         content_chunks.append(chunk)
         content = chunk["data"] if chunk["type"] == "content" else ""
-        reasoning_content = chunk["data"] if chunk["type"] == "reasoning_content" else ""
+        reasoning_content = (
+            chunk["data"] if chunk["type"] == "reasoning_content" else ""
+        )
         if self.config.interactive:
             await self.communicator.send_agent_response(
-                content=content, reasoning_content=reasoning_content,
-                index=index, turn_id=self.turn_id, agent_id=self.agent_id,
-                message_id=message_id, subscription=self.session_id,
+                content=content,
+                reasoning_content=reasoning_content,
+                index=index,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+                message_id=message_id,
+                subscription=self.session_id,
             )
         return index + 1
 
-    async def _process_tool_call_chunk(self, chunk: dict, tool_call_chunks: list, sent: set) -> None:
+    async def _process_tool_call_chunk(
+        self, chunk: dict, tool_call_chunks: list, sent: set
+    ) -> None:
         """处理工具调用块，首次出现时广播到前端"""
         tool_call = chunk["data"]
         tool_call_chunks.append(tool_call)
         if not (hasattr(tool_call, "id") and tool_call.id and tool_call.id not in sent):
             return
-        if hasattr(tool_call, "function") and tool_call.function and tool_call.function.name:
+        if (
+            hasattr(tool_call, "function")
+            and tool_call.function
+            and tool_call.function.name
+        ):
             if self.config.interactive:
                 await self.communicator.send_tool_call(
-                    tool_name=tool_call.function.name, arguments=None,
-                    tool_call_id=tool_call.id, turn_id=self.turn_id,
-                    agent_id=self.agent_id, subscription=self.session_id,
+                    tool_name=tool_call.function.name,
+                    arguments=None,
+                    tool_call_id=tool_call.id,
+                    turn_id=self.turn_id,
+                    agent_id=self.agent_id,
+                    subscription=self.session_id,
                 )
             sent.add(tool_call.id)
 
-    async def _finalize_llm_response(self, content_chunks: list, tool_call_chunks: list, message_id: str) -> LLMMessage | None:
+    async def _finalize_llm_response(
+        self, content_chunks: list, tool_call_chunks: list, message_id: str
+    ) -> LLMMessage | None:
         """完成 LLM 响应聚合，更新 token 计数"""
         input_tokens = self.llm_client.input_tokens_used
         output_tokens = self.llm_client.output_tokens_used
@@ -506,11 +538,15 @@ class LoopEngine:
                 raise asyncio.CancelledError("Execution aborted by user")
 
             if chunk["type"] in ("content", "reasoning_content"):
-                index = await self._process_content_chunk(chunk, content_chunks, index, message_id)
+                index = await self._process_content_chunk(
+                    chunk, content_chunks, index, message_id
+                )
             elif chunk["type"] == "tool_call":
                 await self._process_tool_call_chunk(chunk, tool_call_chunks, sent)
 
-        return await self._finalize_llm_response(content_chunks, tool_call_chunks, message_id)
+        return await self._finalize_llm_response(
+            content_chunks, tool_call_chunks, message_id
+        )
 
     def _get_tools_list(self) -> List[Dict[str, Any]]:
         """
@@ -531,13 +567,18 @@ class LoopEngine:
         ctx.namespace = self.namespace
         return ctx
 
-    async def _broadcast_tool_call_start(self, tool_name: str, arguments: str, tool_call_id: str) -> None:
+    async def _broadcast_tool_call_start(
+        self, tool_name: str, arguments: str, tool_call_id: str
+    ) -> None:
         """广播工具调用开始消息到前端"""
         if self.config.interactive:
             await self.communicator.send_tool_call(
-                tool_name=tool_name, arguments=arguments,
-                tool_call_id=tool_call_id, turn_id=self.turn_id,
-                agent_id=self.agent_id, subscription=self.session_id,
+                tool_name=tool_name,
+                arguments=arguments,
+                tool_call_id=tool_call_id,
+                turn_id=self.turn_id,
+                agent_id=self.agent_id,
+                subscription=self.session_id,
             )
 
     def _is_tool_allowed(self, tool_name: str) -> bool:
@@ -550,7 +591,9 @@ class LoopEngine:
             return self.assign_task_timeout
         return self.tool_call_timeout
 
-    async def _execute_tool_with_allow(self, tool_name: str, arguments: str, context: ToolCallContext) -> ToolResult:
+    async def _execute_tool_with_allow(
+        self, tool_name: str, arguments: str, context: ToolCallContext
+    ) -> ToolResult:
         """以 allow 权限执行工具"""
         try:
             if self._should_skip_tool_timeout(tool_name, arguments):
@@ -567,9 +610,13 @@ class LoopEngine:
             logger.info("Tool execution cancelled by user")
             raise
 
-    async def _execute_tool_with_ask(self, tool_name: str, arguments: str, context: ToolCallContext) -> tuple[ToolResult, str | None]:
+    async def _execute_tool_with_ask(
+        self, tool_name: str, arguments: str, context: ToolCallContext
+    ) -> tuple[ToolResult, str | None]:
         """以 ask 权限执行工具（需用户确认），返回 (result, session_action)"""
-        granted, session_action = await self.agent.ask_for_tool_permission(tool_name, arguments)
+        granted, session_action = await self.agent.ask_for_tool_permission(
+            tool_name, arguments
+        )
         if not granted:
             logger.info(f"Tool '{tool_name}' execution denied by user")
             return ToolResult(
@@ -579,7 +626,9 @@ class LoopEngine:
 
         try:
             if self._should_skip_tool_timeout(tool_name, arguments):
-                tool_result = await self.tool_mapping[tool_name].execute(arguments, context)
+                tool_result = await self.tool_mapping[tool_name].execute(
+                    arguments, context
+                )
             else:
                 timeout = self._get_tool_execution_timeout(tool_name)
                 tool_result = await asyncio.wait_for(
@@ -588,13 +637,17 @@ class LoopEngine:
                 )
         except (ToolError, BrocaError) as e:
             logger.error(f"Tool execution failed: {e}")
-            tool_result = ToolResult(status=ToolStatus.ERROR, content=e.to_user_message())
+            tool_result = ToolResult(
+                status=ToolStatus.ERROR, content=e.to_user_message()
+            )
         except asyncio.CancelledError:
             logger.info("Tool execution cancelled by user")
             raise
         return tool_result, session_action
 
-    def _apply_session_decision(self, tool_name: str, session_action: str | None) -> None:
+    def _apply_session_decision(
+        self, tool_name: str, session_action: str | None
+    ) -> None:
         """应用会话级别的权限决策"""
         if session_action == "allow":
             self.tool_permission_manager.set_session_override(tool_name, "allow")
@@ -603,7 +656,9 @@ class LoopEngine:
             self.tool_permission_manager.set_session_override(tool_name, "forbidden")
             logger.info(f"User chose to always forbid '{tool_name}' for this session")
 
-    async def _execute_single_tool_call(self, tool_call: Any, context: ToolCallContext) -> ToolResult:
+    async def _execute_single_tool_call(
+        self, tool_call: Any, context: ToolCallContext
+    ) -> ToolResult:
         """执行单个工具调用（含权限校验和 session 决策）"""
         tool_name = tool_call.function.name
         arguments = tool_call.function.arguments
@@ -614,17 +669,25 @@ class LoopEngine:
         # 检查工具是否存在
         if tool_name not in self.tool_mapping:
             logger.error(f"Tool '{tool_name}' not found.")
-            return ToolResult(status=ToolStatus.ERROR, content=f"Tool {tool_name} not found")
+            return ToolResult(
+                status=ToolStatus.ERROR, content=f"Tool {tool_name} not found"
+            )
 
         # 检查 allowed_tools 限制
         if not self._is_tool_allowed(tool_name):
-            logger.warning(f"Tool '{tool_name}' is not in allowed_tools list, skipping.")
-            return ToolResult(status=ToolStatus.ERROR, content="this tool is currently not allowed")
+            logger.warning(
+                f"Tool '{tool_name}' is not in allowed_tools list, skipping."
+            )
+            return ToolResult(
+                status=ToolStatus.ERROR, content="this tool is currently not allowed"
+            )
 
         # 权限决策：forbidden / ask / allow
         permission = self.tool_permission_manager.get_permission(tool_name)
         if permission == "forbidden":
-            logger.warning(f"Tool '{tool_name}' is forbidden by permission settings, skipping.")
+            logger.warning(
+                f"Tool '{tool_name}' is forbidden by permission settings, skipping."
+            )
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content=f"Tool {tool_name} is forbidden by permission settings",
@@ -789,7 +852,9 @@ class LoopEngine:
         )
         return True
 
-    async def _build_round_result(self, status: ExecutionStatus, steps: int) -> ExecutionResult:
+    async def _build_round_result(
+        self, status: ExecutionStatus, steps: int
+    ) -> ExecutionResult:
         """根据步骤状态构建回合执行结果"""
         messages = {
             ExecutionStatus.COMPLETED: f"Round completed after {steps} steps",
@@ -821,30 +886,48 @@ class LoopEngine:
                 status = await self.execute_step()
                 steps += 1
 
-                if status in (ExecutionStatus.COMPLETED, ExecutionStatus.ABORTED,
-                              ExecutionStatus.ERROR, ExecutionStatus.DEAD_LOOP):
+                if status in (
+                    ExecutionStatus.COMPLETED,
+                    ExecutionStatus.ABORTED,
+                    ExecutionStatus.ERROR,
+                    ExecutionStatus.DEAD_LOOP,
+                ):
                     return await self._build_round_result(status, steps)
 
                 if max_steps is not None and steps >= max_steps:
-                    return await self._build_round_result(ExecutionStatus.LIMIT_EXCEEDED, steps)
+                    return await self._build_round_result(
+                        ExecutionStatus.LIMIT_EXCEEDED, steps
+                    )
             except BrocaError as e:
                 if self.config.interactive:
-                    await self.communicator.send_error(e.to_dict(), subscription=self.session_id)
-                return ExecutionResult(status=ExecutionStatus.ERROR, message=e.to_user_message())
+                    await self.communicator.send_error(
+                        e.to_dict(), subscription=self.session_id
+                    )
+                return ExecutionResult(
+                    status=ExecutionStatus.ERROR, message=e.to_user_message()
+                )
             except asyncio.CancelledError:
-                return ExecutionResult(status=ExecutionStatus.ABORTED, message="Round aborted by user")
+                return ExecutionResult(
+                    status=ExecutionStatus.ABORTED, message="Round aborted by user"
+                )
 
-    async def _send_execution_error(self, error: Exception, code: str, severity: str = "error") -> None:
+    async def _send_execution_error(
+        self, error: Exception, code: str, severity: str = "error"
+    ) -> None:
         """发送执行错误通知到前端"""
         if self.config.interactive:
             error_info = {
-                "message": f"执行异常: {error}" if code == "UNKNOWN_ERROR" else str(error),
+                "message": f"执行异常: {error}"
+                if code == "UNKNOWN_ERROR"
+                else str(error),
                 "code": code,
                 "severity": severity,
             }
             await self.communicator.send_error(error_info, subscription=self.session_id)
 
-    def _make_error_result(self, status: ExecutionStatus, error: Exception) -> ExecutionResult:
+    def _make_error_result(
+        self, status: ExecutionStatus, error: Exception
+    ) -> ExecutionResult:
         """从异常创建执行错误结果"""
         if isinstance(error, (BrocaError, ValidationError)):
             message = error.to_user_message()
@@ -928,19 +1011,27 @@ class LoopEngine:
     async def _compute_turn_level_diff(self) -> dict | None:
         """计算 turn 级全量文件变更"""
         # 如果 turn 有开始快照但无结束快照（异常终止），捕获当前状态作为结束快照
-        if (self.patch_calculator
-                and self._turn_first_snapshot_hash
-                and not self._turn_last_snapshot_hash):
+        if (
+            self.patch_calculator
+            and self._turn_first_snapshot_hash
+            and not self._turn_last_snapshot_hash
+        ):
             try:
+                if self.snapshot_tracker is None:
+                    return None
                 end_snapshot_hash = await self.snapshot_tracker.track()
                 self._turn_last_snapshot_hash = end_snapshot_hash
             except Exception as e:
-                logger.warning(f"Error capturing final snapshot for abnormal turn end: {e}")
+                logger.warning(
+                    f"Error capturing final snapshot for abnormal turn end: {e}"
+                )
 
-        if not (self.patch_calculator
-                and self._turn_first_snapshot_hash
-                and self._turn_last_snapshot_hash
-                and self._turn_first_snapshot_hash != self._turn_last_snapshot_hash):
+        if not (
+            self.patch_calculator
+            and self._turn_first_snapshot_hash
+            and self._turn_last_snapshot_hash
+            and self._turn_first_snapshot_hash != self._turn_last_snapshot_hash
+        ):
             return None
         try:
             diff_content = await self.patch_calculator.calculate_diff(
@@ -968,32 +1059,53 @@ class LoopEngine:
         self._turn_first_snapshot_hash = None
         self._turn_last_snapshot_hash = None
 
-    async def _save_and_broadcast_turn_end(self, result: ExecutionResult, message: str,
-                                           turn_end_msg_id: str, changed_files: dict | None) -> bool:
+    async def _save_and_broadcast_turn_end(
+        self,
+        result: ExecutionResult,
+        message: str,
+        turn_end_msg_id: str,
+        changed_files: dict | None,
+    ) -> bool:
         """保存 turn_end 到数据库并广播到前端"""
-        turn_status = "completed" if result.status == ExecutionStatus.COMPLETED else "error"
+        turn_status = (
+            "completed" if result.status == ExecutionStatus.COMPLETED else "error"
+        )
         saved = await self.session_manager.save_turn_end(
-            turn_id=self.turn_id, agent_id=self.agent_id, message=message,
-            status=turn_status, message_id=turn_end_msg_id, changed_files=changed_files,
+            turn_id=self.turn_id,
+            agent_id=self.agent_id,
+            message=message,
+            status=turn_status,
+            message_id=turn_end_msg_id,
+            changed_files=changed_files,
         )
         if self.config.interactive:
             await self.communicator.send_turn_end(
-                turn_id=self.turn_id, result=result.status.value,
-                message_id=turn_end_msg_id, subscription=self.session_id,
+                turn_id=self.turn_id,
+                result=result.status.value,
+                message_id=turn_end_msg_id,
+                subscription=self.session_id,
                 changed_files=changed_files,
             )
         return saved
 
-    async def _send_turn_error_notification(self, result: ExecutionResult, message: str) -> None:
+    async def _send_turn_error_notification(
+        self, result: ExecutionResult, message: str
+    ) -> None:
         """发送 turn 错误通知到前端"""
         if not self.config.interactive:
             return
         error_info = {
-            "code": "EXECUTION_ERROR", "severity": "error", "message": message,
-            "recovery_hint": None, "details": {"status": result.status.value},
-            "cause": None, "traceback": None,
+            "code": "EXECUTION_ERROR",
+            "severity": "error",
+            "message": message,
+            "recovery_hint": None,
+            "details": {"status": result.status.value},
+            "cause": None,
+            "traceback": None,
         }
-        await self.communicator.send_error(error_info=error_info, subscription=self.session_id)
+        await self.communicator.send_error(
+            error_info=error_info, subscription=self.session_id
+        )
 
     async def process_turn_end(self, result: ExecutionResult) -> bool:
         try:
@@ -1008,7 +1120,9 @@ class LoopEngine:
             changed_files = await self._compute_turn_level_diff()
             self._clear_turn_snapshots()
 
-            saved = await self._save_and_broadcast_turn_end(result, message, turn_end_msg_id, changed_files)
+            saved = await self._save_and_broadcast_turn_end(
+                result, message, turn_end_msg_id, changed_files
+            )
 
             if result.status != ExecutionStatus.COMPLETED:
                 await self._send_turn_error_notification(result, message)
@@ -1035,7 +1149,9 @@ class LoopEngine:
             )
         return turn_id
 
-    async def _save_user_message(self, user_message: dict, message: Message, turn_id: str, from_agent: bool) -> str | None:
+    async def _save_user_message(
+        self, user_message: dict, message: Message, turn_id: str, from_agent: bool
+    ) -> str | None:
         """保存用户消息到数据库，返回 message_id"""
         message.data["from_agent"] = from_agent
         if user_message.get("raw_input"):
@@ -1045,19 +1161,30 @@ class LoopEngine:
             role=MessageRole.USER,
             content=json.dumps(user_message, ensure_ascii=False),
             message_type=MessageType.USER_MESSAGE,
-            turn_id=turn_id, agent_id=self.agent_id,
-            data=message.data, message_id=message_id,
+            turn_id=turn_id,
+            agent_id=self.agent_id,
+            data=message.data,
+            message_id=message_id,
         )
         return message_id if saved else None
 
-    async def _broadcast_user_message(self, user_message: dict, message: Message, turn_id: str) -> None:
+    async def _broadcast_user_message(
+        self, user_message: dict, message: Message, turn_id: str
+    ) -> None:
         """广播用户消息到 session 订阅者"""
-        if not (self.config.interactive and message.message_id and not getattr(message, 'from_agent', False)):
+        if not (
+            self.config.interactive
+            and message.message_id
+            and not getattr(message, "from_agent", False)
+        ):
             return
         broadcast_msg = MessageProtocol.create_user_message(
-            content=user_message.get("content", ""), sender_id=message.sender_id,
-            subscription=self.session_id, turn_id=turn_id,
-            agent_id=self.agent_id, message_id=message.message_id,
+            content=user_message.get("content", ""),
+            sender_id=message.sender_id,
+            subscription=self.session_id,
+            turn_id=turn_id,
+            agent_id=self.agent_id,
+            message_id=message.message_id,
         )
         if message.data and message.data.get("files"):
             broadcast_msg.data["files"] = message.data["files"]
@@ -1088,7 +1215,9 @@ class LoopEngine:
             if not turn_id:
                 return False
 
-            message_id = await self._save_user_message(user_message, message, turn_id, from_agent or False)
+            message_id = await self._save_user_message(
+                user_message, message, turn_id, from_agent or False
+            )
             if message_id is None:
                 return False
 
