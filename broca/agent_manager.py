@@ -118,7 +118,7 @@ class AgentFactory:
         从 workspace 的 .broca/agents/ 目录加载自定义 Agent 配置。
         如果没有自定义 Agent，则返回空列表（编排器会动态创建 Agent）。
         """
-        agents = []
+        agents: list[Agent] = []
 
         if not workspace:
             logger.info(
@@ -148,7 +148,7 @@ class AgentFactory:
         workspace=None,
         provider=None,
         model=None,
-        agent_id: str = None,
+        agent_id: Optional[str] = None,
     ) -> Agent:
         """
         创建 Agent 实例

@@ -24,7 +24,7 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # 注册模型
-from broca.session.models import SQLModel
+from broca.session.models import SQLModel  # noqa: E402
 target_metadata = SQLModel.metadata
 
 

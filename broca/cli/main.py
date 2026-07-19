@@ -467,7 +467,7 @@ def cmd_service_status(args):
         print("  使用 Broca service start 启动服务")
         return
 
-    print(f"  supervisord:  ✅ 运行中")
+    print("  supervisord:  ✅ 运行中")
     print()
     print(f"  {'服务名':<15} {'状态':<12} {'PID':<8} {'运行时间'}")
     print(f"  {'------':<15} {'------':<12} {'---':<8} {'--------'}")
@@ -501,14 +501,14 @@ def cmd_service_status(args):
         nginx_status = "✅ 已启用" if nginx.get("enabled") else "⏸ 未启用"
         nginx_version = nginx.get("version", "")
         print()
-        print(f"  前端服务 (nginx 站点):")
+        print("  前端服务 (nginx 站点):")
         print(f"    状态: {nginx_status}")
         if nginx_version:
             print(f"    版本: {nginx_version}")
         print(f"    配置文件: {nginx.get('site_config', '-')}")
     else:
         print()
-        print(f"  前端服务: ⚠ nginx 未安装（静态文件需其他方式托管）")
+        print("  前端服务: ⚠ nginx 未安装（静态文件需其他方式托管）")
 
     print()
     print("  提示: Broca service restart 重启所有服务")
@@ -534,7 +534,7 @@ def cmd_create_user(args):
             / "broca_web" / "backend" / "scripts" / "setup_admin.py"
         )
     if not setup_script.exists():
-        print(f"❌ 未找到 setup_admin.py")
+        print("❌ 未找到 setup_admin.py")
         print("   请确保 broca-web/backend/scripts/setup_admin.py 存在。")
         print("   或先运行: broca service install")
         sys.exit(1)
@@ -816,7 +816,7 @@ def main():
 
         if args.validate:
             # 仅校验模式
-            from broca.orchestration.crew import CrewConfigValidator
+            from broca.orchestration.crew import CrewConfig, CrewConfigValidator
 
             print(f"Validating: {yaml_file}")
             errors = CrewConfigValidator.validate_yaml_file(yaml_file)
@@ -845,8 +845,8 @@ def main():
             print("Use 'broca run' in an active agent session or via the Web API.")
             print()
             print("To run via Web API:")
-            print(f'  curl -X POST http://localhost:9000/api/crews \\')
-            print(f'    -H "Content-Type: application/json" \\')
+            print('  curl -X POST http://localhost:9000/api/crews \\')
+            print('    -H "Content-Type: application/json" \\')
             print(f'    -d \'{{"yaml_path": "{yaml_file}"}}\'')
             print()
 
@@ -864,7 +864,7 @@ def main():
                 )
                 with urllib.request.urlopen(req, timeout=10) as resp:
                     result = json.loads(resp.read())
-                    print(f"✅ Crew submitted successfully!")
+                    print("✅ Crew submitted successfully!")
                     print(f"  Execution ID: {result.get('execution_id', 'N/A')}")
                     print(f"  Status: {result.get('status', 'N/A')}")
             except Exception as e:

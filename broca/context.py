@@ -108,7 +108,7 @@ class Context:
         workspace = self.agent_config.workspace
         session_id = self.session_manager.session_id
         session_memeory_path = (
-            Path(workspace) / ".broca" / session_id / "session-memory.md"
+            Path(workspace) / ".broca" / (session_id or "") / "session-memory.md"
         )
         if session_memeory_path.exists():
             return session_memeory_path.read_text(encoding="utf-8").strip()

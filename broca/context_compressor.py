@@ -8,12 +8,17 @@
 根据设计文档 docs/context-compression-design.md 实现。
 """
 
+from __future__ import annotations
+
 import json
 import os
 from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional
+from typing import TYPE_CHECKING, List, Optional
+
+if TYPE_CHECKING:
+    from broca.agent import Agent
 
 from broca.agent_configs import ContextCompactConfig
 from broca.context import Context
@@ -63,7 +68,7 @@ class ContextCompressor:
     def _get_llm_config(self) -> dict:
         """加载并缓存 LLM 配置"""
         if self._llm_config is None:
-            config_path = os.getenv("BROCA_LLM_CONFIG")
+            config_path: str | Path = os.getenv("BROCA_LLM_CONFIG") or ""
             if not config_path:
                 config_path = (
                     Path(__file__).parent.parent / "configs" / "llm_config.json"

@@ -15,7 +15,6 @@ from broca.agent_configs import SessionMemoryConfig
 from broca.agent_manager import AgentFactory
 from broca.context import Context
 from broca.loop_engine import ExecutionStatus
-from broca.errors import BrocaError
 from broca.logging_config import get_logger
 from broca.session import MessageProtocol
 from broca.session_memory.memory_prompts import (
@@ -241,14 +240,14 @@ class SessionMemoryManager:
                 agent_id=agent_id,
             )
         else:
-            sub_agent = agent_factory.get_agent(
+            sub_agent = agent_factory.get_agent(  # type: ignore[assignment]
                 session_manager.session_id, agent_config["name"]
             )
             if sub_agent is None:
                 sub_agent = await agent_factory.restore_agent(agent_id, session_manager)
         if not sub_agent.running:
             task = asyncio.create_task(sub_agent.start())
-            task.add_done_callback(lambda t, a=sub_agent: a.stop())
+            task.add_done_callback(lambda t, a=sub_agent: a.stop())  # type: ignore[misc]
         sub_agent.context.history = copy.copy(context.history)
         trigger_message = MessageProtocol.create_user_message(
             content=user_prompt,
@@ -276,9 +275,9 @@ class SessionMemoryManager:
                 subscription=self.agent.session_id,
             )
             self.state.last_message_index = len(context.history) - 1
-            self.state.last_message_id = context.get_message_db_id(
-                self.state.last_message_index
-            )
+            db_id = context.get_message_db_id(self.state.last_message_index)
+            if db_id is not None:
+                self.state.last_message_id = db_id
 
     def increment_step(self):
         """增加 step 计数"""

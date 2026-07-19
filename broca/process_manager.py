@@ -10,7 +10,6 @@ import json
 import os
 import signal
 import sys
-import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -254,10 +253,11 @@ class ProcessManager:
 
         info.status = new_status
         info.end_time = datetime.now(timezone.utc)
-        self._write_meta(info.meta_path, {
-            "status": new_status.value,
-            "end_time": info.end_time.isoformat(),
-        })
+        if info.meta_path is not None:
+            self._write_meta(info.meta_path, {
+                "status": new_status.value,
+                "end_time": info.end_time.isoformat(),
+            })
 
         logger.info(f"Process {process_id} stopped with {sig_name}")
         return True
@@ -324,11 +324,12 @@ class ProcessManager:
             # 如果已经被 stop_process 设置过 STOPPED/KILLED，保留原状态
 
             # 更新 meta.json
-            self._write_meta(info.meta_path, {
-                "status": info.status.value,
-                "exit_code": exit_code,
-                "end_time": info.end_time.isoformat(),
-            })
+            if info.meta_path is not None:
+                self._write_meta(info.meta_path, {
+                    "status": info.status.value,
+                    "exit_code": exit_code,
+                    "end_time": info.end_time.isoformat(),
+                })
 
             logger.info(
                 f"Process {process_id} finished: "

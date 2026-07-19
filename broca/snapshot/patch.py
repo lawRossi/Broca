@@ -124,7 +124,7 @@ class PatchCalculator:
         except git.GitCommandError as e:
             raise e
 
-    def get_diff_summary(self, diff_content: str) -> Dict[str, any]:
+    def get_diff_summary(self, diff_content: str) -> Dict[str, Any]:
         """
         获取差异统计信息
 

@@ -9,7 +9,7 @@ Session Runner 编排入口模块
 from __future__ import annotations
 
 import asyncio
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
 from broca.errors import OrchestrationError
 from broca.logging_config import get_logger
@@ -291,11 +291,12 @@ class CrewOrchestratorRunner:
             match = re.match(r"round_(\d+)", event.key)
             if match:
                 current_round = int(match.group(1))
-                max_rounds = (
-                    self._orchestrator.crew.orchestrator.max_rounds
-                    if hasattr(self._orchestrator, "crew")
-                    else 1
-                )
+                if self._orchestrator is not None:
+                    max_rounds = getattr(
+                        self._orchestrator.crew.orchestrator, "max_rounds", 1
+                    )
+                else:
+                    max_rounds = 1
                 progress = current_round / max_rounds
                 self._send_crew_event(
                     IPCMessageType.EVT_CREW_PROGRESS,

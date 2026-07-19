@@ -1,5 +1,6 @@
 import asyncio
 from pathlib import Path
+from typing import Any
 
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
@@ -103,7 +104,7 @@ class GrepTool(Tool):
                     output = stdout.decode("utf-8").strip()
                     lines = output.split("\n") if output else []
 
-                    matches = []
+                    matches: list[dict[str, Any]] = []
                     for line in lines:
                         if not line:
                             continue
@@ -144,7 +145,7 @@ class GrepTool(Tool):
                         )
 
                     # Sort by modification time (newest first)
-                    matches.sort(key=lambda x: x["mtime"], reverse=True)
+                    matches.sort(key=lambda x: int(x.get("mtime", 0) or 0), reverse=True)
 
                     truncated = len(matches) > self.limit
                     if truncated:
@@ -162,7 +163,7 @@ class GrepTool(Tool):
                             output_lines.append(f"{match['path']}:")
 
                         # Truncate long lines
-                        line_text = match["line_text"]
+                        line_text = str(match.get("line_text", ""))
                         if len(line_text) > self.max_line_length:
                             line_text = line_text[: self.max_line_length] + "..."
 

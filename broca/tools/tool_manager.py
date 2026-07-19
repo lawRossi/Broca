@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 from broca.logging_config import get_logger
-from broca.errors import ErrorCode, ToolError, ValidationError
+from broca.errors import ErrorCode, ValidationError
 from broca.tools.mcp import connect_mcp_servers
 from broca.tools.tool import Tool
 
@@ -258,15 +258,15 @@ class ToolManager:
             List of Tool instances matching the specified servers.
         """
         if not server_names:
-            result = []
-            for tools in self._mcp_servers_tools.values():
-                result.extend(tools)
-            return result
+            all_tools = []
+            for tool_list in self._mcp_servers_tools.values():
+                all_tools.extend(tool_list)
+            return all_tools
 
-        result = []
+        result: list[Tool] = []
         for name in server_names:
             tools = self._mcp_servers_tools.get(name)
-            if tools:
+            if tools is not None:
                 result.extend(tools)
             else:
                 logger.warning("MCP server '{}' is not connected", name)

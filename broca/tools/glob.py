@@ -135,10 +135,10 @@ class GlobTool(Tool):
                             try:
                                 full_path = Path(f)
                                 if full_path.exists():
-                                    mtime = datetime.datetime.fromtimestamp(
+                                    mtime_label = datetime.datetime.fromtimestamp(
                                         full_path.stat().st_mtime
                                     ).strftime("%Y-%m-%d %H:%M:%S")
-                                    output_lines.append(f"{f}  ({mtime})")
+                                    output_lines.append(f"{f}  ({mtime_label})")
                                 else:
                                     output_lines.append(f)
                             except Exception:

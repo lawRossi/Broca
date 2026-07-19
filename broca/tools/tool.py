@@ -5,7 +5,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Optional
 
-from broca.errors import BrocaError, ToolError
+from broca.errors import BrocaError
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)

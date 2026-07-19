@@ -68,10 +68,10 @@ def init_tree_sitter() -> bool:
     try:
         from tree_sitter import Language, Parser
 
-        Language.build_library("build/my-languages.so", ["vendor/tree-sitter-bash"])
-        lang = Language("build/my-languages.so", "bash")
+        Language.build_library("build/my-languages.so", ["vendor/tree-sitter-bash"])  # type: ignore[attr-defined]
+        lang = Language("build/my-languages.so", "bash")  # type: ignore[call-overload]
         _parser = Parser()
-        _parser.set_language(lang)
+        _parser.language = lang  # type: ignore[attr-defined]
         _tree_sitter_available = True
         logger.info("Tree-sitter bash parser initialized successfully")
     except Exception as e:

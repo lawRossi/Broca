@@ -9,13 +9,17 @@ Defines the core error data structures for Broca's error handling system:
 from __future__ import annotations
 
 import traceback
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
-from typing import Any
 
 
 class ErrorCode(str, Enum):
     """错误码枚举 — 每个值携带 severity / default_message / recovery_hint 元数据"""
+
+    # 运行时由 __new__ 动态设置，此处声明以满足类型检查
+    _severity: str
+    _message: str
+    _hint: str | None
 
     # == LLM ==
     LLM_ERROR = ("LLM_ERROR", "error", "LLM 调用失败", None)

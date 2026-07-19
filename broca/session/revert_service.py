@@ -38,7 +38,7 @@ class SessionRevertService:
         self,
         session_id: str,
         agent_id: str,
-        target_message_id: str,
+        target_message_id: Optional[str] = None,
         level: str = "step",
     ) -> Dict[str, Any]:
         """
@@ -177,7 +177,7 @@ class SessionRevertService:
         return {"success": True}
 
     async def _collect_patches_to_message(
-        self, messages: List[Message], target_message_id: str, level: str
+        self, messages: List[Message], target_message_id: Optional[str], level: str
     ) -> Tuple[list[dict[str, Any]], Optional[str]]:
         """收集到指定消息的所有patch"""
         patches = []

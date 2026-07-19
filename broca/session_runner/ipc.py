@@ -22,10 +22,9 @@ from broca.session_runner.models import (
     get_ipc_family,
 )
 
+from broca.errors import CommunicationError
+
 logger = logging.getLogger(__name__)
-
-
-from broca.errors import CommunicationError, SessionError
 
 
 class IPCConnectionError(CommunicationError):
@@ -100,7 +99,7 @@ class IPCServer:
         import select
 
         # 获取底层 socket 进行超时控制
-        sock = self._listener._listener._socket
+        sock = self._listener._listener._socket  # type: ignore[attr-defined]
 
         # 等待连接
         ready = select.select([sock], [], [], timeout)

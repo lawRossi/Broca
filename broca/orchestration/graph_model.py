@@ -95,7 +95,7 @@ class Node:
     # task 字段
     agent: Optional[str] = None
     task: Optional[str] = None
-    context: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
     # crew 字段
     crew_ref: Optional[str] = None
     # human 字段

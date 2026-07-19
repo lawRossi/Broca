@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import functools
 import logging
-from typing import Any, Callable, TypeVar
+from typing import Callable, TypeVar
 
 from broca.errors.exceptions import BrocaError
 from broca.errors.types import ErrorCode
@@ -112,4 +112,4 @@ def safe_call(
     if func is not None:
         return decorator(func)
 
-    return decorator
+    return decorator  # type: ignore[return-value]

@@ -50,7 +50,7 @@ class SupervisorWorkerOrchestrator(Orchestrator):
         super().__init__(crew_config, context)
         self.namespace = crew_config.name
         self.progress_check_key = "objective_met"
-        self.completed_tasks = set()
+        self.completed_tasks: set[str] = set()
 
     def _ns(self, key: str) -> str:
         return f"{self.namespace}.{key}" if self.namespace else key

@@ -205,8 +205,8 @@ class FileLock:
 
         while True:
             try:
-                msvcrt.locking(
-                    fd, msvcrt.LK_NBLCK if not blocking else msvcrt.LK_LOCK, 1
+                msvcrt.locking(  # type: ignore[attr-defined]
+                    fd, msvcrt.LK_NBLCK if not blocking else msvcrt.LK_LOCK, 1  # type: ignore[attr-defined]
                 )
                 return
             except OSError as e:
@@ -219,7 +219,7 @@ class FileLock:
         import msvcrt
 
         try:
-            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)
+            msvcrt.locking(fd, msvcrt.LK_UNLCK, 1)  # type: ignore[attr-defined]
         except OSError:
             pass
 
@@ -233,12 +233,12 @@ class GitManager:
         normalized = str(Path(workspace_path).resolve())
         if normalized not in cls._instances:
             instance = super().__new__(cls)
-            instance._initialized = False
+            instance._initialized = False  # type: ignore[has-type]
             cls._instances[normalized] = instance
         return cls._instances[normalized]
 
     def __init__(self, workspace_path: str):
-        if self._initialized:
+        if self._initialized:  # type: ignore[has-type]
             return
         self._initialized = True
         self.workspace_path = Path(workspace_path).resolve()
@@ -337,6 +337,7 @@ class GitManager:
     def get_repo(self) -> git.Repo:
         """获取 Git 仓库实例"""
         self.ensure_initialized()
+        assert self.repo is not None
         return self.repo
 
     def sync_ignore_rules(self, ignore_patterns: Optional[list[str]] = None) -> None:
@@ -347,6 +348,7 @@ class GitManager:
             ignore_patterns: 额外的忽略模式列表
         """
         self.ensure_initialized()
+        assert self.repo is not None
 
         self._lock.acquire(blocking=True)
         try:

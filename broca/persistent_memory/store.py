@@ -11,6 +11,7 @@ from datetime import date
 from pathlib import Path
 from typing import Optional
 
+from broca.errors import BrocaError
 from .types import (
     INDEX_LINE_RE,
     MemoryEntry,

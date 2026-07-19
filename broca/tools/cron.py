@@ -6,10 +6,10 @@
 
 import json
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
-from broca.logging_config import get_logger
 from broca.errors import ValidationError
+from broca.logging_config import get_logger
 from broca.scheduler import Scheduler
 from broca.session.models import JobType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
@@ -23,7 +23,7 @@ class CronTool(Tool):
 
     def __init__(self):
         super().__init__()
-        self.scheduler: Optional[Scheduler] = None
+        self.scheduler: Scheduler = Scheduler()
         logger.info("CronTool initialized")
 
     @property
@@ -124,7 +124,7 @@ class CronTool(Tool):
                     run_date = datetime.fromisoformat(trigger.replace("Z", "+00:00"))
                 except ValueError:
                     # 尝试其他格式
-                    from dateutil import parser
+                    from dateutil import parser  # type: ignore[import-untyped]
 
                     run_date = parser.parse(trigger)
                 return {"run_date": run_date.isoformat()}
@@ -137,10 +137,8 @@ class CronTool(Tool):
 
     async def initialize(self):
         """初始化调度器"""
-        if self.scheduler is None:
-            self.scheduler = Scheduler()
-            if not self.scheduler.running:
-                await self.scheduler.start()
+        if not self.scheduler.running:
+            await self.scheduler.start()
             logger.info("CronTool scheduler initialized")
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:

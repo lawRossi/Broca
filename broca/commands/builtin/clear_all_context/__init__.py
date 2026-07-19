@@ -32,6 +32,11 @@ class ClearAllContextCommand(LocalCommand):
             agent = ctx.agent
             session_manager = agent.session_manager
             session_id = session_manager.session_id
+            if not session_id:
+                return CommandResult(
+                    type="error",
+                    value="No active session to clear all context",
+                )
 
             # ================================================================
             # 1. Mark ALL messages in the session (all agents) as compressed

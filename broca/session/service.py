@@ -10,11 +10,10 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
-from sqlalchemy import String, and_, cast, desc, func, or_, select, text
+from sqlalchemy import String, cast, desc, func, or_, select, text
 from sqlalchemy import update as sql_update
 from sqlmodel import SQLModel, and_
 
-from broca.errors import SessionError, ValidationError
 from broca.logging_config import get_logger
 from broca.session.database import db_manager
 from broca.snapshot.patch import PatchCalculator
@@ -522,8 +521,8 @@ class MessageService(BaseService[Message]):
         self,
         message_id: str,
         session_id: str,
-        turn_id: str,
-        agent_id: str,
+        turn_id: Optional[str],
+        agent_id: Optional[str],
         role: MessageRole,
         content: Optional[str] = None,
         message_type: MessageType = MessageType.USER_MESSAGE,
@@ -726,7 +725,7 @@ class MessageService(BaseService[Message]):
             stmt = select(Message).where(Message.session_id == session_id)
 
             if ignore_reverted:
-                stmt = stmt.where(Message.reverted == False)
+                stmt = stmt.where(not Message.reverted)
 
             if message_type:
                 stmt = stmt.where(Message.message_type == message_type)
@@ -779,7 +778,7 @@ class MessageService(BaseService[Message]):
                 select(func.distinct(func.json_extract(Message.data, "$.tool_name")))
                 .where(Message.session_id == session_id)
                 .where(Message.message_type == MessageType.TOOL_CALL)
-                .where(Message.reverted == False)
+                .where(not Message.reverted)
                 .where(func.json_extract(Message.data, "$.tool_name").isnot(None))
             )
             result = await session.execute(stmt)

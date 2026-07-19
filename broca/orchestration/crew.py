@@ -16,6 +16,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from broca.errors import ValidationError
+
 
 class OrchestratorType(str, Enum):
     """编排器拓扑类型枚举"""
@@ -24,6 +26,8 @@ class OrchestratorType(str, Enum):
     SUPERVISOR_WORKER = "supervisor-worker"
     ROUND_TABLE = "round-table"
     COMPOSITE = "composite"
+    BROADCAST = "broadcast"
+    CONSENSUS = "consensus"
 
 
 class AgentRole(str, Enum):
@@ -124,7 +128,7 @@ class SubCrewConfig:
     agents: Optional[List["AgentRoleConfig"]] = None
 
     def to_dict(self) -> Dict[str, Any]:
-        result = {
+        result: Dict[str, Any] = {
             "name": self.name,
             "orchestrator": self.orchestrator.to_dict(),
         }
@@ -239,7 +243,7 @@ class CrewConfig:
         return cls(
             name=data.get("name", ""),
             description=data.get("description", ""),
-            orchestrator=orchestrator,
+            orchestrator=orchestrator,  # type: ignore[arg-type]
             agents=agents,
             blackboard=blackboard,
             sub_crews=sub_crews,
@@ -266,6 +270,13 @@ class CrewConfig:
         if not data:
             raise ValidationError(f"Empty YAML file: {file_path}")
         return cls.from_dict(data)
+
+    @classmethod
+    def _validate_orchestrator(cls, orchestrator: OrchestratorConfig | None) -> OrchestratorConfig:
+        """校验编排器配置不为空"""
+        if orchestrator is None:
+            raise ValidationError("Orchestrator configuration is required")
+        return orchestrator
 
 
 # ============================================================================

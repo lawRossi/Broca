@@ -353,11 +353,11 @@ class SocketIOServer:
         if message.receiver_id:
             result = await self._send_to_client(message.receiver_id, message)
         elif message.room:
-            result = await self._send_to_room(message.room, message)
+            result = await self._send_to_room(message.room, message)  # type: ignore[assignment]
         elif message.subscription:
-            result = await self._send_to_subscription(message.subscription, message)
+            result = await self._send_to_subscription(message.subscription, message)  # type: ignore[assignment]
         else:
-            result = await self._broadcast(message)
+            result = await self._broadcast(message)  # type: ignore[assignment]
 
         # 收到 PERMISSION_RESPONSE 或 USER_ANSWER 时，清理缓存中的对应待处理请求
         if message.message_type in (

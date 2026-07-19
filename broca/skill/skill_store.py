@@ -130,18 +130,24 @@ class SkillStore:
 
     def record_use(self, name: str):
         """记录一次使用。"""
+        entry = self.get(name)
+        if entry is None:
+            return
         self.update(
             name,
-            use_count=self.get(name)["use_count"] + 1,
+            use_count=entry["use_count"] + 1,
             last_used_at=_now_iso(),
             updated_at=_now_iso(),
         )
 
     def record_view(self, name: str):
         """记录一次查看。"""
+        entry = self.get(name)
+        if entry is None:
+            return
         self.update(
             name,
-            view_count=self.get(name)["view_count"] + 1,
+            view_count=entry["view_count"] + 1,
             last_viewed_at=_now_iso(),
             updated_at=_now_iso(),
         )

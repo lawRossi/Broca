@@ -8,7 +8,7 @@ import asyncio
 import os
 import uuid
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
@@ -17,7 +17,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 
 from broca.logging_config import get_logger
 from broca.errors import ValidationError
-from broca.process_manager import ProcessManager, ProcessStatus
+from broca.process_manager import ProcessManager
 from broca.session.models import JobStatus, JobType, MessageProtocol
 from broca.session.service import get_job_execution_service, get_job_service
 from broca.utils.datetime_util import serialize_dt
@@ -142,6 +142,7 @@ class Scheduler:
             trigger = self._parse_trigger(job.trigger_type, job.trigger_config)
 
             # 根据任务类型选择执行函数
+            func: Callable[..., Any]
             if job.job_type == JobType.REMINDER:
                 func = self._execute_reminder
             elif job.job_type == JobType.COMMAND:
@@ -221,6 +222,7 @@ class Scheduler:
             trigger = self._parse_trigger(trigger_type, trigger_config)
 
             # 根据任务类型选择执行函数
+            func: Callable[..., Any]
             if job_type == JobType.REMINDER:
                 func = self._execute_reminder
             elif job_type == JobType.COMMAND:
@@ -636,7 +638,7 @@ class Scheduler:
             await self.execution_service.create_execution(
                 job_id=job_id,
                 success=False,
-                result=f"Job execution cancelled by user",
+                result="Job execution cancelled by user",
             )
         return success
 

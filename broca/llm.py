@@ -3,7 +3,7 @@ import json
 import os
 import warnings
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator
 
 from litellm import Message as LLMMessage
 from litellm import acompletion
@@ -113,11 +113,11 @@ class LLMClient:
         # Initialize content containers for all message types
         text_content = ""
         image_content = []
-        audio_content = []
+        audio_content: list[dict[str, Any]] = []
         video_content = []
 
         if message.message_type == MessageType.USER_MESSAGE:
-            text_content = message.data.get("content", "")
+            text_content = str(message.data.get("content", ""))
             files = message.data.get("files")
             if files:
                 file_info_parts = []
@@ -149,15 +149,15 @@ class LLMClient:
                     files_section = "\n\n[附件文件]:\n" + "\n".join(file_info_parts)
                     text_content = text_content + files_section
         elif message.message_type == MessageType.TASK_START:
-            text_content = message.data.get("task_description")
+            text_content = str(message.data.get("task_description") or "")
         elif message.message_type == MessageType.TASK_COMPLETE:
-            text_content = message.data.get("result")
+            text_content = str(message.data.get("result") or "")
         elif message.message_type == MessageType.TASK_ERROR:
-            text_content = message.data.get("error_message")
+            text_content = str(message.data.get("error_message") or "")
         else:
             return {}
         if image_content:
-            content = image_content
+            content: Any = image_content
         elif video_content:
             content = video_content
         elif audio_content:
@@ -287,7 +287,11 @@ class LLMClient:
         except BadRequestError as e:
             # 某些提供商（如 OpenAI）对无效 API Key 返回 400 BadRequest 而非 401
             error_msg_lower = str(e).lower()
-            if "auth" in error_msg_lower or "api key" in error_msg_lower or "invalid" in error_msg_lower:
+            if (
+                "auth" in error_msg_lower
+                or "api key" in error_msg_lower
+                or "invalid" in error_msg_lower
+            ):
                 raise LLMError(
                     message=f"API Key 认证失败 (provider: {provider}): {e}",
                     error_code=ErrorCode.LLM_AUTH_ERROR,

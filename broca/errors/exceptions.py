@@ -7,8 +7,6 @@ Broca 异常继承体系
 
 from __future__ import annotations
 
-import traceback
-from typing import Any
 
 from broca.errors.types import ErrorCode, ErrorInfo
 

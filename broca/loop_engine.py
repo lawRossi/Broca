@@ -203,18 +203,20 @@ class LoopEngine:
 
     def _acquire_step_lock(self) -> None:
         """持有文件锁直到 step end，防止其他进程插入导致 diff 串"""
+        if self.snapshot_tracker is None:
+            return
         self.snapshot_tracker.git_manager.acquire_lock(blocking=True)
         self._step_lock_held = True
 
     def _release_step_lock(self) -> None:
         """释放 step 期间持有的文件锁"""
-        if self._step_lock_held:
+        if self._step_lock_held and self.snapshot_tracker is not None:
             self.snapshot_tracker.git_manager.release_lock()
             self._step_lock_held = False
 
     async def _capture_step_start_snapshot(self) -> str:
         """捕获 step 开始时的快照，返回快照 hash"""
-        if not self._step_has_write_operations:
+        if not self._step_has_write_operations or self.snapshot_tracker is None:
             return ""
         self._acquire_step_lock()
         snapshot_hash = await self.snapshot_tracker.track()
@@ -427,7 +429,7 @@ class LoopEngine:
             return ExecutionStatus.ERROR
 
         # Step 2: 检查写操作，捕获 step start 快照
-        self.check_step_has_write_operations(response.tool_calls)
+        self.check_step_has_write_operations(response.tool_calls or [])
         await self._capture_step_start()
 
         # Step 3: 保存响应、处理工具调用（含死循环检测）
@@ -475,8 +477,9 @@ class LoopEngine:
         await self.agent.on_llm_call_completed(input_tokens, output_tokens)
 
         message = self.llm_client.aggregate_message(content_chunks, tool_call_chunks)
+        # 将 message_id 附加到消息对象供后续使用
         if message is not None:
-            message.message_id = message_id
+            setattr(message, "message_id", message_id)
         return message
 
     async def _call_llm_streaming(self) -> LLMMessage | None:
@@ -486,8 +489,8 @@ class LoopEngine:
         Returns:
             LLM response message
         """
-        content_chunks = []
-        tool_call_chunks = []
+        content_chunks: list[Any] = []
+        tool_call_chunks: list[Any] = []
         sent: set[str] = set()
         message_id = generate_message_id()
         index = 0
@@ -655,7 +658,7 @@ class LoopEngine:
             if not await self.process_tool_call_result(tool_call, tool_result):
                 raise Exception("Tool call result processing failed")
 
-    def _should_skip_tool_timeout(self, tool_name: str, arguments: dict) -> bool:
+    def _should_skip_tool_timeout(self, tool_name: str, arguments: str) -> bool:
         """判断是否应跳过工具执行的外层超时
 
         以下工具由自身内部 timeout 控制，不需要 LoopEngine 的外层 wait_for 限制：
@@ -663,7 +666,11 @@ class LoopEngine:
         - ask_user：等待用户回答，由内部 timeout（当前 180s）控制
         """
         if tool_name == "bash":
-            return isinstance(arguments, dict) and arguments.get("background", False)
+            try:
+                args_dict = json.loads(arguments)
+                return bool(args_dict.get("background", False))
+            except (json.JSONDecodeError, TypeError):
+                return False
         if tool_name == "ask_user":
             return True
         return False
@@ -789,7 +796,7 @@ class LoopEngine:
             ExecutionStatus.ABORTED: f"Round aborted by user after {steps} steps",
             ExecutionStatus.ERROR: f"Round failed after {steps} steps",
             ExecutionStatus.DEAD_LOOP: f"Dead loop detected after {steps} steps: last 3 tool calls are identical",
-            ExecutionStatus.LIMIT_EXCEEDED: f"Max steps reached",
+            ExecutionStatus.LIMIT_EXCEEDED: "Max steps reached",
         }
         return ExecutionResult(
             status=status,
@@ -1067,11 +1074,11 @@ class LoopEngine:
             if not user_message:
                 return False
 
-            turn_id = await self._start_new_turn(user_message, from_agent)
+            turn_id = await self._start_new_turn(user_message, from_agent or False)
             if not turn_id:
                 return False
 
-            message_id = await self._save_user_message(user_message, message, turn_id, from_agent)
+            message_id = await self._save_user_message(user_message, message, turn_id, from_agent or False)
             if message_id is None:
                 return False
 

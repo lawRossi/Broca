@@ -46,6 +46,7 @@ class PipelineOrchestrator(GraphOrchestrator):
         logger.info(f"Pipeline executing node: '{node.name}' (type={node.type.value})")
 
         try:
+            output: str | None
             if node.type == NodeType.HUMAN:
                 output = await self._execute_human(node)
             else:

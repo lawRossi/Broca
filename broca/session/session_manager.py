@@ -5,15 +5,19 @@ Session管理器模块
 与现有Agent系统集成，实现session持久化和重载能力。
 """
 
+from __future__ import annotations
+
 import asyncio
 import json
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from broca.agent import Agent
 
 from litellm import Message as LLMMessage
 
-from broca.errors import SessionError, ValidationError
-from broca.errors import SessionError, ValidationError, ErrorCode
+from broca.errors import SessionError
 from broca.logging_config import get_logger
 from broca.session.models import Message, MessageRole, MessageType
 from broca.session.service import (
@@ -147,8 +151,8 @@ class SessionManager:
         role: str,
         content: str | None,
         message_type: str,
-        turn_id: str,
-        agent_id: str,
+        turn_id: str | None,
+        agent_id: str | None,
         message_id: str | None = None,
         data: Dict[str, Any] | None = None,
     ) -> bool:

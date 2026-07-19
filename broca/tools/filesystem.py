@@ -75,16 +75,16 @@ def _indentation_flexible_replacer(content: str, find: str) -> Replacer:
 
     def remove_indent(text: str) -> str:
         lines = text.split("\n")
-        non_empty = [l for l in lines if l.strip()]
+        non_empty = [line for line in lines if line.strip()]
         if not non_empty:
             return text
         min_indent = min(
             len(m.group(1))
-            for l in non_empty
-            if (m := re.match(r"^(\s*)", l))
+            for line in non_empty
+            if (m := re.match(r"^(\s*)", line))
         )
         return "\n".join(
-            l[min_indent:] if l.strip() else l for l in lines
+            line[min_indent:] if line.strip() else line for line in lines
         )
 
     normalized_find = remove_indent(find)
@@ -838,8 +838,9 @@ Useful for checking which files were recently changed."""
 
 def _format_size(size: int) -> str:
     """Format file size in human-readable format."""
+    remaining = float(size)
     for unit in ["B", "KB", "MB", "GB", "TB"]:
-        if size < 1024:
-            return f"{size:.1f} {unit}" if unit != "B" else f"{size} B"
-        size /= 1024
-    return f"{size:.1f} PB"
+        if remaining < 1024:
+            return f"{remaining:.1f} {unit}" if unit != "B" else f"{remaining:.0f} B"
+        remaining /= 1024
+    return f"{remaining:.1f} PB"

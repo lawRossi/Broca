@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from broca.errors import SessionError, ValidationError
 from broca.session.session_manager import SessionManager
 from broca.session_runner.ipc import (
     IPCConnectionError,
@@ -22,18 +23,15 @@ from broca.session_runner.ipc import (
     IPCTimeoutError,
     create_ipc_message,
 )
-from broca.utils.datetime_util import serialize_dt
 from broca.session_runner.models import (
     IPCMessage,
     IPCMessageType,
     RunnerProcessInfo,
     RunnerStatus,
 )
+from broca.utils.datetime_util import serialize_dt
 
 logger = logging.getLogger(__name__)
-
-
-from broca.errors import SessionError
 
 
 class RunnerManagerError(SessionError):
@@ -177,11 +175,17 @@ class RunnerManager:
                 result = await session.exec(stmt)
                 db_runner = result.first()
                 if db_runner:
+                    # Convert DB status string to RunnerStatus enum
+                    try:
+                        status = RunnerStatus(db_runner.status)
+                    except ValueError:
+                        status = RunnerStatus.UNKNOWN
+
                     return RunnerProcessInfo(
                         session_id=db_runner.session_id,
                         process=None,
                         pid=db_runner.pid,
-                        status=db_runner.status,
+                        status=status,
                         started_at=db_runner.started_at,
                         ipc_address=db_runner.ipc_address,
                         ipc_family=db_runner.ipc_family,
@@ -302,7 +306,8 @@ class RunnerManager:
                     if first_msg is not None:
                         break
                     logger.debug(
-                        "Waiting for first message from runner (attempt %d/6)...", attempt + 1
+                        "Waiting for first message from runner (attempt %d/6)...",
+                        attempt + 1,
                     )
 
                 if first_msg and first_msg.type == IPCMessageType.EVT_READY:
@@ -318,10 +323,13 @@ class RunnerManager:
                     error_payload = first_msg.payload
                     logger.error(
                         "Session %s runner initialization failed: %s",
-                        session_id, error_payload,
+                        session_id,
+                        error_payload,
                     )
                     runner_info.status = RunnerStatus.ERROR
-                    runner_info.error_message = error_payload.get("message") or str(error_payload)
+                    runner_info.error_message = error_payload.get("message") or str(
+                        error_payload
+                    )
                     runner_info.recovery_hint = error_payload.get("recovery_hint")
                     # 先通知前端，再清理
                     await self._trigger_event("runner_error", runner_info)
@@ -333,7 +341,8 @@ class RunnerManager:
                     msg_type = first_msg.type.value if first_msg else "None"
                     logger.error(
                         "Session %s runner did not send READY in time (got: %s), aborting",
-                        session_id, msg_type,
+                        session_id,
+                        msg_type,
                     )
                     await self._kill_runner(session_id)
                     await self._cleanup_runner(session_id)
@@ -533,6 +542,9 @@ class RunnerManager:
 
         try:
             pid = runner_info.pid
+            if pid is None:
+                logger.warning("Runner %s has no pid, cannot kill", session_id)
+                return
             if sys.platform == "win32":
                 runner_info.process.terminate()
             else:
@@ -659,7 +671,9 @@ class RunnerManager:
             import asyncio
 
             loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(None, ipc_server.receive_message, 10.0)
+            response = await loop.run_in_executor(
+                None, ipc_server.receive_message, 10.0
+            )
 
             if response:
                 return response.payload
@@ -730,7 +744,9 @@ class RunnerManager:
         elif msg.type == IPCMessageType.EVT_ERROR:
             runner_info.status = RunnerStatus.ERROR
             error_payload = msg.payload
-            runner_info.error_message = error_payload.get("message") or str(error_payload)
+            runner_info.error_message = error_payload.get("message") or str(
+                error_payload
+            )
             runner_info.recovery_hint = error_payload.get("recovery_hint")
             logger.error(
                 "Runner error for session %s: %s",
@@ -738,9 +754,7 @@ class RunnerManager:
                 runner_info.error_message,
             )
             # 触发 runner_error 事件，通知前端
-            asyncio.ensure_future(
-                self._trigger_event("runner_error", runner_info)
-            )
+            asyncio.ensure_future(self._trigger_event("runner_error", runner_info))
 
         elif msg.type == IPCMessageType.EVT_SHUTDOWN_COMPLETE:
             runner_info.status = RunnerStatus.DEAD
@@ -773,12 +787,12 @@ class RunnerManager:
         payload = msg.payload
         execution_id = payload.get("execution_id")
         crew_id = payload.get("crew_id", "unknown")
-        status = payload.get("status", "running")
-
         if msg.type == IPCMessageType.EVT_CREW_START:
             logger.info(
                 "[Crew] '%s' started (session=%s, exec=%s, type=%s)",
-                crew_id, session_id, execution_id,
+                crew_id,
+                session_id,
+                execution_id,
                 payload.get("orchestrator_type", "?"),
             )
 
@@ -787,20 +801,29 @@ class RunnerManager:
             phase = payload.get("current_phase", "")
             logger.info(
                 "[Crew] '%s' progress: %.0f%% (session=%s, exec=%s, phase=%s)",
-                crew_id, progress * 100, session_id, execution_id, phase,
+                crew_id,
+                progress * 100,
+                session_id,
+                execution_id,
+                phase,
             )
 
         elif msg.type == IPCMessageType.EVT_CREW_COMPLETE:
             logger.info(
                 "[Crew] '%s' completed (session=%s, exec=%s)",
-                crew_id, session_id, execution_id,
+                crew_id,
+                session_id,
+                execution_id,
             )
 
         elif msg.type == IPCMessageType.EVT_CREW_ERROR:
             error = payload.get("error", "unknown error")
             logger.error(
                 "[Crew] '%s' failed: %s (session=%s, exec=%s)",
-                crew_id, error, session_id, execution_id,
+                crew_id,
+                error,
+                session_id,
+                execution_id,
             )
 
         # 触发已注册的 crew 事件回调
@@ -908,9 +931,9 @@ class RunnerManager:
 
         # 触发事件 & 更新 Agent DB 状态
         for session_id in dead_sessions:
-            runner_info = self._runners.get(session_id)
-            if runner_info:
-                await self._trigger_event("session_crashed", runner_info)
+            crashed_runner = self._runners.get(session_id)
+            if crashed_runner:
+                await self._trigger_event("session_crashed", crashed_runner)
                 # 将对应 session 的所有 agent 标记为 disconnected
                 await self._mark_session_agents_disconnected(session_id)
 
@@ -937,12 +960,14 @@ class RunnerManager:
                 if agents:
                     logger.info(
                         "Marked %d agents as disconnected for session %s",
-                        len(agents), session_id,
+                        len(agents),
+                        session_id,
                     )
         except Exception as e:
             logger.error(
                 "Failed to mark agents disconnected for session %s: %s",
-                session_id, e,
+                session_id,
+                e,
             )
 
     async def _ipc_listener_loop(self, session_id: str) -> None:
@@ -992,7 +1017,7 @@ class RunnerManager:
             async with db_manager.get_session() as session:
                 # 查询所有 alive/starting 状态的 runner 记录
                 stmt = select(SessionRunner).where(
-                    SessionRunner.status.in_(["alive", "starting"])
+                    SessionRunner.status.in_(["alive", "starting"])  # type: ignore[attr-defined]
                 )
                 result = await session.exec(stmt)
                 active_runners = result.all()

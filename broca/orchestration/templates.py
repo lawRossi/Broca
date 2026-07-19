@@ -4,6 +4,8 @@
 预置的编排模板，可直接用于常见场景。
 """
 
+from typing import Any, Optional
+
 from broca.errors import ValidationError
 from broca.orchestration.crew import (
     AgentRole,
@@ -242,7 +244,7 @@ def create_code_review_template(
 def create_multi_source_research_template(
     query: str = "",
     dispatcher_config: str = "dispatcher_agent.md",
-    researcher_configs: list = None,
+    researcher_configs: Optional[list] = None,
     aggregator_config: str = "aggregator_agent.md",
 ) -> CrewConfig:
     """
@@ -306,7 +308,7 @@ def create_multi_source_research_template(
 
 
 # 模板注册表
-TEMPLATE_REGISTRY = {
+TEMPLATE_REGISTRY: dict[str, Any] = {
     "debate": {
         "name": "圆桌辩论",
         "description": "多 Agent 圆桌讨论，适合方案辩论、头脑风暴",

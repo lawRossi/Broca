@@ -233,7 +233,7 @@ class RoundTableOrchestrator(Orchestrator):
                         "type": "opening",
                     }
                 )
-                self.blackboard.set(self._ns("opening"), opening)
+                await self.blackboard.set(self._ns("opening"), opening)
                 opening_phase.status = PhaseStatus.COMPLETED
                 opening_phase.output = {"statement": opening}
                 opening_phase.completed_at = datetime.now(timezone.utc)
@@ -483,6 +483,24 @@ class RoundTableOrchestrator(Orchestrator):
                 or "(no response)"
             )
         return f"(error: {exec_result.error})"
+
+    @staticmethod
+    def _extract_json(text: str) -> dict | None:
+        """从 LLM 回复中提取 JSON 对象。"""
+        # 尝试直接解析
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        # 尝试从 ```json ... ``` 代码块中提取
+        import re
+        match = re.search(r"```(?:json)?\s*\n?(.*?)\n?```", text, re.DOTALL)
+        if match:
+            try:
+                return json.loads(match.group(1).strip())
+            except json.JSONDecodeError:
+                pass
+        return None
 
     def _build_discussion_prompt(
         self,

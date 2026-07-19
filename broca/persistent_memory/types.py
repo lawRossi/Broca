@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date
 from enum import Enum
-from typing import Optional
+
+from broca.errors import ValidationError
 
 # ──────────────────────────────────────────────
 # 记忆类型枚举
@@ -91,7 +92,7 @@ def parse_frontmatter(text: str) -> dict:
         解析后的字段字典。无效或缺失的内容返回空 dict。
 
     Raises:
-        ValueError: YAML 格式无效时抛出
+        ValidationError: YAML 格式无效时抛出
     """
     match = YAML_FRONTMATTER_RE.match(text)
     if not match:

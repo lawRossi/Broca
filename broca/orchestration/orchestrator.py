@@ -14,11 +14,12 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from broca.errors import ErrorCode, ValidationError
 from broca.logging_config import get_logger
 from broca.utils.datetime_util import serialize_dt
+from broca.orchestration.blackboard import Blackboard
 from broca.orchestration.crew import (
     CrewConfig,
     OrchestratorType,
@@ -173,8 +174,10 @@ class Orchestrator(ABC):
         )
         self._aborted = False
         self._result: Optional[OrchestrationResult] = None
+        # 命名空间（由 CompositeOrchestrator 设置，用于黑板键隔离）
+        self.namespace: str = ""
         # 进度回调（由 CrewOrchestratorRunner 设置，阶段完成时推送实时进度）
-        self.progress_callback = None
+        self.progress_callback: Callable[[List[Any], int], None] | None = None
 
     def notify_progress(self, phases: List[Any], total: int) -> None:
         """阶段完成时回调，推送实时进度（由子编排器在阶段完成后调用）

@@ -148,7 +148,7 @@ class SnapshotTracker:
 
     async def _discover_changed_files(self) -> List[str]:
         """发现变更文件"""
-        changed_files = []
+        changed_files: List[str] = []
 
         # 获取已跟踪文件的变更（工作区 vs 索引）
         try:

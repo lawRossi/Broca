@@ -261,7 +261,7 @@ class PersistentMemoryManager:
                 agent_id=agent_id,
             )
         else:
-            sub_agent = agent_factory.get_agent(
+            sub_agent = agent_factory.get_agent(  # type: ignore[assignment]
                 session_manager.session_id, agent_config["name"]
             )
             if sub_agent is None:
@@ -270,7 +270,7 @@ class PersistentMemoryManager:
         # 确保子 Agent 在运行
         if not sub_agent.running:
             task = asyncio.create_task(sub_agent.start())
-            task.add_done_callback(lambda t, a=sub_agent: a.stop())
+            task.add_done_callback(lambda t, a=sub_agent: a.stop())  # type: ignore[misc]
 
         # Fork 当前上下文，去掉末尾带 tool_calls 的 assistant 消息
         history = copy.copy(context.history)

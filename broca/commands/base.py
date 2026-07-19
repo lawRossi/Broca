@@ -50,7 +50,7 @@ class CommandContext:
     """Context passed to command execution"""
 
     workspace: str
-    session_id: str
+    session_id: Optional[str]
     agent_id: str
     agent: "Agent"
     context: "Context"

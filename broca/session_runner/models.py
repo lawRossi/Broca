@@ -108,12 +108,12 @@ class RunnerProcessInfo:
 
     session_id: str
     process: Any  # subprocess.Popen 对象
-    pid: int
-    status: RunnerStatus
-    started_at: datetime
-    ipc_address: str  # IPC 地址（平台自适应）
-    ipc_family: str  # IPC 协议族
-    resource_usage: Dict[str, Any] = field(default_factory=dict)
+    pid: Optional[int] = None
+    status: RunnerStatus = RunnerStatus.UNKNOWN
+    started_at: Optional[datetime] = None
+    ipc_address: Optional[str] = None  # IPC 地址（平台自适应）
+    ipc_family: Optional[str] = None  # IPC 协议族
+    resource_usage: Optional[Dict[str, Any]] = None
     last_heartbeat: Optional[datetime] = None
     restart_count: int = 0
     error_message: Optional[str] = None

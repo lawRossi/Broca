@@ -28,6 +28,7 @@ from broca.orchestration.graph_model import (
     NodeType,
     Router,
 )
+from broca.orchestration.crew import CrewConfig
 from broca.orchestration.orchestrator import (
     CrewContext,
     ExecutionStatus,
@@ -136,7 +137,7 @@ class GraphOrchestrator(Orchestrator, ABC):
         )
 
     async def _run_main_loop(self, result: OrchestrationResult) -> None:
-        current = self.graph.entry
+        current: Optional[str] = self.graph.entry
         total_steps = 0
 
         while current and total_steps < self.MAX_TOTAL_STEPS:
@@ -273,7 +274,7 @@ class GraphOrchestrator(Orchestrator, ABC):
         previous_output = self._get_previous_output()
         task_context = self._build_task_context(
             task=node.task,
-            context=node.context,
+            context=node.context,  # type: ignore[arg-type]
             previous_output=previous_output,
         )
         return await self._execute_agent(node.agent, task_context)
@@ -636,7 +637,7 @@ class GraphOrchestrator(Orchestrator, ABC):
         if len(targets) <= 1:
             return None
 
-        successors = set()
+        successors: set[str | None] = set()
         for target in targets:
             node = self.graph.nodes.get(target)
             if node and node.edges:

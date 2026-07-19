@@ -2,7 +2,7 @@
 PersistentMemory 状态管理
 """
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 
 @dataclass

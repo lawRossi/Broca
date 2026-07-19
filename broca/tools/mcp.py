@@ -193,8 +193,8 @@ def _build_client(name: str, cfg: dict) -> Optional[Any]:
             name,
             url,
         )
-        transport = SSETransport(url=url, headers=headers)
-        return FastMCPClient(transport)
+        sse_transport = SSETransport(url=url, headers=headers)
+        return FastMCPClient(sse_transport)
 
     # -- 无法识别的配置 --
     return None

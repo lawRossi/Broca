@@ -146,7 +146,7 @@ def handle_migration_command(command: str, *args: str) -> bool:
         bool: 是否成功
     """
     commands = {
-        "create": lambda: migration_manager.create_migration(*args),
+        "create": lambda: migration_manager.create_migration(*args),  # type: ignore[arg-type]
         "upgrade": lambda: migration_manager.upgrade_database(*args),
         "downgrade": lambda: migration_manager.downgrade_database(*args),
         "current": lambda: migration_manager.show_current_revision(),

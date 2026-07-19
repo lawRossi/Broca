@@ -44,7 +44,7 @@ def get_blackboard(session_id: str, execution_id: Optional[str] = None) -> Optio
     return _blackboard_registry.get(fallback_key)
 
 
-def set_blackboard(session_id: str, execution_id: Optional[str] = None, blackboard: Blackboard = None) -> None:
+def set_blackboard(session_id: str, execution_id: Optional[str] = None, blackboard: Optional[Blackboard] = None) -> None:
     """设置指定 session+execution 的黑板实例"""
     key = _registry_key(session_id, execution_id)
     _blackboard_registry[key] = blackboard

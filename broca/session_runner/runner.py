@@ -47,7 +47,7 @@ _crew_runner: Optional[Any] = None  # 当前正在运行的编排（用于中止
 
 def setup_logging(log_file: Optional[str] = None, level: str = "INFO") -> None:
     """配置日志"""
-    handlers = [logging.StreamHandler(sys.stderr)]
+    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
     if log_file:
         os.makedirs(os.path.dirname(log_file), exist_ok=True)
         handlers.append(logging.FileHandler(log_file))
@@ -325,7 +325,7 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
         # 中止编排（实际调用 crew_runner.abort_crew()）
         crew_id = msg.payload.get("crew_id")
         logger.info(f"Aborting crew: {crew_id}")
-        if _crew_runner:
+        if _crew_runner:  # type: ignore[used-before-def]  # module-level variable
             try:
                 aborted = await _crew_runner.abort_crew()
                 if aborted:
