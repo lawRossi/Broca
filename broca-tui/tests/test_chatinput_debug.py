@@ -2,15 +2,13 @@
 Debug ChatInput height: why does it take 34 rows instead of ~6?
 """
 from pathlib import Path
+
 import pytest
-pytestmark = pytest.mark.asyncio
 
 from textual.app import App, ComposeResult
 from broca_tui.widgets.chat_input import ChatInput
-from textual.containers import Vertical
-from textual.geometry import Size
 
-
+pytestmark = pytest.mark.asyncio
 CSS_PATH = str(Path(__file__).parent.parent / "broca_tui" / "theme" / "app.tcss")
 
 

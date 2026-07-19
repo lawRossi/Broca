@@ -161,7 +161,7 @@ class AgentStore:
             if not self._restore_visibility_state(session_id):
                 # No saved state: set all agents visible by default
                 self.visible_agent_ids = [
-                    a.get("agent_id") for a in agents if a.get("agent_id")
+                    str(a["agent_id"]) for a in agents if a.get("agent_id")
                 ]
 
             # Set main agent as current (find agent with role "main-agent")
@@ -214,7 +214,7 @@ class AgentStore:
         """Set all agents visible or invisible."""
         if visible:
             self.visible_agent_ids = [
-                a.get("agent_id") for a in self.agents if a.get("agent_id")
+                str(a["agent_id"]) for a in self.agents if a.get("agent_id")
             ]
         else:
             self.visible_agent_ids = []

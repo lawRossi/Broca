@@ -4,7 +4,7 @@ Crew Execution API client.
 Provides methods for submitting, listing, monitoring, and aborting crew executions.
 """
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, Optional
 
 from broca_tui.api.client import APIClient
 

@@ -1,12 +1,13 @@
 """Debug: verify CSS is loaded correctly for MessageList."""
 from pathlib import Path
-import pytest
-pytestmark = pytest.mark.asyncio
 
-from textual.app import App, ComposeResult
+import pytest
+
+from textual.app import App
 from broca_tui.screens.chat import ChatScreen
 from broca_tui.widgets.message_list import MessageList
 
+pytestmark = pytest.mark.asyncio
 CSS_PATH = str(Path(__file__).parent.parent / "broca_tui" / "theme" / "app.tcss")
 print(f"\nCSS_PATH: {CSS_PATH}")
 print(f"CSS file exists: {Path(CSS_PATH).exists()}")
@@ -33,7 +34,7 @@ async def test_message_list_css():
         print(f"MessageList styles.height: {ml.styles.height}")
         
         # Check if CSS is loaded from file
-        print(f"\nAll CSS rules loaded:")
+        print("\nAll CSS rules loaded:")
         for rule in app.stylesheet.rules:
             selector = rule.selectors
             if 'message' in selector.lower():

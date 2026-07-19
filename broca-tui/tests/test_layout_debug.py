@@ -2,15 +2,14 @@
 Minimal layout debug test: figure out why main-content children distribute height incorrectly.
 """
 from pathlib import Path
+
 import pytest
-pytestmark = pytest.mark.asyncio
 
 from textual.app import App, ComposeResult
 from textual.containers import Vertical, Horizontal, ScrollableContainer
-from textual.widgets import Static, Input, Button
-from textual.widget import Widget
-from textual.geometry import Size
+from textual.widgets import Static
 
+pytestmark = pytest.mark.asyncio
 CSS_PATH = str(Path(__file__).parent.parent / "broca_tui" / "theme" / "app.tcss")
 
 

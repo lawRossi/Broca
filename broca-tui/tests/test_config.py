@@ -13,7 +13,6 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from broca_tui.config import load_config, TUIConfig, get_config
 

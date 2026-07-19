@@ -10,7 +10,7 @@ import re
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Set
 
 from broca.communication.socketio_client import SocketIOClient
 from broca.session.models import Message, MessageProtocol
@@ -129,7 +129,7 @@ class ChatStore:
         self.loading_more_turns: bool = False
         self.active_turn_index: int = -1  # 当前活跃 turn 在列表中的索引
         # 耗时改为消息驱动，不再使用定时器
-        self._change_timer = None  # asyncio.TimerHandle: throttle _notify_change
+        self._change_timer: Any = None  # asyncio.TimerHandle: throttle _notify_change
         self._on_get_agent_name: Optional[Callable[[str], Optional[str]]] = None
 
         # Track last message_id that had content per turn (for agent_response separator logic)
@@ -344,10 +344,11 @@ class ChatStore:
                         return
                     self._pending_turn_id = None
 
-                agent_name = target_id or ""
+                target_id_str = str(target_id or "")
+                agent_name = target_id_str
                 if self._on_get_agent_name:
-                    agent_name = self._on_get_agent_name(target_id) or agent_name
-                self.create_turn_summary(turn_id, target_id or "", agent_name)
+                    agent_name = self._on_get_agent_name(target_id_str) or agent_name
+                self.create_turn_summary(turn_id, target_id_str, agent_name)
 
         @self._socket.on("turn_end")
         async def handle_turn_end(message: Message):
@@ -720,7 +721,7 @@ class ChatStore:
 
                 # 解析 started_at（API 返回 ISO 格式字符串，转为 ms 时间戳）
                 started_at_raw = t.get("started_at")
-                started_at_ms = 0
+                started_at_ms = 0.0
                 if started_at_raw:
                     try:
                         import datetime as _dt

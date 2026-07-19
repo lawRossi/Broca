@@ -16,7 +16,7 @@ from typing import Any, Dict, Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
-from textual.screen import Screen
+from textual.screen import ModalScreen, Screen
 
 from broca_tui.api.session import SessionAPI
 from broca_tui.stores.agent_store import AgentStore
@@ -31,7 +31,6 @@ from broca_tui.widgets.orchestration_banner import OrchestrationBanner
 from broca_tui.widgets.permission_dialog import PermissionDialog
 from broca_tui.widgets.turn_card import TurnCard
 
-from broca_tui.debug_log import log, clear as debug_clear
 
 
 class ChatScreen(Screen):

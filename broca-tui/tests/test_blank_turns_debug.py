@@ -1,19 +1,19 @@
 """
 调试: turn 列表空白 — 检查 TurnCard 是否被 mount, turn-scroll/turn-area 尺寸
 """
+from pathlib import Path
+
 import pytest
-pytestmark = pytest.mark.asyncio
 
 from textual.app import App, ComposeResult
-from textual.containers import ScrollableContainer, Vertical, Horizontal
-from textual.widgets import Static, Label
+from textual.containers import ScrollableContainer, Vertical
 
 from broca_tui.screens.chat import ChatScreen
 from broca_tui.widgets.message_list import MessageList
 from broca_tui.stores.chat_store import TurnSummary
 from broca_tui.widgets.turn_card import TurnCard
 
-from pathlib import Path
+pytestmark = pytest.mark.asyncio
 CSS_PATH = str(Path(__file__).parent.parent / "broca_tui" / "theme" / "app.tcss")
 
 
@@ -76,7 +76,7 @@ async def test_chat_screen_turn_rendering():
         scroll = ml.query_one("#turn-scroll", ScrollableContainer)
         area = ml.query_one("#turn-area", Vertical)
 
-        print(f"\n=== ChatScreen turn rendering ===")
+        print("\n=== ChatScreen turn rendering ===")
         print(f"message-list size={ml.size}")
         print(f"scroll size={scroll.size}, region={scroll.region}")
         print(f"area size={area.size}, region={area.region}")

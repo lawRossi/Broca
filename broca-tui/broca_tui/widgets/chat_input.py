@@ -19,6 +19,8 @@ from textual.events import Key
 from textual.reactive import reactive
 from textual.widgets import Button, Label, ListItem, ListView, TextArea
 
+from broca_tui.api.session import SessionAPI
+
 
 class _ChatTextArea(TextArea):
     """TextArea subclass: Enter sends message, Shift+Enter inserts newline."""
@@ -53,8 +55,6 @@ class _ChatTextArea(TextArea):
             return
         await super()._on_key(event)
 
-
-from broca_tui.api.session import SessionAPI
 
 # Fallback commands (used when API call fails)
 FALLBACK_COMMANDS: List[Tuple[str, str]] = [
@@ -358,15 +358,15 @@ class ChatInput(Vertical):
                         self._hide_autocomplete()
                         return
 
-                matches = [
+                mention_matches = [
                     agent
                     for agent in self._agents
                     if not mention_text  # 无过滤文本时匹配全部
                     or mention_text.lower() in agent.get("name", "").lower()
                     or mention_text.lower() in agent.get("agent_id", "").lower()
                 ]
-                if matches:
-                    self._show_autocomplete(matches, "mention")
+                if mention_matches:
+                    self._show_autocomplete(mention_matches, "mention")
                     return
 
         self._hide_autocomplete()

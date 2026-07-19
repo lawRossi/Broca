@@ -8,26 +8,19 @@ These tests catch real runtime errors like:
 - Widget constructor errors
 """
 
-import json
-from unittest.mock import AsyncMock, patch, MagicMock
-
 import pytest
 
-pytestmark = pytest.mark.asyncio
-
 from textual.app import App, ComposeResult
-from textual.containers import Vertical
-from textual.screen import Screen
-from textual.widgets import Button, Label, Static
+from textual.widgets import Button
 
 from broca_tui.screens.session_list import SessionListScreen
-from broca_tui.screens.chat import ChatScreen
 from broca_tui.screens.crew_executions import CrewExecutionsScreen
 from broca_tui.widgets.chat_header import ChatHeader
 from broca_tui.widgets.turn_card import TurnCard
 from broca_tui.widgets.chat_input import ChatInput
 from broca_tui.widgets.info_sidebar import InfoSidebar
-from broca_tui.stores.session_store import SessionStore
+
+pytestmark = pytest.mark.asyncio
 
 
 # ============================================================================

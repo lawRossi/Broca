@@ -10,11 +10,9 @@ Tests that:
 6. MessageList watch methods don't crash during compose phase
 """
 
-import pytest
-
-pytestmark = pytest.mark.asyncio
-
 from unittest.mock import AsyncMock, patch
+
+import pytest
 
 from textual.app import App, ComposeResult
 from textual.containers import ScrollableContainer
@@ -26,6 +24,8 @@ from broca_tui.widgets.chat_header import ChatHeader
 from broca_tui.widgets.chat_input import ChatInput
 from broca_tui.widgets.info_sidebar import InfoSidebar
 from broca_tui.stores.agent_store import AgentStore
+
+pytestmark = pytest.mark.asyncio
 
 
 class PushScreenApp(App):
@@ -190,7 +190,7 @@ class TestMessageListNoRegression:
 
     @pytest.fixture
     def app(self):
-        from textual.app import App, ComposeResult
+        from textual.app import App
         from broca_tui.widgets.message_list import MessageList
 
         class TestApp(App):

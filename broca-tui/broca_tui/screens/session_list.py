@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
@@ -109,7 +109,7 @@ class CreateSessionDialog(ModalScreen):
     async def on_select_changed(self, event: Select.Changed) -> None:
         """Handle Select changes — provider selection triggers model loading."""
         if event.select.id == "input-provider":
-            provider = event.value
+            provider: str | None = event.value  # type: ignore[assignment]
             await self._on_provider_selected(provider)
 
     async def _on_provider_selected(self, provider: str | None) -> None:
@@ -282,9 +282,9 @@ class SessionListScreen(Screen):
         self.run_worker(self._load_sessions())
         self.set_interval(1 / 3, self._check_scroll_bottom)
         # Auto-refresh every 60 seconds
-        self.set_interval(60, self._auto_refresh)
+        self.set_interval(60, self._auto_refresh_sessions)
 
-    def _auto_refresh(self) -> None:
+    def _auto_refresh_sessions(self) -> None:
         """Auto-refresh session list every 60 seconds."""
         # Don't auto-refresh while user is searching or editing
         focused = self.focused
@@ -503,13 +503,13 @@ class SessionListScreen(Screen):
             classes="edit-name-input",
         )
         parent = name_label.parent
-        if parent:
+        if parent is not None:
             # 也移除编辑图标
             for child in list(parent.children):
                 if child.has_class("edit-hint"):
                     child.remove()
             name_label.remove()
-            parent.mount(edit_input, before=0)
+            cast(Widget, parent).mount(edit_input, before=0)
             self.set_timer(0.05, lambda: edit_input.focus())
 
     def on_key(self, event: events.Key) -> None:
@@ -582,19 +582,23 @@ class SessionListScreen(Screen):
         if isinstance(event.widget, Button):
             return
 
+        clicked_widget = event.widget
+        if clicked_widget is None:
+            return
+
         # 如果是输入框或编辑图标，不触发导航
-        if isinstance(event.widget, Input):
+        if isinstance(clicked_widget, Input):
             return
 
         # 点击 session-name 或 edit-hint 启动内联编辑
-        if event.widget.has_class("session-name") or event.widget.has_class("edit-hint"):
-            session_id = self._find_session_id(event.widget)
+        if clicked_widget.has_class("session-name") or clicked_widget.has_class("edit-hint"):
+            session_id = self._find_session_id(clicked_widget)
             if session_id:
                 self._start_inline_edit(session_id)
             return
 
         # Walk up to find session card
-        widget = event.widget
+        widget: Widget | None = clicked_widget
         while widget is not None:
             if hasattr(widget, "id") and widget.id and widget.id.startswith("session-"):
                 session_id = widget.id.replace("session-", "")
@@ -603,7 +607,7 @@ class SessionListScreen(Screen):
                     category = session.get("category", "normal")
                     self._navigate_to_session(session_id, category)
                 return
-            widget = widget.parent if hasattr(widget, "parent") else None
+            widget = widget.parent if hasattr(widget, "parent") else None  # type: ignore[assignment,union-attr]
 
     def _navigate_to_session(self, session_id: str, category: str):
         """Navigate to the appropriate screen based on category.
@@ -616,7 +620,7 @@ class SessionListScreen(Screen):
         from broca_tui.screens.crew_executions import CrewExecutionsScreen
 
         if category == "agent-orchestration":
-            screen = CrewExecutionsScreen(session_id=session_id)
+            screen: Screen = CrewExecutionsScreen(session_id=session_id)
         else:
             screen = ChatScreen(session_id=session_id)
         self.app.push_screen(screen)

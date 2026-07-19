@@ -1,5 +1,4 @@
 """Simple debug logger that writes to /tmp/broca-tui-debug.log"""
-import os
 
 LOG_FILE = "/tmp/broca-tui-debug.log"
 

@@ -11,18 +11,16 @@ Covers full user flow:
 - Dialog lifecycle
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
 from broca_tui.app import BrocaTUIApp
-from broca_tui.screens.session_list import SessionListScreen, CreateSessionDialog, DeleteConfirmDialog
+from broca_tui.screens.session_list import CreateSessionDialog, DeleteConfirmDialog
 from broca_tui.screens.chat import ChatScreen
 from broca_tui.screens.crew_executions import CrewExecutionsScreen, ConfirmDialog
-from broca_tui.widgets.chat_input import ChatInput
 from broca_tui.stores.session_store import SessionStore
-from broca_tui.stores.chat_store import ChatStore, TurnSummary
-from broca_tui.stores.agent_store import AgentStore
+from broca_tui.stores.chat_store import TurnSummary
 from broca_tui.stores.crew_store import CrewStore
 
 
@@ -358,7 +356,6 @@ class TestNavigationFlow:
 
     def test_session_list_to_chat_normal(self):
         """Test that normal category navigates to ChatScreen."""
-        screen = SessionListScreen()
         # The navigation logic
         from broca_tui.screens.chat import ChatScreen
         target = ChatScreen(session_id="test-id")

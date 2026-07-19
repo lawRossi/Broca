@@ -765,7 +765,7 @@ class AgentSidebar(Widget):
             self._store.update_agent_status(agent_id, status)
             self._render_agents()
 
-    def on_mount(self) -> None:
-        """Set up after mount."""
+    def on_mount_extra(self) -> None:
+        """Set up after mount (extra setup for subclasses)."""
         if self._store:
             self._store.on_change(self._render_agents)

@@ -20,7 +20,7 @@ from textual.containers import Horizontal, ScrollableContainer, Vertical
 from textual.screen import ModalScreen, Screen
 from textual.widgets import Button, Label, Select, Static
 
-from broca_tui.stores.crew_store import CrewStore
+from broca_tui.stores.crew_store import CrewStore, TabType
 
 # ============================================================================
 # Orchestrator type labels (matching VS Code CrewApp.vue)
@@ -211,10 +211,14 @@ class CrewExecutionsScreen(Screen):
         """Load executions on mount, bind store, and connect socket."""
         # Bind store changes — use set_timer to ensure UI runs in Textual's event loop
         # Note: delay must be > 0 to avoid Textual division-by-zero error
-        self._store.on_change(lambda: self.set_timer(0.01, self._on_store_change))
-        self._store.on_error(
-            lambda msg: self.set_timer(0.01, lambda: self._show_error(msg))
-        )
+        def _on_store_change_wrapper() -> None:
+            self.set_timer(0.01, self._on_store_change)
+
+        def _on_store_error_wrapper(msg: str) -> None:
+            self.set_timer(0.01, lambda: self._show_error(msg))
+
+        self._store.on_change(_on_store_change_wrapper)
+        self._store.on_error(_on_store_error_wrapper)
 
         # Initial load
         self.run_worker(self._load_executions())
@@ -771,7 +775,7 @@ class CrewExecutionsScreen(Screen):
 
     # ── Tab switching ──
 
-    def _switch_tab(self, tab: str):
+    def _switch_tab(self, tab: TabType):
         """Switch between executions and configs tabs.
 
         Args:

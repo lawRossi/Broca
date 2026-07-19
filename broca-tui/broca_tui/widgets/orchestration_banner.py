@@ -13,12 +13,11 @@ Shows:
 
 from __future__ import annotations
 
-from typing import Optional
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
 from textual.message import Message
-from textual.widgets import Button, Label, Static
+from textual.widgets import Button, Label
 from textual.widget import Widget
 
 

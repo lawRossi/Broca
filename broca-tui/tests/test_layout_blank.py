@@ -3,19 +3,16 @@
 模拟 "除了顶栏其他一片空白" 的问题。
 """
 from pathlib import Path
-import pytest
-pytestmark = pytest.mark.asyncio
 
-from textual.app import App, ComposeResult
-from textual.geometry import Size
+import pytest
+
+from textual.app import App
 from broca_tui.screens.chat import ChatScreen
 from broca_tui.widgets.chat_header import ChatHeader
 from broca_tui.widgets.message_list import MessageList
 from broca_tui.widgets.chat_input import ChatInput
-from broca_tui.stores.agent_store import AgentStore
-from textual.containers import ScrollableContainer, Vertical, Horizontal
 
-
+pytestmark = pytest.mark.asyncio
 CSS_PATH = str(Path(__file__).parent.parent / "broca_tui" / "theme" / "app.tcss")
 
 
@@ -85,7 +82,7 @@ async def test_chat_screen_layout_sizes():
         print(f"info-sidebar: size={info_sidebar.size}, region={info_sidebar.region}")
 
         # Assertions
-        assert chat_screen.size.height == 40, f"chat-screen should fill screen height"
+        assert chat_screen.size.height == 40, "chat-screen should fill screen height"
         assert chat_content.size.height > 2, f"chat-content should have >2 rows, got {chat_content.size.height}"
         assert header.size.height <= 3, f"chat-header should be <=3 rows, got {header.size.height}"
         assert agent_sidebar.size.height > 2, f"agent-sidebar has {agent_sidebar.size.height} height"

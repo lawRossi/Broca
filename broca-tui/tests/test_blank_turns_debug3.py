@@ -1,15 +1,16 @@
 """
 调试: turn 列表空白 — 模拟有数据时是否渲染
 """
+from pathlib import Path
+
 import pytest
-pytestmark = pytest.mark.asyncio
 
 from textual.app import App
 from broca_tui.screens.chat import ChatScreen
 from broca_tui.widgets.message_list import MessageList
 from broca_tui.stores.chat_store import TurnSummary
 
-from pathlib import Path
+pytestmark = pytest.mark.asyncio
 CSS_PATH = str(Path(__file__).parent.parent / "broca_tui" / "theme" / "app.tcss")
 
 
@@ -53,7 +54,7 @@ async def test_chat_screen_with_turn_data():
         scroll = ml.query_one("#turn-scroll")
         area = ml.query_one("#turn-area")
 
-        print(f"\n=== With turn data ===")
+        print("\n=== With turn data ===")
         print(f"scroll size={scroll.size}, region={scroll.region}")
         print(f"area size={area.size}, region={area.region}")
         print(f"area children count={len(area.children)}")
@@ -72,7 +73,7 @@ async def test_chat_screen_lifecycle():
         await pilot.pause()
 
         screen = app.screen
-        print(f"\n=== ChatScreen lifecycle ===")
+        print("\n=== ChatScreen lifecycle ===")
         print(f"screen type={type(screen).__name__}")
         print(f"screen size={screen.size}")
 

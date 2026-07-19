@@ -13,7 +13,7 @@ Message list with:
 from __future__ import annotations
 
 import copy
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, cast
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, ScrollableContainer, Vertical
@@ -228,7 +228,8 @@ class MessageList(Vertical):
         # 因此无需为内容过渡而重建 DOM。只要 turn_id 匹配，一律原地更新。
         can_update_in_place = len(existing_cards) == turn_count and all(
             isinstance(existing_cards[i], TurnCard)
-            and existing_cards[i]._turn.turn_id == self._turn_summaries[i].turn_id
+            and cast(TurnCard, existing_cards[i])._turn.turn_id
+            == self._turn_summaries[i].turn_id
             for i in range(turn_count)
         )
 
@@ -236,7 +237,7 @@ class MessageList(Vertical):
             log(f" _render_turn_cards: updating {turn_count} TurnCards in-place")
             prev_agent_id = None
             for i, turn in enumerate(self._turn_summaries):
-                card = existing_cards[i]
+                card = cast(TurnCard, existing_cards[i])
                 consecutive = turn.agent_id == prev_agent_id
                 card._consecutive_agent = consecutive
                 card.update_turn(turn, self._agent_name_map)
@@ -266,8 +267,8 @@ class MessageList(Vertical):
                     )
                     area.mount(card)
             elif turn_count < len(existing):
-                for card in existing[turn_count:]:
-                    card.remove()
+                for extra_card in existing[turn_count:]:
+                    extra_card.remove()
 
             # Step 2: 逐个卡片检查，turn_id 匹配则原地更新，否则替换 DOM（如新 turn）
             existing = list(area.children)
@@ -276,14 +277,14 @@ class MessageList(Vertical):
                 consecutive = turn.agent_id == prev_agent_id
                 prev_agent_id = turn.agent_id
                 if i < len(existing):
-                    card = existing[i]
+                    card_widget = existing[i]
                     if (
-                        isinstance(card, TurnCard)
-                        and card._turn.turn_id == turn.turn_id
+                        isinstance(card_widget, TurnCard)
+                        and card_widget._turn.turn_id == turn.turn_id
                     ):
                         # turn_id 匹配，原地更新（不重建 DOM，update_turn 内部处理显隐切换）
-                        card._consecutive_agent = consecutive
-                        card.update_turn(turn, self._agent_name_map)
+                        card_widget._consecutive_agent = consecutive
+                        card_widget.update_turn(turn, self._agent_name_map)
                     else:
                         # turn_id 不匹配（新 turn 或乱序），在 DOM 中替换此卡片
                         new_card = TurnCard(
@@ -292,8 +293,12 @@ class MessageList(Vertical):
                             consecutive_agent=consecutive,
                         )
                         siblings = list(area.children)
-                        card_idx = siblings.index(card) if card in siblings else -1
-                        card.remove()
+                        card_idx = (
+                            siblings.index(card_widget)
+                            if card_widget in siblings
+                            else -1
+                        )
+                        card_widget.remove()
                         before = (
                             siblings[card_idx + 1]
                             if card_idx >= 0 and card_idx + 1 < len(siblings)

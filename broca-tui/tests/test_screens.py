@@ -8,9 +8,7 @@ Covers:
 - App: default screen, navigation helpers
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
 
 from broca_tui.screens.session_list import SessionListScreen, CreateSessionDialog, DeleteConfirmDialog
 from broca_tui.screens.chat import ChatScreen
@@ -33,7 +31,6 @@ class TestSessionListScreen:
     def test_bindings_defined(self):
         """Test that keyboard bindings are defined."""
         bindings = SessionListScreen.BINDINGS
-        binding_keys = [b[0] if isinstance(b, tuple) else b.action for b in bindings]
         # Check for ctrl+n and ctrl+f
         has_ctrl_n = any("ctrl+n" in str(b) for b in bindings)
         has_ctrl_f = any("ctrl+f" in str(b) for b in bindings)
@@ -149,8 +146,6 @@ class TestCrewExecutionsScreen:
         """Test ConfirmDialog compose produces buttons."""
         dialog = ConfirmDialog(title="Test", message="Test?")
         # Verify compose works
-        from textual.containers import Vertical, Horizontal
-        from textual.widgets import Button, Label
         assert dialog is not None
 
 

@@ -8,15 +8,9 @@ Covers:
 - Turn edge cases (missing fields, malformed data)
 """
 
-import json
-from unittest.mock import AsyncMock
 
-import pytest
 
-from broca_tui.stores.session_store import SessionStore
 from broca_tui.stores.chat_store import ChatStore, TurnSummary
-from broca_tui.stores.agent_store import AgentStore
-from broca_tui.stores.crew_store import CrewStore
 
 
 # ============================================================================
@@ -94,8 +88,8 @@ class TestTurnSummaryEdgeCases:
             user_message=None,
             current_tool=None,
             current_file_path=None,
-            final_response=None,  # type: ignore — test None handling
-            reasoning_content=None,  # type: ignore
+            final_response=None,  # type: ignore[arg-type]  # test None handling
+            reasoning_content=None,  # type: ignore[arg-type]
             last_message_id=None,
         )
         assert summary.user_message is None

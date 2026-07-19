@@ -8,7 +8,7 @@ Covers:
 - CrewStore: execution list, submit with running check, abort
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock
 
 import pytest
 
