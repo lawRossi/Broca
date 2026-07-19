@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
 @dataclass
 class SocketIOServerConfig:
     enabled: bool = True
-    host: str = "0.0.0.0"
+    host: str = "0.0.0.0"  # noqa: S104
     port: int = 6868
     cors_allowed_origins: str = "*"
 
@@ -49,8 +49,9 @@ class SocketIOServerRuntime:
             cors_allowed_origins=self.config.cors_allowed_origins,
         )
 
-        async def _runner():
+        async def _runner() -> None:
             try:
+                assert self._server is not None
                 await self._server.start()
             except asyncio.CancelledError:
                 logger.info("SocketIOServer task cancelled")

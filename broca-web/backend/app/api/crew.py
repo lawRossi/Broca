@@ -1,5 +1,4 @@
-"""
-Crew API
+"""Crew API
 
 提供编排（Crew）的 REST API：
 - POST /api/crews - 提交编排执行
@@ -9,9 +8,8 @@ Crew API
 - POST /api/crews/{execution_id}/abort - 中止编排
 """
 
-from typing import Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter
 from loguru import logger
 from pydantic import BaseModel
 
@@ -24,8 +22,8 @@ router = APIRouter()
 class CrewSubmitRequest(BaseModel):
     """提交编排的请求模型"""
 
-    yaml_content: Optional[str] = None
-    yaml_path: Optional[str] = None
+    yaml_content: str | None = None
+    yaml_path: str | None = None
     session_id: str
 
     model_config = {"from_attributes": True}
@@ -34,16 +32,15 @@ class CrewSubmitRequest(BaseModel):
 class CrewValidateRequest(BaseModel):
     """校验编排配置的请求模型"""
 
-    yaml_content: Optional[str] = None
-    yaml_path: Optional[str] = None
+    yaml_content: str | None = None
+    yaml_path: str | None = None
 
     model_config = {"from_attributes": True}
 
 
 @router.post("", response_model=ApiResponse)
 async def submit_crew(request: CrewSubmitRequest) -> ApiResponse:
-    """
-    提交编排执行
+    """提交编排执行
 
     支持两种方式提交编排配置：
     1. yaml_content: 直接传入 YAML 字符串
@@ -90,8 +87,7 @@ async def submit_crew(request: CrewSubmitRequest) -> ApiResponse:
 
 @router.post("/validate", response_model=ApiResponse)
 async def validate_crew(request: CrewValidateRequest) -> ApiResponse:
-    """
-    校验编排配置
+    """校验编排配置
 
     支持 YAML 字符串和文件路径两种方式。
     返回校验错误列表，空列表表示配置有效。
@@ -126,8 +122,8 @@ async def validate_crew(request: CrewValidateRequest) -> ApiResponse:
 
 @router.get("", response_model=ApiResponse)
 async def list_crews(
-    session_id: Optional[str] = None,
-    status: Optional[str] = None,
+    session_id: str | None = None,
+    status: str | None = None,
 ) -> ApiResponse:
     """列出编排执行记录"""
     try:
@@ -150,11 +146,11 @@ async def list_crews(
 
 @router.get("/configs", response_model=ApiResponse)
 async def list_crew_configs(workspace: str) -> ApiResponse:
-    """
-    列出 workspace 下 crew_configs 目录中已有的编排配置文件
+    """列出 workspace 下 crew_configs 目录中已有的编排配置文件
 
     Args:
         workspace: 工作空间路径（需 URL 编码）
+
     """
     try:
         crew_service = get_crew_service()
@@ -170,12 +166,12 @@ async def list_crew_configs(workspace: str) -> ApiResponse:
 
 @router.get("/configs/{filename}", response_model=ApiResponse)
 async def get_crew_config_detail(filename: str, workspace: str) -> ApiResponse:
-    """
-    获取 workspace crew_configs 目录下指定配置文件的内容
+    """获取 workspace crew_configs 目录下指定配置文件的内容
 
     Args:
         filename: 配置文件名（不含路径）
         workspace: 工作空间路径
+
     """
     try:
         crew_service = get_crew_service()
@@ -192,6 +188,7 @@ async def get_crew_config_detail(filename: str, workspace: str) -> ApiResponse:
 
 class CrewConfigSaveRequest(BaseModel):
     """保存编排配置文件的请求模型"""
+
     workspace: str
     filename: str
     content: str
@@ -201,12 +198,12 @@ class CrewConfigSaveRequest(BaseModel):
 
 @router.put("/configs/{filename}", response_model=ApiResponse)
 async def save_crew_config(filename: str, request: CrewConfigSaveRequest) -> ApiResponse:
-    """
-    保存/更新 workspace crew_configs 目录下的配置文件
+    """保存/更新 workspace crew_configs 目录下的配置文件
 
     Args:
         filename: 配置文件名
         request: 保存请求（含 workspace, content）
+
     """
     try:
         crew_service = get_crew_service()
@@ -220,24 +217,6 @@ async def save_crew_config(filename: str, request: CrewConfigSaveRequest) -> Api
         return ApiResponse.error(code=400, msg=str(e))
     except Exception as e:
         logger.exception(f"Error saving crew config {filename}")
-        return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
-    """
-    获取 workspace crew_configs 目录下指定配置文件的内容
-
-    Args:
-        filename: 配置文件名（不含路径）
-        workspace: 工作空间路径
-    """
-    try:
-        crew_service = get_crew_service()
-        result = crew_service.get_crew_config_content(workspace, filename)
-        return ApiResponse.success(data=result, msg="Config content retrieved")
-    except FileNotFoundError as e:
-        return ApiResponse.error(code=404, msg=str(e))
-    except ValueError as e:
-        return ApiResponse.error(code=400, msg=str(e))
-    except Exception as e:
-        logger.exception(f"Error getting crew config {filename}")
         return ApiResponse.error(code=500, msg=f"Internal server error: {e!s}")
 
 

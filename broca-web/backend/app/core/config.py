@@ -1,4 +1,5 @@
 import os
+from typing import ClassVar
 
 from pydantic_settings import BaseSettings
 
@@ -24,7 +25,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "2880"))
 
     class Config:  # noqa: D106
-        env_file = [".env.local", ".env.production", ".env.development"]
+        env_file: ClassVar[list[str]] = [".env.local", ".env.production", ".env.development"]
 
     @property
     def async_database_url(self) -> str:

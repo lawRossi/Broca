@@ -3,6 +3,8 @@
 提供可用的命令列表，用于前端命令补全功能。
 """
 
+import tempfile
+
 from broca.commands.loader import load_all_commands
 from broca.commands.registry import CommandRegistry
 from fastapi import APIRouter
@@ -26,7 +28,7 @@ def _load_commands() -> list[dict]:
 
     try:
         registry = CommandRegistry()
-        load_all_commands(registry, "/tmp")
+        load_all_commands(registry, tempfile.gettempdir())
 
         commands = []
         for cmd in registry.get_all():

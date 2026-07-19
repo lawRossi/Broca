@@ -1,4 +1,4 @@
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -9,16 +9,18 @@ class BaseSchema(BaseModel):
 
 class CreateSessionRequest(BaseModel):
     """创建 Session 的请求模型"""
-    description: Optional[str] = None
-    workspace: Optional[str] = None
-    provider: Optional[str] = None  # LLM provider，如 openrouter、deepseek 等
-    model: Optional[str] = None  # LLM model，如 stepfun、nemotron 等
-    category: Optional[str] = "normal"  # 会话分类：normal / agent-orchestration
+
+    description: str | None = None
+    workspace: str | None = None
+    provider: str | None = None  # LLM provider，如 openrouter、deepseek 等
+    model: str | None = None  # LLM model，如 stepfun、nemotron 等
+    category: str | None = "normal"  # 会话分类：normal / agent-orchestration
 
 
 class UpdateSessionRequest(BaseModel):
     """更新 Session 的请求模型"""
-    description: Optional[str] = None
+
+    description: str | None = None
 
 
 class ApiResponse(BaseModel):

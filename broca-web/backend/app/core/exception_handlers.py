@@ -21,10 +21,12 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
     """
     status_code = exc.status_code
     detail = exc.detail
-    if isinstance(detail, dict):
-        msg = detail.get("msg", str(detail))
-    elif isinstance(detail, list):
-        msg = "; ".join(str(e) for e in detail)
+
+    # exc.detail 运行时可能是 dict/list/str，统一转为字符串
+    if isinstance(detail, dict):  # type: ignore[unreachable]
+        msg = detail.get("msg", str(detail))  # type: ignore[unreachable]
+    elif isinstance(detail, list):  # type: ignore[unreachable]
+        msg = "; ".join(str(e) for e in detail)  # type: ignore[unreachable]
     else:
         msg = str(detail)
 

@@ -1,6 +1,7 @@
 import os
 from datetime import datetime
 from ipaddress import IPv6Address, ip_address
+from typing import Any
 
 # 初始化日志（stderr + 文件），必须在任何 import 之后、app 创建之前
 from broca.logging_config import init_logging
@@ -16,7 +17,7 @@ from app.services.auth_service import AuthService
 
 init_logging()
 
-LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
+LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}  # noqa: S104
 
 
 def _is_loopback(host: str | None) -> bool:
@@ -65,7 +66,7 @@ def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(secu
                 req.state.user_id = payload.get("sub")
                 req.state.username = payload.get("username")
                 return
-            except Exception:
+            except Exception:  # noqa: S110
                 pass  # token 无效，降级为匿名本地用户
         req.state.user_id = None
         req.state.username = None
@@ -90,7 +91,7 @@ def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(secu
 app = FastAPI(dependencies=[Depends(verify_token)])
 
 # 注册全局异常处理器 — 统一所有 API 错误响应为 ApiResponse 格式
-app.add_exception_handler(HTTPException, http_exception_handler)
+app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
 app.add_exception_handler(Exception, general_exception_handler)
 
 # CORS 中间件 — 允许前端跨域访问（vite preview / nginx 均需）
@@ -110,7 +111,7 @@ async def setup() -> None:
 
     # === 1. 启动 SocketIO Server ===
     enabled = os.getenv("BROCA_SOCKETIO_ENABLED", "true").lower() == "true"
-    host = os.getenv("BROCA_SOCKETIO_HOST", "0.0.0.0")
+    host = os.getenv("BROCA_SOCKETIO_HOST", "0.0.0.0")  # noqa: S104
     port = int(os.getenv("BROCA_SOCKETIO_PORT", "6868"))
     cors = os.getenv("BROCA_SOCKETIO_CORS", "*")
 
@@ -133,7 +134,7 @@ async def setup() -> None:
         runner_manager.on("crew_event", crew_service.handle_crew_event)
 
         # 注册 Runner 错误事件处理器（转发到前端）
-        async def _on_runner_error(runner_info):
+        async def _on_runner_error(runner_info: Any) -> None:
             """Runner 进程初始化失败或运行异常时，通过 SocketIO 通知前端"""
             socketio_runtime = getattr(app.state, "socketio_runtime", None)
             if not socketio_runtime or not socketio_runtime._server:
@@ -144,8 +145,7 @@ async def setup() -> None:
             if not session_id:
                 return
             try:
-                from broca.communication.socketio_server import MessageProtocol
-                from broca.session.models import Message, MessageType, MessageRole
+                from broca.session.models import Message, MessageRole, MessageType
 
                 data = {"content": error_msg, "code": "RUNNER_ERROR", "severity": "error"}
                 if recovery_hint:
@@ -200,7 +200,7 @@ async def shutdown() -> None:
 
 
 @app.get("/api/health")
-async def health_check():
+async def health_check() -> dict[str, Any]:
     """健康检查"""
     runner_manager = getattr(app.state, "runner_manager", None)
     runner_stats = runner_manager.get_stats() if runner_manager else {"total_runners": 0}

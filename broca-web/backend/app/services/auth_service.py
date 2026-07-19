@@ -1,6 +1,6 @@
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 
 import bcrypt
 from jose import JWTError, jwt
@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 class AuthError(Exception):
     """认证相关错误"""
+
     pass
 
 
@@ -41,12 +42,12 @@ class AuthService:
     @staticmethod
     def create_access_token(user_id: str, username: str) -> str:
         """签发 JWT access token"""
-        expire = datetime.now(timezone.utc) + timedelta(minutes=settings.jwt_expire_minutes)
+        expire = datetime.now(UTC) + timedelta(minutes=settings.jwt_expire_minutes)
         payload = {
             "sub": user_id,
             "username": username,
             "exp": expire,
-            "iat": datetime.now(timezone.utc),
+            "iat": datetime.now(UTC),
         }
         return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
@@ -67,7 +68,7 @@ class AuthService:
             payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
             exp = payload.get("exp")
             if exp:
-                return datetime.fromtimestamp(exp, tz=timezone.utc) < datetime.now(timezone.utc)
+                return datetime.fromtimestamp(exp, tz=UTC) < datetime.now(UTC)
             return True
         except JWTError:
             return True
@@ -86,6 +87,7 @@ class AuthService:
 
         Raises:
             AuthError: 用户名已存在或参数无效
+
         """
         # 参数校验
         if not username or len(username.strip()) < 2:
@@ -96,7 +98,7 @@ class AuthService:
         username = username.strip()
 
         # 检查用户名是否已存在
-        existing = await self.db.scalar(select(UserAuth).where(UserAuth.username == username))
+        existing = await self.db.scalar(select(UserAuth).where(UserAuth.username == username))  # type: ignore[arg-type]
         if existing:
             raise AuthError("用户名已被注册")
 
@@ -130,10 +132,11 @@ class AuthService:
 
         Raises:
             AuthError: 用户名或密码错误
+
         """
         username = username.strip()
 
-        user = await self.db.scalar(select(UserAuth).where(UserAuth.username == username))
+        user = await self.db.scalar(select(UserAuth).where(UserAuth.username == username))  # type: ignore[arg-type]
         if not user:
             raise AuthError("用户名或密码错误")
 
@@ -152,4 +155,5 @@ class AuthService:
 
     async def get_user_by_id(self, user_id: str) -> UserAuth | None:
         """根据 ID 获取用户"""
-        return await self.db.scalar(select(UserAuth).where(UserAuth.id == user_id))
+        result = await self.db.execute(select(UserAuth).where(UserAuth.id == user_id))  # type: ignore[arg-type]
+        return result.scalar_one_or_none()

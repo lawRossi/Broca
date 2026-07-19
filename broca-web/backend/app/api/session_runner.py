@@ -1,21 +1,21 @@
-"""
-Session Runner 管理 API
+"""Session Runner 管理 API
 
 提供 Session 进程的生命周期管理和状态查询功能。
 """
 
-from fastapi import APIRouter, HTTPException
-from loguru import logger
 
 from broca.session_runner import RunnerManager
 from broca.session_runner.manager import RunnerManagerError
+from fastapi import APIRouter, HTTPException
+from loguru import logger
+
 from app.schemas.schemas import ApiResponse
 
 router = APIRouter()
 
 
 @router.get("/runners", response_model=ApiResponse)
-async def list_runners():
+async def list_runners() -> ApiResponse:
     """获取所有 Session Runner 进程列表及状态"""
     try:
         runner_manager = RunnerManager()
@@ -27,7 +27,7 @@ async def list_runners():
 
 
 @router.get("/runners/stats", response_model=ApiResponse)
-async def get_runner_stats():
+async def get_runner_stats() -> ApiResponse:
     """获取 Runner 资源统计信息"""
     try:
         runner_manager = RunnerManager()
@@ -39,7 +39,7 @@ async def get_runner_stats():
 
 
 @router.get("/{session_id}/runner/status", response_model=ApiResponse)
-async def get_runner_status(session_id: str):
+async def get_runner_status(session_id: str) -> ApiResponse:
     """获取指定 Session 的 Runner 进程状态"""
     try:
         runner_manager = RunnerManager()
@@ -58,7 +58,7 @@ async def get_runner_status(session_id: str):
 
 
 @router.post("/{session_id}/runner/restart", response_model=ApiResponse)
-async def restart_runner(session_id: str):
+async def restart_runner(session_id: str) -> ApiResponse:
     """重启指定 Session 的 Runner 进程"""
     try:
         runner_manager = RunnerManager()
@@ -82,7 +82,7 @@ async def restart_runner(session_id: str):
 
 
 @router.post("/{session_id}/runner/stop", response_model=ApiResponse)
-async def stop_runner(session_id: str):
+async def stop_runner(session_id: str) -> ApiResponse:
     """停止指定 Session 的 Runner 进程"""
     try:
         runner_manager = RunnerManager()

@@ -7,7 +7,7 @@ from sqlmodel import Field, SQLModel
 class UserAuth(SQLModel, table=True):
     """用户认证信息表（用户名+密码，取代 Supabase Auth）"""
 
-    model_config = ConfigDict(from_attributes=True, title="User Auth")
+    model_config = ConfigDict(from_attributes=True, title="User Auth")  # type: ignore[assignment]
 
     __tablename__ = "user_auth"
 

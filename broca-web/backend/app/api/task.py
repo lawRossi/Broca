@@ -3,9 +3,9 @@
 提供任务的查询、创建、更新、删除等功能
 """
 
-from typing import Any, List, Optional
+from typing import Any
 
-from broca.session.service import get_task_service, get_task_comment_service
+from broca.session.service import get_task_comment_service, get_task_service
 from broca.utils.datetime_util import serialize_dt
 from fastapi import APIRouter, HTTPException
 from loguru import logger
@@ -19,12 +19,12 @@ router = APIRouter()
 async def get_tasks(
     skip: int = 0,
     limit: int = 20,
-    status: Optional[str] = None,
-    priority: Optional[str] = None,
-    assignee: Optional[str] = None,
-    session_id: Optional[str] = None,
-    parent_id: Optional[str] = None,
-    keyword: Optional[str] = None,
+    status: str | None = None,
+    priority: str | None = None,
+    assignee: str | None = None,
+    session_id: str | None = None,
+    parent_id: str | None = None,
+    keyword: str | None = None,
     order_by: str = "created_at desc",
 ) -> ApiResponse:
     """获取任务列表，支持分页、筛选、搜索和排序"""
@@ -173,7 +173,7 @@ async def create_task(task_data: dict[str, Any]) -> ApiResponse:
         # 提取必填字段
         name = task_data.get("name")
         description = task_data.get("description")
-        
+
         if not name or not description:
             raise HTTPException(status_code=400, detail="Name and description are required")
 
@@ -235,7 +235,7 @@ async def update_task(task_id: str, update_data: dict[str, Any]) -> ApiResponse:
             "details", "acceptance_criteria", "context_files", "context_links",
             "context_notes", "report", "dependencies"
         }
-        
+
         update_fields = {}
         for field in allowed_fields:
             if field in update_data:
@@ -328,7 +328,7 @@ async def add_task_comment(task_id: str, comment_data: dict[str, Any]) -> ApiRes
     try:
         author = comment_data.get("author")
         content = comment_data.get("content")
-        
+
         if not author or not content:
             raise HTTPException(status_code=400, detail="Author and content are required")
 
@@ -391,7 +391,7 @@ async def get_task_children(task_id: str) -> ApiResponse:
 @router.get("/search", response_model=ApiResponse)
 async def search_tasks(
     query: str,
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     skip: int = 0,
     limit: int = 20,
 ) -> ApiResponse:

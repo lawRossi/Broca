@@ -47,11 +47,11 @@ async def login(data: LoginRequest, db: AsyncSession = Depends(get_db)) -> ApiRe
 
 def _is_local_request(req: Request) -> bool:
     """判断请求是否来自本机"""
-    LOCAL_HOSTS = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}
+    local_hosts = {"127.0.0.1", "::1", "localhost", "0.0.0.0"}  # noqa: S104
     client_host = req.headers.get("X-Real-IP") or (req.client.host if req.client else None)
     if not client_host:
         return False
-    if client_host in LOCAL_HOSTS:
+    if client_host in local_hosts:
         return True
     # macOS 双栈模式下的 IPv4-mapped IPv6 回环地址
     try:
@@ -76,16 +76,16 @@ async def local_login(req: Request, db: AsyncSession = Depends(get_db)) -> ApiRe
 
     try:
         # 创建一个固定 ID 的"本地用户" token，不依赖数据库中的用户记录
-        LOCAL_USER_ID = "local"
-        LOCAL_USERNAME = "Local User"
+        local_user_id = "local"
+        local_username = "Local User"
 
-        token = AuthService.create_access_token(LOCAL_USER_ID, LOCAL_USERNAME)
+        token = AuthService.create_access_token(local_user_id, local_username)
 
         return ApiResponse.success(
             {
                 "token": token,
-                "user_id": LOCAL_USER_ID,
-                "username": LOCAL_USERNAME,
+                "user_id": local_user_id,
+                "username": local_username,
             },
             msg="本地自动登录成功",
         )

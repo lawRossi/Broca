@@ -9,23 +9,23 @@ from __future__ import annotations
 import json
 import os
 import uuid
-from datetime import UTC, datetime, timezone
-from typing import Any
+from datetime import UTC, datetime
+from typing import Any, cast
 
 from broca.orchestration.crew import CrewConfig, CrewConfigValidator
-
-
-def _ensure_tz(dt: datetime) -> datetime:
-    """确保 datetime 有时区信息（SQLite 不保存时区，读出后补回 UTC）"""
-    if dt.tzinfo is None:
-        return dt.replace(tzinfo=timezone.utc)
-    return dt
 from broca.session.database import db_manager
 from broca.session.models import CrewExecution, CrewExecutionStatus, Message, MessageRole, MessageType
 from broca.session_runner import RunnerManager
 from broca.session_runner.models import IPCMessageType
 from loguru import logger
 from sqlalchemy import desc, select
+
+
+def _ensure_tz(dt: datetime) -> datetime:
+    """确保 datetime 有时区信息（SQLite 不保存时区，读出后补回 UTC）"""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt
 
 
 class CrewService:
@@ -36,7 +36,7 @@ class CrewService:
     通过 RunnerManager 的 IPC 通道与 Runner 进程通信。
     """
 
-    def __init__(self):
+    def __init__(self) -> None:
         self._runner_manager = RunnerManager()
 
     # ==========================================================================
@@ -55,7 +55,7 @@ class CrewService:
             crew_name = cfg.name or execution.crew_name
             description = cfg.description or ""
             agent_count = len(cfg.agents) if cfg.agents else 0
-        except Exception:
+        except Exception:  # noqa: S110
             pass
 
         # 解析 phases_json
@@ -256,6 +256,7 @@ class CrewService:
         Returns:
             tuple[bool, str]: (success, message) — success 表示是否成功中止，
                                message 包含成功/失败原因描述
+
         """
         async with db_manager.get_session() as session:
             record = await session.get(CrewExecution, execution_id)
@@ -320,6 +321,7 @@ class CrewService:
     @staticmethod
     async def handle_crew_event(session_id: str, msg: Any) -> None:
         """处理来自 Runner 的编排事件（由 RunnerManager 回调）
+
         将进度/结果更新持久化到数据库。
         """
         service = get_crew_service()
@@ -392,12 +394,14 @@ class CrewService:
     @staticmethod
     def validate_crew_yaml(yaml_content: str) -> list[str]:
         """校验 YAML 配置"""
-        return CrewConfigValidator.validate_yaml(yaml_content)
+        result = CrewConfigValidator.validate_yaml(yaml_content)
+        return cast("list[str]", result)
 
     @staticmethod
     def validate_crew_yaml_file(yaml_path: str) -> list[str]:
         """校验 YAML 文件配置"""
-        return CrewConfigValidator.validate_yaml_file(yaml_path)
+        result = CrewConfigValidator.validate_yaml_file(yaml_path)
+        return cast("list[str]", result)
 
     # ==========================================================================
     # Workspace crew_configs 目录管理
@@ -504,7 +508,7 @@ class CrewService:
         try:
             cfg = CrewConfig.from_yaml(content)
         except Exception as e:
-            raise ValueError(f"Invalid YAML content: {e!s}")
+            raise ValueError(f"Invalid YAML content: {e!s}") from e
 
         with open(fpath, "w", encoding="utf-8") as f:
             f.write(content)

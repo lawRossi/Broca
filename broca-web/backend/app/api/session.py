@@ -16,9 +16,9 @@ from broca.session.service import (
     get_session_service,
     get_turn_service,
 )
-from broca.utils.datetime_util import serialize_dt
 from broca.session_runner import RunnerManager
 from broca.session_runner.manager import RunnerManagerError
+from broca.utils.datetime_util import serialize_dt
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
@@ -304,6 +304,7 @@ async def search_session_messages(
         order: 排序方向，desc（最新在前）或 asc（最早在前）
         skip: 分页偏移
         limit: 每页数量（最大 200）
+
     """
     try:
         session_service = get_session_service()
@@ -613,8 +614,8 @@ async def get_session_turns(
     limit: int = 20,
     execution_id: str | None = None,
 ) -> ApiResponse:
-    """
-    获取会话的 turn 摘要列表（简洁模式使用）。
+    """获取会话的 turn 摘要列表（简洁模式使用）。
+
     按 sequence_number desc 排序（最新的 turn 在前），
     返回时反转（最早的在前）。
 
@@ -698,8 +699,7 @@ async def get_turn_file_diff(
     turn_id: str,
     path: str,
 ) -> ApiResponse:
-    """
-    获取 turn 中指定文件的 unified diff。
+    """获取 turn 中指定文件的 unified diff。
 
     后端从 turn_end 消息中提取最早/最晚快照哈希，
     实时计算该文件的 diff 并返回。

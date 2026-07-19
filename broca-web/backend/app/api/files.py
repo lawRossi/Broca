@@ -225,7 +225,7 @@ async def edit_file(path: str, request: FileEditRequest) -> ApiResponse:
 
     Args:
         path: 文件路径
-        content: 新的文件内容
+        request: 文件编辑请求（包含新的文件内容）
 
     """
     try:
@@ -302,7 +302,7 @@ async def edit_file(path: str, request: FileEditRequest) -> ApiResponse:
 @router.get("/files/home", response_model=ApiResponse)
 async def get_home_directory() -> ApiResponse:
     """获取用户的home目录
-    
+
     返回当前用户的home目录路径，用于前端初始化工作空间选择器
     """
     try:

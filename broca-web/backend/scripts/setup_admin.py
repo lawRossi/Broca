@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-"""
-setup_admin.py — 创建或更新管理员账户
+"""setup_admin.py — 创建或更新管理员账户
 
 用法：
     python setup_admin.py [--db sqlite:///path/to/backend.db]
@@ -23,7 +22,7 @@ import os
 import subprocess
 import sys
 import uuid
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 BACKEND_DIR = os.path.dirname(SCRIPT_DIR)
@@ -31,7 +30,7 @@ if BACKEND_DIR not in sys.path:
     sys.path.insert(0, BACKEND_DIR)
 
 
-def ensure_deps():
+def ensure_deps() -> None:
     missing = []
     try:
         import bcrypt  # noqa: F401
@@ -48,7 +47,7 @@ def ensure_deps():
 
     if missing:
         print(f"  正在安装缺失的依赖: {', '.join(missing)} ...")
-        subprocess.check_call(
+        subprocess.check_call(  # noqa: S603
             [sys.executable, "-m", "pip", "install", *missing],
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
@@ -56,7 +55,7 @@ def ensure_deps():
         print("  依赖安装完成。")
 
 
-def resolve_db_url(args) -> str:
+def resolve_db_url(args: argparse.Namespace) -> str:
     db_url = args.db or os.getenv("SQLITE_DATABASE_PATH", "")
     if not db_url:
         broca_home = os.path.expanduser("~/.broca")
@@ -70,7 +69,7 @@ def to_async_url(db_url: str) -> str:
     return db_url
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser(description="创建管理员账户（安装时使用）")
     parser.add_argument("--db", help="数据库连接 URL（如 sqlite:///path/to/backend.db）")
     parser.add_argument("--username", help="管理员用户名（默认 admin）")
@@ -81,6 +80,7 @@ def main():
     ensure_deps()
 
     import asyncio
+
     import bcrypt
     from sqlalchemy import text
     from sqlalchemy.ext.asyncio import create_async_engine
@@ -92,7 +92,7 @@ def main():
     # ============================================================
     # 第一步：检查数据库表是否存在
     # ============================================================
-    async def check_table_exists():
+    async def check_table_exists() -> bool:
         engine = create_async_engine(
             async_db_url,
             echo=False,
@@ -161,7 +161,7 @@ def main():
     # ============================================================
     # 第三步：写入数据库（用户名已存在则更新密码）
     # ============================================================
-    async def upsert_user():
+    async def upsert_user() -> bool:
         engine = create_async_engine(
             async_db_url,
             echo=False,
@@ -178,7 +178,7 @@ def main():
                 existing = r.fetchone()
 
                 hashed = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
-                now = datetime.now(timezone.utc)
+                now = datetime.now(UTC)
 
                 if existing:
                     # 更新已有用户的密码
@@ -193,7 +193,7 @@ def main():
                         },
                     )
                     await conn.commit()
-                    print(f"  ✅ 管理员账户密码已更新!")
+                    print("  ✅ 管理员账户密码已更新!")
                     print(f"     用户名: {username}")
                     print(f"     ID:     {existing[0]}")
                 else:
@@ -212,7 +212,7 @@ def main():
                         },
                     )
                     await conn.commit()
-                    print(f"  ✅ 管理员账户创建成功!")
+                    print("  ✅ 管理员账户创建成功!")
                     print(f"     用户名: {username}")
                     print(f"     ID:     {user_id}")
                 return True
