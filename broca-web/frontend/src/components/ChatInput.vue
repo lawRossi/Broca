@@ -54,9 +54,21 @@ const fetchCommands = async () => {
     console.warn('获取命令列表失败:', e)
     // 后端不可用时使用静态命令列表
     allCommands.value = [
-      { name: 'help', description: '显示命令帮助', short_description: '显示命令帮助', type: 'local', argument_hint: '[command_name]' },
+      {
+        name: 'help',
+        description: '显示命令帮助',
+        short_description: '显示命令帮助',
+        type: 'local',
+        argument_hint: '[command_name]',
+      },
       { name: 'init', description: '初始化项目', short_description: '初始化项目', type: 'prompt', argument_hint: '' },
-      { name: 'plan', description: '生成计划文档', short_description: '生成计划文档', type: 'prompt', argument_hint: '<目标描述>' },
+      {
+        name: 'plan',
+        description: '生成计划文档',
+        short_description: '生成计划文档',
+        type: 'prompt',
+        argument_hint: '<目标描述>',
+      },
     ]
   }
 }
@@ -85,9 +97,8 @@ watch(
           commandSearch.value = searchTerm
 
           // 过滤命令
-          commandSuggestions.value = allCommands.value.filter(
-            (cmd) =>
-              cmd.name.toLowerCase().startsWith(searchTerm.toLowerCase())
+          commandSuggestions.value = allCommands.value.filter((cmd) =>
+            cmd.name.toLowerCase().startsWith(searchTerm.toLowerCase())
           )
 
           if (commandSuggestions.value.length > 0) {
@@ -115,9 +126,7 @@ watch(
       } else if (spaceIndex > 0) {
         // / 后面有内容后有空格，检查是否是精确匹配
         const searchTerm = afterSlash.substring(0, spaceIndex)
-        const isExactMatch = allCommands.value.some(
-          (cmd) => cmd.name.toLowerCase() === searchTerm.toLowerCase()
-        )
+        const isExactMatch = allCommands.value.some((cmd) => cmd.name.toLowerCase() === searchTerm.toLowerCase())
         if (isExactMatch) {
           showCommandSuggestions.value = false
           // 命令已完整，继续检测 @mention
@@ -640,7 +649,9 @@ const handleSendMessage = async () => {
       >
         <span class="text-lg">{{ getFileIcon(fileRecord.file) }}</span>
         <div class="flex-1 min-w-0">
-          <div class="font-medium truncate">{{ fileRecord.file.name }}</div>
+          <div class="font-medium truncate">
+            {{ fileRecord.file.name }}
+          </div>
           <div class="text-gray-500 text-xs">
             {{ formatFileSize(fileRecord.file.size) }}
             <span v-if="fileRecord.status === 'uploading'"> - 上传中... {{ fileRecord.progress }}%</span>
@@ -659,7 +670,7 @@ const handleSendMessage = async () => {
         </button>
         <!-- 上传进度条 -->
         <div v-if="fileRecord.status === 'uploading'" class="w-12 h-1 bg-gray-200 rounded overflow-hidden">
-          <div class="h-full bg-blue-500 transition-all" :style="{ width: fileRecord.progress + '%' }"></div>
+          <div class="h-full bg-blue-500 transition-all" :style="{ width: fileRecord.progress + '%' }" />
         </div>
       </div>
     </div>
@@ -686,21 +697,25 @@ const handleSendMessage = async () => {
           class="absolute bottom-full left-0 right-0 mb-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto"
           @click.stop
         >
-            <div
-              v-for="(suggestion, index) in commandSuggestions"
-              :key="suggestion.name"
-              class="px-3 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
-              :class="{ 'bg-blue-50': index === selectedCommandIndex }"
-              @click="handleCommandClick($event, suggestion.name)"
-            >
-              <div class="flex items-center gap-2">
-                <span class="text-green-600 font-mono font-bold">/</span>
-                <div class="flex-1 min-w-0">
-                  <div class="font-medium text-gray-900 font-mono">{{ suggestion.name }}</div>
-                  <div class="text-xs text-gray-500 truncate">{{ suggestion.short_description || suggestion.description }}</div>
+          <div
+            v-for="(suggestion, index) in commandSuggestions"
+            :key="suggestion.name"
+            class="px-3 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+            :class="{ 'bg-blue-50': index === selectedCommandIndex }"
+            @click="handleCommandClick($event, suggestion.name)"
+          >
+            <div class="flex items-center gap-2">
+              <span class="text-green-600 font-mono font-bold">/</span>
+              <div class="flex-1 min-w-0">
+                <div class="font-medium text-gray-900 font-mono">
+                  {{ suggestion.name }}
+                </div>
+                <div class="text-xs text-gray-500 truncate">
+                  {{ suggestion.short_description || suggestion.description }}
                 </div>
               </div>
             </div>
+          </div>
         </div>
 
         <!-- @mention 建议列表 -->
@@ -731,8 +746,8 @@ const handleSendMessage = async () => {
         :disabled="!chatStore.runnerAlive || isUploading"
         size="default"
         class="!px-3"
-        @click="triggerFileSelect"
         title="上传文件"
+        @click="triggerFileSelect"
       >
         📎
       </el-button>

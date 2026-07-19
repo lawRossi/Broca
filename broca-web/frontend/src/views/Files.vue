@@ -271,11 +271,7 @@ onUnmounted(() => {
       <template #footer>
         <span class="dialog-footer">
           <el-button @click="fileInfoDialog = false">Close</el-button>
-          <el-button
-            v-if="selectedFile && !selectedFile.is_dir"
-            type="primary"
-            @click="selectedFile && $emit('file-click', selectedFile)"
-          >
+          <el-button v-if="selectedFile && !selectedFile.is_dir" type="primary" @click="showFileInfo(selectedFile)">
             Preview
           </el-button>
         </span>

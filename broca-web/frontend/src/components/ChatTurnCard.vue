@@ -87,7 +87,7 @@ const isLongUserMessage = computed(() => {
 const simplifiedStatus = computed(() => {
   if (props.turn.status === 'completed') return 'completed'
   if (props.turn.status === 'error') return 'error'
-  return 'active'  // active / thinking / calling_tool 统一为"进行中"
+  return 'active' // active / thinking / calling_tool 统一为"进行中"
 })
 
 const statusText = computed(() => {
@@ -150,11 +150,7 @@ const formattedCompletionTime = computed(() => {
   const pad = (n: number) => n.toString().padStart(2, '0')
   const time = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
   // 非当天显示完整日期
-  if (
-    d.getFullYear() !== now.getFullYear() ||
-    d.getMonth() !== now.getMonth() ||
-    d.getDate() !== now.getDate()
-  ) {
+  if (d.getFullYear() !== now.getFullYear() || d.getMonth() !== now.getMonth() || d.getDate() !== now.getDate()) {
     return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${time}`
   }
   return time
@@ -167,9 +163,11 @@ const currentToolText = computed(() => {
 
 // 是否显示文件路径
 const showFilePath = computed(() => {
-  return props.turn.currentFilePath &&
+  return (
+    props.turn.currentFilePath &&
     props.turn.currentTool &&
     ['read_file', 'edit_file', 'write_file'].includes(props.turn.currentTool)
+  )
 })
 
 // 是否显示 TODO 列表
@@ -219,7 +217,11 @@ const openFileDiff = async (filePath: string) => {
 }
 
 // 解析 unified diff 为带颜色的行
-interface DiffLine { text: string; type: 'add' | 'del' | 'ctx' | 'head'; lineNum: number | null }
+interface DiffLine {
+  text: string
+  type: 'add' | 'del' | 'ctx' | 'head'
+  lineNum: number | null
+}
 const parsedDiffLines = computed<DiffLine[]>(() => {
   if (!diffContent.value) return [{ text: '(无变更)', type: 'ctx', lineNum: null }]
   const lines: DiffLine[] = []
@@ -241,7 +243,8 @@ const parsedDiffLines = computed<DiffLine[]>(() => {
       raw.startsWith('copy to') ||
       raw.startsWith('similarity index') ||
       raw.startsWith('Binary files')
-    ) continue
+    )
+      continue
 
     if (raw.startsWith('@@')) {
       // @@ 头部：仅解析行号，不展示
@@ -264,14 +267,14 @@ const parsedDiffLines = computed<DiffLine[]>(() => {
 
 // 是否有工具执行（无工具执行时隐藏整个执行摘要）
 const hasToolExecution = computed(() => {
-  return showToolStats.value || !!currentToolText.value || showFilePath.value || showTodoList.value || showChangedFiles.value
+  return (
+    showToolStats.value || !!currentToolText.value || showFilePath.value || showTodoList.value || showChangedFiles.value
+  )
 })
 
 // 工具统计文本
 const toolStatsText = computed(() => {
-  return props.turn.toolCallStats
-    .map(s => `${s.toolName} (${s.count}次)`)
-    .join(', ')
+  return props.turn.toolCallStats.map((s) => `${s.toolName} (${s.count}次)`).join(', ')
 })
 
 // 是否显示回复区域（有 finalResponse 时）
@@ -300,15 +303,11 @@ const canUndo = computed(() => {
 
 // 确认撤销
 const confirmUndo = () => {
-  ElMessageBox.confirm(
-    `确定要撤销"第${props.turn.sequenceNumber}轮"操作吗？`,
-    '确认撤销',
-    {
-      confirmButtonText: '确定',
-      cancelButtonText: '取消',
-      type: 'warning',
-    }
-  )
+  ElMessageBox.confirm(`确定要撤销"第${props.turn.sequenceNumber}轮"操作吗？`, '确认撤销', {
+    confirmButtonText: '确定',
+    cancelButtonText: '取消',
+    type: 'warning',
+  })
     .then(() => handleUndo())
     .catch(() => {})
 }
@@ -332,18 +331,14 @@ const handleUndo = async () => {
 
 <template>
   <div
-    :class="[
-      'turn-card',
-      statusBorderClass,
-      consecutiveAgent ? 'mt-1' : 'mt-3',
-    ]"
+    :class="['turn-card', statusBorderClass, consecutiveAgent ? 'mt-1' : 'mt-3']"
     @mouseenter="showActions = true"
     @mouseleave="showActions = false"
   >
     <!-- 标题栏 -->
     <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2 mb-2">
       <div class="flex items-center gap-2 w-full sm:w-auto">
-        <span :class="['inline-block w-2.5 h-2.5 rounded-full flex-shrink-0', statusDotClass]"></span>
+        <span :class="['inline-block w-2.5 h-2.5 rounded-full flex-shrink-0', statusDotClass]" />
         <span class="font-semibold text-sm truncate" :class="headerTextClass">{{ turn.agentName }}</span>
         <span class="text-xs text-gray-600 flex-shrink-0">第{{ turn.sequenceNumber }}轮</span>
       </div>
@@ -359,15 +354,10 @@ const handleUndo = async () => {
       <div class="flex items-start gap-2 text-xs sm:text-sm text-gray-600">
         <span class="flex-shrink-0">👤</span>
         <div class="flex-1 min-w-0">
-          <div
-            class="user-msg-text"
-            :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }"
-          >{{ turn.userMessage }}</div>
-          <button
-            v-if="isLongUserMessage"
-            class="expand-btn"
-            @click="showFullUserMessage = !showFullUserMessage"
-          >
+          <div class="user-msg-text" :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }">
+            {{ turn.userMessage }}
+          </div>
+          <button v-if="isLongUserMessage" class="expand-btn" @click="showFullUserMessage = !showFullUserMessage">
             {{ showFullUserMessage ? '收起 ▲' : '展开 ▼' }}
           </button>
         </div>
@@ -410,9 +400,9 @@ const handleUndo = async () => {
           <span class="summary-label">📁 变更文件</span>
           <span class="summary-value changed-files-summary" @click="toggleChangedFiles">
             <span class="cf-added">+{{ turn.changedFiles.totalAdded }}</span>
-            <span class="cf-sep"> </span>
+            <span class="cf-sep" />
             <span class="cf-deleted">-{{ turn.changedFiles.totalDeleted }}</span>
-            <span class="cf-sep"> </span>
+            <span class="cf-sep" />
             <span class="cf-modified">~{{ turn.changedFiles.totalModified }}</span>
             <span class="cf-expand-icon">{{ showChangedFilesDetail ? '▲' : '▼' }}</span>
           </span>
@@ -421,19 +411,19 @@ const handleUndo = async () => {
           <div v-if="turn.changedFiles.filesAdded.length" class="cf-group">
             <div class="cf-group-label cf-added-label">新增</div>
             <div v-for="f in turn.changedFiles.filesAdded" :key="f" class="cf-file-item cf-added-file">
-              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">{{ f }}</span>
+              <span class="cf-file-link" title="查看 diff" @click="openFileDiff(f)">{{ f }}</span>
             </div>
           </div>
           <div v-if="turn.changedFiles.filesDeleted.length" class="cf-group">
             <div class="cf-group-label cf-deleted-label">删除</div>
             <div v-for="f in turn.changedFiles.filesDeleted" :key="f" class="cf-file-item cf-deleted-file">
-              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">{{ f }}</span>
+              <span class="cf-file-link" title="查看 diff" @click="openFileDiff(f)">{{ f }}</span>
             </div>
           </div>
           <div v-if="turn.changedFiles.filesModified.length" class="cf-group">
             <div class="cf-group-label cf-modified-label">修改</div>
             <div v-for="f in turn.changedFiles.filesModified" :key="f" class="cf-file-item cf-modified-file">
-              <span class="cf-file-link" @click="openFileDiff(f)" title="查看 diff">{{ f }}</span>
+              <span class="cf-file-link" title="查看 diff" @click="openFileDiff(f)">{{ f }}</span>
             </div>
           </div>
         </div>
@@ -445,15 +435,13 @@ const handleUndo = async () => {
       <div class="flex items-start gap-2">
         <span class="flex-shrink-0 text-sm mt-0.5">🤖</span>
         <div class="flex-1 min-w-0">
-          <div class="markdown-content text-gray-800 text-xs sm:text-sm leading-relaxed overflow-x-auto"
+          <div
+            class="markdown-content text-gray-800 text-xs sm:text-sm leading-relaxed overflow-x-auto"
             :class="{ 'response-collapsed': isLongResponse && !showFullResponse }"
-            v-html="renderMarkdown(turn.finalResponse)"></div>
+            v-html="renderMarkdown(turn.finalResponse)"
+          />
           <!-- 渐变遮罩由 .response-collapsed::after 处理 -->
-          <button
-            v-if="isLongResponse"
-            class="expand-btn"
-            @click="showFullResponse = !showFullResponse"
-          >
+          <button v-if="isLongResponse" class="expand-btn" @click="showFullResponse = !showFullResponse">
             {{ showFullResponse ? '收起 ▲' : '展开 ▼' }}
           </button>
         </div>
@@ -470,10 +458,7 @@ const handleUndo = async () => {
     </div>
     <!-- 未调用工具时：展示思考（可折叠） -->
     <div v-else-if="hasReasoning" class="pt-2">
-      <button
-        class="reasoning-toggle"
-        @click="showReasoning = !showReasoning"
-      >
+      <button class="reasoning-toggle" @click="showReasoning = !showReasoning">
         <span>{{ showReasoning ? '▼' : '▶' }}</span>
         <span class="reasoning-label">思考</span>
         <span v-if="!showReasoning && simplifiedStatus === 'active'" class="reasoning-dots">...</span>
@@ -488,9 +473,9 @@ const handleUndo = async () => {
       <el-button
         size="small"
         link
-        @click.stop="confirmUndo"
         title="撤销此轮操作"
         class="!p-1 !min-h-0 !h-auto undo-button"
+        @click.stop="confirmUndo"
       >
         <span class="text-xs">↩️ 撤销</span>
       </el-button>
@@ -498,27 +483,21 @@ const handleUndo = async () => {
   </div>
 
   <!-- Diff 弹窗 -->
-  <el-dialog
-    v-model="diffDialogVisible"
-    :title="'Diff: ' + diffFileName"
-    width="80%"
-    top="5vh"
-    destroy-on-close
-  >
-    <div v-if="diffLoading" style="text-align:center;padding:40px;">
-      <el-icon class="is-loading" :size="24"><Loading /></el-icon>
-      <p style="margin-top:8px;color:#999;">加载中...</p>
+  <el-dialog v-model="diffDialogVisible" :title="'Diff: ' + diffFileName" width="80%" top="5vh" destroy-on-close>
+    <div v-if="diffLoading" style="text-align: center; padding: 40px">
+      <el-icon class="is-loading" :size="24">
+        <Loading />
+      </el-icon>
+      <p style="margin-top: 8px; color: #999">加载中...</p>
     </div>
     <div v-else class="diff-view">
-      <div
-        v-for="(line, idx) in parsedDiffLines"
-        :key="idx"
-        :class="['diff-line', line.type]"
-      ><span class="diff-line-num">{{ line.lineNum ?? '' }}</span><span class="diff-line-content">{{ line.text }}</span></div>
+      <div v-for="(line, idx) in parsedDiffLines" :key="idx" :class="['diff-line', line.type]">
+        <span class="diff-line-num">{{ line.lineNum ?? '' }}</span
+        ><span class="diff-line-content">{{ line.text }}</span>
+      </div>
     </div>
   </el-dialog>
 </template>
-
 
 <style scoped>
 /* ==================== 卡片基础样式 ==================== */
@@ -537,28 +516,53 @@ const handleUndo = async () => {
 }
 
 /* 状态边框颜色 */
-.border-l-active { border-left-color: #5a8fc9; }
-.border-l-completed { border-left-color: var(--border-color, #b0b0b0); }
-.border-l-error { border-left-color: #c95a5a; }
+.border-l-active {
+  border-left-color: #5a8fc9;
+}
+.border-l-completed {
+  border-left-color: var(--border-color, #b0b0b0);
+}
+.border-l-error {
+  border-left-color: #c95a5a;
+}
 
 /* 状态文字颜色 */
-.text-active { color: #5a8fc9; }
-.text-completed { color: var(--text-secondary, #808080); }
-.text-error { color: #c95a5a; }
-.text-agent { color: #5a8fc9; }
+.text-active {
+  color: #5a8fc9;
+}
+.text-completed {
+  color: var(--text-secondary, #808080);
+}
+.text-error {
+  color: #c95a5a;
+}
+.text-agent {
+  color: #5a8fc9;
+}
 
 /* 状态圆点 */
-.dot-active { background-color: #5a8fc9; }
-.dot-completed { background-color: var(--border-color, #b0b0b0); }
-.dot-error { background-color: #c95a5a; }
+.dot-active {
+  background-color: #5a8fc9;
+}
+.dot-completed {
+  background-color: var(--border-color, #b0b0b0);
+}
+.dot-error {
+  background-color: #c95a5a;
+}
 
 .dot-active.animate-pulse {
   animation: pulse-dot 1.5s ease-in-out infinite;
 }
 
 @keyframes pulse-dot {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
 }
 
 /* ==================== 标题栏 ==================== */
@@ -573,8 +577,6 @@ const handleUndo = async () => {
   font-size: 11px;
   white-space: nowrap;
 }
-
-
 
 /* ==================== 区域分隔 + 左侧标识竖线 ==================== */
 .section-accent {
@@ -764,10 +766,21 @@ const handleUndo = async () => {
   opacity: 0.8;
 }
 
-.cf-added { color: #16a34a; font-weight: 600; }
-.cf-deleted { color: #dc2626; font-weight: 600; }
-.cf-modified { color: #ca8a04; font-weight: 600; }
-.cf-sep { margin: 0 2px; }
+.cf-added {
+  color: #16a34a;
+  font-weight: 600;
+}
+.cf-deleted {
+  color: #dc2626;
+  font-weight: 600;
+}
+.cf-modified {
+  color: #ca8a04;
+  font-weight: 600;
+}
+.cf-sep {
+  margin: 0 2px;
+}
 .cf-expand-icon {
   font-size: 10px;
   margin-left: 4px;
@@ -797,9 +810,15 @@ const handleUndo = async () => {
   margin-bottom: 2px;
 }
 
-.cf-added-label { color: #16a34a; }
-.cf-deleted-label { color: #dc2626; }
-.cf-modified-label { color: #ca8a04; }
+.cf-added-label {
+  color: #16a34a;
+}
+.cf-deleted-label {
+  color: #dc2626;
+}
+.cf-modified-label {
+  color: #ca8a04;
+}
 
 .cf-file-item {
   padding: 1px 0 1px 8px;
@@ -809,9 +828,15 @@ const handleUndo = async () => {
   word-break: break-all;
 }
 
-.cf-added-file { color: #15803d; }
-.cf-deleted-file { color: #b91c1c; }
-.cf-modified-file { color: #a16207; }
+.cf-added-file {
+  color: #15803d;
+}
+.cf-deleted-file {
+  color: #b91c1c;
+}
+.cf-modified-file {
+  color: #a16207;
+}
 
 .cf-file-link {
   cursor: pointer;
@@ -858,13 +883,29 @@ const handleUndo = async () => {
   flex: 1;
 }
 
-.diff-line.add { background: #d4edda; }
-.diff-line.del { background: #f8d7da; }
-.diff-line.head { background: #f0f0f0; color: #1a1a1a; font-weight: 600; }
-.diff-line.ctx { color: #1a1a1a; }
+.diff-line.add {
+  background: #d4edda;
+}
+.diff-line.del {
+  background: #f8d7da;
+}
+.diff-line.head {
+  background: #f0f0f0;
+  color: #1a1a1a;
+  font-weight: 600;
+}
+.diff-line.ctx {
+  color: #1a1a1a;
+}
 
-.diff-line.add .diff-line-content { color: #1a1a1a; font-weight: 500; }
-.diff-line.del .diff-line-content { color: #1a1a1a; font-weight: 500; }
+.diff-line.add .diff-line-content {
+  color: #1a1a1a;
+  font-weight: 500;
+}
+.diff-line.del .diff-line-content {
+  color: #1a1a1a;
+  font-weight: 500;
+}
 
 /* ==================== 展开按钮 ==================== */
 .expand-btn {
@@ -924,13 +965,31 @@ const handleUndo = async () => {
   color: #1e293b;
 }
 
-:deep(.markdown-content h1) { font-size: 1.5em; border-bottom: 1px solid var(--border-color, #eaecef); padding-bottom: 0.3em; }
-:deep(.markdown-content h2) { font-size: 1.3em; border-bottom: 1px solid var(--border-color, #eaecef); padding-bottom: 0.3em; }
-:deep(.markdown-content h3) { font-size: 1.1em; }
-:deep(.markdown-content p) { margin-bottom: 1em; line-height: 1.6; }
+:deep(.markdown-content h1) {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--border-color, #eaecef);
+  padding-bottom: 0.3em;
+}
+:deep(.markdown-content h2) {
+  font-size: 1.3em;
+  border-bottom: 1px solid var(--border-color, #eaecef);
+  padding-bottom: 0.3em;
+}
+:deep(.markdown-content h3) {
+  font-size: 1.1em;
+}
+:deep(.markdown-content p) {
+  margin-bottom: 1em;
+  line-height: 1.6;
+}
 :deep(.markdown-content ul),
-:deep(.markdown-content ol) { padding-left: 2em; margin-bottom: 1em; }
-:deep(.markdown-content li) { margin-bottom: 0.25em; }
+:deep(.markdown-content ol) {
+  padding-left: 2em;
+  margin-bottom: 1em;
+}
+:deep(.markdown-content li) {
+  margin-bottom: 0.25em;
+}
 :deep(.markdown-content blockquote) {
   margin: 1em 0;
   padding: 0.5em 1em;
@@ -975,12 +1034,30 @@ const handleUndo = async () => {
   background: var(--bg-tertiary, #f6f8fa);
   color: #1e293b;
 }
-:deep(.markdown-content a) { color: var(--text-link, #0366d6); text-decoration: none; }
-:deep(.markdown-content a:hover) { text-decoration: underline; }
-:deep(.markdown-content img) { max-width: 100%; height: auto; }
-:deep(.markdown-content hr) { height: 0.25em; padding: 0; margin: 1.5em 0; background-color: var(--border-color, #e1e4e8); border: 0; }
-:deep(.markdown-content strong) { font-weight: 600; }
-:deep(.markdown-content em) { font-style: italic; }
+:deep(.markdown-content a) {
+  color: var(--text-link, #0366d6);
+  text-decoration: none;
+}
+:deep(.markdown-content a:hover) {
+  text-decoration: underline;
+}
+:deep(.markdown-content img) {
+  max-width: 100%;
+  height: auto;
+}
+:deep(.markdown-content hr) {
+  height: 0.25em;
+  padding: 0;
+  margin: 1.5em 0;
+  background-color: var(--border-color, #e1e4e8);
+  border: 0;
+}
+:deep(.markdown-content strong) {
+  font-weight: 600;
+}
+:deep(.markdown-content em) {
+  font-style: italic;
+}
 
 /* ==================== 响应渐变遮罩 ==================== */
 .response-collapsed {
@@ -1022,5 +1099,4 @@ const handleUndo = async () => {
   background: linear-gradient(transparent, var(--card-bg, #ffffff));
   pointer-events: none;
 }
-
 </style>

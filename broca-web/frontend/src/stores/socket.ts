@@ -29,7 +29,7 @@ export const useSocketStore = defineStore('socket', () => {
   })
 
   const onConnect = ref<(() => void) | null>(null)
-  const onDisconnect = ref<((() => void) | null)>(null)
+  const onDisconnect = ref<(() => void) | null>(null)
 
   // 使用 Map 支持多组件同时注册处理器，避免单例覆盖问题
   const _messageHandlers = new Map<string, (message: Message) => void>()
@@ -44,35 +44,51 @@ export const useSocketStore = defineStore('socket', () => {
   /** 注册消息处理器，返回注销函数 */
   const onMessage = (id: string, handler: (message: Message) => void): (() => void) => {
     _messageHandlers.set(id, handler)
-    return () => { _messageHandlers.delete(id) }
+    return () => {
+      _messageHandlers.delete(id)
+    }
   }
   const onCrewEvent = (id: string, handler: (event: string, data: any) => void): (() => void) => {
     _crewEventHandlers.set(id, handler)
-    return () => { _crewEventHandlers.delete(id) }
+    return () => {
+      _crewEventHandlers.delete(id)
+    }
   }
   const onTurnStart = (id: string, handler: (message: Message) => void): (() => void) => {
     _turnStartHandlers.set(id, handler)
-    return () => { _turnStartHandlers.delete(id) }
+    return () => {
+      _turnStartHandlers.delete(id)
+    }
   }
   const onTurnEnd = (id: string, handler: (message: Message) => void): (() => void) => {
     _turnEndHandlers.set(id, handler)
-    return () => { _turnEndHandlers.delete(id) }
+    return () => {
+      _turnEndHandlers.delete(id)
+    }
   }
   const onAgentResponse = (id: string, handler: (message: Message) => void): (() => void) => {
     _agentResponseHandlers.set(id, handler)
-    return () => { _agentResponseHandlers.delete(id) }
+    return () => {
+      _agentResponseHandlers.delete(id)
+    }
   }
   const onToolCall = (id: string, handler: (message: Message) => void): (() => void) => {
     _toolCallHandlers.set(id, handler)
-    return () => { _toolCallHandlers.delete(id) }
+    return () => {
+      _toolCallHandlers.delete(id)
+    }
   }
   const onPermissionRequest = (id: string, handler: (message: Message) => void): (() => void) => {
     _permissionRequestHandlers.set(id, handler)
-    return () => { _permissionRequestHandlers.delete(id) }
+    return () => {
+      _permissionRequestHandlers.delete(id)
+    }
   }
   const onAgentQuery = (id: string, handler: (message: Message) => void): (() => void) => {
     _agentQueryHandlers.set(id, handler)
-    return () => { _agentQueryHandlers.delete(id) }
+    return () => {
+      _agentQueryHandlers.delete(id)
+    }
   }
 
   const connect = async () => {
@@ -85,69 +101,69 @@ export const useSocketStore = defineStore('socket', () => {
     connecting.value = true
     _connectPromise = (async () => {
       try {
-      client = new BrocaSocketClient({
-        serverUrl: socketConfig.serverUrl,
-        clientType: socketConfig.clientType,
-        clientId: socketConfig.clientId,
-        userId: socketConfig.userId,
-      })
+        client = new BrocaSocketClient({
+          serverUrl: socketConfig.serverUrl,
+          clientType: socketConfig.clientType,
+          clientId: socketConfig.clientId,
+          userId: socketConfig.userId,
+        })
 
-      client.on('connect', () => {
-        connected.value = true
+        client.on('connect', () => {
+          connected.value = true
+          connecting.value = false
+          onConnect.value?.()
+
+          // 重连后重新订阅所有此前已订阅的频道。
+          // 服务端在 disconnect 时会清除客户端的订阅状态，
+          // 因此 Socket.IO 自动重连后必须显式重新订阅，否则服务端无法将消息推送回来。
+          for (const [channel] of _subscriptionRefCounts) {
+            client!.subscribe(channel).catch((err) => {
+              console.error(`重连后重新订阅失败 ${channel}:`, err)
+            })
+          }
+        })
+        client.on('disconnect', () => {
+          connected.value = false
+          connecting.value = false
+          onDisconnect.value?.()
+        })
+        client.on('message', (m: Message) => {
+          // 广播给所有注册的消息处理器
+          _messageHandlers.forEach((h) => h(m))
+          // 如果是编排事件，路由到所有编排事件处理器
+          if (m.message_type === 'system_message' && m.data?.crew_event) {
+            _crewEventHandlers.forEach((h) => h(m.data.crew_event, m.data.payload))
+          }
+        })
+        client.on('turn_start', (m: Message) => {
+          _turnStartHandlers.forEach((h) => h(m))
+        })
+        client.on('turn_end', (m: Message) => {
+          _turnEndHandlers.forEach((h) => h(m))
+        })
+        client.on('agent_response', (m: Message) => {
+          _agentResponseHandlers.forEach((h) => h(m))
+        })
+        client.on('tool_call', (m: Message) => {
+          _toolCallHandlers.forEach((h) => h(m))
+        })
+        client.on('permission_request', (m: Message) => {
+          _permissionRequestHandlers.forEach((h) => h(m))
+        })
+        client.on('agent_query', (m: Message) => {
+          _agentQueryHandlers.forEach((h) => h(m))
+        })
+
+        await client.connect()
+      } catch (e: any) {
         connecting.value = false
-        onConnect.value?.()
-
-        // 重连后重新订阅所有此前已订阅的频道。
-        // 服务端在 disconnect 时会清除客户端的订阅状态，
-        // 因此 Socket.IO 自动重连后必须显式重新订阅，否则服务端无法将消息推送回来。
-        for (const [channel] of _subscriptionRefCounts) {
-          client!.subscribe(channel).catch((err) => {
-            console.error(`重连后重新订阅失败 ${channel}:`, err)
-          })
-        }
-      })
-      client.on('disconnect', () => {
         connected.value = false
-        connecting.value = false
-        onDisconnect.value?.()
-      })
-      client.on('message', (m: Message) => {
-        // 广播给所有注册的消息处理器
-        _messageHandlers.forEach(h => h(m))
-        // 如果是编排事件，路由到所有编排事件处理器
-        if (m.message_type === 'system_message' && m.data?.crew_event) {
-          _crewEventHandlers.forEach(h => h(m.data.crew_event, m.data.payload))
-        }
-      })
-      client.on('turn_start', (m: Message) => {
-        _turnStartHandlers.forEach(h => h(m))
-      })
-      client.on('turn_end', (m: Message) => {
-        _turnEndHandlers.forEach(h => h(m))
-      })
-      client.on('agent_response', (m: Message) => {
-        _agentResponseHandlers.forEach(h => h(m))
-      })
-      client.on('tool_call', (m: Message) => {
-        _toolCallHandlers.forEach(h => h(m))
-      })
-      client.on('permission_request', (m: Message) => {
-        _permissionRequestHandlers.forEach(h => h(m))
-      })
-      client.on('agent_query', (m: Message) => {
-        _agentQueryHandlers.forEach(h => h(m))
-      })
-
-      await client.connect()
-    } catch (e: any) {
-      connecting.value = false
-      connected.value = false
-      ElMessage.error(e?.message || '连接失败')
-      throw e
-    } finally {
-      _connectPromise = null
-      // 连接完成（无论成功或失败）后清除 promise
-    }
+        ElMessage.error(e?.message || '连接失败')
+        throw e
+      } finally {
+        _connectPromise = null
+        // 连接完成（无论成功或失败）后清除 promise
+      }
     })()
     return _connectPromise
   }
@@ -167,10 +183,10 @@ export const useSocketStore = defineStore('socket', () => {
 
   /**
    * 订阅频道（带引用计数）
-   * 
+   *
    * 多个组件可以安全地订阅同一频道，各自独立 unsubscribe。
    * 只有当引用计数归零时才真正向服务端发送取消订阅。
-   * 
+   *
    * @param sessionId 会话 ID
    * @param subscribeToCrew 是否同时订阅编排事件频道
    * @returns 取消订阅函数，调用后引用计数减一
@@ -330,7 +346,7 @@ export const useSocketStore = defineStore('socket', () => {
         command: 'undo',
         arguments: {
           target_message_id: params.targetMessageId,
-          level: params.level || 'step'
+          level: params.level || 'step',
         },
         subscription: params.subscription,
         receiverId: params.receiverId,
@@ -341,9 +357,7 @@ export const useSocketStore = defineStore('socket', () => {
     }
   }
 
-  const sendRedo = async (params: {
-    receiverId?: string
-  }) => {
+  const sendRedo = async (params: { receiverId?: string }) => {
     if (!client) {
       ElMessage.warning('请先连接')
       return

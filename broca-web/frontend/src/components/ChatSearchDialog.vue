@@ -33,7 +33,7 @@ const searchKeyword = ref('')
 const selectedAgentId = ref('')
 const selectedMessageType = ref('')
 const selectedToolName = ref('')
-const sortOrder = ref<'desc' | 'asc'>('desc')  // desc=最新在前, asc=最早在前
+const sortOrder = ref<'desc' | 'asc'>('desc') // desc=最新在前, asc=最早在前
 
 // ========== Pagination ==========
 const pageSize = ref(20)
@@ -207,7 +207,9 @@ const getContentPreview = (m: Message): string => {
         }
         return parsed.content || JSON.stringify(parsed).slice(0, 200)
       }
-    } catch { /* not json */ }
+    } catch {
+      /* not json */
+    }
     return content.slice(0, 300)
   }
   return String(content).slice(0, 300)
@@ -220,28 +222,41 @@ const getDataPreview = (m: Message): string => {
 
 const getTypeBadgeClass = (messageType: string): string => {
   switch (messageType) {
-    case 'user_message': return 'type-user'
-    case 'agent_response': return 'type-agent'
-    case 'tool_call': return 'type-tool'
+    case 'user_message':
+      return 'type-user'
+    case 'agent_response':
+      return 'type-agent'
+    case 'tool_call':
+      return 'type-tool'
     case 'error':
-    case 'agent_error': return 'type-error'
+    case 'agent_error':
+      return 'type-error'
     case 'system_message':
-    case 'agent_system_message': return 'type-system'
-    default: return 'type-default'
+    case 'agent_system_message':
+      return 'type-system'
+    default:
+      return 'type-default'
   }
 }
 
 const getTypeLabel = (messageType: string): string => {
   switch (messageType) {
-    case 'user_message': return 'User'
-    case 'agent_response': return 'Agent'
-    case 'tool_call': return 'Tool'
+    case 'user_message':
+      return 'User'
+    case 'agent_response':
+      return 'Agent'
+    case 'tool_call':
+      return 'Tool'
     case 'error':
-    case 'agent_error': return 'Error'
+    case 'agent_error':
+      return 'Error'
     case 'system_message':
-    case 'agent_system_message': return 'System'
-    case 'command_result': return 'Cmd'
-    default: return messageType
+    case 'agent_system_message':
+      return 'System'
+    case 'command_result':
+      return 'Cmd'
+    default:
+      return messageType
   }
 }
 
@@ -319,23 +334,19 @@ watch(visible, (val) => {
         @click.self="handleClose"
       >
         <div
-          class="
-            search-dialog bg-white shadow-2xl border border-gray-200
-            flex flex-col overflow-hidden
-            sm:rounded-xl sm:max-w-5xl sm:max-h-[80vh] sm:w-[90vw]
-            w-full max-h-[85vh] sm:mx-0
-            rounded-t-2xl
-          "
+          class="search-dialog bg-white shadow-2xl border border-gray-200 flex flex-col overflow-hidden sm:rounded-xl sm:max-w-5xl sm:max-h-[80vh] sm:w-[90vw] w-full max-h-[85vh] sm:mx-0 rounded-t-2xl"
         >
           <!-- Header -->
-          <div class="flex items-center justify-between px-3 sm:px-5 py-2.5 sm:py-3 border-b border-gray-200 bg-gray-50">
+          <div
+            class="flex items-center justify-between px-3 sm:px-5 py-2.5 sm:py-3 border-b border-gray-200 bg-gray-50"
+          >
             <h3 class="text-sm sm:text-base font-semibold text-gray-700 flex items-center gap-1.5 sm:gap-2">
               <span>🔍</span>
               <span>消息搜索</span>
             </h3>
             <div class="flex items-center gap-1.5 sm:gap-2">
-              <el-button size="small" @click="resetFilters">重置</el-button>
-              <el-button size="small" type="default" @click="handleClose" :icon="Close" class="!px-2 sm:!px-3">
+              <el-button size="small" @click="resetFilters"> 重置 </el-button>
+              <el-button size="small" type="default" :icon="Close" class="!px-2 sm:!px-3" @click="handleClose">
                 <span class="hidden sm:inline">关闭</span>
               </el-button>
             </div>
@@ -367,12 +378,7 @@ watch(visible, (val) => {
                 :teleported="true"
                 style="flex: none; width: 150px"
               >
-                <el-option
-                  v-for="opt in agentOptions"
-                  :key="opt.value"
-                  :label="opt.label"
-                  :value="opt.value"
-                />
+                <el-option v-for="opt in agentOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
               </el-select>
 
               <!-- Message type -->
@@ -384,12 +390,7 @@ watch(visible, (val) => {
                 :teleported="true"
                 style="flex: none; width: 150px"
               >
-                <el-option
-                  v-for="opt in messageTypeOptions"
-                  :key="opt.value"
-                  :label="opt.label"
-                  :value="opt.value"
-                />
+                <el-option v-for="opt in messageTypeOptions" :key="opt.value" :label="opt.label" :value="opt.value" />
               </el-select>
 
               <!-- Tool name -->
@@ -401,18 +402,15 @@ watch(visible, (val) => {
                 :teleported="true"
                 style="flex: none; width: 150px"
               >
-                <el-option
-                  v-for="name in toolNameOptions"
-                  :key="name"
-                  :label="name"
-                  :value="name"
-                />
+                <el-option v-for="name in toolNameOptions" :key="name" :label="name" :value="name" />
               </el-select>
 
               <!-- Result count -->
               <span class="text-xs text-gray-400 whitespace-nowrap flex-none">
                 <template v-if="loading">⏳</template>
-                <template v-else>共 <strong class="text-gray-600">{{ totalResults }}</strong> 条</template>
+                <template v-else
+                  >共 <strong class="text-gray-600">{{ totalResults }}</strong> 条</template
+                >
               </span>
             </div>
           </div>
@@ -449,12 +447,7 @@ watch(visible, (val) => {
                   <div class="px-3 py-2.5 border-b border-gray-200">
                     <div class="flex items-center justify-between">
                       <span class="text-sm font-medium text-gray-700">内容</span>
-                      <el-button
-                        size="small"
-                        text
-                        type="primary"
-                        @click="showRawJson = !showRawJson"
-                      >
+                      <el-button size="small" text type="primary" @click="showRawJson = !showRawJson">
                         {{ showRawJson ? '友好视图' : '查看原始 JSON' }}
                       </el-button>
                     </div>
@@ -473,13 +466,14 @@ watch(visible, (val) => {
                         </span>
                       </div>
                     </template>
-                    <div v-else class="px-3 py-4 text-sm text-gray-400 text-center">
-                      无数据
-                    </div>
+                    <div v-else class="px-3 py-4 text-sm text-gray-400 text-center">无数据</div>
                   </div>
 
                   <div v-else class="p-3">
-                    <pre class="text-xs text-gray-700 font-mono whitespace-pre-wrap break-all leading-5 max-h-96 overflow-auto">{{ formatJson(selectedMessage.data) }}</pre>
+                    <pre
+                      class="text-xs text-gray-700 font-mono whitespace-pre-wrap break-all leading-5 max-h-96 overflow-auto"
+                      >{{ formatJson(selectedMessage.data) }}</pre
+                    >
                   </div>
                 </div>
               </div>
@@ -586,7 +580,10 @@ watch(visible, (val) => {
                             {{ getDataPreview(m) }}
                           </div>
                           <!-- 文件工具：展示文件路径 -->
-                          <div v-if="isFileTool(m) && getFilePath(m)" class="text-xs text-blue-500 mt-0.5 font-mono truncate">
+                          <div
+                            v-if="isFileTool(m) && getFilePath(m)"
+                            class="text-xs text-blue-500 mt-0.5 font-mono truncate"
+                          >
                             📁 {{ getFilePath(m) }}
                           </div>
                         </td>
@@ -608,9 +605,7 @@ watch(visible, (val) => {
             v-if="totalPages > 1"
             class="flex items-center justify-between px-3 sm:px-5 py-2.5 sm:py-3 border-t border-gray-200 bg-gray-50 gap-2"
           >
-            <span class="text-xs text-gray-400 shrink-0">
-              第 {{ currentPage }}/{{ totalPages }} 页
-            </span>
+            <span class="text-xs text-gray-400 shrink-0"> 第 {{ currentPage }}/{{ totalPages }} 页 </span>
             <el-pagination
               v-model:current-page="currentPage"
               :page-size="pageSize"

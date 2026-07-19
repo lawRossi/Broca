@@ -2,7 +2,7 @@
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useChatStore } from '@/stores'
-import { sessionApi, type SessionStats} from '@/api/session'
+import { sessionApi, type SessionStats } from '@/api/session'
 import { jobApi } from '@/api/job'
 import { taskApi } from '@/api/task'
 import { Loading, Refresh } from '@element-plus/icons-vue'
@@ -253,12 +253,10 @@ const getRunnerConfig = (status: string | undefined) => {
           </div>
           <div
             class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
-            @click="router.push({ name: 'Tasks', query: { session_id: chatStore.sessionId } })"
             title="Click to view tasks for this session"
+            @click="router.push({ name: 'Tasks', query: { session_id: chatStore.sessionId } })"
           >
-            <span class="text-gray-700">
-              Agent Task:
-            </span>
+            <span class="text-gray-700"> Agent Task: </span>
             <div class="flex items-center gap-2">
               <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
                 <el-icon class="is-loading"><Loading /></el-icon>
@@ -268,12 +266,10 @@ const getRunnerConfig = (status: string | undefined) => {
           </div>
           <div
             class="flex justify-between items-center cursor-pointer hover:bg-gray-50 py-0.5 px-1 rounded"
-            @click="router.push({ name: 'Jobs', query: { session_id: chatStore.sessionId } })"
             title="Click to view jobs for this session"
+            @click="router.push({ name: 'Jobs', query: { session_id: chatStore.sessionId } })"
           >
-            <span class="text-gray-700">
-              后台Job:
-            </span>
+            <span class="text-gray-700"> 后台Job: </span>
             <div class="flex items-center gap-2">
               <span v-if="jobTaskLoading" class="font-mono text-sm text-gray-500">
                 <el-icon class="is-loading"><Loading /></el-icon>
@@ -300,7 +296,9 @@ const getRunnerConfig = (status: string | undefined) => {
         </el-button>
       </div>
       <div v-if="runnerLoading && !runnerInfo" class="flex justify-center py-4">
-        <el-icon class="is-loading"><Loading /></el-icon>
+        <el-icon class="is-loading">
+          <Loading />
+        </el-icon>
       </div>
       <div v-else class="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-2 border border-gray-100">
         <div class="space-y-1.5 text-sm">
@@ -327,9 +325,7 @@ const getRunnerConfig = (status: string | undefined) => {
             <span class="text-gray-800">{{ formatMemory(runnerInfo?.resource_usage?.memory_rss_mb) }}</span>
           </div>
           <div v-if="runnerInfo?.status === 'alive'" class="pt-2 flex gap-2">
-            <el-button type="danger" size="small" :loading="stopping" @click="handleStopRunner">
-              停止进程
-            </el-button>
+            <el-button type="danger" size="small" :loading="stopping" @click="handleStopRunner"> 停止进程 </el-button>
           </div>
           <div v-else-if="runnerInfo?.status === 'error'" class="pt-2">
             <el-button type="danger" size="small" :loading="restarting" @click="handleRestartRunner">
@@ -352,27 +348,19 @@ const getRunnerConfig = (status: string | undefined) => {
       <div class="bg-gradient-to-r from-gray-50 to-blue-50 rounded-lg p-2 border border-gray-100">
         <div class="space-y-1.5">
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-700 flex items-center gap-2">
-              User Messages
-            </span>
+            <span class="text-sm text-gray-700 flex items-center gap-2"> User Messages </span>
             <span class="font-mono text-sm text-gray-800">{{ userMessagesFromApi }}</span>
           </div>
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-700 flex items-center gap-2">
-              Assistant Responses
-            </span>
+            <span class="text-sm text-gray-700 flex items-center gap-2"> Assistant Responses </span>
             <span class="font-mono text-sm text-gray-800">{{ assistantMessagesFromApi }}</span>
           </div>
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-700 flex items-center gap-2">
-              Tool Calls
-            </span>
+            <span class="text-sm text-gray-700 flex items-center gap-2"> Tool Calls </span>
             <span class="font-mono text-sm text-gray-800">{{ toolCallsFromApi }}</span>
           </div>
           <div class="flex justify-between items-center">
-            <span class="text-sm text-gray-700 flex items-center gap-2">
-              Tool Call Errors
-            </span>
+            <span class="text-sm text-gray-700 flex items-center gap-2"> Tool Call Errors </span>
             <span
               class="font-mono text-sm text-gray-800"
               :class="{ 'text-red-600 font-bold': toolCallErrorsFromApi > 0 }"

@@ -7,8 +7,8 @@ export interface Session {
   workspace?: string
   created_at: string
   finished_at?: string
-  category?: string                // 会话分类：normal / agent-orchestration
-  runner_status?: string           // Runner 进程状态（由后端从 SessionRunner 表获取）
+  category?: string // 会话分类：normal / agent-orchestration
+  runner_status?: string // Runner 进程状态（由后端从 SessionRunner 表获取）
 }
 
 export interface Agent {
@@ -172,7 +172,12 @@ export const sessionApi = {
    * 获取会话的消息历史
    * @param executionId - 可选，按编排执行ID过滤
    */
-  async getSessionMessages(sessionId: string, skip: number = 0, limit: number = 50, executionId?: string): Promise<MessagesResponse> {
+  async getSessionMessages(
+    sessionId: string,
+    skip: number = 0,
+    limit: number = 50,
+    executionId?: string
+  ): Promise<MessagesResponse> {
     const params: Record<string, any> = { skip, limit }
     if (executionId) {
       params.execution_id = executionId
@@ -260,11 +265,7 @@ export const sessionApi = {
   /**
    * 获取 turn 中指定文件的 unified diff
    */
-  async getFileDiff(
-    sessionId: string,
-    turnId: string,
-    path: string
-  ): Promise<{ diff: string; file_path: string }> {
+  async getFileDiff(sessionId: string, turnId: string, path: string): Promise<{ diff: string; file_path: string }> {
     return request.get(`/session/${sessionId}/turns/${turnId}/file-diff`, {
       params: { path },
     })

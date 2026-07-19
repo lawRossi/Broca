@@ -52,24 +52,24 @@ const selectOption = (optionName: string) => {
     <div v-if="hasOptions" class="mt-5" :class="chatStore.isMobile ? 'pl-0' : 'pl-11'">
       <div class="text-sm mb-3 options-label" :class="{ 'mb-2': chatStore.isMobile }">快捷回答:</div>
       <div class="flex flex-col gap-2 sm:gap-3">
-      <div
-        v-for="option in chatStore.agentQueryDialog.options"
-        :key="option.name"
-        class="option-card"
-        @click="selectOption(option.name)"
-      >
-        <div class="option-text">
-          <div class="option-name">
-            {{ option.name }}
+        <div
+          v-for="option in chatStore.agentQueryDialog.options"
+          :key="option.name"
+          class="option-card"
+          @click="selectOption(option.name)"
+        >
+          <div class="option-text">
+            <div class="option-name">
+              {{ option.name }}
+            </div>
+            <div v-if="option.description" class="option-desc">
+              {{ option.description }}
+            </div>
           </div>
-          <div v-if="option.description" class="option-desc">
-            {{ option.description }}
-          </div>
+          <el-icon class="option-arrow">
+            <ArrowRight />
+          </el-icon>
         </div>
-        <el-icon class="option-arrow">
-          <ArrowRight />
-        </el-icon>
-      </div>
       </div>
     </div>
 

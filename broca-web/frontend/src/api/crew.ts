@@ -34,7 +34,7 @@ export interface AgentRoleConfig {
   role: string
   name: string
   config: string
-  use_history?: boolean        // 是否保留历史消息（默认 false）
+  use_history?: boolean // 是否保留历史消息（默认 false）
   extras?: Record<string, any>
 }
 
@@ -192,10 +192,7 @@ export const crewApi = {
   /**
    * 获取编排执行列表
    */
-  async list(params?: {
-    session_id?: string
-    status?: string
-  }): Promise<CrewListResponse> {
+  async list(params?: { session_id?: string; status?: string }): Promise<CrewListResponse> {
     return request.get('/crews', { params })
   },
 

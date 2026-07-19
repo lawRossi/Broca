@@ -5,20 +5,14 @@
  */
 import { computed } from 'vue'
 import type { PhaseResult, ExecutionStatus } from '@/api/crew'
-import {
-  CircleCheck,
-  CircleClose,
-  Loading,
-  Clock,
-  Connection,
-} from '@element-plus/icons-vue'
+import { CircleCheck, CircleClose, Loading, Clock, Connection } from '@element-plus/icons-vue'
 
 const props = defineProps<{
   phases: PhaseResult[]
   status: ExecutionStatus
   orchestratorType?: string
-  progress?: number         // 后端算好的进度（0~1）
-  phasesTotal?: number      // 预期总阶段数
+  progress?: number // 后端算好的进度（0~1）
+  phasesTotal?: number // 预期总阶段数
 }>()
 
 // 阶段状态映射
@@ -114,17 +108,10 @@ const overallStatus = computed(() => {
     <!-- 阶段列表（DAG 视图） -->
     <div class="relative">
       <!-- 连线 -->
-      <div
-        v-if="phases.length > 1"
-        class="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-200"
-      />
+      <div v-if="phases.length > 1" class="absolute left-6 top-0 bottom-0 w-0.5 bg-gray-200" />
 
       <!-- 阶段节点 -->
-      <div
-        v-for="(phase, index) in phases"
-        :key="phase.name"
-        class="relative flex gap-3 sm:gap-4 pb-4 sm:pb-6"
-      >
+      <div v-for="(phase, index) in phases" :key="phase.name" class="relative flex gap-3 sm:gap-4 pb-4 sm:pb-6">
         <!-- 节点圆点 -->
         <div class="relative z-10 flex-shrink-0 pt-0.5">
           <div
@@ -136,21 +123,20 @@ const overallStatus = computed(() => {
             <div
               :class="[
                 'w-2 h-2 sm:w-2.5 sm:h-2.5 rounded-full',
-                phase.status === 'completed' ? 'bg-green-500' :
-                phase.status === 'running' ? 'bg-blue-500' :
-                phase.status === 'failed' ? 'bg-red-500' : 'bg-gray-300'
+                phase.status === 'completed'
+                  ? 'bg-green-500'
+                  : phase.status === 'running'
+                    ? 'bg-blue-500'
+                    : phase.status === 'failed'
+                      ? 'bg-red-500'
+                      : 'bg-gray-300',
               ]"
             />
           </div>
         </div>
 
         <!-- 阶段卡片 -->
-        <div
-          :class="[
-            'flex-1 rounded-lg border p-3 sm:p-4 transition-all',
-            phaseBgClass(phase.status),
-          ]"
-        >
+        <div :class="['flex-1 rounded-lg border p-3 sm:p-4 transition-all', phaseBgClass(phase.status)]">
           <!-- 头部：名称 + 状态（移动端竖直排列） -->
           <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-1 sm:gap-2">
             <div class="flex items-center gap-1.5 sm:gap-2">
@@ -160,7 +146,15 @@ const overallStatus = computed(() => {
               <span class="font-medium text-gray-900 text-sm sm:text-base">{{ phase.name }}</span>
             </div>
             <el-tag
-              :type="phase.status === 'completed' ? 'success' : phase.status === 'running' ? 'primary' : phase.status === 'failed' ? 'danger' : 'info'"
+              :type="
+                phase.status === 'completed'
+                  ? 'success'
+                  : phase.status === 'running'
+                    ? 'primary'
+                    : phase.status === 'failed'
+                      ? 'danger'
+                      : 'info'
+              "
               size="small"
               class="self-start sm:self-auto"
             >
@@ -195,12 +189,7 @@ const overallStatus = computed(() => {
       </div>
 
       <!-- 空状态 -->
-      <div
-        v-if="!phases.length"
-        class="text-center py-8 text-gray-400"
-      >
-        暂无阶段信息
-      </div>
+      <div v-if="!phases.length" class="text-center py-8 text-gray-400">暂无阶段信息</div>
     </div>
   </div>
 </template>

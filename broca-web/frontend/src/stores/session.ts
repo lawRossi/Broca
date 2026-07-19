@@ -72,13 +72,16 @@ export const useSessionStore = defineStore('session', () => {
 
     try {
       // silent=true: 关闭 Axios 拦截器的 ElMessage 弹窗，由本 catch 块统一处理错误展示
-      const response = await sessionApi.createSession({
-        description: params.description || undefined,
-        workspace: params.workspace || undefined,
-        provider: params.provider || undefined,
-        model: params.model || undefined,
-        category: params.category || 'normal',
-      }, true)
+      const response = await sessionApi.createSession(
+        {
+          description: params.description || undefined,
+          workspace: params.workspace || undefined,
+          provider: params.provider || undefined,
+          model: params.model || undefined,
+          category: params.category || 'normal',
+        },
+        true
+      )
 
       ElMessage.success('会话创建成功')
 

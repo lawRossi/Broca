@@ -47,11 +47,7 @@ const handleConciseToggle = (val: boolean) => {
           </el-button>
 
           <!-- 搜索按钮 -->
-          <el-button
-            size="small"
-            class="!px-2"
-            @click="emit('search')"
-          >
+          <el-button size="small" class="!px-2" @click="emit('search')">
             <el-icon><Search /></el-icon>
           </el-button>
 

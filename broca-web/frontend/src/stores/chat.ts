@@ -86,14 +86,18 @@ export const useChatStore = defineStore('chat', () => {
     try {
       const saved = localStorage.getItem(`broca_display_mode_${sid}`)
       if (saved === 'concise' || saved === 'detail') return saved
-    } catch { /* localStorage 不可用时忽略 */ }
+    } catch {
+      /* localStorage 不可用时忽略 */
+    }
     return 'concise'
   }
   /** 将会话显示模式持久化到 localStorage */
   const saveDisplayMode = (sid: string, mode: 'detail' | 'concise') => {
     try {
       localStorage.setItem(`broca_display_mode_${sid}`, mode)
-    } catch { /* 忽略 */ }
+    } catch {
+      /* 忽略 */
+    }
   }
   const displayMode = ref<'detail' | 'concise'>('concise')
   const turnSummaries = ref<TurnSummary[]>([])
@@ -143,7 +147,7 @@ export const useChatStore = defineStore('chat', () => {
       for (let i = 0; i < 15; i++) {
         await fetchRunnerStatus()
         if (runnerInfo.value?.status === 'alive') break
-        await new Promise(r => setTimeout(r, 2000))
+        await new Promise((r) => setTimeout(r, 2000))
       }
     } catch (error: any) {
       const { ElMessage } = await import('element-plus')
@@ -252,7 +256,7 @@ export const useChatStore = defineStore('chat', () => {
     const summaries = turnSummaries.value
     const visibleIds = agentStore.visibleAgentIds
     if (visibleIds.length === 0) return summaries
-    return summaries.filter(t => visibleIds.includes(t.agentId))
+    return summaries.filter((t) => visibleIds.includes(t.agentId))
   })
 
   const mergeAgentResponseChunks = (chunks: Message[]) => {
@@ -463,7 +467,7 @@ export const useChatStore = defineStore('chat', () => {
     const turnId = message.turn_id
     if (!turnId) return
 
-    const idx = turnSummaries.value.findIndex(t => t.turnId === turnId)
+    const idx = turnSummaries.value.findIndex((t) => t.turnId === turnId)
     if (idx === -1) return
 
     if (message.message_type === 'step_start') {
@@ -478,7 +482,7 @@ export const useChatStore = defineStore('chat', () => {
     const turnId = message.turn_id || message.data?.turn_id
     if (!turnId) return
 
-    const idx = turnSummaries.value.findIndex(t => t.turnId === turnId)
+    const idx = turnSummaries.value.findIndex((t) => t.turnId === turnId)
     if (idx === -1) return
 
     const turn = turnSummaries.value[idx]
@@ -525,7 +529,7 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
       if (isFirstSeen) {
-        const existingStat = turn.toolCallStats.find(s => s.toolName === toolName)
+        const existingStat = turn.toolCallStats.find((s) => s.toolName === toolName)
         if (existingStat) {
           existingStat.count++
         } else {
@@ -575,9 +579,9 @@ export const useChatStore = defineStore('chat', () => {
               const prevContentMsgId = _turnContentMsgId.get(turnId)
               const isNewMessage = prevContentMsgId !== undefined && prevContentMsgId !== message.message_id
               if (isNewMessage) {
-                turn.finalResponse = parsed.content  // 新消息流，替换
+                turn.finalResponse = parsed.content // 新消息流，替换
               } else {
-                turn.finalResponse += parsed.content  // 同一消息流，拼接
+                turn.finalResponse += parsed.content // 同一消息流，拼接
               }
               _turnContentMsgId.set(turnId, message.message_id)
             }
@@ -588,9 +592,9 @@ export const useChatStore = defineStore('chat', () => {
             // 此时 isNewResponse=false（同 message_id），但需要清空 reasoningContent。
             if (parsed.reasoning_content) {
               if (isNewResponse) {
-                turn.reasoningContent = parsed.reasoning_content  // 新消息，重新开始
+                turn.reasoningContent = parsed.reasoning_content // 新消息，重新开始
               } else {
-                turn.reasoningContent += parsed.reasoning_content  // 同消息，累加
+                turn.reasoningContent += parsed.reasoning_content // 同消息，累加
               }
             }
             if (parsed.content && turn.reasoningContent.length > 0) {
@@ -604,9 +608,9 @@ export const useChatStore = defineStore('chat', () => {
           const prevContentMsgId = _turnContentMsgId.get(turnId)
           const isNewMessage = prevContentMsgId !== undefined && prevContentMsgId !== message.message_id
           if (isNewMessage) {
-            turn.finalResponse = content  // 新消息流，替换
+            turn.finalResponse = content // 新消息流，替换
           } else {
-            turn.finalResponse += content  // 同一消息流，拼接
+            turn.finalResponse += content // 同一消息流，拼接
           }
           _turnContentMsgId.set(turnId, message.message_id)
         }
@@ -628,15 +632,15 @@ export const useChatStore = defineStore('chat', () => {
     if (!turnId) return
 
     // 检查是否已存在（避免重复）
-    if (turnSummaries.value.some(t => t.turnId === turnId)) return
+    if (turnSummaries.value.some((t) => t.turnId === turnId)) return
 
     const targetAgentId = message.sender_id || agentStore.currentAgentId
-    const agent = agentStore.agents.find(a => a.agent_id === targetAgentId)
+    const agent = agentStore.agents.find((a) => a.agent_id === targetAgentId)
     const agentName = agent?.name || targetAgentId
 
     const newSummary: TurnSummary = {
       turnId,
-      sequenceNumber: Math.max(0, ...turnSummaries.value.map(t => t.sequenceNumber)) + 1,
+      sequenceNumber: Math.max(0, ...turnSummaries.value.map((t) => t.sequenceNumber)) + 1,
       agentId: targetAgentId,
       agentName,
       userMessage: null,
@@ -670,7 +674,7 @@ export const useChatStore = defineStore('chat', () => {
     const turnId = message.turn_id || message.data?.turn_id
     if (!turnId) return
 
-    const idx = turnSummaries.value.findIndex(t => t.turnId === turnId)
+    const idx = turnSummaries.value.findIndex((t) => t.turnId === turnId)
     if (idx === -1) return
 
     const turn = turnSummaries.value[idx]
@@ -682,7 +686,7 @@ export const useChatStore = defineStore('chat', () => {
       activeTurnIndex.value = -1
     }
     // 如果没有任何活跃 turn 了，停止计时器（timer 自身也会检测，这里做双重保障）
-    if (!turnSummaries.value.some(t => t.isActive)) {
+    if (!turnSummaries.value.some((t) => t.isActive)) {
       stopDurationTimer()
     }
     // 保存 turn_end 消息 ID 用于撤销定位（始终安全，后端可能已删除最后响应消息）
@@ -830,9 +834,7 @@ export const useChatStore = defineStore('chat', () => {
       return message
     } else {
       // 通用去重：按 message_id 检查是否已存在
-      const existingIndex = messages.value.findIndex(
-        (m) => m.message_id === message.message_id
-      )
+      const existingIndex = messages.value.findIndex((m) => m.message_id === message.message_id)
       if (existingIndex !== -1) {
         const existing = messages.value[existingIndex]
         if (existing) {
@@ -983,16 +985,11 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     try {
-      const response = await sessionApi.getSessionTurns(
-        sessionId,
-        turnHistorySkip.value,
-        3,
-        filterExecutionId
-      )
+      const response = await sessionApi.getSessionTurns(sessionId, turnHistorySkip.value, 3, filterExecutionId)
 
       const newSummaries: TurnSummary[] = response.turns
-        .filter(t => !t.is_reverted)  // 前端过滤已撤销的 turn
-        .map(t => ({
+        .filter((t) => !t.is_reverted) // 前端过滤已撤销的 turn
+        .map((t) => ({
           turnId: t.turn_id,
           sequenceNumber: t.sequence_number,
           agentId: t.agent_id,
@@ -1002,13 +999,13 @@ export const useChatStore = defineStore('chat', () => {
           // 后端 status 字段只有 turn_end 时才会被设为 'completed'/'error'，
           // 未结束的 turn 该字段为 None（被后端映射为 'completed'），
           // 故不能仅依赖后端 status 字段判断活跃状态。
-          status: t.status === 'error' ? 'error' : (!t.ended_at ? 'active' : 'completed'),
+          status: t.status === 'error' ? 'error' : !t.ended_at ? 'active' : 'completed',
           currentTool: null,
           currentFilePath: t.current_file_path,
           currentTodoList: (t.current_todo_list || []) as TodoItem[],
           totalDuration: t.duration_seconds || 0,
           totalSteps: t.total_steps || 0,
-          toolCallStats: (t.tool_call_stats || []).map(s => ({
+          toolCallStats: (t.tool_call_stats || []).map((s) => ({
             toolName: s.tool_name,
             count: s.count,
           })),
@@ -1018,14 +1015,16 @@ export const useChatStore = defineStore('chat', () => {
           startedAt: parseISODate(t.started_at) ?? Date.now(),
           createdAt: t.created_at || '',
           lastMessageId: t.last_message_id || null,
-          changedFiles: t.changed_files ? {
-            totalAdded: t.changed_files.total_added || 0,
-            totalDeleted: t.changed_files.total_deleted || 0,
-            totalModified: t.changed_files.total_modified || 0,
-            filesAdded: t.changed_files.files_added || [],
-            filesDeleted: t.changed_files.files_deleted || [],
-            filesModified: t.changed_files.files_modified || [],
-          } : null,
+          changedFiles: t.changed_files
+            ? {
+                totalAdded: t.changed_files.total_added || 0,
+                totalDeleted: t.changed_files.total_deleted || 0,
+                totalModified: t.changed_files.total_modified || 0,
+                filesAdded: t.changed_files.files_added || [],
+                filesDeleted: t.changed_files.files_deleted || [],
+                filesModified: t.changed_files.files_modified || [],
+              }
+            : null,
         }))
 
       if (isLoadMore) {
@@ -1043,8 +1042,8 @@ export const useChatStore = defineStore('chat', () => {
         // 注意：不能只使用 API 调用前保存的 activeTurns，因为在 await 期间，
         // socket 事件可能向 turnSummaries 添加了新的活跃 turn，也可能会
         // 发生 turn_end 将活跃 turn 标记为完成。因此需要保留所有 API 未覆盖的 turn。
-        const seenIds = new Set(newSummaries.map(t => t.turnId))
-        const currentLive = turnSummaries.value.filter(t => !seenIds.has(t.turnId))
+        const seenIds = new Set(newSummaries.map((t) => t.turnId))
+        const currentLive = turnSummaries.value.filter((t) => !seenIds.has(t.turnId))
         // 策略：API 数据是数据库快照，保证完整性；socket 数据有实时流式更新。
         // 以 API 为 base，再将 socket 的流式字段叠加上去。
         const merged = [...newSummaries, ...currentLive]
@@ -1053,7 +1052,10 @@ export const useChatStore = defineStore('chat', () => {
           dedupMap.set(t.turnId, t)
         }
         if (merged.length !== dedupMap.size) {
-          console.warn(`[ChatStore] loadTurnHistory skip=0 dedup: merged=${merged.length}, unique=${dedupMap.size}`, dedupMap)
+          console.warn(
+            `[ChatStore] loadTurnHistory skip=0 dedup: merged=${merged.length}, unique=${dedupMap.size}`,
+            dedupMap
+          )
         }
         // 活跃 turn 的流式字段：以 API 版本为 base，叠加 socket 的实时数据
         for (const socketTurn of turnSummaries.value) {
@@ -1062,7 +1064,8 @@ export const useChatStore = defineStore('chat', () => {
           apiTurn.totalDuration = socketTurn.totalDuration
           apiTurn.currentTool = socketTurn.currentTool || apiTurn.currentTool
           apiTurn.currentFilePath = socketTurn.currentFilePath || apiTurn.currentFilePath
-          apiTurn.currentTodoList = socketTurn.currentTodoList.length > 0 ? socketTurn.currentTodoList : apiTurn.currentTodoList
+          apiTurn.currentTodoList =
+            socketTurn.currentTodoList.length > 0 ? socketTurn.currentTodoList : apiTurn.currentTodoList
           apiTurn.isActive = true
         }
         turnSummaries.value = Array.from(dedupMap.values())
@@ -1075,7 +1078,7 @@ export const useChatStore = defineStore('chat', () => {
 
       // 检测活跃 turn
       if (!isLoadMore) {
-        const activeIdx = turnSummaries.value.findIndex(s => s.isActive)
+        const activeIdx = turnSummaries.value.findIndex((s) => s.isActive)
         if (activeIdx >= 0) {
           activeTurnIndex.value = activeIdx
           // 如果合并后有活跃 turn，确保计时器在运行
@@ -1205,7 +1208,13 @@ export const useChatStore = defineStore('chat', () => {
           handleTurnStart(m)
         } else if (m.message_type === 'turn_end') {
           handleTurnEnd(m)
-        } else if (m.message_type === 'tool_call' || m.message_type === 'agent_response' || m.message_type === 'user_message' || m.message_type === 'error' || m.message_type === 'agent_error') {
+        } else if (
+          m.message_type === 'tool_call' ||
+          m.message_type === 'agent_response' ||
+          m.message_type === 'user_message' ||
+          m.message_type === 'error' ||
+          m.message_type === 'agent_error'
+        ) {
           updateTurnSummaryOnMessage(m)
         }
         return
@@ -1276,7 +1285,13 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       // tool_call、agent_response、user_message、error 同时更新 TurnSummary
-      if (m.message_type === 'tool_call' || m.message_type === 'agent_response' || m.message_type === 'user_message' || m.message_type === 'error' || m.message_type === 'agent_error') {
+      if (
+        m.message_type === 'tool_call' ||
+        m.message_type === 'agent_response' ||
+        m.message_type === 'user_message' ||
+        m.message_type === 'error' ||
+        m.message_type === 'agent_error'
+      ) {
         updateTurnSummaryOnMessage(m)
       }
     })
@@ -1313,8 +1328,15 @@ export const useChatStore = defineStore('chat', () => {
     })
 
     // 保存注销函数以便 cleanup 时清理
-    _cleanupHandlers.push(unsubMessage, unsubTurnStart, unsubTurnEnd,
-      unsubAgentResponse, unsubToolCall, unsubPermission, unsubAgentQuery)
+    _cleanupHandlers.push(
+      unsubMessage,
+      unsubTurnStart,
+      unsubTurnEnd,
+      unsubAgentResponse,
+      unsubToolCall,
+      unsubPermission,
+      unsubAgentQuery
+    )
 
     await socketStore.connect()
   }
@@ -1511,7 +1533,7 @@ export const useChatStore = defineStore('chat', () => {
   const cleanup = () => {
     window.removeEventListener('resize', checkMobile)
     // 清理当前页面注册的处理器
-    _cleanupHandlers.forEach(fn => fn())
+    _cleanupHandlers.forEach((fn) => fn())
     _cleanupHandlers.length = 0
     connectingSession.value = false
     sessionId.value = ''

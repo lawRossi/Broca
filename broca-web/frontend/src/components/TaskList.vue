@@ -636,6 +636,4 @@ const isTaskStarred = (task: Task): boolean => {
     height: 20px;
   }
 }
-
-
 </style>

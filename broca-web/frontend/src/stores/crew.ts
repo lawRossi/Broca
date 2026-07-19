@@ -1,7 +1,7 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref } from 'vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
-import { crewApi, type CrewExecution, type ExecutionStatus, type CrewConfig, type CrewConfigFile, type CrewConfigDetail } from '@/api/crew'
+import { crewApi, type CrewExecution, type CrewConfigFile, type CrewConfigDetail } from '@/api/crew'
 
 let _crewEventHandlerRegistered = false
 
@@ -40,10 +40,7 @@ export const useCrewStore = defineStore('crew', () => {
   const saving = ref(false)
 
   // Actions
-  const fetchExecutions = async (params?: {
-    session_id?: string
-    status?: string
-  }) => {
+  const fetchExecutions = async (params?: { session_id?: string; status?: string }) => {
     loading.value = true
     try {
       const response = await crewApi.list({
@@ -165,7 +162,7 @@ export const useCrewStore = defineStore('crew', () => {
       })
       await crewApi.delete(executionId)
       ElMessage.success('编排已删除')
-      executions.value = executions.value.filter(e => e.execution_id !== executionId)
+      executions.value = executions.value.filter((e) => e.execution_id !== executionId)
       if (selectedExecutionId.value === executionId) {
         closeDetail()
       }
@@ -322,7 +319,7 @@ export const useCrewStore = defineStore('crew', () => {
         if (data?.execution_id) {
           // 深拷贝数据，避免引用问题
           const update = JSON.parse(JSON.stringify(data)) as CrewExecution
-          const idx = executions.value.findIndex(e => e.execution_id === update.execution_id)
+          const idx = executions.value.findIndex((e) => e.execution_id === update.execution_id)
           if (idx >= 0) {
             executions.value[idx] = update
             executions.value = [...executions.value]

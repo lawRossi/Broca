@@ -295,7 +295,11 @@ export const useAgentStore = defineStore('agent', () => {
   /**
    * 保存Agent配置
    */
-  const saveAgentConfig = async (sessionId: string, agentId: string, configContent: Record<string, any>): Promise<boolean> => {
+  const saveAgentConfig = async (
+    sessionId: string,
+    agentId: string,
+    configContent: Record<string, any>
+  ): Promise<boolean> => {
     try {
       await agentApi.updateAgentConfig({
         sessionId,
@@ -312,7 +316,7 @@ export const useAgentStore = defineStore('agent', () => {
         })
       }
       selectedAgentConfig.value = {
-        ...(selectedAgentConfig.value || {} as AgentConfig),
+        ...(selectedAgentConfig.value || ({} as AgentConfig)),
         config_content: configContent,
       } as AgentConfig
       return true

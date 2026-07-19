@@ -246,9 +246,9 @@ watch(
     :model-value="props.visible"
     :size="drawerSize"
     :before-close="handleClose"
-    @update:model-value="(val: boolean) => emit('update:visible', val)"
     title="任务详情"
     class="task-detail-drawer"
+    @update:model-value="(val: boolean) => emit('update:visible', val)"
   >
     <div v-if="loading" class="flex items-center justify-center py-12">
       <el-icon class="is-loading" size="24">
@@ -272,8 +272,8 @@ watch(
           <el-input v-model="editForm.description" type="textarea" placeholder="任务描述" :rows="2" />
           <el-input v-model="editForm.details" type="textarea" placeholder="详细描述" :rows="4" />
           <div class="flex gap-2">
-            <el-button type="primary" @click="handleSaveEdit">保存</el-button>
-            <el-button @click="handleCancelEdit">取消</el-button>
+            <el-button type="primary" @click="handleSaveEdit"> 保存 </el-button>
+            <el-button @click="handleCancelEdit"> 取消 </el-button>
           </div>
         </div>
 
@@ -283,7 +283,9 @@ watch(
               <h2 class="text-sm font-bold text-gray-900 break-words">
                 {{ task.name }}
               </h2>
-              <p class="text-xs text-gray-600 mt-1 break-words">{{ task.description }}</p>
+              <p class="text-xs text-gray-600 mt-1 break-words">
+                {{ task.description }}
+              </p>
             </div>
             <el-button type="warning" circle @click="handleEdit">
               <el-icon><Edit /></el-icon>
@@ -369,7 +371,9 @@ watch(
             <el-icon><Document /></el-icon>
             详细描述
           </h3>
-          <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">{{ task.details }}</div>
+          <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">
+            {{ task.details }}
+          </div>
         </div>
 
         <!-- 验收标准 -->
@@ -381,7 +385,9 @@ watch(
               :key="index"
               class="flex items-start gap-2 text-sm"
             >
-              <el-icon class="text-green-500 mt-0.5 flex-shrink-0"><Check /></el-icon>
+              <el-icon class="text-green-500 mt-0.5 flex-shrink-0">
+                <Check />
+              </el-icon>
               <span class="text-gray-700 break-words">{{ criterion }}</span>
             </li>
           </ul>
@@ -428,13 +434,17 @@ watch(
         <!-- 上下文笔记 -->
         <div v-if="task.context_notes" class="border rounded-lg p-4">
           <h3 class="text-sm font-semibold mb-2">上下文笔记</h3>
-          <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">{{ task.context_notes }}</div>
+          <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">
+            {{ task.context_notes }}
+          </div>
         </div>
 
         <!-- 任务报告 -->
         <div v-if="task.report" class="border rounded-lg p-4">
           <h3 class="text-sm font-semibold mb-2">任务报告</h3>
-          <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">{{ task.report }}</div>
+          <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">
+            {{ task.report }}
+          </div>
         </div>
 
         <!-- 依赖关系 -->
@@ -471,8 +481,12 @@ watch(
             >
               <div class="flex items-start justify-between gap-2">
                 <div class="flex-1 min-w-0">
-                  <div class="font-medium text-sm truncate">{{ child.name }}</div>
-                  <div class="text-xs text-gray-500 truncate">{{ child.description }}</div>
+                  <div class="font-medium text-sm truncate">
+                    {{ child.name }}
+                  </div>
+                  <div class="text-xs text-gray-500 truncate">
+                    {{ child.description }}
+                  </div>
                 </div>
                 <div class="flex items-center gap-1 flex-shrink-0">
                   <el-tag :type="getStatusInfo(child?.status).type" size="small">
@@ -509,10 +523,16 @@ watch(
           <div v-if="displayedComments.length > 0" class="space-y-4 mb-4">
             <div v-for="comment in displayedComments" :key="comment.comment_id" class="border-b pb-4 last:border-0">
               <div class="flex items-start justify-between mb-2">
-                <div class="font-medium text-sm">{{ comment.author }}</div>
-                <div class="text-xs text-gray-500">{{ formatDate(comment.created_at) }}</div>
+                <div class="font-medium text-sm">
+                  {{ comment.author }}
+                </div>
+                <div class="text-xs text-gray-500">
+                  {{ formatDate(comment.created_at) }}
+                </div>
               </div>
-              <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">{{ comment.content }}</div>
+              <div class="text-gray-700 text-sm whitespace-pre-wrap break-words">
+                {{ comment.content }}
+              </div>
             </div>
           </div>
 

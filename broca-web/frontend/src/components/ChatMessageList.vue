@@ -11,9 +11,7 @@ const isRestoringScroll = ref(false)
 
 // 简洁模式下独立渲染的错误消息（不绑定到 TurnCard）
 const standaloneErrorMessages = computed(() => {
-  return chatStore.messages.filter(
-    m => m.message_type === 'error' || m.message_type === 'agent_error'
-  )
+  return chatStore.messages.filter((m) => m.message_type === 'error' || m.message_type === 'agent_error')
 })
 
 // 时间轴合并：将 turn 和独立错误消息按时间顺序合并成一个列表
@@ -68,20 +66,23 @@ const isConciseMode = computed(() => chatStore.displayMode === 'concise')
 
 // 模式切换时保存/恢复滚动位置
 let previousScrollPct = 0
-watch(() => chatStore.displayMode, (newMode, oldMode) => {
-  if (oldMode === newMode || !containerRef.value) return
-  // displayMode 刚变化但数据尚未加载完成 — 保存当前滚动百分比
-  previousScrollPct = containerRef.value.scrollTop /
-    (containerRef.value.scrollHeight - containerRef.value.clientHeight || 1)
-  // 等数据加载 + DOM 渲染完成后恢复
-  nextTick(() => {
-    if (containerRef.value) {
-      const container = containerRef.value
-      const newMaxScroll = container.scrollHeight - container.clientHeight
-      container.scrollTop = newMaxScroll * previousScrollPct
-    }
-  })
-})
+watch(
+  () => chatStore.displayMode,
+  (newMode, oldMode) => {
+    if (oldMode === newMode || !containerRef.value) return
+    // displayMode 刚变化但数据尚未加载完成 — 保存当前滚动百分比
+    previousScrollPct =
+      containerRef.value.scrollTop / (containerRef.value.scrollHeight - containerRef.value.clientHeight || 1)
+    // 等数据加载 + DOM 渲染完成后恢复
+    nextTick(() => {
+      if (containerRef.value) {
+        const container = containerRef.value
+        const newMaxScroll = container.scrollHeight - container.clientHeight
+        container.scrollTop = newMaxScroll * previousScrollPct
+      }
+    })
+  }
+)
 
 // 防抖定时器（分开管理，避免互相干扰）
 const loadMoreTimer = ref<number | null>(null)
@@ -148,7 +149,7 @@ watch(
 
 // ====== 明细模式：流式内容更新时自动滚动 ======
 watch(
-  () => chatStore.filteredMessages.map(m => m.data?.content).join(''),
+  () => chatStore.filteredMessages.map((m) => m.data?.content).join(''),
   () => {
     if (isRestoringScroll.value) return
     if (contentScrollTimer.value) clearTimeout(contentScrollTimer.value)
@@ -172,9 +173,7 @@ watch(
 
 // 简洁模式下 turn 的 finalResponse/reasoningContent 更新时自动滚动
 watch(
-  () => chatStore.filteredTurnSummaries
-    .map(t => `${t.finalResponse}|${t.reasoningContent}|${t.status}`)
-    .join('---'),
+  () => chatStore.filteredTurnSummaries.map((t) => `${t.finalResponse}|${t.reasoningContent}|${t.status}`).join('---'),
   () => {
     if (isRestoringScroll.value) return
     if (!isConciseMode.value) return
@@ -260,7 +259,10 @@ const handleRedo = () => {
         <span>没有更多历史轮次了</span>
       </div>
 
-      <div v-if="!chatStore.filteredTurnSummaries.length" class="flex flex-col items-center justify-center h-full text-gray-400">
+      <div
+        v-if="!chatStore.filteredTurnSummaries.length"
+        class="flex flex-col items-center justify-center h-full text-gray-400"
+      >
         <div class="text-4xl mb-2">📊</div>
         <div class="text-sm">暂无轮次数据</div>
       </div>
@@ -272,10 +274,7 @@ const handleRedo = () => {
             :turn="item.turn"
             :consecutive-agent="isConsecutiveAgentTurn(timelineItems, idx)"
           />
-          <ChatMessageItem
-            v-else-if="item.type === 'error' && item.message"
-            :message="item.message"
-          />
+          <ChatMessageItem v-else-if="item.type === 'error' && item.message" :message="item.message" />
         </template>
       </div>
     </template>
@@ -292,7 +291,10 @@ const handleRedo = () => {
         <span>没有更多历史消息了</span>
       </div>
 
-      <div v-if="!chatStore.filteredMessages.length" class="flex flex-col items-center justify-center h-full text-gray-400">
+      <div
+        v-if="!chatStore.filteredMessages.length"
+        class="flex flex-col items-center justify-center h-full text-gray-400"
+      >
         <div class="text-4xl mb-2">💬</div>
         <div v-if="chatStore.urlSessionId && !chatStore.connected" class="text-sm">正在自动连接...</div>
         <div v-else-if="chatStore.urlSessionId && chatStore.connected" class="text-sm">已连接，等待消息...</div>
@@ -303,16 +305,8 @@ const handleRedo = () => {
     </template>
 
     <!-- 重做按钮 - 撤销成功后显示（两种模式共用） -->
-    <div
-      v-if="chatStore.showRedoButton && !chatStore.isAgentOrchestration"
-      class="flex justify-center py-2"
-    >
-      <el-button
-        type="warning"
-        size="small"
-        @click="handleRedo"
-        class="!rounded-full !px-4"
-      >
+    <div v-if="chatStore.showRedoButton && !chatStore.isAgentOrchestration" class="flex justify-center py-2">
+      <el-button type="warning" size="small" class="!rounded-full !px-4" @click="handleRedo">
         <span class="flex items-center gap-1">
           <span>↪️</span>
           <span>Redo</span>

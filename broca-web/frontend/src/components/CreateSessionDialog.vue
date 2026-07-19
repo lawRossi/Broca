@@ -164,8 +164,8 @@ const handleCreate = () => {
       <el-form-item label="会话类型">
         <el-radio-group
           :model-value="localFormData.category || 'normal'"
-          @change="(val: string) => updateFormData({ category: val })"
           class="w-full"
+          @change="(val: string) => updateFormData({ category: val })"
         >
           <el-radio value="normal" class="category-radio">
             <div class="flex flex-col">

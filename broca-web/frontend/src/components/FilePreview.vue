@@ -437,7 +437,7 @@ defineExpose({
         <el-button v-if="previewMode === 'direct' && props.fileUrl" @click="openInNewWindow">
           Open in New Window
         </el-button>
-        <el-button @click="closePreview">Close</el-button>
+        <el-button @click="closePreview"> Close </el-button>
       </div>
     </template>
   </el-dialog>

@@ -7,10 +7,12 @@
     "dev": "vite",
     "build:dev": "vue-tsc --noEmit && vite build --mode development",
     "preview:dev": "vite preview --mode development",
-    "format": "prettier --write src",
-    "format:check": "prettier --check src",
-    "lint": "eslint . --ext .js,.ts,.jsx,.tsx,.vue",
-    "lint:fix": "eslint . --fix"
+    "format": "prettier --write src/",
+    "format:check": "prettier --check src/",
+    "lint": "eslint .",
+    "lint:fix": "eslint . --fix",
+    "check:all": "npm run format:check && npm run lint",
+    "fix:all": "npm run format && npm run lint:fix"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.995.0",
@@ -51,8 +53,6 @@
     "vue-eslint-parser": "^9.4.3",
     "vue-tsc": "^3.2.5"
   },
-  "lint": "eslint . --ext .vue,.js,.ts,.jsx,.tsx --fix",
-  "format": "prettier --write src/",
   "msw": {
     "workerDirectory": [
       "public"

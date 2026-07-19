@@ -63,10 +63,10 @@ request.interceptors.response.use(
     // 处理业务状态码
     if (data.code === 200) {
       return data.data
-      } else {
-        const errMsg = data.msg || '请求失败'
-        if (!silent && !isLocalLoginRequest(config)) {
-          ElMessage.error(errMsg)
+    } else {
+      const errMsg = data.msg || '请求失败'
+      if (!silent && !isLocalLoginRequest(config)) {
+        ElMessage.error(errMsg)
       }
       return Promise.reject(new Error(errMsg))
     }

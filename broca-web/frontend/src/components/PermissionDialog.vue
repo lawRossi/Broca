@@ -14,7 +14,9 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
     :close-on-click-modal="false"
   >
     <div class="flex items-start gap-3 py-2">
-      <div class="text-2xl leading-none mt-0.5">{{ isToolPermission ? '🔧' : '🔐' }}</div>
+      <div class="text-2xl leading-none mt-0.5">
+        {{ isToolPermission ? '🔧' : '🔐' }}
+      </div>
       <div class="text-sm whitespace-pre-wrap flex-1 leading-relaxed permission-message">
         {{ chatStore.permissionDialog.message }}
       </div>
@@ -75,7 +77,9 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
   border: 1px solid #e4e7ed;
   cursor: pointer;
   user-select: none;
-  transition: background 0.15s, border-color 0.15s;
+  transition:
+    background 0.15s,
+    border-color 0.15s;
   font-family: inherit;
   font-size: inherit;
   color: inherit;
@@ -109,5 +113,4 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
 .perm-btn:hover .btn-desc {
   opacity: 0.8;
 }
-
 </style>

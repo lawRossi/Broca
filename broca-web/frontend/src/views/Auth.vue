@@ -40,9 +40,7 @@ onMounted(async () => {
       <div class="card hover-lift">
         <div class="card-header">
           <h2 class="text-3xl font-bold text-center text-gray-900">Broca</h2>
-          <p class="text-center text-gray-500 text-sm mt-2">
-            使用broca create-user命令创建账户
-          </p>
+          <p class="text-center text-gray-500 text-sm mt-2">使用broca create-user命令创建账户</p>
         </div>
 
         <div class="card-body">
@@ -55,15 +53,17 @@ onMounted(async () => {
 
               <div class="form-group">
                 <label class="form-label">密码</label>
-                <el-input v-model="loginForm.password" type="password" placeholder="请输入密码" class="form-input" @keyup.enter="handleLogin" />
+                <el-input
+                  v-model="loginForm.password"
+                  type="password"
+                  placeholder="请输入密码"
+                  class="form-input"
+                  @keyup.enter="handleLogin"
+                />
               </div>
             </el-form>
 
-            <button
-              class="btn btn-primary w-full"
-              :disabled="loading"
-              @click="handleLogin"
-            >
+            <button class="btn btn-primary w-full" :disabled="loading" @click="handleLogin">
               {{ loading ? '登录中...' : '登录' }}
             </button>
           </div>

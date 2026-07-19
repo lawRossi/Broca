@@ -1,7 +1,20 @@
 <script setup lang="ts">
 import { computed, ref, nextTick } from 'vue'
 import { useRouter } from 'vue-router'
-import { Delete, FolderOpened, ArrowRight, Calendar, Bell, Document, Edit, Check, Close, WarningFilled, VideoPlay, VideoPause } from '@element-plus/icons-vue'
+import {
+  Delete,
+  FolderOpened,
+  ArrowRight,
+  Calendar,
+  Bell,
+  Document,
+  Edit,
+  Check,
+  Close,
+  WarningFilled,
+  VideoPlay,
+  VideoPause,
+} from '@element-plus/icons-vue'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { formatTime } from '@/utils/time'
 import type { Session } from '@/api/session'
@@ -274,8 +287,8 @@ const handleToggleRunner = async () => {
           <el-icon
             class="text-gray-400 hover:text-blue-500 cursor-pointer transition-colors flex-shrink-0"
             size="14"
-            @click.stop="startEdit"
             title="编辑描述"
+            @click.stop="startEdit"
           >
             <Edit />
           </el-icon>
@@ -290,13 +303,20 @@ const handleToggleRunner = async () => {
             placeholder="请输入会话描述"
             maxlength="200"
             show-word-limit
+            class="flex-1 w-full"
             @keydown="handleKeydown"
             @blur="saveEdit"
-            class="flex-1 w-full"
           />
           <div class="flex items-center gap-1">
-            <el-button type="success" size="small" :loading="editing" :icon="Check" @click.stop="saveEdit" title="保存" />
-            <el-button type="info" size="small" :icon="Close" @click.stop="cancelEdit" title="取消" />
+            <el-button
+              type="success"
+              size="small"
+              :loading="editing"
+              :icon="Check"
+              title="保存"
+              @click.stop="saveEdit"
+            />
+            <el-button type="info" size="small" :icon="Close" title="取消" @click.stop="cancelEdit" />
           </div>
         </div>
       </div>
@@ -332,7 +352,18 @@ const handleToggleRunner = async () => {
       </div>
 
       <span class="session-time">
-        🕐 {{ formatTime(session.created_at ? (session.created_at.includes('T') && !session.created_at.endsWith('Z') && !session.created_at.includes('+') ? session.created_at + 'Z' : session.created_at) : null).slice(0, 16) }}
+        🕐
+        {{
+          formatTime(
+            session.created_at
+              ? session.created_at.includes('T') &&
+                !session.created_at.endsWith('Z') &&
+                !session.created_at.includes('+')
+                ? session.created_at + 'Z'
+                : session.created_at
+              : null
+          ).slice(0, 16)
+        }}
       </span>
 
       <!-- 操作按钮组 -->
@@ -346,7 +377,9 @@ const handleToggleRunner = async () => {
           :title="`浏览工作空间: ${session.workspace}`"
           @click.stop="handleBrowseFiles"
         >
-          <el-icon class="mr-1"><FolderOpened /></el-icon>
+          <el-icon class="mr-1">
+            <FolderOpened />
+          </el-icon>
           文件
         </el-button>
         <el-button
@@ -364,8 +397,17 @@ const handleToggleRunner = async () => {
           </el-icon>
           {{ session.runner_status === 'alive' ? '停止' : session.runner_status === 'starting' ? '启动中' : '启动' }}
         </el-button>
-        <el-button type="danger" size="small" plain :disabled="isEditing || sessionStore.isDeleting(session.session_id)" :loading="sessionStore.isDeleting(session.session_id)" @click.stop="handleDelete">
-          <el-icon v-if="!sessionStore.isDeleting(session.session_id)" class="mr-1"><Delete /></el-icon>
+        <el-button
+          type="danger"
+          size="small"
+          plain
+          :disabled="isEditing || sessionStore.isDeleting(session.session_id)"
+          :loading="sessionStore.isDeleting(session.session_id)"
+          @click.stop="handleDelete"
+        >
+          <el-icon v-if="!sessionStore.isDeleting(session.session_id)" class="mr-1">
+            <Delete />
+          </el-icon>
           {{ sessionStore.isDeleting(session.session_id) ? '删除中...' : '删除' }}
         </el-button>
       </div>

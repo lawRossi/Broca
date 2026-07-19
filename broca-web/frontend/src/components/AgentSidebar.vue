@@ -2,7 +2,21 @@
 import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
 import { useChatStore, useAgentStore } from '@/stores'
 import type { Agent } from '@/stores/agent'
-import { ElIcon, ElTooltip, ElTag, ElButton, ElDialog, ElSelect, ElOption, ElMessage, ElInput, ElCheckbox, ElDropdown, ElDropdownMenu, ElDropdownItem } from 'element-plus'
+import {
+  ElIcon,
+  ElTooltip,
+  ElTag,
+  ElButton,
+  ElDialog,
+  ElSelect,
+  ElOption,
+  ElMessage,
+  ElInput,
+  ElCheckbox,
+  ElDropdown,
+  ElDropdownMenu,
+  ElDropdownItem,
+} from 'element-plus'
 import {
   UserFilled,
   QuestionFilled,
@@ -79,7 +93,7 @@ const statusColors: Record<string, string> = {
 
 const typeIcons: Record<string, any> = {
   assistant: UserFilled,
-  code_assistant: Document
+  code_assistant: Document,
 }
 
 const typeColors: Record<string, string> = {
@@ -217,11 +231,7 @@ const saveConfig = async () => {
     }
 
     // 保存到后端
-    const success = await agentStore.saveAgentConfig(
-      chatStore.sessionId,
-      selectedAgent.value.agent_id,
-      configContent,
-    )
+    const success = await agentStore.saveAgentConfig(chatStore.sessionId, selectedAgent.value.agent_id, configContent)
 
     if (success) {
       ElMessage.success({
@@ -334,7 +344,9 @@ onUnmounted(() => {
         <!-- Agent 消息过滤下拉 -->
         <el-dropdown trigger="click" @command="handleFilterCommand">
           <el-button size="small" class="!p-1 !h-6 !w-6" :disabled="!agents.length">
-            <el-icon :size="14"><Setting /></el-icon>
+            <el-icon :size="14">
+              <Setting />
+            </el-icon>
           </el-button>
           <template #dropdown>
             <el-dropdown-menu>
@@ -342,11 +354,7 @@ onUnmounted(() => {
                 <el-checkbox :model-value="allVisible" size="small" @click.stop="toggleAll" />
                 <span class="ml-1">全部</span>
               </el-dropdown-item>
-              <el-dropdown-item
-                v-for="agent in sortedAgents"
-                :key="agent.agent_id"
-                :command="agent.agent_id"
-              >
+              <el-dropdown-item v-for="agent in sortedAgents" :key="agent.agent_id" :command="agent.agent_id">
                 <el-checkbox
                   :model-value="agentStore.visibleAgentIds.includes(agent.agent_id)"
                   size="small"
@@ -525,12 +533,7 @@ onUnmounted(() => {
               style="width: 100%"
               @change="handleProviderChange"
             >
-              <el-option
-                v-for="p in availableProviders"
-                :key="p.id"
-                :label="p.name"
-                :value="p.id"
-              />
+              <el-option v-for="p in availableProviders" :key="p.id" :label="p.name" :value="p.id" />
             </el-select>
           </div>
           <div>
@@ -542,12 +545,7 @@ onUnmounted(() => {
               style="width: 100%"
               :disabled="!selectedProvider"
             >
-              <el-option
-                v-for="m in availableModels"
-                :key="m.id"
-                :label="m.name"
-                :value="m.id"
-              />
+              <el-option v-for="m in availableModels" :key="m.id" :label="m.name" :value="m.id" />
             </el-select>
           </div>
         </div>
@@ -559,7 +557,9 @@ onUnmounted(() => {
           <el-icon :size="16" class="text-blue-500">
             <Document />
           </el-icon>
-          <span class="text-sm font-medium text-gray-700">配置内容 (config_content) <span class="text-xs text-gray-400 font-normal">- 可编辑 JSON</span></span>
+          <span class="text-sm font-medium text-gray-700"
+            >配置内容 (config_content) <span class="text-xs text-gray-400 font-normal">- 可编辑 JSON</span></span
+          >
         </div>
         <el-input
           v-model="editableConfigContent"
@@ -584,13 +584,7 @@ onUnmounted(() => {
     <template #footer>
       <div class="flex justify-end gap-2">
         <el-button size="small" @click="closeConfigDialog"> 关闭 </el-button>
-        <el-button
-          type="primary"
-          size="small"
-          :loading="saving"
-          :disabled="!selectedAgentConfig"
-          @click="saveConfig"
-        >
+        <el-button type="primary" size="small" :loading="saving" :disabled="!selectedAgentConfig" @click="saveConfig">
           保存
         </el-button>
       </div>

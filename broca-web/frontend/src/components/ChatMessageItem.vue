@@ -196,7 +196,12 @@ const getContent = (message: Message) => {
 }
 
 const isFileManagementTool = (message: Message) => {
-  return message.message_type === 'tool_call' && (message.data?.tool_name === 'read_file' || message.data?.tool_name === 'write_file' || message.data?.tool_name === 'edit_file')
+  return (
+    message.message_type === 'tool_call' &&
+    (message.data?.tool_name === 'read_file' ||
+      message.data?.tool_name === 'write_file' ||
+      message.data?.tool_name === 'edit_file')
+  )
 }
 
 const getFilePath = (message: Message) => {
@@ -217,55 +222,55 @@ interface DiffLine {
 
 const computeDiff = (oldText: string, newText: string): DiffLine[] => {
   const result: DiffLine[] = []
-  
+
   // 使用 diff 库计算差异
   const diffResult = diffLines(oldText || '', newText || '')
-  
+
   diffResult.forEach((part) => {
     const lines = part.value.split('\n')
     // 移除最后一个空行（split会在末尾产生空字符串）
     if (lines.length > 0 && lines[lines.length - 1] === '') {
       lines.pop()
     }
-    
+
     lines.forEach((line) => {
       if (part.added) {
-        result.push({ 
-          type: 'added', 
-          content: line
+        result.push({
+          type: 'added',
+          content: line,
         })
       } else if (part.removed) {
-        result.push({ 
-          type: 'removed', 
-          content: line
+        result.push({
+          type: 'removed',
+          content: line,
         })
       } else {
-        result.push({ 
-          type: 'unchanged', 
-          content: line
+        result.push({
+          type: 'unchanged',
+          content: line,
         })
       }
     })
   })
-  
+
   return result
 }
 
 // 获取 edit_file 的参数
 const getEditFileParams = (message: Message) => {
   if (!isEditFile(message)) return null
-  
+
   const args = message.data?.arguments
   if (!args) return null
-  
+
   const params = typeof args === 'string' ? JSON.parse(args) : args
-  
+
   return {
     path: params.path || '',
     oldText: params.old_text || '',
     newText: params.new_text || '',
     encoding: params.encoding || 'utf-8',
-    newFile: params.new_file || false
+    newFile: params.new_file || false,
   }
 }
 
@@ -284,7 +289,7 @@ const isAskUser = (message: Message) => {
   return message.message_type === 'tool_call' && message.data?.tool_name === 'ask_user'
 }
 
-const isReadFile = (message: Message) =>{
+const isReadFile = (message: Message) => {
   return message.message_type === 'tool_call' && message.data?.tool_name === 'read_file'
 }
 
@@ -334,8 +339,7 @@ const shouldExpandParameters = (message: Message) => {
 const getParametersTitle = (message: Message) => {
   if (isEditFile(message)) {
     return '编辑内容'
-  }
-  else if (isWriteFile(message)) {
+  } else if (isWriteFile(message)) {
     return '文件内容'
   }
   return '参数'
@@ -352,8 +356,7 @@ const shouldExpandResult = (message: Message) => {
 const getResultTitle = (message: Message) => {
   if (isAskUser(message)) {
     return '回答'
-  }
-  else if (isReadFile(message)) {
+  } else if (isReadFile(message)) {
     return '文件内容'
   }
   return '结果'
@@ -407,7 +410,7 @@ const getFormattedJson = (data: any): string => {
   if (data === null || data === undefined) {
     return 'null'
   }
-  
+
   try {
     // 如果已经是字符串，尝试解析为JSON再格式化
     if (typeof data === 'string') {
@@ -431,7 +434,6 @@ const getFormattedJson = (data: any): string => {
     return String(data)
   }
 }
-
 
 // 打开文件预览
 const openFilePreview = (file: { url?: string; path?: string; name?: string; type?: string }) => {
@@ -494,7 +496,7 @@ const canUndoThisMessage = computed(() => {
   if (!chatStore.connected || !chatStore.sessionId || !chatStore.runnerAlive) {
     return false
   }
-  
+
   // 支持撤销的消息类型
   const undoableTypes = ['user_message', 'tool_call', 'agent_response']
   if (!undoableTypes.includes(props.message.message_type)) {
@@ -516,22 +518,24 @@ const getUndoLevel = computed(() => {
 // 确认撤销
 const confirmUndo = () => {
   let messageText = '确定要撤销此操作吗？'
-  
+
   ElMessageBox.confirm(messageText, '确认撤销', {
     confirmButtonText: '确定',
     cancelButtonText: '取消',
     type: 'warning',
-  }).then(() => {
-    handleUndoToHere()
-  }).catch(() => {
-    // 用户取消
   })
+    .then(() => {
+      handleUndoToHere()
+    })
+    .catch(() => {
+      // 用户取消
+    })
 }
 
 // 执行撤销
 const handleUndoToHere = async () => {
   if (!canUndoThisMessage.value) return
-    
+
   let targetAgentId = null
   const message = props.message
   if (message.message_type === 'user_message') {
@@ -545,7 +549,7 @@ const handleUndoToHere = async () => {
       targetMessageId: props.message.message_id,
       level: getUndoLevel.value,
       subscription: chatStore.sessionId,
-      receiverId: targetAgentId
+      receiverId: targetAgentId,
     })
   } catch (error) {
     console.error('撤销失败:', error)
@@ -554,7 +558,7 @@ const handleUndoToHere = async () => {
 </script>
 
 <template>
-  <div 
+  <div
     class="message-container"
     :class="getBgClass(message)"
     @mouseenter="showActions = true"
@@ -570,20 +574,20 @@ const handleUndoToHere = async () => {
           {{ getSenderName(message, agentStore.currentAgentName) }}
         </span>
       </div>
-      
+
       <div class="flex items-center gap-2">
         <div class="text-xs text-gray-500">
           {{ formatTimeShort(message.timestamp) }}
         </div>
-        
+
         <!-- 悬停撤销按钮（编排会话禁用） -->
-        <div class="hover-actions" v-if="showActions && canUndoThisMessage && !chatStore.isAgentOrchestration">
-          <el-button 
-            size="small" 
+        <div v-if="showActions && canUndoThisMessage && !chatStore.isAgentOrchestration" class="hover-actions">
+          <el-button
+            size="small"
             link
-            @click.stop="confirmUndo"
             title="撤销此操作"
             class="!p-1 !min-h-0 !h-auto undo-button"
+            @click.stop="confirmUndo"
           >
             <span class="text-xs">↩️ 撤销</span>
           </el-button>
@@ -605,10 +609,7 @@ const handleUndoToHere = async () => {
           </span>
         </el-button>
 
-        <div
-          v-if="getShowReasoning(message.message_id)"
-          class="reasoning-content"
-        >
+        <div v-if="getShowReasoning(message.message_id)" class="reasoning-content">
           <pre class="reasoning-text">{{ getReasoningContent(message) }}</pre>
         </div>
       </div>
@@ -620,7 +621,8 @@ const handleUndoToHere = async () => {
           <pre
             class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-0"
             :class="[getContentClass(message), { 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }]"
-          >{{ getContent(message) }}</pre>
+            >{{ getContent(message) }}</pre
+          >
           <button
             v-if="isLongUserMessage"
             class="user-msg-expand-btn"
@@ -643,7 +645,9 @@ const handleUndoToHere = async () => {
 
             <!-- 文件信息 -->
             <div class="flex-1 min-w-0">
-              <div class="font-medium text-sm text-gray-800 truncate">{{ file.name }}</div>
+              <div class="font-medium text-sm text-gray-800 truncate">
+                {{ file.name }}
+              </div>
               <div class="text-xs text-gray-500">
                 {{ formatFileSize(file.size) }}
                 <span v-if="file.type" class="ml-1">• {{ file.type }}</span>
@@ -662,26 +666,23 @@ const handleUndoToHere = async () => {
         class="markdown-content text-xs sm:text-sm leading-relaxed mb-2 overflow-x-auto"
         :class="getContentClass(message)"
         v-html="renderMarkdown(getContent(message))"
-      ></div>
+      />
 
       <!-- command_result 使用 markdown 渲染（如 /help 输出的标题、列表等） -->
       <div
         v-else-if="message.message_type === 'command_result'"
         class="markdown-content text-xs sm:text-sm leading-relaxed mb-2 overflow-x-auto"
         v-html="renderMarkdown(getContent(message))"
-      ></div>
+      />
 
       <!-- error 消息：内容 + 恢复建议 -->
       <template v-else-if="message.message_type === 'error' || message.message_type === 'agent_error'">
         <pre
           class="whitespace-pre-wrap break-words text-xs sm:text-sm leading-relaxed mb-1"
           :class="getContentClass(message)"
-        >{{ getContent(message) }}</pre>
-        <div
-          v-if="message.data?.recovery_hint"
-          class="text-xs mt-1 opacity-80"
-          :class="getSeverityHintClass(message)"
+          >{{ getContent(message) }}</pre
         >
+        <div v-if="message.data?.recovery_hint" class="text-xs mt-1 opacity-80" :class="getSeverityHintClass(message)">
           💡 {{ message.data.recovery_hint }}
         </div>
       </template>
@@ -696,7 +697,9 @@ const handleUndoToHere = async () => {
 
       <div v-if="message.message_type === 'tool_call'" class="mt-2">
         <div v-if="isFileManagementTool(message)" class="diff-header px-3 py-2 border-b flex items-center gap-2">
-          <span class="diff-path font-medium text-sm" :title="getFilePath(message)"> 📃 {{ getFilePath(message)}} </span>
+          <span class="diff-path font-medium text-sm" :title="getFilePath(message)">
+            📃 {{ getFilePath(message) }}
+          </span>
         </div>
 
         <!-- 参数展示 -->
@@ -753,31 +756,46 @@ const handleUndoToHere = async () => {
             </div>
 
             <!-- 特殊处理edit_file的diff展示 -->
-            <div v-else-if="isEditFile(message) && getEditFileParams(message)" class="diff-wrapper rounded border overflow-hidden">
+            <div
+              v-else-if="isEditFile(message) && getEditFileParams(message)"
+              class="diff-wrapper rounded border overflow-hidden"
+            >
               <!-- Diff 展示 -->
-              <div v-if="getEditFileParams(message).oldText || getEditFileParams(message).newText" class="diff-container font-mono text-xs">
-                <div 
-                  v-for="(line, index) in computeDiff(getEditFileParams(message).oldText, getEditFileParams(message).newText)" 
+              <div
+                v-if="getEditFileParams(message).oldText || getEditFileParams(message).newText"
+                class="diff-container font-mono text-xs"
+              >
+                <div
+                  v-for="(line, index) in computeDiff(
+                    getEditFileParams(message).oldText,
+                    getEditFileParams(message).newText
+                  )"
                   :key="index"
                   class="diff-line"
                   :class="{
                     'diff-added': line.type === 'added',
                     'diff-removed': line.type === 'removed',
-                    'diff-unchanged': line.type === 'unchanged'
+                    'diff-unchanged': line.type === 'unchanged',
                   }"
                 >
                   {{ line.content }}
                 </div>
               </div>
-              
+
               <!-- 如果没有old_text和new_text，显示格式化的JSON -->
               <div v-else class="p-3">
-                <pre class="json-display text-xs font-mono whitespace-pre-wrap break-words overflow-auto max-h-96" v-html="getFormattedJson(message.data.arguments || message.data.parameters)"></pre>
+                <pre
+                  class="json-display text-xs font-mono whitespace-pre-wrap break-words overflow-auto max-h-96"
+                  v-html="getFormattedJson(message.data.arguments || message.data.parameters)"
+                />
               </div>
             </div>
 
             <!--file_write-->
-            <pre v-else-if="isWriteFile(message)" class="file-content text-xs font-mono whitespace-pre-wrap break-words p-2 rounded border overflow-auto max-h-96">
+            <pre
+              v-else-if="isWriteFile(message)"
+              class="file-content text-xs font-mono whitespace-pre-wrap break-words p-2 rounded border overflow-auto max-h-96"
+            >
               {{ getWriteFileContent(message) }}
             </pre>
 
@@ -786,8 +804,7 @@ const handleUndoToHere = async () => {
               v-else
               class="json-display text-xs font-mono text-purple-800 whitespace-pre-wrap break-words bg-white p-2 rounded border overflow-auto max-h-96"
               v-html="getFormattedJson(message.data.arguments || message.data.parameters)"
-            ></pre
-            >
+            />
           </div>
         </div>
 
@@ -818,7 +835,8 @@ const handleUndoToHere = async () => {
             <pre
               v-else
               class="result-pre text-xs font-mono whitespace-pre-wrap break-words p-2 rounded border overflow-auto max-h-96"
-            >{{message.data.result}}</pre>
+              >{{ message.data.result }}</pre
+            >
           </div>
         </div>
       </div>
@@ -1161,13 +1179,31 @@ const handleUndoToHere = async () => {
   color: #1e293b;
 }
 
-:deep(.markdown-content h1) { font-size: 1.5em; border-bottom: 1px solid var(--border-color, #eaecef); padding-bottom: 0.3em; }
-:deep(.markdown-content h2) { font-size: 1.3em; border-bottom: 1px solid var(--border-color, #eaecef); padding-bottom: 0.3em; }
-:deep(.markdown-content h3) { font-size: 1.1em; }
-:deep(.markdown-content p) { margin-bottom: 1em; line-height: 1.6; }
+:deep(.markdown-content h1) {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--border-color, #eaecef);
+  padding-bottom: 0.3em;
+}
+:deep(.markdown-content h2) {
+  font-size: 1.3em;
+  border-bottom: 1px solid var(--border-color, #eaecef);
+  padding-bottom: 0.3em;
+}
+:deep(.markdown-content h3) {
+  font-size: 1.1em;
+}
+:deep(.markdown-content p) {
+  margin-bottom: 1em;
+  line-height: 1.6;
+}
 :deep(.markdown-content ul),
-:deep(.markdown-content ol) { padding-left: 2em; margin-bottom: 1em; }
-:deep(.markdown-content li) { margin-bottom: 0.25em; }
+:deep(.markdown-content ol) {
+  padding-left: 2em;
+  margin-bottom: 1em;
+}
+:deep(.markdown-content li) {
+  margin-bottom: 0.25em;
+}
 :deep(.markdown-content blockquote) {
   margin: 1em 0;
   padding: 0.5em 1em;
@@ -1212,12 +1248,30 @@ const handleUndoToHere = async () => {
   background: var(--bg-tertiary, #f6f8fa);
   color: #1e293b;
 }
-:deep(.markdown-content a) { color: var(--text-link, #0366d6); text-decoration: none; }
-:deep(.markdown-content a:hover) { text-decoration: underline; }
-:deep(.markdown-content img) { max-width: 100%; height: auto; }
-:deep(.markdown-content hr) { height: 0.25em; padding: 0; margin: 1.5em 0; background-color: var(--border-color, #e1e4e8); border: 0; }
-:deep(.markdown-content strong) { font-weight: 600; }
-:deep(.markdown-content em) { font-style: italic; }
+:deep(.markdown-content a) {
+  color: var(--text-link, #0366d6);
+  text-decoration: none;
+}
+:deep(.markdown-content a:hover) {
+  text-decoration: underline;
+}
+:deep(.markdown-content img) {
+  max-width: 100%;
+  height: auto;
+}
+:deep(.markdown-content hr) {
+  height: 0.25em;
+  padding: 0;
+  margin: 1.5em 0;
+  background-color: var(--border-color, #e1e4e8);
+  border: 0;
+}
+:deep(.markdown-content strong) {
+  font-weight: 600;
+}
+:deep(.markdown-content em) {
+  font-style: italic;
+}
 
 /* ==================== 用户消息折叠 ==================== */
 .user-msg-wrapper {

@@ -137,12 +137,12 @@ onUnmounted(() => {
           <ChatMessageList />
           <!-- 编排会话只读，隐藏输入框 -->
           <template v-if="isAgentOrchestration">
-            <div class="flex items-center justify-center gap-2 py-3 px-4 bg-purple-50 border-t border-purple-100 text-sm text-purple-600">
+            <div
+              class="flex items-center justify-center gap-2 py-3 px-4 bg-purple-50 border-t border-purple-100 text-sm text-purple-600"
+            >
               <el-icon><Connection /></el-icon>
               <span>此会话为 Agent 编排会话，聊天仅用于查看执行日志</span>
-              <el-button size="small" type="primary" plain @click="$router.push('/crews')">
-                返回编排管理
-              </el-button>
+              <el-button size="small" type="primary" plain @click="$router.push('/crews')"> 返回编排管理 </el-button>
             </div>
           </template>
           <ChatInput v-else />
@@ -154,7 +154,11 @@ onUnmounted(() => {
 
     <PermissionDialog />
     <AgentQueryDialog />
-    <ChatSearchDialog ref="searchDialogRef" v-model:visible="searchDialogVisible" @close="searchDialogVisible = false" />
+    <ChatSearchDialog
+      ref="searchDialogRef"
+      v-model:visible="searchDialogVisible"
+      @close="searchDialogVisible = false"
+    />
   </div>
 </template>
 
