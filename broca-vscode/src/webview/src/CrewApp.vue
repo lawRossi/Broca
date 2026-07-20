@@ -160,6 +160,11 @@ function fetchConfigFiles() {
   postMessage({ type: 'fetchCrewConfigs', payload: { session_id: sessionId } })
 }
 
+function switchToConfigsTab() {
+  fetchConfigFiles()
+  activeTab.value = 'configs'
+}
+
 function submitConfigFile(cfg: CrewConfigFile) {
   if (isConfigExecuting(cfg)) return
   postMessage({ type: 'submitCrew', payload: { yaml_path: cfg.path, session_id: sessionId } })
@@ -274,15 +279,7 @@ onUnmounted(() => {
       <button :class="['crew-tab', { active: activeTab === 'executions' }]" @click="activeTab = 'executions'">
         执行记录
       </button>
-      <button
-        :class="['crew-tab', { active: activeTab === 'configs' }]"
-        @click="
-          fetchConfigFiles()
-          activeTab = 'configs'
-        "
-      >
-        已有编排
-      </button>
+      <button :class="['crew-tab', { active: activeTab === 'configs' }]" @click="switchToConfigsTab">已有编排</button>
     </div>
 
     <!-- ==================== List View (Executions) ==================== -->
