@@ -93,6 +93,47 @@ async def get_tasks(
         raise HTTPException(500, f"Internal server error: {e!s}") from e
 
 
+@router.get("/search", response_model=ApiResponse)
+async def search_tasks(
+    query: str,
+    session_id: str | None = None,
+    skip: int = 0,
+    limit: int = 20,
+) -> ApiResponse:
+    """搜索任务"""
+    try:
+        task_service = get_task_service()
+
+        # 搜索任务
+        tasks = await task_service.search_tasks(query, session_id)
+
+        # 分页
+        total = len(tasks)
+        tasks = tasks[skip : skip + limit]
+
+        # 转换为字典格式返回
+        task_list = []
+        for task in tasks:
+            task_dict = {
+                "task_id": task.task_id,
+                "name": task.name,
+                "description": task.description,
+                "status": task.status.value if hasattr(task.status, "value") else str(task.status),
+                "priority": task.priority.value if hasattr(task.priority, "value") else str(task.priority),
+                "assignee": task.assignee,
+                "parent_id": task.parent_id,
+                "session_id": task.session_id,
+                "created_at": serialize_dt(task.created_at),
+                "updated_at": serialize_dt(task.updated_at),
+            }
+            task_list.append(task_dict)
+
+        return ApiResponse.success({"tasks": task_list, "total": total, "skip": skip, "limit": limit})
+    except Exception as e:
+        logger.exception("Error searching tasks")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
 @router.get("/{task_id}", response_model=ApiResponse)
 async def get_task_detail(task_id: str, include_comments: bool = True) -> ApiResponse:
     """获取任务详情，包含评论"""
@@ -385,45 +426,4 @@ async def get_task_children(task_id: str) -> ApiResponse:
         raise
     except Exception as e:
         logger.exception("Error getting task children")
-        raise HTTPException(500, f"Internal server error: {e!s}") from e
-
-
-@router.get("/search", response_model=ApiResponse)
-async def search_tasks(
-    query: str,
-    session_id: str | None = None,
-    skip: int = 0,
-    limit: int = 20,
-) -> ApiResponse:
-    """搜索任务"""
-    try:
-        task_service = get_task_service()
-
-        # 搜索任务
-        tasks = await task_service.search_tasks(query, session_id)
-
-        # 分页
-        total = len(tasks)
-        tasks = tasks[skip : skip + limit]
-
-        # 转换为字典格式返回
-        task_list = []
-        for task in tasks:
-            task_dict = {
-                "task_id": task.task_id,
-                "name": task.name,
-                "description": task.description,
-                "status": task.status.value if hasattr(task.status, "value") else str(task.status),
-                "priority": task.priority.value if hasattr(task.priority, "value") else str(task.priority),
-                "assignee": task.assignee,
-                "parent_id": task.parent_id,
-                "session_id": task.session_id,
-                "created_at": serialize_dt(task.created_at),
-                "updated_at": serialize_dt(task.updated_at),
-            }
-            task_list.append(task_dict)
-
-        return ApiResponse.success({"tasks": task_list, "total": total, "skip": skip, "limit": limit})
-    except Exception as e:
-        logger.exception("Error searching tasks")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
