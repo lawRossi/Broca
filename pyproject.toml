@@ -52,3 +52,26 @@ broca = "broca.cli.main:main"
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
+
+[tool.mypy]
+ignore_missing_imports = true
+warn_unused_ignores = false
+exclude = [
+    'broca/commands/builtin/skill-create',
+    'broca/commands/builtin/skill-suggest',
+    'broca/alembic/versions/',
+]
+
+# SQLModel/SQLAlchemy 已知 mypy 限制：Relationship 重载、表达式 API
+[[tool.mypy.overrides]]
+module = [
+    'broca.session.models',
+    'broca.session.service',
+    'broca.session.database',
+]
+ignore_errors = true
+
+# service_manager.py: subprocess.CompletedProcess 类型在 Python 版本间有差异
+[[tool.mypy.overrides]]
+module = 'broca.service_manager'
+ignore_errors = true
