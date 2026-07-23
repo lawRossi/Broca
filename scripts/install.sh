@@ -131,15 +131,19 @@ info "pip: $($PYTHON -m pip --version | awk '{print $2}')"
 # --- Node.js / pnpm ---
 USE_PNPM=false
 PNPM_MAJOR_VERSION=0
+HAS_NODE=false
 if command -v pnpm &>/dev/null; then
+    HAS_NODE=true
     USE_PNPM=true
     PNPM_MAJOR_VERSION=$(pnpm --version | cut -d. -f1)
     info "pnpm: $(pnpm --version) (major v$PNPM_MAJOR_VERSION)"
 elif command -v npm &>/dev/null; then
+    HAS_NODE=true
     info "npm: $(npm --version) — 将使用 npm 代替 pnpm"
 else
-    error "需要 Node.js (推荐 v18+)，请先安装：https://nodejs.org"
-    exit 1
+    warn "未检测到 Node.js，将跳过前端构建和 VS Code 插件打包。"
+    warn "如需前端页面或 VS Code 插件，请先安装 Node.js (推荐 v18+)：https://nodejs.org"
+    SKIP_FRONTEND=true
 fi
 
 # --- nginx 检测 ---
@@ -148,8 +152,9 @@ NGINX_DIST_DIR=""
 NGINX_SITE_CONF=""
 FRONTEND_DIR=""
 ENV_FILE=""
-SKIP_FRONTEND=false
-if command -v nginx &>/dev/null; then
+# 如果 Node.js 不可用则已设为 true，否则初始为 false
+SKIP_FRONTEND="${SKIP_FRONTEND:-false}"
+if ! $SKIP_FRONTEND && command -v nginx &>/dev/null; then
     info "nginx: $(nginx -v 2>&1)"
 
     # 查找 nginx 配置目录
@@ -193,7 +198,7 @@ if command -v nginx &>/dev/null; then
             fi
         fi
     fi
-else
+elif ! $SKIP_FRONTEND; then
     echo ""
     warn "未检测到 nginx，无法部署前端页面。"
     prompt "是否跳过前端，仅安装后端？(Y/n) "
@@ -768,8 +773,9 @@ info "前端构建完成: $FRONTEND_DIR/dist"
 fi  # SKIP_FRONTEND
 
 # ============================================================================
-# Step 7: 打包 VS Code 插件
+# Step 7: 打包 VS Code 插件（需要 Node.js）
 # ============================================================================
+if $HAS_NODE; then
 step "Step 6/9: 打包 VS Code 插件..."
 
 VSCODE_DIR="$PROJECT_ROOT/broca-vscode"
@@ -795,11 +801,19 @@ else
     warn "未找到 VS Code 插件目录: $VSCODE_DIR"
 fi
 
+else
+    warn "跳过 VS Code 插件打包（未检测到 Node.js）"
+fi
+
 # ============================================================================
 # Step 8: 部署前端
 # ============================================================================
 if $SKIP_FRONTEND; then
-    info "跳过前端部署（未安装 nginx）"
+    if $HAS_NODE; then
+        info "跳过前端部署（未安装 nginx）"
+    else
+        info "跳过前端部署和 VS Code 插件打包（未检测到 Node.js）"
+    fi
     echo "  提示: 可使用 VS Code 插件连接后端服务"
     echo "  后端服务端口: 9000"
 else
@@ -996,12 +1010,13 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
   "python_path": "$BROCA_PYTHON",
   "venv_path": "$BROCA_VENV",
   "project_root": "$PROJECT_ROOT",
-  "frontend_mode": "nginx",
+  "has_node": $HAS_NODE,
+  "frontend_mode": $([ "$SKIP_FRONTEND" = true ] && echo '"none"' || echo '"nginx"'),
   "frontend_dist": "$FRONTEND_DIR/dist",
   "nginx_dist_dir": "$NGINX_DIST_DIR",
   "storage_configured": $([ -f "$ENV_FILE" ] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" && echo "true" || echo "false"),
   "backend_port": 9000,
-  "frontend_port": 5166,
+  "frontend_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || echo '5166'),
   "skip_frontend": $SKIP_FRONTEND
 }
 JSONEOF
@@ -1068,19 +1083,34 @@ echo "  broca 命令: $BROCA_VENV/bin/broca"
 echo "  日志目录:   $LOG_DIR"
 
 if $SKIP_FRONTEND; then
-    echo "  前端:       未部署（可安装 VS Code 插件访问后端）"
-    echo "  后端端口:   9000"
-    echo ""
-    echo "  快速开始:"
-    echo "    broca service start      # 启动后端服务"
-    echo "    broca service stop       # 停止后端服务"
-    echo "    broca service status     # 查看服务状态"
-    echo ""
-    echo "  访问后端 API: http://localhost:9000"
-    echo "  如需前端页面，请安装 VS Code 插件或重新安装 nginx 后运行:"
-    echo "    sudo apt install nginx   # Ubuntu"
-    echo "    brew install nginx       # macOS"
-    echo "    broca service install    # 重新安装以启用前端"
+    if $HAS_NODE; then
+        echo "  前端:       未部署（未安装 nginx）"
+        echo "  后端端口:   9000"
+        echo ""
+        echo "  快速开始:"
+        echo "    broca service start      # 启动后端服务"
+        echo "    broca service stop       # 停止后端服务"
+        echo "    broca service status     # 查看服务状态"
+        echo ""
+        echo "  访问后端 API: http://localhost:9000"
+        echo "  如需前端页面，请安装 VS Code 插件或重新安装 nginx 后运行:"
+        echo "    sudo apt install nginx   # Ubuntu"
+        echo "    brew install nginx       # macOS"
+        echo "    broca service install    # 重新安装以启用前端"
+    else
+        echo "  前端:       未部署（未检测到 Node.js）"
+        echo "  VS Code 插件: 未打包（需要 Node.js）"
+        echo "  后端端口:   9000"
+        echo ""
+        echo "  快速开始:"
+        echo "    broca service start      # 启动后端服务"
+        echo "    broca service stop       # 停止后端服务"
+        echo "    broca service status     # 查看服务状态"
+        echo ""
+        echo "  访问后端 API: http://localhost:9000"
+        echo "  如需前端页面或 VS Code 插件，请安装 Node.js 后重新运行:"
+        echo "    broca service install    # 重新安装"
+    fi
 else
     echo "  前端模式:   nginx"
     if [[ -f "$ENV_FILE" ]] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" 2>/dev/null; then
