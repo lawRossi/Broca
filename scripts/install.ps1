@@ -92,70 +92,88 @@ try {
     exit 1
 }
 
-# --- Node.js / pnpm ---
+# --- Node.js / npm / pnpm ---
 $UsePnpm = $false
 $PnpmMajorVersion = 0
 $HasNode = $false
+
+# 先直接检测 node 本身（不依赖 npm/pnpm）
 try {
-    $pnpmVer = pnpm --version 2>&1
+    $nodeVer = node --version 2>&1
     $HasNode = $true
-    $pnpmVerTrimmed = $pnpmVer.Trim()
-    $PnpmMajorVersion = [int](($pnpmVerTrimmed -split '\.')[0])
-
-    # pnpm v6 以下版本过旧（v7+ 才稳定支持 lockfile v5.4）
-    # 如果版本解析为 0（非法格式）或低于最低要求，尝试升级或回退
-    $MinPnpmMajorVersion = 6
-    if ($PnpmMajorVersion -ge $MinPnpmMajorVersion) {
-        $UsePnpm = $true
-        Write-Info "pnpm: $pnpmVerTrimmed (major v$PnpmMajorVersion)"
-    } else {
-        Write-Warn "pnpm: $pnpmVerTrimmed — 版本过旧 (v$PnpmMajorVersion)，最低要求 v$MinPnpmMajorVersion"
-        Write-Info "尝试升级 pnpm..."
-        $upgradeOutput = npm install -g pnpm@latest 2>&1
-        if ($LASTEXITCODE -eq 0) {
-            $newPnpmVer = (pnpm --version 2>&1).Trim()
-            $newPnpmMajor = [int](($newPnpmVer -split '\.')[0])
-            if ($newPnpmMajor -ge $MinPnpmMajorVersion) {
-                $UsePnpm = $true
-                $PnpmMajorVersion = $newPnpmMajor
-                Write-Info "pnpm 升级成功: $pnpmVerTrimmed → $newPnpmVer"
-            } else {
-                Write-Warn "pnpm 升级后版本仍过低 (v$newPnpmMajor)，将回退到 npm"
-                $UsePnpm = $false
-            }
-        } else {
-            Write-Warn "pnpm 自动升级失败，将回退到 npm"
-            Write-Host $upgradeOutput
-            $UsePnpm = $false
-        }
-    }
+    Write-Info "Node.js: $($nodeVer.Trim())"
 } catch {
-    try {
-        $npmVer = npm --version 2>&1
-        $HasNode = $true
-        $npmMajorVersion = [int]($npmVer.Trim() -split '\.')[0]
-        Write-Info "npm: $($npmVer.Trim()) (major v$npmMajorVersion)"
+    Write-Warn "未检测到 Node.js，将跳过前端构建和 VS Code 插件打包。"
+    Write-Warn "如需前端页面或 VS Code 插件，请先安装 Node.js (推荐 v18+)：https://nodejs.org"
+}
 
-        # 检查 npm 版本，如果低于最低要求则升级
-        $MinNpmMajorVersion = 8
-        if ($npmMajorVersion -lt $MinNpmMajorVersion) {
-            Write-Warn "npm v$npmMajorVersion 版本过旧，最低要求 v$MinNpmMajorVersion，尝试升级..."
-            $upgradeOutput = npm install -g npm@latest 2>&1
+# 再分别检测 pnpm 和 npm
+if ($HasNode) {
+    # 检测 pnpm
+    try {
+        $pnpmVer = pnpm --version 2>&1
+        $pnpmVerTrimmed = $pnpmVer.Trim()
+        $PnpmMajorVersion = [int](($pnpmVerTrimmed -split '\.')[0])
+
+        # pnpm v6 以下版本过旧
+        $MinPnpmMajorVersion = 6
+        if ($PnpmMajorVersion -ge $MinPnpmMajorVersion) {
+            $UsePnpm = $true
+            Write-Info "pnpm: $pnpmVerTrimmed (major v$PnpmMajorVersion)"
+        } else {
+            Write-Warn "pnpm: $pnpmVerTrimmed — 版本过旧 (v$PnpmMajorVersion)，最低要求 v$MinPnpmMajorVersion"
+            Write-Info "尝试升级 pnpm..."
+            $upgradeOutput = npm install -g pnpm@latest 2>&1
             if ($LASTEXITCODE -eq 0) {
-                # 重新获取版本号
-                $newNpmVer = npm --version 2>&1
-                $newNpmMajor = [int]($newNpmVer.Trim() -split '\.')[0]
-                Write-Info "npm 升级成功: v$npmMajorVersion → v$($newNpmVer.Trim())"
-                $npmVer = $newNpmVer
-                $npmMajorVersion = $newNpmMajor
+                $newPnpmVer = (pnpm --version 2>&1).Trim()
+                $newPnpmMajor = [int](($newPnpmVer -split '\.')[0])
+                if ($newPnpmMajor -ge $MinPnpmMajorVersion) {
+                    $UsePnpm = $true
+                    $PnpmMajorVersion = $newPnpmMajor
+                    Write-Info "pnpm 升级成功: $pnpmVerTrimmed → $newPnpmVer"
+                } else {
+                    Write-Warn "pnpm 升级后版本仍过低 (v$newPnpmMajor)，将回退到 npm"
+                    $UsePnpm = $false
+                }
             } else {
-                Write-Warn "npm 自动升级失败，可之后手动执行: npm install -g npm@latest"
-                Write-Warn "将继续使用现有版本，如遇到依赖问题请手动升级 npm"
+                Write-Warn "pnpm 自动升级失败，将回退到 npm"
+                Write-Host $upgradeOutput
+                $UsePnpm = $false
             }
         }
     } catch {
-        Write-Warn "未检测到 Node.js，将跳过前端构建和 VS Code 插件打包。"
-        Write-Warn "如需前端页面或 VS Code 插件，请先安装 Node.js (推荐 v18+)：https://nodejs.org"
+        # pnpm 未安装，属于正常情况，不用报错
+        Write-Info "pnpm: 未安装，将使用 npm"
+        $UsePnpm = $false
+    }
+
+    # 检测 npm
+    if (-not $UsePnpm) {
+        try {
+            $npmVer = npm --version 2>&1
+            $npmMajorVersion = [int]($npmVer.Trim() -split '\.')[0]
+            Write-Info "npm: $($npmVer.Trim()) (major v$npmMajorVersion)"
+
+            # 检查 npm 版本，如果低于最低要求则升级
+            $MinNpmMajorVersion = 8
+            if ($npmMajorVersion -lt $MinNpmMajorVersion) {
+                Write-Warn "npm v$npmMajorVersion 版本过旧，最低要求 v$MinNpmMajorVersion，尝试升级..."
+                $upgradeOutput = npm install -g npm@latest 2>&1
+                if ($LASTEXITCODE -eq 0) {
+                    $newNpmVer = npm --version 2>&1
+                    $newNpmMajor = [int]($newNpmVer.Trim() -split '\.')[0]
+                    Write-Info "npm 升级成功: v$npmMajorVersion → v$($newNpmVer.Trim())"
+                    $npmVer = $newNpmVer
+                    $npmMajorVersion = $newNpmMajor
+                } else {
+                    Write-Warn "npm 自动升级失败，可之后手动执行: npm install -g npm@latest"
+                    Write-Warn "将继续使用现有版本，如遇到依赖问题请手动升级 npm"
+                }
+            }
+        } catch {
+            Write-Warn "npm: 未检测到，虽然 Node.js 已安装但 npm 不可用"
+            Write-Warn "请确保 npm 已正确安装或在 PATH 中"
+        }
     }
 }
 
