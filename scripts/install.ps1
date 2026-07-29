@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Broca - Windows 一键安装脚本 (PowerShell)
 .DESCRIPTION
@@ -76,6 +76,7 @@ foreach ($cmd in @("python3", "python", "py")) {
 if (-not $Python) {
     Write-Error "需要 Python >= 3.12，请先安装：https://www.python.org/downloads/"
     Write-Host "  安装时请确保勾选 'Add Python to PATH'"
+    pause
     exit 1
 }
 $pyVersion = & $Python --version 2>&1
@@ -87,6 +88,7 @@ try {
     Write-Info "pip: $($pipVer.Split(' ')[1])"
 } catch {
     Write-Error "pip 未安装，请先安装 pip。"
+    pause
     exit 1
 }
 
@@ -97,14 +99,60 @@ $HasNode = $false
 try {
     $pnpmVer = pnpm --version 2>&1
     $HasNode = $true
-    $UsePnpm = $true
-    $PnpmMajorVersion = [int]($pnpmVer.Trim() -split '\.')[0]
-    Write-Info "pnpm: $($pnpmVer.Trim()) (major v$PnpmMajorVersion)"
+    $pnpmVerTrimmed = $pnpmVer.Trim()
+    $PnpmMajorVersion = [int](($pnpmVerTrimmed -split '\.')[0])
+
+    # pnpm v6 以下版本过旧（v7+ 才稳定支持 lockfile v5.4）
+    # 如果版本解析为 0（非法格式）或低于最低要求，尝试升级或回退
+    $MinPnpmMajorVersion = 6
+    if ($PnpmMajorVersion -ge $MinPnpmMajorVersion) {
+        $UsePnpm = $true
+        Write-Info "pnpm: $pnpmVerTrimmed (major v$PnpmMajorVersion)"
+    } else {
+        Write-Warn "pnpm: $pnpmVerTrimmed — 版本过旧 (v$PnpmMajorVersion)，最低要求 v$MinPnpmMajorVersion"
+        Write-Info "尝试升级 pnpm..."
+        $upgradeOutput = npm install -g pnpm@latest 2>&1
+        if ($LASTEXITCODE -eq 0) {
+            $newPnpmVer = (pnpm --version 2>&1).Trim()
+            $newPnpmMajor = [int](($newPnpmVer -split '\.')[0])
+            if ($newPnpmMajor -ge $MinPnpmMajorVersion) {
+                $UsePnpm = $true
+                $PnpmMajorVersion = $newPnpmMajor
+                Write-Info "pnpm 升级成功: $pnpmVerTrimmed → $newPnpmVer"
+            } else {
+                Write-Warn "pnpm 升级后版本仍过低 (v$newPnpmMajor)，将回退到 npm"
+                $UsePnpm = $false
+            }
+        } else {
+            Write-Warn "pnpm 自动升级失败，将回退到 npm"
+            Write-Host $upgradeOutput
+            $UsePnpm = $false
+        }
+    }
 } catch {
     try {
         $npmVer = npm --version 2>&1
         $HasNode = $true
-        Write-Info "npm: $($npmVer.Trim()) — 将使用 npm 代替 pnpm"
+        $npmMajorVersion = [int]($npmVer.Trim() -split '\.')[0]
+        Write-Info "npm: $($npmVer.Trim()) (major v$npmMajorVersion)"
+
+        # 检查 npm 版本，如果低于最低要求则升级
+        $MinNpmMajorVersion = 8
+        if ($npmMajorVersion -lt $MinNpmMajorVersion) {
+            Write-Warn "npm v$npmMajorVersion 版本过旧，最低要求 v$MinNpmMajorVersion，尝试升级..."
+            $upgradeOutput = npm install -g npm@latest 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                # 重新获取版本号
+                $newNpmVer = npm --version 2>&1
+                $newNpmMajor = [int]($newNpmVer.Trim() -split '\.')[0]
+                Write-Info "npm 升级成功: v$npmMajorVersion → v$($newNpmVer.Trim())"
+                $npmVer = $newNpmVer
+                $npmMajorVersion = $newNpmMajor
+            } else {
+                Write-Warn "npm 自动升级失败，可之后手动执行: npm install -g npm@latest"
+                Write-Warn "将继续使用现有版本，如遇到依赖问题请手动升级 npm"
+            }
+        }
     } catch {
         Write-Warn "未检测到 Node.js，将跳过前端构建和 VS Code 插件打包。"
         Write-Warn "如需前端页面或 VS Code 插件，请先安装 Node.js (推荐 v18+)：https://nodejs.org"
@@ -135,7 +183,6 @@ if ($env:VIRTUAL_ENV) {
 
 if ($InVenv) {
     $BrocaPython = "$BrocaVenv\Scripts\python.exe"
-    $BrocaPip = "$BrocaPython -m pip"
     Write-Info "直接使用当前虚拟环境: $(& $BrocaPython --version 2>&1)"
 } elseif (Test-Path "$BrocaVenv\Scripts\python.exe") {
     Write-Info "检测到已有的 broca 虚拟环境: $BrocaVenv"
@@ -148,55 +195,54 @@ if ($InVenv) {
         Remove-Item -Recurse -Force $BrocaVenv -ErrorAction SilentlyContinue
         Write-Info "创建 broca 专属虚拟环境..."
         & $Python -m venv $BrocaVenv
-        if (-not $?) { Write-Error "虚拟环境创建失败"; exit 1 }
+        if (-not $?) { Write-Error "虚拟环境创建失败"; pause; exit 1 }
         Write-Info "虚拟环境创建成功"
     }
     $BrocaPython = "$BrocaVenv\Scripts\python.exe"
-    $BrocaPip = "$BrocaPython -m pip"
 } else {
     Write-Info "创建 broca 专属虚拟环境: $BrocaVenv"
     $null = New-Item -ItemType Directory -Force -Path $BrocaVenv
     & $Python -m venv $BrocaVenv
-    if (-not $?) { Write-Error "虚拟环境创建失败"; exit 1 }
+    if (-not $?) { Write-Error "虚拟环境创建失败"; pause; exit 1 }
     Write-Info "虚拟环境创建成功"
     $BrocaPython = "$BrocaVenv\Scripts\python.exe"
-    $BrocaPip = "$BrocaPython -m pip"
 }
 Write-Info "使用虚拟环境 Python: $(& $BrocaPython --version 2>&1)"
 
 # 升级 pip
 Write-Info "升级 pip..."
-& $BrocaPip install --upgrade pip setuptools wheel build 2>&1 | Out-Null
+& $BrocaPython -m pip install --upgrade pip setuptools wheel build 2>&1 | Out-Null
 Write-Info "pip 升级完成"
 
 # 安装 broca 模块
 Write-Info "安装 broca 模块..."
-$pipOutput = & $BrocaPip install $ProjectRoot 2>&1
-if (-not $?) {
+$pipOutput = & $BrocaPython -m pip install $ProjectRoot 2>&1
+if ($LASTEXITCODE -ne 0) {
     Write-Error "broca 模块安装失败"
     Write-Host $pipOutput
+    pause
     exit 1
 }
 Write-Info "broca 模块安装完成"
 
 # 安装后端依赖
 Write-Info "安装后端依赖..."
-$pipOutput = & $BrocaPip install "$ProjectRoot\broca-web\backend" 2>&1
+$pipOutput = & $BrocaPython -m pip install "$ProjectRoot\broca-web\backend" 2>&1
 if ($LASTEXITCODE -eq 0) {
     Write-Info "后端依赖安装完成"
 } else {
-    Write-Warn "后端依赖安装失败，可之后手动执行: $BrocaPip install $ProjectRoot\broca-web\backend"
+    Write-Warn "后端依赖安装失败，可之后手动执行: $BrocaPython -m pip install $ProjectRoot\broca-web\backend"
 }
 
 # 安装 TUI
 $tuiDir = "$ProjectRoot\broca-tui"
 if (Test-Path $tuiDir) {
     Write-Info "安装 TUI 依赖..."
-    $pipOutput = & $BrocaPip install $tuiDir 2>&1
+    $pipOutput = & $BrocaPython -m pip install $tuiDir 2>&1
     if ($LASTEXITCODE -eq 0) {
         Write-Info "TUI 依赖安装完成"
     } else {
-        Write-Warn "TUI 依赖安装失败，可之后手动执行: $BrocaPip install $tuiDir"
+        Write-Warn "TUI 依赖安装失败，可之后手动执行: $BrocaPython -m pip install $tuiDir"
     }
 } else {
     Write-Warn "broca-tui 目录不存在，跳过 TUI 安装"
@@ -209,6 +255,9 @@ $Python = $BrocaPython
 # Step 3: 数据库迁移
 # ============================================================================
 Write-Step "Step 3/9: 数据库迁移..."
+
+# Windows 中文系统默认编码为 GBK，强制 Python 使用 UTF-8 读取配置文件
+$env:PYTHONUTF8 = 1
 
 $null = New-Item -ItemType Directory -Force -Path $BrocaDbDir
 Write-Info "数据库目录: $BrocaDbDir"
@@ -240,6 +289,7 @@ if ($LASTEXITCODE -eq 0) {
 
 Remove-Item Env:\BROCA_DATABASE_DIR -ErrorAction SilentlyContinue
 Remove-Item Env:\SQLITE_DATABASE_PATH -ErrorAction SilentlyContinue
+Remove-Item Env:\PYTHONUTF8 -ErrorAction SilentlyContinue
 Set-Location $ProjectRoot
 
 # ============================================================================
@@ -343,6 +393,7 @@ if (Test-Path $backendSrc) {
     Write-Info "后端代码已部署: $backendDst"
 } else {
     Write-Error "后端代码目录不存在: $backendSrc"
+    pause
     exit 1
 }
 
@@ -357,6 +408,7 @@ if (Test-Path $frontendSrc) {
     Write-Info "前端源码已部署: $frontendDst"
 } else {
     Write-Error "前端源码目录不存在: $frontendSrc"
+    pause
     exit 1
 }
 
@@ -540,9 +592,10 @@ if ($UsePnpm) {
     # 删除旧锁文件
     Remove-Item "$frontendDst\pnpm-lock.yaml" -Force -ErrorAction SilentlyContinue
     $buildOutput = pnpm install 2>&1
-    if (-not $?) {
+    if ($LASTEXITCODE -ne 0) {
         Write-Error "pnpm install 失败"
         Write-Host $buildOutput
+        pause
         exit 1
     }
     Write-Host $buildOutput | Select-Object -Last 5
@@ -557,18 +610,20 @@ if ($UsePnpm) {
         Write-PnpmBuildConfig $frontendDst $PnpmMajorVersion
         Remove-Item "$frontendDst\pnpm-lock.yaml" -Force -ErrorAction SilentlyContinue
         $buildOutput = pnpm install 2>&1
-        if (-not $?) {
+        if ($LASTEXITCODE -ne 0) {
             Write-Error "pnpm install 失败"
             Write-Host $buildOutput
+            pause
             exit 1
         }
         Write-Host $buildOutput | Select-Object -Last 5
     } else {
         Write-Warn "pnpm 安装失败，回退到 npm (使用 --legacy-peer-deps)..."
         $buildOutput = npm install --legacy-peer-deps 2>&1
-        if (-not $?) {
+        if ($LASTEXITCODE -ne 0) {
             Write-Error "npm install 失败"
             Write-Host $buildOutput
+            pause
             exit 1
         }
         Write-Host $buildOutput | Select-Object -Last 5
@@ -577,9 +632,10 @@ if ($UsePnpm) {
 
 Write-Info "构建前端 (production mode)..."
 $buildOutput = npx vite build 2>&1
-if (-not $?) {
+if ($LASTEXITCODE -ne 0) {
     Write-Error "前端构建失败"
     Write-Host $buildOutput
+    pause
     exit 1
 }
 Write-Host $buildOutput | Select-Object -Last 10
@@ -916,4 +972,6 @@ try {
 
 Write-Host ""
 Write-Host "  如果遇到问题，请查看日志: $BrocaLogDir"
+Write-Host ""
+pause
 Write-Host ""
