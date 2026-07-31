@@ -111,11 +111,20 @@ def _ensure_dirs() -> None:
     LOG_DIR.mkdir(parents=True, exist_ok=True)
 
 
+def _is_windows() -> bool:
+    """判断当前是否 Windows 平台"""
+    return os.name == "nt"
+
+
 def _is_supervisord_running() -> bool:
     """检查 supervisord 是否在运行"""
     if SUPERVISOR_PID.exists():
         try:
             pid = int(SUPERVISOR_PID.read_text().strip())
+            if _is_windows():
+                # Windows 上 os.kill(pid, 0) 不可靠，改用 psutil
+                import psutil
+                return psutil.pid_exists(pid)
             os.kill(pid, 0)  # 检查进程是否存在
             return True
         except (ValueError, OSError, ProcessLookupError):
@@ -128,8 +137,18 @@ def _is_supervisord_running() -> bool:
 
 
 def _wait_for_socket(timeout: float = 5.0) -> bool:
-    """等待 supervisor Unix socket 就绪"""
+    """等待 supervisor 就绪（Unix: socket 文件；Windows: TCP 端口）"""
     start = time.time()
+    if _is_windows():
+        # Windows 使用 inet_http_server (TCP 127.0.0.1:9001)
+        import socket as socket_mod
+        while time.time() - start < timeout:
+            try:
+                with socket_mod.create_connection(("127.0.0.1", 9001), timeout=0.5):
+                    return True
+            except OSError:
+                time.sleep(0.2)
+        return False
     while time.time() - start < timeout:
         if SUPERVISOR_SOCK.exists():
             return True
@@ -906,7 +925,7 @@ def _generate_supervisor_config(
     backend_port: int = 9000,
 ) -> str:
     """
-    生成 supervisor 配置内容（nginx 代理模式）
+    生成 supervisor 配置内容（nginx 代理模式，支持 Windows/Linux）
 
     Args:
         backend_port: 后端端口
@@ -914,56 +933,105 @@ def _generate_supervisor_config(
     Returns:
         配置文本
     """
-    user = os.environ.get("USER", "root")
+    win = _is_windows()
 
-    # 检测 uvicorn 路径（优先级: install.json 记录的 venv > ~/.broca/venv/ > 系统路径）
+    # 检测后端启动命令（优先级: install.json 记录的 venv > ~/.broca/venv/ > 系统路径）
     install_info = _load_install_info()
-    uvicorn_cmd = "uvicorn"  # 默认
-
-    # 方案1: 从 install.json 中读取 venv_path
     venv_path_str = install_info.get("venv_path", "")
-    if venv_path_str:
-        candidate = Path(venv_path_str) / "bin" / "uvicorn"
-        if candidate.exists():
-            uvicorn_cmd = str(candidate)
 
-    # 方案2: 检查 ~/.broca/venv/
-    if uvicorn_cmd == "uvicorn":
-        candidate = BROCA_HOME / "venv" / "bin" / "uvicorn"
-        if candidate.exists():
-            uvicorn_cmd = str(candidate)
+    if win:
+        # Windows: 使用 venv 中的 python.exe -m uvicorn
+        python_cmd = None
+        if venv_path_str:
+            candidate = Path(venv_path_str) / "Scripts" / "python.exe"
+            if candidate.exists():
+                python_cmd = str(candidate)
+        if not python_cmd:
+            candidate = BROCA_HOME / "venv" / "Scripts" / "python.exe"
+            if candidate.exists():
+                python_cmd = str(candidate)
+        if not python_cmd:
+            python_cmd = sys.executable
+        uvicorn_cmd = f"{python_cmd} -m uvicorn"
+        backend_dir = BROCA_HOME / "web" / "backend"
+        env_sep = ";"  # Windows PATH 分隔符
+        env_prefix = f'PYTHONPATH="{backend_dir}"'
+    else:
+        # Unix/Linux: 使用 bin/uvicorn
+        uvicorn_cmd = "uvicorn"  # 默认
+        if venv_path_str:
+            candidate = Path(venv_path_str) / "bin" / "uvicorn"
+            if candidate.exists():
+                uvicorn_cmd = str(candidate)
+        if uvicorn_cmd == "uvicorn":
+            candidate = BROCA_HOME / "venv" / "bin" / "uvicorn"
+            if candidate.exists():
+                uvicorn_cmd = str(candidate)
+        backend_dir = BROCA_HOME / "web" / "backend"
+        env_sep = ":"
+        env_prefix = f'PYTHONPATH="{backend_dir}:$PYTHONPATH"'
+
+    # 公共配置段
+    if win:
+        http_section = [
+            "[inet_http_server]",
+            "port = 127.0.0.1:9001",
+        ]
+        supervisor_section = [
+            "[supervisord]",
+            f"logfile={LOG_DIR}\\supervisord.log",
+            "logfile_maxbytes=50MB",
+            "logfile_backups=10",
+            "loglevel=info",
+            f"pidfile={RUN_DIR}\\supervisord.pid",
+            "nodaemon=false",
+        ]
+        ctl_url = "http://127.0.0.1:9001"
+        user_line = None
+    else:
+        http_section = [
+            "[unix_http_server]",
+            f"file={SUPERVISOR_DIR}/supervisor.sock",
+            "chmod=0700",
+        ]
+        supervisor_section = [
+            "[supervisord]",
+            f"logfile={LOG_DIR}/supervisord.log",
+            "logfile_maxbytes=50MB",
+            "logfile_backups=10",
+            "loglevel=info",
+            f"pidfile={RUN_DIR}/supervisord.pid",
+            "nodaemon=false",
+            f"user={os.environ.get('USER', 'root')}",
+        ]
+        ctl_url = f"unix://{SUPERVISOR_DIR}/supervisor.sock"
+        user_line = f"user={os.environ.get('USER', 'root')}"
 
     lines = [
         "; Broca - Supervisor 配置",
         f"; 安装目录: {BROCA_HOME}",
         f"; 生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
         "",
-        "[unix_http_server]",
-        f"file={SUPERVISOR_DIR}/supervisor.sock",
-        "chmod=0700",
+    ] + http_section + [
         "",
-        "[supervisord]",
-        f"logfile={LOG_DIR}/supervisord.log",
-        "logfile_maxbytes=50MB",
-        "logfile_backups=10",
-        "loglevel=info",
-        f"pidfile={RUN_DIR}/supervisord.pid",
-        "nodaemon=false",
-        f"user={user}",
+    ] + supervisor_section + [
         "",
         "[rpcinterface:supervisor]",
         "supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface",
         "",
         "[supervisorctl]",
-        f"serverurl=unix://{SUPERVISOR_DIR}/supervisor.sock",
+        f"serverurl={ctl_url}",
         "",
         "; ====================",
         "; Backend (FastAPI / Uvicorn)",
         "; ====================",
         "[program:backend]",
         f"command={uvicorn_cmd} app.main:app --host 127.0.0.1 --port {backend_port} --log-level info",
-        f"directory={BROCA_HOME}/web/backend",
-        f"user={user}",
+        f"directory={backend_dir}",
+    ]
+    if user_line:
+        lines.append(user_line)
+    lines += [
         "autostart=true",
         "autorestart=true",
         "startretries=3",
@@ -971,7 +1039,7 @@ def _generate_supervisor_config(
         f"stdout_logfile={LOG_DIR}/backend.out.log",
         "stdout_logfile_maxbytes=20MB",
         "stderr_logfile_maxbytes=20MB",
-        f'environment=PYTHONPATH="{BROCA_HOME}/web/backend:$PYTHONPATH",BROCA_CONFIG="{BROCA_HOME}/configs/configs.json",BROCA_DATABASE_DIR="{BROCA_HOME}/data",BROCA_LLM_CONFIG="{BROCA_HOME}/configs/llm_config.json",BROCA_AGENTS_CONFIG_DIR="{BROCA_HOME}/configs/agents",BROCA_LOG_DIR="{BROCA_HOME}/logs",SQLITE_DATABASE_PATH="sqlite:///{BROCA_HOME}/data/backend.db"',
+        f'environment={env_prefix},BROCA_CONFIG="{BROCA_HOME}/configs/configs.json",BROCA_DATABASE_DIR="{BROCA_HOME}/data",BROCA_LLM_CONFIG="{BROCA_HOME}/configs/llm_config.json",BROCA_AGENTS_CONFIG_DIR="{BROCA_HOME}/configs/agents",BROCA_LOG_DIR="{BROCA_HOME}/logs",SQLITE_DATABASE_PATH="sqlite:///{BROCA_HOME}/data/backend.db"',
         "stopasgroup=true",
         "killasgroup=true",
     ]
@@ -995,6 +1063,7 @@ def write_supervisor_config(
     )
 
     SUPERVISOR_CONF.write_text(config_text)
-    SUPERVISOR_CONF.chmod(0o600)  # 限制权限，防止路径/配置泄露
+    if not _is_windows():
+        SUPERVISOR_CONF.chmod(0o600)  # 限制权限，防止路径/配置泄露（Unix 专用）
     logger.info("Supervisor config written to %s", SUPERVISOR_CONF)
     return str(SUPERVISOR_CONF)
