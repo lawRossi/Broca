@@ -8,15 +8,15 @@ Each chat page creates its own ChatStore instance.
 import json
 import re
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Set
+from typing import Any
 
 from broca.communication.socketio_client import SocketIOClient
 from broca.session.models import Message, MessageProtocol
 from broca_tui.api.session import SessionAPI
 from broca_tui.config import get_config
-from broca_tui.debug_log import log
 
 
 def _clean_error_message(raw: str) -> str:
@@ -72,30 +72,30 @@ class TurnSummary:
     sequence_number: int
     agent_id: str
     agent_name: str
-    user_message: Optional[str] = None
+    user_message: str | None = None
     status: str = "active"  # active, thinking, calling_tool, completed, error
-    current_tool: Optional[str] = None
-    current_file_path: Optional[str] = None
-    current_todo_list: List[Dict[str, Any]] = field(default_factory=list)
+    current_tool: str | None = None
+    current_file_path: str | None = None
+    current_todo_list: list[dict[str, Any]] = field(default_factory=list)
     total_duration: float = 0.0
     total_steps: int = 0
-    tool_call_stats: List[Dict[str, Any]] = field(default_factory=list)
+    tool_call_stats: list[dict[str, Any]] = field(default_factory=list)
     final_response: str = ""
     reasoning_content: str = ""
     is_active: bool = True
     started_at: float = 0.0  # timestamp in ms
     created_at: str = ""
-    last_message_id: Optional[str] = None
-    changed_files: Optional[Dict[str, Any]] = None
-    error_message: Optional[str] = None
-    error_severity: Optional[str] = None
-    recovery_hint: Optional[str] = None
+    last_message_id: str | None = None
+    changed_files: dict[str, Any] | None = None
+    error_message: str | None = None
+    error_severity: str | None = None
+    recovery_hint: str | None = None
 
 
 class ChatStore:
     """Store for chat state."""
 
-    def __init__(self, api: Optional[SessionAPI] = None):
+    def __init__(self, api: SessionAPI | None = None):
         """Initialize chat store.
 
         Args:
@@ -105,54 +105,54 @@ class ChatStore:
         self._config = get_config()
 
         # Socket.IO client
-        self._socket: Optional[SocketIOClient] = None
+        self._socket: SocketIOClient | None = None
 
         # Connection state
         self.connected: bool = False
         self.connecting: bool = False
-        self.session_id: Optional[str] = None
-        self.execution_id: Optional[str] = None
+        self.session_id: str | None = None
+        self.execution_id: str | None = None
         self.is_agent_orchestration: bool = False
 
         # Messages (简洁模式: turn_summaries 替代 messages 用于渲染)
         self.show_redo_button: bool = False
-        self.redo_receiver_id: Optional[str] = None
+        self.redo_receiver_id: str | None = None
         self._preserve_redo: bool = False  # Prevent redo from being cleared after undo
 
         # Loading state
         self.loading: bool = False
 
         # Turn summaries (简洁模式)
-        self.turn_summaries: List[TurnSummary] = []
+        self.turn_summaries: list[TurnSummary] = []
         self.turn_history_skip: int = 0
         self.has_more_turns: bool = True
         self.loading_more_turns: bool = False
         self.active_turn_index: int = -1  # 当前活跃 turn 在列表中的索引
         # 耗时改为消息驱动，不再使用定时器
         self._change_timer: Any = None  # asyncio.TimerHandle: throttle _notify_change
-        self._on_get_agent_name: Optional[Callable[[str], Optional[str]]] = None
+        self._on_get_agent_name: Callable[[str], str | None] | None = None
 
         # Track last message_id that had content per turn (for agent_response separator logic)
-        self._turn_content_msg_id: Dict[str, str] = {}
+        self._turn_content_msg_id: dict[str, str] = {}
 
         # Track seen tool_call_ids per turn (dedup: backend sends preview→actual→result for same call)
-        self._turn_seen_tool_call_ids: Dict[str, Set[str]] = {}
+        self._turn_seen_tool_call_ids: dict[str, set[str]] = {}
 
         # Track last response message_id per turn (for reasoning delimiting and undo targeting)
-        self._turn_last_response_msg_id: Dict[str, str] = {}
+        self._turn_last_response_msg_id: dict[str, str] = {}
 
         # 乐观更新：发送用户消息时预创建的 turn 信息（turn_start 到达后替换 turn_id）
-        self._pending_turn_id: Optional[str] = None
+        self._pending_turn_id: str | None = None
 
         # Input state
         self.input_text: str = ""
 
         # Runner state
-        self.runner_info: Optional[Dict[str, Any]] = None
+        self.runner_info: dict[str, Any] | None = None
         self.runner_alive: bool = False
 
         # Permission dialog state
-        self.permission_dialog: Dict[str, Any] = {
+        self.permission_dialog: dict[str, Any] = {
             "visible": False,
             "request_id": None,
             "sender_id": None,
@@ -161,7 +161,7 @@ class ChatStore:
         }
 
         # Agent query dialog state
-        self.agent_query_dialog: Dict[str, Any] = {
+        self.agent_query_dialog: dict[str, Any] = {
             "visible": False,
             "request_id": None,
             "sender_id": None,
@@ -170,14 +170,14 @@ class ChatStore:
         }
 
         # Callbacks
-        self._on_change: Optional[Callable[[], None]] = None
-        self._on_error: Optional[Callable[..., None]] = None
-        self._on_info: Optional[Callable[[str], None]] = None
-        self._on_permission: Optional[Callable[[Dict[str, Any]], None]] = None
-        self._on_agent_query: Optional[Callable[[Dict[str, Any]], None]] = None
-        self._on_message: Optional[Callable[[Dict[str, Any]], None]] = None
-        self._on_connection_change: Optional[Callable[[bool], None]] = None
-        self._on_dismiss_dialogs: Optional[Callable[[], None]] = None
+        self._on_change: Callable[[], None] | None = None
+        self._on_error: Callable[..., None] | None = None
+        self._on_info: Callable[[str], None] | None = None
+        self._on_permission: Callable[[dict[str, Any]], None] | None = None
+        self._on_agent_query: Callable[[dict[str, Any]], None] | None = None
+        self._on_message: Callable[[dict[str, Any]], None] | None = None
+        self._on_connection_change: Callable[[bool], None] | None = None
+        self._on_dismiss_dialogs: Callable[[], None] | None = None
 
     def on_change(self, callback: Callable[[], None]):
         """Register callback for general state changes."""
@@ -191,15 +191,15 @@ class ChatStore:
         """Register callback for info/success notifications."""
         self._on_info = callback
 
-    def on_permission_request(self, callback: Callable[[Dict[str, Any]], None]):
+    def on_permission_request(self, callback: Callable[[dict[str, Any]], None]):
         """Register callback for permission requests."""
         self._on_permission = callback
 
-    def on_agent_query(self, callback: Callable[[Dict[str, Any]], None]):
+    def on_agent_query(self, callback: Callable[[dict[str, Any]], None]):
         """Register callback for agent queries."""
         self._on_agent_query = callback
 
-    def on_message_received(self, callback: Callable[[Dict[str, Any]], None]):
+    def on_message_received(self, callback: Callable[[dict[str, Any]], None]):
         """Register callback for new messages."""
         self._on_message = callback
 
@@ -211,7 +211,7 @@ class ChatStore:
         """Register callback to dismiss active dialogs when new task messages arrive."""
         self._on_dismiss_dialogs = callback
 
-    def on_get_agent_name(self, callback: Callable[[str], Optional[str]]):
+    def on_get_agent_name(self, callback: Callable[[str], str | None]):
         """Register callback to get agent display name by ID."""
         self._on_get_agent_name = callback
 
@@ -266,7 +266,7 @@ class ChatStore:
 
     # ==================== Socket.IO Connection ====================
 
-    async def connect(self, session_id: str, execution_id: Optional[str] = None):
+    async def connect(self, session_id: str, execution_id: str | None = None):
         """Connect to Socket.IO server and subscribe to session.
 
         Args:
@@ -336,7 +336,9 @@ class ChatStore:
                         pending.turn_id = turn_id
                         pending.agent_id = target_id or ""
                         if self._on_get_agent_name and target_id:
-                            pending.agent_name = self._on_get_agent_name(target_id) or target_id
+                            pending.agent_name = (
+                                self._on_get_agent_name(target_id) or target_id
+                            )
                         else:
                             pending.agent_name = target_id or ""
                         self._pending_turn_id = None
@@ -403,18 +405,15 @@ class ChatStore:
             if self.session_id and self._socket:
                 try:
                     await self._socket.subscribe(self.session_id)
-                    log(f"已订阅 session {self.session_id}")
                 except Exception as e:
-                    log(f"订阅 session {self.session_id} 失败: {e}")
+                    self._notify_error(f"订阅失败: {e}")
 
         @self._socket.on("disconnect")
         async def handle_disconnect():
             self.connected = False
             self._notify_change()
             if self._on_connection_change:
-                                self._on_connection_change(False)
-
-                    
+                self._on_connection_change(False)
 
     # ==================== Message Handling ====================
 
@@ -612,6 +611,7 @@ class ChatStore:
             elif command == "clear_history":
                 self._notify_info("历史记录已清空")
                 import asyncio
+
                 asyncio.ensure_future(
                     self.load_turn_history(filter_execution_id=self.execution_id)
                 )
@@ -644,11 +644,10 @@ class ChatStore:
             is_load_more: Kept for API compatibility, unused
         """
         # 简洁模式下消息级历史不再需要，使用 load_turn_history() 替代
-        pass
 
     # ==================== Turn Management (简洁模式) ====================
 
-    def _find_turn(self, turn_id: str) -> Optional[TurnSummary]:
+    def _find_turn(self, turn_id: str) -> TurnSummary | None:
         """根据 turn_id 查找 TurnSummary。
 
         Args:
@@ -663,7 +662,7 @@ class ChatStore:
         return None
 
     async def load_turn_history(
-        self, is_load_more: bool = False, filter_execution_id: Optional[str] = None
+        self, is_load_more: bool = False, filter_execution_id: str | None = None
     ):
         """加载 turn 历史（简洁模式）。
 
@@ -672,18 +671,10 @@ class ChatStore:
             filter_execution_id: 可选，按编排执行 ID 过滤
         """
         if not self.session_id:
-            log("load_turn_history: no session_id")
             return
-
-        log(
-            f" load_turn_history: is_load_more={is_load_more}, loading_more_turns={self.loading_more_turns}, has_more_turns={self.has_more_turns}, skip={self.turn_history_skip}"
-        )
 
         if is_load_more:
             if self.loading_more_turns or not self.has_more_turns:
-                log(
-                    f" load_turn_history: early return (loading_more={self.loading_more_turns}, has_more={self.has_more_turns})"
-                )
                 return
             self.loading_more_turns = True
             self.loading = True  # 确保 loading 状态同步到 MessageList
@@ -708,10 +699,6 @@ class ChatStore:
             total = result.get("total", 0)
             raw_turns = result.get("turns", [])
 
-            log(
-                f" load_turn_history: API returned total={total}, turns_count={len(raw_turns)}, skip={self.turn_history_skip}"
-            )
-
             # 将后端数据映射为 TurnSummary
             new_turns = []
             for t in raw_turns:
@@ -731,7 +718,7 @@ class ChatStore:
                             started_at_raw.replace("Z", "+00:00")
                         )
                         if d.tzinfo is None:
-                            d = d.replace(tzinfo=_dt.timezone.utc)
+                            d = d.replace(tzinfo=_dt.UTC)
                         started_at_ms = d.timestamp() * 1000
                     except Exception:
                         pass
@@ -782,12 +769,7 @@ class ChatStore:
             self.turn_history_skip += limit
             self.has_more_turns = self.turn_history_skip < total
 
-            log(
-                f" load_turn_history: done, turn_summaries count={len(self.turn_summaries)}, has_more_turns={self.has_more_turns}, loading={self.loading}"
-            )
-
         except Exception as e:
-            log(f" load_turn_history: ERROR {e}")
             self._notify_error(f"加载 Turn 历史失败: {e}")
         finally:
             self.loading = False
@@ -823,7 +805,7 @@ class ChatStore:
         # 不再启动 1s 定时器更新耗时，改为消息驱动（tool_call/agent_response/step_start 时计算）
         self._notify_change(force=True)
 
-    def update_turn_on_tool_call(self, turn_id: str, data: Dict[str, Any]):
+    def update_turn_on_tool_call(self, turn_id: str, data: dict[str, Any]):
         """工具调用消息到达时更新 turn 状态。
 
         Args:
@@ -891,7 +873,7 @@ class ChatStore:
         self._notify_change()
 
     def update_turn_on_agent_response(
-        self, turn_id: str, data: Dict[str, Any], message_id: str = ""
+        self, turn_id: str, data: dict[str, Any], message_id: str = ""
     ):
         """Agent 回复消息到达时累加 finalResponse。
 
@@ -980,9 +962,9 @@ class ChatStore:
     def finalize_turn_summary(
         self,
         turn_id: str,
-        status: Optional[str] = None,
-        turn_end_msg_id: Optional[str] = None,
-        changed_files: Optional[Dict[str, Any]] = None,
+        status: str | None = None,
+        turn_end_msg_id: str | None = None,
+        changed_files: dict[str, Any] | None = None,
     ):
         """终结 TurnSummary（turn_end 事件触发）。
 
@@ -1049,8 +1031,8 @@ class ChatStore:
     # ==================== Filtered Turns (简洁模式) ====================
 
     def get_filtered_turns(
-        self, visible_agent_ids: List[str], all_agent_ids: List[str]
-    ) -> List[TurnSummary]:
+        self, visible_agent_ids: list[str], all_agent_ids: list[str]
+    ) -> list[TurnSummary]:
         """根据 Agent 可见性过滤 turn。
 
         Args:
@@ -1070,7 +1052,7 @@ class ChatStore:
     async def send_user_message(
         self,
         content: str,
-        target_agent_id: Optional[str] = None,
+        target_agent_id: str | None = None,
     ):
         """Send a user message.
 
@@ -1119,7 +1101,7 @@ class ChatStore:
             self._pending_turn_id = None
             self._notify_change(force=True)
 
-    async def send_abort(self, agent_id: Optional[str] = None):
+    async def send_abort(self, agent_id: str | None = None):
         """Send abort command to an agent.
 
         Args:
@@ -1137,7 +1119,7 @@ class ChatStore:
     async def send_undo(
         self,
         target_message_id: str,
-        target_agent_id: Optional[str] = None,
+        target_agent_id: str | None = None,
         level: str = "step",
     ):
         """Send undo command (matching Web's sendUndo command).
@@ -1162,7 +1144,7 @@ class ChatStore:
         except Exception as e:
             self._notify_error(f"撤销失败: {e}")
 
-    async def send_redo(self, target_agent_id: Optional[str] = None):
+    async def send_redo(self, target_agent_id: str | None = None):
         """Send redo command (matching Web's sendRedo command).
 
         Args:
@@ -1181,7 +1163,7 @@ class ChatStore:
             self._notify_error(f"重做失败: {e}")
 
     async def respond_permission(
-        self, granted: bool, session_action: Optional[str] = None
+        self, granted: bool, session_action: str | None = None
     ):
         """Respond to a permission request.
 

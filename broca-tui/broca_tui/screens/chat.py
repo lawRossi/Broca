@@ -12,7 +12,7 @@ Manages Socket.IO lifecycle, event callbacks, and navigation.
 from __future__ import annotations
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any
 
 from textual.app import ComposeResult
 from textual.containers import Horizontal, Vertical
@@ -32,7 +32,6 @@ from broca_tui.widgets.permission_dialog import PermissionDialog
 from broca_tui.widgets.turn_card import TurnCard
 
 
-
 class ChatScreen(Screen):
     """Main chat interface with three-panel layout (简洁模式：TurnCard)."""
 
@@ -45,7 +44,7 @@ class ChatScreen(Screen):
     def __init__(
         self,
         session_id: str = "",
-        execution_id: Optional[str] = None,
+        execution_id: str | None = None,
         category: str = "normal",
         **kwargs,
     ):
@@ -69,7 +68,7 @@ class ChatScreen(Screen):
         self._last_turn_count = -1
 
         # Track active dialog for auto-dismiss on new task messages
-        self._active_dialog: Optional["ModalScreen"] = None
+        self._active_dialog: ModalScreen | None = None
 
         # 离开页面检测：记录 screen 创建时间，兜底后台打开的场景
         self._leave_timestamp: float = 0.0
@@ -166,7 +165,9 @@ class ChatScreen(Screen):
             pass
         finally:
             self._chat_store._on_error = original_error_cb
-            header.connection_status = "connected" if self._chat_store.connected else "disconnected"
+            header.connection_status = (
+                "connected" if self._chat_store.connected else "disconnected"
+            )
 
         # ── Path 2: Load agents FIRST (so agent_name_map is ready when turns arrive) ──
         try:
@@ -186,13 +187,19 @@ class ChatScreen(Screen):
                 )
             await agent_sidebar.load_agents(self._session_id)
         except Exception as e:
-            self.notify(f"Agent 加载失败: {e}", severity="warning", timeout=5, markup=False)
+            self.notify(
+                f"Agent 加载失败: {e}", severity="warning", timeout=5, markup=False
+            )
 
         # ── Path 3: Load turn history via HTTP — 即使 agents 加载失败也应继续
         try:
-            await self._chat_store.load_turn_history(filter_execution_id=self._execution_id)
+            await self._chat_store.load_turn_history(
+                filter_execution_id=self._execution_id
+            )
         except Exception as e:
-            self.notify(f"加载 Turn 历史失败: {e}", severity="error", timeout=5, markup=False)
+            self.notify(
+                f"加载 Turn 历史失败: {e}", severity="error", timeout=5, markup=False
+            )
         finally:
             # 确保 loading 状态被清除，避免"消息加载中"卡死
             self._chat_store.loading = False
@@ -218,10 +225,14 @@ class ChatScreen(Screen):
             if socket is None:
                 return
             # 查询 engine.io 底层状态（比 socket.sio.connected 更及时）
-            eio = socket.sio.eio if hasattr(socket, 'sio') and hasattr(socket.sio, 'eio') else None
+            eio = (
+                socket.sio.eio
+                if hasattr(socket, "sio") and hasattr(socket.sio, "eio")
+                else None
+            )
             if eio is None:
                 return
-            is_connected = eio.state == 'connected' if hasattr(eio, 'state') else False
+            is_connected = eio.state == "connected" if hasattr(eio, "state") else False
             # 如果 engine.io 认为已断开但 ChatStore 仍标记为已连接，同步状态
             if not is_connected and self._chat_store.connected:
                 self._chat_store.connected = False
@@ -240,10 +251,14 @@ class ChatScreen(Screen):
         # Chat store → MessageList
         self._chat_store.on_change(lambda: self._on_chat_change())
         self._chat_store.on_error(
-            lambda msg, sev="error": self.notify(msg, severity=sev, timeout=5, markup=False)
+            lambda msg, sev="error": self.notify(
+                msg, severity=sev, timeout=5, markup=False
+            )
         )
         self._chat_store.on_info(
-            lambda msg: self.notify(msg, severity="information", timeout=3, markup=False)
+            lambda msg: self.notify(
+                msg, severity="information", timeout=3, markup=False
+            )
         )
         self._chat_store.on_permission_request(
             lambda d: self.run_worker(self._show_permission_dialog(d))
@@ -257,9 +272,7 @@ class ChatScreen(Screen):
         )
 
         # 收到 agent 任务进展时自动关闭对话框
-        self._chat_store.on_dismiss_dialogs(
-            lambda: self._dismiss_active_dialog()
-        )
+        self._chat_store.on_dismiss_dialogs(lambda: self._dismiss_active_dialog())
 
         # 简洁模式：注入 agent name 查询回调
         self._chat_store.on_get_agent_name(
@@ -274,22 +287,24 @@ class ChatScreen(Screen):
             lambda turn_id: self.run_worker(self._handle_turn_undo(turn_id))
         )
         message_list.set_on_redo(
-            lambda: self.run_worker(self._chat_store.send_redo(
-                target_agent_id=self._agent_store.current_agent_id or "",
-            ))
+            lambda: self.run_worker(
+                self._chat_store.send_redo(
+                    target_agent_id=self._agent_store.current_agent_id or "",
+                )
+            )
         )
 
         # Agent store → agent 状态/列表变化由 AgentSidebar 的 _render_agents 处理
-        self._agent_store.on_visibility_change(
-            lambda: self._on_visibility_changed()
-        )
+        self._agent_store.on_visibility_change(lambda: self._on_visibility_changed())
 
         # ChatInput callbacks (only in normal sessions)
         if not is_orch:
             try:
                 chat_input = self.query_one("#chat-input", ChatInput)
                 chat_input.set_on_send(
-                    lambda text, target: self.run_worker(self._send_message(text, target))
+                    lambda text, target: self.run_worker(
+                        self._send_message(text, target)
+                    )
                 )
                 chat_input.set_agents(
                     self._agent_store.agents,
@@ -328,12 +343,15 @@ class ChatScreen(Screen):
         # Build agent_id → display_name map
         agent_name_map = {
             a.get("agent_id", ""): a.get("name", a.get("agent_id", ""))
-            for a in self._agent_store.agents if a.get("agent_id")
+            for a in self._agent_store.agents
+            if a.get("agent_id")
         }
 
         # Get visible agent IDs
         visible_ids = self._agent_store.visible_agent_ids
-        all_ids = [a.get("agent_id", "") for a in self._agent_store.agents if a.get("agent_id")]
+        all_ids = [
+            a.get("agent_id", "") for a in self._agent_store.agents if a.get("agent_id")
+        ]
 
         # 加载中时只更新 loading 状态，跳过 turn 渲染
         if not self._chat_store.loading:
@@ -352,17 +370,20 @@ class ChatScreen(Screen):
         # Build agent_name_map
         agent_name_map = {
             a.get("agent_id", ""): a.get("name", a.get("agent_id", ""))
-            for a in self._agent_store.agents if a.get("agent_id")
+            for a in self._agent_store.agents
+            if a.get("agent_id")
         }
 
         visible_ids = self._agent_store.visible_agent_ids
-        all_ids = [a.get("agent_id", "") for a in self._agent_store.agents if a.get("agent_id")]
+        all_ids = [
+            a.get("agent_id", "") for a in self._agent_store.agents if a.get("agent_id")
+        ]
         filtered_turns = self._chat_store.get_filtered_turns(visible_ids, all_ids)
 
         message_list.set_turn_summaries(filtered_turns, agent_name_map)
         self._last_turn_count = len(filtered_turns)
 
-    def _on_message_received(self, msg: Dict[str, Any]):
+    def _on_message_received(self, msg: dict[str, Any]):
         """Handle new message from Socket.IO (agent status updates).
 
         Args:
@@ -406,7 +427,7 @@ class ChatScreen(Screen):
         """Load more turn history."""
         await self._chat_store.load_turn_history(is_load_more=True)
 
-    async def _send_message(self, text: str, target_agent_id: Optional[str] = None):
+    async def _send_message(self, text: str, target_agent_id: str | None = None):
         """Send a user message.
 
         Args:
@@ -461,13 +482,13 @@ class ChatScreen(Screen):
             diff_text = await api.get_file_diff(session_id, turn_id, file_path)
             await self.app.push_screen(DiffViewer(file_path, diff_text or "(无变更)"))
         except Exception as e:
-            from broca_tui.debug_log import log
-            log(f"_show_file_diff error: {e}")
-            self.notify(f"获取 diff 失败: {e}", severity="error", timeout=5, markup=False)
+            self.notify(
+                f"获取 diff 失败: {e}", severity="error", timeout=5, markup=False
+            )
 
     # ==================== Dialog Handlers ====================
 
-    async def _show_permission_dialog(self, dialog_data: Dict[str, Any]):
+    async def _show_permission_dialog(self, dialog_data: dict[str, Any]):
         """Show permission request dialog.
 
         Args:
@@ -489,7 +510,7 @@ class ChatScreen(Screen):
         finally:
             self._active_dialog = None
 
-    async def _show_agent_query_dialog(self, dialog_data: Dict[str, Any]):
+    async def _show_agent_query_dialog(self, dialog_data: dict[str, Any]):
         """Show agent query dialog.
 
         Args:
