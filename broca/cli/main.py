@@ -367,18 +367,18 @@ def cmd_service_install():
 
 
 def cmd_service_start(args):
-    """启动生产环境服务 (基于 supervisor)"""
+    """启动生产环境服务"""
     # 延迟导入，允许在未安装时也能查看帮助
     from broca.service_manager import start_services, status_services
 
     print("正在启动 Broca 服务...")
 
-    # 先检查 supervisord 是否已运行，如果已运行则直接 start all
+    # 先检查服务是否已运行，如果已运行则直接启动托管程序
     status = status_services()
     if status.get("supervisord_running"):
-        print("supervisord 已在运行，启动托管服务...")
+        print("服务已在运行，检查托管程序...")
     else:
-        print("启动 supervisord 进程管理器...")
+        print("启动 Broca 服务管理器...")
 
     result = start_services(wait=True)
 
@@ -408,7 +408,7 @@ def cmd_service_start(args):
 
 
 def cmd_service_stop(args):
-    """停止生产环境服务 (基于 supervisor)"""
+    """停止生产环境服务"""
     from broca.service_manager import stop_services
 
     print("正在停止 Broca 服务...")
@@ -462,12 +462,12 @@ def cmd_service_status(args):
         return
 
     if not result.get("supervisord_running"):
-        print("⚠  supervisord 未运行")
+        print("⚠  服务未运行")
         print()
         print("  使用 Broca service start 启动服务")
         return
 
-    print("  supervisord:  ✅ 运行中")
+    print("  服务管理器:  ✅ 运行中")
     print()
     print(f"  {'服务名':<15} {'状态':<12} {'PID':<8} {'运行时间'}")
     print(f"  {'------':<15} {'------':<12} {'---':<8} {'--------'}")
@@ -495,7 +495,7 @@ def cmd_service_status(args):
 
             print(f"  {name:<15} {status_display:<12} {pid_str:<8} {uptime}")
 
-    # nginx 前端状态
+    # 前端状态（仅 Linux 的 nginx 模式有该字段）
     nginx = result.get("nginx", {})
     if nginx.get("available"):
         nginx_status = "✅ 已启用" if nginx.get("enabled") else "⏸ 未启用"

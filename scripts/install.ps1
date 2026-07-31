@@ -828,6 +828,47 @@ $stopBody | Out-File $stopScript -Encoding UTF8
 
 Write-Info "停止脚本已创建: $stopScript"
 
+# 检测 nginx（前端需要）
+$NginxFound = $false
+if ($HasNode) {
+    $nginxCmd = Get-Command nginx.exe -ErrorAction SilentlyContinue
+    if ($nginxCmd) {
+        Write-Info "nginx: $($nginxCmd.Source)"
+        $NginxFound = $true
+    } else {
+        # 检查常见安装位置
+        foreach ($p in @("$env:ProgramFiles\nginx\nginx.exe", "$env:LOCALAPPDATA\nginx\nginx.exe", "C:\nginx\nginx.exe")) {
+            if (Test-Path $p) {
+                Write-Info "nginx: $p"
+                $NginxFound = $true
+                break
+            }
+        }
+        if (-not $NginxFound) {
+            Write-Warn "未检测到 nginx，尝试自动安装..."
+            try {
+                $wingetOut = winget install --id Nginx.Nginx -e --accept-source-agreements --accept-package-agreements 2>&1
+                Write-Host $wingetOut
+                $nginxCmd = Get-Command nginx.exe -ErrorAction SilentlyContinue
+                if ($nginxCmd) { $NginxFound = $true }
+            } catch {
+                Write-Warn "winget 安装 nginx 失败"
+            }
+        }
+    }
+    if ($NginxFound) {
+        Write-Info "nginx 前端部署就绪（broca service start 时启用）"
+    } else {
+        Write-Warn "nginx 不可用，前端将无法部署。"
+        Write-Warn "请手动安装 nginx for Windows: https://nginx.org/en/download.html"
+        Write-Warn "  或运行: winget install Nginx.Nginx"
+        Write-Warn "安装后重新运行 install.bat admin"
+    }
+} else {
+    Write-Warn "未构建前端（未检测到 Node.js），跳过 nginx 配置"
+}
+
+
 # ---- 注册 Windows 服务 (NSSM) ----
 if ($IsAdmin) {
     $nssmPath = Get-Command nssm.exe -ErrorAction SilentlyContinue
@@ -846,46 +887,53 @@ if ($IsAdmin) {
         & nssm.exe set BrocaBackend AppStderr "$BrocaLogDir\backend.err.log" 2>&1 | Out-Null
         & nssm.exe set BrocaBackend AppEnvironmentExtra "PYTHONPATH=$backendDst" "BROCA_CONFIG=$BrocaConfigDir\configs.json" "BROCA_DATABASE_DIR=$BrocaDbDir" "BROCA_LLM_CONFIG=$BrocaConfigDir\llm_config.json" "BROCA_AGENTS_CONFIG_DIR=$BrocaConfigDir\agents" "BROCA_LOG_DIR=$BrocaLogDir" "SQLITE_DATABASE_PATH=sqlite:///$BrocaDbDir\backend.db" 2>&1 | Out-Null
 
-        if ($HasNode) {
-        # 前端服务 (用 Python 内置 http.server)
-        & nssm.exe stop BrocaFrontend 2>&1 | Out-Null
-        & nssm.exe remove BrocaFrontend confirm 2>&1 | Out-Null
-        & nssm.exe install BrocaFrontend "$BrocaPython" "-m http.server 5166 --directory $frontendDst\dist" 2>&1 | Out-Null
-        & nssm.exe set BrocaFrontend AppDirectory "$frontendDst\dist" 2>&1 | Out-Null
-        & nssm.exe set BrocaFrontend DisplayName "Broca Frontend Service" 2>&1 | Out-Null
-        & nssm.exe set BrocaFrontend Description "Broca AI Agent 框架前端服务" 2>&1 | Out-Null
-        & nssm.exe set BrocaFrontend Start SERVICE_AUTO_START 2>&1 | Out-Null
-        & nssm.exe set BrocaFrontend AppStdout "$BrocaLogDir\frontend.out.log" 2>&1 | Out-Null
-        & nssm.exe set BrocaFrontend AppStderr "$BrocaLogDir\frontend.err.log" 2>&1 | Out-Null
+        # 前端服务 (nginx，与 Linux 部署方式一致)
+        if ($HasNode -and $NginxFound) {
+            # 先准备 nginx 独立环境（复制 nginx.exe + 生成配置）
+            Write-Info "准备 nginx 前端环境..."
+            $nginxPrep = & $BrocaPython -c "from broca.service_manager import _win_prepare_nginx; ok, msg, exe = _win_prepare_nginx(); print(msg); import sys; sys.exit(0 if ok else 1)" 2>&1
+            if ($LASTEXITCODE -eq 0) {
+                $nginxExePath = "$BrocaHome\nginx\nginx.exe"
+                Write-Info "nginx 环境就绪: $nginxExePath"
+
+                & nssm.exe stop BrocaFrontend 2>&1 | Out-Null
+                & nssm.exe remove BrocaFrontend confirm 2>&1 | Out-Null
+                & nssm.exe install BrocaFrontend "$nginxExePath" "-p $BrocaHome\nginx\ -c conf\nginx.conf" 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend AppDirectory "$BrocaHome\nginx" 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend DisplayName "Broca Frontend Service (nginx)" 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend Description "Broca AI Agent 框架前端服务 (nginx)" 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend Start SERVICE_AUTO_START 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend AppStdout "$BrocaLogDir\frontend.out.log" 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend AppStderr "$BrocaLogDir\frontend.err.log" 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend AppStopMethodConsole 15000 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend AppStopMethodWindow 15000 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend AppStopMethodThreads 15000 2>&1 | Out-Null
+                & nssm.exe set BrocaFrontend AppStopMethodKill 5000 2>&1 | Out-Null
+                Write-Info "前端服务 (nginx) 已注册"
+            } else {
+                Write-Warn "nginx 环境准备失败，前端服务未注册"
+                Write-Host $nginxPrep
+            }
+        } elseif ($HasNode) {
+            Write-Warn "未检测到 nginx，前端服务未注册（请先安装 nginx）"
         }
-        & nssm.exe set BrocaFrontend AppStdout "$BrocaLogDir\frontend.out.log" 2>&1 | Out-Null
-        & nssm.exe set BrocaFrontend AppStderr "$BrocaLogDir\frontend.err.log" 2>&1 | Out-Null
 
         Write-Info "Windows 服务已注册"
         Write-Host "  服务管理命令:"
-        Write-Host "    nssm start BrocaBackend   # 启动后端"
-        Write-Host "    nssm start BrocaFrontend  # 启动前端"
-        Write-Host "    nssm stop BrocaBackend    # 停止后端"
-        Write-Host "    nssm stop BrocaFrontend   # 停止前端"
-        Write-Host "    services.msc              # 查看服务列表"
+        Write-Host "    broca service start   # 启动所有服务"
+        Write-Host "    broca service stop    # 停止所有服务"
+        Write-Host "    services.msc          # 查看服务列表"
     } else {
         Write-Warn "未检测到 NSSM (Non-Sucking Service Manager)。"
-        Write-Warn "服务注册已跳过，但启动/停止脚本已创建。"
+        Write-Warn "服务注册已跳过，broca service start 将使用裸起进程管理。"
         Write-Host ""
         Write-Host "  如需注册 Windows 服务，请安装 NSSM:"
         Write-Host "    winget install NSSM 或 https://nssm.cc/download"
         Write-Host "  之后重新运行此脚本，或手动注册。"
-        Write-Host ""
-        Write-Host "  也可直接使用脚本管理:"
-        Write-Host "    PowerShell -File $startScript   # 启动"
-        Write-Host "    PowerShell -File $stopScript    # 停止"
     }
 } else {
     Write-Warn "未以管理员身份运行，跳过 Windows 服务注册。"
-    Write-Host "  可使用脚本管理:"
-    Write-Host "    PowerShell -File $startScript   # 启动"
-    Write-Host "    PowerShell -File $stopScript    # 停止"
-    Write-Host ""
+    Write-Host "  broca service start 将使用裸起进程管理。"
 
     # 即使非管理员，也提示 NSSM 信息
     $nssmPath = Get-Command nssm.exe -ErrorAction SilentlyContinue
@@ -894,6 +942,13 @@ if ($IsAdmin) {
         Write-Host "    winget install NSSM 或 https://nssm.cc/download"
     }
 }
+
+# ---- 服务管理（Windows 原生进程管理 + nginx 前端）----
+$null = New-Item -ItemType Directory -Force -Path $BrocaRunDir, $BrocaLogDir
+Write-Info "Windows 服务管理: 原生进程管理（uvicorn 后端 + nginx 前端）"
+
+Write-Info "  启动: broca service start"
+Write-Info "  停止: broca service stop"
 
 # ---- 保存安装信息 ----
 $installInfo = @{

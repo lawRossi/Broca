@@ -23,10 +23,10 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
-from broca.logging_config import get_logger
 from broca.errors import BrocaError
+from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
 
@@ -47,7 +47,7 @@ def _get_project_root() -> Path:
     return Path(__file__).parent.parent
 
 
-def _load_install_info() -> Dict[str, Any]:
+def _load_install_info() -> dict[str, Any]:
     """加载安装信息"""
     if INSTALL_JSON.exists():
         try:
@@ -60,7 +60,7 @@ def _load_install_info() -> Dict[str, Any]:
 # ==================== Supervisor 进程管理 ====================
 
 
-def _find_supervisord() -> Optional[str]:
+def _find_supervisord() -> str | None:
     """查找 supervisord 可执行文件路径"""
     # 优先使用 module 方式
     python = sys.executable
@@ -88,7 +88,7 @@ def _find_supervisord() -> Optional[str]:
     return None
 
 
-def _find_supervisorctl() -> Optional[str]:
+def _find_supervisorctl() -> str | None:
     """查找 supervisorctl 可执行文件路径"""
     python = sys.executable
     try:
@@ -124,6 +124,7 @@ def _is_supervisord_running() -> bool:
             if _is_windows():
                 # Windows 上 os.kill(pid, 0) 不可靠，改用 psutil
                 import psutil
+
                 return psutil.pid_exists(pid)
             os.kill(pid, 0)  # 检查进程是否存在
             return True
@@ -142,6 +143,7 @@ def _wait_for_socket(timeout: float = 5.0) -> bool:
     if _is_windows():
         # Windows 使用 inet_http_server (TCP 127.0.0.1:9001)
         import socket as socket_mod
+
         while time.time() - start < timeout:
             try:
                 with socket_mod.create_connection(("127.0.0.1", 9001), timeout=0.5):
@@ -156,7 +158,7 @@ def _wait_for_socket(timeout: float = 5.0) -> bool:
     return False
 
 
-def _call_supervisorctl(args: List[str]) -> Tuple[int, str, str]:
+def _call_supervisorctl(args: list[str]) -> tuple[int, str, str]:
     """调用 supervisorctl 并返回 (returncode, stdout, stderr)"""
     cmd = _find_supervisorctl()
     if not cmd:
@@ -190,7 +192,7 @@ def _is_macos() -> bool:
     return sys.platform == "darwin"
 
 
-def _find_nginx() -> Optional[str]:
+def _find_nginx() -> str | None:
     """查找 nginx 可执行文件路径"""
     for cmd in [
         "nginx",
@@ -212,7 +214,7 @@ def _broca_site_conf() -> Path:
     return BROCA_HOME / "nginx-broca.conf"
 
 
-def _broca_sites_enabled_dir() -> Optional[Path]:
+def _broca_sites_enabled_dir() -> Path | None:
     """查找 nginx sites-enabled 目录"""
     candidates = []
     if _is_macos():
@@ -266,7 +268,7 @@ def _broca_site_enabled() -> bool:
     return (sites_dir / "broca.conf").exists()
 
 
-def _enable_broca_site() -> Tuple[bool, str]:
+def _enable_broca_site() -> tuple[bool, str]:
     """启用 broca nginx 站点（创建 symlink + reload）"""
     site_conf = _broca_site_conf()
     if not site_conf.exists():
@@ -321,7 +323,7 @@ def _enable_broca_site() -> Tuple[bool, str]:
     return False, f"启用 broca 站点失败: {last_error}{hint}"
 
 
-def _disable_broca_site() -> Tuple[bool, str]:
+def _disable_broca_site() -> tuple[bool, str]:
     """禁用 broca nginx 站点（删除 symlink + reload）"""
     sites_dir = _broca_sites_enabled_dir()
     if not sites_dir:
@@ -549,7 +551,7 @@ def _ensure_nginx_user() -> None:
             continue
 
 
-def _start_nginx() -> Tuple[bool, str]:
+def _start_nginx() -> tuple[bool, str]:
     """启动 nginx 服务"""
     nginx_cmd = _find_nginx()
     if not nginx_cmd:
@@ -588,7 +590,7 @@ def _start_nginx() -> Tuple[bool, str]:
     return False, f"nginx 启动失败: {last_error}{hint}"
 
 
-def _reload_nginx() -> Tuple[bool, str]:
+def _reload_nginx() -> tuple[bool, str]:
     """重载 nginx 配置（若 nginx 未运行则先启动）"""
     nginx_cmd = _find_nginx()
     if not nginx_cmd:
@@ -635,7 +637,7 @@ def _reload_nginx() -> Tuple[bool, str]:
     return False, f"nginx 重载失败: {last_error}{hint}"
 
 
-def _get_frontend_status() -> Dict[str, Any]:
+def _get_frontend_status() -> dict[str, Any]:
     """获取前端服务状态（基于 broca 站点是否启用）"""
     nginx_cmd = _find_nginx()
     if not nginx_cmd:
@@ -668,10 +670,710 @@ def _is_frontend_skipped() -> bool:
     return install_info.get("skip_frontend", False)
 
 
+# ==================== Windows 服务管理 ====================
+# supervisor 是 Unix 工具（依赖 pwd/grp/fcntl/os.fork 等），Windows 上不可用。
+# Windows 优先使用 NSSM 注册的 Windows 服务；若未注册则裸起（subprocess 管理），
+# PID 记录在 run/services.json。前端统一使用 nginx（与 Linux 一致）。
+
+SERVICES_STATE = RUN_DIR / "services.json"
+
+
+def _win_find_nssm() -> str | None:
+    """查找 nssm.exe"""
+    try:
+        import shutil
+
+        found = shutil.which("nssm")
+        if found:
+            return found
+    except Exception:
+        pass
+    for p in [
+        r"C:\nssm\nssm.exe",
+        r"C:\tools\nssm\nssm.exe",
+        r"C:\Program Files\nssm\nssm.exe",
+    ]:
+        if Path(p).exists():
+            return p
+    return None
+
+
+def _win_nssm_available() -> bool:
+    """检查 NSSM 是否可用且 Broca 服务已注册"""
+    nssm = _win_find_nssm()
+    if not nssm:
+        return False
+    try:
+        result = subprocess.run(
+            [nssm, "status", "BrocaBackend"],
+            capture_output=True,
+            timeout=5,
+            text=True,
+        )
+        return result.returncode in (0, 1, 2, 3)  # 服务存在
+    except Exception:
+        return False
+
+
+def _win_nssm_service_status(nssm: str, svc: str) -> tuple[bool, str]:
+    """查询 NSSM 服务状态，返回 (是否运行, 状态描述)"""
+    try:
+        result = subprocess.run(
+            [nssm, "status", svc], capture_output=True, timeout=5, text=True
+        )
+        # NSSM status 退出码: 0=RUNNING, 1=STOPPED, 2=START_PENDING, 3=STOP_PENDING
+        code = result.returncode
+        status_map = {
+            0: "RUNNING",
+            1: "STOPPED",
+            2: "STARTING",
+            3: "STOPPING",
+        }
+        status = status_map.get(code, f"UNKNOWN({code})")
+        return code == 0, status
+    except Exception as e:
+        return False, f"ERROR: {e}"
+
+
+def _win_nssm_run(nssm: str, action: str, svc: str) -> tuple[int, str, str]:
+    """执行 nssm 命令"""
+    try:
+        result = subprocess.run(
+            [nssm, action, svc], capture_output=True, timeout=30, text=True
+        )
+        return result.returncode, result.stdout.strip(), result.stderr.strip()
+    except Exception as e:
+        return -1, "", str(e)
+
+
+def _win_nssm_start_services(wait: bool = True) -> dict[str, Any]:
+    """Windows (NSSM): 通过 Windows 服务启动后端和前端"""
+    nssm = _win_find_nssm()
+    details = []
+
+    # 后端
+    running, status = _win_nssm_service_status(nssm, "BrocaBackend")
+    if running:
+        details.append("后端服务已在运行")
+    else:
+        ret, out, err = _win_nssm_run(nssm, "start", "BrocaBackend")
+        if ret != 0:
+            return {"success": False, "error": f"启动后端服务失败: {err or out}"}
+        details.append("后端服务已启动")
+
+    # 前端 (nginx)
+    running, status = _win_nssm_service_status(nssm, "BrocaFrontend")
+    if running:
+        details.append("前端服务 (nginx) 已在运行，http://localhost:5166")
+    else:
+        ret, out, err = _win_nssm_run(nssm, "start", "BrocaFrontend")
+        if ret != 0:
+            details.append(f"前端服务启动失败: {err or out}")
+            details.append(
+                "  提示: 请确认 nginx 已安装且 install.bat 已注册 BrocaFrontend 服务"
+            )
+        else:
+            details.append("前端服务 (nginx) 已启动，http://localhost:5166")
+
+    return {
+        "success": True,
+        "message": "所有服务已启动",
+        "detail": "\n".join(details),
+        "nginx": {"ok": _win_frontend_running(), "message": "nginx 前端服务 (NSSM)"},
+    }
+
+
+def _win_nssm_stop_services() -> dict[str, Any]:
+    """Windows (NSSM): 通过 Windows 服务停止后端和前端"""
+    nssm = _win_find_nssm()
+    details = []
+
+    for svc, label in [
+        ("BrocaBackend", "后端服务"),
+        ("BrocaFrontend", "前端服务 (nginx)"),
+    ]:
+        running, status = _win_nssm_service_status(nssm, svc)
+        if running:
+            ret, out, err = _win_nssm_run(nssm, "stop", svc)
+            if ret == 0:
+                details.append(f"{label}已停止")
+            else:
+                details.append(f"{label}停止失败: {err or out}")
+        else:
+            details.append(f"{label}未运行")
+
+    return {
+        "success": True,
+        "message": "所有服务已停止",
+        "detail": "\n".join(details),
+        "nginx": {"ok": True, "message": "前端服务已停止"},
+    }
+
+
+def _win_nssm_status_services() -> dict[str, Any]:
+    """Windows (NSSM): 查询服务状态"""
+    nssm = _win_find_nssm()
+    services = []
+    any_running = False
+
+    for svc, label in [
+        ("BrocaBackend", "backend (NSSM)"),
+        ("BrocaFrontend", "frontend (NSSM)"),
+    ]:
+        running, status = _win_nssm_service_status(nssm, svc)
+        if running:
+            any_running = True
+        services.append(
+            {
+                "name": label,
+                "status": status,
+                "pid": None,
+                "uptime": None,
+            }
+        )
+
+    return {
+        "supervisord_running": any_running,
+        "services": services,
+    }
+
+
+def _win_load_state() -> dict[str, Any]:
+    """加载 Windows 服务状态 (PID 记录)"""
+    if SERVICES_STATE.exists():
+        try:
+            return json.loads(SERVICES_STATE.read_text(encoding="utf-8"))
+        except Exception:
+            pass
+    return {"backend": None, "frontend": None}
+
+
+def _win_save_state(state: dict[str, Any]) -> None:
+    """保存 Windows 服务状态"""
+    try:
+        SERVICES_STATE.write_text(json.dumps(state, indent=2), encoding="utf-8")
+    except Exception as e:
+        logger.warning("保存服务状态失败: %s", e)
+
+
+def _win_get_python() -> str:
+    """获取 venv 中的 python.exe 路径"""
+    install_info = _load_install_info()
+    venv = install_info.get("venv_path", "")
+    if venv:
+        cand = Path(venv) / "Scripts" / "python.exe"
+        if cand.exists():
+            return str(cand)
+    # 回退：~/.broca/venv/
+    cand = BROCA_HOME / "venv" / "Scripts" / "python.exe"
+    if cand.exists():
+        return str(cand)
+    return sys.executable
+
+
+def _win_is_process_alive(pid: int | None) -> bool:
+    """检查进程是否存活"""
+    if not pid:
+        return False
+    try:
+        import psutil
+
+        return psutil.pid_exists(pid)
+    except ImportError:
+        try:
+            os.kill(pid, 0)
+            return True
+        except OSError:
+            return False
+
+
+def _win_stop_process(pid: int | None) -> None:
+    """停止进程（含子进程树）"""
+    if not pid or not _win_is_process_alive(pid):
+        return
+    try:
+        import psutil
+
+        try:
+            p = psutil.Process(pid)
+            for child in p.children(recursive=True):
+                try:
+                    child.kill()
+                except Exception:
+                    pass
+            p.kill()
+        except psutil.NoSuchProcess:
+            pass
+    except ImportError:
+        try:
+            os.kill(pid, 9)
+        except OSError:
+            pass
+
+
+def _win_backend_env(backend_dir: Path) -> dict[str, str]:
+    """构造后端进程环境变量"""
+    env = os.environ.copy()
+    env.update(
+        {
+            "PYTHONPATH": str(backend_dir),
+            "BROCA_CONFIG": str(BROCA_HOME / "configs" / "configs.json"),
+            "BROCA_DATABASE_DIR": str(BROCA_HOME / "data"),
+            "BROCA_LLM_CONFIG": str(BROCA_HOME / "configs" / "llm_config.json"),
+            "BROCA_AGENTS_CONFIG_DIR": str(BROCA_HOME / "configs" / "agents"),
+            "BROCA_LOG_DIR": str(LOG_DIR),
+            "SQLITE_DATABASE_PATH": f"sqlite:///{BROCA_HOME}/data/backend.db",
+        }
+    )
+    return env
+
+
+def _win_start_backend() -> tuple[bool, str, int | None]:
+    """启动后端 (uvicorn)"""
+    python = _win_get_python()
+    backend_dir = BROCA_HOME / "web" / "backend"
+    if not backend_dir.exists():
+        return False, f"后端目录不存在: {backend_dir}", None
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    log_out = open(LOG_DIR / "backend.out.log", "ab")
+    log_err = open(LOG_DIR / "backend.err.log", "ab")
+
+    try:
+        proc = subprocess.Popen(
+            [
+                python,
+                "-m",
+                "uvicorn",
+                "app.main:app",
+                "--host",
+                "127.0.0.1",
+                "--port",
+                "9000",
+                "--log-level",
+                "info",
+            ],
+            cwd=str(backend_dir),
+            env=_win_backend_env(backend_dir),
+            stdout=log_out,
+            stderr=log_err,
+            creationflags=getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0),
+        )
+        return True, f"后端已启动 (PID: {proc.pid})", proc.pid
+    except Exception as e:
+        return False, f"后端启动失败: {e}", None
+
+
+def _win_find_nginx() -> str | None:
+    """查找 nginx 可执行文件"""
+    # 1. 优先使用 ~/.broca/nginx/ 下的独立安装
+    cand = BROCA_HOME / "nginx" / "nginx.exe"
+    if cand.exists():
+        return str(cand)
+    # 2. PATH 中查找
+    try:
+        import shutil
+
+        found = shutil.which("nginx")
+        if found:
+            return found
+    except Exception:
+        pass
+    # 3. 常见安装位置
+    for p in [
+        r"C:\nginx\nginx.exe",
+        r"C:\tools\nginx\nginx.exe",
+        r"C:\Program Files\nginx\nginx.exe",
+    ]:
+        if Path(p).exists():
+            return p
+    return None
+
+
+def _win_prepare_nginx() -> tuple[bool, str, str | None]:
+    """准备 nginx 独立运行环境（prefix 隔离，不影响系统 nginx）。
+
+    布局:
+      ~/.broca/nginx/
+        nginx.exe          (复制自 nginx 安装目录)
+        conf/nginx.conf    (Broca 主配置)
+        conf/mime.types    (复制自 nginx 安装目录)
+        logs/  temp/
+    """
+    nginx_exe = _win_find_nginx()
+    if not nginx_exe:
+        return (
+            False,
+            "未找到 nginx。请安装 nginx for Windows:\n"
+            "  winget install nginx 或 https://nginx.org/en/download.html\n"
+            "  安装后请重新运行 install.bat admin",
+            None,
+        )
+
+    nginx_src = Path(nginx_exe)
+    nginx_home = BROCA_HOME / "nginx"
+
+    # 复制 nginx.exe 到独立目录（若来源不是该目录）
+    if nginx_src.parent != nginx_home:
+        try:
+            nginx_home.mkdir(parents=True, exist_ok=True)
+            target_exe = nginx_home / "nginx.exe"
+            if not target_exe.exists():
+                import shutil
+
+                shutil.copy2(nginx_src, target_exe)
+            nginx_exe = str(target_exe)
+        except Exception as e:
+            # 复制失败则直接使用原路径
+            logger.warning("复制 nginx.exe 失败，直接使用原路径: %s", e)
+            nginx_exe = str(nginx_src)
+
+    # 复制 mime.types（若不存在）
+    conf_dir = nginx_home / "conf"
+    conf_dir.mkdir(parents=True, exist_ok=True)
+    src_mime = nginx_src.parent / "conf" / "mime.types"
+    if src_mime.exists() and not (conf_dir / "mime.types").exists():
+        import shutil
+
+        shutil.copy2(src_mime, conf_dir / "mime.types")
+
+    # 生成主配置（含 Broca server 块，与 Linux nginx 站点配置保持一致）
+    nginx_conf = conf_dir / "nginx.conf"
+    install_info = _load_install_info()
+    dist_dir = install_info.get("frontend_dist") or ""
+    # nginx 配置中统一使用正斜杠
+    dist_dir_nix = str(dist_dir).replace("\\", "/")
+
+    config_text = f"""worker_processes  1;
+
+events {{
+    worker_connections  1024;
+}}
+
+http {{
+    include       mime.types;
+    default_type  application/octet-stream;
+
+    log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+                      '$status $body_bytes_sent "$http_referer" '
+                      '"$http_user_agent" "$http_x_forwarded_for"';
+
+    access_log  {str(nginx_home / "logs" / "access.log").replace(os.sep, "/")}  main;
+    error_log   {str(nginx_home / "logs" / "error.log").replace(os.sep, "/")};
+
+    sendfile        on;
+    keepalive_timeout  65;
+
+    # ---- Broca Web 站点 ----
+    server {{
+        listen       5166;
+        server_name  _;
+
+        # 前端静态文件
+        root {dist_dir_nix};
+        index index.html;
+
+        # gzip 压缩
+        gzip on;
+        gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+        # API 反向代理 (后端)
+        location /api/ {{
+            proxy_pass http://127.0.0.1:9000;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }}
+
+        # Socket.IO 反向代理
+        location /socket.io/ {{
+            proxy_pass http://127.0.0.1:6868;
+            proxy_http_version 1.1;
+            proxy_set_header Upgrade $http_upgrade;
+            proxy_set_header Connection "upgrade";
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+            proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+            proxy_set_header X-Forwarded-Proto $scheme;
+        }}
+
+        # SPA 路由: 所有非文件请求返回 index.html
+        location / {{
+            try_files $uri $uri/ /index.html;
+        }}
+    }}
+}}
+"""
+    try:
+        nginx_conf.write_text(config_text, encoding="utf-8")
+    except Exception as e:
+        return False, f"生成 nginx 配置失败: {e}", None
+
+    # 日志目录
+    (nginx_home / "logs").mkdir(parents=True, exist_ok=True)
+    (nginx_home / "temp").mkdir(parents=True, exist_ok=True)
+
+    return True, f"nginx 配置就绪: {nginx_conf}", nginx_exe
+
+
+def _win_start_frontend() -> tuple[bool, str, int | None]:
+    """启动前端 (nginx 部署，与 Linux 一致)"""
+    install_info = _load_install_info()
+    dist_dir = install_info.get("frontend_dist")
+    if not dist_dir or not Path(dist_dir).exists():
+        return False, "前端 dist 目录不存在", None
+
+    # 准备 nginx 独立环境
+    ok, msg, nginx_exe = _win_prepare_nginx()
+    if not ok:
+        return False, msg, None
+
+    nginx_home = BROCA_HOME / "nginx"
+    try:
+        proc = subprocess.Popen(
+            [
+                nginx_exe,
+                "-p",
+                str(nginx_home).replace("\\", "/") + "/",
+                "-c",
+                "conf/nginx.conf",
+            ],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        )
+        # nginx 启动后自己会 daemonize，Popen 立即返回
+        time.sleep(1)
+        # 检查端口是否就绪
+        import socket as socket_mod
+
+        for _ in range(10):
+            try:
+                with socket_mod.create_connection(("127.0.0.1", 5166), timeout=0.5):
+                    return True, "前端 (nginx) 已启动，http://localhost:5166", None
+            except OSError:
+                time.sleep(0.5)
+
+        # 端口未就绪，读取 nginx 错误日志
+        err_log = nginx_home / "logs" / "error.log"
+        err_detail = ""
+        if err_log.exists():
+            err_detail = err_log.read_text(encoding="utf-8", errors="replace")[-1000:]
+        return False, f"nginx 启动失败（端口 5166 未就绪）\n{err_detail}", None
+    except Exception as e:
+        return False, f"nginx 启动失败: {e}", None
+
+
+def _win_stop_frontend() -> tuple[bool, str]:
+    """停止前端 (nginx)"""
+    nginx_exe = _win_find_nginx()
+    nginx_home = BROCA_HOME / "nginx"
+
+    # 方式1: nginx -s stop 优雅停止
+    if nginx_exe:
+        try:
+            subprocess.run(
+                [
+                    nginx_exe,
+                    "-p",
+                    str(nginx_home).replace("\\", "/") + "/",
+                    "-s",
+                    "stop",
+                ],
+                capture_output=True,
+                timeout=10,
+            )
+            time.sleep(1)
+        except Exception:
+            pass
+
+    # 方式2: 检查端口，若仍占用则 kill 进程
+    import socket as socket_mod
+
+    try:
+        with socket_mod.create_connection(("127.0.0.1", 5166), timeout=0.5):
+            # 端口仍占用，强制 kill nginx 进程
+            try:
+                import psutil
+
+                for proc in psutil.process_iter(["name", "cmdline"]):
+                    try:
+                        if proc.info["name"] and "nginx" in proc.info["name"].lower():
+                            proc.kill()
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+            except ImportError:
+                subprocess.run(
+                    ["taskkill", "/F", "/IM", "nginx.exe"],
+                    capture_output=True,
+                    timeout=10,
+                )
+            return True, "前端 (nginx) 已停止"
+    except OSError:
+        return True, "前端 (nginx) 已停止"
+
+
+def _win_frontend_running() -> bool:
+    """检查前端 (nginx) 是否在运行"""
+    import socket as socket_mod
+
+    try:
+        with socket_mod.create_connection(("127.0.0.1", 5166), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def _win_bare_start_services(wait: bool = True) -> dict[str, Any]:
+    """Windows (裸起): 启动后端和前端进程"""
+    _ensure_dirs()
+    state = _win_load_state()
+    details = []
+
+    # --- 后端 ---
+    backend_pid = state.get("backend")
+    if _win_is_process_alive(backend_pid):
+        details.append(f"后端已在运行 (PID: {backend_pid})")
+    else:
+        ok, msg, pid = _win_start_backend()
+        details.append(msg)
+        if not ok:
+            return {"success": False, "error": msg, "detail": "\n".join(details)}
+        state["backend"] = pid
+
+    # 等待后端端口就绪
+    if wait:
+        import socket as socket_mod
+
+        for _ in range(20):  # 最多 10 秒
+            try:
+                with socket_mod.create_connection(("127.0.0.1", 9000), timeout=0.5):
+                    break
+            except OSError:
+                time.sleep(0.5)
+
+    # --- 前端 (nginx) ---
+    install_info = _load_install_info()
+    if install_info.get("frontend_dist"):
+        if _win_frontend_running():
+            details.append("前端 (nginx) 已在运行，http://localhost:5166")
+        else:
+            ok, msg, pid = _win_start_frontend()
+            details.append(msg)
+            if not ok:
+                details.append("  提示: 可稍后手动执行 broca service start 重试")
+                # 前端失败不阻塞后端
+    else:
+        details.append("前端已跳过（安装时未构建）")
+
+    _win_save_state(state)
+
+    return {
+        "success": True,
+        "message": "后端服务已启动",
+        "detail": "\n".join(details),
+        "nginx": {"ok": _win_frontend_running(), "message": "nginx 前端服务"},
+    }
+
+
+def _win_bare_stop_services() -> dict[str, Any]:
+    """Windows (裸起): 停止所有服务进程"""
+    state = _win_load_state()
+    details = []
+
+    # 停止后端
+    backend_pid = state.get("backend")
+    if _win_is_process_alive(backend_pid):
+        _win_stop_process(backend_pid)
+        details.append(f"后端已停止 (PID: {backend_pid})")
+    state["backend"] = None
+
+    # 停止前端 (nginx)
+    if _win_frontend_running():
+        ok, msg = _win_stop_frontend()
+        details.append(msg)
+    else:
+        details.append("前端 (nginx) 未运行")
+
+    _win_save_state(state)
+
+    if not details:
+        details.append("没有运行中的服务")
+
+    return {
+        "success": True,
+        "message": "所有服务已停止",
+        "detail": "\n".join(details),
+        "nginx": {"ok": True, "message": "前端 (nginx) 已停止"},
+    }
+
+
+def _win_bare_status_services() -> dict[str, Any]:
+    """Windows (裸起): 查询服务状态"""
+    state = _win_load_state()
+    services = []
+
+    # 后端
+    backend_pid = state.get("backend")
+    backend_alive = _win_is_process_alive(backend_pid)
+    services.append(
+        {
+            "name": "backend",
+            "status": "RUNNING" if backend_alive else "STOPPED",
+            "pid": backend_pid if backend_alive else None,
+            "uptime": None,
+        }
+    )
+
+    # 前端 (nginx)
+    frontend_alive = _win_frontend_running()
+    services.append(
+        {
+            "name": "frontend (nginx)",
+            "status": "RUNNING" if frontend_alive else "STOPPED",
+            "pid": None,
+            "uptime": None,
+        }
+    )
+
+    return {
+        "supervisord_running": backend_alive or frontend_alive,
+        "services": services,
+    }
+
+
+# ---- Windows 分发入口：优先 NSSM 服务，否则裸起 ----
+
+
+def _win_start_services(wait: bool = True) -> dict[str, Any]:
+    """Windows: 启动服务（有 NSSM 服务用服务，否则裸起）"""
+    if _win_nssm_available():
+        logger.info("使用 NSSM Windows 服务管理")
+        return _win_nssm_start_services(wait=wait)
+    logger.info("未检测到 NSSM 服务，使用裸起进程管理")
+    return _win_bare_start_services(wait=wait)
+
+
+def _win_stop_services() -> dict[str, Any]:
+    """Windows: 停止服务（有 NSSM 服务用服务，否则裸起）"""
+    if _win_nssm_available():
+        logger.info("使用 NSSM Windows 服务管理")
+        return _win_nssm_stop_services()
+    logger.info("未检测到 NSSM 服务，使用裸起进程管理")
+    return _win_bare_stop_services()
+
+
+def _win_status_services() -> dict[str, Any]:
+    """Windows: 查询状态（有 NSSM 服务用服务，否则裸起）"""
+    if _win_nssm_available():
+        return _win_nssm_status_services()
+    return _win_bare_status_services()
+
+
 # ==================== 公开 API ====================
 
 
-def status_services() -> Dict[str, Any]:
+def status_services() -> dict[str, Any]:
     """
     查询所有服务的状态
 
@@ -684,7 +1386,11 @@ def status_services() -> Dict[str, Any]:
             ]
         }
     """
-    result: Dict[str, Any] = {
+    # Windows 使用原生进程管理
+    if _is_windows():
+        return _win_status_services()
+
+    result: dict[str, Any] = {
         "supervisord_running": False,
         "services": [],
     }
@@ -748,18 +1454,21 @@ def status_services() -> Dict[str, Any]:
                 }
             )
     else:
-        result["nginx"] = {"available": False, "enabled": False, "note": "安装时跳过了前端部署"}
+        result["nginx"] = {
+            "available": False,
+            "enabled": False,
+            "note": "安装时跳过了前端部署",
+        }
 
     return result
 
 
-def start_services(wait: bool = True) -> Dict[str, Any]:
+def start_services(wait: bool = True) -> dict[str, Any]:
     """
-    启动所有服务 (supervisord + 托管程序 + nginx 前端)
+    启动所有服务
 
-    1. 如果 supervisord 未运行，先启动它
-    2. 通过 supervisorctl 启动所有 program
-    3. 启动 nginx 前端服务
+    Linux: supervisord + 托管程序 + nginx 前端
+    Windows: 原生 subprocess 进程管理（uvicorn + http.server）
 
     Args:
         wait: 是否等待服务就绪
@@ -767,6 +1476,10 @@ def start_services(wait: bool = True) -> Dict[str, Any]:
     Returns:
         状态字典
     """
+    # Windows 使用原生进程管理（supervisor 不支持 Windows）
+    if _is_windows():
+        return _win_start_services(wait=wait)
+
     _ensure_dirs()
 
     # 检查配置文件
@@ -787,21 +1500,37 @@ def start_services(wait: bool = True) -> Dict[str, Any]:
             }
 
         try:
-            subprocess.run(
+            # Windows 上 nodaemon=true，supervisord 在前台运行，必须用 Popen 后台启动
+            proc = subprocess.Popen(
                 supervisord_cmd.split() + ["-c", str(SUPERVISOR_CONF)],
-                capture_output=True,
-                timeout=10,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
-        except subprocess.TimeoutExpired:
-            pass  # 正常
         except Exception as e:
             return {"success": False, "error": f"启动 supervisord 失败: {e}"}
 
         # 等待 socket 就绪
-        if not _wait_for_socket(timeout=5.0):
+        if not _wait_for_socket(timeout=8.0):
+            # 收集 supervisord 启动错误信息
+            err_detail = ""
+            try:
+                if proc.poll() is not None:
+                    # 进程已退出，读取错误输出
+                    _, stderr = proc.communicate(timeout=2)
+                    err_detail = f"\nsupervisord 退出码: {proc.returncode}"
+                    if stderr:
+                        err_detail += f"\nstderr: {stderr.decode('utf-8', errors='replace')[:2000]}"
+                else:
+                    # 进程还在但 socket 未就绪
+                    proc.terminate()
+                    err_detail = (
+                        "\nsupervisord 进程仍在运行但未监听端口，可能配置有问题"
+                    )
+            except Exception:
+                pass
             return {
                 "success": False,
-                "error": "supervisord 启动超时 (socket 未就绪)",
+                "error": f"supervisord 启动超时 (socket 未就绪){err_detail}",
             }
 
         logger.info("supervisord started")
@@ -838,17 +1567,20 @@ def start_services(wait: bool = True) -> Dict[str, Any]:
     }
 
 
-def stop_services() -> Dict[str, Any]:
+def stop_services() -> dict[str, Any]:
     """
     停止所有服务
 
-    1. 通过 supervisorctl 停止所有 program
-    2. 停止 supervisord
-    3. 停止 nginx 前端服务
+    Linux: 停止 supervisord 托管程序 + nginx
+    Windows: 停止原生管理的进程
 
     Returns:
         状态字典
     """
+    # Windows 使用原生进程管理
+    if _is_windows():
+        return _win_stop_services()
+
     nginx_ok = True
     nginx_msg = ""
 
@@ -904,7 +1636,7 @@ def stop_services() -> Dict[str, Any]:
     }
 
 
-def restart_services() -> Dict[str, Any]:
+def restart_services() -> dict[str, Any]:
     """
     重启所有服务
 
@@ -984,7 +1716,8 @@ def _generate_supervisor_config(
             "logfile_backups=10",
             "loglevel=info",
             f"pidfile={RUN_DIR}\\supervisord.pid",
-            "nodaemon=false",
+            # Windows 无 os.fork()，必须以非守护模式运行
+            "nodaemon=true",
         ]
         ctl_url = "http://127.0.0.1:9001"
         user_line = None
@@ -1007,28 +1740,34 @@ def _generate_supervisor_config(
         ctl_url = f"unix://{SUPERVISOR_DIR}/supervisor.sock"
         user_line = f"user={os.environ.get('USER', 'root')}"
 
-    lines = [
-        "; Broca - Supervisor 配置",
-        f"; 安装目录: {BROCA_HOME}",
-        f"; 生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
-        "",
-    ] + http_section + [
-        "",
-    ] + supervisor_section + [
-        "",
-        "[rpcinterface:supervisor]",
-        "supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface",
-        "",
-        "[supervisorctl]",
-        f"serverurl={ctl_url}",
-        "",
-        "; ====================",
-        "; Backend (FastAPI / Uvicorn)",
-        "; ====================",
-        "[program:backend]",
-        f"command={uvicorn_cmd} app.main:app --host 127.0.0.1 --port {backend_port} --log-level info",
-        f"directory={backend_dir}",
-    ]
+    lines = (
+        [
+            "; Broca - Supervisor 配置",
+            f"; 安装目录: {BROCA_HOME}",
+            f"; 生成时间: {time.strftime('%Y-%m-%d %H:%M:%S')}",
+            "",
+        ]
+        + http_section
+        + [
+            "",
+        ]
+        + supervisor_section
+        + [
+            "",
+            "[rpcinterface:supervisor]",
+            "supervisor.rpcinterface_factory = supervisor.rpcinterface:make_main_rpcinterface",
+            "",
+            "[supervisorctl]",
+            f"serverurl={ctl_url}",
+            "",
+            "; ====================",
+            "; Backend (FastAPI / Uvicorn)",
+            "; ====================",
+            "[program:backend]",
+            f"command={uvicorn_cmd} app.main:app --host 127.0.0.1 --port {backend_port} --log-level info",
+            f"directory={backend_dir}",
+        ]
+    )
     if user_line:
         lines.append(user_line)
     lines += [

@@ -10,10 +10,12 @@ import json
 import logging
 import threading
 import uuid
-from datetime import datetime, timezone
+from collections.abc import Callable
+from datetime import UTC, datetime
 from multiprocessing.connection import Client, Listener
-from typing import Any, Callable, Dict, Optional
+from typing import Any
 
+from broca.errors import CommunicationError
 from broca.session_runner.models import (
     IPCMessage,
     IPCMessageType,
@@ -22,21 +24,15 @@ from broca.session_runner.models import (
     get_ipc_family,
 )
 
-from broca.errors import CommunicationError
-
 logger = logging.getLogger(__name__)
 
 
 class IPCConnectionError(CommunicationError):
     """IPC 连接异常"""
 
-    pass
-
 
 class IPCTimeoutError(CommunicationError):
     """IPC 超时异常"""
-
-    pass
 
 
 class IPCServer:
@@ -51,10 +47,10 @@ class IPCServer:
         self.session_id = session_id
         self.address = get_ipc_address(session_id)
         self.family = get_ipc_family()
-        self._listener: Optional[Listener] = None
+        self._listener: Listener | None = None
         self._connection: Any = None
         self._running = False
-        self._handlers: Dict[IPCMessageType, Callable] = {}
+        self._handlers: dict[IPCMessageType, Callable] = {}
         # 保护连接读写的锁，防止 stop_session 与 _ipc_listener_loop 竞态
         self._lock = threading.Lock()
 
@@ -96,24 +92,59 @@ class IPCServer:
         if not self._listener:
             raise IPCConnectionError("IPC server not started")
 
-        import select
+        if self.family == "AF_UNIX":
+            import select
 
-        # 获取底层 socket 进行超时控制
-        sock = self._listener._listener._socket  # type: ignore[attr-defined]
+            # 获取底层 socket 进行超时控制（仅 Unix 的 SocketListener 有 _socket）
+            sock = self._listener._listener._socket  # type: ignore[attr-defined]
 
-        # 等待连接
-        ready = select.select([sock], [], [], timeout)
-        if not ready[0]:
-            raise IPCTimeoutError(
-                f"IPC connection timeout for {self.session_id} after {timeout}s"
+            # 等待连接
+            ready = select.select([sock], [], [], timeout)
+            if not ready[0]:
+                raise IPCTimeoutError(
+                    f"IPC connection timeout for {self.session_id} after {timeout}s"
+                )
+
+            try:
+                self._connection = self._listener.accept()
+            except Exception as e:
+                raise IPCConnectionError(f"Failed to accept IPC connection: {e}") from e
+        else:
+            # Windows AF_PIPE：底层是 PipeListener（命名管道），没有 socket 可供
+            # select，且 select.select 不支持 Windows 命名管道。
+            # 改用 daemon 线程执行阻塞 accept()，通过 join(timeout) 实现超时控制。
+            result: dict[str, Any] = {}
+
+            def _do_accept() -> None:
+                try:
+                    assert self._listener is not None
+                    result["connection"] = self._listener.accept()
+                except Exception as e:  # pragma: no cover - 平台相关
+                    result["error"] = str(e)
+
+            thread = threading.Thread(
+                target=_do_accept,
+                name=f"ipc-accept-{self.session_id}",
+                daemon=True,
             )
+            thread.start()
+            thread.join(timeout)
 
-        try:
-            self._connection = self._listener.accept()
-            logger.info("IPC connection accepted for session %s", self.session_id)
-            return True
-        except Exception as e:
-            raise IPCConnectionError(f"Failed to accept IPC connection: {e}") from e
+            if thread.is_alive():
+                # 超时：accept 线程仍在阻塞等待，close() 关闭 listener 后其自然退出
+                raise IPCTimeoutError(
+                    f"IPC connection timeout for {self.session_id} after {timeout}s"
+                )
+
+            if "error" in result:
+                raise IPCConnectionError(
+                    f"Failed to accept IPC connection: {result['error']}"
+                )
+
+            self._connection = result.get("connection")
+
+        logger.info("IPC connection accepted for session %s", self.session_id)
+        return True
 
     def send_message(self, msg: IPCMessage) -> None:
         """
@@ -135,7 +166,7 @@ class IPCServer:
                     f"IPC send failed (connection broken): {e}"
                 ) from e
 
-    def receive_message(self, timeout: float = 10.0) -> Optional[IPCMessage]:
+    def receive_message(self, timeout: float = 10.0) -> IPCMessage | None:
         """
         接收来自 Runner 进程的消息
 
@@ -253,7 +284,7 @@ class IPCClient:
         except (BrokenPipeError, ConnectionError, EOFError) as e:
             raise IPCConnectionError(f"IPC send failed (connection broken): {e}") from e
 
-    def receive_message(self, timeout: float = 10.0) -> Optional[IPCMessage]:
+    def receive_message(self, timeout: float = 10.0) -> IPCMessage | None:
         """
         接收来自 Web 进程的消息
 
@@ -296,15 +327,15 @@ class IPCClient:
 def create_ipc_message(
     msg_type: IPCMessageType,
     session_id: str,
-    payload: Optional[Dict[str, Any]] = None,
-    status: Optional[IPCStatusCode] = None,
+    payload: dict[str, Any] | None = None,
+    status: IPCStatusCode | None = None,
 ) -> IPCMessage:
     """创建 IPC 消息"""
     return IPCMessage(
         type=msg_type,
         session_id=session_id,
         message_id=uuid.uuid4().hex[:16],
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         payload=payload or {},
         status=status,
     )
@@ -313,14 +344,14 @@ def create_ipc_message(
 def create_response_message(
     request: IPCMessage,
     status: IPCStatusCode = IPCStatusCode.SUCCESS,
-    payload: Optional[Dict[str, Any]] = None,
+    payload: dict[str, Any] | None = None,
 ) -> IPCMessage:
     """创建对请求的响应消息"""
     return IPCMessage(
         type=IPCMessageType.RESPONSE,
         session_id=request.session_id,
         message_id=request.message_id,
-        timestamp=datetime.now(timezone.utc).isoformat(),
+        timestamp=datetime.now(UTC).isoformat(),
         payload=payload or {},
         status=status,
     )
