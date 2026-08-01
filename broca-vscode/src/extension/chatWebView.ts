@@ -26,7 +26,7 @@ export class ChatWebViewManager {
     this.apiClient.onAuthError = onAuthError ?? null
     this._onAuthError = onAuthError ?? null
 
-    // 监听 VS Code 窗口焦点变化（Alt+Tab 切出/切回）
+    // 监听 VS Code 窗口焦点变化（Alt+Tab 切出/切回），作为"离开/回到页面"的信号之一
     this._windowStateDisposable = vscode.window.onDidChangeWindowState((e) => {
       if (e.focused) {
         this._onWindowFocus()
@@ -73,11 +73,12 @@ export class ChatWebViewManager {
     }
   }
 
-  // 离开页面检测：用户离开页面超过超时时间（1分钟），回来时自动刷新
+  // 离开页面检测：只有"确实离开 + 确实回来"且离开超过 1 分钟才自动刷新。
+  // 离开信号：panel 隐藏（切换 VS Code 内标签页）或窗口失焦（Alt+Tab 切到其他应用）
+  // 回来信号：panel 重新可见，或窗口恢复焦点且该 panel 当前可见
   private static readonly LEAVE_TIMEOUT_MS = 60 * 1000 // 1 分钟
-  private webviewLeaveTimestamps = new Map<string, number>()
-  // 记录 panel 创建时间，兜底后台打开 panel 的场景
-  private panelCreatedTimestamps = new Map<string, number>()
+  // 记录每个 session 的"离开开始时间"（离开期间保留最早时间戳，回到页面时检查并清除）
+  private webviewAwayTimestamps = new Map<string, number>()
 
   async openChat(sessionId: string, executionId?: string) {
     try {
@@ -115,8 +116,6 @@ export class ChatWebViewManager {
 
       // Store panel reference
       this.panels.set(sessionId, panel)
-      // 记录 panel 创建时间，兜底后台打开 panel 的场景
-      this.panelCreatedTimestamps.set(sessionId, Date.now())
 
       // Handle panel disposal
       panel.onDidDispose(() => {
@@ -135,7 +134,7 @@ export class ChatWebViewManager {
         }
         this.sessionExecutionIds.delete(sessionId)
         this.panels.delete(sessionId)
-        this.panelCreatedTimestamps.delete(sessionId)
+        this.webviewAwayTimestamps.delete(sessionId)
       })
 
       // Handle messages from WebView
@@ -149,20 +148,23 @@ export class ChatWebViewManager {
       })
 
       // Handle view state changes (pause/resume polling, auto-refresh on long absence)
+      // 只有"确实离开 + 确实回来"才可能刷新：回来（可见）时检查离开时长，
+      // 避免"留在页面没离开"（无离开记录）或"离开页面未返回"（仍隐藏）时误刷新。
       panel.onDidChangeViewState((e) => {
         if (e.webviewPanel.visible) {
           this.startRunnerPolling(sessionId, panel)
-          // 检查是否超时：取离开时间和 panel 创建时间的较晚者
-          const leaveTs = this.webviewLeaveTimestamps.get(sessionId) || 0
-          const createTs = this.panelCreatedTimestamps.get(sessionId) || 0
-          const lastHidden = Math.max(leaveTs, createTs)
-          if (lastHidden > 0 && Date.now() - lastHidden >= ChatWebViewManager.LEAVE_TIMEOUT_MS) {
+          // 回到页面：若曾离开且离开超过 1 分钟则刷新
+          const awaySince = this.webviewAwayTimestamps.get(sessionId)
+          if (awaySince !== undefined && Date.now() - awaySince >= ChatWebViewManager.LEAVE_TIMEOUT_MS) {
             this.postToPanel(panel, { type: 'refreshSession' } as ExtensionToWebView)
           }
-          this.webviewLeaveTimestamps.delete(sessionId)
+          this.webviewAwayTimestamps.delete(sessionId)
         } else {
           this.stopRunnerPolling(sessionId)
-          this.webviewLeaveTimestamps.set(sessionId, Date.now())
+          // 页面隐藏：记录离开时间（若尚未记录则保留最早离开时间）
+          if (!this.webviewAwayTimestamps.has(sessionId)) {
+            this.webviewAwayTimestamps.set(sessionId, Date.now())
+          }
         }
       })
     } catch (error: any) {
@@ -170,25 +172,28 @@ export class ChatWebViewManager {
     }
   }
 
-  // 窗口失去焦点（Alt+Tab 切到其他应用）：记录所有激活 panel 的离开时间
+  // 窗口失去焦点（Alt+Tab 切到其他应用）：对每个 panel 记录"离开开始时间"。
+  // 若已处于离开状态则保留最早时间戳，避免被更晚的 blur 覆盖而缩短离开时长。
   private _onWindowBlur(): void {
     const now = Date.now()
     for (const [sessionId] of this.panels) {
-      this.webviewLeaveTimestamps.set(sessionId, now)
+      if (!this.webviewAwayTimestamps.has(sessionId)) {
+        this.webviewAwayTimestamps.set(sessionId, now)
+      }
     }
   }
 
-  // 窗口恢复焦点（切回 VS Code）：检查所有激活 panel 是否需要刷新
+  // 窗口恢复焦点（切回 VS Code）：仅当用户确实回到该页面（panel 当前可见）时才检查是否刷新。
+  // 若 panel 仍隐藏（用户切走页面后还没回来），只保留离开记录，不刷新、不清除。
   private _onWindowFocus(): void {
     const now = Date.now()
     for (const [sessionId, panel] of this.panels) {
-      const leaveTs = this.webviewLeaveTimestamps.get(sessionId) || 0
-      const createTs = this.panelCreatedTimestamps.get(sessionId) || 0
-      const lastHidden = Math.max(leaveTs, createTs)
-      if (lastHidden > 0 && now - lastHidden >= ChatWebViewManager.LEAVE_TIMEOUT_MS) {
+      if (!panel.visible) continue // 页面仍隐藏：用户还没回到该页面，不刷新
+      const awaySince = this.webviewAwayTimestamps.get(sessionId)
+      if (awaySince !== undefined && now - awaySince >= ChatWebViewManager.LEAVE_TIMEOUT_MS) {
         this.postToPanel(panel, { type: 'refreshSession' } as ExtensionToWebView)
       }
-      this.webviewLeaveTimestamps.delete(sessionId)
+      this.webviewAwayTimestamps.delete(sessionId)
     }
   }
 
@@ -2047,6 +2052,7 @@ export class ChatWebViewManager {
       this.disposeSession(sessionId)
     }
     this.panels.clear()
+    this.webviewAwayTimestamps.clear()
     // Cleanup window state listener
     if (this._windowStateDisposable) {
       this._windowStateDisposable.dispose()
