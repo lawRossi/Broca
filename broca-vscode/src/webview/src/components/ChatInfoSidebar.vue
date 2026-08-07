@@ -76,12 +76,12 @@ async function fetchStats() {
 
 function startStatsPolling() {
   stopStatsPolling()
-  // 每 30 秒轮询一次，仅在 runner 运行时才拉取数据
+  // 每 10 秒轮询一次，仅在 runner 运行时才拉取数据
   statsPollingTimer = setInterval(() => {
     if (chatStore.runnerAlive) {
       fetchStats()
     }
-  }, 30000)
+  }, 10000)
 }
 
 function stopStatsPolling() {
@@ -97,7 +97,7 @@ function startCountsPolling() {
     if (chatStore.runnerAlive) {
       fetchCounts()
     }
-  }, 30000)
+  }, 10000)
 }
 
 function stopCountsPolling() {

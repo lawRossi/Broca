@@ -133,8 +133,8 @@ export class SessionTreeProvider implements vscode.TreeDataProvider<SessionTreeI
     // Initialize context: filtering by workspace by default
     vscode.commands.executeCommand('setContext', 'broca:showAllSessions', false)
 
-    // Auto-refresh every 30 seconds
-    this.refreshInterval = setInterval(() => this.refresh(), 30000)
+    // Auto-refresh every 10 seconds
+    this.refreshInterval = setInterval(() => this.refresh(), 10000)
   }
 
   get showAllSessions(): boolean {

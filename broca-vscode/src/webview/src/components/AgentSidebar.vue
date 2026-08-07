@@ -103,7 +103,7 @@ function closeConfigDialog() {
   selectedModel.value = ''
   // 关闭弹窗后，仅在 runner 运行时恢复自动刷新
   if (chatStore.sessionId && chatStore.runnerAlive) {
-    startAutoRefresh(30000)
+    startAutoRefresh(10000)
   }
 }
 
@@ -227,7 +227,7 @@ onMounted(() => {
     }
   })
 
-  if (chatStore.sessionId && chatStore.runnerAlive) startAutoRefresh(30000)
+  if (chatStore.sessionId && chatStore.runnerAlive) startAutoRefresh(10000)
 })
 
 // 监听 Runner 状态变化，控制自动刷新启停
@@ -235,7 +235,7 @@ watch(
   () => chatStore.runnerAlive,
   (isAlive) => {
     if (isAlive && chatStore.sessionId) {
-      startAutoRefresh(30000)
+      startAutoRefresh(10000)
     } else {
       stopAutoRefresh()
     }
@@ -251,7 +251,7 @@ watch(
     if (newStatus === 'alive' && chatStore.sessionId) {
       if (!autoRefreshInterval.value) {
         refreshAgents()
-        startAutoRefresh(30000)
+        startAutoRefresh(10000)
       }
     }
   }
@@ -278,7 +278,7 @@ function refreshAgents() {
   loading.value = false
 }
 
-function startAutoRefresh(intervalMs: number = 30000) {
+function startAutoRefresh(intervalMs: number = 10000) {
   if (autoRefreshInterval.value) stopAutoRefresh()
   autoRefreshInterval.value = window.setInterval(() => {
     if (chatStore.sessionId && !loading.value) {
@@ -297,7 +297,7 @@ function stopAutoRefresh() {
 watch(
   () => chatStore.sessionId,
   (newId) => {
-    if (newId && chatStore.runnerAlive) startAutoRefresh(30000)
+    if (newId && chatStore.runnerAlive) startAutoRefresh(10000)
     else stopAutoRefresh()
   }
 )
