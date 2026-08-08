@@ -606,6 +606,15 @@ class LoopEngine:
         except (ToolError, BrocaError) as e:
             logger.error(f"Tool execution failed: {e}")
             return ToolResult(status=ToolStatus.ERROR, content=e.to_user_message())
+        except asyncio.TimeoutError:
+            timeout = self._get_tool_execution_timeout(tool_name)
+            logger.error(
+                f"Tool '{tool_name}' execution timed out after {timeout}s"
+            )
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Tool {tool_name} execution timed out after {timeout}s",
+            )
         except asyncio.CancelledError:
             logger.info("Tool execution cancelled by user")
             raise
@@ -639,6 +648,15 @@ class LoopEngine:
             logger.error(f"Tool execution failed: {e}")
             tool_result = ToolResult(
                 status=ToolStatus.ERROR, content=e.to_user_message()
+            )
+        except asyncio.TimeoutError:
+            timeout = self._get_tool_execution_timeout(tool_name)
+            logger.error(
+                f"Tool '{tool_name}' execution timed out after {timeout}s"
+            )
+            tool_result = ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Tool {tool_name} execution timed out after {timeout}s",
             )
         except asyncio.CancelledError:
             logger.info("Tool execution cancelled by user")
