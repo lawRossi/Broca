@@ -258,51 +258,63 @@ class CrewService:
                                message 包含成功/失败原因描述
 
         """
+        # 第1步：短事务读取记录后立即提交，释放 SQLite SHARED 读锁。
+        # 关键：不能在 IPC 等待期间持有读事务——否则会阻塞 runner 进程
+        # 在 abort 收尾时的写提交（回滚日志模式下 EXCLUSIVE 锁被 SHARED 锁阻塞），
+        # 超过 busy_timeout 后 runner 报 "database is locked"。
         async with db_manager.get_session() as session:
             record = await session.get(CrewExecution, execution_id)
             if not record:
                 return False, f"Execution '{execution_id}' not found"
+            session_id = record.session_id
+            crew_name = record.crew_name
+            await session.commit()
 
-            # 向 runner 发送中止命令，并检查是否成功送达
-            response = await self._runner_manager.send_command(
-                session_id=record.session_id,
-                msg_type=IPCMessageType.CMD_ABORT_CREW,
-                payload={"crew_id": record.crew_name, "execution_id": execution_id},
+        # 第2步：向 runner 发送中止命令（此时不持有任何数据库连接/锁）
+        response = await self._runner_manager.send_command(
+            session_id=session_id,
+            msg_type=IPCMessageType.CMD_ABORT_CREW,
+            payload={"crew_id": crew_name, "execution_id": execution_id},
+        )
+
+        # 检查 runner 是否成功处理了中止命令
+        if response is None:
+            msg = (
+                f"Runner IPC not available for session {session_id}. "
+                f"The runner process may be dead or disconnected."
             )
+            logger.warning(f"Abort failed for execution {execution_id}: {msg}")
+            return False, msg
 
-            # 检查 runner 是否成功处理了中止命令
-            if response is None:
-                msg = (
-                    f"Runner IPC not available for session {record.session_id}. "
-                    f"The runner process may be dead or disconnected."
+        if isinstance(response, dict):
+            if response.get("success") is False:
+                error = response.get("error", "Unknown error")
+                logger.warning(
+                    f"Abort failed for execution {execution_id}: "
+                    f"runner reported: {error}"
                 )
-                logger.warning(f"Abort failed for execution {execution_id}: {msg}")
-                return False, msg
+                return False, error
+            if response.get("error"):
+                error = response["error"]
+                logger.warning(
+                    f"Abort failed for execution {execution_id}: "
+                    f"runner responded with error: {error}"
+                )
+                return False, error
 
-            if isinstance(response, dict):
-                if response.get("success") is False:
-                    error = response.get("error", "Unknown error")
-                    logger.warning(
-                        f"Abort failed for execution {execution_id}: "
-                        f"runner reported: {error}"
-                    )
-                    return False, error
-                if response.get("error"):
-                    error = response["error"]
-                    logger.warning(
-                        f"Abort failed for execution {execution_id}: "
-                        f"runner responded with error: {error}"
-                    )
-                    return False, error
-
+        # 第3步：新事务更新记录状态
+        async with db_manager.get_session() as session:
+            record = await session.get(CrewExecution, execution_id)
+            if not record:
+                return False, f"Execution '{execution_id}' not found"
             record.status = CrewExecutionStatus.ABORTED
             record.completed_at = datetime.now(UTC)
             session.add(record)
             await session.commit()
 
-            # 实时推送编排事件到前端
-            await _emit_crew_event("aborted", self._execution_to_dict(record), record.session_id)
-            return True, "Execution aborted successfully"
+        # 实时推送编排事件到前端（在事务提交、会话关闭之后进行）
+        await _emit_crew_event("aborted", self._execution_to_dict(record), record.session_id)
+        return True, "Execution aborted successfully"
 
     async def delete_execution(self, execution_id: str) -> bool:
         """删除编排执行记录"""
