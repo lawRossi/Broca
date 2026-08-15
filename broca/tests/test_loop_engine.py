@@ -11,6 +11,7 @@ LoopEngine 单元测试+集成测试
 - abort/reset 功能
 """
 
+import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,6 +21,7 @@ from broca.loop_engine import (
     ExecutionStatus,
     LoopEngine,
 )
+from broca.tools.tool import ToolResult, ToolStatus
 
 # ============================================================================
 # 测试 ExecutionStatus
@@ -258,3 +260,128 @@ class TestExecute:
 
         result = await loop_engine.execute(message=mock_message)
         assert result.status == ExecutionStatus.ERROR
+
+
+class TestSaveUserMessage:
+    """测试 _save_user_message（回归：from_agent 消息曾导致 setup context 失败）"""
+
+    @pytest.mark.asyncio
+    async def test_from_agent_returns_valid_message_id(self, loop_engine):
+        """from_agent=True 时必须返回有效的 message_id，且传给 save_message 的不是 None"""
+        mock_message = MagicMock()
+        mock_message.message_id = "msg-original"
+        mock_message.data = {"content": "task"}
+
+        user_message = {"role": "user", "content": "task"}
+
+        message_id = await loop_engine._save_user_message(
+            user_message=user_message,
+            message=mock_message,
+            turn_id="turn-1",
+            from_agent=True,
+        )
+
+        # 返回的 message_id 必须非 None，否则 _setup_execution_context 会误判失败
+        assert message_id is not None
+        assert message_id.startswith("msg_")
+        # 不应复用原消息 ID（避免主键冲突），且必须以非 None 传入 save_message
+        assert message_id != mock_message.message_id
+        saved_message_id = loop_engine.session_manager.save_message.call_args.kwargs[
+            "message_id"
+        ]
+        assert saved_message_id == message_id
+
+    @pytest.mark.asyncio
+    async def test_not_from_agent_keeps_original_message_id(self, loop_engine):
+        """from_agent=False 时保留原始 message_id"""
+        mock_message = MagicMock()
+        mock_message.message_id = "msg-original"
+        mock_message.data = {"content": "hello"}
+
+        user_message = {"role": "user", "content": "hello"}
+
+        message_id = await loop_engine._save_user_message(
+            user_message=user_message,
+            message=mock_message,
+            turn_id="turn-1",
+            from_agent=False,
+        )
+
+        assert message_id == "msg-original"
+        saved_message_id = loop_engine.session_manager.save_message.call_args.kwargs[
+            "message_id"
+        ]
+        assert saved_message_id == "msg-original"
+
+    @pytest.mark.asyncio
+    async def test_save_failure_returns_none(self, loop_engine):
+        """save_message 失败时返回 None"""
+        loop_engine.session_manager.save_message = AsyncMock(return_value=False)
+
+        mock_message = MagicMock()
+        mock_message.message_id = "msg-original"
+        mock_message.data = {"content": "hello"}
+
+        message_id = await loop_engine._save_user_message(
+            user_message={"role": "user", "content": "hello"},
+            message=mock_message,
+            turn_id="turn-1",
+            from_agent=True,
+        )
+
+        assert message_id is None
+
+
+class TestToolTimeout:
+    """测试工具执行超时处理（_execute_tool_with_allow / _execute_tool_with_ask）"""
+
+    class SlowTool:
+        """模拟一个永不返回的工具"""
+
+        async def execute(self, arguments, context):
+            await asyncio.sleep(30)
+            return ToolResult(status=ToolStatus.SUCCESS, content="done")
+
+    def _make_engine(self, loop_engine):
+        """配置一个带慢工具 + 短超时的引擎"""
+        loop_engine.tool_mapping["slow_tool"] = self.SlowTool()
+        loop_engine.tool_call_timeout = 0.05
+        return loop_engine
+
+    @pytest.mark.asyncio
+    async def test_allow_timeout_returns_error_result(self, loop_engine):
+        """allow 权限下工具超时返回 ToolResult(ERROR)，不抛异常"""
+        engine = self._make_engine(loop_engine)
+        result = await engine._execute_tool_with_allow(
+            "slow_tool", "{}", MagicMock()
+        )
+        assert result.status == ToolStatus.ERROR
+        assert "timed out" in result.content
+        assert "slow_tool" in result.content
+
+    @pytest.mark.asyncio
+    async def test_ask_timeout_returns_error_result(self, loop_engine):
+        """ask 权限下工具超时返回 ToolResult(ERROR)，不抛异常"""
+        engine = self._make_engine(loop_engine)
+        loop_engine.agent.ask_for_tool_permission = AsyncMock(
+            return_value=(True, None)
+        )
+        result, session_action = await engine._execute_tool_with_ask(
+            "slow_tool", "{}", MagicMock()
+        )
+        assert result.status == ToolStatus.ERROR
+        assert "timed out" in result.content
+        assert session_action is None
+
+    @pytest.mark.asyncio
+    async def test_single_tool_call_timeout_returns_error(self, loop_engine):
+        """_execute_single_tool_call 超时时返回 ERROR 而非向上抛异常"""
+        engine = self._make_engine(loop_engine)
+        tool_call = MagicMock()
+        tool_call.id = "call_1"
+        tool_call.function.name = "slow_tool"
+        tool_call.function.arguments = "{}"
+
+        result = await engine._execute_single_tool_call(tool_call, MagicMock())
+        assert result.status == ToolStatus.ERROR
+        assert "timed out" in result.content

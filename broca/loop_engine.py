@@ -1174,7 +1174,13 @@ class LoopEngine:
         message.data["from_agent"] = from_agent
         if user_message.get("raw_input"):
             message.data["raw_input"] = user_message["raw_input"]
-        message_id = message.message_id if not from_agent else None
+        # from_agent 消息预生成 message_id 并返回，避免 _setup_execution_context
+        # 因 message_id 为 None 而误判执行上下文设置失败（回归修复，见 104c8c2）
+        message_id = (
+            message.message_id
+            if not from_agent
+            else f"msg_{uuid.uuid4().hex[:16]}"
+        )
         saved = await self.session_manager.save_message(
             role=MessageRole.USER,
             content=json.dumps(user_message, ensure_ascii=False),
