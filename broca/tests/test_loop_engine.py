@@ -12,10 +12,11 @@ LoopEngine 单元测试+集成测试
 """
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from broca.errors import ErrorCode, LLMError
 from broca.loop_engine import (
     ExecutionResult,
     ExecutionStatus,
@@ -165,9 +166,10 @@ class TestLoopEngineInit:
         assert loop_engine.agent_id == "test-agent"
         assert loop_engine.session_id == "test-session"
         assert loop_engine.step_max_errors == 3
-        assert loop_engine.llm_retry_delay == 10
+        assert loop_engine.llm_retry_delay == 5
         assert loop_engine.tool_call_timeout == 120
         assert loop_engine._recent_tool_call_signatures == []
+        assert loop_engine._consecutive_rate_limit_errors == 0
 
     def test_abort_event_not_set(self, loop_engine):
         """测试 abort 事件初始未设置"""
@@ -188,6 +190,82 @@ class TestLoopEngineInit:
         assert loop_engine.abort_event.is_set() is False
         loop_engine.abort()
         assert loop_engine.abort_event.is_set() is True
+
+
+class TestRateLimitRetry:
+    """测试 LLM 限流自动重试"""
+
+    @staticmethod
+    def _rate_limit_error() -> LLMError:
+        return LLMError(
+            "请求频率过高，触发限流", error_code=ErrorCode.LLM_RATE_LIMIT
+        )
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_retry_then_success(self, loop_engine):
+        """限流后等待 5 秒重试，重试成功返回响应且计数清零"""
+        response = MagicMock()
+
+        loop_engine._call_llm_streaming = AsyncMock(
+            side_effect=[self._rate_limit_error(), response]
+        )
+
+        with patch("broca.loop_engine.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            result = await loop_engine._call_llm_with_retry()
+
+        assert result is response
+        mock_sleep.assert_awaited_once_with(5)
+        assert loop_engine._consecutive_rate_limit_errors == 0
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_exhausts_retries(self, loop_engine):
+        """连续限流超过 3 次后放弃，抛出 LLMError 结束 turn"""
+        err = self._rate_limit_error()
+        loop_engine._call_llm_streaming = AsyncMock(side_effect=[err, err, err, err])
+
+        with patch("broca.loop_engine.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            with pytest.raises(LLMError):
+                await loop_engine._call_llm_with_retry()
+
+        # 每次失败后重试前等待 5 秒，共 3 次（第 4 次失败直接放弃）
+        assert mock_sleep.await_count == 3
+        mock_sleep.assert_awaited_with(5)
+        assert loop_engine._consecutive_rate_limit_errors == 4
+
+    @pytest.mark.asyncio
+    async def test_rate_limit_counter_resets_on_success(self, loop_engine):
+        """调用成功后限流计数清零，下一次调用获得全新重试预算"""
+        response = MagicMock()
+
+        # 第一次调用：限流 2 次后成功
+        loop_engine._call_llm_streaming = AsyncMock(
+            side_effect=[self._rate_limit_error(), self._rate_limit_error(), response]
+        )
+        with patch("broca.loop_engine.asyncio.sleep", new=AsyncMock()):
+            result = await loop_engine._call_llm_with_retry()
+        assert result is response
+        assert loop_engine._consecutive_rate_limit_errors == 0
+
+        # 第二次调用（模拟同一 turn 内的下一步）：仍拥有完整 3 次重试预算
+        err = self._rate_limit_error()
+        loop_engine._call_llm_streaming = AsyncMock(side_effect=[err, err, err, err])
+        with patch("broca.loop_engine.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            with pytest.raises(LLMError):
+                await loop_engine._call_llm_with_retry()
+        assert mock_sleep.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_non_rate_limit_llm_error_not_retried(self, loop_engine):
+        """非限流 LLM 错误保持原行为：立即抛出，不重试"""
+        err = LLMError("API Key 认证失败", error_code=ErrorCode.LLM_AUTH_ERROR)
+        loop_engine._call_llm_streaming = AsyncMock(side_effect=[err, MagicMock()])
+
+        with patch("broca.loop_engine.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            with pytest.raises(LLMError):
+                await loop_engine._call_llm_with_retry()
+
+        mock_sleep.assert_not_awaited()
+        assert loop_engine._consecutive_rate_limit_errors == 0
 
 
 class TestDeadLoopDetection:

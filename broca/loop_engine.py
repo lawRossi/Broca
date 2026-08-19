@@ -20,7 +20,7 @@ from litellm import Message as LLMMessage
 
 from broca.context import Context
 from broca.context_compressor import ContextCompressor
-from broca.errors import BrocaError, LLMError, ToolError, ValidationError
+from broca.errors import BrocaError, ErrorCode, LLMError, ToolError, ValidationError
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
 from broca.session import (
@@ -101,7 +101,7 @@ class LoopEngine:
         session_memory_manager: Any = None,
         tool_permission_manager: Optional[ToolPermissionManager] = None,
         step_max_errors=3,
-        llm_retry_delay=10,
+        llm_retry_delay=5,
         tool_call_timeout=120,
         assign_task_timeout=1800,
     ):
@@ -164,6 +164,9 @@ class LoopEngine:
 
         # 死循环检测
         self._recent_tool_call_signatures: List[str] = []
+
+        # 限流连续失败计数（调用成功后清零）
+        self._consecutive_rate_limit_errors: int = 0
 
         # 允许调用的工具列表 (None 表示不限制)
         self.allowed_tools: Optional[List[str]] = None
@@ -305,7 +308,14 @@ class LoopEngine:
             return False
 
     async def _call_llm_with_retry(self) -> LLMMessage | None:
-        """调用 LLM 并支持重试，返回 LLM 响应消息"""
+        """调用 LLM 并支持重试，返回 LLM 响应消息
+
+        重试参数统一为 step_max_errors 次 / llm_retry_delay 秒：
+        - 限流 (LLM_RATE_LIMIT)：等待后自动重试，最多连续重试 step_max_errors 次，
+          某次调用成功后限流计数清零。
+        - 其他 LLMError：立即向上抛出，结束 turn。
+        - 超时/未知异常：按同一重试参数重试。
+        """
         errors = 0
         while errors < self.step_max_errors:
             if self.abort_event.is_set():
@@ -318,8 +328,33 @@ class LoopEngine:
                 )
                 if not response:
                     raise LLMError("LLM 调用返回空响应")
+                # 调用成功：限流连续失败计数清零
+                if self._consecutive_rate_limit_errors:
+                    self._consecutive_rate_limit_errors = 0
                 return response
-            except LLMError:
+            except LLMError as e:
+                if e.error_code == ErrorCode.LLM_RATE_LIMIT:
+                    self._consecutive_rate_limit_errors += 1
+                    if self._consecutive_rate_limit_errors > self.step_max_errors:
+                        logger.error(
+                            "LLM rate limited %d consecutive times, aborting turn",
+                            self._consecutive_rate_limit_errors,
+                        )
+                        raise
+                    logger.warning(
+                        "LLM rate limited (%d/%d), retrying in %ds",
+                        self._consecutive_rate_limit_errors,
+                        self.step_max_errors,
+                        self.llm_retry_delay,
+                    )
+                    await self._send_llm_error(
+                        f"请求频率过高，{self.llm_retry_delay} 秒后自动重试 "
+                        f"({self._consecutive_rate_limit_errors}/{self.step_max_errors})...",
+                        "LLM_RATE_LIMIT",
+                        "warning",
+                    )
+                    await asyncio.sleep(self.llm_retry_delay)
+                    continue
                 raise
             except asyncio.TimeoutError:
                 errors += 1
@@ -980,6 +1015,7 @@ class LoopEngine:
 
         self.abort_event.clear()
         self._recent_tool_call_signatures.clear()
+        self._consecutive_rate_limit_errors = 0
 
         try:
             if not await self._setup_execution_context(message, from_agent):
@@ -1280,6 +1316,7 @@ class LoopEngine:
         self.abort_event.clear()
         self.turn_id = None
         self.tool_permission_manager.clear_session_overrides()
+        self._consecutive_rate_limit_errors = 0
 
     async def _truncate_last_assistant_message_with_tool_calls(self):
         """
