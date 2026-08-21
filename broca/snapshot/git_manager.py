@@ -303,6 +303,8 @@ class GitManager:
             config.set_value("core", "longpaths", "true")
             config.set_value("core", "symlinks", "true")
             config.set_value("core", "fsmonitor", "false")
+            # 关闭非 ASCII 文件名转义，保证中文文件名原样输出
+            config.set_value("core", "quotepath", "false")
 
     def ensure_initialized(self) -> None:
         """确保 Git 仓库已初始化"""
@@ -454,8 +456,9 @@ class GitManager:
         env["GIT_DIR"] = str(self.repo_path / ".git")
         env["GIT_WORK_TREE"] = str(self.workspace_path)
 
-        # 构建命令字符串
-        cmd_str = "git " + " ".join(args)
+        # 注入 -c core.quotepath=false，确保非 ASCII（中文）文件名不被转义。
+        # 兜底场景：仓库配置缺失或被外部修改时依然生效。
+        cmd_str = "git -c core.quotepath=false " + " ".join(args)
 
         # 执行命令
         process = await asyncio.create_subprocess_shell(

@@ -6,9 +6,63 @@ Patch 计算模块
 
 from typing import Any, Dict, List, Optional
 
+import re
+
 import git
 
 from .git_manager import GitManager
+
+# 匹配 git 输出中的路径 token：带引号的 C 转义路径 或 普通 token
+_GIT_PATH_TOKEN_RE = re.compile(r'"(?:[^"\\]|\\.)*"|\S+')
+
+
+def _unquote_git_path(path: str) -> str:
+    """还原 git 输出中被引号包裹的转义路径。
+
+    git 默认 (core.quotepath=true) 会把非 ASCII 文件名输出为
+    "a/\\344\\270\\255\\346\\226\\207.txt" 形式，此函数将其还原为原始 UTF-8 路径。
+    """
+    if not (len(path) >= 2 and path.startswith('"') and path.endswith('"')):
+        return path
+    body = path[1:-1]
+    out = bytearray()
+    i = 0
+    while i < len(body):
+        ch = body[i]
+        if ch == "\\" and i + 1 < len(body):
+            nxt = body[i + 1]
+            if nxt in ("\\", '"'):
+                out.extend(nxt.encode("utf-8"))
+                i += 2
+                continue
+            if nxt == "t":
+                out.append(0x09)
+                i += 2
+                continue
+            if nxt == "n":
+                out.append(0x0A)
+                i += 2
+                continue
+            m = re.match(r"[0-7]{1,3}", body[i + 1 :])
+            if m:
+                out.append(int(m.group(0), 8))
+                i += 1 + len(m.group(0))
+                continue
+        out.extend(ch.encode("utf-8"))
+        i += 1
+    try:
+        return out.decode("utf-8")
+    except UnicodeDecodeError:
+        return out.decode("utf-8", errors="replace")
+
+
+def _strip_diff_prefix(path: str) -> str:
+    """去掉 diff 路径的 a/ 或 b/ 前缀（仅一层），/dev/null 原样返回。"""
+    if path in ("/dev/null", "dev/null"):
+        return path
+    if path[:2] in ("a/", "b/"):
+        return path[2:]
+    return path
 
 
 class PatchCalculator:
@@ -155,12 +209,13 @@ class PatchCalculator:
 
         for line in lines:
             if line.startswith("diff --git"):
-                # 新文件开始
-                parts = line.split()
-                if len(parts) >= 3:
+                # 新文件开始。路径可能含空格或被引号包裹（非 ASCII 文件名），
+                # 用 token 正则提取而非简单 split
+                tokens = _GIT_PATH_TOKEN_RE.findall(line[len("diff --git ") :])
+                if len(tokens) >= 2:
                     # 提取文件名，格式为 "a/path/to/file" 或 "b/path/to/file"
-                    file_a = parts[2][2:]  # 去掉 "a/"
-                    file_b = parts[3][2:] if len(parts) > 3 else ""  # 去掉 "b/"
+                    file_a = _strip_diff_prefix(_unquote_git_path(tokens[0]))
+                    file_b = _strip_diff_prefix(_unquote_git_path(tokens[1]))
 
                     # 暂存文件名，等看到 new/deleted file mode 行再确定类型
                     current_file = (
@@ -179,8 +234,10 @@ class PatchCalculator:
                 if current_file and current_file not in files_deleted:
                     files_deleted.append(current_file)
 
-            elif line.startswith("--- a/"):
-                # 修改文件（没有 new/deleted file mode 标记）
+            elif line.startswith("--- ") and not line.startswith("--- /dev/null"):
+                # 修改文件（没有 new/deleted file mode 标记）。
+                # 注意：非 ASCII 路径会被引号包裹（--- "a/中文.txt"），
+                # 因此只检查 "--- " 前缀而非 "--- a/"
                 if (
                     current_file
                     and current_file not in files_added
