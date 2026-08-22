@@ -23,6 +23,12 @@ class UpdateSessionRequest(BaseModel):
     description: str | None = None
 
 
+class LLMConfigUpdateRequest(BaseModel):
+    """保存完整 LLM 配置的请求模型"""
+
+    config: dict[str, Any]
+
+
 class ApiResponse(BaseModel):
     code: int = 200
     msg: str | None = ""

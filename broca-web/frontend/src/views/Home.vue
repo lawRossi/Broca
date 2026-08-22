@@ -288,7 +288,7 @@ onMounted(async () => {
           </div>
 
           <!-- 功能导航 -->
-          <div class="mt-8 grid grid-cols-1 sm:grid-cols-4 gap-4">
+          <div class="mt-8 grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-5 gap-4">
             <router-link
               to="/sessions"
               class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all"
@@ -323,6 +323,15 @@ onMounted(async () => {
               <div class="text-2xl mb-2">📁</div>
               <h4 class="font-semibold text-gray-900">File Browser</h4>
               <p class="text-sm text-gray-600 mt-1">Browse and manage files</p>
+            </router-link>
+
+            <router-link
+              to="/settings"
+              class="card hover-lift p-4 text-center border border-gray-200 rounded-lg hover:border-primary-300 transition-all"
+            >
+              <div class="text-2xl mb-2">⚙️</div>
+              <h4 class="font-semibold text-gray-900">LLM 配置</h4>
+              <p class="text-sm text-gray-600 mt-1">管理 LLM 提供商与模型</p>
             </router-link>
           </div>
 
