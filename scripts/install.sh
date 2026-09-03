@@ -122,11 +122,23 @@ fi
 info "Python: $($PYTHON --version)"
 
 # --- pip ---
-if ! $PYTHON -m pip --version &>/dev/null; then
+# 检测 pip：优先使用当前 Python 的 -m pip 模块；
+# 若该 Python 未绑定 pip 模块（多版本共存或系统仅提供 pip/pip3 命令），
+# 回退到系统 pip / pip3 命令，避免误报"pip 未安装"。
+PIP_CMD=""
+if $PYTHON -m pip --version &>/dev/null; then
+    PIP_CMD="$PYTHON -m pip"
+elif command -v pip &>/dev/null; then
+    PIP_CMD="pip"
+elif command -v pip3 &>/dev/null; then
+    PIP_CMD="pip3"
+fi
+
+if [[ -z "$PIP_CMD" ]]; then
     error "pip 未安装，请先安装 pip。"
     exit 1
 fi
-info "pip: $($PYTHON -m pip --version | awk '{print $2}')"
+info "pip: $($PIP_CMD --version | awk '{print $2}')"
 
 # --- Node.js / pnpm ---
 USE_PNPM=false
@@ -291,6 +303,21 @@ else
     BROCA_PYTHON="$BROCA_VENV/bin/python"
     BROCA_PIP="$BROCA_PYTHON -m pip"
     info "使用虚拟环境 Python: $($BROCA_PYTHON --version)"
+fi
+
+# 验证虚拟环境中 pip 可用；若缺失则用 ensurepip 补齐
+# （某些 Linux 发行版若缺 python3-venv/python3-pip 包，python -m venv 创建的 venv 不含 pip）
+if ! $BROCA_PIP --version &>/dev/null; then
+    info "虚拟环境缺少 pip，尝试使用 ensurepip 补齐..."
+    $BROCA_PYTHON -m ensurepip --upgrade 2>&1 || {
+        error "虚拟环境 pip 创建失败"
+        exit 1
+    }
+    if ! $BROCA_PIP --version &>/dev/null; then
+        error "虚拟环境 pip 仍不可用"
+        exit 1
+    fi
+    info "pip 已通过 ensurepip 补齐: $($BROCA_PIP --version | awk '{print $2}')"
 fi
 
 # 升级 pip
