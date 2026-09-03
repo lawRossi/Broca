@@ -70,6 +70,9 @@ class RunnerManager:
             self._event_handlers: Dict[str, List[Callable]] = {}
             # 心跳监控任务
             self._heartbeat_monitor_task: Optional[asyncio.Task] = None
+            # 心跳上报的 agent 状态缓存: {session_id: {agent_id: status}}
+            # 用于变更检测，避免每次心跳都产生无效 DB 写入
+            self._agent_status_cache: Dict[str, Dict[str, str]] = {}
             # 日志目录
             self._log_dir = Path.home() / ".broca/logs/runners"
 
@@ -570,6 +573,9 @@ class RunnerManager:
         if runner_info:
             runner_info.status = RunnerStatus.DEAD
 
+        # 清理心跳状态缓存，避免 session 重启后残留旧数据影响变更检测
+        self._agent_status_cache.pop(session_id, None)
+
         # 清理 IPC socket 文件
         await self._cleanup_ipc_resources(session_id)
 
@@ -739,6 +745,16 @@ class RunnerManager:
                     runner_info.status = RunnerStatus(status_str)
                 except ValueError:
                     pass
+
+            # 将心跳上报的 agent 状态同步到 DB（仅变化时写入）
+            # 心跳每 5s 上报一次各 agent 的实时状态，作为 DB 中 agent_status 的
+            # 权威来源：短暂断线重连、心跳超时误判等场景下可自动自愈，
+            # 避免前端轮询读到过期的 disconnected 状态
+            agent_statuses = msg.payload.get("agent_statuses")
+            if isinstance(agent_statuses, dict) and agent_statuses:
+                asyncio.ensure_future(
+                    self._sync_agent_statuses(session_id, agent_statuses)
+                )
             # DB 持久化由心跳监控循环定期统一处理
 
         elif msg.type == IPCMessageType.EVT_ERROR:
@@ -963,11 +979,68 @@ class RunnerManager:
                         len(agents),
                         session_id,
                     )
+            # 清除状态缓存，确保后续心跳恢复时能重新同步真实状态
+            # （否则缓存与心跳 payload 相同会跳过写入，DB 永远停留在 disconnected）
+            self._agent_status_cache.pop(session_id, None)
         except Exception as e:
             logger.error(
                 "Failed to mark agents disconnected for session %s: %s",
                 session_id,
                 e,
+            )
+
+    async def _sync_agent_statuses(
+        self, session_id: str, agent_statuses: Dict[str, str]
+    ) -> None:
+        """将 Runner 心跳上报的 agent 状态同步到数据库
+
+        心跳每 5s 携带一次 {agent_id: status} 映射。通过变更检测，
+        仅当状态与上次同步结果不同时才写库，避免频繁无效 IO。
+
+        该机制保证 DB 中的 agent_status 能在断线重连、心跳超时误判等
+        场景下自动恢复为 Runner 上报的真实状态（自愈）。
+
+        Args:
+            session_id: Session ID
+            agent_statuses: {agent_id: status} 映射
+        """
+        cached = self._agent_status_cache.get(session_id)
+        if cached == agent_statuses:
+            return
+
+        changed_count = 0
+        try:
+            from sqlmodel import select
+
+            from broca.session.database import db_manager
+            from broca.session.models import Agent
+
+            async with db_manager.get_session() as session:
+                stmt = select(Agent).where(Agent.session_id == session_id)
+                result = await session.exec(stmt)
+                agents = result.all()
+                changed = []
+                for agent in agents:
+                    new_status = agent_statuses.get(agent.agent_id)
+                    if new_status and new_status != agent.agent_status:
+                        agent.agent_status = new_status
+                        changed.append(agent)
+                if changed:
+                    changed_count = len(changed)
+                    session.add_all(changed)
+                    await session.commit()
+
+            # 仅在成功后更新缓存；写库失败时保留旧缓存以便下次重试
+            self._agent_status_cache[session_id] = dict(agent_statuses)
+            if changed_count:
+                logger.debug(
+                    "Synced %d agent statuses from heartbeat for session %s",
+                    changed_count,
+                    session_id,
+                )
+        except Exception as e:
+            logger.error(
+                "Failed to sync agent statuses for session %s: %s", session_id, e
             )
 
     async def _ipc_listener_loop(self, session_id: str) -> None:

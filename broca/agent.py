@@ -202,6 +202,11 @@ class Agent:
         # 注册断连事件：SocketIO 底层检测到连接断开时，
         # 立即将 agent 状态持久化为 disconnected
         self.communicator.register_event_handler("disconnect", self._on_disconnected)
+        # 注册连接/重连成功事件：网络抖动导致短暂断线后 SocketIOClient 自动重连，
+        # 此时 start() 循环中 is_connected() 已为 True，不会再次调用 connect()，
+        # 若不在此处恢复状态，DB 中会残留过期的 disconnected 状态，
+        # 导致前端轮询时误显示"断开连接"
+        self.communicator.register_event_handler("connect", self._on_connected)
 
         from broca.tools.agent_interaction import AskUserToolManager
 
@@ -287,6 +292,21 @@ class Agent:
             "Agent %s socket disconnected, marking as disconnected", self.agent_id
         )
         await self._set_status(self.STATUS_DISCONNECTED)
+
+    async def _on_connected(self):
+        """Handle Socket.io connect/reconnect event — restore status after reconnection.
+
+        SocketIOClient 连接（含自动重连）成功后触发 "connect" 事件。
+        仅当当前状态为 disconnected 时才恢复为 idle：
+        - 避免覆盖任务执行中的 running 状态
+        - 初始连接时 start() -> connect() 已设置 idle，此处幂等
+        """
+        if self.status == self.STATUS_DISCONNECTED:
+            logger.info(
+                "Agent %s socket (re)connected, restoring status to idle",
+                self.agent_id,
+            )
+            await self._set_status(self.STATUS_IDEL)
 
     async def ask_for_permission(self, message: str) -> bool:
         """

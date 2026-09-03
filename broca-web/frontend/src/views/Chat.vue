@@ -35,6 +35,18 @@ const isAgentOrchestration = computed(() => {
 // 编排执行 ID（从 query 参数 ?execution_id=xxx 读取）
 const executionId = computed(() => route.query.execution_id as string | undefined)
 
+// 编排是否执行中：存在任一活跃 turn 即为执行中
+// - 实时：socket turn_start/turn_end 事件维护 isActive
+// - 刷新/进入页面：loadTurnHistory 从 API 恢复（is_active ?? !ended_at）
+const isOrchestrationExecuting = computed(() => {
+  return chatStore.turnSummaries.some((t) => t.isActive)
+})
+
+// 编排会话输入禁用条件：编排执行中 或 runner 未运行
+const showOrchestrationBanner = computed(() => {
+  return isAgentOrchestration.value && (isOrchestrationExecuting.value || !chatStore.runnerAlive)
+})
+
 // 加载会话信息
 const loadSessionInfo = async () => {
   const sessionId = chatStore.sessionId || chatStore.urlSessionId
@@ -135,13 +147,19 @@ onUnmounted(() => {
           }"
         >
           <ChatMessageList />
-          <!-- 编排会话只读，隐藏输入框 -->
-          <template v-if="isAgentOrchestration">
+          <!-- 编排会话：执行中或 runner 未运行时显示提示横幅（禁用输入），其余情况启用输入 -->
+          <template v-if="showOrchestrationBanner">
             <div
-              class="flex items-center justify-center gap-2 py-3 px-4 bg-purple-50 border-t border-purple-100 text-sm text-purple-600"
+              class="flex items-center justify-center gap-2 py-3 px-4 border-t text-sm"
+              :class="
+                isOrchestrationExecuting
+                  ? 'bg-purple-50 border-purple-100 text-purple-600'
+                  : 'bg-amber-50 border-amber-100 text-amber-600'
+              "
             >
               <el-icon><Connection /></el-icon>
-              <span>此会话为 Agent 编排会话，聊天仅用于查看执行日志</span>
+              <span v-if="isOrchestrationExecuting">Agent 编排执行中，暂无法发送消息</span>
+              <span v-else>Runner 未运行，请先启动进程后再发送消息</span>
               <el-button size="small" type="primary" plain @click="$router.push('/crews')"> 返回编排管理 </el-button>
             </div>
           </template>

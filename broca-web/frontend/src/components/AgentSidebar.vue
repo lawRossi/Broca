@@ -394,10 +394,10 @@ onUnmounted(() => {
           <div class="flex items-center gap-1">
             <el-tag
               size="small"
-              :type="(agent.status ? statusColors[agent.status] : 'info') as any"
+              :type="(agent.status ? statusColors[agent.status] : 'warning') as any"
               class="!text-xs !px-2 !py-0 !h-5"
             >
-              {{ getStatusText(agent.status || 'disconnected') }}
+              {{ getStatusText(agent.status || 'connecting') }}
             </el-tag>
             <el-tooltip v-if="agent.status === 'running'" content="中断此Agent" placement="top" :show-after="300">
               <el-button
