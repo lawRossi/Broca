@@ -14,6 +14,11 @@
 
 set -euo pipefail
 
+# 获取当前用户名（避免 set -u 下 $USER 未定义时触发 "unbound variable"）
+# $USER 通常在登录 shell 中已定义，但经 sudo/su/env -i 或容器环境调用时可能缺失，
+# 用 id -un 作为可靠回退。
+USER="${USER:-$(id -un)}"
+
 # ---- 颜色 ----
 RED='\033[0;31m'
 GREEN='\033[0;32m'
