@@ -254,7 +254,12 @@ class VisibilityFilterDialog(ModalScreen):
 
 
 class AgentConfigDialog(ModalScreen):
-    """Modal dialog for editing agent configuration."""
+    """Modal dialog for editing agent configuration.
+
+    Provider / Model 下拉选项从后端动态加载（GET /api/config/llm/providers、
+    GET /api/config/llm/models/{provider}），而不是硬编码的固定列表，
+    保证与运行时 llm_config.json 一致。
+    """
 
     def __init__(self, agent: Dict[str, Any], **kwargs):
         """Initialize config dialog.
@@ -264,6 +269,16 @@ class AgentConfigDialog(ModalScreen):
         """
         super().__init__(**kwargs)
         self._agent = agent
+        from broca_tui.api.session import SessionAPI
+
+        self._api = SessionAPI()
+        # 当前 agent 已有的 provider / model，用于打开时预选
+        self._current_provider: Optional[str] = agent.get("provider")
+        if self._current_provider is None:
+            self._current_provider = agent.get("agent_config", {}).get("provider")
+        self._current_model: Optional[str] = agent.get("model")
+        if self._current_model is None:
+            self._current_model = agent.get("agent_config", {}).get("model")
 
     def compose(self) -> ComposeResult:
         """Create the dialog layout."""
@@ -273,25 +288,19 @@ class AgentConfigDialog(ModalScreen):
 
             # Provider + Model 同一行（不要 label，下拉已有提示文字）
             with Horizontal(classes="dialog-select-row", id="provider-model-row"):
+                # 初始为加载占位，on_mount 后动态填充（provider 列表来自后端配置）
                 yield Select(
-                    [(p, p) for p in ["openai", "anthropic", "google", "azure"]],
-                    prompt="Select provider...",
+                    [("加载中...", "")],
+                    prompt="加载提供商...",
                     id="provider-select",
                     classes="dialog-select",
                 )
                 yield Select(
-                    [
-                        (m, m)
-                        for m in [
-                            "gpt-4",
-                            "gpt-3.5-turbo",
-                            "claude-3-opus",
-                            "claude-3-sonnet",
-                        ]
-                    ],
-                    prompt="Select model...",
+                    [("加载中...", "")],
+                    prompt="加载模型...",
                     id="model-select",
                     classes="dialog-select",
+                    disabled=True,
                 )
 
             # JSON config editor（撑满剩余空间）
@@ -305,6 +314,100 @@ class AgentConfigDialog(ModalScreen):
             with Horizontal(classes="dialog-actions dialog-actions-config"):
                 yield Button("保存", id="btn-save", variant="primary")
                 yield Button("取消", id="btn-cancel", classes="cancel-btn")
+
+    async def on_mount(self) -> None:
+        """Fetch available LLM providers on mount（动态加载 provider 列表）。"""
+        try:
+            providers = await self._api.get_llm_providers()
+            options: list[tuple[str, str | None]] = []
+            for p in providers:
+                label = p.get("name", p["id"])
+                options.append((label, p["id"]))
+
+            provider_select = self.query_one("#provider-select", Select)
+
+            # 当前 provider 不在后端列表中时，也追加展示（保证能预选并查看）
+            if (
+                self._current_provider
+                and self._current_provider not in [opt[1] for opt in options]
+                and not any(opt[0] == self._current_provider for opt in options)
+            ):
+                options.append((self._current_provider, self._current_provider))
+
+            provider_select.set_options(options)
+            provider_select.prompt = "选择提供商..."
+            provider_select.disabled = False
+
+            # 预选当前 provider（若存在于配置）
+            if self._current_provider:
+                provider_select.value = self._current_provider
+                await self._load_models(self._current_provider)
+        except Exception:
+            # If can't fetch providers, keep the prompt placeholder
+            self.notify("无法加载 LLM 提供商列表", severity="warning", timeout=3)
+
+    async def _load_models(self, provider: str) -> None:
+        """Fetch models for the selected provider and pre-select current model.
+
+        注意：不在 finally 中关闭 self._api——该实例在整个对话框生命周期内复用，
+        统一在 on_unmount 中关闭。
+        """
+        model_select = self.query_one("#model-select", Select)
+        try:
+            model_select.disabled = True
+            model_select.set_options([("加载中...", "")])
+            model_select.prompt = "加载模型..."
+            models = await self._api.get_llm_models(provider)
+
+            options: list[tuple[str, str | None]] = []
+            for m in models:
+                label = m.get("name", m["id"])
+                options.append((label, m["id"]))
+
+            # 当前 model 不在该 provider 列表中时，也追加展示（保证能预选）
+            if (
+                self._current_model
+                and self._current_model not in [opt[1] for opt in options]
+                and not any(opt[0] == self._current_model for opt in options)
+            ):
+                options.append((self._current_model, self._current_model))
+
+            model_select.set_options(options)
+            model_select.prompt = "选择模型..."
+
+            # 预选当前 model（若存在于该 provider 下）
+            if self._current_model:
+                model_select.value = self._current_model
+            model_select.disabled = False
+        except Exception:
+            model_select.set_options([("无法加载模型", "")])
+            model_select.prompt = "无法加载模型"
+            model_select.disabled = True
+            self.notify(
+                f"无法加载 {provider} 的模型列表", severity="warning", timeout=3
+            )
+
+    async def on_select_changed(self, event: Select.Changed) -> None:
+        """Handle Select changes — provider selection triggers model loading."""
+        if event.select.id == "provider-select":
+            provider: str | None = event.value  # type: ignore[assignment]
+            if provider:
+                await self._load_models(provider)
+            else:
+                # 无 provider — 清空 model 下拉
+                model_select = self.query_one("#model-select", Select)
+                model_select.set_options([])
+                model_select.prompt = "选择模型..."
+                model_select.disabled = True
+
+    def on_unmount(self) -> None:
+        """Close the API session when the dialog closes."""
+        try:
+            import asyncio
+
+            asyncio.ensure_future(self._api.close())
+        except Exception:
+            pass
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""

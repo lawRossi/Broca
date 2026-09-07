@@ -10,6 +10,8 @@ Covers:
 
 
 
+import pytest
+
 from broca_tui.stores.chat_store import TurnSummary
 from broca_tui.widgets.turn_card import TurnCard
 
@@ -265,3 +267,112 @@ class TestOrchestrationBanner:
         from broca_tui.widgets.orchestration_banner import OrchestrationBanner
         msg = OrchestrationBanner.NavigateToCrew(session_id="test-session")
         assert msg.session_id == "test-session"
+
+
+# ============================================================================
+# AgentConfigDialog tests (dynamic provider/model loading)
+# ============================================================================
+
+class TestAgentConfigDialog:
+    """Test that AgentConfigDialog loads provider/model from backend config.
+
+    对应 bug 修复：provider / model 下拉列表必须来自后端
+    GET /api/config/llm/providers 与 /api/config/llm/models/{provider}，
+    而不是硬编码的固定列表。
+    """
+
+    def test_compose_no_legacy_hardcoded_values(self):
+        """Dialog compose 中不应再包含旧的硬编码 provider/model 列表。"""
+        from broca_tui.widgets.agent_sidebar import AgentConfigDialog
+        import inspect
+
+        src = inspect.getsource(AgentConfigDialog.compose)
+        # 旧的硬编码 provider / model 不应再出现
+        for old in ("openai", "anthropic", "google", "azure",
+                    "gpt-4", "gpt-3.5-turbo", "claude-3-opus", "claude-3-sonnet"):
+            assert old not in src, f"硬编码 '{old}' 仍存在于 compose 源码中"
+
+    @pytest.mark.asyncio
+    async def test_on_mount_loads_providers_from_api(self):
+        """on_mount 应从 get_llm_providers 动态加载 provider 选项。"""
+        from unittest.mock import AsyncMock, patch
+        from textual.app import App
+        from broca_tui.widgets.agent_sidebar import AgentConfigDialog
+
+        provider_data = [
+            {"id": "deepseek", "name": "DeepSeek"},
+            {"id": "nvidia", "name": "NVIDIA"},
+            {"id": "z-ai", "name": "Z-AI"},
+        ]
+        model_data = [
+            {"id": "deepseek-v4-flash", "name": "deepseek-v4-flash"},
+            {"id": "deepseek-v4-pro", "name": "deepseek-v4-pro"},
+        ]
+
+        class DialogApp(App):
+            def on_mount(self):
+                self.push_screen(
+                    AgentConfigDialog({"name": "TestAgent", "agent_id": "ag-1"})
+                )
+
+        with patch("broca_tui.api.session.SessionAPI.get_llm_providers",
+                   AsyncMock(return_value=provider_data)), \
+             patch("broca_tui.api.session.SessionAPI.get_llm_models",
+                   AsyncMock(return_value=model_data)):
+            app = DialogApp()
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                dialog = app.screen
+                from textual.widgets import Select
+                provider_select = dialog.query_one("#provider-select", Select)
+                options = provider_select._options
+                ids = [o[1] if isinstance(o, tuple) else o.value
+                       for o in options]
+                # 选项来自后端 API，且包含 deepseek / nvidia / z-ai
+                assert "deepseek" in ids
+                assert "nvidia" in ids
+                assert "z-ai" in ids
+                # 不应包含旧的硬编码 provider
+                assert "openai" not in ids
+
+    @pytest.mark.asyncio
+    async def test_provider_change_loads_models(self):
+        """切换 provider 时应动态加载对应模型的列表。"""
+        from unittest.mock import AsyncMock, patch
+        from textual.app import App
+        from textual.widgets import Select
+        from broca_tui.widgets.agent_sidebar import AgentConfigDialog
+
+        provider_data = [
+            {"id": "nvidia", "name": "NVIDIA"},
+            {"id": "z-ai", "name": "Z-AI"},
+        ]
+        # z-ai 的模型列表
+        zai_models = [
+            {"id": "glm-4.7", "name": "glm-4.7"},
+        ]
+
+        class DialogApp(App):
+            def on_mount(self):
+                self.push_screen(AgentConfigDialog({"name": "A", "agent_id": "a1"}))
+
+        with patch("broca_tui.api.session.SessionAPI.get_llm_providers",
+                   AsyncMock(return_value=provider_data)), \
+             patch("broca_tui.api.session.SessionAPI.get_llm_models",
+                   AsyncMock(return_value=zai_models)) as mock_models:
+            app = DialogApp()
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                dialog = app.screen
+                provider_select = dialog.query_one("#provider-select", Select)
+                # 切换到 z-ai provider
+                provider_select.value = "z-ai"
+                await pilot.pause()
+                model_select = dialog.query_one("#model-select", Select)
+                assert mock_models.await_count >= 1
+                # 最近一次调用使用 z-ai provider
+                assert mock_models.await_args.args[0] == "z-ai"
+                # 模型选项包含 glm-4.7
+                ids = [o[1] if isinstance(o, tuple) else o.value
+                       for o in model_select._options]
+                assert "glm-4.7" in ids
