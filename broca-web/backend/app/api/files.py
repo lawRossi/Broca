@@ -32,6 +32,28 @@ class FileListResponse(BaseModel):
     total: int
 
 
+class FileCompleteItem(BaseModel):
+    """路径补全建议项"""
+
+    name: str
+    path: str
+    is_dir: bool
+
+
+class FileCompleteResponse(BaseModel):
+    """路径补全响应"""
+
+    base: str
+    prefix: str
+    completions: list[FileCompleteItem]
+    total: int
+    truncated: bool = False
+
+
+# 补全条目数上限，超出截断（避免大目录响应过慢）
+MAX_COMPLETE_ITEMS = 200
+
+
 @router.get("/files", response_model=ApiResponse)
 async def list_files(path: str = ".") -> ApiResponse:
     """获取指定路径的文件列表
@@ -108,6 +130,84 @@ async def list_files(path: str = ".") -> ApiResponse:
         raise
     except Exception as e:
         logger.exception(f"Error listing files in {path}")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+@router.get("/files/complete", response_model=ApiResponse)
+async def complete_files(base: str = "", prefix: str = "") -> ApiResponse:
+    """文件路径补全（供前端输入 # 触发）
+
+    Args:
+        base: 补全根目录（通常为当前会话 workspace）；为空时使用后端 cwd
+        prefix: 相对 base 的路径前缀，如 "src/comp"、"src/"、""（空串 = 根目录）
+
+    Returns:
+        相对路径补全建议列表（path 相对 base，由后端拼接，前端零路径运算）
+    """
+    try:
+        # 解析 base：空 → cwd；否则 expanduser + resolve 为绝对路径
+        if not base:
+            base_path = Path.cwd()
+        else:
+            base_path = Path(base).expanduser().resolve()
+
+        empty_response = FileCompleteResponse(
+            base=str(base_path), prefix=prefix, completions=[], total=0
+        )
+
+        # base 不存在或不是目录 → 返回空列表
+        if not base_path.exists() or not base_path.is_dir():
+            return ApiResponse.success(empty_response.dict())
+
+        # prefix 校验：拒绝父目录穿越（..）与绝对路径（限制在根目录内）
+        prefix_path = Path(prefix)
+        if ".." in prefix_path.parts or prefix_path.is_absolute():
+            return ApiResponse.success(empty_response.dict())
+
+        # 拆分 prefix：「目录部分 + 名字前缀」
+        if prefix.endswith("/"):
+            dir_part = prefix.rstrip("/")
+            name_prefix = ""
+        else:
+            parent = prefix_path.parent
+            dir_part = "" if str(parent) == "." else str(parent)
+            name_prefix = prefix_path.name
+
+        # 列出 base/dir 下条目
+        target_dir = base_path / dir_part if dir_part else base_path
+        completions: list[FileCompleteItem] = []
+        if target_dir.exists() and target_dir.is_dir():
+            for item in target_dir.iterdir():
+                try:
+                    is_dir = item.is_dir()
+                    name = item.name
+                    # 按名字前缀过滤（startswith），空前缀不过滤
+                    if name_prefix and not name.startswith(name_prefix):
+                        continue
+                    # 相对路径 = dir/name（相对 base）
+                    rel_path = (Path(dir_part) / name).as_posix() if dir_part else name
+                    completions.append(FileCompleteItem(name=name, path=rel_path, is_dir=is_dir))
+                except (PermissionError, OSError) as e:
+                    logger.warning(f"Cannot access {item}: {e}")
+
+        # 排序：目录在前、文件在后，各自按 name.lower() 排序
+        completions.sort(key=lambda x: (not x.is_dir, x.name.lower()))
+
+        # 限制返回条数，超出截断并提示
+        truncated = len(completions) > MAX_COMPLETE_ITEMS
+        completions = completions[:MAX_COMPLETE_ITEMS]
+
+        response_data = FileCompleteResponse(
+            base=str(base_path),
+            prefix=prefix,
+            completions=completions,
+            total=len(completions),
+            truncated=truncated,
+        )
+        return ApiResponse.success(response_data.dict())
+
+    except Exception as e:
+        logger.exception(f"Error completing files: base={base}, prefix={prefix}")
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 

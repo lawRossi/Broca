@@ -154,6 +154,9 @@ class ChatScreen(Screen):
         header.is_agent_orchestration = is_orch
         message_list.set_session(self._session_id)
         info_sidebar.set_session(self._session_id, workspace=workspace)
+        if not is_orch:
+            # 将 workspace 传给 ChatInput 作为 # 路径补全根目录（空串 → 后端回退 cwd）
+            chat_input.set_workspace(workspace)
 
         # ── Path 1: Connect Socket.IO (best-effort, independent of turn loading) ──
         header.connection_status = "connecting"

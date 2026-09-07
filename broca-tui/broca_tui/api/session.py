@@ -247,6 +247,28 @@ class SessionAPI:
         except Exception:
             return []
 
+    async def complete_files(self, base: str, prefix: str) -> List[Dict[str, Any]]:
+        """Get file path completions for ChatInput # trigger.
+
+        Args:
+            base: Completion root directory (usually session workspace).
+                  Empty string → backend falls back to its cwd.
+            prefix: Relative path prefix (e.g. "src/comp", "src/", "" = root).
+
+        Returns:
+            List of completion dicts: {'name', 'path', 'is_dir'}, where path is
+            relative to base (backend assembles it, frontend does no path math).
+        """
+        try:
+            response = await self._client.get(
+                "/files/complete", params={"base": base, "prefix": prefix}
+            )
+            if isinstance(response, dict) and "completions" in response:
+                return response["completions"]
+            return []
+        except Exception:
+            return []
+
     async def close(self):
         """Close the underlying HTTP client."""
         await self._client.close()

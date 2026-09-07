@@ -241,6 +241,21 @@ export class ApiClient {
     return response.data.commands || response.data
   }
 
+  // ==================== Files Completion API ====================
+
+  async completeFiles(base: string, prefix: string): Promise<{
+    base: string
+    prefix: string
+    completions: Array<{ name: string; path: string; is_dir: boolean }>
+    total: number
+    truncated?: boolean
+  }> {
+    const response = await this.client.get('/files/complete', {
+      params: { base, prefix },
+    })
+    return response.data
+  }
+
   // ==================== Crew (Orchestration) API ====================
 
   async submitCrew(data: { yaml_content?: string; yaml_path?: string; session_id: string }): Promise<CrewExecution> {

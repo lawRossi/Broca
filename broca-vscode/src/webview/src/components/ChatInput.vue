@@ -93,6 +93,9 @@ onMessage((data: any) => {
   }
 })
 
+// Listen for files completion response (# 路径补全)
+onMessage(handleFilesReply)
+
 const showCommandSuggestions = ref(false)
 const commandSuggestions = ref<CommandInfo[]>([])
 const commandSearch = ref('')
@@ -100,11 +103,75 @@ const selectedCommandIndex = ref(-1)
 const commandSuggestionsRef = ref<HTMLElement>()
 const justSelectedCommand = ref(false)
 
-// 监听输入变化，检测 @mention 和 /command
+// ==================== # 文件路径补全 ====================
+interface PathCompletionItem {
+  name: string
+  path: string
+  is_dir: boolean
+}
+
+const showPathSuggestions = ref(false)
+const pathSuggestions = ref<PathCompletionItem[]>([])
+const selectedPathIndex = ref(-1)
+const pathSuggestionsRef = ref<HTMLElement>()
+const justSelectedPath = ref(false)
+// 请求序号与超时句柄：避免异步竞态，3s 未回复则隐藏列表
+let pathRequestSeq = 0
+let pathLatestPrefix = ''
+let pathRequestTimer: ReturnType<typeof setTimeout> | undefined
+
+// 更新 # 文件路径补全建议（通过扩展进程转发到后端 /files/complete）
+function updatePathSuggestions(text: string) {
+  const lastHash = text.lastIndexOf('#')
+  if (lastHash === -1) {
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    return
+  }
+
+  const afterHash = text.substring(lastHash + 1)
+
+  // # 后出现空格 → 视为补全结束，关闭列表
+  if (afterHash.includes(' ')) {
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    return
+  }
+
+  const seq = ++pathRequestSeq
+  pathLatestPrefix = afterHash
+  // 3s 未收到回包则隐藏列表（不展示 fallback 数据）
+  if (pathRequestTimer) clearTimeout(pathRequestTimer)
+  pathRequestTimer = setTimeout(() => {
+    if (seq === pathRequestSeq) {
+      showPathSuggestions.value = false
+      pathSuggestions.value = []
+      selectedPathIndex.value = -1
+    }
+  }, 3000)
+
+  postMessage({ type: 'listFiles', payload: { prefix: afterHash } })
+}
+
+// 处理扩展回包 type === 'files'
+function handleFilesReply(data: any) {
+  if (data.type !== 'files') return
+  const payload = data.payload || {}
+  // 竞态保护：仅采纳与最近一次请求前缀一致的回包
+  if (payload.prefix !== pathLatestPrefix) return
+  const completions: PathCompletionItem[] = Array.isArray(payload.completions) ? payload.completions : []
+  showPathSuggestions.value = completions.length > 0
+  pathSuggestions.value = completions
+  selectedPathIndex.value = completions.length > 0 ? 0 : -1
+}
+
+// 监听输入变化，检测 @mention、/command 与 # 文件路径
 watch(
   () => chatStore.inputText,
   (newValue) => {
-    if (justSelectedMention.value || justSelectedCommand.value) return
+    if (justSelectedMention.value || justSelectedCommand.value || justSelectedPath.value) return
 
     // ---- 检测 /command ----
     const slashIndex = newValue.lastIndexOf('/')
@@ -200,6 +267,16 @@ watch(
     } else {
       showMentionSuggestions.value = false
     }
+
+    // ---- 检测 # 文件路径补全（优先级低于 / 与 @，互斥）----
+    // 若 / 或 @ 列表当前已显示，则跳过 # 检测，保证同一时刻只显示一种列表
+    if (showCommandSuggestions.value || showMentionSuggestions.value) {
+      showPathSuggestions.value = false
+      pathSuggestions.value = []
+      selectedPathIndex.value = -1
+      return
+    }
+    updatePathSuggestions(newValue)
   }
 )
 
@@ -275,11 +352,59 @@ function handleMentionClick(event: MouseEvent, agentId: string, agentName: strin
   selectMention(agentId, agentName)
 }
 
-// 点击外部关闭 mention/command 列表
+// 选择 # 路径补全
+function selectPath(item: PathCompletionItem) {
+  const input = chatStore.inputText
+  const lastHash = input.lastIndexOf('#')
+  if (lastHash === -1) {
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    return
+  }
+
+  const before = input.substring(0, lastHash)
+  const after = input.substring(lastHash)
+  const spaceIndex = after.indexOf(' ')
+
+  let base = ''
+  if (spaceIndex === -1) {
+    base = `${before}#${item.path}`
+  } else {
+    base = `${before}#${item.path}${after.substring(spaceIndex)}`
+  }
+
+  if (item.is_dir) {
+    // 选中目录 → 插入 dir/，立即继续钻取子目录（不设 justSelectedPath）
+    chatStore.inputText = base + '/'
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    updatePathSuggestions(chatStore.inputText)
+  } else {
+    // 选中文件 → 插入 #路径 + 尾随空格，关闭列表
+    chatStore.inputText = base + ' '
+    justSelectedPath.value = true
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    setTimeout(() => {
+      justSelectedPath.value = false
+    }, 100)
+  }
+}
+
+function handlePathClick(event: MouseEvent, item: PathCompletionItem) {
+  event.stopPropagation()
+  selectPath(item)
+}
+
+// 点击外部关闭 mention/command/#路径列表
 function handleClickOutside(event: MouseEvent) {
   const target = event.target as HTMLElement
   const mentionList = mentionListRef.value
   const cmdList = commandSuggestionsRef.value
+  const pathList = pathSuggestionsRef.value
 
   // 关闭 command 列表
   if (showCommandSuggestions.value && cmdList && !cmdList.contains(target)) {
@@ -293,6 +418,13 @@ function handleClickOutside(event: MouseEvent) {
     showMentionSuggestions.value = false
     mentionSearch.value = ''
     selectedMentionIndex.value = -1
+  }
+
+  // 关闭 # 路径列表
+  if (showPathSuggestions.value && pathList && !pathList.contains(target)) {
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
   }
 }
 
@@ -404,8 +536,8 @@ async function uploadPendingFiles() {
 
 // ==================== 发送消息 ====================
 function handleSend() {
-  // 如果刚选择了命令或mention，跳过发送
-  if (justSelectedCommand.value || justSelectedMention.value) {
+  // 如果刚选择了命令、mention 或路径，跳过发送
+  if (justSelectedCommand.value || justSelectedMention.value || justSelectedPath.value) {
     return
   }
 
@@ -523,6 +655,35 @@ function handleKeydown(event: KeyboardEvent) {
     }
   }
 
+  // # 路径列表导航
+  if (showPathSuggestions.value && pathSuggestions.value.length > 0) {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        selectedPathIndex.value = Math.min(selectedPathIndex.value + 1, pathSuggestions.value.length - 1)
+        return
+      case 'ArrowUp':
+        event.preventDefault()
+        selectedPathIndex.value = Math.max(selectedPathIndex.value - 1, 0)
+        return
+      case 'Enter':
+        if (selectedPathIndex.value >= 0 && selectedPathIndex.value < pathSuggestions.value.length) {
+          event.preventDefault()
+          const suggestion = pathSuggestions.value[selectedPathIndex.value]
+          if (suggestion) {
+            selectPath(suggestion)
+          }
+          return
+        }
+        break
+      case 'Escape':
+        showPathSuggestions.value = false
+        pathSuggestions.value = []
+        selectedPathIndex.value = -1
+        return
+    }
+  }
+
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
     handleSend()
@@ -600,7 +761,7 @@ const targetAgentDisplay = computed(() => {
           ref="inputRef"
           v-model="chatStore.inputText"
           class="chat-input"
-          :placeholder="chatStore.runnerAlive ? '输入/执行命令，@指定agent' : '进程未运行，无法发送消息'"
+          :placeholder="chatStore.runnerAlive ? '输入/执行命令，@指定agent，#引用文件' : '进程未运行，无法发送消息'"
           rows="1"
           :disabled="!chatStore.runnerAlive"
           @keydown="handleKeydown"
@@ -642,6 +803,25 @@ const targetAgentDisplay = computed(() => {
           >
             <span class="mention-prefix">@</span>
             <span class="mention-name">{{ suggestion.name }}</span>
+          </div>
+        </div>
+
+        <!-- # 文件路径建议列表 -->
+        <div
+          v-if="showPathSuggestions && pathSuggestions.length > 0"
+          ref="pathSuggestionsRef"
+          class="path-suggestions"
+        >
+          <div
+            v-for="(suggestion, index) in pathSuggestions"
+            :key="suggestion.path"
+            class="path-item"
+            :class="{ 'path-selected': index === selectedPathIndex }"
+            @click="handlePathClick($event, suggestion)"
+          >
+            <span class="path-prefix">#</span>
+            <span class="path-name">{{ suggestion.path }}{{ suggestion.is_dir ? '/' : '' }}</span>
+            <span v-if="suggestion.is_dir" class="path-dir-icon">📁</span>
           </div>
         </div>
       </div>
@@ -920,6 +1100,64 @@ const targetAgentDisplay = computed(() => {
 .mention-name {
   color: var(--text-primary);
   font-weight: 500;
+}
+
+/* ==================== # 文件路径建议列表 ==================== */
+.path-suggestions {
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  margin-bottom: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.2);
+  max-height: 180px;
+  overflow-y: auto;
+  z-index: 100;
+}
+
+.path-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 13px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.path-item:last-child {
+  border-bottom: none;
+}
+
+.path-item:hover,
+.path-selected {
+  background: var(--bg-tertiary);
+}
+
+.path-prefix {
+  color: #d97706;
+  font-weight: 700;
+  font-family: monospace;
+  font-size: 15px;
+  flex-shrink: 0;
+}
+
+.path-name {
+  color: var(--text-primary);
+  font-family: monospace;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.path-dir-icon {
+  flex-shrink: 0;
+  color: var(--text-secondary);
 }
 
 /* ==================== 按钮 ==================== */

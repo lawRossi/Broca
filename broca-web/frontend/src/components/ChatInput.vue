@@ -3,6 +3,8 @@ import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore, useAgentStore, useSocketStore } from '@/stores'
 import { uploadFile, isStorageConfigured } from '@/utils/upload'
 import { commandsApi, type CommandInfo } from '@/api/commands'
+import { filesApi, type FileCompleteItem } from '@/api/files'
+import { sessionApi } from '@/api/session'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -45,6 +47,36 @@ const selectedCommandIndex = ref(-1)
 const commandSuggestionsRef = ref<HTMLElement>()
 const justSelectedCommand = ref(false)
 
+// # 文件路径补全相关状态
+const showPathSuggestions = ref(false)
+const pathSuggestions = ref<FileCompleteItem[]>([])
+const selectedPathIndex = ref(-1)
+const pathSuggestionsRef = ref<HTMLElement>()
+const justSelectedPath = ref(false)
+// 当前会话 workspace（# 补全根目录）
+const chatWorkspace = ref('')
+// 请求序号，避免异步竞态（仅采纳最后一次请求的响应）
+let pathRequestSeq = 0
+
+// 监听会话变化，获取 workspace 作为 # 补全根目录
+watch(
+  () => chatStore.sessionId,
+  async (sessionId) => {
+    if (!sessionId) {
+      chatWorkspace.value = ''
+      return
+    }
+    try {
+      const session = await sessionApi.getSession(sessionId)
+      chatWorkspace.value = session.workspace || ''
+    } catch (e) {
+      console.warn('获取会话 workspace 失败:', e)
+      chatWorkspace.value = ''
+    }
+  },
+  { immediate: true }
+)
+
 // 获取命令列表
 const fetchCommands = async () => {
   try {
@@ -73,12 +105,55 @@ const fetchCommands = async () => {
   }
 }
 
-// 监听输入变化，检测@mention 和 /command
+// 更新 # 文件路径补全建议（从文本中取最后一个 #，其后方可触发）
+const updatePathSuggestions = async (text: string) => {
+  const lastHash = text.lastIndexOf('#')
+  if (lastHash === -1) {
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    return
+  }
+
+  const afterHash = text.substring(lastHash + 1)
+
+  // # 后出现空格 → 视为补全结束，关闭列表
+  if (afterHash.includes(' ')) {
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    return
+  }
+
+  const searchTerm = afterHash
+  const seq = ++pathRequestSeq
+  try {
+    const res = await filesApi.completeFiles(chatWorkspace.value, searchTerm)
+    // 仅采纳最后一次请求的响应（竞态保护）
+    if (seq !== pathRequestSeq) return
+    pathSuggestions.value = res.completions || []
+    if (pathSuggestions.value.length > 0) {
+      showPathSuggestions.value = true
+      selectedPathIndex.value = 0
+    } else {
+      showPathSuggestions.value = false
+      selectedPathIndex.value = -1
+    }
+  } catch (e) {
+    console.warn('# 路径补全请求失败:', e)
+    if (seq !== pathRequestSeq) return
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+  }
+}
+
+// 监听输入变化，检测@mention 和 /command 与 # 文件路径
 watch(
   () => chatStore.input,
   (newValue) => {
-    // 如果刚刚选择了mention或command，跳过检测
-    if (justSelectedMention.value || justSelectedCommand.value) {
+    // 如果刚刚选择了mention、command 或路径，跳过检测
+    if (justSelectedMention.value || justSelectedCommand.value || justSelectedPath.value) {
       return
     }
 
@@ -187,6 +262,16 @@ watch(
     } else {
       showMentionSuggestions.value = false
     }
+
+    // ---- 检测 # 文件路径补全（优先级低于 / 与 @，互斥）----
+    // 若 / 或 @ 列表当前已显示，则跳过 # 检测，保证同一时刻只显示一种列表
+    if (showCommandSuggestions.value || showMentionSuggestions.value) {
+      showPathSuggestions.value = false
+      pathSuggestions.value = []
+      selectedPathIndex.value = -1
+      return
+    }
+    updatePathSuggestions(newValue)
   }
 )
 
@@ -266,6 +351,49 @@ const selectCommand = (commandName: string) => {
   }
 }
 
+// 选择 # 路径补全
+const selectPath = (item: FileCompleteItem) => {
+  const input = chatStore.input
+  const lastHash = input.lastIndexOf('#')
+  if (lastHash === -1) {
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    return
+  }
+
+  const before = input.substring(0, lastHash)
+  const after = input.substring(lastHash)
+  const spaceIndex = after.indexOf(' ')
+
+  let base = ''
+  if (spaceIndex === -1) {
+    base = `${before}#${item.path}`
+  } else {
+    base = `${before}#${item.path}${after.substring(spaceIndex)}`
+  }
+
+  if (item.is_dir) {
+    // 选中目录 → 插入 dir/，立即继续钻取子目录（不设 justSelectedPath）
+    chatStore.input = base + '/'
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    updatePathSuggestions(chatStore.input)
+  } else {
+    // 选中文件 → 插入 #路径 + 尾随空格，关闭列表
+    chatStore.input = base + ' '
+    justSelectedPath.value = true
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+    // 100ms 内不再重弹（与 selectMention 一致）
+    setTimeout(() => {
+      justSelectedPath.value = false
+    }, 100)
+  }
+}
+
 // 处理键盘事件
 const handleKeyDown = (event: KeyboardEvent) => {
   // 优先处理命令建议
@@ -320,6 +448,34 @@ const handleKeyDown = (event: KeyboardEvent) => {
     }
   }
 
+  // 处理 # 路径建议
+  if (showPathSuggestions.value && pathSuggestions.value.length > 0) {
+    switch (event.key) {
+      case 'ArrowDown':
+        event.preventDefault()
+        selectedPathIndex.value = Math.min(selectedPathIndex.value + 1, pathSuggestions.value.length - 1)
+        return
+      case 'ArrowUp':
+        event.preventDefault()
+        selectedPathIndex.value = Math.max(selectedPathIndex.value - 1, 0)
+        return
+      case 'Enter':
+        event.preventDefault()
+        if (selectedPathIndex.value >= 0 && selectedPathIndex.value < pathSuggestions.value.length) {
+          const suggestion = pathSuggestions.value[selectedPathIndex.value]
+          if (suggestion) {
+            selectPath(suggestion)
+          }
+        }
+        return
+      case 'Escape':
+        showPathSuggestions.value = false
+        pathSuggestions.value = []
+        selectedPathIndex.value = -1
+        return
+    }
+  }
+
   // 没有建议列表显示时，Enter 发送消息
   if (event.key === 'Enter' && !event.shiftKey) {
     event.preventDefault()
@@ -327,11 +483,12 @@ const handleKeyDown = (event: KeyboardEvent) => {
   }
 }
 
-// 点击外部关闭mention/command列表
+// 点击外部关闭mention/command/#路径列表
 const handleClickOutside = (event: MouseEvent) => {
   const target = event.target as HTMLElement
   const mentionList = mentionSuggestionsRef.value
   const cmdList = commandSuggestionsRef.value
+  const pathList = pathSuggestionsRef.value
 
   // 检查是否点击在command列表外部
   if (showCommandSuggestions.value && cmdList && !cmdList.contains(target)) {
@@ -346,6 +503,13 @@ const handleClickOutside = (event: MouseEvent) => {
     mentionSearch.value = ''
     selectedMentionIndex.value = -1
   }
+
+  // 检查是否点击在#路径列表外部
+  if (showPathSuggestions.value && pathList && !pathList.contains(target)) {
+    showPathSuggestions.value = false
+    pathSuggestions.value = []
+    selectedPathIndex.value = -1
+  }
 }
 
 // 处理mention列表点击事件，阻止事件冒泡
@@ -358,6 +522,12 @@ const handleMentionClick = (event: MouseEvent, agentId: string, agentName: strin
 const handleCommandClick = (event: MouseEvent, commandName: string) => {
   event.stopPropagation()
   selectCommand(commandName)
+}
+
+// 处理#路径列表点击事件，阻止事件冒泡
+const handlePathClick = (event: MouseEvent, item: FileCompleteItem) => {
+  event.stopPropagation()
+  selectPath(item)
 }
 
 // 当前目标agent显示
@@ -561,8 +731,8 @@ const isAnyUploading = computed(() => {
 
 // 处理发送消息（包含文件上传）
 const handleSendMessage = async () => {
-  // 如果刚选择了命令或mention，跳过发送
-  if (justSelectedCommand.value || justSelectedMention.value) {
+  // 如果刚选择了命令、mention 或路径，跳过发送
+  if (justSelectedCommand.value || justSelectedMention.value || justSelectedPath.value) {
     return
   }
 
@@ -684,7 +854,7 @@ const handleSendMessage = async () => {
           v-model="chatStore.input"
           type="textarea"
           :autosize="{ minRows: 1, maxRows: 6 }"
-          :placeholder="chatStore.runnerAlive ? '输入/执行命令，@指定agent' : '进程未运行，无法发送消息'"
+          :placeholder="chatStore.runnerAlive ? '输入/执行命令，@指定agent，#引用文件' : '进程未运行，无法发送消息'"
           :disabled="!chatStore.runnerAlive || isUploading"
           size="default"
           @keydown="handleKeyDown"
@@ -735,6 +905,30 @@ const handleSendMessage = async () => {
             <div class="flex items-center gap-2">
               <span class="text-blue-600">@</span>
               <span class="font-medium text-gray-900">{{ suggestion.name }}</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- # 文件路径建议列表 -->
+        <div
+          v-if="showPathSuggestions && pathSuggestions.length > 0"
+          ref="pathSuggestionsRef"
+          class="absolute bottom-full left-0 right-0 mb-1 bg-white border rounded-lg shadow-lg z-50 max-h-48 overflow-y-auto"
+          @click.stop
+        >
+          <div
+            v-for="(suggestion, index) in pathSuggestions"
+            :key="suggestion.path"
+            class="px-3 py-2 hover:bg-gray-50 cursor-pointer border-b last:border-b-0"
+            :class="{ 'bg-blue-50': index === selectedPathIndex }"
+            @click="handlePathClick($event, suggestion)"
+          >
+            <div class="flex items-center gap-2">
+              <span class="text-orange-500 font-mono font-bold">#</span>
+              <span class="font-mono text-gray-900 flex-1 min-w-0 truncate">
+                {{ suggestion.path }}{{ suggestion.is_dir ? '/' : '' }}
+              </span>
+              <span v-if="suggestion.is_dir" class="text-gray-400">📁</span>
             </div>
           </div>
         </div>

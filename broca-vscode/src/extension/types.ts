@@ -316,6 +316,7 @@ export interface ExtensionToWebView {
     | 'fileDiffResult'
     | 'workspacePath'
     | 'refreshSession'
+    | 'files'
   payload: any
 }
 
@@ -378,5 +379,6 @@ export interface WebViewToExtension {
     | 'fetchTurns'
     | 'searchMessages'
     | 'getSearchFilters'
+    | 'listFiles'
   payload?: any
 }

@@ -53,6 +53,20 @@ export interface FileEditResponse {
   backup_path?: string
 }
 
+export interface FileCompleteItem {
+  name: string
+  path: string
+  is_dir: boolean
+}
+
+export interface FileCompleteResponse {
+  base: string
+  prefix: string
+  completions: FileCompleteItem[]
+  total: number
+  truncated?: boolean
+}
+
 export const filesApi = {
   /**
    * 获取文件列表
@@ -60,6 +74,17 @@ export const filesApi = {
   async listFiles(path: string = '.'): Promise<FileListResponse> {
     return request.get('/files', {
       params: { path },
+    })
+  },
+
+  /**
+   * 文件路径补全（供 ChatInput 输入 # 触发）
+   * @param base 补全根目录（通常为会话 workspace）；为空则后端回退 cwd
+   * @param prefix 相对 base 的路径前缀，如 "src/comp"、"src/"、""（空串 = 根目录）
+   */
+  async completeFiles(base: string, prefix: string): Promise<FileCompleteResponse> {
+    return request.get('/files/complete', {
+      params: { base, prefix },
     })
   },
 

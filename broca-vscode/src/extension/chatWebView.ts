@@ -910,6 +910,11 @@ export class ChatWebViewManager {
         await this.handleFetchCommands(panel)
         break
 
+      // ==================== Files completion handlers ====================
+      case 'listFiles':
+        await this.handleListFiles(panel, sessionId, message.payload)
+        break
+
       // ==================== Turn summary (concise mode) handlers ====================
       case 'fetchTurns':
         await this.handleFetchTurns(panel, message.payload)
@@ -1963,6 +1968,34 @@ export class ChatWebViewManager {
       this.postToPanel(panel, {
         type: 'commands',
         payload: { commands: [] },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleListFiles(
+    panel: vscode.WebviewPanel,
+    sessionId: string,
+    payload: { prefix?: string }
+  ) {
+    try {
+      // 获取会话 workspace 作为补全根目录；无则用空串（后端回退 cwd）
+      let workspace = ''
+      try {
+        const session = await this.apiClient.getSession(sessionId)
+        workspace = session.workspace || ''
+      } catch {
+        workspace = ''
+      }
+      const result = await this.apiClient.completeFiles(workspace, payload?.prefix || '')
+      this.postToPanel(panel, {
+        type: 'files',
+        payload: result,
+      } as ExtensionToWebView)
+    } catch {
+      // Silently fail — webview hides the list when files reply is empty
+      this.postToPanel(panel, {
+        type: 'files',
+        payload: { base: '', prefix: payload?.prefix || '', completions: [], total: 0 },
       } as ExtensionToWebView)
     }
   }

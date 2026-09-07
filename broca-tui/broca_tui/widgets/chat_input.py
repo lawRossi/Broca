@@ -116,7 +116,7 @@ class ChatInput(Vertical):
 
     def __init__(
         self,
-        placeholder: str = "输入/执行命令，@指定agent",
+        placeholder: str = "输入/执行命令，@指定agent，#引用文件",
         **kwargs,
     ):
         """Initialize chat input.
@@ -129,9 +129,12 @@ class ChatInput(Vertical):
         self._agents: List[Dict[str, Any]] = []
         self._main_agent_id: str = ""
         self._commands: List[Tuple[str, str]] = list(FALLBACK_COMMANDS)
-        self._autocomplete_type: Optional[str] = None  # "command" or "mention"
+        self._autocomplete_type: Optional[str] = None  # "command" / "mention" / "path"
         self._filtered_items: List[Any] = []
         self._selected_index: int = 0
+        self._workspace: str = ""  # # 路径补全根目录（会话 workspace，空串 → 后端回退 cwd）
+        self._path_completions: List[Dict[str, Any]] = []
+        self._path_request_seq: int = 0  # 异步补全请求序号（竞态保护）
         self._on_send: Optional[Callable] = None
         self._on_abort: Optional[Callable] = None
         self._suppress_next_change: bool = False  # 补全后抑制一次 Input.Changed
@@ -168,6 +171,14 @@ class ChatInput(Vertical):
         self._agents = agents
         if main_agent_id:
             self._main_agent_id = main_agent_id
+
+    def set_workspace(self, workspace: str):
+        """Set workspace as the # path completion root.
+
+        Args:
+            workspace: Session workspace path (may be empty → backend falls back to cwd)
+        """
+        self._workspace = workspace or ""
 
     def set_on_send(self, callback: Callable):
         """Set callback for message send.
@@ -277,7 +288,7 @@ class ChatInput(Vertical):
 
         Args:
             items: List of autocomplete items
-            type: "command" or "mention"
+            type: "command" / "mention" / "path"
         """
         if not items:
             self._hide_autocomplete()
@@ -294,6 +305,11 @@ class ChatInput(Vertical):
             if type == "command":
                 cmd_name, cmd_desc = item
                 label = f"{cmd_name}  — {cmd_desc}"
+            elif type == "path":
+                path = item.get("path", item.get("name", ""))
+                is_dir = item.get("is_dir", False)
+                suffix = "/" if is_dir else ""
+                label = f"#{path}{suffix}"
             else:
                 agent_name = item.get("name", item.get("agent_id", "Unknown"))
                 label = f"@{agent_name}"
@@ -369,7 +385,52 @@ class ChatInput(Vertical):
                     self._show_autocomplete(mention_matches, "mention")
                     return
 
+        # Path autocomplete (#) — 优先级低于 /command 与 @mention（互斥）
+        if "#" in value:
+            hash_index = value.rfind("#")
+            if hash_index >= 0:
+                after_hash = value[hash_index + 1 :]
+                # # 后出现空格 → 视为补全结束，关闭列表
+                if " " in after_hash:
+                    self._hide_autocomplete()
+                    return
+                self._request_path_completions(after_hash)
+                return
+
         self._hide_autocomplete()
+
+    def _request_path_completions(self, search_term: str):
+        """Request # path completions from backend asynchronously.
+
+        Uses a request sequence + input snapshot for race protection:
+        only the latest request's response is applied, and only when the
+        input hasn't changed since the request was sent.
+
+        Args:
+            search_term: prefix text after the last '#' (e.g. "src/", "comp", "")
+        """
+        self._path_request_seq += 1
+        seq = self._path_request_seq
+        input_snapshot = self._get_input_value()
+
+        async def _fetch():
+            try:
+                api = SessionAPI()
+                completions = await api.complete_files(self._workspace, search_term)
+                await api.close()
+            except Exception:
+                completions = []
+            # 竞态保护：仅采纳最后一次请求，且输入未再变化
+            if seq != self._path_request_seq:
+                return
+            if self._get_input_value() != input_snapshot:
+                return
+            if completions:
+                self._show_autocomplete(completions, "path")
+            else:
+                self._hide_autocomplete()
+
+        self.run_worker(_fetch())
 
     def _select_autocomplete(self):
         """Select the currently highlighted autocomplete item."""
@@ -400,6 +461,25 @@ class ChatInput(Vertical):
                 after = value[at_index:].split(" ", 1)
                 rest = after[1] if len(after) > 1 else ""
                 self._set_input_value(f"{before}@{agent_name} {rest}")
+        elif self._autocomplete_type == "path":
+            selected_item = self._filtered_items[idx]
+            path = selected_item.get("path", "")
+            is_dir = selected_item.get("is_dir", False)
+            # Replace the #path text
+            hash_index = value.rfind("#")
+            if hash_index >= 0:
+                before = value[:hash_index]
+                after = value[hash_index:].split(" ", 1)
+                rest = after[1] if len(after) > 1 else ""
+                if is_dir:
+                    # 选中目录 → 插入 #path/ 并继续钻取（不抑制 Changed，由输入变化自然触发下一级补全）
+                    self._set_input_value(f"{before}#{path}/{rest}")
+                    self._hide_autocomplete()
+                    self._focus_input()
+                    self.set_timer(0.01, self._move_cursor_to_end)
+                    return
+                # 选中文件 → 插入 #path + 尾随空格
+                self._set_input_value(f"{before}#{path} {rest}")
 
         # 抑制本次补全触发的 Changed 事件重新弹出下拉
         self._suppress_next_change = True
