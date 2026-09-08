@@ -41,6 +41,30 @@ export interface LLMProviderConfig {
 /** 完整 LLM 配置：provider id → 提供商配置 */
 export type LLMConfig = Record<string, LLMProviderConfig>
 
+/** 基础配置（configs.json）：仅已知字段 */
+export interface GeneralConfig {
+  database_dir?: string
+  log_file?: string
+  log_level?: string
+  llm_config_file?: string
+  socket_server_url?: string
+  api_server_url?: string
+}
+
+/** 工具权限配置（tool_permission_config.json） */
+export interface ToolPermissionConfig {
+  _description?: string
+  _permission_values?: Record<string, string>
+  tools: Record<string, string>
+}
+
+/** 合法权限值 */
+export const PERMISSION_VALUES = ['allow', 'ask', 'forbidden'] as const
+export type PermissionValue = (typeof PERMISSION_VALUES)[number]
+
+/** 合法日志级别 */
+export const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] as const
+
 export const configApi = {
   /**
    * 获取可用的LLM提供商列表
@@ -68,6 +92,34 @@ export const configApi = {
    */
   async saveLLMConfig(config: LLMConfig): Promise<void> {
     await request.put('/config/llm', { config })
+  },
+
+  /**
+   * 获取基础配置（configs.json）
+   */
+  async getGeneralConfig(): Promise<GeneralConfig> {
+    return await request.get('/config/general')
+  },
+
+  /**
+   * 保存基础配置（后端仅写回已知字段）
+   */
+  async saveGeneralConfig(config: GeneralConfig): Promise<void> {
+    await request.put('/config/general', { config })
+  },
+
+  /**
+   * 获取工具权限配置
+   */
+  async getToolPermissionConfig(): Promise<ToolPermissionConfig> {
+    return await request.get('/config/tool-permission')
+  },
+
+  /**
+   * 保存工具权限配置
+   */
+  async saveToolPermissionConfig(config: ToolPermissionConfig): Promise<void> {
+    await request.put('/config/tool-permission', { config })
   },
 }
 

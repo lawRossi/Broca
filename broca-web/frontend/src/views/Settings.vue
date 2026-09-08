@@ -5,6 +5,8 @@ import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Setting, Delete, Loading } from '@element-plus/icons-vue'
 import configApi from '@/api/config'
 import type { LLMConfig, LLMModelConfig } from '@/api/config'
+import GeneralConfigPanel from './settings/GeneralConfigPanel.vue'
+import ToolPermissionPanel from './settings/ToolPermissionPanel.vue'
 
 // ==================== 状态 ====================
 const loading = ref(false)
@@ -20,6 +22,16 @@ const providerCount = computed(() => Object.keys(config.value).length)
 const modelCount = computed(() =>
   Object.values(config.value).reduce((sum, p) => sum + Object.keys(p.models || {}).length, 0)
 )
+
+// ==================== 标签页与子面板协调 ====================
+const activeTab = ref('llm')
+
+/** 基础配置 / 工具权限面板的脏状态（由子面板 dirty-change 事件更新） */
+const generalDirty = ref(false)
+const toolDirty = ref(false)
+
+const generalPanelRef = ref<InstanceType<typeof GeneralConfigPanel>>()
+const toolPanelRef = ref<InstanceType<typeof ToolPermissionPanel>>()
 
 // ==================== 数据加载 ====================
 const loadConfig = async () => {
@@ -706,15 +718,10 @@ const resetConfig = async () => {
 }
 
 // ==================== 离开页面保护 ====================
-/** 路由离开：有改动时先自动保存；无法通过校验时询问是否丢弃 */
-onBeforeRouteLeave(async () => {
-  clearAutoSaveTimer()
-  if (!dirty.value) return true
-  if (!validateBeforeSave()) {
-    return await persistConfig()
-  }
+/** 任一面板有未通过校验/保存失败的修改时，询问是否放弃修改并离开 */
+const confirmDiscardChanges = async (): Promise<boolean> => {
   try {
-    await ElMessageBox.confirm('当前修改未通过校验、无法自动保存，离开将丢失这些修改。确定离开吗？', '未保存的修改', {
+    await ElMessageBox.confirm('当前修改未通过校验或保存失败，离开将丢失这些修改。确定离开吗？', '未保存的修改', {
       type: 'warning',
       confirmButtonText: '放弃修改并离开',
       cancelButtonText: '留在本页',
@@ -723,11 +730,35 @@ onBeforeRouteLeave(async () => {
   } catch {
     return false
   }
+}
+
+/** 路由离开：三个面板有改动时先尝试自动保存；保存失败/校验不过时询问是否丢弃 */
+onBeforeRouteLeave(async () => {
+  clearAutoSaveTimer()
+  // LLM 配置面板
+  if (dirty.value) {
+    if (!validateBeforeSave()) {
+      // 校验通过 → 尝试保存；失败则询问
+      if (!(await persistConfig())) return await confirmDiscardChanges()
+    } else if (!(await confirmDiscardChanges())) {
+      // 校验未通过 → 询问
+      return false
+    }
+  }
+  // 基础配置面板：有脏数据时先尝试保存
+  if (generalDirty.value && generalPanelRef.value) {
+    if (!(await generalPanelRef.value.saveNow())) return await confirmDiscardChanges()
+  }
+  // 工具权限面板：有脏数据时先尝试保存
+  if (toolDirty.value && toolPanelRef.value) {
+    if (!(await toolPanelRef.value.saveNow())) return await confirmDiscardChanges()
+  }
+  return true
 })
 
-/** 浏览器刷新/关闭：仍有未落盘的改动时弹出原生确认 */
+/** 浏览器刷新/关闭：任一面板仍有未落盘的改动时弹出原生确认 */
 const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-  if (dirty.value || saving.value) {
+  if (dirty.value || generalDirty.value || toolDirty.value || saving.value) {
     e.preventDefault()
     e.returnValue = ''
   }
@@ -742,36 +773,7 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
         <div class="flex items-center justify-between h-14 sm:h-16">
           <div class="flex items-center gap-2 sm:gap-3 min-w-0">
             <el-icon class="text-blue-600 text-lg sm:text-xl flex-shrink-0"><Setting /></el-icon>
-            <h1 class="text-base sm:text-xl font-bold text-gray-900 truncate">LLM 配置管理</h1>
-            <!-- 自动保存状态 -->
-            <span v-if="saving" class="hidden sm:inline-flex items-center gap-1 text-xs text-blue-600">
-              <el-icon class="is-loading"><Loading /></el-icon>
-              保存中...
-            </span>
-            <span v-else-if="saveFailed" class="hidden sm:inline text-xs text-red-500">
-              自动保存失败，请点击「保存」重试
-            </span>
-            <span v-else-if="autoSaveBlocked" class="hidden sm:inline text-xs text-amber-600">
-              修改未通过校验，暂未保存
-            </span>
-            <span v-else-if="lastSavedAt && !dirty" class="hidden md:inline text-xs text-gray-400">
-              已自动保存 {{ lastSavedAtText }}
-            </span>
-            <span v-else-if="dirty" class="hidden sm:inline text-xs text-gray-400">即将自动保存...</span>
-          </div>
-          <div class="flex items-center gap-2 sm:gap-4 flex-shrink-0">
-            <div class="text-sm text-gray-500 hidden md:inline">
-              {{ providerCount }} 个提供商 · {{ modelCount }} 个模型
-            </div>
-            <el-button size="small" :icon="Plus" @click="openProviderDialog">
-              <span class="hidden sm:inline">添加提供商</span>
-            </el-button>
-            <el-button size="small" :icon="Refresh" :disabled="saving" @click="resetConfig">
-              <span class="hidden sm:inline">重置</span>
-            </el-button>
-            <el-button size="small" type="primary" :loading="saving" :disabled="!dirty" @click="saveConfig">
-              保存
-            </el-button>
+            <h1 class="text-base sm:text-xl font-bold text-gray-900 truncate">设置</h1>
           </div>
         </div>
       </div>
@@ -779,251 +781,320 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
 
     <!-- 主内容区 -->
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
-
-      <!-- 加载状态 -->
-      <div v-if="loading" class="flex items-center justify-center py-12">
-        <el-icon class="is-loading" size="24">
-          <Loading />
-        </el-icon>
-        <span class="ml-2 text-gray-500">加载中...</span>
-      </div>
-
-      <!-- 空状态 -->
-      <div v-else-if="providerCount === 0" class="flex flex-col items-center justify-center py-12 text-gray-500">
-        <el-icon size="48" class="mb-4">
-          <Setting />
-        </el-icon>
-        <p>暂无 LLM 提供商配置</p>
-        <p class="text-sm mt-1">点击下方按钮添加第一个提供商</p>
-        <el-button class="mt-4" type="primary" :icon="Plus" @click="openProviderDialog">添加提供商</el-button>
-      </div>
-
-      <!-- 提供商配置列表 -->
-      <el-collapse
-        v-else
-        v-model="activeProviders"
-        class="bg-white rounded-lg border shadow-sm overflow-hidden settings-collapse"
-      >
-        <el-collapse-item v-for="(provider, providerId) in config" :key="providerId" :name="providerId">
-          <template #title>
-            <div class="flex items-center gap-2 w-full pr-2">
-              <span class="font-semibold text-gray-900">{{ providerId }}</span>
-              <el-tag size="small" type="info" effect="plain"
-                >{{ Object.keys(provider.models || {}).length }} 个模型</el-tag
+      <el-tabs v-model="activeTab">
+        <!-- ============ Tab 1: LLM 配置 ============ -->
+        <el-tab-pane label="LLM 配置" name="llm">
+          <!-- LLM 面板专属工具栏（原页面头部操作行移入） -->
+          <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <div class="flex items-center gap-2 sm:gap-3 min-w-0 flex-wrap">
+              <!-- 自动保存状态 -->
+              <span v-if="saving" class="inline-flex items-center gap-1 text-xs text-blue-600">
+                <el-icon class="is-loading"><Loading /></el-icon>
+                保存中...
+              </span>
+              <span v-else-if="saveFailed" class="text-xs text-red-500">自动保存失败，请点击「保存」重试</span>
+              <span v-else-if="autoSaveBlocked" class="text-xs text-amber-600">修改未通过校验，暂未保存</span>
+              <span v-else-if="lastSavedAt && !dirty" class="text-xs text-gray-400"
+                >已自动保存 {{ lastSavedAtText }}</span
               >
-              <div class="flex-1"></div>
-              <el-button
-                size="small"
-                type="danger"
-                text
-                :icon="Delete"
-                class="provider-delete-btn"
-                @click.stop="removeProvider(providerId)"
-              >
-                删除提供商
-              </el-button>
+              <span v-else-if="dirty" class="text-xs text-gray-400">即将自动保存...</span>
             </div>
-          </template>
-
-          <div class="px-4 pb-4">
-            <!-- 提供商基础配置 -->
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
-              <div>
-                <label class="block text-xs text-gray-600 mb-1">Base URL</label>
-                <el-input v-model="provider.base_url" placeholder="https://api.example.com/v1" />
+            <div class="flex items-center gap-2 sm:gap-4 flex-shrink-0 flex-wrap">
+              <div class="text-sm text-gray-500 hidden md:inline">
+                {{ providerCount }} 个提供商 · {{ modelCount }} 个模型
               </div>
-              <div>
-                <label class="block text-xs text-gray-600 mb-1">API Key</label>
-                <el-input v-model="provider.api_key" show-password placeholder="sk-..." />
-              </div>
-            </div>
-
-            <!-- 模型列表 -->
-            <div class="flex items-center justify-between mb-2">
-              <span class="text-sm font-medium text-gray-700">模型列表</span>
-              <el-button size="small" type="primary" plain :icon="Plus" @click="openModelDialog(providerId)">
-                添加模型
+              <el-button size="small" :icon="Plus" @click="openProviderDialog">添加提供商</el-button>
+              <el-button size="small" :icon="Refresh" :disabled="saving" @click="resetConfig">重置</el-button>
+              <el-button size="small" type="primary" :loading="saving" :disabled="!dirty" @click="saveConfig">
+                保存
               </el-button>
-            </div>
-
-            <el-table :data="Object.entries(provider.models || {})" size="small" border>
-              <el-table-column label="模型别名" min-width="160">
-                <template #default="{ row }">
-                  <el-input
-                    :model-value="getDraft(modelCellKey(providerId, row[0], 'alias'), row[0])"
-                    size="small"
-                    @input="(val: string) => setDraft(modelCellKey(providerId, row[0], 'alias'), val)"
-                    @change="(val: string | number) => renameModel(providerId, row[0], val)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="实际模型名 (model)" min-width="220">
-                <template #default="{ row }">
-                  <el-input v-model="row[1].model" size="small" placeholder="openai/model-name" />
-                </template>
-              </el-table-column>
-              <el-table-column label="Max Tokens" width="150">
-                <template #default="{ row }">
-                  <el-input-number
-                    v-model="row[1].max_tokens"
-                    size="small"
-                    :min="1"
-                    :step="1000"
-                    controls-position="right"
-                    placeholder="默认"
-                    style="width: 120px"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="上下文窗口" width="160">
-                <template #default="{ row }">
-                  <el-input-number
-                    :model-value="
-                      typeof row[1].meta?.context_window === 'number' ? row[1].meta.context_window : undefined
-                    "
-                    size="small"
-                    :min="1"
-                    :step="10000"
-                    controls-position="right"
-                    placeholder="默认"
-                    style="width: 130px"
-                    @update:model-value="(val: number | undefined) => setContextWindow(row[1], val)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="extra_body" width="230">
-                <template #default="{ row }">
-                  <el-input
-                    type="textarea"
-                    :rows="2"
-                    :autosize="{ minRows: 2, maxRows: 8 }"
-                    class="json-editor font-mono"
-                    :class="{ 'json-editor--error': hasJsonError(modelCellKey(providerId, row[0], 'extra_body')) }"
-                    :model-value="getDraft(modelCellKey(providerId, row[0], 'extra_body'), extraBodyText(row[1]))"
-                    placeholder='未配置，如 {"thinking": {"type": "enabled"}}'
-                    @input="(val: string) => setDraft(modelCellKey(providerId, row[0], 'extra_body'), val)"
-                    @change="(val: string) => applyExtraBody(providerId, row[0], row[1], val)"
-                  />
-                </template>
-              </el-table-column>
-              <el-table-column label="更多参数" width="300" class-name="more-params-cell">
-                <template #default="{ row }">
-                  <div>
-                    <el-button link type="primary" size="small" @click="toggleParamsExpanded(providerId, row[0])">
-                      {{ isParamsExpanded(providerId, row[0]) ? '收起' : `展开 (${extraParamKeys(row[1]).length})` }}
-                    </el-button>
-                    <div v-if="isParamsExpanded(providerId, row[0])" class="mt-2 space-y-2">
-                      <div v-for="paramKey in extraParamKeys(row[1])" :key="paramKey" class="flex items-start gap-1">
-                        <el-input
-                          :model-value="getDraft(modelCellKey(providerId, row[0], `key:${paramKey}`), paramKey)"
-                          size="small"
-                          class="flex-shrink-0"
-                          style="width: 110px"
-                          @input="(val: string) => setDraft(modelCellKey(providerId, row[0], `key:${paramKey}`), val)"
-                          @change="
-                            (val: string | number) => commitExtraParamKey(providerId, row[0], row[1], paramKey, val)
-                          "
-                        />
-                        <!-- 布尔值 → 开关 -->
-                        <el-switch
-                          v-if="paramValueType(row[1][paramKey]) === 'boolean'"
-                          :model-value="Boolean(row[1][paramKey])"
-                          size="small"
-                          class="mt-1.5"
-                          @change="(val: boolean) => (row[1][paramKey] = val)"
-                        />
-                        <!-- 数字 → 数字输入 -->
-                        <el-input-number
-                          v-else-if="paramValueType(row[1][paramKey]) === 'number'"
-                          :model-value="Number(row[1][paramKey])"
-                          size="small"
-                          controls-position="right"
-                          style="width: 110px"
-                          @change="
-                            (val: number | undefined) => setNumberParam(providerId, row[0], row[1], paramKey, val)
-                          "
-                        />
-                        <!-- 字符串 → 文本输入（自动识别数字/布尔/JSON） -->
-                        <el-input
-                          v-else-if="paramValueType(row[1][paramKey]) === 'string'"
-                          :model-value="
-                            getDraft(modelCellKey(providerId, row[0], `val:${paramKey}`), String(row[1][paramKey]))
-                          "
-                          size="small"
-                          placeholder="文本（自动识别数字/布尔/JSON）"
-                          @input="(val: string) => setDraft(modelCellKey(providerId, row[0], `val:${paramKey}`), val)"
-                          @change="(val: string) => setStringParam(providerId, row[0], row[1], paramKey, val)"
-                        />
-                        <!-- 数组/对象/null → JSON 编辑 -->
-                        <el-input
-                          v-else
-                          type="textarea"
-                          :rows="2"
-                          :autosize="{ minRows: 2, maxRows: 6 }"
-                          class="json-editor font-mono"
-                          :class="{ 'json-editor--error': hasJsonError(modelCellKey(providerId, row[0], paramKey)) }"
-                          :model-value="
-                            getDraft(
-                              modelCellKey(providerId, row[0], `val:${paramKey}`),
-                              jsonParamText(row[1][paramKey])
-                            )
-                          "
-                          @input="(val: string) => setDraft(modelCellKey(providerId, row[0], `val:${paramKey}`), val)"
-                          @change="(val: string) => applyJsonParam(providerId, row[0], row[1], paramKey, val)"
-                        />
-                        <el-button
-                          size="small"
-                          type="danger"
-                          text
-                          :icon="Delete"
-                          class="flex-shrink-0"
-                          @click="removeExtraParam(row[1], paramKey)"
-                        />
-                      </div>
-                      <el-button
-                        size="small"
-                        type="primary"
-                        plain
-                        :icon="Plus"
-                        @click="openAddExtraParam(providerId, row[0], row[1])"
-                      >
-                        添加参数
-                      </el-button>
-                    </div>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="多模态" min-width="210">
-                <template #default="{ row }">
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <el-checkbox
-                      v-for="opt in MODALITY_OPTIONS"
-                      :key="opt.key"
-                      :model-value="hasModality(row[1], opt.key)"
-                      size="small"
-                      @change="(checked: boolean | string | number) => toggleModality(row[1], opt.key, checked)"
-                    >
-                      <span class="text-xs">{{ opt.label }}</span>
-                    </el-checkbox>
-                    <el-button size="small" text type="primary" @click="openModalityDialog(providerId, row[0], row[1])">
-                      参数
-                    </el-button>
-                  </div>
-                </template>
-              </el-table-column>
-              <el-table-column label="操作" width="80" fixed="right">
-                <template #default="{ row }">
-                  <el-button size="small" type="danger" text :icon="Delete" @click="removeModel(providerId, row[0])" />
-                </template>
-              </el-table-column>
-            </el-table>
-
-            <div v-if="Object.keys(provider.models || {}).length === 0" class="text-center text-gray-400 text-sm py-4">
-              暂无模型，点击「添加模型」创建
             </div>
           </div>
-        </el-collapse-item>
-      </el-collapse>
+
+          <!-- 加载状态 -->
+          <div v-if="loading" class="flex items-center justify-center py-12">
+            <el-icon class="is-loading" size="24">
+              <Loading />
+            </el-icon>
+            <span class="ml-2 text-gray-500">加载中...</span>
+          </div>
+
+          <!-- 空状态 -->
+          <div v-else-if="providerCount === 0" class="flex flex-col items-center justify-center py-12 text-gray-500">
+            <el-icon size="48" class="mb-4">
+              <Setting />
+            </el-icon>
+            <p>暂无 LLM 提供商配置</p>
+            <p class="text-sm mt-1">点击下方按钮添加第一个提供商</p>
+            <el-button class="mt-4" type="primary" :icon="Plus" @click="openProviderDialog">添加提供商</el-button>
+          </div>
+
+          <!-- 提供商配置列表 -->
+          <el-collapse
+            v-else
+            v-model="activeProviders"
+            class="bg-white rounded-lg border shadow-sm overflow-hidden settings-collapse"
+          >
+            <el-collapse-item v-for="(provider, providerId) in config" :key="providerId" :name="providerId">
+              <template #title>
+                <div class="flex items-center gap-2 w-full pr-2">
+                  <span class="font-semibold text-gray-900">{{ providerId }}</span>
+                  <el-tag size="small" type="info" effect="plain"
+                    >{{ Object.keys(provider.models || {}).length }} 个模型</el-tag
+                  >
+                  <div class="flex-1"></div>
+                  <el-button
+                    size="small"
+                    type="danger"
+                    text
+                    :icon="Delete"
+                    class="provider-delete-btn"
+                    @click.stop="removeProvider(providerId)"
+                  >
+                    删除提供商
+                  </el-button>
+                </div>
+              </template>
+
+              <div class="px-4 pb-4">
+                <!-- 提供商基础配置 -->
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                  <div>
+                    <label class="block text-xs text-gray-600 mb-1">Base URL</label>
+                    <el-input v-model="provider.base_url" placeholder="https://api.example.com/v1" />
+                  </div>
+                  <div>
+                    <label class="block text-xs text-gray-600 mb-1">API Key</label>
+                    <el-input v-model="provider.api_key" show-password placeholder="sk-..." />
+                  </div>
+                </div>
+
+                <!-- 模型列表 -->
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-sm font-medium text-gray-700">模型列表</span>
+                  <el-button size="small" type="primary" plain :icon="Plus" @click="openModelDialog(providerId)">
+                    添加模型
+                  </el-button>
+                </div>
+
+                <el-table :data="Object.entries(provider.models || {})" size="small" border>
+                  <el-table-column label="模型别名" min-width="160">
+                    <template #default="{ row }">
+                      <el-input
+                        :model-value="getDraft(modelCellKey(providerId, row[0], 'alias'), row[0])"
+                        size="small"
+                        @input="(val: string) => setDraft(modelCellKey(providerId, row[0], 'alias'), val)"
+                        @change="(val: string | number) => renameModel(providerId, row[0], val)"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="实际模型名 (model)" min-width="220">
+                    <template #default="{ row }">
+                      <el-input v-model="row[1].model" size="small" placeholder="openai/model-name" />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="Max Tokens" width="150">
+                    <template #default="{ row }">
+                      <el-input-number
+                        v-model="row[1].max_tokens"
+                        size="small"
+                        :min="1"
+                        :step="1000"
+                        controls-position="right"
+                        placeholder="默认"
+                        style="width: 120px"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="上下文窗口" width="160">
+                    <template #default="{ row }">
+                      <el-input-number
+                        :model-value="
+                          typeof row[1].meta?.context_window === 'number' ? row[1].meta.context_window : undefined
+                        "
+                        size="small"
+                        :min="1"
+                        :step="10000"
+                        controls-position="right"
+                        placeholder="默认"
+                        style="width: 130px"
+                        @update:model-value="(val: number | undefined) => setContextWindow(row[1], val)"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="extra_body" width="230">
+                    <template #default="{ row }">
+                      <el-input
+                        type="textarea"
+                        :rows="2"
+                        :autosize="{ minRows: 2, maxRows: 8 }"
+                        class="json-editor font-mono"
+                        :class="{ 'json-editor--error': hasJsonError(modelCellKey(providerId, row[0], 'extra_body')) }"
+                        :model-value="getDraft(modelCellKey(providerId, row[0], 'extra_body'), extraBodyText(row[1]))"
+                        placeholder='未配置，如 {"thinking": {"type": "enabled"}}'
+                        @input="(val: string) => setDraft(modelCellKey(providerId, row[0], 'extra_body'), val)"
+                        @change="(val: string) => applyExtraBody(providerId, row[0], row[1], val)"
+                      />
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="更多参数" width="300" class-name="more-params-cell">
+                    <template #default="{ row }">
+                      <div>
+                        <el-button link type="primary" size="small" @click="toggleParamsExpanded(providerId, row[0])">
+                          {{
+                            isParamsExpanded(providerId, row[0]) ? '收起' : `展开 (${extraParamKeys(row[1]).length})`
+                          }}
+                        </el-button>
+                        <div v-if="isParamsExpanded(providerId, row[0])" class="mt-2 space-y-2">
+                          <div
+                            v-for="paramKey in extraParamKeys(row[1])"
+                            :key="paramKey"
+                            class="flex items-start gap-1"
+                          >
+                            <el-input
+                              :model-value="getDraft(modelCellKey(providerId, row[0], `key:${paramKey}`), paramKey)"
+                              size="small"
+                              class="flex-shrink-0"
+                              style="width: 110px"
+                              @input="
+                                (val: string) => setDraft(modelCellKey(providerId, row[0], `key:${paramKey}`), val)
+                              "
+                              @change="
+                                (val: string | number) => commitExtraParamKey(providerId, row[0], row[1], paramKey, val)
+                              "
+                            />
+                            <!-- 布尔值 → 开关 -->
+                            <el-switch
+                              v-if="paramValueType(row[1][paramKey]) === 'boolean'"
+                              :model-value="Boolean(row[1][paramKey])"
+                              size="small"
+                              class="mt-1.5"
+                              @change="(val: boolean) => (row[1][paramKey] = val)"
+                            />
+                            <!-- 数字 → 数字输入 -->
+                            <el-input-number
+                              v-else-if="paramValueType(row[1][paramKey]) === 'number'"
+                              :model-value="Number(row[1][paramKey])"
+                              size="small"
+                              controls-position="right"
+                              style="width: 110px"
+                              @change="
+                                (val: number | undefined) => setNumberParam(providerId, row[0], row[1], paramKey, val)
+                              "
+                            />
+                            <!-- 字符串 → 文本输入（自动识别数字/布尔/JSON） -->
+                            <el-input
+                              v-else-if="paramValueType(row[1][paramKey]) === 'string'"
+                              :model-value="
+                                getDraft(modelCellKey(providerId, row[0], `val:${paramKey}`), String(row[1][paramKey]))
+                              "
+                              size="small"
+                              placeholder="文本（自动识别数字/布尔/JSON）"
+                              @input="
+                                (val: string) => setDraft(modelCellKey(providerId, row[0], `val:${paramKey}`), val)
+                              "
+                              @change="(val: string) => setStringParam(providerId, row[0], row[1], paramKey, val)"
+                            />
+                            <!-- 数组/对象/null → JSON 编辑 -->
+                            <el-input
+                              v-else
+                              type="textarea"
+                              :rows="2"
+                              :autosize="{ minRows: 2, maxRows: 6 }"
+                              class="json-editor font-mono"
+                              :class="{
+                                'json-editor--error': hasJsonError(modelCellKey(providerId, row[0], paramKey)),
+                              }"
+                              :model-value="
+                                getDraft(
+                                  modelCellKey(providerId, row[0], `val:${paramKey}`),
+                                  jsonParamText(row[1][paramKey])
+                                )
+                              "
+                              @input="
+                                (val: string) => setDraft(modelCellKey(providerId, row[0], `val:${paramKey}`), val)
+                              "
+                              @change="(val: string) => applyJsonParam(providerId, row[0], row[1], paramKey, val)"
+                            />
+                            <el-button
+                              size="small"
+                              type="danger"
+                              text
+                              :icon="Delete"
+                              class="flex-shrink-0"
+                              @click="removeExtraParam(row[1], paramKey)"
+                            />
+                          </div>
+                          <el-button
+                            size="small"
+                            type="primary"
+                            plain
+                            :icon="Plus"
+                            @click="openAddExtraParam(providerId, row[0], row[1])"
+                          >
+                            添加参数
+                          </el-button>
+                        </div>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="多模态" min-width="210">
+                    <template #default="{ row }">
+                      <div class="flex items-center gap-2 flex-wrap">
+                        <el-checkbox
+                          v-for="opt in MODALITY_OPTIONS"
+                          :key="opt.key"
+                          :model-value="hasModality(row[1], opt.key)"
+                          size="small"
+                          @change="(checked: boolean | string | number) => toggleModality(row[1], opt.key, checked)"
+                        >
+                          <span class="text-xs">{{ opt.label }}</span>
+                        </el-checkbox>
+                        <el-button
+                          size="small"
+                          text
+                          type="primary"
+                          @click="openModalityDialog(providerId, row[0], row[1])"
+                        >
+                          参数
+                        </el-button>
+                      </div>
+                    </template>
+                  </el-table-column>
+                  <el-table-column label="操作" width="80" fixed="right">
+                    <template #default="{ row }">
+                      <el-button
+                        size="small"
+                        type="danger"
+                        text
+                        :icon="Delete"
+                        @click="removeModel(providerId, row[0])"
+                      />
+                    </template>
+                  </el-table-column>
+                </el-table>
+
+                <div
+                  v-if="Object.keys(provider.models || {}).length === 0"
+                  class="text-center text-gray-400 text-sm py-4"
+                >
+                  暂无模型，点击「添加模型」创建
+                </div>
+              </div>
+            </el-collapse-item>
+          </el-collapse>
+        </el-tab-pane>
+
+        <!-- ============ Tab 2: 基础配置 ============ -->
+        <el-tab-pane label="基础配置" name="general">
+          <GeneralConfigPanel ref="generalPanelRef" @dirty-change="generalDirty = $event" />
+        </el-tab-pane>
+
+        <!-- ============ Tab 3: 工具权限 ============ -->
+        <el-tab-pane label="工具权限" name="tool-permission">
+          <ToolPermissionPanel ref="toolPanelRef" @dirty-change="toolDirty = $event" />
+        </el-tab-pane>
+      </el-tabs>
     </div>
 
     <!-- 添加提供商对话框 -->

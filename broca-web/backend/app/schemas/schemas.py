@@ -29,6 +29,18 @@ class LLMConfigUpdateRequest(BaseModel):
     config: dict[str, Any]
 
 
+class GeneralConfigUpdateRequest(BaseModel):
+    """保存基础配置（configs.json）的请求模型"""
+
+    config: dict[str, Any]
+
+
+class ToolPermissionUpdateRequest(BaseModel):
+    """保存工具权限配置的请求模型"""
+
+    config: dict[str, Any]
+
+
 class ApiResponse(BaseModel):
     code: int = 200
     msg: str | None = ""

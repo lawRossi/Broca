@@ -8,7 +8,12 @@ from broca.configs import get_configs
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
-from app.schemas.schemas import ApiResponse, LLMConfigUpdateRequest
+from app.schemas.schemas import (
+    ApiResponse,
+    GeneralConfigUpdateRequest,
+    LLMConfigUpdateRequest,
+    ToolPermissionUpdateRequest,
+)
 
 router = APIRouter()
 
@@ -19,19 +24,81 @@ if not _llm_config_path:
     _llm_config_path = configs.llm_config_file
 LLM_CONFIG_PATH = Path(_llm_config_path)
 
+# ---------- general（configs.json）与 tool-permission（工具权限）配置 ----------
+
+# 已知的 general 配置字段（保存时仅写回这些字段，未知字段丢弃；保持该顺序写回）
+KNOWN_GENERAL_CONFIG_FIELDS = (
+    "database_dir",
+    "log_file",
+    "log_level",
+    "llm_config_file",
+    "socket_server_url",
+    "api_server_url",
+)
+VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+VALID_PERMISSIONS = {"allow", "ask", "forbidden"}
+
+
+def _resolve_general_config_path() -> Path:
+    """按优先级解析 general 配置路径：
+    BROCA_CONFIG 环境变量 > ~/.broca/configs/configs.json（TUI/运行时新路径，优先于 legacy）
+    > ~/.broca/configs.json（legacy）> 项目默认 configs/configs.json。
+    写回目标 = 解析出的路径（不存在时也用它作为创建路径）。
+    """
+    env_path = os.getenv("BROCA_CONFIG")
+    if env_path:
+        return Path(env_path).expanduser()
+    new_path = Path.home() / ".broca" / "configs" / "configs.json"
+    if new_path.exists():
+        return new_path
+    legacy_path = Path.home() / ".broca" / "configs.json"
+    if legacy_path.exists():
+        return legacy_path
+    # 项目默认 configs/configs.json（与 broca.configs.get_configs 的默认路径一致）
+    return Path(__file__).resolve().parents[4] / "configs" / "configs.json"
+
+
+GENERAL_CONFIG_PATH = _resolve_general_config_path()
+# 工具权限全局路径（与 ToolPermissionManager 一致）
+TOOL_PERMISSION_PATH = Path.home() / ".broca" / "configs" / "tool_permission_config.json"
+
+
+def _read_json_config(path: Path) -> dict[str, Any]:
+    """读取 JSON 配置文件：不存在 → 404；损坏 → 500；非 object → 500"""
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Config file not found: {path}")
+    try:
+        with open(path, encoding="utf-8") as f:
+            config = json.load(f)
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Config file is not valid JSON: {e}") from e
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Failed to read config file: {e}") from e
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=500, detail="Config file content must be an object")
+    return config
+
+
+def _atomic_write_json(path: Path, config: dict[str, Any]) -> None:
+    """备份（.bak）并原子写入 JSON 配置文件（.tmp + os.replace，父目录自动创建）"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    # 写入前备份旧配置
+    if path.exists():
+        backup_path = path.with_suffix(".json.bak")
+        backup_path.write_bytes(path.read_bytes())
+
+    # 临时文件 + os.replace 原子替换，避免写一半导致配置损坏
+    tmp_path = path.with_suffix(".json.tmp")
+    with open(tmp_path, "w", encoding="utf-8") as f:
+        json.dump(config, f, ensure_ascii=False, indent=4)
+        f.write("\n")
+    os.replace(tmp_path, path)
+
 
 def _read_llm_config() -> dict[str, Any]:
     """读取完整 LLM 配置文件内容"""
-    if not LLM_CONFIG_PATH.exists():
-        raise HTTPException(status_code=404, detail="LLM config file not found")
-    try:
-        with open(LLM_CONFIG_PATH, encoding="utf-8") as f:
-            config = json.load(f)
-    except json.JSONDecodeError as e:
-        raise HTTPException(status_code=500, detail=f"LLM config file is not valid JSON: {e}") from e
-    if not isinstance(config, dict):
-        raise HTTPException(status_code=500, detail="LLM config file content must be an object")
-    return config
+    return _read_json_config(LLM_CONFIG_PATH)
 
 
 def _validate_llm_config(config: Any) -> None:
@@ -80,19 +147,71 @@ def _validate_llm_config(config: Any) -> None:
 
 def _write_llm_config(config: dict[str, Any]) -> None:
     """备份并原子写入 LLM 配置文件"""
-    LLM_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _atomic_write_json(LLM_CONFIG_PATH, config)
 
-    # 写入前备份旧配置
-    if LLM_CONFIG_PATH.exists():
-        backup_path = LLM_CONFIG_PATH.with_suffix(".json.bak")
-        backup_path.write_bytes(LLM_CONFIG_PATH.read_bytes())
 
-    # 临时文件 + os.replace 原子替换，避免写一半导致配置损坏
-    tmp_path = LLM_CONFIG_PATH.with_suffix(".json.tmp")
-    with open(tmp_path, "w", encoding="utf-8") as f:
-        json.dump(config, f, ensure_ascii=False, indent=4)
-        f.write("\n")
-    os.replace(tmp_path, LLM_CONFIG_PATH)
+def _validate_general_config(config: Any) -> None:
+    """校验 general 配置：必须 object；已知字段若存在必须为 string；log_level 必须合法；
+    未知字段仅记录 warning（写回时丢弃）。"""
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=400, detail="General config must be an object")
+    for key, value in config.items():
+        if key in KNOWN_GENERAL_CONFIG_FIELDS:
+            if not isinstance(value, str):
+                raise HTTPException(
+                    status_code=400, detail=f"General config field '{key}' must be a string"
+                )
+        else:
+            logger.warning("Unknown general config field '%s' will be dropped on save", key)
+    log_level = config.get("log_level")
+    if log_level is not None and log_level not in VALID_LOG_LEVELS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"log_level must be one of {sorted(VALID_LOG_LEVELS)}, got '{log_level}'",
+        )
+
+
+def _filter_general_config(config: dict[str, Any]) -> dict[str, Any]:
+    """仅保留已知字段，并按 KNOWN_GENERAL_CONFIG_FIELDS 顺序写回"""
+    return {key: config[key] for key in KNOWN_GENERAL_CONFIG_FIELDS if key in config}
+
+
+def _validate_tool_permission_config(config: Any) -> None:
+    """校验工具权限配置：必须 object；tools 必须为 dict（可为空）且每个权限值合法；
+    _description 若存在必须 string；_permission_values 若存在必须 object 且值均为 string。"""
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=400, detail="Tool permission config must be an object")
+    tools = config.get("tools", {})
+    if not isinstance(tools, dict):
+        raise HTTPException(
+            status_code=400, detail="Tool permission config 'tools' must be an object"
+        )
+    for tool_name, permission in tools.items():
+        if not isinstance(tool_name, str) or not tool_name.strip():
+            raise HTTPException(
+                status_code=400, detail="Tool name must be a non-empty string"
+            )
+        if permission not in VALID_PERMISSIONS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Permission for tool '{tool_name}' must be one of "
+                    f"{sorted(VALID_PERMISSIONS)}, got '{permission}'"
+                ),
+            )
+    description = config.get("_description")
+    if description is not None and not isinstance(description, str):
+        raise HTTPException(status_code=400, detail="'_description' must be a string")
+    permission_values = config.get("_permission_values")
+    if permission_values is not None:
+        if not isinstance(permission_values, dict):
+            raise HTTPException(status_code=400, detail="'_permission_values' must be an object")
+        for key, value in permission_values.items():
+            if not isinstance(value, str):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"'_permission_values.{key}' must be a string",
+                )
 
 
 @router.get("/llm/providers", response_model=ApiResponse)
@@ -182,4 +301,67 @@ async def update_llm_config(request: LLMConfigUpdateRequest) -> ApiResponse:
         raise
     except Exception as e:
         logger.exception("Error saving LLM config")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+# -------------------- general（configs.json）---------------------
+
+
+@router.get("/general", response_model=ApiResponse)
+async def get_general_config() -> ApiResponse:
+    """获取基础配置文件（configs.json）内容"""
+    try:
+        config = _read_json_config(GENERAL_CONFIG_PATH)
+        return ApiResponse.success(config, msg="General config retrieved successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting general config")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.put("/general", response_model=ApiResponse)
+async def update_general_config(request: GeneralConfigUpdateRequest) -> ApiResponse:
+    """保存基础配置：校验 + 仅写回已知字段（未知字段丢弃）+ 备份 + 原子写"""
+    try:
+        _validate_general_config(request.config)
+        filtered = _filter_general_config(request.config)
+        _atomic_write_json(GENERAL_CONFIG_PATH, filtered)
+        logger.info("General config saved to %s", GENERAL_CONFIG_PATH)
+        return ApiResponse.success(msg="General config saved successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error saving general config")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+# -------------------- tool-permission（工具权限）---------------------
+
+
+@router.get("/tool-permission", response_model=ApiResponse)
+async def get_tool_permission_config() -> ApiResponse:
+    """获取工具权限配置文件（tool_permission_config.json）内容"""
+    try:
+        config = _read_json_config(TOOL_PERMISSION_PATH)
+        return ApiResponse.success(config, msg="Tool permission config retrieved successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting tool permission config")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.put("/tool-permission", response_model=ApiResponse)
+async def update_tool_permission_config(request: ToolPermissionUpdateRequest) -> ApiResponse:
+    """保存工具权限配置：校验 + 保留请求中全部字段（含元数据）+ 备份 + 原子写"""
+    try:
+        _validate_tool_permission_config(request.config)
+        _atomic_write_json(TOOL_PERMISSION_PATH, copy.deepcopy(request.config))
+        logger.info("Tool permission config saved to %s", TOOL_PERMISSION_PATH)
+        return ApiResponse.success(msg="Tool permission config saved successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error saving tool permission config")
         raise HTTPException(500, f"Internal server error: {e!s}") from e
