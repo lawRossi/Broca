@@ -35,7 +35,6 @@ class ContextCompactConfig:
     """上下文压缩全局配置"""
 
     # Session Memory 截断
-    enable_session_memory_truncation: bool = True
     session_trunc_threshold: int = 250000  # 触发截断的 token 阈值
     session_trunc_percentage: float = 0.5  # 上下文窗口百分比
 

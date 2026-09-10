@@ -91,7 +91,6 @@ const configForm = ref<any>({
     freshness_warning_days: 7,
   },
   compact_config: {
-    enable_session_memory_truncation: true,
     session_trunc_threshold: 250000,
     session_trunc_percentage: 0.5,
   },

@@ -83,7 +83,7 @@ class TestCheckAndCompress:
 
     @pytest.mark.asyncio
     async def test_no_compression_needed(self):
-        """测试不需要压缩时"""
+        """测试无 session_memory_manager 时不截断"""
         compressor = ContextCompressor()
         mock_context = MagicMock()
         mock_context.history = [
@@ -94,13 +94,12 @@ class TestCheckAndCompress:
         mock_agent = MagicMock()
         mock_agent.config.provider = "openai"
         mock_agent.config.model = "gpt-4o"
+        mock_agent.session_memory_manager = None
 
-        # 设置 compact_config 禁用压缩
         mock_compact = MagicMock()
-        mock_compact.enable_session_memory_truncation = False
         mock_agent.config.compact_config = mock_compact
 
-        # 即使 force=True，因为策略被禁用，应无操作
+        # 无 session_memory_manager 时应跳过截断，无操作
         stats = await compressor.check_and_compress(
             context=mock_context,
             execution_engine=mock_engine,

@@ -119,27 +119,26 @@ class ContextCompressor:
         total_tokens = self._estimate_context_tokens(context)
 
         # Session Memory 截断
-        if compact_config.enable_session_memory_truncation:
-            if force:
+        if force:
+            await self._try_session_memory_truncation(
+                context=context,
+                execution_engine=execution_engine,
+                agent=agent,
+                config=compact_config,
+            )
+        else:
+            effective_threshold = self._get_effective_threshold(
+                compact_config.session_trunc_threshold,
+                compact_config.session_trunc_percentage,
+                agent,
+            )
+            if total_tokens > effective_threshold:
                 await self._try_session_memory_truncation(
                     context=context,
                     execution_engine=execution_engine,
                     agent=agent,
                     config=compact_config,
                 )
-            else:
-                effective_threshold = self._get_effective_threshold(
-                    compact_config.session_trunc_threshold,
-                    compact_config.session_trunc_percentage,
-                    agent,
-                )
-                if total_tokens > effective_threshold:
-                    await self._try_session_memory_truncation(
-                        context=context,
-                        execution_engine=execution_engine,
-                        agent=agent,
-                        config=compact_config,
-                    )
 
         return self.stats
 
