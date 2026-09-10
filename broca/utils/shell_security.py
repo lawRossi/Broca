@@ -37,8 +37,6 @@ DANGEROUS_COMMAND_PATTERNS: List[Tuple[str, str]] = [
     (r"^\s*dd\s+", "Disk data operation with 'dd'"),
     (r"^\s*mkfs\s+", "Filesystem creation with 'mkfs'"),
     (r"^\s*fdisk\s+", "Partition manipulation with 'fdisk'"),
-    # Shell 注入
-    (r"\$\s*\(", "Shell command substitution '$('"),
     # Python 危险调用
     (r"^\s*os\.system\s*\(", "Python os.system() call"),
     (r"^\s*subprocess\.call\s*\(", "Python subprocess.call()"),
