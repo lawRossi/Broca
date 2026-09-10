@@ -100,10 +100,10 @@ class LoopEngine:
         session_manager: SessionManager,
         session_memory_manager: Any = None,
         tool_permission_manager: Optional[ToolPermissionManager] = None,
-        step_max_errors=3,
-        llm_retry_delay=5,
-        tool_call_timeout=120,
-        assign_task_timeout=1800,
+        step_max_errors=None,
+        llm_retry_delay=None,
+        tool_call_timeout=None,
+        assign_task_timeout=None,
     ):
         """
         Initialize the execution engine
@@ -116,6 +116,10 @@ class LoopEngine:
             config: Agent configuration
             communicator: Communication interface for sending messages
             session_manager: Session manager for persistence
+            step_max_errors: Maximum number of step errors before aborting
+            llm_retry_delay: Delay in seconds between LLM retries
+            tool_call_timeout: Timeout in seconds for tool calls
+            assign_task_timeout: Timeout in seconds for assign_task tool
         """
         self.agent = agent
         self.llm_client = llm_client
@@ -141,10 +145,30 @@ class LoopEngine:
         self.namespace: Optional[str] = None
         self.execution_id: Optional[str] = None
 
-        self.step_max_errors = step_max_errors
-        self.llm_retry_delay = llm_retry_delay
-        self.tool_call_timeout = tool_call_timeout
-        self.assign_task_timeout = assign_task_timeout
+        # 执行参数：显式传入 > config 中的 execution 配置 > 默认值
+        exec_cfg = getattr(config, "execution_config", None)
+        self.step_max_errors = (
+            step_max_errors
+            if step_max_errors is not None
+            else getattr(exec_cfg, "step_max_errors", 3)
+        )
+        self.llm_retry_delay = (
+            llm_retry_delay
+            if llm_retry_delay is not None
+            else getattr(exec_cfg, "llm_retry_delay", 5)
+        )
+        self.tool_call_timeout = (
+            tool_call_timeout
+            if tool_call_timeout is not None
+            else getattr(exec_cfg, "tool_call_timeout", 120)
+        )
+        self.assign_task_timeout = (
+            assign_task_timeout
+            if assign_task_timeout is not None
+            else getattr(exec_cfg, "assign_task_timeout", 1800)
+        )
+        self.dead_loop_window = getattr(exec_cfg, "dead_loop_window", 3)
+        self.llm_timeout = getattr(exec_cfg, "llm_timeout", 300)
 
         # 快照跟踪
         self.snapshot_tracker: Optional[SnapshotTracker] = None
@@ -324,7 +348,7 @@ class LoopEngine:
 
             try:
                 response = await asyncio.wait_for(
-                    self._call_llm_streaming(), timeout=300
+                    self._call_llm_streaming(), timeout=self.llm_timeout
                 )
                 if not response:
                     raise LLMError("LLM 调用返回空响应")
@@ -389,15 +413,16 @@ class LoopEngine:
             )
 
     def _detect_dead_loop(self, tool_calls: list) -> ExecutionStatus:
-        """检测是否陷入死循环（最近 3 步工具调用完全相同）"""
+        """检测是否陷入死循环（最近 N 步工具调用完全相同，N 由配置 dead_loop_window 决定）"""
         tool_call_signatures = self._extract_tool_call_signatures(tool_calls)
         self._recent_tool_call_signatures.extend(tool_call_signatures)
-        if len(self._recent_tool_call_signatures) < 3:
+        window = self.dead_loop_window
+        if len(self._recent_tool_call_signatures) < window:
             return ExecutionStatus.RUNNING
-        last3 = self._recent_tool_call_signatures[-3:]
-        if last3[0] == last3[1] == last3[2]:
+        last_n = self._recent_tool_call_signatures[-window:]
+        if all(sig == last_n[0] for sig in last_n[1:]):
             logger.warning(
-                f"Dead loop detected: last 3 tool calls are identical "
+                f"Dead loop detected: last {window} tool calls are identical "
                 f"({self._recent_tool_call_signatures[-1]})"
             )
             return ExecutionStatus.DEAD_LOOP

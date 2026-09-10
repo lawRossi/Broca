@@ -34,6 +34,18 @@ KNOWN_GENERAL_CONFIG_FIELDS = (
     "llm_config_file",
     "socket_server_url",
     "api_server_url",
+    "execution",
+)
+# execution 分组下的已知字段（数字型，执行引擎相关；顺序保持写回）
+KNOWN_EXECUTION_CONFIG_FIELDS = (
+    "step_max_errors",
+    "llm_retry_delay",
+    "tool_call_timeout",
+    "assign_task_timeout",
+    "llm_timeout",
+    "llm_first_chunk_timeout",
+    "dead_loop_window",
+    "message_queue_size",
 )
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_PERMISSIONS = {"allow", "ask", "forbidden"}
@@ -150,19 +162,37 @@ def _write_llm_config(config: dict[str, Any]) -> None:
     _atomic_write_json(LLM_CONFIG_PATH, config)
 
 
+def _validate_execution_config(config: Any) -> None:
+    """校验 execution 分组：必须 object；字段若存在必须为数字且非负；未知字段记录 warning。"""
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=400, detail="General config field 'execution' must be an object")
+    for key, value in config.items():
+        if key in KNOWN_EXECUTION_CONFIG_FIELDS:
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Execution config field '{key}' must be a non-negative number",
+                )
+        else:
+            logger.warning("Unknown execution config field '%s' will be dropped on save", key)
+
+
 def _validate_general_config(config: Any) -> None:
     """校验 general 配置：必须 object；已知字段若存在必须为 string；log_level 必须合法；
-    未知字段仅记录 warning（写回时丢弃）。"""
+    execution 分组有独立的 object 校验；未知字段仅记录 warning（写回时丢弃）。"""
     if not isinstance(config, dict):
         raise HTTPException(status_code=400, detail="General config must be an object")
     for key, value in config.items():
-        if key in KNOWN_GENERAL_CONFIG_FIELDS:
+        if key not in KNOWN_GENERAL_CONFIG_FIELDS:
+            logger.warning("Unknown general config field '%s' will be dropped on save", key)
+    for key, value in config.items():
+        if key == "execution":
+            _validate_execution_config(value)
+        elif key in KNOWN_GENERAL_CONFIG_FIELDS:
             if not isinstance(value, str):
                 raise HTTPException(
                     status_code=400, detail=f"General config field '{key}' must be a string"
                 )
-        else:
-            logger.warning("Unknown general config field '%s' will be dropped on save", key)
     log_level = config.get("log_level")
     if log_level is not None and log_level not in VALID_LOG_LEVELS:
         raise HTTPException(
@@ -172,8 +202,23 @@ def _validate_general_config(config: Any) -> None:
 
 
 def _filter_general_config(config: dict[str, Any]) -> dict[str, Any]:
-    """仅保留已知字段，并按 KNOWN_GENERAL_CONFIG_FIELDS 顺序写回"""
-    return {key: config[key] for key in KNOWN_GENERAL_CONFIG_FIELDS if key in config}
+    """仅保留已知字段，并按 KNOWN_GENERAL_CONFIG_FIELDS 顺序写回；
+    execution 分组进一步过滤为已知 execution 字段。"""
+    result: dict[str, Any] = {}
+    for key in KNOWN_GENERAL_CONFIG_FIELDS:
+        if key not in config:
+            continue
+        if key == "execution":
+            exec_src = config[key]
+            if isinstance(exec_src, dict):
+                result[key] = {
+                    fk: exec_src[fk]
+                    for fk in KNOWN_EXECUTION_CONFIG_FIELDS
+                    if fk in exec_src
+                }
+        else:
+            result[key] = config[key]
+    return result
 
 
 def _validate_tool_permission_config(config: Any) -> None:

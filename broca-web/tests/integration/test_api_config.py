@@ -371,6 +371,16 @@ class TestGeneralConfigAPI:
         "llm_config_file": "/tmp/broca/configs/llm_config.json",
         "socket_server_url": "http://localhost:6868",
         "api_server_url": "http://localhost:9000",
+        "execution": {
+            "step_max_errors": 3,
+            "llm_retry_delay": 5,
+            "tool_call_timeout": 120,
+            "assign_task_timeout": 1800,
+            "llm_timeout": 300,
+            "llm_first_chunk_timeout": 30,
+            "dead_loop_window": 3,
+            "message_queue_size": 3,
+        },
     }
 
     @pytest.mark.asyncio
@@ -490,6 +500,131 @@ class TestGeneralConfigAPI:
         # pydantic 请求模型要求 config 为 dict，非对象在请求校验层即被拒绝
         assert response.status_code == 422
         assert config_file.read_text(encoding="utf-8") == "{}"
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_with_execution(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT general config with execution group: preserved in KNOWN order,
+        unknown execution fields dropped, .bak backup created."""
+        config_file = tmp_path / "configs.json"
+        original = {"database_dir": "/old"}
+        config_file.write_text(json.dumps(original), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        payload = {
+            "database_dir": "/new/data",
+            "execution": {
+                "step_max_errors": 5,
+                "llm_retry_delay": 7,
+                "tool_call_timeout": 60,
+                "assign_task_timeout": 900,
+                "llm_timeout": 120,
+                "llm_first_chunk_timeout": 15,
+                "dead_loop_window": 4,
+                "message_queue_size": 10,
+                "bogus_field": "should-be-dropped",
+            },
+        }
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": payload},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert "execution" in saved
+        # execution 字段按 KNOWN 顺序写回，未知字段被过滤
+        assert list(saved["execution"].keys()) == [
+            "step_max_errors",
+            "llm_retry_delay",
+            "tool_call_timeout",
+            "assign_task_timeout",
+            "llm_timeout",
+            "llm_first_chunk_timeout",
+            "dead_loop_window",
+            "message_queue_size",
+        ]
+        assert saved["execution"]["step_max_errors"] == 5
+        assert saved["execution"]["dead_loop_window"] == 4
+        assert "bogus_field" not in saved["execution"]
+        # 旧文件备份为 .bak
+        backup_file = tmp_path / "configs.json.bak"
+        assert backup_file.exists()
+        assert json.loads(backup_file.read_text(encoding="utf-8")) == original
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_execution_not_object(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with non-object 'execution' should return 400 and not modify file."""
+        config_file = tmp_path / "configs.json"
+        original = json.dumps(self.VALID_CONFIG)
+        config_file.write_text(original, encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": {**self.VALID_CONFIG, "execution": "not-an-object"}},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert config_file.read_text(encoding="utf-8") == original
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_execution_invalid_value(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with non-numeric or boolean/negative execution field should return 400."""
+        config_file = tmp_path / "configs.json"
+        original = json.dumps(self.VALID_CONFIG)
+        config_file.write_text(original, encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        # 非数字
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": {**self.VALID_CONFIG, "execution": {"step_max_errors": "three"}}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+        # 布尔值（int 子类，应拒绝）
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": {**self.VALID_CONFIG, "execution": {"step_max_errors": True}}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+        # 负数
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": {**self.VALID_CONFIG, "execution": {"llm_retry_delay": -1}}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+        # 原文件未被修改
+        assert config_file.read_text(encoding="utf-8") == original
+
+    @pytest.mark.asyncio
+    async def test_get_general_config_with_execution(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """GET general config should return the full config dict including execution."""
+        config_file = tmp_path / "configs.json"
+        config_file.write_text(json.dumps(self.VALID_CONFIG), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        response = await async_client.get("/api/config/general", headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["data"]["execution"]["llm_timeout"] == 300
+        assert data["data"]["execution"]["message_queue_size"] == 3
 
 
 class TestToolPermissionConfigAPI:

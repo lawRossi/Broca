@@ -47,6 +47,11 @@ class LLMClient:
         with open(config_file) as f:
             self.config = json.load(f)
 
+        # 全局配置（configs.json）中执行相关参数，用于 LLM 调用超时
+        from broca.configs import get_configs
+
+        self.execution_config = get_configs().execution
+
         # 环境变量覆盖 API Key: BROCA_API_KEY_{PROVIDER_UPPER}
         self._apply_env_overrides()
 
@@ -174,8 +179,8 @@ class LLMClient:
         model,
         messages,
         tools=None,
-        first_chunk_timeout=30,
-        timeout=300,
+        first_chunk_timeout=None,
+        timeout=None,
     ) -> AsyncGenerator[dict, None]:
         if provider not in self.config:
             raise ValidationError(
@@ -191,6 +196,11 @@ class LLMClient:
         del args["meta"]
 
         model_name = args.get("model", model)
+        # 未显式传入时使用全局配置中的超时参数
+        if first_chunk_timeout is None:
+            first_chunk_timeout = self.execution_config.llm_first_chunk_timeout
+        if timeout is None:
+            timeout = self.execution_config.llm_timeout
         try:
             response = await acompletion(
                 base_url=self.config[provider]["base_url"],

@@ -49,6 +49,19 @@ export interface GeneralConfig {
   llm_config_file?: string
   socket_server_url?: string
   api_server_url?: string
+  execution?: ExecutionConfig
+}
+
+/** 执行引擎配置（configs.json 中的 execution 分组，数字型） */
+export interface ExecutionConfig {
+  step_max_errors?: number
+  llm_retry_delay?: number
+  tool_call_timeout?: number
+  assign_task_timeout?: number
+  llm_timeout?: number
+  llm_first_chunk_timeout?: number
+  dead_loop_window?: number
+  message_queue_size?: number
 }
 
 /** 工具权限配置（tool_permission_config.json） */

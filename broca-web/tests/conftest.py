@@ -7,8 +7,10 @@ and reusable auth helpers.
 from __future__ import annotations
 
 import os
+import sys
 import uuid
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, AsyncGenerator
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -16,6 +18,12 @@ import pytest
 import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
+
+# 确保优先加载源码仓库的 backend（而非 ~/.broca/web 部署副本）
+# 部署/测试环境可能通过 PYTHONPATH 指向部署副本，这里把源码 backend 插到 sys.path 最前
+_SOURCE_BACKEND = Path(__file__).resolve().parents[1] / "backend"
+if str(_SOURCE_BACKEND) not in sys.path:
+    sys.path.insert(0, str(_SOURCE_BACKEND))
 
 # Override settings before importing app modules
 os.environ["JWT_SECRET"] = "test-secret-key-for-testing-only"

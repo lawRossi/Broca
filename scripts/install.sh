@@ -440,73 +440,17 @@ echo "    export BROCA_API_KEY_{PROVIDER}=\"your-key\""
 echo "  ────────────────────────────────────────────"
 echo ""
 
-# ---- 复制 configs.json ----
-mkdir -p "$BROCA_HOME/configs"
-CONFIG_DST="$BROCA_HOME/configs/configs.json"
-CONFIG_SRC="$PROJECT_ROOT/configs/configs.json"
+# 同步配置文件（configs.json / llm_config / agents / tool_permission / skills）
+mkdir -p "$BROCA_HOME/configs" "$BROCA_HOME/data" "$BROCA_HOME/logs"
 
-if [[ ! -f "$CONFIG_DST" ]]; then
-    if [[ -f "$CONFIG_SRC" ]]; then
-        cp "$CONFIG_SRC" "$CONFIG_DST"
-        # 将路径改为指向 ~/.broca/
-        sed_inplace "s|\"database_dir\":.*|\"database_dir\": \"$BROCA_HOME/data\",|" "$CONFIG_DST"
-        sed_inplace "s|\"llm_config_file\":.*|\"llm_config_file\": \"$BROCA_HOME/configs/llm_config.json\",|" "$CONFIG_DST"
-        sed_inplace "s|\"log_file\":.*|\"log_file\": \"$BROCA_HOME/logs/agent.log\"|" "$CONFIG_DST"
-        info "已创建用户配置: $CONFIG_DST"
-    else
-        warn "未找到默认配置: $CONFIG_SRC"
-    fi
+# 配置复制/同步统一由独立脚本处理（install.sh 与 install.ps1 复用，跨平台一致）
+info "同步配置文件到 $BROCA_HOME ..."
+if $BROCA_PYTHON "$SCRIPT_DIR/sync_configs.py" \
+    --project-root "$PROJECT_ROOT" \
+    --broca-home "$BROCA_HOME"; then
+    info "配置文件同步完成"
 else
-    info "用户配置已存在: ${CONFIG_DST}（跳过）"
-fi
-
-# ---- 复制 llm_config.json ----
-LLM_DST="$BROCA_HOME/configs/llm_config_template.json"
-LLM_CONFIG="$BROCA_HOME/configs/llm_config.json"
-LLM_SRC="$PROJECT_ROOT/configs/llm_config_template.json"
-
-cp "$LLM_SRC" "$LLM_DST"
-
-if [[ ! -f "$LLM_CONFIG" ]]; then
-    cp "$LLM_SRC" "$LLM_CONFIG"
-    info "已创建用户 LLM 配置: $LLM_CONFIG"
-else
-    info "用户 LLM 配置已存在: ${LLM_CONFIG}（跳过）"
-fi
-
-# ---- 复制 Agent 配置 ----
-AGENTS_SRC="$PROJECT_ROOT/configs/agents"
-AGENTS_DST="$BROCA_HOME/configs/agents"
-
-if [[ -d "$AGENTS_SRC" ]]; then
-    mkdir -p "$AGENTS_DST"
-    cp -r "$AGENTS_SRC/"* "$AGENTS_DST/" 2>/dev/null
-    info "Agent 配置已更新: $AGENTS_DST"
-else
-    warn "未找到 Agent 配置目录: $AGENTS_SRC"
-fi
-
-# ---- 复制 tool_permission_config.json ----
-PERM_DST="$BROCA_HOME/configs/tool_permission_config.json"
-PERM_SRC="$PROJECT_ROOT/configs/tool_permission_config.json"
-
-if [[ -f "$PERM_SRC" ]]; then
-    cp "$PERM_SRC" "$PERM_DST"
-    info "已创建工具权限配置: $PERM_DST"
-else
-    warn "未找到默认工具权限配置: $PERM_SRC"
-fi
-
-# ---- 复制 Skills ----
-SKILLS_DST="$BROCA_HOME/skills"
-SKILLS_SRC="$PROJECT_ROOT/skills"
-
-if [[ -d "$SKILLS_SRC" ]]; then
-    mkdir -p "$SKILLS_DST"
-    rsync -a --delete "$SKILLS_SRC/" "$SKILLS_DST/" 2>/dev/null || cp -r "$SKILLS_SRC"/* "$SKILLS_DST/"
-    info "Skills 已部署: $SKILLS_DST"
-else
-    warn "未找到 Skills 目录: $SKILLS_SRC"
+    warn "配置文件同步失败，请检查后手动处理 $BROCA_HOME/configs"
 fi
 
 echo ""

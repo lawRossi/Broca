@@ -317,70 +317,18 @@ Write-Step "Step 4/9: 配置 LLM 与用户配置..."
 
 $null = New-Item -ItemType Directory -Force -Path $BrocaConfigDir
 
-# ---- 复制 configs.json ----
-$configDst = "$BrocaConfigDir\configs.json"
-$configSrc = "$ProjectRoot\configs\configs.json"
-if (-not (Test-Path $configDst)) {
-    if (Test-Path $configSrc) {
-        Copy-Item $configSrc $configDst
-        # 替换路径为 Windows 风格
-        (Get-Content $configDst) `
-            -replace '"database_dir":\s*"[^"]*"', ('"database_dir": "' + $BrocaDbDir.Replace('\', '\\') + '",') `
-            -replace '"llm_config_file":\s*"[^"]*"', ('"llm_config_file": "' + $BrocaConfigDir.Replace('\', '\\') + '\\llm_config.json",') `
-            -replace '"log_file":\s*"[^"]*"', ('"log_file": "' + $BrocaLogDir.Replace('\', '\\') + '\\agent.log"') `
-        | Set-Content $configDst -Encoding UTF8
-        Write-Info "已创建用户配置: $configDst"
-    } else {
-        Write-Warn "未找到默认配置: $configSrc"
-    }
-} else {
-    Write-Info "用户配置已存在: $configDst（跳过）"
-}
+# ---- 同步配置文件（configs.json / llm_config / agents / tool_permission / skills）----
+# 统一由独立 Python 脚本处理（install.sh 与 install.ps1 复用，跨平台一致）
+$null = New-Item -ItemType Directory -Force -Path $BrocaConfigDir, $BrocaDbDir, $BrocaLogDir
 
-# ---- 复制 llm_config.json ----
-$llmDst = "$BrocaConfigDir\llm_config_template.json"
-$llmConfig = "$BrocaConfigDir\llm_config.json"
-$llmSrc = "$ProjectRoot\configs\llm_config_template.json"
-if (Test-Path $llmSrc) {
-    Copy-Item $llmSrc $llmDst -Force
-    if (-not (Test-Path $llmConfig)) {
-        Copy-Item $llmSrc $llmConfig
-        Write-Info "已创建用户 LLM 配置: $llmConfig"
-    } else {
-        Write-Info "用户 LLM 配置已存在: $llmConfig（跳过）"
-    }
-}
-
-# ---- 复制 Agent 配置 ----
-$agentsSrc = "$ProjectRoot\configs\agents"
-$agentsDst = "$BrocaConfigDir\agents"
-if (Test-Path $agentsSrc) {
-    $null = New-Item -ItemType Directory -Force -Path $agentsDst
-    Copy-Item "$agentsSrc\*" $agentsDst -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Info "Agent 配置已更新: $agentsDst"
+Write-Info "同步配置文件到 $BrocaHome ..."
+& $BrocaPython "$ProjectRoot\scripts\sync_configs.py" `
+    --project-root $ProjectRoot `
+    --broca-home $BrocaHome
+if ($LASTEXITCODE -eq 0) {
+    Write-Info "配置文件同步完成"
 } else {
-    Write-Warn "未找到 Agent 配置目录: $agentsSrc"
-}
-
-# ---- 复制 tool_permission_config.json ----
-$permDst = "$BrocaConfigDir\tool_permission_config.json"
-$permSrc = "$ProjectRoot\configs\tool_permission_config.json"
-if (Test-Path $permSrc) {
-    Copy-Item $permSrc $permDst -Force
-    Write-Info "已创建工具权限配置: $permDst"
-} else {
-    Write-Warn "未找到默认工具权限配置: $permSrc"
-}
-
-# ---- 复制 Skills ----
-$skillsDst = "$BrocaHome\skills"
-$skillsSrc = "$ProjectRoot\skills"
-if (Test-Path $skillsSrc) {
-    $null = New-Item -ItemType Directory -Force -Path $skillsDst
-    Copy-Item "$skillsSrc\*" $skillsDst -Recurse -Force -ErrorAction SilentlyContinue
-    Write-Info "Skills 已部署: $skillsDst"
-} else {
-    Write-Warn "未找到 Skills 目录: $skillsSrc"
+    Write-Warn "配置文件同步失败，请检查后手动处理 $BrocaConfigDir"
 }
 
 Write-Host ""

@@ -4,5 +4,15 @@
     "log_level": "INFO",
     "llm_config_file": "/home/ubuntu/code/Broca/configs/llm_config.json",
     "socket_server_url": "http://localhost:6868",
-    "api_server_url": "http://localhost:9000"
+    "api_server_url": "http://localhost:9000",
+    "execution": {
+        "step_max_errors": 3,
+        "llm_retry_delay": 5,
+        "tool_call_timeout": 120,
+        "assign_task_timeout": 1800,
+        "llm_timeout": 300,
+        "llm_first_chunk_timeout": 30,
+        "dead_loop_window": 3,
+        "message_queue_size": 3
+    }
 }

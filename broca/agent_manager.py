@@ -166,6 +166,11 @@ class AgentFactory:
         if not config.workspace:
             config.workspace = os.getcwd()
 
+        # 注入全局 execution 配置（configs.json 中的 execution 分组）
+        from broca.configs import get_configs
+
+        config.execution_config = get_configs().execution
+
         # Initialize ToolManager (loads custom tools + MCP servers).
         # Idempotent: only happens once across all agents in this process.
         await ToolManager().init(config.workspace)
@@ -246,6 +251,11 @@ class AgentFactory:
             config.update(cached_config)
         logger.debug(f"Restoring agent from config: {config}, agent_id: {agent_id}")
         agent_config = AgentConfig.from_config(config)
+
+        # 注入全局 execution 配置（configs.json 中的 execution 分组）
+        from broca.configs import get_configs
+
+        agent_config.execution_config = get_configs().execution
 
         # Ensure ToolManager is initialized (idempotent — safe to call on restore)
         await ToolManager().init(agent_config.workspace)

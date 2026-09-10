@@ -55,6 +55,28 @@ const FIELDS: { key: keyof GeneralConfig; label: string; placeholder: string; hi
   },
 ]
 
+/**
+ * 执行引擎配置字段定义（configs.json 的 execution 分组，数字型）
+ * 单位：无特殊标注的为「秒」
+ */
+const EXECUTION_FIELDS: {
+  key: keyof NonNullable<GeneralConfig['execution']>
+  label: string
+  unit: string
+  hint: string
+  min: number
+  step: number
+}[] = [
+  { key: 'step_max_errors', label: 'LLM 最大重试次数', unit: '次', hint: 'LLM 调用失败/限流时的最大重试次数', min: 1, step: 1 },
+  { key: 'llm_retry_delay', label: 'LLM 重试间隔', unit: '秒', hint: '两次 LLM 重试之间的等待时间', min: 0, step: 1 },
+  { key: 'tool_call_timeout', label: '工具执行超时', unit: '秒', hint: '普通工具调用超时时间（assign_task 除外）', min: 1, step: 10 },
+  { key: 'assign_task_timeout', label: '任务分配超时', unit: '秒', hint: 'assign_task 工具调用超时时间', min: 1, step: 60 },
+  { key: 'llm_timeout', label: 'LLM 请求超时', unit: '秒', hint: 'LLM 流式请求总超时（含外层等待）', min: 1, step: 10 },
+  { key: 'llm_first_chunk_timeout', label: 'LLM 首块超时', unit: '秒', hint: '等待 LLM 返回首块内容的超时时间', min: 5, step: 5 },
+  { key: 'dead_loop_window', label: '死循环判定窗口', unit: '步', hint: '最近 N 步工具调用完全相同时判定为死循环', min: 2, step: 1 },
+  { key: 'message_queue_size', label: '消息队列容量', unit: '条', hint: 'Agent 消息队列最大消息数', min: 1, step: 1 },
+]
+
 // ==================== 数据加载 ====================
 const loadConfig = async () => {
   loading.value = true
@@ -124,11 +146,45 @@ const validateBeforeSave = (): string | null => {
   if (level !== undefined && level !== '' && !(LOG_LEVELS as readonly string[]).includes(level)) {
     return `log_level 必须是 ${LOG_LEVELS.join(' / ')} 之一`
   }
+  // execution 分组：数字型字段须为不小于 min 的数字
+  const execution = config.value.execution
+  if (execution) {
+    for (const field of EXECUTION_FIELDS) {
+      const value = execution[field.key]
+      if (value !== undefined && value !== null && (Number.isNaN(Number(value)) || Number(value) < field.min)) {
+        return `${field.label} 必须是不小于 ${field.min} 的数字`
+      }
+    }
+  }
   // 其余字段允许为空
   return null
 }
 
 const emit = defineEmits<{ (e: 'dirty-change', dirty: boolean): void }>()
+
+/** 读取 execution 字段值（做响应式深拷贝以确保触发 dirty 检测） */
+const executionValue = (fieldKey: keyof NonNullable<GeneralConfig['execution']>): number | undefined => {
+  const execution = config.value.execution
+  return execution && typeof execution === 'object' ? execution[fieldKey] : undefined
+}
+
+/** 写回 execution 字段值：确保 execution 对象存在后更新；空/非法值时移除该字段 */
+const setExecutionValue = (
+  fieldKey: keyof NonNullable<GeneralConfig['execution']>,
+  value: number | undefined | null
+) => {
+  // 深拷贝当前 execution，确保响应式变更触发脏检测
+  const current = config.value.execution
+  const execution: NonNullable<GeneralConfig['execution']> = current
+    ? { ...current }
+    : {}
+  if (value === undefined || value === null || Number.isNaN(Number(value))) {
+    delete execution[fieldKey]
+  } else {
+    execution[fieldKey] = Number(value)
+  }
+  config.value = { ...config.value, execution }
+}
 
 // 当 dirty 变化时上报父组件（聚合离开保护）
 watch(dirty, (val) => emit('dirty-change', val))
@@ -242,21 +298,46 @@ defineExpose({ saveNow, reset })
 
     <div v-else class="bg-white rounded-lg border shadow-sm overflow-hidden p-5">
       <el-form label-width="150px" label-position="left" @submit.prevent>
-        <el-form-item v-for="field in FIELDS" :key="field.key" :label="field.label">
-          <div class="w-full">
-            <el-select
-              v-if="field.key === 'log_level'"
-              v-model="config.log_level"
-              placeholder="选择日志级别"
-              class="w-full"
-            >
-              <el-option v-for="level in LOG_LEVELS" :key="level" :label="level" :value="level" />
-            </el-select>
-            <el-input v-else v-model="config[field.key]" :placeholder="field.placeholder" />
-            <p class="mt-1.5 text-xs text-gray-400">{{ field.hint }}</p>
-          </div>
-        </el-form-item>
-      </el-form>
+          <el-form-item v-for="field in FIELDS" :key="field.key" :label="field.label">
+            <div class="w-full">
+              <el-select
+                v-if="field.key === 'log_level'"
+                v-model="config.log_level"
+                placeholder="选择日志级别"
+                class="w-full"
+              >
+                <el-option v-for="level in LOG_LEVELS" :key="level" :label="level" :value="level" />
+              </el-select>
+              <el-input v-else v-model="config[field.key]" :placeholder="field.placeholder" />
+              <p class="mt-1.5 text-xs text-gray-400">{{ field.hint }}</p>
+            </div>
+          </el-form-item>
+        </el-form>
+
+        <!-- 执行引擎配置（execution 分组） -->
+        <div class="mt-6 border-t border-gray-100 pt-5">
+          <h3 class="text-sm font-medium text-gray-700 mb-1">执行引擎配置</h3>
+          <p class="text-xs text-gray-400 mb-4">LLM 重试、工具执行超时、死循环检测等运行参数（configs.json 的 execution 分组）</p>
+          <el-form label-width="150px" label-position="left" @submit.prevent>
+            <el-form-item v-for="field in EXECUTION_FIELDS" :key="field.key" :label="field.label">
+              <div class="w-full">
+                <div class="flex items-center gap-2">
+                  <el-input-number
+                    :model-value="executionValue(field.key)"
+                    :min="field.min"
+                    :step="field.step"
+                    controls-position="right"
+                    style="width: 180px"
+                    placeholder="留空使用默认"
+                    @update:model-value="(val: number | undefined) => setExecutionValue(field.key, val)"
+                  />
+                  <span class="text-xs text-gray-400 flex-shrink-0">{{ field.unit }}</span>
+                </div>
+                <p class="mt-1.5 text-xs text-gray-400">{{ field.hint }}</p>
+              </div>
+            </el-form-item>
+          </el-form>
+        </div>
     </div>
   </div>
 </template>

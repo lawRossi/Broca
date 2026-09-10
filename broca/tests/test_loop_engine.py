@@ -107,6 +107,10 @@ def mock_agent():
     agent.config.provider = "openai"
     agent.config.model = "gpt-4o"
     agent.config.interactive = False
+    # 提供真实的 execution 配置，模拟 AgentManager 注入的全局配置
+    from broca.configs import ExecutionConfig
+
+    agent.config.execution_config = ExecutionConfig()
     return agent
 
 

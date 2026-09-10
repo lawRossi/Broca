@@ -3,12 +3,38 @@ import os
 from pathlib import Path
 
 
+class ExecutionConfig:
+    """执行引擎相关配置（loop_engine / llm / agent）"""
+
+    def __init__(self):
+        self.step_max_errors = 3  # LLM 最大重试次数
+        self.llm_retry_delay = 5  # LLM 重试间隔（秒）
+        self.tool_call_timeout = 120  # 普通工具执行超时（秒）
+        self.assign_task_timeout = 1800  # assign_task 工具超时（秒）
+        self.llm_timeout = 300  # LLM 流式请求超时（秒，也用于外层 wait_for）
+        self.llm_first_chunk_timeout = 30  # LLM 首块超时（秒）
+        self.dead_loop_window = 3  # 最近 N 步工具调用相同判定死循环
+        self.message_queue_size = 3  # agent 消息队列大小
+
+    @classmethod
+    def from_config(cls, config):
+        exec_config = cls()
+        for key in list(config.keys()):
+            if key not in exec_config.__dict__:
+                del config[key]
+        exec_config.__dict__.update(config)
+        return exec_config
+
+
 class BrocaConfig:
     def __init__(self):
         self.database_dir = None
         self.log_file = None
         self.log_level = "INFO"
         self.llm_config_file = None
+        self.socket_server_url = None
+        self.api_server_url = None
+        self.execution = ExecutionConfig()
 
     @classmethod
     def from_config(cls, config):
@@ -16,6 +42,9 @@ class BrocaConfig:
         for key in list(config.keys()):
             if key not in agent_config.__dict__:
                 del config[key]
+            elif key == "execution" and isinstance(config[key], dict):
+                agent_config.execution = ExecutionConfig.from_config(config[key])
+                config[key] = agent_config.execution
         agent_config.__dict__.update(config)
         return agent_config
 

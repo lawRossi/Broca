@@ -59,7 +59,9 @@ class Agent:
         self.total_llm_calls: int = 0
         self.last_context_length: Optional[int] = None
 
-        self.message_queue: asyncio.Queue = asyncio.Queue(3)
+        self.message_queue: asyncio.Queue = asyncio.Queue(
+            getattr(getattr(self.config, "execution_config", None), "message_queue_size", 3)
+        )
 
         self._abort_task: Optional[asyncio.Task] = None
         self.running = False

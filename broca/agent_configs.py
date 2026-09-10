@@ -1,6 +1,8 @@
 import json
 from dataclasses import asdict, dataclass
 
+from broca.configs import ExecutionConfig
+
 
 @dataclass
 class SessionMemoryConfig:
@@ -34,8 +36,8 @@ class ContextCompactConfig:
 
     # Session Memory 截断
     enable_session_memory_truncation: bool = True
-    session_trunc_threshold: int = 600000  # 触发截断的 token 阈值
-    session_trunc_percentage: float = 0.8  # 上下文窗口百分比
+    session_trunc_threshold: int = 250000  # 触发截断的 token 阈值
+    session_trunc_percentage: float = 0.5  # 上下文窗口百分比
 
 
 DEFAULT_COMPACT_CONFIG = ContextCompactConfig()
@@ -63,6 +65,7 @@ class AgentConfig:
         self.persistent_memory_config = DEFAULT_PERSISTENT_MEMORY_CONFIG
         self.enable_context_compression = False
         self.compact_config = DEFAULT_COMPACT_CONFIG
+        self.execution_config = ExecutionConfig()
 
     @classmethod
     def from_config(cls, config):
@@ -102,4 +105,7 @@ class AgentConfig:
         return json.dumps(data, ensure_ascii=False, indent=4)
 
     def to_dict(self) -> dict:
-        return dict(self.__dict__)
+        # execution_config 是全局配置，不随 agent 配置持久化/序列化
+        data = dict(self.__dict__)
+        data.pop("execution_config", None)
+        return data
