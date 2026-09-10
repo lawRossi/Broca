@@ -193,7 +193,7 @@ class Context:
                 MessageType.AGENT_RESPONSE,
                 MessageType.TOOL_CALL,
             ]:
-                # 策略B：被 session memory 截断的消息 → 跳过
+                # Session Memory 截断的消息 → 跳过
                 if message.is_truncated:
                     continue
 

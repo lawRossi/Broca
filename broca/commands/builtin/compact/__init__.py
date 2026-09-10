@@ -2,13 +2,11 @@
 Compact Command
 
 Manually triggers context compression for the current agent:
-1. Strategy A: Clean up stale tool call results (expired tool results)
-2. Strategy B: Attempt session memory truncation (if session memory is available and aligned)
+- Attempt session memory truncation (if session memory is available and aligned)
 
 Unlike the automatic compression (which waits for token thresholds), /compact forces
 compression regardless of current token count. This is useful when:
 - The user feels the context is becoming too large
-- After a long conversation where many tool results are no longer relevant
 - Before switching to a different task to keep context focused
 """
 
@@ -62,22 +60,14 @@ class CompactCommand(LocalCommand):
             # ================================================================
             parts = [f"Context compression completed for agent: **{agent_name}**"]
 
-            if stats.expired_count > 0:
-                parts.append(
-                    f"✅ Strategy A: Marked **{stats.expired_count}** stale "
-                    "tool result(s) as expired"
-                )
-            else:
-                parts.append("ℹ️ Strategy A: No stale tool results to clean up")
-
             if stats.truncated_count > 0:
                 parts.append(
-                    f"✅ Strategy B: Session memory truncation completed, "
+                    f"✅ Session memory truncation completed, "
                     f"**{stats.truncated_count}** message(s) truncated"
                 )
             else:
                 parts.append(
-                    "ℹ️ Strategy B: Session memory truncation not applicable "
+                    "ℹ️ Session memory truncation not applicable "
                     "(session memory unavailable, empty, or index misaligned)"
                 )
 
@@ -97,8 +87,8 @@ class CompactCommand(LocalCommand):
                 )
 
             logger.info(
-                f"Compact command: expired={stats.expired_count}, "
-                f"truncated={stats.truncated_count} for agent {agent.agent_id}"
+                f"Compact command: truncated={stats.truncated_count} "
+                f"for agent {agent.agent_id}"
             )
 
             return CommandResult(

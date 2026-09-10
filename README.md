@@ -293,7 +293,7 @@ LoopEngine 是 Agent 的执行核心，管理完整的执行生命周期：
 3. **工具调用**（可配置超时，支持并发工具执行）
 4. **快照捕获**（step 开始/结束）
 5. **死循环检测**（连续 3 步相同工具调用模式）
-6. **上下文压缩**（过期工具结果清理 + Session Memory 截断）
+6. **上下文压缩**（Session Memory 截断）
 
 执行状态枚举：`RUNNING`、`PENDING`、`COMPLETED`、`ERROR`、`ABORTED`、`SKIPPED`、`LIMIT_EXCEEDED`、`DEAD_LOOP`
 
@@ -331,7 +331,7 @@ LoopEngine 是 Agent 的执行核心，管理完整的执行生命周期：
 **消息模型**支持：
 - 序列号排序
 - 截断标记（`is_truncated`，被 Session Memory 替代的历史消息）
-- 过期标记（`is_expired`，上下文压缩清理的工具结果）
+- 过期标记（`is_expired`，清除上下文时标记的消息，读取时以占位符呈现）
 - Step 级快照关联
 
 **RevertService** 提供 undo/redo 能力，基于 Git 快照比对实现文件级变更回滚。
@@ -378,9 +378,8 @@ SocketIOServer 是一个多端通信服务器，支持：
 - 支持从数据库重建历史（过滤被截断/过期的消息）
 - 在 Abort 时自动截断最后一次含工具调用的 Assistant 消息
 
-**会话上下文压缩** 包含两种策略：
-- **策略A**: 清理过期的工具执行结果，替换为占位符
-- **策略B**: 基于 Session Memory 截断早期对话，释放上下文窗口
+**会话上下文压缩**：
+- **Session Memory 截断**: 基于 Session Memory 截断早期对话，释放上下文窗口
 
 **Session Memory**（会话短期记忆）：
 - 在上下文中注入当前会话的历史摘要

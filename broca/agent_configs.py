@@ -32,15 +32,7 @@ DEFAULT_PERSISTENT_MEMORY_CONFIG = PersistentMemoryConfig()
 class ContextCompactConfig:
     """上下文压缩全局配置"""
 
-    # 策略A：过期工具结果清理
-    enable_stale_tool_cleanup: bool = True
-    stale_cleanup_threshold: int = 50000  # 触发清理的 token 阈值
-    stale_cleanup_percentage: float = 0.3  # 上下文窗口百分比
-    min_stale_messages: int = 40  # 超过多少条消息视为过期
-    min_recent_tool_results_to_keep: int = 15  # 至少保留最近几条工具结果
-    min_stale_tokens: int = 10000
-
-    # 策略B：Session Memory 截断
+    # Session Memory 截断
     enable_session_memory_truncation: bool = True
     session_trunc_threshold: int = 600000  # 触发截断的 token 阈值
     session_trunc_percentage: float = 0.8  # 上下文窗口百分比

@@ -1332,8 +1332,7 @@ class LoopEngine:
         """
         检查 context 是否需要进行压缩。
 
-        在 execute_step 完成后调用，触发策略A（过期工具结果清理）
-        和策略B（Session Memory 截断）。
+        在 execute_step 完成后调用，触发 Session Memory 截断。
         """
         if not self.context_compressor:
             self.context_compressor = ContextCompressor()
