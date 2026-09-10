@@ -39,12 +39,72 @@ const autoRefreshInterval = ref<number | null>(null)
 const lastRefreshTime = ref<Date>(new Date())
 
 // LLM 配置编辑相关
-const editableConfigContent = ref<string>('')
 const selectedProvider = ref<string>('')
 const selectedModel = ref<string>('')
 const availableProviders = ref<{ id: string; name: string }[]>([])
 const availableModels = ref<{ id: string; name: string }[]>([])
 const saving = ref(false)
+
+// ==================== Agent 配置表单模型（分组表单编辑） ====================
+const configForm = ref<any>({
+  name: '',
+  role: '',
+  server_url: '',
+  tools: [] as string[],
+  skills: '',
+  mcp_servers: '',
+  interactive: true,
+  save_history: true,
+  track_session_momory: false,
+  enable_context_compression: false,
+  workspace: '',
+  environment: '',
+  system_prompt_template: '',
+  session_memory_config: {
+    minimum_messages_to_init: 200,
+    minimum_messages_between_update: 100,
+    steps_between_updates: 50,
+  },
+  persistent_memory_config: {
+    auto_extract: false,
+    minimum_messages_to_init: 50,
+    minimum_messages_between_update: 30,
+    steps_between_updates: 20,
+    freshness_warning_days: 7,
+  },
+  compact_config: {
+    enable_session_memory_truncation: true,
+    session_trunc_threshold: 250000,
+    session_trunc_percentage: 0.5,
+  },
+})
+
+// 可选工具列表（用于 tools 多选，允许用户自定义输入）
+const availableTools = ref<string[]>([
+  'read_file',
+  'write_file',
+  'edit_file',
+  'glob',
+  'grep',
+  'list_dir',
+  'tree_dir',
+  'web_fetch',
+  'web_search',
+  'ask_user',
+  'assign_task',
+  'bash',
+  'cron',
+  'task_management',
+  'todo_management',
+  'load_skill',
+  'skill_manage',
+  'memory',
+  'read_blackboard',
+  'write_blackboard',
+  'list_blackboard',
+  'delete_blackboard',
+  'blackboard_changes',
+])
 
 // 使用 computed 从 agentStore 获取 agents 列表（main_agent 排第一）
 const agents = computed(() => agentStore.agents)
@@ -172,12 +232,9 @@ const refreshConfig = async () => {
   initConfigEdit()
 }
 
-// 初始化配置编辑状态
+// 初始化配置编辑状态（填充表单）
 const initConfigEdit = async () => {
   if (!selectedAgentConfig.value?.config_content) return
-
-  // 设置可编辑的配置内容
-  editableConfigContent.value = JSON.stringify(selectedAgentConfig.value.config_content, null, 2)
 
   // 加载 LLM 提供商列表
   await agentStore.fetchLLMProviders()
@@ -187,6 +244,36 @@ const initConfigEdit = async () => {
   const config = selectedAgentConfig.value.config_content
   selectedProvider.value = config.provider || ''
   selectedModel.value = config.model || ''
+
+  // 填充表单字段
+  configForm.value = {
+    name: config.name ?? '',
+    role: config.role ?? '',
+    server_url: config.server_url ?? '',
+    tools: Array.isArray(config.tools)
+      ? [...config.tools]
+      : config.tools
+        ? String(config.tools)
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+        : [],
+    skills: config.skills ?? '',
+    mcp_servers:
+      config.mcp_servers !== undefined && config.mcp_servers !== null
+        ? JSON.stringify(config.mcp_servers, null, 2)
+        : '',
+    interactive: config.interactive ?? true,
+    save_history: config.save_history ?? true,
+    track_session_momory: config.track_session_momory ?? false,
+    enable_context_compression: config.enable_context_compression ?? false,
+    workspace: config.workspace ?? '',
+    environment: config.environment ?? '',
+    system_prompt_template: config.system_prompt_template ?? '',
+    session_memory_config: { ...(config.session_memory_config || {}) },
+    persistent_memory_config: { ...(config.persistent_memory_config || {}) },
+    compact_config: { ...(config.compact_config || {}) },
+  }
 
   // 如果已有 provider，加载对应的 models
   if (selectedProvider.value) {
@@ -207,28 +294,61 @@ const handleProviderChange = async (provider: string) => {
   }
 }
 
+// 由表单字段构造 config_content 对象
+const buildConfigContent = (): Record<string, any> => {
+  const form = configForm.value
+  // 从原始配置拷贝一份，保留未被表单覆盖的未知字段
+  const original = { ...(selectedAgentConfig.value?.config_content || {}) }
+
+  let mcpServers: any = undefined
+  const mcpStr = (form.mcp_servers || '').trim()
+  if (mcpStr) {
+    try {
+      mcpServers = JSON.parse(mcpStr)
+    } catch {
+      // 非法 JSON 时保持原值
+      mcpServers = original.mcp_servers
+    }
+  }
+
+  const configContent: Record<string, any> = {
+    ...original,
+    name: form.name,
+    role: form.role,
+    server_url: form.server_url,
+    tools: form.tools,
+    skills: form.skills,
+    interactive: form.interactive,
+    save_history: form.save_history,
+    track_session_momory: form.track_session_momory,
+    enable_context_compression: form.enable_context_compression,
+    workspace: form.workspace,
+    environment: form.environment,
+    system_prompt_template: form.system_prompt_template,
+    session_memory_config: { ...form.session_memory_config },
+    persistent_memory_config: { ...form.persistent_memory_config },
+    compact_config: { ...form.compact_config },
+  }
+  if (mcpServers !== undefined) {
+    configContent.mcp_servers = mcpServers
+  } else {
+    delete configContent.mcp_servers
+  }
+
+  // 覆盖 provider 和 model
+  if (selectedProvider.value) configContent.provider = selectedProvider.value
+  if (selectedModel.value) configContent.model = selectedModel.value
+
+  return configContent
+}
+
 // 保存配置
 const saveConfig = async () => {
   if (!selectedAgent.value || !chatStore.sessionId || !selectedAgentConfig.value) return
 
   saving.value = true
   try {
-    // 解析当前编辑的配置内容
-    let configContent: Record<string, any>
-    try {
-      configContent = JSON.parse(editableConfigContent.value)
-    } catch (e) {
-      ElMessage.error('配置内容 JSON 格式有误，请检查后重试')
-      return
-    }
-
-    // 更新 provider 和 model
-    if (selectedProvider.value) {
-      configContent.provider = selectedProvider.value
-    }
-    if (selectedModel.value) {
-      configContent.model = selectedModel.value
-    }
+    const configContent = buildConfigContent()
 
     // 保存到后端
     const success = await agentStore.saveAgentConfig(chatStore.sessionId, selectedAgent.value.agent_id, configContent)
@@ -264,7 +384,24 @@ const closeConfigDialog = () => {
   showConfigDialog.value = false
   selectedAgent.value = null
   agentStore.selectedAgentConfig = null
-  editableConfigContent.value = ''
+  configForm.value = {
+    name: '',
+    role: '',
+    server_url: '',
+    tools: [],
+    skills: '',
+    mcp_servers: '',
+    interactive: true,
+    save_history: true,
+    track_session_momory: false,
+    enable_context_compression: false,
+    workspace: '',
+    environment: '',
+    system_prompt_template: '',
+    session_memory_config: {},
+    persistent_memory_config: {},
+    compact_config: {},
+  }
   selectedProvider.value = ''
   selectedModel.value = ''
   // 关闭弹窗后，仅在 runner 运行时恢复自动刷新
@@ -551,23 +688,243 @@ onUnmounted(() => {
         </div>
       </div>
 
-      <!-- 配置内容（可编辑） -->
+      <!-- 基本信息 -->
       <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
-        <div class="flex items-center gap-2 mb-2">
+        <div class="flex items-center gap-2 mb-3">
           <el-icon :size="16" class="text-blue-500">
+            <UserFilled />
+          </el-icon>
+          <span class="text-sm font-medium text-gray-700">基本信息</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Name</label>
+            <el-input v-model="configForm.name" size="small" placeholder="Agent 名称" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Role</label>
+            <el-input v-model="configForm.role" size="small" placeholder="角色标识" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 工具与技能 -->
+      <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
+        <div class="flex items-center gap-2 mb-3">
+          <el-icon :size="16" class="text-cyan-500">
+            <Tools />
+          </el-icon>
+          <span class="text-sm font-medium text-gray-700">工具与技能</span>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Tools（可在下拉中勾选，也可直接输入新增）</label>
+            <el-select
+              v-model="configForm.tools"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              :reserve-keyword="false"
+              size="small"
+              style="width: 100%"
+              placeholder="选择或输入工具名称"
+            >
+              <el-option v-for="t in availableTools" :key="t" :label="t" :value="t" />
+            </el-select>
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Skills</label>
+            <el-input v-model="configForm.skills" size="small" placeholder="如 all 或以逗号分隔的技能列表" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">MCP Servers（JSON）</label>
+            <el-input
+              v-model="configForm.mcp_servers"
+              type="textarea"
+              :rows="3"
+              placeholder="[]"
+              class="config-editor"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- 行为开关 -->
+      <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
+        <div class="flex items-center gap-2 mb-3">
+          <el-icon :size="16" class="text-purple-500">
+            <Setting />
+          </el-icon>
+          <span class="text-sm font-medium text-gray-700">行为开关</span>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-600">Interactive</span>
+            <el-switch v-model="configForm.interactive" size="small" />
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-600">Save History</span>
+            <el-switch v-model="configForm.save_history" size="small" />
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-600">Track Session Memory</span>
+            <el-switch v-model="configForm.track_session_momory" size="small" />
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-600">启用上下文压缩</span>
+            <el-switch v-model="configForm.enable_context_compression" size="small" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 运行环境 -->
+      <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
+        <div class="flex items-center gap-2 mb-3">
+          <el-icon :size="16" class="text-green-500">
+            <Connection />
+          </el-icon>
+          <span class="text-sm font-medium text-gray-700">运行环境</span>
+        </div>
+        <div class="space-y-3">
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Workspace</label>
+            <el-input v-model="configForm.workspace" size="small" placeholder="工作空间路径" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">System Prompt Template</label>
+            <el-input v-model="configForm.system_prompt_template" type="textarea" :rows="6" />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">Environment</label>
+            <el-input v-model="configForm.environment" type="textarea" :rows="3" />
+          </div>
+        </div>
+      </div>
+
+      <!-- Session Memory 配置 -->
+      <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
+        <div class="flex items-center gap-2 mb-3">
+          <el-icon :size="16" class="text-orange-500">
+            <ChatDotRound />
+          </el-icon>
+          <span class="text-sm font-medium text-gray-700">Session Memory 配置</span>
+        </div>
+        <div class="grid grid-cols-3 gap-3">
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">最小消息数(初始化)</label>
+            <el-input-number
+              v-model="configForm.session_memory_config.minimum_messages_to_init"
+              size="small"
+              :min="0"
+              style="width: 100%"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">更新间隔消息数</label>
+            <el-input-number
+              v-model="configForm.session_memory_config.minimum_messages_between_update"
+              size="small"
+              :min="0"
+              style="width: 100%"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">更新Step数</label>
+            <el-input-number
+              v-model="configForm.session_memory_config.steps_between_updates"
+              size="small"
+              :min="0"
+              style="width: 100%"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- 持久化记忆配置 -->
+      <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
+        <div class="flex items-center gap-2 mb-3">
+          <el-icon :size="16" class="text-red-500">
             <Document />
           </el-icon>
-          <span class="text-sm font-medium text-gray-700"
-            >配置内容 (config_content) <span class="text-xs text-gray-400 font-normal">- 可编辑 JSON</span></span
-          >
+          <span class="text-sm font-medium text-gray-700">持久化记忆配置</span>
         </div>
-        <el-input
-          v-model="editableConfigContent"
-          type="textarea"
-          :rows="12"
-          class="config-editor"
-          placeholder="在此编辑配置 JSON..."
-        />
+        <div class="space-y-2">
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-600">自动提取 (Auto Extract)</span>
+            <el-switch v-model="configForm.persistent_memory_config.auto_extract" size="small" />
+          </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mt-2">
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">最小消息数(初始化)</label>
+            <el-input-number
+              v-model="configForm.persistent_memory_config.minimum_messages_to_init"
+              size="small"
+              :min="0"
+              style="width: 100%"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">更新间隔消息数</label>
+            <el-input-number
+              v-model="configForm.persistent_memory_config.minimum_messages_between_update"
+              size="small"
+              :min="0"
+              style="width: 100%"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">更新Step数</label>
+            <el-input-number
+              v-model="configForm.persistent_memory_config.steps_between_updates"
+              size="small"
+              :min="0"
+              style="width: 100%"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">新鲜度告警天数</label>
+            <el-input-number
+              v-model="configForm.persistent_memory_config.freshness_warning_days"
+              size="small"
+              :min="0"
+              style="width: 100%"
+            />
+          </div>
+        </div>
+      </div>
+
+      <!-- 上下文压缩配置 -->
+      <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
+        <div class="flex items-center gap-2 mb-3">
+          <el-icon :size="16" class="text-indigo-500">
+            <Upload />
+          </el-icon>
+          <span class="text-sm font-medium text-gray-700">上下文压缩配置</span>
+        </div>
+        <div class="grid grid-cols-2 gap-3">
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">触发截断 Token 阈值</label>
+            <el-input-number
+              v-model="configForm.compact_config.session_trunc_threshold"
+              size="small"
+              :min="0"
+              style="width: 100%"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">截断百分比</label>
+            <el-input-number
+              v-model="configForm.compact_config.session_trunc_percentage"
+              size="small"
+              :min="0"
+              :max="1"
+              :step="0.1"
+              style="width: 100%"
+            />
+          </div>
+        </div>
       </div>
     </div>
 

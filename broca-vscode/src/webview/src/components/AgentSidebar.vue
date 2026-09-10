@@ -57,12 +57,132 @@ const agentConfig = ref<any>(null)
 const configLoading = ref(false)
 
 // LLM 配置编辑相关
-const editableConfigContent = ref<string>('')
 const selectedProvider = ref<string>('')
 const selectedModel = ref<string>('')
 const availableProviders = ref<{ id: string; name: string }[]>([])
 const availableModels = ref<{ id: string; name: string }[]>([])
 const saving = ref(false)
+
+// ==================== Agent 配置表单模型（分组表单编辑） ====================
+const configForm = ref<any>({
+  name: '',
+  role: '',
+  server_url: '',
+  tools: [] as string[],
+  skills: '',
+  mcp_servers: '',
+  interactive: true,
+  save_history: true,
+  track_session_momory: false,
+  enable_context_compression: false,
+  workspace: '',
+  environment: '',
+  system_prompt_template: '',
+  session_memory_config: {
+    minimum_messages_to_init: 200,
+    minimum_messages_between_update: 100,
+    steps_between_updates: 50,
+  },
+  persistent_memory_config: {
+    auto_extract: false,
+    minimum_messages_to_init: 50,
+    minimum_messages_between_update: 30,
+    steps_between_updates: 20,
+    freshness_warning_days: 7,
+  },
+  compact_config: {
+    enable_session_memory_truncation: true,
+    session_trunc_threshold: 250000,
+    session_trunc_percentage: 0.5,
+  },
+})
+
+// 可选工具列表（用于 tools 多选，允许用户自定义输入）
+const availableTools = ref<string[]>([
+  'read_file',
+  'write_file',
+  'edit_file',
+  'glob',
+  'grep',
+  'list_dir',
+  'tree_dir',
+  'web_fetch',
+  'web_search',
+  'ask_user',
+  'assign_task',
+  'bash',
+  'cron',
+  'task_management',
+  'todo_management',
+  'load_skill',
+  'skill_manage',
+  'memory',
+  'read_blackboard',
+  'write_blackboard',
+  'list_blackboard',
+  'delete_blackboard',
+  'blackboard_changes',
+])
+
+function resetConfigForm() {
+  configForm.value = {
+    name: '',
+    role: '',
+    server_url: '',
+    tools: [],
+    skills: '',
+    mcp_servers: '',
+    interactive: true,
+    save_history: true,
+    track_session_momory: false,
+    enable_context_compression: false,
+    workspace: '',
+    environment: '',
+    system_prompt_template: '',
+    session_memory_config: {},
+    persistent_memory_config: {},
+    compact_config: {},
+  }
+}
+
+// ==================== 工具多选下拉 ====================
+const showToolsMenu = ref(false)
+const toolsSearch = ref('')
+
+const filteredTools = computed(() => {
+  const q = toolsSearch.value.trim().toLowerCase()
+  if (!q) return availableTools.value
+  return availableTools.value.filter((t) => t.toLowerCase().includes(q))
+})
+
+function hasTool(tool: string): boolean {
+  return configForm.value.tools?.includes(tool) ?? false
+}
+
+function toggleTool(tool: string) {
+  const idx = configForm.value.tools.indexOf(tool)
+  if (idx === -1) {
+    configForm.value.tools.push(tool)
+  } else {
+    configForm.value.tools.splice(idx, 1)
+  }
+}
+
+function removeTool(tool: string) {
+  toggleTool(tool)
+}
+
+function addCustomTool() {
+  const name = toolsSearch.value.trim()
+  if (!name) return
+  if (!configForm.value.tools.includes(name)) {
+    configForm.value.tools.push(name)
+  }
+  if (!availableTools.value.includes(name)) {
+    availableTools.value.push(name)
+  }
+  toolsSearch.value = ''
+}
 
 function handleAgentClick(agent: any) {
   // 打开配置弹窗时暂停自动刷新，避免覆盖用户编辑
@@ -98,7 +218,7 @@ function closeConfigDialog() {
   showConfigDialog.value = false
   selectedAgent.value = null
   agentConfig.value = null
-  editableConfigContent.value = ''
+  resetConfigForm()
   selectedProvider.value = ''
   selectedModel.value = ''
   // 关闭弹窗后，仅在 runner 运行时恢复自动刷新
@@ -127,11 +247,39 @@ function fetchLLMModels(provider: string) {
 function initConfigEdit() {
   if (!agentConfig.value?.config_content) return
 
-  editableConfigContent.value = JSON.stringify(agentConfig.value.config_content, null, 2)
-
   const config = agentConfig.value.config_content
   selectedProvider.value = config.provider || ''
   selectedModel.value = config.model || ''
+
+  // 填充表单字段
+  configForm.value = {
+    name: config.name ?? '',
+    role: config.role ?? '',
+    server_url: config.server_url ?? '',
+    tools: Array.isArray(config.tools)
+      ? [...config.tools]
+      : config.tools
+        ? String(config.tools)
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+        : [],
+    skills: config.skills ?? '',
+    mcp_servers:
+      config.mcp_servers !== undefined && config.mcp_servers !== null
+        ? JSON.stringify(config.mcp_servers, null, 2)
+        : '',
+    interactive: config.interactive ?? true,
+    save_history: config.save_history ?? true,
+    track_session_momory: config.track_session_momory ?? false,
+    enable_context_compression: config.enable_context_compression ?? false,
+    workspace: config.workspace ?? '',
+    environment: config.environment ?? '',
+    system_prompt_template: config.system_prompt_template ?? '',
+    session_memory_config: { ...(config.session_memory_config || {}) },
+    persistent_memory_config: { ...(config.persistent_memory_config || {}) },
+    compact_config: { ...(config.compact_config || {}) },
+  }
 
   fetchLLMProviders()
 
@@ -150,25 +298,57 @@ function handleProviderChange(provider: string) {
   }
 }
 
+// 由表单字段构造 config_content 对象
+function buildConfigContent(): Record<string, any> {
+  const form = configForm.value
+  const original = { ...(agentConfig.value?.config_content || {}) }
+
+  let mcpServers: any = undefined
+  const mcpStr = (form.mcp_servers || '').trim()
+  if (mcpStr) {
+    try {
+      mcpServers = JSON.parse(mcpStr)
+    } catch {
+      mcpServers = original.mcp_servers
+    }
+  }
+
+  const configContent: Record<string, any> = {
+    ...original,
+    name: form.name,
+    role: form.role,
+    server_url: form.server_url,
+    tools: form.tools,
+    skills: form.skills,
+    interactive: form.interactive,
+    save_history: form.save_history,
+    track_session_momory: form.track_session_momory,
+    enable_context_compression: form.enable_context_compression,
+    workspace: form.workspace,
+    environment: form.environment,
+    system_prompt_template: form.system_prompt_template,
+    session_memory_config: { ...form.session_memory_config },
+    persistent_memory_config: { ...form.persistent_memory_config },
+    compact_config: { ...form.compact_config },
+  }
+  if (mcpServers !== undefined) {
+    configContent.mcp_servers = mcpServers
+  } else {
+    delete configContent.mcp_servers
+  }
+
+  if (selectedProvider.value) configContent.provider = selectedProvider.value
+  if (selectedModel.value) configContent.model = selectedModel.value
+
+  return configContent
+}
+
 function saveConfig() {
   if (!selectedAgent.value || !agentConfig.value) return
 
   saving.value = true
   try {
-    let configContent: Record<string, any>
-    try {
-      configContent = JSON.parse(editableConfigContent.value)
-    } catch (e) {
-      chatStore.showError('配置内容 JSON 格式有误，请检查后重试', 'error')
-      return
-    }
-
-    if (selectedProvider.value) {
-      configContent.provider = selectedProvider.value
-    }
-    if (selectedModel.value) {
-      configContent.model = selectedModel.value
-    }
+    const configContent = buildConfigContent()
 
     postMessage({
       type: 'updateAgentConfig',
@@ -189,6 +369,9 @@ function handleDocumentClick(e: MouseEvent) {
   const target = e.target as HTMLElement
   if (!target.closest('.filter-dropdown')) {
     showFilterDropdown.value = false
+  }
+  if (!target.closest('.tools-select')) {
+    showToolsMenu.value = false
   }
 }
 
@@ -479,19 +662,224 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                 </div>
               </div>
 
-              <!-- 可编辑的配置内容 -->
+              <!-- 基本信息 -->
               <div class="section-box">
                 <div class="section-title">
-                  <span>📄 配置内容 (config_content)</span>
-                  <span class="hint">- 可编辑 JSON</span>
+                  <span>👤 基本信息</span>
                 </div>
-                <textarea
-                  v-model="editableConfigContent"
-                  class="config-textarea"
-                  rows="12"
-                  placeholder="在此编辑配置 JSON..."
-                  spellcheck="false"
-                ></textarea>
+                <div class="form-grid">
+                  <div class="field">
+                    <label>Name</label>
+                    <input v-model="configForm.name" placeholder="Agent 名称" />
+                  </div>
+                  <div class="field">
+                    <label>Role</label>
+                    <input v-model="configForm.role" placeholder="角色标识" />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 工具与技能 -->
+              <div class="section-box">
+                <div class="section-title">
+                  <span>🛠️ 工具与技能</span>
+                </div>
+                <div class="form-grid">
+                  <div class="field full">
+                    <label>Tools</label>
+                    <div class="tools-select" @click.stop>
+                      <div class="tools-trigger" @click="showToolsMenu = !showToolsMenu">
+                        <div class="tools-tags">
+                          <span v-for="t in configForm.tools" :key="t" class="tool-tag">
+                            {{ t }}
+                            <span class="tool-tag-remove" @click.stop="removeTool(t)">×</span>
+                          </span>
+                          <span v-if="!configForm.tools.length" class="tools-placeholder">选择或输入工具名称</span>
+                        </div>
+                        <span class="tools-caret">▾</span>
+                      </div>
+                      <div v-if="showToolsMenu" class="tools-menu">
+                        <div class="tools-search-row">
+                          <input
+                            v-model="toolsSearch"
+                            class="tools-search"
+                            placeholder="搜索或输入新增..."
+                            @keydown.enter.prevent="addCustomTool"
+                          />
+                        </div>
+                        <div
+                          v-if="toolsSearch.trim() && !availableTools.includes(toolsSearch.trim())"
+                          class="tools-add"
+                        >
+                          <button class="tools-add-btn" @click="addCustomTool">新增 "{{ toolsSearch.trim() }}"</button>
+                        </div>
+                        <div class="tools-list">
+                          <label v-for="t in filteredTools" :key="t" class="tools-option" @click.stop="toggleTool(t)">
+                            <input type="checkbox" :checked="hasTool(t)" />
+                            <span>{{ t }}</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="field">
+                    <label>Skills</label>
+                    <input v-model="configForm.skills" placeholder="如 all 或以逗号分隔" />
+                  </div>
+                  <div class="field full">
+                    <label>MCP Servers（JSON）</label>
+                    <textarea v-model="configForm.mcp_servers" rows="3" placeholder="[]" spellcheck="false"></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <!-- 行为开关 -->
+              <div class="section-box">
+                <div class="section-title">
+                  <span>⚙️ 行为开关</span>
+                </div>
+                <div class="switch-list">
+                  <label class="switch-item">
+                    <span>Interactive</span>
+                    <input type="checkbox" v-model="configForm.interactive" />
+                  </label>
+                  <label class="switch-item">
+                    <span>Save History</span>
+                    <input type="checkbox" v-model="configForm.save_history" />
+                  </label>
+                  <label class="switch-item">
+                    <span>Track Session Memory</span>
+                    <input type="checkbox" v-model="configForm.track_session_momory" />
+                  </label>
+                  <label class="switch-item">
+                    <span>启用上下文压缩</span>
+                    <input type="checkbox" v-model="configForm.enable_context_compression" />
+                  </label>
+                </div>
+              </div>
+
+              <!-- 运行环境 -->
+              <div class="section-box">
+                <div class="section-title">
+                  <span>🌐 运行环境</span>
+                </div>
+                <div class="form-grid">
+                  <div class="field full">
+                    <label>Workspace</label>
+                    <input v-model="configForm.workspace" placeholder="工作空间路径" />
+                  </div>
+                  <div class="field full">
+                    <label>System Prompt Template</label>
+                    <textarea v-model="configForm.system_prompt_template" rows="6"></textarea>
+                  </div>
+                  <div class="field full">
+                    <label>Environment</label>
+                    <textarea v-model="configForm.environment" rows="3"></textarea>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Session Memory 配置 -->
+              <div class="section-box">
+                <div class="section-title">
+                  <span>💬 Session Memory 配置</span>
+                </div>
+                <div class="form-grid">
+                  <div class="field">
+                    <label>最小消息数(初始化)</label>
+                    <input
+                      type="number"
+                      v-model.number="configForm.session_memory_config.minimum_messages_to_init"
+                      min="0"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>更新间隔消息数</label>
+                    <input
+                      type="number"
+                      v-model.number="configForm.session_memory_config.minimum_messages_between_update"
+                      min="0"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>更新 Step 数</label>
+                    <input
+                      type="number"
+                      v-model.number="configForm.session_memory_config.steps_between_updates"
+                      min="0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 持久化记忆配置 -->
+              <div class="section-box">
+                <div class="section-title">
+                  <span>🧠 持久化记忆配置</span>
+                </div>
+                <div class="switch-list">
+                  <label class="switch-item">
+                    <span>自动提取 (Auto Extract)</span>
+                    <input type="checkbox" v-model="configForm.persistent_memory_config.auto_extract" />
+                  </label>
+                </div>
+                <div class="form-grid">
+                  <div class="field">
+                    <label>最小消息数(初始化)</label>
+                    <input
+                      type="number"
+                      v-model.number="configForm.persistent_memory_config.minimum_messages_to_init"
+                      min="0"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>更新间隔消息数</label>
+                    <input
+                      type="number"
+                      v-model.number="configForm.persistent_memory_config.minimum_messages_between_update"
+                      min="0"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>更新 Step 数</label>
+                    <input
+                      type="number"
+                      v-model.number="configForm.persistent_memory_config.steps_between_updates"
+                      min="0"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>新鲜度告警天数</label>
+                    <input
+                      type="number"
+                      v-model.number="configForm.persistent_memory_config.freshness_warning_days"
+                      min="0"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              <!-- 上下文压缩配置 -->
+              <div class="section-box">
+                <div class="section-title">
+                  <span>📦 上下文压缩配置</span>
+                </div>
+                <div class="form-grid">
+                  <div class="field">
+                    <label>触发截断 Token 阈值</label>
+                    <input type="number" v-model.number="configForm.compact_config.session_trunc_threshold" min="0" />
+                  </div>
+                  <div class="field">
+                    <label>截断百分比</label>
+                    <input
+                      type="number"
+                      v-model.number="configForm.compact_config.session_trunc_percentage"
+                      min="0"
+                      max="1"
+                      step="0.1"
+                    />
+                  </div>
+                </div>
               </div>
             </div>
 
@@ -1013,6 +1401,224 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
 .field select:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* ==================== 表单网格 ==================== */
+.form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.field.full {
+  grid-column: 1 / -1;
+}
+
+.field input:not([type='checkbox']):not([type='radio']),
+.field textarea {
+  width: 100%;
+  padding: 6px 8px;
+  background: var(--input-background, var(--bg-primary));
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+  font-family: inherit;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.field input:not([type='checkbox']):not([type='radio']):focus,
+.field textarea:focus {
+  border-color: var(--focus-border);
+}
+
+.field input:not([type='checkbox']):not([type='radio']):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ==================== 开关列表 ==================== */
+.switch-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.switch-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 12px;
+  color: var(--text-primary);
+  padding: 3px 0;
+  cursor: pointer;
+}
+
+.switch-item input[type='checkbox'] {
+  width: 15px;
+  height: 15px;
+  cursor: pointer;
+  accent-color: var(--focus-border, #007fd4);
+}
+
+/* ==================== 工具多选下拉 ==================== */
+.tools-select {
+  position: relative;
+  width: 100%;
+}
+
+.tools-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-height: 28px;
+  padding: 4px 8px;
+  background: var(--input-background, var(--bg-primary));
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.tools-trigger:hover {
+  border-color: var(--focus-border);
+}
+
+.tools-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.tool-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  background: rgba(0, 127, 212, 0.15);
+  color: var(--text-link);
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tool-tag-remove {
+  cursor: pointer;
+  font-weight: bold;
+  color: var(--text-secondary);
+  line-height: 1;
+}
+
+.tool-tag-remove:hover {
+  color: var(--error-fg);
+}
+
+.tools-placeholder {
+  color: var(--text-secondary);
+  font-size: 12px;
+  opacity: 0.7;
+}
+
+.tools-caret {
+  color: var(--text-secondary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.tools-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 210;
+  background: var(--bg-primary, #252526);
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 6px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  overflow: hidden;
+}
+
+.tools-search-row {
+  padding: 6px;
+  border-bottom: 1px solid var(--border-color, #3c3c3c);
+}
+
+.tools-search {
+  width: 100%;
+  padding: 5px 8px;
+  box-sizing: border-box;
+  background: var(--input-background, var(--bg-primary));
+  color: var(--text-primary);
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 4px;
+  font-size: 12px;
+  outline: none;
+}
+
+.tools-search:focus {
+  border-color: var(--focus-border, #007fd4);
+}
+
+.tools-add {
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border-color, #3c3c3c);
+}
+
+.tools-add-btn {
+  width: 100%;
+  text-align: left;
+  padding: 4px 8px;
+  font-size: 12px;
+  color: var(--text-link);
+  background: transparent;
+  border: 1px dashed var(--text-link);
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.tools-add-btn:hover {
+  background: rgba(0, 127, 212, 0.12);
+}
+
+.tools-list {
+  max-height: 160px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.tools-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  font-size: 12px;
+  color: var(--text-primary);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.tools-option:hover {
+  background: var(--list-hover-background, rgba(255, 255, 255, 0.06));
+}
+
+.tools-option input[type='checkbox'] {
+  flex-shrink: 0;
+  margin: 0;
+  cursor: pointer;
+  accent-color: var(--focus-border, #007fd4);
+}
+
+.section-box + .section-box {
+  margin-top: 12px;
 }
 
 .config-textarea {
