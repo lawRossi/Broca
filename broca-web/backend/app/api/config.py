@@ -12,6 +12,7 @@ from app.schemas.schemas import (
     ApiResponse,
     GeneralConfigUpdateRequest,
     LLMConfigUpdateRequest,
+    McpConfigUpdateRequest,
     ToolPermissionUpdateRequest,
 )
 
@@ -73,6 +74,8 @@ def _resolve_general_config_path() -> Path:
 GENERAL_CONFIG_PATH = _resolve_general_config_path()
 # 工具权限全局路径（与 ToolPermissionManager 一致）
 TOOL_PERMISSION_PATH = Path.home() / ".broca" / "configs" / "tool_permission_config.json"
+# MCP 服务器全局配置路径（与 ToolManager._load_mcp_config 的全局回退路径一致）
+MCP_CONFIG_PATH = Path.home() / ".broca" / "configs" / "mcp_config.json"
 
 
 def _read_json_config(path: Path) -> dict[str, Any]:
@@ -259,6 +262,98 @@ def _validate_tool_permission_config(config: Any) -> None:
                 )
 
 
+def _validate_mcp_string_map(server_name: str, value: Any, field: str) -> None:
+    """校验 MCP 服务器的 env/headers 字段：可为空，若存在必须是 string → string 的对象。"""
+    if value is None:
+        return
+    if not isinstance(value, dict):
+        raise HTTPException(
+            status_code=400, detail=f"MCP server '{server_name}' field '{field}' must be an object"
+        )
+    for key, item in value.items():
+        if not isinstance(key, str) or not isinstance(item, str):
+            raise HTTPException(
+                status_code=400,
+                detail=f"MCP server '{server_name}' field '{field}' must be an object of strings",
+            )
+
+
+def _validate_mcp_config(config: Any) -> None:
+    """校验 MCP 配置结构，不合法时抛出 HTTPException(400)。
+
+    顶层必须为 object；每个服务器名为非空字符串、配置为 object，且必须提供
+    'command'（stdio）或 'url'（HTTP）之一。
+
+    - stdio：command 非空 string；args 若存在必须是 string 列表；env 若存在必须是
+      string→string；cwd 若存在必须是 string。
+    - HTTP：url 非空 string；headers 若存在必须是 string→string。
+    - 两者共有：tool_timeout 若存在必须是正数（bool 不接受）。
+    """
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=400, detail="MCP config must be an object")
+    for server_name, server_config in config.items():
+        if not isinstance(server_name, str) or not server_name.strip():
+            raise HTTPException(
+                status_code=400, detail="MCP server name must be a non-empty string"
+            )
+        if not isinstance(server_config, dict):
+            raise HTTPException(
+                status_code=400, detail=f"MCP server '{server_name}' must be an object"
+            )
+
+        command = server_config.get("command")
+        url = server_config.get("url")
+        if command is None and url is None:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"MCP server '{server_name}' requires either a 'command' (stdio) "
+                    f"or a 'url' (HTTP)"
+                ),
+            )
+
+        if command is not None:
+            if not isinstance(command, str) or not command.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"MCP server '{server_name}' field 'command' must be a non-empty string",
+                )
+            args = server_config.get("args")
+            if args is not None and (
+                not isinstance(args, list) or not all(isinstance(a, str) for a in args)
+            ):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"MCP server '{server_name}' field 'args' must be a list of strings",
+                )
+            _validate_mcp_string_map(server_name, server_config.get("env"), "env")
+            cwd = server_config.get("cwd")
+            if cwd is not None and not isinstance(cwd, str):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"MCP server '{server_name}' field 'cwd' must be a string",
+                )
+
+        if url is not None:
+            if not isinstance(url, str) or not url.strip():
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"MCP server '{server_name}' field 'url' must be a non-empty string",
+                )
+            _validate_mcp_string_map(server_name, server_config.get("headers"), "headers")
+
+        tool_timeout = server_config.get("tool_timeout")
+        if tool_timeout is not None and (
+            isinstance(tool_timeout, bool)
+            or not isinstance(tool_timeout, (int, float))
+            or tool_timeout <= 0
+        ):
+            raise HTTPException(
+                status_code=400,
+                detail=f"MCP server '{server_name}' field 'tool_timeout' must be a positive number",
+            )
+
+
 @router.get("/llm/providers", response_model=ApiResponse)
 async def get_llm_providers() -> ApiResponse:
     """获取可用的LLM提供商列表"""
@@ -409,4 +504,35 @@ async def update_tool_permission_config(request: ToolPermissionUpdateRequest) ->
         raise
     except Exception as e:
         logger.exception("Error saving tool permission config")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+# -------------------- mcp（MCP 服务器配置）---------------------
+
+
+@router.get("/mcp", response_model=ApiResponse)
+async def get_mcp_config() -> ApiResponse:
+    """获取 MCP 服务器配置文件（mcp_config.json）内容"""
+    try:
+        config = _read_json_config(MCP_CONFIG_PATH)
+        return ApiResponse.success(config, msg="MCP config retrieved successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error getting MCP config")
+        raise HTTPException(500, f"Internal server error: {e!s}") from e
+
+
+@router.put("/mcp", response_model=ApiResponse)
+async def update_mcp_config(request: McpConfigUpdateRequest) -> ApiResponse:
+    """保存 MCP 服务器配置：校验 + 保留请求中全部字段（含服务器顺序）+ 备份 + 原子写"""
+    try:
+        _validate_mcp_config(request.config)
+        _atomic_write_json(MCP_CONFIG_PATH, copy.deepcopy(request.config))
+        logger.info("MCP config saved to %s", MCP_CONFIG_PATH)
+        return ApiResponse.success(msg="MCP config saved successfully")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Error saving MCP config")
         raise HTTPException(500, f"Internal server error: {e!s}") from e

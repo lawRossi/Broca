@@ -7,6 +7,7 @@ import configApi from '@/api/config'
 import type { LLMConfig, LLMModelConfig } from '@/api/config'
 import GeneralConfigPanel from './settings/GeneralConfigPanel.vue'
 import ToolPermissionPanel from './settings/ToolPermissionPanel.vue'
+import McpConfigPanel from './settings/McpConfigPanel.vue'
 
 // ==================== 状态 ====================
 const loading = ref(false)
@@ -24,14 +25,16 @@ const modelCount = computed(() =>
 )
 
 // ==================== 标签页与子面板协调 ====================
-const activeTab = ref('llm')
+const activeTab = ref('general')
 
-/** 基础配置 / 工具权限面板的脏状态（由子面板 dirty-change 事件更新） */
+/** 各子面板的脏状态（由子面板 dirty-change 事件更新） */
 const generalDirty = ref(false)
 const toolDirty = ref(false)
+const mcpDirty = ref(false)
 
 const generalPanelRef = ref<InstanceType<typeof GeneralConfigPanel>>()
 const toolPanelRef = ref<InstanceType<typeof ToolPermissionPanel>>()
+const mcpPanelRef = ref<InstanceType<typeof McpConfigPanel>>()
 
 // ==================== 数据加载 ====================
 const loadConfig = async () => {
@@ -732,7 +735,7 @@ const confirmDiscardChanges = async (): Promise<boolean> => {
   }
 }
 
-/** 路由离开：三个面板有改动时先尝试自动保存；保存失败/校验不过时询问是否丢弃 */
+/** 路由离开：四个面板有改动时先尝试自动保存；保存失败/校验不过时询问是否丢弃 */
 onBeforeRouteLeave(async () => {
   clearAutoSaveTimer()
   // LLM 配置面板
@@ -753,12 +756,16 @@ onBeforeRouteLeave(async () => {
   if (toolDirty.value && toolPanelRef.value) {
     if (!(await toolPanelRef.value.saveNow())) return await confirmDiscardChanges()
   }
+  // MCP 配置面板：有脏数据时先尝试保存
+  if (mcpDirty.value && mcpPanelRef.value) {
+    if (!(await mcpPanelRef.value.saveNow())) return await confirmDiscardChanges()
+  }
   return true
 })
 
 /** 浏览器刷新/关闭：任一面板仍有未落盘的改动时弹出原生确认 */
 const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-  if (dirty.value || generalDirty.value || toolDirty.value || saving.value) {
+  if (dirty.value || generalDirty.value || toolDirty.value || mcpDirty.value || saving.value) {
     e.preventDefault()
     e.returnValue = ''
   }
@@ -782,7 +789,12 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
     <!-- 主内容区 -->
     <div class="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-6">
       <el-tabs v-model="activeTab">
-        <!-- ============ Tab 1: LLM 配置 ============ -->
+        <!-- ============ Tab 1: 基础配置 ============ -->
+        <el-tab-pane label="基础配置" name="general">
+          <GeneralConfigPanel ref="generalPanelRef" @dirty-change="generalDirty = $event" />
+        </el-tab-pane>
+
+        <!-- ============ Tab 2: LLM 配置 ============ -->
         <el-tab-pane label="LLM 配置" name="llm">
           <!-- LLM 面板专属工具栏（原页面头部操作行移入） -->
           <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -1085,14 +1097,14 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
           </el-collapse>
         </el-tab-pane>
 
-        <!-- ============ Tab 2: 基础配置 ============ -->
-        <el-tab-pane label="基础配置" name="general">
-          <GeneralConfigPanel ref="generalPanelRef" @dirty-change="generalDirty = $event" />
-        </el-tab-pane>
-
         <!-- ============ Tab 3: 工具权限 ============ -->
         <el-tab-pane label="工具权限" name="tool-permission">
           <ToolPermissionPanel ref="toolPanelRef" @dirty-change="toolDirty = $event" />
+        </el-tab-pane>
+
+        <!-- ============ Tab 4: MCP 配置 ============ -->
+        <el-tab-pane label="MCP 配置" name="mcp">
+          <McpConfigPanel ref="mcpPanelRef" @dirty-change="mcpDirty = $event" />
         </el-tab-pane>
       </el-tabs>
     </div>
@@ -1201,23 +1213,29 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
   </div>
 </template>
 
-<style scoped>
+<style>
+/*
+ * 设置页各面板共享样式（全局）：
+ * 这些 class 同时被 Settings.vue 与 settings/ 下的子面板（McpConfigPanel 等）使用，
+ * 若放在 <style scoped> 中，Vue 的 scope 属性无法作用到子组件内部元素，导致样式不一致，
+ * 因此统一定义为全局样式，保证各 Tab 视觉对齐。
+ */
 .provider-delete-btn {
   margin-left: auto;
 }
 
 /* JSON 编辑器：等宽字体 + 错误态红框 */
-.json-editor :deep(textarea) {
+.json-editor textarea {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
   line-height: 1.5;
 }
 
-.json-editor--error :deep(.el-textarea__inner) {
+.json-editor--error .el-textarea__inner {
   border-color: var(--el-color-danger);
 }
 
-.json-editor--error :deep(.el-textarea__inner:focus) {
+.json-editor--error .el-textarea__inner:focus {
   box-shadow: 0 0 0 1px var(--el-color-danger) inset;
 }
 
@@ -1227,18 +1245,18 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
   border-bottom: none;
 }
 
-.settings-collapse :deep(.el-collapse-item__header) {
+.settings-collapse .el-collapse-item__header {
   padding: 0 16px;
   font-size: 14px;
 }
 
-.settings-collapse :deep(.el-collapse-item__content) {
+.settings-collapse .el-collapse-item__content {
   padding-bottom: 0;
 }
 
 /* 移动端优化 */
 @media (max-width: 640px) {
-  .settings-collapse :deep(.el-collapse-item__header) {
+  .settings-collapse .el-collapse-item__header {
     padding: 0 12px;
   }
 }

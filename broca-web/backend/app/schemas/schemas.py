@@ -41,6 +41,12 @@ class ToolPermissionUpdateRequest(BaseModel):
     config: dict[str, Any]
 
 
+class McpConfigUpdateRequest(BaseModel):
+    """保存 MCP 服务器配置（mcp_config.json）的请求模型"""
+
+    config: dict[str, Any]
+
+
 class ApiResponse(BaseModel):
     code: int = 200
     msg: str | None = ""

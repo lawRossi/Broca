@@ -776,3 +776,222 @@ class TestToolPermissionConfigAPI:
             headers=auth_headers,
         )
         assert response.status_code == 400
+
+
+class TestMcpConfigAPI:
+    """Test GET/PUT /api/config/mcp (mcp_config.json)."""
+
+    VALID_CONFIG = {
+        "stock": {
+            "command": "python",
+            "args": ["stock_mcp_server.py"],
+            "env": {"API_KEY": "xxx"},
+            "tool_timeout": 15,
+        },
+        "weather": {
+            "url": "https://api.example.com/mcp",
+            "headers": {"Authorization": "Bearer xxx"},
+            "tool_timeout": 30,
+        },
+    }
+
+    @pytest.mark.asyncio
+    async def test_get_mcp_success(self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch):
+        """GET MCP config should return the full dict (stdio + HTTP servers)."""
+        config_file = tmp_path / "mcp_config.json"
+        config_file.write_text(json.dumps(self.VALID_CONFIG), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.get("/api/config/mcp", headers=auth_headers)
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["code"] == 200
+        assert data["data"] == self.VALID_CONFIG
+        assert data["data"]["stock"]["command"] == "python"
+        assert data["data"]["weather"]["url"] == "https://api.example.com/mcp"
+
+    @pytest.mark.asyncio
+    async def test_get_mcp_no_file(self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch):
+        """Missing MCP config file should return 404."""
+        config_file = tmp_path / "mcp_config.json"
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.get("/api/config/mcp", headers=auth_headers)
+
+        assert response.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_get_mcp_damaged(self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch):
+        """Damaged JSON should return 500 with parse error in detail."""
+        config_file = tmp_path / "mcp_config.json"
+        config_file.write_text('{"stock": {', encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.get("/api/config/mcp", headers=auth_headers)
+
+        assert response.status_code == 500
+        # HTTPException 的 detail 经统一异常处理放到 ApiResponse.msg 中
+        assert "not valid JSON" in response.json().get("msg", "")
+
+    @pytest.mark.asyncio
+    async def test_put_mcp_success(self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch):
+        """PUT valid MCP config: persisted verbatim, server order preserved, .bak backup created."""
+        config_file = tmp_path / "mcp_config.json"
+        original = {"old": {"command": "python", "args": ["old.py"]}}
+        config_file.write_text(json.dumps(original), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": self.VALID_CONFIG},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["code"] == 200
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved == self.VALID_CONFIG
+        # 服务器顺序保持
+        assert list(saved.keys()) == ["stock", "weather"]
+        # 旧文件备份为 .bak
+        backup_file = tmp_path / "mcp_config.json.bak"
+        assert backup_file.exists()
+        assert json.loads(backup_file.read_text(encoding="utf-8")) == original
+
+    @pytest.mark.asyncio
+    async def test_put_mcp_empty_config(self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch):
+        """PUT empty object should be accepted (no servers configured)."""
+        config_file = tmp_path / "mcp_config.json"
+        config_file.write_text(json.dumps(self.VALID_CONFIG), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": {}},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        assert json.loads(config_file.read_text(encoding="utf-8")) == {}
+
+    @pytest.mark.asyncio
+    async def test_put_mcp_missing_transport(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with a server lacking both 'command' and 'url' should return 400."""
+        config_file = tmp_path / "mcp_config.json"
+        original = json.dumps(self.VALID_CONFIG)
+        config_file.write_text(original, encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": {"broken": {"tool_timeout": 10}}},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert config_file.read_text(encoding="utf-8") == original
+
+    @pytest.mark.asyncio
+    async def test_put_mcp_invalid_command(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with empty/non-string command should return 400."""
+        config_file = tmp_path / "mcp_config.json"
+        config_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": {"s": {"command": "   "}}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": {"s": {"command": 123}}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_put_mcp_invalid_args_and_env(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with non-list args or non-string env values should return 400."""
+        config_file = tmp_path / "mcp_config.json"
+        config_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": {"s": {"command": "python", "args": "not-a-list"}}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": {"s": {"command": "python", "env": {"KEY": 123}}}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_put_mcp_invalid_url_and_headers(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with empty url or non-object headers should return 400."""
+        config_file = tmp_path / "mcp_config.json"
+        config_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": {"s": {"url": ""}}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": {"s": {"url": "https://x/mcp", "headers": ["bad"]}}},
+            headers=auth_headers,
+        )
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_put_mcp_invalid_tool_timeout(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with non-positive / boolean tool_timeout should return 400."""
+        config_file = tmp_path / "mcp_config.json"
+        config_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        for bad_timeout in (0, -5, True, "10"):
+            response = await async_client.put(
+                "/api/config/mcp",
+                json={"config": {"s": {"command": "python", "tool_timeout": bad_timeout}}},
+                headers=auth_headers,
+            )
+            assert response.status_code == 400, f"tool_timeout={bad_timeout!r} should be rejected"
+
+    @pytest.mark.asyncio
+    async def test_put_mcp_not_object(self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch):
+        """PUT with non-object config should be rejected by request validation (422)."""
+        config_file = tmp_path / "mcp_config.json"
+        config_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr("app.api.config.MCP_CONFIG_PATH", config_file)
+
+        response = await async_client.put(
+            "/api/config/mcp",
+            json={"config": ["not", "an", "object"]},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 422
+        assert config_file.read_text(encoding="utf-8") == "{}"

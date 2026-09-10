@@ -78,6 +78,32 @@ export type PermissionValue = (typeof PERMISSION_VALUES)[number]
 /** 合法日志级别 */
 export const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] as const
 
+/** 单个 MCP 服务器配置（stdio 与 HTTP 二选一） */
+export interface McpServerConfig {
+  /** stdio 传输：可执行命令（与 url 二选一） */
+  command?: string
+  /** stdio 传输：命令参数列表 */
+  args?: string[]
+  /** stdio 传输：环境变量 */
+  env?: Record<string, string>
+  /** stdio 传输：工作目录 */
+  cwd?: string
+  /** HTTP 传输：MCP 服务 URL（与 command 二选一） */
+  url?: string
+  /** HTTP 传输：请求头 */
+  headers?: Record<string, string>
+  /** 单次工具调用超时秒数 */
+  tool_timeout?: number
+  [key: string]: unknown
+}
+
+/** 完整 MCP 配置：服务器名 → 服务器配置 */
+export type McpConfig = Record<string, McpServerConfig>
+
+/** MCP 传输类型 */
+export const MCP_TRANSPORTS = ['stdio', 'http'] as const
+export type McpTransport = (typeof MCP_TRANSPORTS)[number]
+
 export const configApi = {
   /**
    * 获取可用的LLM提供商列表
@@ -133,6 +159,20 @@ export const configApi = {
    */
   async saveToolPermissionConfig(config: ToolPermissionConfig): Promise<void> {
     await request.put('/config/tool-permission', { config })
+  },
+
+  /**
+   * 获取 MCP 服务器配置（mcp_config.json）
+   */
+  async getMcpConfig(): Promise<McpConfig> {
+    return await request.get('/config/mcp')
+  },
+
+  /**
+   * 保存 MCP 服务器配置
+   */
+  async saveMcpConfig(config: McpConfig): Promise<void> {
+    await request.put('/config/mcp', { config })
   },
 }
 
