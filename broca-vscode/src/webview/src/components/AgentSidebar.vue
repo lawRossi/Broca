@@ -346,18 +346,29 @@ function saveConfig() {
   if (!selectedAgent.value || !agentConfig.value) return
 
   saving.value = true
+  // 兜底：若长时间未收到 extension 响应，恢复按钮状态，避免卡在“保存中...”
+  window.setTimeout(() => {
+    saving.value = false
+  }, 15000)
   try {
     const configContent = buildConfigContent()
+
+    // 深度序列化为纯 JSON，避免 payload 内含 Vue 响应式 Proxy 导致 postMessage 序列化抛错
+    const plainConfig = JSON.parse(JSON.stringify(configContent))
 
     postMessage({
       type: 'updateAgentConfig',
       payload: {
         agentId: selectedAgent.value.agent_id,
-        config_content: configContent,
+        config_content: plainConfig,
       },
     })
-  } finally {
+  } catch (e: any) {
+    // 发送失败：立即恢复按钮状态并给出真实错误信息，便于定位
+    const errMsg = typeof e?.message === 'string' ? e.message : String(e)
+    console.error('[AgentSidebar] Failed to post updateAgentConfig message:', e)
     saving.value = false
+    chatStore.showError(`保存失败：${errMsg || '无法发送保存请求'}`, 'error', 6000)
   }
 }
 
@@ -405,6 +416,7 @@ onMounted(() => {
       case 'error':
         configLoading.value = false
         saving.value = false
+        chatStore.showError(data.payload?.message || '操作失败', 'error', 6000)
         break
     }
   })
