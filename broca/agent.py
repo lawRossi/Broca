@@ -161,7 +161,11 @@ class Agent:
 
     def _setup_context(self, **kwargs) -> None:
         """Set up agent context"""
-        self.context = Context(self.config, self.session_manager, **kwargs)
+        self.context = Context(
+            self.config,
+            self.session_manager,
+            **kwargs,
+        )
 
     async def _setup_tools(self):
         """Set up tools for the agent, including auto-discovered built-in tools,
@@ -217,8 +221,8 @@ class Agent:
         )
 
     def _setup_session_memory(self):
-        """Set up session memory manager"""
-        if not self.config.track_session_momory:
+        """Set up session memory manager (gated by enable_context_compression)"""
+        if not self.config.enable_context_compression:
             self.session_memory_manager = None
             return
 
@@ -229,7 +233,7 @@ class Agent:
         self.session_memory_manager = SessionMemoryManager(
             workspace=self.config.workspace,
             agent=self,
-            config=self.config.session_memory_config,
+            config=self.config.compact_config,
         )
 
     def _setup_persistent_memory(self):

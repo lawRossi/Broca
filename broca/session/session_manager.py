@@ -607,3 +607,50 @@ class SessionManager:
             message_ids_to_mark, is_truncated=True
         )
         return count
+
+    async def mark_messages_before_as_truncated(
+        self, agent_id: str, keep_from_message_id: str
+    ) -> int:
+        """
+        将序列号（sequence_number）小于 keep_from 消息的所有消息标记为
+        is_truncated=True。
+
+        用于"同 turn 内保留最近 N 步"的截断：以 keep_from 消息为界，
+        更早的消息都被压缩掉。
+
+        Args:
+            agent_id: Agent ID
+            keep_from_message_id: 保留边界的起点的消息 ID（其自身保留，
+                早于它的消息被标记为截断）
+
+        Returns:
+            被标记为截断的消息数量
+        """
+        messages = await self.get_messages(agent_id=agent_id)
+        keep_from_seq = None
+        # message_id 可能带前缀，先按相等匹配，找不到再按后缀匹配
+        for message in messages:
+            if message.message_id == keep_from_message_id or message.message_id.endswith(
+                keep_from_message_id
+            ):
+                keep_from_seq = message.sequence_number
+                break
+        if keep_from_seq is None:
+            logger.warning(
+                f"mark_messages_before_as_truncated: 未找到 keep_from 消息 "
+                f"{keep_from_message_id}，跳过截断标记"
+            )
+            return 0
+
+        message_ids_to_mark = [
+            m.message_id
+            for m in messages
+            if (m.sequence_number or 0) < keep_from_seq
+        ]
+        if not message_ids_to_mark:
+            return 0
+
+        count = await self.message_service.update_batch(
+            message_ids_to_mark, is_truncated=True
+        )
+        return count

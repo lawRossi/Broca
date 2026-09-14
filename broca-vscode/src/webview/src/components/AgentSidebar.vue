@@ -73,16 +73,10 @@ const configForm = ref<any>({
   mcp_servers: '',
   interactive: true,
   save_history: true,
-  track_session_momory: false,
   enable_context_compression: false,
   workspace: '',
   environment: '',
   system_prompt_template: '',
-  session_memory_config: {
-    minimum_messages_to_init: 200,
-    minimum_messages_between_update: 100,
-    steps_between_updates: 50,
-  },
   persistent_memory_config: {
     auto_extract: false,
     minimum_messages_to_init: 50,
@@ -93,6 +87,7 @@ const configForm = ref<any>({
   compact_config: {
     session_trunc_threshold: 250000,
     session_trunc_percentage: 0.5,
+    keep_steps: 5,
   },
 })
 
@@ -133,12 +128,10 @@ function resetConfigForm() {
     mcp_servers: '',
     interactive: true,
     save_history: true,
-    track_session_momory: false,
     enable_context_compression: false,
     workspace: '',
     environment: '',
     system_prompt_template: '',
-    session_memory_config: {},
     persistent_memory_config: {},
     compact_config: {},
   }
@@ -270,12 +263,10 @@ function initConfigEdit() {
         : '',
     interactive: config.interactive ?? true,
     save_history: config.save_history ?? true,
-    track_session_momory: config.track_session_momory ?? false,
     enable_context_compression: config.enable_context_compression ?? false,
     workspace: config.workspace ?? '',
     environment: config.environment ?? '',
     system_prompt_template: config.system_prompt_template ?? '',
-    session_memory_config: { ...(config.session_memory_config || {}) },
     persistent_memory_config: { ...(config.persistent_memory_config || {}) },
     compact_config: { ...(config.compact_config || {}) },
   }
@@ -321,12 +312,10 @@ function buildConfigContent(): Record<string, any> {
     skills: form.skills,
     interactive: form.interactive,
     save_history: form.save_history,
-    track_session_momory: form.track_session_momory,
     enable_context_compression: form.enable_context_compression,
     workspace: form.workspace,
     environment: form.environment,
     system_prompt_template: form.system_prompt_template,
-    session_memory_config: { ...form.session_memory_config },
     persistent_memory_config: { ...form.persistent_memory_config },
     compact_config: { ...form.compact_config },
   }
@@ -759,10 +748,6 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                     <input type="checkbox" v-model="configForm.save_history" />
                   </label>
                   <label class="switch-item">
-                    <span>Track Session Memory</span>
-                    <input type="checkbox" v-model="configForm.track_session_momory" />
-                  </label>
-                  <label class="switch-item">
                     <span>启用上下文压缩</span>
                     <input type="checkbox" v-model="configForm.enable_context_compression" />
                   </label>
@@ -786,39 +771,6 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                   <div class="field full">
                     <label>Environment</label>
                     <textarea v-model="configForm.environment" rows="3"></textarea>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Session Memory 配置 -->
-              <div class="section-box">
-                <div class="section-title">
-                  <span>💬 Session Memory 配置</span>
-                </div>
-                <div class="form-grid">
-                  <div class="field">
-                    <label>最小消息数(初始化)</label>
-                    <input
-                      type="number"
-                      v-model.number="configForm.session_memory_config.minimum_messages_to_init"
-                      min="0"
-                    />
-                  </div>
-                  <div class="field">
-                    <label>更新间隔消息数</label>
-                    <input
-                      type="number"
-                      v-model.number="configForm.session_memory_config.minimum_messages_between_update"
-                      min="0"
-                    />
-                  </div>
-                  <div class="field">
-                    <label>更新 Step 数</label>
-                    <input
-                      type="number"
-                      v-model.number="configForm.session_memory_config.steps_between_updates"
-                      min="0"
-                    />
                   </div>
                 </div>
               </div>
@@ -888,6 +840,14 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                       min="0"
                       max="1"
                       step="0.1"
+                    />
+                  </div>
+                  <div class="field">
+                    <label>保留最近 Step 数</label>
+                    <input
+                      type="number"
+                      v-model.number="configForm.compact_config.keep_steps"
+                      min="1"
                     />
                   </div>
                 </div>

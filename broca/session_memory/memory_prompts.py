@@ -44,9 +44,8 @@ _Step by step actions taken. Very terse summary for each step_
 
 def build_extraction_user_prompt(memory_path, current_content) -> str:
     """构建子代理的 user prompt"""
-    return """Based on the user conversation above (EXCLUDING this note-taking instruction message as well as system prompt), update the session notes file {memory_path}.
-Your ONLY task is to use the edit_file tool to update the notes file, then stop. You can make multiple edits (update every section as needed).  
-The content of the file {memory_path} has already been read for you. Here is its current contents:
+    return """Based on the user conversation above (EXCLUDING this note-taking instruction message), update the session notes file {memory_path}.
+Your ONLY task is to use the edit_file tool to update the notes file, then stop. The content of the file {memory_path} has already been read for you. Here is its current contents:
 
 {current_content}
 

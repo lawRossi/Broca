@@ -5,18 +5,6 @@ from broca.configs import ExecutionConfig
 
 
 @dataclass
-class SessionMemoryConfig:
-    """Session Memory 配置"""
-
-    minimum_messages_to_init: int = 200
-    minimum_messages_between_update: int = 100
-    steps_between_updates: int = 50
-
-
-DEFAULT_SESSION_MEMORY_CONFIG = SessionMemoryConfig()
-
-
-@dataclass
 class PersistentMemoryConfig:
     """持久化记忆提取配置"""
 
@@ -37,6 +25,7 @@ class ContextCompactConfig:
     # Session Memory 截断
     session_trunc_threshold: int = 250000  # 触发截断的 token 阈值
     session_trunc_percentage: float = 0.5  # 上下文窗口百分比
+    keep_steps: int = 5  # 截断时保留的最近 step 数（当前 turn 未结束时）
 
 
 DEFAULT_COMPACT_CONFIG = ContextCompactConfig()
@@ -59,8 +48,6 @@ class AgentConfig:
         self.save_history = True
         self.environment = None
         self.workspace = ""
-        self.track_session_momory = False
-        self.session_memory_config = DEFAULT_SESSION_MEMORY_CONFIG
         self.persistent_memory_config = DEFAULT_PERSISTENT_MEMORY_CONFIG
         self.enable_context_compression = False
         self.compact_config = DEFAULT_COMPACT_CONFIG
@@ -72,14 +59,7 @@ class AgentConfig:
         for key in list(config.keys()):
             if key not in agent_config.__dict__:
                 continue
-            if key == "session_memory_config":
-                if isinstance(config[key], dict):
-                    agent_config.session_memory_config = SessionMemoryConfig(
-                        **config[key]
-                    )
-                elif isinstance(config[key], SessionMemoryConfig):
-                    agent_config.session_memory_config = config[key]
-            elif key == "persistent_memory_config":
+            if key == "persistent_memory_config":
                 if isinstance(config[key], dict):
                     agent_config.persistent_memory_config = PersistentMemoryConfig(
                         **config[key]
@@ -98,7 +78,6 @@ class AgentConfig:
 
     def to_json(self) -> str:
         data = self.to_dict()
-        data["session_memory_config"] = asdict(self.session_memory_config)
         data["persistent_memory_config"] = asdict(self.persistent_memory_config)
         data["compact_config"] = asdict(self.compact_config)
         return json.dumps(data, ensure_ascii=False, indent=4)

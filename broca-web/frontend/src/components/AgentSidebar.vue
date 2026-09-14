@@ -55,16 +55,10 @@ const configForm = ref<any>({
   mcp_servers: '',
   interactive: true,
   save_history: true,
-  track_session_momory: false,
   enable_context_compression: false,
   workspace: '',
   environment: '',
   system_prompt_template: '',
-  session_memory_config: {
-    minimum_messages_to_init: 200,
-    minimum_messages_between_update: 100,
-    steps_between_updates: 50,
-  },
   persistent_memory_config: {
     auto_extract: false,
     minimum_messages_to_init: 50,
@@ -75,6 +69,7 @@ const configForm = ref<any>({
   compact_config: {
     session_trunc_threshold: 250000,
     session_trunc_percentage: 0.5,
+    keep_steps: 5,
   },
 })
 
@@ -264,12 +259,10 @@ const initConfigEdit = async () => {
         : '',
     interactive: config.interactive ?? true,
     save_history: config.save_history ?? true,
-    track_session_momory: config.track_session_momory ?? false,
     enable_context_compression: config.enable_context_compression ?? false,
     workspace: config.workspace ?? '',
     environment: config.environment ?? '',
     system_prompt_template: config.system_prompt_template ?? '',
-    session_memory_config: { ...(config.session_memory_config || {}) },
     persistent_memory_config: { ...(config.persistent_memory_config || {}) },
     compact_config: { ...(config.compact_config || {}) },
   }
@@ -319,12 +312,10 @@ const buildConfigContent = (): Record<string, any> => {
     skills: form.skills,
     interactive: form.interactive,
     save_history: form.save_history,
-    track_session_momory: form.track_session_momory,
     enable_context_compression: form.enable_context_compression,
     workspace: form.workspace,
     environment: form.environment,
     system_prompt_template: form.system_prompt_template,
-    session_memory_config: { ...form.session_memory_config },
     persistent_memory_config: { ...form.persistent_memory_config },
     compact_config: { ...form.compact_config },
   }
@@ -392,12 +383,10 @@ const closeConfigDialog = () => {
     mcp_servers: '',
     interactive: true,
     save_history: true,
-    track_session_momory: false,
     enable_context_compression: false,
     workspace: '',
     environment: '',
     system_prompt_template: '',
-    session_memory_config: {},
     persistent_memory_config: {},
     compact_config: {},
   }
@@ -767,10 +756,6 @@ onUnmounted(() => {
             <el-switch v-model="configForm.save_history" size="small" />
           </div>
           <div class="flex items-center justify-between">
-            <span class="text-xs text-gray-600">Track Session Memory</span>
-            <el-switch v-model="configForm.track_session_momory" size="small" />
-          </div>
-          <div class="flex items-center justify-between">
             <span class="text-xs text-gray-600">启用上下文压缩</span>
             <el-switch v-model="configForm.enable_context_compression" size="small" />
           </div>
@@ -797,45 +782,6 @@ onUnmounted(() => {
           <div>
             <label class="block text-xs text-gray-600 mb-1">Environment</label>
             <el-input v-model="configForm.environment" type="textarea" :rows="3" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Session Memory 配置 -->
-      <div v-if="selectedAgentConfig.config_content" class="bg-gray-50 p-3 rounded border">
-        <div class="flex items-center gap-2 mb-3">
-          <el-icon :size="16" class="text-orange-500">
-            <ChatDotRound />
-          </el-icon>
-          <span class="text-sm font-medium text-gray-700">Session Memory 配置</span>
-        </div>
-        <div class="grid grid-cols-3 gap-3">
-          <div>
-            <label class="block text-xs text-gray-600 mb-1">最小消息数(初始化)</label>
-            <el-input-number
-              v-model="configForm.session_memory_config.minimum_messages_to_init"
-              size="small"
-              :min="0"
-              style="width: 100%"
-            />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-600 mb-1">更新间隔消息数</label>
-            <el-input-number
-              v-model="configForm.session_memory_config.minimum_messages_between_update"
-              size="small"
-              :min="0"
-              style="width: 100%"
-            />
-          </div>
-          <div>
-            <label class="block text-xs text-gray-600 mb-1">更新Step数</label>
-            <el-input-number
-              v-model="configForm.session_memory_config.steps_between_updates"
-              size="small"
-              :min="0"
-              style="width: 100%"
-            />
           </div>
         </div>
       </div>
@@ -920,6 +866,15 @@ onUnmounted(() => {
               :min="0"
               :max="1"
               :step="0.1"
+              style="width: 100%"
+            />
+          </div>
+          <div>
+            <label class="block text-xs text-gray-600 mb-1">保留最近 Step 数</label>
+            <el-input-number
+              v-model="configForm.compact_config.keep_steps"
+              size="small"
+              :min="1"
               style="width: 100%"
             />
           </div>

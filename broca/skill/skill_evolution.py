@@ -46,7 +46,6 @@ async def run_skill_sub_agent(
             agent_config = agent.config.to_dict()
             agent_config["name"] = "skill-evolution-agent"
             agent_config["role"] = "skill_evolution"
-            agent_config["track_session_momory"] = False
             agent_config["enable_context_compression"] = False
             agent_config["save_history"] = False
             agent_config["interactive"] = False

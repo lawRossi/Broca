@@ -26,10 +26,15 @@ class Context:
     STALE_TOOL_RESULT_PLACEHOLDER = "[Expired tool result has been cleared]"
 
     def __init__(
-        self, agent_config: AgentConfig, session_manager: SessionManager, **kwargs
+        self,
+        agent_config: AgentConfig,
+        session_manager: SessionManager,
+        agent_id: Optional[str] = None,
+        **kwargs,
     ):
         self.agent_config = agent_config
         self.session_manager = session_manager
+        self.agent_id = agent_id
         self.system_prompt_kwargs = kwargs
         self.system_prompt = self._build_system_prompt()
         self._init_history()
@@ -107,9 +112,20 @@ class Context:
     def _load_session_memory(self) -> str:
         workspace = self.agent_config.workspace
         session_id = self.session_manager.session_id
-        session_memeory_path = (
-            Path(workspace) / ".broca" / (session_id or "") / "session-memory.md"
-        )
+        agent_id = self.agent_id
+        # agent_id 为空时回退到旧 session 级路径，保证测试兼容
+        if agent_id:
+            session_memeory_path = (
+                Path(workspace)
+                / ".broca"
+                / (session_id or "")
+                / agent_id
+                / "session-memory.md"
+            )
+        else:
+            session_memeory_path = (
+                Path(workspace) / ".broca" / (session_id or "") / "session-memory.md"
+            )
         if session_memeory_path.exists():
             return session_memeory_path.read_text(encoding="utf-8").strip()
         return ""

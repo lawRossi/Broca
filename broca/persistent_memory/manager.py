@@ -250,7 +250,6 @@ class PersistentMemoryManager:
             agent_config = self.agent.config.to_dict()
             agent_config["name"] = "persistent-memory-agent"
             agent_config["role"] = "persistent_memory_manager"
-            agent_config["track_session_momory"] = False
             agent_config["enable_context_compression"] = False
             agent_config["save_history"] = False
             agent_config["interactive"] = False

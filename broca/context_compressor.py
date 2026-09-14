@@ -124,7 +124,6 @@ class ContextCompressor:
                 context=context,
                 execution_engine=execution_engine,
                 agent=agent,
-                config=compact_config,
             )
         else:
             effective_threshold = self._get_effective_threshold(
@@ -137,7 +136,6 @@ class ContextCompressor:
                     context=context,
                     execution_engine=execution_engine,
                     agent=agent,
-                    config=compact_config,
                 )
 
         return self.stats
@@ -168,18 +166,14 @@ class ContextCompressor:
         context,
         execution_engine,
         agent,
-        config: ContextCompactConfig,
     ):
         """
-        尝试使用 session memory 做截断。
+        尝试使用 session memory 做截断（仅压缩，不做提取，供手动 /compact 使用）。
 
         流程：
-        1. 安全校验（内容非空 + 索引对齐）
-        2. 确定截断边界
-        3. 将 session memory 注入 system prompt
-        4. 重建 context
-        5. 标记被截断的消息到数据库
-        6. 重置 SessionMemoryManager
+        1. 安全校验（存在 session_memory_manager + 内容非空）
+        2. 通过 manager 计算保留边界 keep_pivot（保留最近 N 步，不跨 turn）
+        3. 执行截断
         """
         session_memory_manager = agent.session_memory_manager
 
@@ -192,17 +186,15 @@ class ContextCompressor:
             logger.info("Session Memory：session_memory 内容为空，跳过截断")
             return
 
-        # 校验二：last_message_index 与 context 对齐
-        last_index = session_memory_manager.last_message_index
-        if last_index == 0:
-            return
-
-        if not self._validate_index_alignment(context, session_memory_manager):
-            logger.warning(
-                f"Session Memory：last_message_index ({last_index}) 与 context 不对齐，"
-                "重置并跳过截断"
+        # 校验二：计算保留边界（复用 manager 的 pivot 计算）
+        keep_steps = getattr(agent.config.compact_config, "keep_steps", 5)
+        keep_from_message_id, keep_index = (
+            await session_memory_manager._compute_keep_pivot(context, keep_steps)
+        )
+        if not keep_from_message_id or keep_index is None:
+            logger.info(
+                "Session Memory：无法计算保留边界 pivot，跳过截断"
             )
-            session_memory_manager.reset_last_message_index()
             return
 
         # 校验通过，执行截断
@@ -210,54 +202,37 @@ class ContextCompressor:
             context=context,
             execution_engine=execution_engine,
             agent=agent,
-            config=config,
+            keep_from_message_id=keep_from_message_id,
         )
-
-    def _validate_index_alignment(self, context, session_memory_manager) -> bool:
-        """验证 last_message_index 与当前 context 对齐"""
-        last_index = session_memory_manager.state.last_message_index
-        history = context.history
-
-        # 索引越界检查
-        if last_index >= len(history):
-            return False
-
-        # 通过 context 的 message_id 映射获取该消息的数据库 ID
-        msg_db_id = context.get_message_db_id(last_index)
-
-        if not msg_db_id:
-            return False
-
-        return msg_db_id == session_memory_manager.last_message_id
 
     async def _do_session_memory_truncation(
         self,
         context,
         execution_engine,
         agent,
-        config: ContextCompactConfig,
+        keep_from_message_id,
     ):
         """
-        执行 session memory 截断。
+        执行 session memory 截断（保留最近 N 步）。
 
-        1. 获取 session memory 内容
-        2. 注入到 system prompt
+        1. 标记被截断的消息到数据库
+        2. 将 snapshot 冻结为 frozen memory
         3. 重建 context（保留截断点之后的消息）
-        4. 标记被截断的消息到数据库
-        5. 重置 SessionMemoryManager
+        4. 重置 SessionMemoryManager
         """
         session_memory_manager = agent.session_memory_manager
-        pivot_message_id = session_memory_manager.last_message_id
 
         # 标记被截断的消息到数据库
         session_manager = execution_engine.session_manager
-        count = await session_manager.mark_messages_as_truncated(
-            agent.agent_id, pivot_message_id
+        count = await session_manager.mark_messages_before_as_truncated(
+            agent.agent_id, keep_from_message_id
         )
         self.stats.truncated_count = count
         session_memory_manager.frosen_session_memory()
         session_memory_manager.reset()
-        context.build_history_from_session(agent.agent_id, rebuild_system_prompt=True)
+        await context.build_history_from_session(
+            agent.agent_id, rebuild_system_prompt=True
+        )
 
         logger.info(
             f"Session Memory：Session memory 截断完成，"
