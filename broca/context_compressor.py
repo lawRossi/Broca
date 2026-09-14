@@ -9,6 +9,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 from dataclasses import dataclass, field
@@ -98,13 +99,21 @@ class ContextCompressor:
         self, context, execution_engine, agent: "Agent", force: bool = False
     ) -> CompressionStats:
         """
-        检查 context token 数并触发压缩。
+        检查 context token 数并触发压缩（统一"提取 + 压缩"流程）。
 
-        在 execute_step 完成后调用。当 force=True 时，跳过 token 阈值检查直接执行压缩。
+        在 execute_step 完成后由 loop_engine 调用。当 force=True 时（手动
+        /compact），跳过 token 阈值检查直接执行压缩。
+
+        流程：
+        1. 校验存在 session_memory_manager；
+        2. token 阈值检查（force 时跳过）；
+        3. 计算保留边界 keep_pivot（保留最近 N 步，不跨 turn）；
+        4. 调用 session_memory_manager 提取记忆（用被压缩的旧消息更新 snapshot）；
+        5. 提取成功 → 截断压缩（标记截断、frozen、reset、重建 context）。
 
         Args:
             context: Context 实例
-            execution_engine: ExecutionEngine 实例（用于获取 step 信息和写操作）
+            execution_engine: ExecutionEngine 实例（用于获取 session_manager）
             agent: Agent
             force: 是否强制压缩（跳过 token 阈值检查）
 
@@ -113,30 +122,32 @@ class ContextCompressor:
         """
         self.stats.reset()
 
+        session_memory_manager = agent.session_memory_manager
+        if not session_memory_manager:
+            logger.info("Session Memory：无 session_memory_manager，跳过压缩")
+            return self.stats
+
         compact_config: ContextCompactConfig = agent.config.compact_config
 
         # 估算 context 总 token 数
         total_tokens = self._estimate_context_tokens(context)
 
-        # Session Memory 截断
-        if force:
-            await self._try_session_memory_truncation(
-                context=context,
-                execution_engine=execution_engine,
-                agent=agent,
-            )
-        else:
+        # token 阈值检查
+        if not force:
             effective_threshold = self._get_effective_threshold(
                 compact_config.session_trunc_threshold,
                 compact_config.session_trunc_percentage,
                 agent,
             )
-            if total_tokens > effective_threshold:
-                await self._try_session_memory_truncation(
-                    context=context,
-                    execution_engine=execution_engine,
-                    agent=agent,
-                )
+            if total_tokens <= effective_threshold:
+                return self.stats
+
+        await self._do_session_memory_compress(
+            context=context,
+            execution_engine=execution_engine,
+            agent=agent,
+            total_tokens=total_tokens,
+        )
 
         return self.stats
 
@@ -158,71 +169,53 @@ class ContextCompressor:
         return total_chars // 3
 
     # ========================================================================
-    # Session Memory 截断
+    # Session Memory 压缩（统一"提取 + 压缩"）
     # ========================================================================
 
-    async def _try_session_memory_truncation(
+    async def _do_session_memory_compress(
         self,
         context,
         execution_engine,
         agent,
+        total_tokens,
     ):
         """
-        尝试使用 session memory 做截断（仅压缩，不做提取，供手动 /compact 使用）。
+        统一"提取 + 压缩"流程。
 
-        流程：
-        1. 安全校验（存在 session_memory_manager + 内容非空）
-        2. 通过 manager 计算保留边界 keep_pivot（保留最近 N 步，不跨 turn）
-        3. 执行截断
+        1. 通过 manager 计算保留边界 keep_pivot（保留最近 N 步，不跨 turn）；
+        2. 调用 manager 提取记忆（用被压缩的旧消息 context.history[:keep_index]
+           更新 snapshot 文件）；
+        3. 提取成功 → 截断压缩：
+           - 标记被截断的消息到数据库
+           - 将 snapshot 冻结为 frozen memory
+           - 重建 context（保留截断点之后的消息）
+           - 重置 SessionMemoryManager
         """
         session_memory_manager = agent.session_memory_manager
+        compact_config = agent.config.compact_config
+        keep_steps = getattr(compact_config, "keep_steps", 5)
 
-        if not session_memory_manager:
-            logger.info("Session Memory：无 session_memory_manager，跳过截断")
-            return
-
-        # 校验一：Session memory 内容非空
-        if session_memory_manager.is_session_memory_empty():
-            logger.info("Session Memory：session_memory 内容为空，跳过截断")
-            return
-
-        # 校验二：计算保留边界（复用 manager 的 pivot 计算）
-        keep_steps = getattr(agent.config.compact_config, "keep_steps", 5)
+        # 1. 计算保留边界（复用 manager 的 pivot 计算）
         keep_from_message_id, keep_index = (
-            await session_memory_manager._compute_keep_pivot(context, keep_steps)
+            await session_memory_manager.compute_keep_pivot(context, keep_steps)
         )
         if not keep_from_message_id or keep_index is None:
-            logger.info(
-                "Session Memory：无法计算保留边界 pivot，跳过截断"
-            )
+            logger.info("Session Memory：无法计算保留边界 pivot，跳过压缩")
             return
 
-        # 校验通过，执行截断
-        await self._do_session_memory_truncation(
-            context=context,
-            execution_engine=execution_engine,
-            agent=agent,
-            keep_from_message_id=keep_from_message_id,
+        logger.info(
+            f"Session Memory：开始压缩 (tokens={total_tokens}, "
+            f"keep_steps={keep_steps})"
         )
 
-    async def _do_session_memory_truncation(
-        self,
-        context,
-        execution_engine,
-        agent,
-        keep_from_message_id,
-    ):
-        """
-        执行 session memory 截断（保留最近 N 步）。
+        # 2. 提取记忆（用被压缩的旧消息，最新几步不写入记忆避免丢信息）
+        old_history = copy.copy(context.history[:keep_index])
+        extraction_ok = await session_memory_manager.extract(context, old_history)
+        if not extraction_ok:
+            logger.info("Session Memory：记忆提取失败，跳过压缩")
+            return
 
-        1. 标记被截断的消息到数据库
-        2. 将 snapshot 冻结为 frozen memory
-        3. 重建 context（保留截断点之后的消息）
-        4. 重置 SessionMemoryManager
-        """
-        session_memory_manager = agent.session_memory_manager
-
-        # 标记被截断的消息到数据库
+        # 3. 截断压缩
         session_manager = execution_engine.session_manager
         count = await session_manager.mark_messages_before_as_truncated(
             agent.agent_id, keep_from_message_id
@@ -235,7 +228,7 @@ class ContextCompressor:
         )
 
         logger.info(
-            f"Session Memory：Session memory 截断完成，"
+            f"Session Memory：Session memory 压缩完成，"
             f"截断了 {self.stats.truncated_count} 条消息"
         )
 

@@ -19,6 +19,7 @@ from typing import Any, Dict, List, Optional
 from litellm import Message as LLMMessage
 
 from broca.context import Context
+from broca.context_compressor import ContextCompressor
 from broca.errors import BrocaError, ErrorCode, LLMError, ToolError, ValidationError
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
@@ -182,7 +183,8 @@ class LoopEngine:
         self._step_has_write_operations: bool = False
         self._step_lock_held: bool = False  # step 期间是否持有文件锁
 
-        # 上下文压缩器（已废弃，压缩逻辑统一由 session_memory_manager 触发）
+        # 上下文压缩器（由 ContextCompressor 统一执行"提取 + 压缩"）
+        self.context_compressor: Optional[ContextCompressor] = None
 
         # 死循环检测
         self._recent_tool_call_signatures: List[str] = []
@@ -450,14 +452,12 @@ class LoopEngine:
         return self._detect_dead_loop(response.tool_calls)
 
     async def _trigger_post_step_hooks(self) -> None:
-        """触发 step 完成后的后置钩子：session memory 提取+压缩、持久化记忆"""
-        # Session Memory：token 超阈值时，提取+压缩一起完成。
+        """触发 step 完成后的后置钩子：上下文压缩（提取+压缩）、持久化记忆"""
+        # Session Memory：token 超阈值时，由 ContextCompressor 统一执行提取+压缩。
         # session_memory_manager 仅在 enable_context_compression=True 时创建，
         # 因此该分支即为其统一门控。
         if self.session_memory_manager:
-            await self.session_memory_manager.check_and_extract(
-                context=self.context, engine=self
-            )
+            await self._check_context_compression()
 
         if (
             self.persistent_memory_manager
@@ -1346,3 +1346,18 @@ class LoopEngine:
                 turn_id=self.turn_id,
                 agent_id=self.agent_id,
             )
+
+    async def _check_context_compression(self):
+        """
+        检查 context 是否需要进行压缩。
+
+        在 execute_step 完成后调用，由 ContextCompressor 统一执行"提取 + 压缩"。
+        """
+        if not self.context_compressor:
+            self.context_compressor = ContextCompressor()
+
+        await self.context_compressor.check_and_compress(
+            context=self.context,
+            execution_engine=self,
+            agent=self.agent,
+        )

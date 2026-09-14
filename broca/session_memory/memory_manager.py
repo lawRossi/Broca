@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from broca.agent_manager import AgentFactory
-from broca.context_compressor import ContextCompressor
 from broca.loop_engine import ExecutionStatus
 from broca.logging_config import get_logger
 from broca.session import MessageProtocol, MessageType
@@ -104,88 +103,22 @@ class SessionMemoryManager:
             logger.info(f"Created session memory template at {memory_file}")
 
     # ========================================================================
-    # token 阈值计算（复用 ContextCompressor）
+    # 记忆提取（由 ContextCompressor 在压缩前调用）
     # ========================================================================
 
-    def _estimate_context_tokens(self, context) -> int:
-        return ContextCompressor()._estimate_context_tokens(context)
-
-    def _get_effective_threshold(self) -> int:
-        compressor = ContextCompressor()
-        return compressor._get_effective_threshold(
-            self.config.session_trunc_threshold,
-            self.config.session_trunc_percentage,
-            self.agent,
-        )
-
-    # ========================================================================
-    # 统一触发：提取 + 压缩
-    # ========================================================================
-
-    async def check_and_extract(self, context, engine=None):
+    async def extract(self, context: Context, old_history) -> bool:
         """
-        统一触发"提取 + 压缩"流程：
+        执行记忆提取（通过子代理），用将被压缩的旧消息更新 snapshot 文件。
 
-        1. 若提取进行中 → 返回；
-        2. 计算有效 token 阈值；若 context token 数 ≤ 阈值 → 返回；
-        3. 计算保留边界 keep_pivot（保留当前 turn 内最近 keep_steps 个 step），
-           得到 keep_from_message_id 与对应的 context 索引 keep_index；
-        4. 用 context.history[:keep_index]（被压缩的旧消息）作为子代理上下文，
-           执行记忆提取（写 snapshot 文件）；
-        5. 提取成功 → 截断压缩（标记截断、frozen、reset、重建 context）。
-        """
-        if self.state.extraction_in_progress:
-            return
+        只负责"提取记忆"，截断压缩由 ContextCompressor 负责。
 
-        # 1/2. token 阈值检查
-        total_tokens = self._estimate_context_tokens(context)
-        effective_threshold = self._get_effective_threshold()
-        if total_tokens <= effective_threshold:
-            return
-
-        # 3. 计算保留边界
-        keep_steps = getattr(self.config, "keep_steps", 5)
-        keep_from_message_id, keep_index = await self._compute_keep_pivot(
-            context, keep_steps
-        )
-        if not keep_from_message_id or keep_index is None:
-            logger.info("Session Memory：无法计算保留边界 pivot，跳过截断")
-            return
-
-        logger.info(
-            f"start to extract session memory (tokens={total_tokens}, "
-            f"threshold={effective_threshold}, keep_steps={keep_steps})"
-        )
-
-        # 被压缩的旧消息（最新几步不写入记忆，避免丢信息）
-        old_history = copy.copy(context.history[:keep_index])
-
-        try:
-            await self.agent.communicator.send_agent_system_message(
-                content="Extracting session memory", subscription=self.agent.session_id
-            )
-            original_content = self._read_session_memory_content()
-            success = await self._extract_and_compress(
-                context=context,
-                old_history=old_history,
-                keep_from_message_id=keep_from_message_id,
-            )
-            if not success:
-                with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
-                    f.write(original_content)
-        except Exception as e:
-            logger.error(f"Session memory extraction failed: {e}")
-            with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
-                f.write(original_content)
-
-    async def _extract_and_compress(
-        self, context, old_history, keep_from_message_id
-    ) -> bool:
-        """
-        执行提取，提取成功后执行截断压缩。
+        Args:
+            context: 当前 Context 实例
+            old_history: 被压缩的旧消息（context.history[:keep_index]），
+                最新几步不写入记忆，避免丢信息
 
         Returns:
-            是否提取成功（压缩仅在提取成功后执行）
+            提取是否成功（成功才允许后续压缩）
         """
         async with self._lock:
             if self.state.extraction_in_progress:
@@ -193,44 +126,29 @@ class SessionMemoryManager:
 
             self.state.extraction_in_progress = True
             try:
+                original_content = self._read_session_memory_content()
+                await self.agent.communicator.send_agent_system_message(
+                    content="Extracting session memory",
+                    subscription=self.agent.session_id,
+                )
                 success = await self._do_extract(context, old_history)
                 if not success:
-                    return False
-
-                await self._do_compress(context, keep_from_message_id)
-                return True
+                    with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
+                        f.write(original_content)
+                return success
             except Exception as e:
-                logger.error(f"Session memory extraction/compression failed: {e}")
+                logger.error(f"Session memory extraction failed: {e}")
+                with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
+                    f.write(original_content)
                 return False
             finally:
                 self.state.extraction_in_progress = False
-
-    async def _do_compress(self, context, keep_from_message_id):
-        """提取成功后执行截断压缩"""
-        agent_id = self.agent.agent_id
-        session_manager = self.agent.session_manager
-
-        # 标记被压缩的旧消息为截断
-        count = await session_manager.mark_messages_before_as_truncated(
-            agent_id, keep_from_message_id
-        )
-        logger.info(
-            f"Session Memory：截断完成，标记了 {count} 条消息为 truncated"
-        )
-
-        # snapshot -> frozen
-        self.frosen_session_memory()
-        self.reset()
-        # 重建 context（system prompt + 保留的最近消息）
-        await context.build_history_from_session(
-            agent_id, rebuild_system_prompt=True
-        )
 
     # ========================================================================
     # 保留边界 pivot 计算
     # ========================================================================
 
-    async def _compute_keep_pivot(self, context, keep_steps: int):
+    async def compute_keep_pivot(self, context, keep_steps: int):
         """
         计算保留边界。
 

@@ -58,7 +58,7 @@ class TestComputeKeepPivot:
             [None, "u1", "a1", "u2", "a2", "a3", "a4"]
         )
 
-        keep_from, keep_index = await manager._compute_keep_pivot(context, keep_steps=2)
+        keep_from, keep_index = await manager.compute_keep_pivot(context, keep_steps=2)
         # 保留最近 2 步：a3、a4；a2 及更早被截断
         assert keep_from == "a3"
         assert keep_index == 5
@@ -75,7 +75,7 @@ class TestComputeKeepPivot:
         manager = make_manager(tmp_path, messages)
         context = make_context([None, "u1", "a1", "u2", "a2"])
 
-        keep_from, keep_index = await manager._compute_keep_pivot(context, keep_steps=5)
+        keep_from, keep_index = await manager.compute_keep_pivot(context, keep_steps=5)
         # 整体保留当前 turn，起点为用户消息 u2
         assert keep_from == "u2"
         assert keep_index == 3
@@ -97,7 +97,7 @@ class TestComputeKeepPivot:
             [None, "u1", "a1", "a2", "a3", "a4", "a5", "u2", "a6"]
         )
 
-        keep_from, keep_index = await manager._compute_keep_pivot(context, keep_steps=3)
+        keep_from, keep_index = await manager.compute_keep_pivot(context, keep_steps=3)
         # 当前 turn 只有 1 个 step，保留整个当前 turn（起点 u2），不跨到上一轮
         assert keep_from == "u2"
         assert keep_index == 7
@@ -112,7 +112,7 @@ class TestComputeKeepPivot:
         manager = make_manager(tmp_path, messages)
         context = make_context([None, "a1", "a2"])
 
-        keep_from, keep_index = await manager._compute_keep_pivot(context, keep_steps=2)
+        keep_from, keep_index = await manager.compute_keep_pivot(context, keep_steps=2)
         assert keep_from is None
         assert keep_index is None
 
@@ -128,6 +128,6 @@ class TestComputeKeepPivot:
         # db_ids 中找不到 pivot 消息
         context = make_context([None, "u1", "a1"])
 
-        keep_from, keep_index = await manager._compute_keep_pivot(context, keep_steps=1)
+        keep_from, keep_index = await manager.compute_keep_pivot(context, keep_steps=1)
         assert keep_from is None
         assert keep_index is None
