@@ -869,6 +869,9 @@ class ChatStore:
                 if todos:
                     turn.current_todo_list = todos
 
+        # 收到 tool_call → 思考阶段已结束（进入工具执行），清空 reasoning_content，
+        # 避免下次思考阶段把上一次的推理内容先展示出来。
+        turn.reasoning_content = ""
         turn.status = "calling_tool"
         self._notify_change()
 

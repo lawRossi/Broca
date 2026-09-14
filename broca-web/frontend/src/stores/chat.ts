@@ -557,6 +557,9 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
 
+      // 收到 tool_call → 思考阶段已结束（进入工具执行），清空 reasoningContent，
+      // 避免下次思考阶段把上一次的推理内容先展示出来。
+      turn.reasoningContent = ''
       turn.status = 'calling_tool'
       // 记录最后一条消息 ID（用于撤销定位）
       _turnLastResponseMsgId.set(turnId, message.message_id)

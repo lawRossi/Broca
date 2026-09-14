@@ -1229,7 +1229,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   width: 72px;
   flex-shrink: 0;
   text-align: right;
-  color: #555;
+  color: var(--vscode-editorLineNumber-foreground, #555);
   padding-right: 12px;
   user-select: none;
 }
@@ -1246,12 +1246,13 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   background: #f8d7da;
 }
 .diff-line.head {
-  background: #f0f0f0;
-  color: #1a1a1a;
+  background: var(--vscode-editor-lineHighlightBackground, #f0f0f0);
+  color: var(--vscode-editor-foreground, #1a1a1a);
   font-weight: 600;
 }
+/* 未修改（上下文）行：跟随主题前景色，保证 dark 模式下可见 */
 .diff-line.ctx {
-  color: #1a1a1a;
+  color: var(--vscode-editor-foreground, #1a1a1a);
 }
 
 .diff-line.add .diff-line-content {
@@ -1263,7 +1264,7 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   font-weight: 500;
 }
 .diff-line.head .diff-line-content {
-  color: #1a1a1a;
+  color: var(--vscode-editor-foreground, #1a1a1a);
   font-weight: 600;
 }
 
