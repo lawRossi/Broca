@@ -266,7 +266,7 @@ Agent 是系统的核心执行单元，每个 Agent 包含：
 - **Tool 集合**: 可配置的工具列表，支持内置工具和自定义工具
 - **Context**: 管理对话历史和 system prompt 的组装
 - **Communicator**: 通过 Socket.IO 实现消息收发
-- **Session Memory**: 长期记忆管理
+- **Session Memory**: 短期会话记忆（提取 + 上下文压缩）
 - **Permission Manager**: 用户交互式权限管理
 - **Revert Service**: 撤销/重做支持
 
@@ -378,13 +378,20 @@ SocketIOServer 是一个多端通信服务器，支持：
 - 支持从数据库重建历史（过滤被截断/过期的消息）
 - 在 Abort 时自动截断最后一次含工具调用的 Assistant 消息
 
-**会话上下文压缩**：
-- **Session Memory 截断**: 基于 Session Memory 截断早期对话，释放上下文窗口
+**会话上下文压缩**（统一"提取 + 压缩"流程）：
+- 由 `ContextCompressor` 统一编排：当 context token 数超过有效阈值时，先提取记忆，再截断早期对话释放上下文窗口
+- **触发阈值**：`compact_config.session_trunc_threshold` 与 `compact_config.session_trunc_percentage`（有效阈值取两者较小的那个）
+- **保留边界**：`compact_config.keep_steps`（默认 5）——保留当前进行中 turn 内最近 N 个 step，**绝不跨 turn 截到上一轮**
+- **唯一门控**：`enable_context_compression=true`（同时创建 `SessionMemoryManager`）
+- 职责划分：`SessionMemoryManager` 负责记忆提取与保留边界计算；`ContextCompressor` 负责 token 阈值判断与压缩编排
 
 **Session Memory**（会话短期记忆）：
 - 在上下文中注入当前会话的历史摘要
-- 后台子 Agent（`session-memory-agent`）每次 LLM 调用后自动提取关键信息
-- 存储在 `.broca/{session_id}/session-memory.md`
+- 每个 Agent 使用**独立记忆文件**，避免多 Agent 并发写入互相覆盖
+- 后台子 Agent（`session-memory-agent`）用将被压缩的旧消息提取关键信息并更新 snapshot
+- 记忆文件（agent 级路径）：
+  - `.broca/{session_id}/{agent_id}/session-memory_latest.md` —— 提取中的 snapshot
+  - `.broca/{session_id}/{agent_id}/session-memory.md` —— 冻结记忆（frozen），注入 system prompt
 
 **Persistent Memory**（跨会话持久化记忆）：
 - 基于 `mem_tech.md` 设计理念，采用**独立子 Agent 提取**模式
