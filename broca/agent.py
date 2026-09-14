@@ -264,7 +264,6 @@ class Agent:
             config=self.config,
             communicator=self.communicator,
             session_manager=self.session_manager,
-            session_memory_manager=self.session_memory_manager,
             tool_permission_manager=self.tool_permission_manager,
         )
 

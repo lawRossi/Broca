@@ -98,7 +98,6 @@ class LoopEngine:
         config: Any,
         communicator: Any,
         session_manager: SessionManager,
-        session_memory_manager: Any = None,
         tool_permission_manager: Optional[ToolPermissionManager] = None,
         step_max_errors=None,
         llm_retry_delay=None,
@@ -128,7 +127,6 @@ class LoopEngine:
         self.config = config
         self.communicator = communicator
         self.session_manager = session_manager
-        self.session_memory_manager = session_memory_manager
         self.persistent_memory_manager = getattr(
             agent, "persistent_memory_manager", None
         )
@@ -454,9 +452,9 @@ class LoopEngine:
     async def _trigger_post_step_hooks(self) -> None:
         """触发 step 完成后的后置钩子：上下文压缩（提取+压缩）、持久化记忆"""
         # Session Memory：token 超阈值时，由 ContextCompressor 统一执行提取+压缩。
-        # session_memory_manager 仅在 enable_context_compression=True 时创建，
-        # 因此该分支即为其统一门控。
-        if self.session_memory_manager:
+        # 以 enable_context_compression 为统一门控（loop_engine 不需要持有
+        # session_memory_manager，压缩器内部通过 agent.session_memory_manager 访问）。
+        if self.config.enable_context_compression:
             await self._check_context_compression()
 
         if (
