@@ -725,7 +725,7 @@ class MessageService(BaseService[Message]):
             stmt = select(Message).where(Message.session_id == session_id)
 
             if ignore_reverted:
-                stmt = stmt.where(not Message.reverted)
+                stmt = stmt.where(Message.reverted == False)  # noqa: E712
 
             if message_type:
                 stmt = stmt.where(Message.message_type == message_type)
@@ -778,7 +778,7 @@ class MessageService(BaseService[Message]):
                 select(func.distinct(func.json_extract(Message.data, "$.tool_name")))
                 .where(Message.session_id == session_id)
                 .where(Message.message_type == MessageType.TOOL_CALL)
-                .where(not Message.reverted)
+                .where(Message.reverted == False)  # noqa: E712
                 .where(func.json_extract(Message.data, "$.tool_name").isnot(None))
             )
             result = await session.execute(stmt)
