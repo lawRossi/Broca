@@ -58,9 +58,9 @@ class Bash(Tool):
         }
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
-        code = arguments["code"]
+        code = arguments.get("code") or arguments.get("command")
         background = arguments.get("background", False)
-        notify = arguments.get("notify", False)
+        notify = False
 
         # 检测命令是否包含 &（shell background operator）
         has_shell_bg = self._detect_background_ampersand(code)
