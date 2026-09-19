@@ -53,8 +53,7 @@ class Bash(Tool):
                     "description": "When background=True, whether to send a notification when the process completes. Default: False (no notification). Use process tool to check status instead.",
                     "default": False,
                 },
-            },
-            "required": ["code"],
+            }
         }
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
