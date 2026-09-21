@@ -85,11 +85,33 @@ class SessionMemoryManager:
         return str(self._agent_memory_dir / self.FROSEN_MEMORY_FILENAME)
 
     def is_session_memory_empty(self) -> bool:
-        content = Path(self.snapshot_memory_path).read_text(encoding="utf-8").strip()
+        try:
+            content = Path(self.snapshot_memory_path).read_text(
+                encoding="utf-8"
+            ).strip()
+        except FileNotFoundError:
+            logger.warning(
+                f"Session memory snapshot not found: {self.snapshot_memory_path}"
+            )
+            return True
         return content == "" or content == DEFAULT_MEMORY_TEMPLATE.strip()
 
-    def frosen_session_memory(self):
-        shutil.copyfile(self.snapshot_memory_path, self.memory_path)
+    def frozen_session_memory(self):
+        """将 snapshot 冻结为 frozen memory（snapshot → frozen）"""
+        try:
+            shutil.copyfile(self.snapshot_memory_path, self.memory_path)
+        except FileNotFoundError:
+            logger.error(
+                f"Cannot freeze session memory: snapshot not found "
+                f"{self.snapshot_memory_path}"
+            )
+            raise
+        except OSError as e:
+            logger.error(
+                f"Failed to freeze session memory "
+                f"({self.snapshot_memory_path} → {self.memory_path}): {e}"
+            )
+            raise
 
     def _read_session_memory_content(self):
         return Path(self.snapshot_memory_path).read_text(encoding="utf-8").strip()
@@ -196,15 +218,20 @@ class SessionMemoryManager:
         return keep_from_message_id, keep_index
 
     def _resolve_context_index(self, context, message_id):
-        """在 context 中根据 message_id 找到对应索引"""
+        """在 context 中根据 message_id 找到对应索引（仅精确匹配）"""
         db_ids = getattr(context, "_message_db_ids", None)
         if not db_ids:
+            logger.warning(
+                "_resolve_context_index: context 无 _message_db_ids，无法定位"
+            )
             return None
         for idx, db_id in enumerate(db_ids):
-            if not db_id:
-                continue
-            if db_id == message_id or db_id.endswith(str(message_id)):
+            if db_id == message_id:
                 return idx
+        logger.warning(
+            f"_resolve_context_index: 未在 context 中找到 "
+            f"message_id={message_id}（db_ids 长度={len(db_ids)}）"
+        )
         return None
 
     # ========================================================================

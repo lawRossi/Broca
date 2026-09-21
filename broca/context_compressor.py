@@ -129,8 +129,8 @@ class ContextCompressor:
 
         compact_config: ContextCompactConfig = agent.config.compact_config
 
-        # 估算 context 总 token 数
-        total_tokens = self._estimate_context_tokens(context)
+        # 获取 context token 数（优先用 LLM 返回的真实值）
+        total_tokens = self._get_total_tokens(context, agent)
 
         # token 阈值检查
         if not force:
@@ -155,17 +155,61 @@ class ContextCompressor:
         """
         估算 context 的总 token 数。
 
-        使用简单的字符数估算（约 3 字符/token）。
+        涵盖 content、reasoning_content, tool_calls，使用约 3 字符/token 的粗略换算。
         """
         total_chars = 0
         for msg in context.history:
             if isinstance(msg, dict):
-                content = msg.get("content", "")
-                if content:
-                    total_chars += len(str(content))
+                total_chars += len([msg["content"]])
             elif hasattr(msg, "content"):
-                total_chars += len(str(msg.content))
-        # 粗略估算：约 3 字符/token
+                # litellm.Message 对象：统计 content + reasoning_content + tool_calls
+                total_chars += len(str(msg.content or ""))
+                rc = getattr(msg, "reasoning_content", None)
+                if rc:
+                    total_chars += len(str(rc))
+                tc = getattr(msg, "tool_calls", None)
+                if tc:
+                    total_chars += len(
+                        json.dumps(tc, ensure_ascii=False, default=str)
+                    )
+        return total_chars // 3
+
+    def _get_total_tokens(self, context, agent) -> int:
+        """
+        获取 context 的总 token 数。
+
+        优先使用 LLM 调用返回的真实值（agent.last_context_length），
+        再加上最后一次 LLM 调用后新增的 tool result 消息的估算值。
+        取不到真实值时回退到全量字符估算。
+        """
+        last_ctx = getattr(agent, "last_context_length", None)
+        if last_ctx is None:
+            return self._estimate_context_tokens(context)
+        tool_result_tokens = self._estimate_recent_tool_result_tokens(context)
+        return last_ctx + tool_result_tokens
+
+    @staticmethod
+    def _estimate_recent_tool_result_tokens(context) -> int:
+        """
+        估算最近一次 LLM 调用后新增的 tool result 消息的 token 数。
+
+        从 context.history 末尾向前扫描，累计 role == "tool" 的消息字符数，
+        遇到非 tool 消息即停止（即最后一条 assistant 消息）。
+        """
+        total_chars = 0
+        for msg in reversed(context.history):
+            role = (
+                msg.get("role") if isinstance(msg, dict)
+                else getattr(msg, "role", None)
+            )
+            if role == "tool":
+                content = (
+                    msg.get("content", "") if isinstance(msg, dict)
+                    else (msg.content or "")
+                )
+                total_chars += len(str(content))
+            else:
+                break
         return total_chars // 3
 
     # ========================================================================
@@ -221,7 +265,7 @@ class ContextCompressor:
             agent.agent_id, keep_from_message_id
         )
         self.stats.truncated_count = count
-        session_memory_manager.frosen_session_memory()
+        session_memory_manager.frozen_session_memory()
         session_memory_manager.reset()
         await context.build_history_from_session(
             agent.agent_id, rebuild_system_prompt=True
