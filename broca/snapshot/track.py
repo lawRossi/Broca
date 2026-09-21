@@ -249,7 +249,7 @@ class SnapshotTracker:
             if os.path.getsize(temp_file) > 0:
                 # 使用临时文件进行添加
                 await self.git_manager._run_git_command(
-                    "add", "--all", f"--pathspec-from-file={temp_file}"
+                    "add", "-f", "--all", f"--pathspec-from-file={temp_file}"
                 )
                 return True
             else:
