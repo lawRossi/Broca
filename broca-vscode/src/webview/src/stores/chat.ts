@@ -269,7 +269,11 @@ export const useChatStore = defineStore('chat', () => {
 
   // ==================== 简洁模式计算属性 ====================
   const filteredTurnSummaries = computed(() => {
-    return turnSummaries.value.filter((t) => !(t.isActive && t.status === 'error'))
+    const visibleIds = visibleAgentIds.value
+    const base = turnSummaries.value.filter((t) => !(t.isActive && t.status === 'error'))
+    // 应用 Agent 可见性过滤（与 filteredMessages 一致）
+    if (visibleIds.length === 0) return base
+    return base.filter((t) => visibleIds.includes(t.agentId))
   })
 
   // ==================== 消息处理 ====================
@@ -1040,6 +1044,10 @@ export const useChatStore = defineStore('chat', () => {
           apiTurn.currentTodoList =
             socketTurn.currentTodoList.length > 0 ? socketTurn.currentTodoList : apiTurn.currentTodoList
           apiTurn.isActive = true
+          // 保留 socket 端的 startedAt（客户端时钟，更精确），避免 API 时钟偏差
+          if (socketTurn.startedAt) {
+            apiTurn.startedAt = socketTurn.startedAt
+          }
         }
 
         turnSummaries.value = Array.from(dedupMap.values())
@@ -1062,6 +1070,11 @@ export const useChatStore = defineStore('chat', () => {
 
       turnHistorySkip.value = responseSkip + turnList.length
       hasMoreTurns.value = turnHistorySkip.value < (total || 0)
+
+      // 如果加载的数据包含活跃 turn，确保计时器在运行
+      if (turnSummaries.value.some((t) => t.isActive) && !durationTimer.value) {
+        startDurationTimer()
+      }
     } catch (err: any) {
       showError(err.message || '加载 turn 历史失败', 'error')
     } finally {

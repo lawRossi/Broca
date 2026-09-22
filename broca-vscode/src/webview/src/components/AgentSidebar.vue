@@ -514,7 +514,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
             ⚙️
           </button>
           <div v-if="showFilterDropdown" class="filter-menu" @click.stop>
-            <label class="filter-item" @click="toggleAll">
+            <label class="filter-item" @click.prevent="toggleAll">
               <input type="checkbox" :checked="allVisible" />
               <span>全部</span>
             </label>
@@ -522,7 +522,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
               v-for="agent in chatStore.agents"
               :key="agent.agent_id"
               class="filter-item"
-              @click="chatStore.toggleAgentVisibility(agent.agent_id)"
+              @click.prevent="chatStore.toggleAgentVisibility(agent.agent_id)"
             >
               <input type="checkbox" :checked="chatStore.visibleAgentIds.includes(agent.agent_id)" />
               <span class="truncate" :title="agent.name">{{ agent.name }}</span>
