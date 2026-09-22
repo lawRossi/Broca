@@ -440,16 +440,22 @@ class GitManager:
             if not already_locked:
                 self._lock.release()
 
-    async def _run_git_command_no_lock(self, *args, **kwargs) -> str:
+    async def _run_git_command_no_lock(
+        self, *args, input_data: Optional[bytes] = None, **kwargs
+    ) -> str:
         """
         执行Git命令（不获取锁），设置正确的环境变量
 
         Args:
             *args: Git命令参数
+            input_data: 通过 stdin 传给命令的数据（可选）
             **kwargs: 额外参数
 
         Returns:
-            命令输出
+            命令输出（stdout）
+
+        Raises:
+            git.GitCommandError: 命令返回非零退出码
         """
         # 设置环境变量
         env = os.environ.copy()
@@ -465,12 +471,13 @@ class GitManager:
             cmd_str,
             cwd=str(self.workspace_path),
             env=env,
+            stdin=asyncio.subprocess.PIPE if input_data is not None else None,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             **kwargs,
         )
 
-        stdout, stderr = await process.communicate()
+        stdout, stderr = await process.communicate(input=input_data)
 
         if process.returncode != 0:
             raise git.GitCommandError(cmd_str, process.returncode, stderr.decode())
@@ -492,9 +499,10 @@ class GitManager:
 
     async def is_ignored_batch(self, file_paths: list[str]) -> set[str]:
         """
-        批量检查文件是否被忽略（使用 git check-ignore -z --stdin）
+        批量检查文件是否被忽略（使用 git check-ignore -z --no-index --stdin）
 
         通过 stdin 传递路径，避免 shell 转义问题，且只需一次子进程调用。
+        --no-index：纯模式匹配，不受索引中已跟踪状态影响。
 
         Args:
             file_paths: 文件路径列表（相对于工作区根目录）
@@ -507,30 +515,20 @@ class GitManager:
 
         self.ensure_initialized()
 
-        env = os.environ.copy()
-        env["GIT_DIR"] = str(self.repo_path / ".git")
-        env["GIT_WORK_TREE"] = str(self.workspace_path)
-
         # NUL 分隔输入，避免路径中含空格/特殊字符的问题
         input_data = "\x00".join(file_paths).encode("utf-8") + b"\x00"
 
-        process = await asyncio.create_subprocess_shell(
-            "git -c core.quotepath=false check-ignore -z --no-index --stdin",
-            cwd=str(self.workspace_path),
-            env=env,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-
-        stdout, _ = await process.communicate(input=input_data)
-
-        # exit 0 = 至少有一个被忽略; exit 1 = 都没有被忽略
-        if process.returncode not in (0, 1):
+        try:
+            result = await self._run_git_command_no_lock(
+                "check-ignore", "-z", "--no-index", "--stdin",
+                input_data=input_data,
+            )
+        except git.GitCommandError:
+            # exit 1 = 没有文件被忽略
             return set()
 
         ignored = set()
-        for item in stdout.decode("utf-8").split("\x00"):
+        for item in result.split("\x00"):
             if item:
                 ignored.add(item)
         return ignored
