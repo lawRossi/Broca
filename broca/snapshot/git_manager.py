@@ -487,14 +487,53 @@ class GitManager:
         Returns:
             是否被忽略
         """
+        result = await self.is_ignored_batch([file_path])
+        return file_path in result
+
+    async def is_ignored_batch(self, file_paths: list[str]) -> set[str]:
+        """
+        批量检查文件是否被忽略（使用 git check-ignore -z --stdin）
+
+        通过 stdin 传递路径，避免 shell 转义问题，且只需一次子进程调用。
+
+        Args:
+            file_paths: 文件路径列表（相对于工作区根目录）
+
+        Returns:
+            被忽略的文件路径集合
+        """
+        if not file_paths:
+            return set()
+
         self.ensure_initialized()
 
-        try:
-            result = await self._run_git_command("check-ignore", file_path)
-            return result.strip() != ""
-        except git.GitCommandError:
-            # 如果命令失败，说明文件不被忽略
-            return False
+        env = os.environ.copy()
+        env["GIT_DIR"] = str(self.repo_path / ".git")
+        env["GIT_WORK_TREE"] = str(self.workspace_path)
+
+        # NUL 分隔输入，避免路径中含空格/特殊字符的问题
+        input_data = "\x00".join(file_paths).encode("utf-8") + b"\x00"
+
+        process = await asyncio.create_subprocess_shell(
+            "git -c core.quotepath=false check-ignore -z --no-index --stdin",
+            cwd=str(self.workspace_path),
+            env=env,
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        stdout, _ = await process.communicate(input=input_data)
+
+        # exit 0 = 至少有一个被忽略; exit 1 = 都没有被忽略
+        if process.returncode not in (0, 1):
+            return set()
+
+        ignored = set()
+        for item in stdout.decode("utf-8").split("\x00"):
+            if item:
+                ignored.add(item)
+        return ignored
 
     async def get_tree_files(self, tree_hash: str) -> list[str]:
         """

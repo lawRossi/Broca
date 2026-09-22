@@ -197,9 +197,12 @@ class SnapshotTracker:
         """过滤文件"""
         filtered_files = []
 
+        # 批量检查忽略规则（一次 git check-ignore -z --stdin 调用）
+        ignored_set = await self.git_manager.is_ignored_batch(file_paths)
+
         for file_path in file_paths:
             # 检查是否被忽略
-            if await self.git_manager.is_ignored(file_path):
+            if file_path in ignored_set:
                 continue
 
             # 检查文件大小（仅对真实存在的文件）
@@ -249,7 +252,7 @@ class SnapshotTracker:
             if os.path.getsize(temp_file) > 0:
                 # 使用临时文件进行添加
                 await self.git_manager._run_git_command(
-                    "add", "-f", "--all", f"--pathspec-from-file={temp_file}"
+                    "add", "--all", f"--pathspec-from-file={temp_file}"
                 )
                 return True
             else:
