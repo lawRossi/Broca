@@ -293,7 +293,7 @@ class SessionMemoryManager:
             content=user_prompt,
         )
         result = await sub_agent.run(
-            trigger_message, from_agent=True, allowed_tools=["edit_file"]
+            trigger_message, from_agent=True, allowed_tools=["write_file"]
         )
 
         if result.status != ExecutionStatus.COMPLETED:
