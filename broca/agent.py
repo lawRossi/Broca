@@ -287,12 +287,18 @@ class Agent:
         await self.message_queue.put(message)
 
     async def _on_disconnected(self):
-        """Handle Socket.io disconnect event — immediately mark as disconnected.
+        """Handle Socket.io disconnect event — mark as disconnected.
 
         SocketIOClient 在检测到底层连接断开时触发 "disconnect" 事件。
-        此处理器将 agent 状态持久化为 disconnected，确保即使进程
-        后续能重连，中间状态也能被正确记录。
+        仅在非 running 状态下标记为 disconnected，避免覆盖任务执行中的
+        running 状态（长工具执行期间 Socket.IO 可能短暂断连）。
         """
+        if self.status == self.STATUS_RUNNING:
+            logger.info(
+                "Agent %s socket disconnected during running, keeping running status",
+                self.agent_id,
+            )
+            return
         logger.info(
             "Agent %s socket disconnected, marking as disconnected", self.agent_id
         )
@@ -302,16 +308,19 @@ class Agent:
         """Handle Socket.io connect/reconnect event — restore status after reconnection.
 
         SocketIOClient 连接（含自动重连）成功后触发 "connect" 事件。
-        仅当当前状态为 disconnected 时才恢复为 idle：
-        - 避免覆盖任务执行中的 running 状态
+        仅当当前状态为 disconnected 时才恢复：
+        - 如果 run() 仍在执行中（_abort_task 不为 None），恢复为 running
+        - 否则恢复为 idle
         - 初始连接时 start() -> connect() 已设置 idle，此处幂等
         """
         if self.status == self.STATUS_DISCONNECTED:
+            restore_status = self.STATUS_RUNNING if self._abort_task else self.STATUS_IDEL
             logger.info(
-                "Agent %s socket (re)connected, restoring status to idle",
+                "Agent %s socket (re)connected, restoring status to %s",
                 self.agent_id,
+                restore_status,
             )
-            await self._set_status(self.STATUS_IDEL)
+            await self._set_status(restore_status)
 
     async def ask_for_permission(self, message: str) -> bool:
         """
