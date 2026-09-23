@@ -79,9 +79,7 @@ class ClearAllContextCommand(LocalCommand):
 
                     frozen_path = Path(agent.session_memory_manager.memory_path)
                     if frozen_path.exists():
-                        frozen_path.write_text(
-                            DEFAULT_MEMORY_TEMPLATE.strip(), encoding="utf-8"
-                        )
+                        frozen_path.unlink()
 
                     cleared_session_memory = True
                     logger.info("Session memory cleared")
