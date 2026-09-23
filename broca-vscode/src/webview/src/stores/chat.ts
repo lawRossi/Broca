@@ -942,7 +942,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     const skip = isLoadMore ? turnHistorySkip.value : 0
-    const limit = 3
+    const limit = 5
     const execId = filterExecutionId || executionId.value
 
     // 使用 Promise 包装 postMessage 请求，等待 extension host 响应

@@ -988,7 +988,7 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     try {
-      const response = await sessionApi.getSessionTurns(sessionId, turnHistorySkip.value, 3, filterExecutionId)
+      const response = await sessionApi.getSessionTurns(sessionId, turnHistorySkip.value, 5, filterExecutionId)
 
       const newSummaries: TurnSummary[] = response.turns
         .filter((t) => !t.is_reverted) // 前端过滤已撤销的 turn
