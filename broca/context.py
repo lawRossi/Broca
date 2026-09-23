@@ -45,6 +45,17 @@ class Context:
         self._history.append({"role": "system", "content": self.system_prompt})
         self._message_db_ids.append(None)  # system prompt 没有数据库记录
 
+        # 将 session memory 作为 user message 插入（如果存在）
+        session_memory = self._load_session_memory()
+        if session_memory:
+            memory_msg = (
+                "[Session Memory] Some earlier messages have been compressed "
+                "into the following session summary for context:\n\n"
+                + session_memory
+            )
+            self._history.append({"role": "user", "content": memory_msg})
+            self._message_db_ids.append(None)  # 合成消息，无数据库记录
+
     @property
     def history(self):
         return self._history
@@ -95,9 +106,6 @@ class Context:
         boostrap_content = self._load_bootstrap_files(config.workspace)
         if boostrap_content:
             kwargs["bootstrap_content"] = boostrap_content
-        session_memory = self._load_session_memory()
-        if session_memory:
-            kwargs["session_memory"] = session_memory
         memory_index = self._load_memory_index()
         if memory_index:
             kwargs["memory_index"] = memory_index

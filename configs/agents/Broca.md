@@ -52,10 +52,3 @@ assistant: A helpful agent that can aid you with general tasks.
 {{memory_index}}
 {%- endif %}
 
-{% if session_memory -%}
-## Session Memory
-
-Some history messages have been truncated to save context space. You can find the full history in the following session memory:
-
-{{session_memory}}
-{%- endif %}
