@@ -478,8 +478,8 @@ class ChatInput(Vertical):
                     self._focus_input()
                     self.set_timer(0.01, self._move_cursor_to_end)
                     return
-                # 选中文件 → 插入 #path + 尾随空格
-                self._set_input_value(f"{before}#{path} {rest}")
+                # 选中文件 → 插入 path（不带 #）+ 尾随空格
+                self._set_input_value(f"{before}{path} {rest}")
 
         # 抑制本次补全触发的 Changed 事件重新弹出下拉
         self._suppress_next_change = True

@@ -161,6 +161,8 @@ function handleFilesReply(data: any) {
   const payload = data.payload || {}
   // 竞态保护：仅采纳与最近一次请求前缀一致的回包
   if (payload.prefix !== pathLatestPrefix) return
+  // 收到回包，取消 3s 超时定时器，避免列表被误关
+  if (pathRequestTimer) { clearTimeout(pathRequestTimer); pathRequestTimer = undefined }
   const completions: PathCompletionItem[] = Array.isArray(payload.completions) ? payload.completions : []
   showPathSuggestions.value = completions.length > 0
   pathSuggestions.value = completions
@@ -367,22 +369,24 @@ function selectPath(item: PathCompletionItem) {
   const after = input.substring(lastHash)
   const spaceIndex = after.indexOf(' ')
 
+  // 目录保留 # 以便钻取，文件去掉 #
+  const hashPrefix = item.is_dir ? '#' : ''
   let base = ''
   if (spaceIndex === -1) {
-    base = `${before}#${item.path}`
+    base = `${before}${hashPrefix}${item.path}`
   } else {
-    base = `${before}#${item.path}${after.substring(spaceIndex)}`
+    base = `${before}${hashPrefix}${item.path}${after.substring(spaceIndex)}`
   }
 
   if (item.is_dir) {
-    // 选中目录 → 插入 dir/，立即继续钻取子目录（不设 justSelectedPath）
+    // 选中目录 → 插入 #dir/，立即继续钻取子目录（不设 justSelectedPath）
     chatStore.inputText = base + '/'
     showPathSuggestions.value = false
     pathSuggestions.value = []
     selectedPathIndex.value = -1
     updatePathSuggestions(chatStore.inputText)
   } else {
-    // 选中文件 → 插入 #路径 + 尾随空格，关闭列表
+    // 选中文件 → 插入纯路径（无 #）+ 尾随空格，关闭列表
     chatStore.inputText = base + ' '
     justSelectedPath.value = true
     showPathSuggestions.value = false

@@ -366,22 +366,24 @@ const selectPath = (item: FileCompleteItem) => {
   const after = input.substring(lastHash)
   const spaceIndex = after.indexOf(' ')
 
+  // 目录保留 # 以便钻取，文件去掉 #
+  const hashPrefix = item.is_dir ? '#' : ''
   let base = ''
   if (spaceIndex === -1) {
-    base = `${before}#${item.path}`
+    base = `${before}${hashPrefix}${item.path}`
   } else {
-    base = `${before}#${item.path}${after.substring(spaceIndex)}`
+    base = `${before}${hashPrefix}${item.path}${after.substring(spaceIndex)}`
   }
 
   if (item.is_dir) {
-    // 选中目录 → 插入 dir/，立即继续钻取子目录（不设 justSelectedPath）
+    // 选中目录 → 插入 #dir/，立即继续钻取子目录（不设 justSelectedPath）
     chatStore.input = base + '/'
     showPathSuggestions.value = false
     pathSuggestions.value = []
     selectedPathIndex.value = -1
     updatePathSuggestions(chatStore.input)
   } else {
-    // 选中文件 → 插入 #路径 + 尾随空格，关闭列表
+    // 选中文件 → 插入纯路径（无 #）+ 尾随空格，关闭列表
     chatStore.input = base + ' '
     justSelectedPath.value = true
     showPathSuggestions.value = false
