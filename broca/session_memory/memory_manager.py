@@ -304,18 +304,34 @@ class SessionMemoryManager:
                 content="Fail to extract session memory",
                 subscription=self.agent.session_id,
             )
-            with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
-                f.write(current_content)
             return False
-        else:
-            end = time.time()
-            logger.info("Session memory updated successfully via sub-agent")
-            time_used = int(end - start)
+
+        # 验证文件确实被修改，防止子代理"成功"但未实际写入
+        try:
+            new_content = Path(self.snapshot_memory_path).read_text(encoding="utf-8").strip()
+        except (FileNotFoundError, OSError) as e:
+            logger.error(f"Failed to verify session memory file after extraction: {e}")
+            return False
+
+        if new_content == current_content.strip():
+            logger.warning(
+                "Session memory sub-agent completed but file unchanged, "
+                "treating as failure to prevent data loss"
+            )
             await self.agent.communicator.send_agent_system_message(
-                content=f"Session memory updated successfully in {time_used} seconds",
+                content="Session memory extraction produced no changes",
                 subscription=self.agent.session_id,
             )
-            return True
+            return False
+
+        end = time.time()
+        logger.info("Session memory updated successfully via sub-agent")
+        time_used = int(end - start)
+        await self.agent.communicator.send_agent_system_message(
+            content=f"Session memory updated successfully in {time_used} seconds",
+            subscription=self.agent.session_id,
+        )
+        return True
 
     def reset(self):
         self.state.reset()
