@@ -242,8 +242,7 @@ class SessionMemoryManager:
         """实际提取逻辑——创建子代理执行"""
         current_content = self._read_session_memory_content()
         user_prompt = build_extraction_user_prompt(
-            memory_path=self.snapshot_memory_path,
-            current_content=current_content,
+            memory_path=self.snapshot_memory_path
         )
 
         return await self._run_extraction_subagent(

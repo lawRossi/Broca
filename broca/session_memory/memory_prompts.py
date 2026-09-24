@@ -43,22 +43,23 @@ _Step by step actions taken. Very terse summary for each step_
 """
 
 
-def build_extraction_user_prompt(memory_path, current_content) -> str:
+def build_extraction_user_prompt(memory_path) -> str:
     """构建子代理的 user prompt"""
-    return """Based on the user conversation above (EXCLUDING this note-taking instruction message), update the session notes file {memory_path}.
-Your ONLY task is to use the write_file tool to update the notes file, then stop. The content of the file {memory_path} has already been read for you. Here is its current contents:
+    return f"""The context is about to reach the limit. Based on the conversation above, summarize the session notes to {memory_path}.
+The content of the file must follow the following template:
 
-{current_content}
+{DEFAULT_MEMORY_TEMPLATE}
 
 Critical Rules:
 
-1. Preserve the exact file structure - *MUST NOT* modify or delete section headers or italic description lines
+1. Preserve the exact template structure - *MUST NOT* modify or delete section headers or italic description lines
 2. Do NOT add new sections or remove existing ones
 3. Skip sections with no substantial new insights
 4. Write DETAILED, INFO-DENSE content with specific file paths, function names, error messages, etc.
 5. Keep each section under ~2000 tokens - condense older info if needed
 6. Total file under ~12000 tokens
 7. Always update "Current State" to reflect the most recent work
-8. You ONLY have access to write_file tool
+8. You ONLY have access to write_file tool, and can ONLY write to {memory_path}
 
-""".format(memory_path=memory_path, current_content=current_content)
+REMEMBER: Your ONLY task is to use the write_file tool to write the notes, then stop.
+"""
