@@ -1,4 +1,9 @@
 import asyncio
+import os
+import shutil
+import signal
+import sys
+import tempfile
 from datetime import datetime
 
 from jinja2 import Template
@@ -117,31 +122,92 @@ class Bash(Tool):
                 return True
         return False
 
+    # shell 中「词首」分隔符：位于这些字符之后的 # 才是注释
+    _SHELL_WORD_BREAK = " \t\r\n;&|()<>"
+
+    @classmethod
+    def _find_comment_start(cls, line: str) -> int:
+        """返回一行中第一个「真正的」注释 '#' 的下标，没有则返回 -1。
+
+        简化规则（不依赖 tree-sitter）：
+        - 引号（'...' / "..."）内的 # 不是注释；
+        - 反斜杠转义的下一个字符跳过；
+        - 只有当 # 处于「词首」（行首，或前一个字符是空白 / ; & | ( ) < >）
+          时才算注释。
+
+        这样就能避免把文件名、URL、a#b 里的 # 误判为注释。
+        """
+        in_single = in_double = False
+        i, n = 0, len(line)
+        while i < n:
+            ch = line[i]
+            if in_single:
+                if ch == "'":
+                    in_single = False
+                i += 1
+                continue
+            if in_double:
+                if ch == "\\":
+                    i += 2
+                    continue
+                if ch == '"':
+                    in_double = False
+                i += 1
+                continue
+            if ch == "\\":
+                i += 2
+                continue
+            if ch == "'":
+                in_single = True
+            elif ch == '"':
+                in_double = True
+            elif ch == "#":
+                prev = line[i - 1] if i > 0 else ""
+                if prev == "" or prev in cls._SHELL_WORD_BREAK:
+                    return i
+            i += 1
+        return -1
+
+    @classmethod
+    def _strip_comments(cls, code: str) -> str:
+        """按行去掉真正的注释（保留行结构与换行）。"""
+        out = []
+        for line in code.split("\n"):
+            ci = cls._find_comment_start(line)
+            out.append(line[:ci].rstrip() if ci != -1 else line)
+        return "\n".join(out)
+
     def _detect_background_ampersand(self, code: str) -> bool:
         """检测命令是否以 shell background operator & 结尾
 
         检测规则：
-        - 代码去除首尾空白后以 & 结尾
-        - 允许结尾有分号、空格、注释（# 后内容被忽略）
+        - 去掉真正的注释后，去除首尾空白，以 & 结尾（允许结尾有分号）
+        - # 只有在「词首」且不在引号内时才算注释
         """
-        stripped = code.strip()
-        # 去掉注释
-        if "#" in stripped:
-            stripped = stripped.rsplit("#", 1)[0]
+        stripped = self._strip_comments(code).strip()
         return stripped.rstrip().rstrip(";").rstrip().endswith("&")
 
     def _strip_background_ampersand(self, code: str) -> str:
-        """去除命令末尾的 & 和尾随空白"""
-        # 先去除注释
-        lines = code.rsplit("#", 1)
-        main_code = lines[0]
+        """去除命令末尾的 background operator & 及尾随空白/分号，保留注释。"""
+        # 定位最后一行末尾的注释（若有），把代码与注释分开
+        body = code.rstrip()
+        nl = body.rfind("\n")
+        last_line = body[nl + 1:]
+        ci = self._find_comment_start(last_line)
+        if ci != -1:
+            split = nl + 1 + ci
+            head, tail = code[:split], code[split:]
+        else:
+            head, tail = body, ""
+
         # 处理 &、;、空格的各种组合（如 "cmd &"、"cmd &;"、"cmd ;&"）
-        while main_code and main_code[-1] in ";& ":
-            main_code = main_code.rstrip(";& ").rstrip()
-        # 如果本来有注释，保留它
-        if len(lines) > 1:
-            return main_code + "  # " + lines[1]
-        return main_code
+        while head and head[-1] in ";& \t\r\n":
+            head = head.rstrip(";& \t\r\n").rstrip()
+
+        if tail:
+            sep = "" if (not head or head[-1] in " \t\n") else " "
+            return head + sep + tail
+        return head
 
     async def _run_background(
         self, code: str, context: ToolCallContext, notify: bool = False
@@ -181,46 +247,63 @@ class Bash(Tool):
             )
 
     async def _run_code_async(self, code: str, timeout: int = 120) -> ToolResult:
-        """异步执行代码"""
-        status: ToolStatus = ToolStatus.SUCCESS
-        try:
-            # 使用 asyncio.create_subprocess_shell 异步执行
-            process = await asyncio.create_subprocess_shell(
-                code,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                shell=True,
-            )
+        """异步执行代码。
 
+        不使用 PIPE + communicate()：后台子进程会一直占着管道写端，
+        导致管道 EOF 永不到达，必须等到超时才返回（例如
+        `cmd & echo done` / `cmd > /dev/null &`）。
+        改为把 stdout/stderr 重定向到临时文件，只 wait() shell 进程本身；
+        并用独立进程组，超时可把整棵进程树一起杀掉，避免孤儿进程。
+        """
+        status: ToolStatus = ToolStatus.SUCCESS
+        result_dict: dict = {}
+        tmpdir = tempfile.mkdtemp(prefix="broca_bash_")
+        out_path = os.path.join(tmpdir, "stdout.log")
+        err_path = os.path.join(tmpdir, "stderr.log")
+
+        def _read(path: str) -> str:
             try:
-                # 等待进程完成，带超时
-                stdout, stderr = await asyncio.wait_for(
-                    process.communicate(), timeout=timeout
+                with open(path, "rb") as f:
+                    return f.read().decode("utf-8", errors="replace")
+            except FileNotFoundError:
+                return ""
+
+        try:
+            with open(out_path, "wb") as out_f, open(err_path, "wb") as err_f:
+                kwargs: dict = {}
+                if sys.platform == "win32":
+                    kwargs["creationflags"] = 0x00000200  # CREATE_NEW_PROCESS_GROUP
+                else:
+                    kwargs["preexec_fn"] = os.setsid
+
+                process = await asyncio.create_subprocess_shell(
+                    code,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=out_f,
+                    stderr=err_f,
+                    **kwargs,
                 )
 
-                result_dict = {
-                    "returncode": process.returncode,
-                    "stdout": stdout.decode("utf-8", errors="replace")
-                    if stdout
-                    else "",
-                    "stderr": stderr.decode("utf-8", errors="replace")
-                    if stderr
-                    else "",
-                }
-                status = ToolStatus.SUCCESS
-
-            except asyncio.TimeoutError:
-                # 超时处理
                 try:
-                    process.kill()
-                    await process.wait()
-                except Exception:
-                    pass
-                result_dict = {
-                    "returncode": -1,
-                    "stderr": f"Execution timed out after {timeout} seconds.",
-                }
-                status = ToolStatus.ERROR
+                    # 只等 shell 本身，不再等管道 EOF
+                    await asyncio.wait_for(process.wait(), timeout=timeout)
+                    result_dict = {"returncode": process.returncode}
+                except asyncio.TimeoutError:
+                    # 超时：杀掉整个进程组，避免后台子进程残留
+                    self._kill_process_tree(process)
+                    try:
+                        await process.wait()
+                    except Exception:
+                        pass
+                    result_dict = {
+                        "returncode": -1,
+                        "stderr": f"Execution timed out after {timeout} seconds.",
+                    }
+                    status = ToolStatus.ERROR
+
+            result_dict.setdefault("stdout", _read(out_path))
+            if "stderr" not in result_dict:
+                result_dict["stderr"] = _read(err_path)
 
         except Exception as e:
             result_dict = {
@@ -228,6 +311,24 @@ class Bash(Tool):
                 "stderr": f"Execution failed: {e}",
             }
             status = ToolStatus.ERROR
+        finally:
+            shutil.rmtree(tmpdir, ignore_errors=True)
 
         output = Template(self.code_output_template).render(output=result_dict)
         return ToolResult(status=status, content=output)
+
+    @staticmethod
+    def _kill_process_tree(process) -> None:
+        """杀掉整个进程组，避免后台子进程变成孤儿。"""
+        try:
+            if sys.platform == "win32":
+                process.kill()
+            else:
+                os.killpg(os.getpgid(process.pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
