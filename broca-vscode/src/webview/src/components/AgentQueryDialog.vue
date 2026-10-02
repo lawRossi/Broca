@@ -1,10 +1,47 @@
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, onBeforeUnmount } from 'vue'
 import { useChatStore } from '../stores/chat'
 
 const chatStore = useChatStore()
 const answer = ref('')
 const selectedOption = ref('')
+
+// Draggable position (offset from the centered layout)
+const offset = ref({ x: 0, y: 0 })
+let dragging = false
+let startMouse = { x: 0, y: 0 }
+let startOffset = { x: 0, y: 0 }
+
+function onHeaderMouseDown(e: MouseEvent) {
+  // Ignore drags that start on the close button
+  if ((e.target as HTMLElement).closest('.close-btn')) return
+  dragging = true
+  startMouse = { x: e.clientX, y: e.clientY }
+  startOffset = { ...offset.value }
+  document.body.style.userSelect = 'none'
+  window.addEventListener('mousemove', onWindowMouseMove)
+  window.addEventListener('mouseup', onWindowMouseUp)
+}
+
+function onWindowMouseMove(e: MouseEvent) {
+  if (!dragging) return
+  offset.value = {
+    x: startOffset.x + (e.clientX - startMouse.x),
+    y: startOffset.y + (e.clientY - startMouse.y),
+  }
+}
+
+function onWindowMouseUp() {
+  dragging = false
+  document.body.style.userSelect = ''
+  window.removeEventListener('mousemove', onWindowMouseMove)
+  window.removeEventListener('mouseup', onWindowMouseUp)
+}
+
+onBeforeUnmount(() => {
+  window.removeEventListener('mousemove', onWindowMouseMove)
+  window.removeEventListener('mouseup', onWindowMouseUp)
+})
 
 function handleSelectOption(option: string) {
   answer.value = ''
@@ -20,6 +57,7 @@ function handleSubmit() {
 
 function handleClose() {
   answer.value = ''
+  offset.value = { x: 0, y: 0 }
   chatStore.respondAgentQuery('')
 }
 </script>
@@ -27,8 +65,11 @@ function handleClose() {
 <template>
   <Teleport to="body">
     <div v-if="chatStore.agentQueryDialog.visible" class="dialog-overlay">
-      <div class="dialog-container">
-        <div class="dialog-header">
+      <div
+        class="dialog-container"
+        :style="{ transform: `translate(${offset.x}px, ${offset.y}px)` }"
+      >
+        <div class="dialog-header" @mousedown="onHeaderMouseDown">
           <span class="dialog-icon">❓</span>
           <span class="dialog-title">Agent 提问</span>
           <button class="close-btn" @click="handleClose">✕</button>
@@ -74,21 +115,28 @@ function handleClose() {
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 1000;
+  pointer-events: none;
 }
 
 .dialog-container {
+  pointer-events: auto;
   background: var(--bg-secondary);
   border: 1px solid var(--border-color);
   border-radius: 8px;
   padding: 20px;
   min-width: 320px;
   max-width: 500px;
+  width: 100%;
+  max-height: 85vh;
+  display: flex;
+  flex-direction: column;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  box-sizing: border-box;
 }
 
 .dialog-header {
@@ -96,6 +144,12 @@ function handleClose() {
   align-items: center;
   gap: 8px;
   margin-bottom: 12px;
+  cursor: grab;
+  flex-shrink: 0;
+}
+
+.dialog-header:active {
+  cursor: grabbing;
 }
 
 .dialog-icon {
@@ -127,6 +181,9 @@ function handleClose() {
 
 .dialog-body {
   margin-bottom: 8px;
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .question {

@@ -36,6 +36,10 @@ const selectOption = (optionName: string) => {
     title="Agent 提问"
     :width="chatStore.isMobile ? '90%' : '520px'"
     :close-on-click-modal="false"
+    :modal="false"
+    :modal-append-to-body="false"
+    draggable
+    align-center
     class="agent-query-dialog"
     @close="submitAnswer('')"
   >
@@ -141,5 +145,13 @@ const selectOption = (optionName: string) => {
   .option-desc {
     @apply text-xs;
   }
+}
+</style>
+
+<!-- 非 scoped：el-dialog 内部结构需穿透样式 -->
+<style>
+.agent-query-dialog .el-dialog__body {
+  max-height: 60vh;
+  overflow-y: auto;
 }
 </style>
