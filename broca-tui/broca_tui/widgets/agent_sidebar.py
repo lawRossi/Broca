@@ -409,24 +409,73 @@ class AgentConfigDialog(ModalScreen):
         except Exception:
             pass
 
-    def on_button_pressed(self, event: Button.Pressed) -> None:
+    async def on_button_pressed(self, event: Button.Pressed) -> None:
         """Handle button presses."""
         if event.button.id == "btn-save":
-            provider = self.query_one("#provider-select", Select).value
-            model = self.query_one("#model-select", Select).value
-            config_text = self.query_one("#config-editor", TextArea).text
-            self.dismiss(
-                {
-                    "action": "save_config",
-                    "agent_id": self._agent.get("agent_id"),
-                    "session_id": self._agent.get("session_id"),
-                    "provider": provider,
-                    "model": model,
-                    "config": config_text,
-                }
-            )
+            await self._handle_save()
         elif event.button.id == "btn-cancel":
             self.dismiss({"action": "cancel"})
+
+    async def _handle_save(self) -> None:
+        """保存配置：仅当后端保存成功时才关闭弹窗。
+
+        保存失败（JSON 格式错误或 API 报错）时保持弹窗打开并提示错误，
+        避免用户已编辑的内容丢失。
+        """
+        provider = self.query_one("#provider-select", Select).value
+        model = self.query_one("#model-select", Select).value
+        config_text = self.query_one("#config-editor", TextArea).text
+
+        # Parse and validate the config JSON
+        try:
+            parsed_config = json.loads(config_text)
+        except json.JSONDecodeError:
+            self.notify("配置JSON格式无效", severity="error", timeout=5, markup=False)
+            return
+        if not isinstance(parsed_config, dict):
+            self.notify(
+                "配置格式无效：应为 JSON 对象", severity="error", timeout=5, markup=False
+            )
+            return
+
+        # 对齐 Web 版：后端只接收 { config_content: {完整配置对象} }
+        # provider / model 等字段包含在 config_content 内部
+        full_config = {
+            "provider": provider,
+            "model": model,
+            **parsed_config,
+        }
+
+        save_btn = self.query_one("#btn-save", Button)
+        cancel_btn = self.query_one("#btn-cancel", Button)
+        save_btn.disabled = True
+        cancel_btn.disabled = True
+        save_btn.label = "保存中..."
+        try:
+            await self._api.update_agent_config(
+                self._agent.get("session_id"),
+                self._agent.get("agent_id"),
+                {"config_content": full_config},
+            )
+        except Exception:
+            # 保存失败：恢复按钮状态并保持弹窗打开
+            save_btn.disabled = False
+            cancel_btn.disabled = False
+            save_btn.label = "保存"
+            self.notify("保存配置失败", severity="error", timeout=5, markup=False)
+            return
+
+        # 保存成功：关闭弹窗，回传结果供 Sidebar 更新本地 store
+        self.dismiss(
+            {
+                "action": "save_config",
+                "agent_id": self._agent.get("agent_id"),
+                "session_id": self._agent.get("session_id"),
+                "provider": provider,
+                "model": model,
+                "config": parsed_config,
+            }
+        )
 
 
 # ============================================================================
@@ -760,7 +809,7 @@ class AgentSidebar(Widget):
         Args:
             agent: Agent dict
         """
-        # 优先用本地 store 中已保存的配置（_save_agent_config 更新后的数据），
+        # 优先用本地 store 中已保存的配置（_apply_saved_config 更新后的数据），
         # 没有时才从 API 拉取（首次打开）。
         agent_config = agent.get("agent_config")
         if agent_config is None:
@@ -781,66 +830,40 @@ class AgentSidebar(Widget):
         dialog = AgentConfigDialog(agent_with_config)
         result = await self.app.push_screen_wait(dialog)
         if result and result.get("action") == "save_config":
-            await self._save_agent_config(result)
+            # 弹窗仅在保存成功后关闭（真正的 API 保存在弹窗内完成），
+            # 此处只需同步本地 store 并给出提示。
+            self._apply_saved_config(result)
 
-    async def _save_agent_config(self, config_data: Dict[str, Any]):
-        """保存 agent 配置到后端 API，同时更新本地 store。
+    def _apply_saved_config(self, config_data: Dict[str, Any]) -> None:
+        """保存成功回调：更新本地 store 并提示。
+
+        实际的 API 保存由 AgentConfigDialog 完成（保证保存失败时不关闭弹窗），
+        这里只负责同步本地缓存与用户提示。
 
         Args:
-            config_data: Dict with agent_id, session_id, provider, model, config
+            config_data: Dict with agent_id, provider, model, config(parsed dict)
         """
-        from broca_tui.api.session import SessionAPI
+        agent_id = config_data.get("agent_id", "")
+        provider = config_data.get("provider", "")
+        model = config_data.get("model", "")
+        parsed_config = config_data.get("config") or {}
+        if not isinstance(parsed_config, dict):
+            parsed_config = {}
 
-        api = SessionAPI()
-        try:
-            agent_id = config_data.get("agent_id", "")
-            session_id = config_data.get("session_id", "") or self._session_id
-            provider = config_data.get("provider", "")
-            model = config_data.get("model", "")
-            config_content = config_data.get("config", "{}")
+        # 同步更新本地 store
+        agent = self._store.get_agent(agent_id)
+        if agent:
+            agent["provider"] = provider
+            agent["model"] = model
+            agent["agent_config"] = parsed_config
+            self._store._notify_change()
 
-            # Parse and validate the config JSON
-            try:
-                parsed_config = json.loads(config_content)
-            except json.JSONDecodeError:
-                self.notify(
-                    "配置JSON格式无效", severity="error", timeout=5, markup=False
-                )
-                return
-
-            # 对齐 Web 版：后端只接收 { config_content: {完整配置对象} }
-            # provider / model 等字段包含在 config_content 内部
-            full_config = {
-                "provider": provider,
-                "model": model,
-                **(parsed_config if isinstance(parsed_config, dict) else {}),
-            }
-            await api.update_agent_config(
-                session_id,
-                agent_id,
-                {
-                    "config_content": full_config,
-                },
-            )
-
-            # 同步更新本地 store
-            agent = self._store.get_agent(agent_id)
-            if agent:
-                agent["provider"] = provider
-                agent["model"] = model
-                agent["agent_config"] = parsed_config
-                self._store._notify_change()
-
-            self.notify(
-                "已保存，重启后生效",
-                severity="information",
-                timeout=5,
-                markup=False,
-            )
-        except Exception:
-            self.notify("保存配置失败", severity="error", timeout=5, markup=False)
-        finally:
-            await api.close()
+        self.notify(
+            "已保存，重启后生效",
+            severity="information",
+            timeout=5,
+            markup=False,
+        )
 
     async def _show_visibility_filter(self):
         """Show visibility filter dialog with agent checkboxes."""

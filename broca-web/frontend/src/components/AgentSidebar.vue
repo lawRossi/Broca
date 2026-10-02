@@ -348,8 +348,8 @@ const saveConfig = async () => {
         message: '配置保存成功！请重启 session 进程以使更改生效。',
         duration: 6000,
       })
-      // 刷新配置信息，显示更新后的值
-      await refreshConfig()
+      // 保存成功后自动关闭弹窗
+      closeConfigDialog()
     }
   } finally {
     saving.value = false

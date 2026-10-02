@@ -390,8 +390,8 @@ onMounted(() => {
         configLoading.value = false
         saving.value = false
         chatStore.showError('配置保存成功！请重启 session 进程以使更改生效。', 'info', 6000)
-        // 刷新配置信息，显示更新后的值
-        setTimeout(() => initConfigEdit(), 0)
+        // 保存成功后自动关闭弹窗
+        closeConfigDialog()
         break
 
       case 'providers':
