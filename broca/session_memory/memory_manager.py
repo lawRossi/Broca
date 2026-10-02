@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from broca.agent_manager import AgentFactory
+from broca.context import Context
 from broca.loop_engine import ExecutionStatus
 from broca.logging_config import get_logger
 from broca.session import MessageProtocol, MessageType
