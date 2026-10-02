@@ -25,7 +25,7 @@ class ContextCompactConfig:
     # Session Memory 截断
     session_trunc_threshold: int = 250000  # 触发截断的 token 阈值
     session_trunc_percentage: float = 0.5  # 上下文窗口百分比
-    keep_steps: int = 5  # 截断时保留的最近 step 数（当前 turn 未结束时）
+    keep_steps: int = 8  # 截断时保留的最近 step 数（当前 turn 未结束时）
 
 
 DEFAULT_COMPACT_CONFIG = ContextCompactConfig()

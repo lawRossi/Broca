@@ -61,5 +61,5 @@ Critical Rules:
 7. Always update "Current State" to reflect the most recent work
 8. You ONLY have access to write_file tool, and can ONLY write to {memory_path}
 
-REMEMBER: Your ONLY task is to use the write_file tool to write the notes, then stop.
+REMEMBER: now writing session notes is your ONLY task, do NOTHING else.
 """

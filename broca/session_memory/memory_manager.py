@@ -271,7 +271,6 @@ class SessionMemoryManager:
             agent_config["role"] = "session_memory_manager"
             agent_config["enable_context_compression"] = False
             agent_config["save_history"] = False
-            agent_config["interactive"] = False
 
             sub_agent = await agent_factory.create_agent(
                 agent_config=agent_config,
@@ -292,7 +291,7 @@ class SessionMemoryManager:
             content=user_prompt,
         )
         result = await sub_agent.run(
-            trigger_message, from_agent=True, allowed_tools=["write_file"]
+            trigger_message, from_agent=True, allowed_tools=["write_file"], max_steps=3
         )
 
         if result.status != ExecutionStatus.COMPLETED:
