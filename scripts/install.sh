@@ -100,6 +100,23 @@ detect_nginx_user() {
     fi
 }
 
+# 确保目标路径的所有祖先目录对 other 具备执行（遍历）权限。
+# 部分容器镜像会把根目录 / 设为 700，导致 nginx worker（非 root 用户）无法
+# 遍历到 /var/www/... 下的静态文件，访问页面报 13: Permission denied / HTTP 500。
+# 这里逐级为祖先目录补 o+x（等价于恢复默认 755 的可遍历性）。
+ensure_path_traversable() {
+    local target="${1%/}"
+    local p="$target"
+    while [[ -n "$p" && "$p" != "/" ]]; do
+        p="$(dirname "$p")"
+        if $IS_ROOT; then
+            chmod o+x "$p" 2>/dev/null || true
+        elif command -v sudo &>/dev/null; then
+            sudo chmod o+x "$p" 2>/dev/null || true
+        fi
+    done
+}
+
 # ---- 工具函数 ----
 # 根据 pnpm 版本生成 build 权限配置（v10: .npmrc, v11+: pnpm-workspace.yaml）
 write_pnpm_build_config() {
@@ -410,46 +427,6 @@ else
     warn "broca-tui 目录不存在 (未找到 $PROJECT_ROOT/broca-tui)，跳过 TUI 安装"
     warn "如需使用 TUI，请确保 broca-tui 目录存在并手动执行:"
     warn "  $BROCA_PIP install $PROJECT_ROOT/broca-tui"
-fi
-
-# 安装 Playwright 浏览器二进制（web_fetch 工具需要）
-# pip install 只安装 Python 包，Chromium 二进制需要单独下载
-info "安装 Playwright Chromium 浏览器（web_fetch 依赖）..."
-if $IS_ROOT; then
-    # root 用户：先安装系统依赖，再下载浏览器
-    if PLAYWRIGHT_OUTPUT=$($BROCA_PYTHON -m playwright install-deps chromium 2>&1); then
-        echo "$PLAYWRIGHT_OUTPUT" | tail -3
-        if PLAYWRIGHT_OUTPUT=$($BROCA_PYTHON -m playwright install chromium 2>&1); then
-            echo "$PLAYWRIGHT_OUTPUT" | tail -3
-            info "Playwright Chromium 安装完成"
-        else
-            warn "Playwright Chromium 下载失败，web_fetch 工具将不可用"
-            warn "可之后手动执行: $BROCA_PYTHON -m playwright install chromium"
-        fi
-    else
-        warn "Playwright 系统依赖安装失败（$PLAYWRIGHT_OUTPUT 末尾）"
-        echo "$PLAYWRIGHT_OUTPUT" | tail -5
-        # 尝试跳过系统依赖直接下载浏览器
-        if PLAYWRIGHT_OUTPUT=$($BROCA_PYTHON -m playwright install chromium 2>&1); then
-            echo "$PLAYWRIGHT_OUTPUT" | tail -3
-            info "Playwright Chromium 安装完成（系统依赖可能缺失，运行时可能报错）"
-        else
-            warn "Playwright Chromium 下载失败，web_fetch 工具将不可用"
-            warn "可之后手动执行: $BROCA_PYTHON -m playwright install chromium"
-        fi
-    fi
-else
-    # 非 root 用户：尝试直接安装（某些容器/环境已预装系统依赖）
-    if PLAYWRIGHT_OUTPUT=$($BROCA_PYTHON -m playwright install chromium 2>&1); then
-        echo "$PLAYWRIGHT_OUTPUT" | tail -3
-        info "Playwright Chromium 安装完成"
-    else
-        warn "Playwright Chromium 安装失败，web_fetch 工具将不可用"
-        warn "可之后手动执行: $BROCA_PYTHON -m playwright install chromium"
-        if command -v sudo &>/dev/null; then
-            warn "若缺少系统依赖，请执行: sudo $BROCA_PYTHON -m playwright install-deps chromium"
-        fi
-    fi
 fi
 
 info "broca 模块安装完成。"
@@ -906,9 +883,9 @@ else
         if id "$NGINX_USER" &>/dev/null; then
             chown -R "${NGINX_USER}:${NGINX_USER}" "$NGINX_DIST_DIR" 2>/dev/null || true
         fi
-        # 安全兜底：确保任何用户都能读取（容器内安全由容器层保障）
-        chmod o+x /var/www 2>/dev/null || true
-        chmod o+x /var/www/broca 2>/dev/null || true
+        # 安全兜底：确保 nginx worker 能遍历到静态文件
+        # （覆盖 /、/var、/var/www 等全部祖先目录，容器内安全由容器层保障）
+        ensure_path_traversable "$NGINX_DIST_DIR"
         chmod -R o+rX "$NGINX_DIST_DIR"
         info "前端静态文件已部署到: $NGINX_DIST_DIR (root 直接写入, 用户: $NGINX_USER)"
     elif command -v sudo &>/dev/null; then
@@ -917,8 +894,8 @@ else
         if id "$NGINX_USER" &>/dev/null; then
             sudo chown -R "${NGINX_USER}:${NGINX_USER}" "$NGINX_DIST_DIR" 2>/dev/null || true
         fi
-        sudo chmod o+x /var/www 2>/dev/null || true
-        sudo chmod o+x /var/www/broca 2>/dev/null || true
+        # 确保 nginx worker 能遍历到静态文件（覆盖 / 等全部祖先目录）
+        ensure_path_traversable "$NGINX_DIST_DIR"
         sudo chmod -R o+rX "$NGINX_DIST_DIR"
         info "前端静态文件已部署到: $NGINX_DIST_DIR"
     else
@@ -926,6 +903,7 @@ else
         echo "    sudo mkdir -p $NGINX_DIST_DIR"
         echo "    sudo cp -r $FRONTEND_DIR/dist/* $NGINX_DIST_DIR/"
         echo "    sudo chown -R ${NGINX_USER}:${NGINX_USER} $NGINX_DIST_DIR"
+        echo "    sudo chmod o+x / /var /var/www /var/www/broca   # 确保 nginx 可遍历"
         echo "    sudo chmod -R o+rX $NGINX_DIST_DIR"
         # 回退到 ~/.broca/
         NGINX_DIST_DIR="$BROCA_HOME/frontend-dist"

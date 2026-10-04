@@ -590,6 +590,42 @@ def _start_nginx() -> tuple[bool, str]:
     return False, f"nginx 启动失败: {last_error}{hint}"
 
 
+def _chmod_o_x(path: Path) -> bool:
+    """为单个目录补 o+x（可遍历）权限，返回是否成功。"""
+    for cmd in [
+        ["chmod", "o+x", str(path)],
+        ["sudo", "-n", "chmod", "o+x", str(path)],
+    ]:
+        try:
+            result = subprocess.run(cmd, capture_output=True, timeout=5)
+            if result.returncode == 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+
+def _ensure_frontend_traversable() -> None:
+    """确保 nginx worker 能遍历到前端静态文件（权限自愈兜底）。
+
+    部分容器镜像将根目录 / 设为 700，nginx worker（非 root 用户）在 stat
+    /var/www/... 下的静态文件时会返回 13: Permission denied，导致页面 500。
+    这里从静态文件目录逐级向上到 /，为每一级目录补 o+x（可遍历）权限。
+    """
+    install_info = _load_install_info()
+    dist_dir = install_info.get("nginx_dist_dir") or "/var/www/broca/frontend"
+    if not isinstance(dist_dir, str) or not dist_dir.startswith("/"):
+        return
+
+    path = Path(dist_dir)
+    while True:
+        _chmod_o_x(path)
+        parent = path.parent
+        if parent == path:  # 已到达根目录
+            break
+        path = parent
+
+
 def _reload_nginx() -> tuple[bool, str]:
     """重载 nginx 配置（若 nginx 未运行则先启动）"""
     nginx_cmd = _find_nginx()
@@ -1552,6 +1588,8 @@ def start_services(wait: bool = True) -> dict[str, Any]:
 
     # Step 4: 启动 nginx 前端（仅当安装时未跳过前端）
     if not _is_frontend_skipped():
+        # 自愈：确保 nginx worker 能遍历到静态文件（容器 / 权限兜底）
+        _ensure_frontend_traversable()
         logger.info("Starting nginx frontend...")
         nginx_ok, nginx_msg = _enable_broca_site()
         if not nginx_ok:
