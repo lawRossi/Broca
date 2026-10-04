@@ -19,6 +19,12 @@ set -euo pipefail
 # 用 id -un 作为可靠回退。
 USER="${USER:-$(id -un)}"
 
+# 检测是否为 root 用户（云容器常见：root 但无 sudo）
+IS_ROOT=false
+if [[ $(id -u) -eq 0 ]]; then
+    IS_ROOT=true
+fi
+
 # ---- 颜色 ----
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -380,6 +386,46 @@ else
     warn "broca-tui 目录不存在 (未找到 $PROJECT_ROOT/broca-tui)，跳过 TUI 安装"
     warn "如需使用 TUI，请确保 broca-tui 目录存在并手动执行:"
     warn "  $BROCA_PIP install $PROJECT_ROOT/broca-tui"
+fi
+
+# 安装 Playwright 浏览器二进制（web_fetch 工具需要）
+# pip install 只安装 Python 包，Chromium 二进制需要单独下载
+info "安装 Playwright Chromium 浏览器（web_fetch 依赖）..."
+if $IS_ROOT; then
+    # root 用户：先安装系统依赖，再下载浏览器
+    if PLAYWRIGHT_OUTPUT=$($BROCA_PYTHON -m playwright install-deps chromium 2>&1); then
+        echo "$PLAYWRIGHT_OUTPUT" | tail -3
+        if PLAYWRIGHT_OUTPUT=$($BROCA_PYTHON -m playwright install chromium 2>&1); then
+            echo "$PLAYWRIGHT_OUTPUT" | tail -3
+            info "Playwright Chromium 安装完成"
+        else
+            warn "Playwright Chromium 下载失败，web_fetch 工具将不可用"
+            warn "可之后手动执行: $BROCA_PYTHON -m playwright install chromium"
+        fi
+    else
+        warn "Playwright 系统依赖安装失败（$PLAYWRIGHT_OUTPUT 末尾）"
+        echo "$PLAYWRIGHT_OUTPUT" | tail -5
+        # 尝试跳过系统依赖直接下载浏览器
+        if PLAYWRIGHT_OUTPUT=$($BROCA_PYTHON -m playwright install chromium 2>&1); then
+            echo "$PLAYWRIGHT_OUTPUT" | tail -3
+            info "Playwright Chromium 安装完成（系统依赖可能缺失，运行时可能报错）"
+        else
+            warn "Playwright Chromium 下载失败，web_fetch 工具将不可用"
+            warn "可之后手动执行: $BROCA_PYTHON -m playwright install chromium"
+        fi
+    fi
+else
+    # 非 root 用户：尝试直接安装（某些容器/环境已预装系统依赖）
+    if PLAYWRIGHT_OUTPUT=$($BROCA_PYTHON -m playwright install chromium 2>&1); then
+        echo "$PLAYWRIGHT_OUTPUT" | tail -3
+        info "Playwright Chromium 安装完成"
+    else
+        warn "Playwright Chromium 安装失败，web_fetch 工具将不可用"
+        warn "可之后手动执行: $BROCA_PYTHON -m playwright install chromium"
+        if command -v sudo &>/dev/null; then
+            warn "若缺少系统依赖，请执行: sudo $BROCA_PYTHON -m playwright install-deps chromium"
+        fi
+    fi
 fi
 
 info "broca 模块安装完成。"
@@ -818,7 +864,13 @@ else
     echo "  静态文件将部署到 $NGINX_DIST_DIR"
     echo ""
 
-    if command -v sudo &>/dev/null; then
+    if $IS_ROOT; then
+        # root 用户直接操作，无需 sudo（云容器常见场景）
+        mkdir -p "$NGINX_DIST_DIR"
+        cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
+        chown -R "${NGINX_USER}:${NGINX_USER}" "$NGINX_DIST_DIR" 2>/dev/null || true
+        info "前端静态文件已部署到: $NGINX_DIST_DIR (root 直接写入)"
+    elif command -v sudo &>/dev/null; then
         sudo mkdir -p "$NGINX_DIST_DIR"
         sudo cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
         sudo chown -R "${NGINX_USER}:${NGINX_USER}" "$NGINX_DIST_DIR" 2>/dev/null || true
@@ -885,14 +937,28 @@ NGINXEOF
 
     info "nginx 配置文件已生成: $NGINX_SITE_CONF"
 
-    # 验证 nginx 配置语法（使用 sudo -n 避免非交互环境挂起）
+    # 验证 nginx 配置语法（root 直接执行，非 root 尝试 sudo）
     info "验证 nginx 配置语法..."
-    if sudo -n nginx -t 2>&1; then
-        info "nginx 配置语法正确"
-    elif sudo nginx -t 2>&1; then
-        info "nginx 配置语法正确"
+    if $IS_ROOT; then
+        if nginx -t 2>&1; then
+            info "nginx 配置语法正确"
+        else
+            warn "nginx 配置语法有误，请检查: nginx -t"
+        fi
+    elif command -v sudo &>/dev/null; then
+        if sudo -n nginx -t 2>&1; then
+            info "nginx 配置语法正确"
+        elif sudo nginx -t 2>&1; then
+            info "nginx 配置语法正确"
+        else
+            warn "nginx 配置语法有误，请检查: sudo nginx -t"
+        fi
     else
-        warn "nginx 配置语法有误，请检查: sudo nginx -t"
+        if nginx -t 2>&1; then
+            info "nginx 配置语法正确"
+        else
+            warn "nginx 配置语法有误，请检查: nginx -t"
+        fi
     fi
 
     # 仅生成配置，不启用站点（用户通过 broca service start 启用）
