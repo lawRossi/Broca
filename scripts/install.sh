@@ -76,6 +76,30 @@ sed_inplace() {
     "${SED_INPLACE[@]}" "$@"
 }
 
+# 从 nginx.conf 的 user 指令检测 nginx 实际运行用户
+# 容器环境可能以 nginx/http/nginx 等用户运行，不能假设 www-data
+detect_nginx_user() {
+    local conf_file=""
+    for f in /etc/nginx/nginx.conf /usr/local/etc/nginx/nginx.conf /opt/homebrew/etc/nginx/nginx.conf; do
+        if [[ -f "$f" ]]; then
+            conf_file="$f"
+            break
+        fi
+    done
+    if [[ -z "$conf_file" ]]; then
+        echo ""
+        return
+    fi
+    # 匹配 "user xxx;" 或 "user xxx yyy;" 行（忽略注释行）
+    local user_line
+    user_line=$(grep -E '^\s*user\s+' "$conf_file" 2>/dev/null | head -1 | sed 's/^\s*user\s\+//' | awk '{print $1}')
+    if [[ -n "$user_line" ]]; then
+        echo "$user_line"
+    else
+        echo ""
+    fi
+}
+
 # ---- 工具函数 ----
 # 根据 pnpm 版本生成 build 权限配置（v10: .npmrc, v11+: pnpm-workspace.yaml）
 write_pnpm_build_config() {
@@ -857,8 +881,18 @@ if $IS_MACOS; then
     chmod -R o+rX "$NGINX_DIST_DIR"
     info "前端静态文件已部署到: $NGINX_DIST_DIR"
 else
-    # Linux: nginx 以 www-data 运行，家目录不可读，放到系统路径
+    # Linux: nginx worker 以非 root 用户运行，家目录不可读，放到系统路径
     NGINX_DIST_DIR="/var/www/broca/frontend"
+
+    # 从 nginx.conf 自动检测实际运行用户（容器可能不是 www-data）
+    DETECTED_NGINX_USER=$(detect_nginx_user)
+    if [[ -n "$DETECTED_NGINX_USER" ]]; then
+        NGINX_USER="$DETECTED_NGINX_USER"
+        info "检测到 nginx 运行用户: $NGINX_USER"
+    else
+        warn "无法从 nginx.conf 检测运行用户，使用默认: $NGINX_USER"
+    fi
+
     echo ""
     echo "  注意：nginx 以 $NGINX_USER 用户运行，不能读取 ~/.broca/ 下的文件。"
     echo "  静态文件将部署到 $NGINX_DIST_DIR"
@@ -868,18 +902,31 @@ else
         # root 用户直接操作，无需 sudo（云容器常见场景）
         mkdir -p "$NGINX_DIST_DIR"
         cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
-        chown -R "${NGINX_USER}:${NGINX_USER}" "$NGINX_DIST_DIR" 2>/dev/null || true
-        info "前端静态文件已部署到: $NGINX_DIST_DIR (root 直接写入)"
+        # chown 到 nginx 实际运行用户（若用户不存在会静默失败）
+        if id "$NGINX_USER" &>/dev/null; then
+            chown -R "${NGINX_USER}:${NGINX_USER}" "$NGINX_DIST_DIR" 2>/dev/null || true
+        fi
+        # 安全兜底：确保任何用户都能读取（容器内安全由容器层保障）
+        chmod o+x /var/www 2>/dev/null || true
+        chmod o+x /var/www/broca 2>/dev/null || true
+        chmod -R o+rX "$NGINX_DIST_DIR"
+        info "前端静态文件已部署到: $NGINX_DIST_DIR (root 直接写入, 用户: $NGINX_USER)"
     elif command -v sudo &>/dev/null; then
         sudo mkdir -p "$NGINX_DIST_DIR"
         sudo cp -r "$FRONTEND_DIR/dist/"* "$NGINX_DIST_DIR/"
-        sudo chown -R "${NGINX_USER}:${NGINX_USER}" "$NGINX_DIST_DIR" 2>/dev/null || true
+        if id "$NGINX_USER" &>/dev/null; then
+            sudo chown -R "${NGINX_USER}:${NGINX_USER}" "$NGINX_DIST_DIR" 2>/dev/null || true
+        fi
+        sudo chmod o+x /var/www 2>/dev/null || true
+        sudo chmod o+x /var/www/broca 2>/dev/null || true
+        sudo chmod -R o+rX "$NGINX_DIST_DIR"
         info "前端静态文件已部署到: $NGINX_DIST_DIR"
     else
         warn "未找到 sudo，请手动复制前端文件:"
         echo "    sudo mkdir -p $NGINX_DIST_DIR"
         echo "    sudo cp -r $FRONTEND_DIR/dist/* $NGINX_DIST_DIR/"
         echo "    sudo chown -R ${NGINX_USER}:${NGINX_USER} $NGINX_DIST_DIR"
+        echo "    sudo chmod -R o+rX $NGINX_DIST_DIR"
         # 回退到 ~/.broca/
         NGINX_DIST_DIR="$BROCA_HOME/frontend-dist"
         mkdir -p "$NGINX_DIST_DIR"
