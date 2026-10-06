@@ -61,8 +61,20 @@ export class AudioRecorder {
    *
    * @param onAudioFrame 每 ~128ms 回调一次，参数为 16kHz Int16 PCM 数据的 ArrayBuffer
    * @throws DOMException (NotAllowedError) 如果用户拒绝权限
+   * @throws Error 如果不是安全上下文（iPhone 通过 HTTP 访问时）
    */
   async start(onAudioFrame: (data: ArrayBuffer) => void): Promise<void> {
+    // 安全上下文检查：iOS Safari / Android Chrome 要求 HTTPS 才开放 mediaDevices
+    if (!window.isSecureContext) {
+      throw new Error(
+        '当前页面不是 HTTPS 环境，浏览器禁止使用麦克风。' +
+        '请通过 https:// 地址访问（iPhone 首次访问需点击「访问此网站」信任自签证书）。'
+      )
+    }
+    if (!navigator.mediaDevices?.getUserMedia) {
+      throw new Error('浏览器不支持 getUserMedia，请使用最新版 Safari / Chrome')
+    }
+
     // 重复调用时先清理上一次
     if (this._isRecording) {
       this.stop()
@@ -174,6 +186,9 @@ export class AudioRecorder {
    * @returns true 表示有可用麦克风且权限已授予
    */
   static async checkPermission(): Promise<boolean> {
+    if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+      return false
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true })
       stream.getTracks().forEach((t) => t.stop())
