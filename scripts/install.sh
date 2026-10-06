@@ -434,7 +434,7 @@ info "broca 模块安装完成。"
 # ============================================================================
 # Step 2.5: 下载 ASR 语音识别模型（可选，用于语音输入功能）
 # ============================================================================
-ASR_MODEL_DIR="$BROCA_HOME/models/asr/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20"
+ASR_MODEL_DIR="$BROCA_HOME/models/asr/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"
 if [[ ! -d "$ASR_MODEL_DIR" ]] || [[ -z "$(ls "$ASR_MODEL_DIR" 2>/dev/null)" ]]; then
     # 检查 sherpa-onnx 是否已安装
     if $BROCA_PYTHON -c "import sherpa_onnx" 2>/dev/null; then
@@ -935,15 +935,51 @@ else
     fi
 fi
 
+    # 生成自签 HTTPS 证书（iOS/Android 要求 HTTPS 才能使用麦克风权限）
+    NGINX_CERT_DIR="$BROCA_HOME/certs"
+    NGINX_CERT="$NGINX_CERT_DIR/broca-cert.pem"
+    NGINX_KEY="$NGINX_CERT_DIR/broca-key.pem"
+    if [[ ! -f "$NGINX_CERT" || ! -f "$NGINX_KEY" ]]; then
+        mkdir -p "$NGINX_CERT_DIR"
+        info "生成自签 HTTPS 证书（有效期 10 年）..."
+        # 尝试获取本机外网 IP / 域名作为 SAN
+        LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "192.168.1.100")
+        openssl req -x509 -newkey rsa:2048 \
+            -keyout "$NGINX_KEY" -out "$NGINX_CERT" \
+            -days 3650 -nodes \
+            -subj "/CN=broca/O=Broca" \
+            -addext "subjectAltName=DNS:localhost,DNS:*.local,IP:127.0.0.1,IP:${LOCAL_IP}" \
+            2>/dev/null
+        chmod 600 "$NGINX_KEY"
+        info "证书已生成: $NGINX_CERT"
+        info "  (如使用 DynDNS/外网域名，请重新生成证书并将域名加入 SAN)"
+    else
+        info "复用已有证书: $NGINX_CERT"
+    fi
+
     # 生成 nginx 配置（使用转义保留 nginx 变量）
+    # HTTPS 端口 8443，HTTP 5166 自动跳转
     NGINX_SITE_CONF="$BROCA_HOME/nginx-broca.conf"
     cat > "$NGINX_SITE_CONF" <<- NGINXEOF
 # Broca Web - Nginx 配置
 # 由 broca service install 自动生成
+# HTTPS (8443) + HTTP→HTTPS 跳转 (5166)
 
+# HTTP → HTTPS 跳转
 server {
     listen       5166;
     server_name  _;
+    return 301 https://\$host:8443\$request_uri;
+}
+
+# HTTPS 主站点
+server {
+    listen       8443 ssl;
+    server_name  _;
+
+    ssl_certificate     ${NGINX_CERT};
+    ssl_certificate_key ${NGINX_KEY};
+    ssl_protocols       TLSv1.2 TLSv1.3;
 
     # 前端静态文件
     root ${NGINX_DIST_DIR};
@@ -962,7 +998,8 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Proto https;
+        proxy_read_timeout 300s;
     }
 
     # Socket.IO 反向代理
@@ -974,7 +1011,7 @@ server {
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto \$scheme;
+        proxy_set_header X-Forwarded-Proto https;
     }
 
     # SPA 路由: 所有非文件请求返回 index.html
@@ -1107,7 +1144,8 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
   "nginx_dist_dir": "$NGINX_DIST_DIR",
   "storage_configured": $([ -f "$ENV_FILE" ] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" && echo "true" || echo "false"),
   "backend_port": 9000,
-  "frontend_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || echo '5166'),
+  "frontend_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || echo '8443'),
+  "frontend_http_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || echo '5166'),
   "skip_frontend": $SKIP_FRONTEND
 }
 JSONEOF
@@ -1218,7 +1256,8 @@ else
     echo "    broca service status     # 查看服务状态"
     echo "    broca web                # 启动开发模式 (前后端同时启动)"
     echo ""
-    echo "  broca service start 后访问: http://localhost:5166"
+    echo "  broca service start 后访问: https://localhost:8443"
+    echo "  (HTTP 5166 自动跳转 HTTPS；iPhone 首次访问需信任自签证书)"
 fi
 
 echo ""
