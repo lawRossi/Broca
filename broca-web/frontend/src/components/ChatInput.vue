@@ -5,6 +5,8 @@ import { uploadFile, isStorageConfigured } from '@/utils/upload'
 import { commandsApi, type CommandInfo } from '@/api/commands'
 import { filesApi, type FileCompleteItem } from '@/api/files'
 import { sessionApi } from '@/api/session'
+import { AudioRecorder, audioRecorder } from '@/services/audioRecorder'
+import { asrClient, type AsrEvent } from '@/services/asrClient'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -53,6 +55,22 @@ const pathSuggestions = ref<FileCompleteItem[]>([])
 const selectedPathIndex = ref(-1)
 const pathSuggestionsRef = ref<HTMLElement>()
 const justSelectedPath = ref(false)
+
+// ========== 语音输入相关状态 ==========
+const isVoiceRecording = ref(false)
+const micAvailable = ref<boolean | null>(null) // null = 检测中, true/false = 结果
+const voicePartialText = ref('')
+const voiceError = ref('')
+const micTooltip = computed(() => {
+  if (micAvailable.value === false) return '无可用麦克风或权限被拒绝'
+  if (!chatStore.runnerAlive) return '进程未运行'
+  return ''
+})
+const micDisabled = computed(() => {
+  if (!chatStore.runnerAlive) return true
+  if (micAvailable.value === false) return true
+  return false
+})
 // 当前会话 workspace（# 补全根目录）
 const chatWorkspace = ref('')
 // 请求序号，避免异步竞态（仅采纳最后一次请求的响应）
@@ -558,15 +576,110 @@ const canSendMessage = computed(() => {
   return hasValidText || allFilesUploaded.value
 })
 
+// ========== 语音输入方法 ==========
+
+/** 停止语音录音并清理资源 */
+const stopVoiceRecording = (commitFinalText: boolean = true) => {
+  if (!isVoiceRecording.value) return
+
+  // 提交残余的 partial 文本（用户可能在中途停止，最后一个 utterance 没有触发 final）
+  if (commitFinalText && voicePartialText.value) {
+    const currentInput = chatStore.input
+    chatStore.input = currentInput ? currentInput + voicePartialText.value : voicePartialText.value
+  }
+
+  // 停止录音
+  audioRecorder.stop()
+  asrClient.disconnect()
+
+  isVoiceRecording.value = false
+  voicePartialText.value = ''
+}
+
+/** 语音事件回调 */
+const handleVoiceEvent = (e: AsrEvent) => {
+  // 诊断日志：记录每个 ASR 事件，用于排查重字/多字问题
+  if (e.type === 'partial' || e.type === 'final') {
+    console.debug(`[Voice] ${e.type}: "${e.text}"`)
+  }
+
+  switch (e.type) {
+    case 'status':
+      // loading → ready 状态切换，无需额外处理
+      break
+    case 'partial':
+      voicePartialText.value = e.text
+      break
+    case 'final':
+      // 实时追加到输入框（与 VSCode 版一致）
+      voicePartialText.value = ''
+      if (e.text) {
+        const current = chatStore.input
+        chatStore.input = current ? current + e.text : e.text
+        console.debug(`[Voice] input += "${e.text}" → "${chatStore.input}"`)
+      }
+      break
+    case 'error':
+      voiceError.value = e.message
+      stopVoiceRecording(false)
+      break
+  }
+}
+
+/** 切换语音输入（开始/停止） */
+const toggleVoiceInput = async () => {
+  if (isVoiceRecording.value) {
+    // 停止录音
+    stopVoiceRecording(true)
+    return
+  }
+
+  // 开始录音
+  voiceError.value = ''
+  try {
+    // 1. 连接 ASR WebSocket
+    await asrClient.connect(handleVoiceEvent)
+
+    // 2. 等待 ASR 就绪（模型加载完成）
+    // connect() 已在 onopen 后 resolve，模型加载通过 status 事件通知
+    // 这里启动录音，音频在 _isReady=false 时会被 asrClient 静默丢弃
+    await audioRecorder.start((data) => {
+      asrClient.sendAudioFrame(data)
+    })
+
+    isVoiceRecording.value = true
+  } catch (e: any) {
+    if (e?.name === 'NotAllowedError') {
+      voiceError.value = '麦克风权限被拒绝'
+      micAvailable.value = false
+    } else if (e?.name === 'NotFoundError') {
+      voiceError.value = '未找到麦克风设备'
+      micAvailable.value = false
+    } else {
+      voiceError.value = e?.message || '语音输入启动失败'
+    }
+    // 清理已启动的资源
+    if (audioRecorder.isRecording) audioRecorder.stop()
+    asrClient.disconnect()
+    isVoiceRecording.value = false
+  }
+}
+
 // 添加和移除全局点击事件监听器
 onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
   // 获取命令列表
   await fetchCommands()
+  // 检查麦克风可用性
+  micAvailable.value = await AudioRecorder.checkPermission()
 })
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  // 清理语音录音资源
+  if (isVoiceRecording.value) {
+    stopVoiceRecording(false)
+  }
 })
 
 // 触发文件选择
@@ -738,6 +851,11 @@ const handleSendMessage = async () => {
     return
   }
 
+  // 如果正在录音，先停止并提交识别文本
+  if (isVoiceRecording.value) {
+    stopVoiceRecording(true)
+  }
+
   const text = chatStore.input.trim()
   const { targetAgentId, cleanText } = chatStore.parseMention(text)
 
@@ -805,6 +923,24 @@ const handleSendMessage = async () => {
     <div class="mb-2 text-xs text-gray-500 flex items-center gap-1">
       <span>发送给:</span>
       <span class="font-medium text-blue-600">{{ targetAgentDisplay }}</span>
+    </div>
+
+    <!-- 语音输入状态条 -->
+    <div
+      v-if="isVoiceRecording || voiceError"
+      class="flex items-center gap-2 px-3 py-1.5 rounded-md text-xs mb-2"
+      :class="voiceError ? 'bg-red-50 text-red-600' : 'bg-blue-50 text-blue-600'"
+    >
+      <template v-if="voiceError">
+        <span>⚠️</span>
+        <span>{{ voiceError }}</span>
+        <button class="ml-auto text-red-400 hover:text-red-600" @click="voiceError = ''">✕</button>
+      </template>
+      <template v-else>
+        <span class="voice-recording-dot" />
+        <span v-if="voicePartialText" class="truncate max-w-[200px]">{{ voicePartialText }}</span>
+        <span v-else class="text-blue-400">正在聆听…</span>
+      </template>
     </div>
 
     <!-- 文件预览区域 -->
@@ -948,6 +1084,24 @@ const handleSendMessage = async () => {
         📎
       </el-button>
 
+      <!-- 语音输入按钮 -->
+      <el-tooltip :content="micTooltip" :disabled="!micTooltip" placement="top">
+        <button
+          type="button"
+          class="voice-mic-btn"
+          :class="{
+            'voice-mic-btn--recording': isVoiceRecording,
+            'voice-mic-btn--disabled': micDisabled,
+          }"
+          :disabled="micDisabled"
+          :title="isVoiceRecording ? '点击停止录音' : '点击开始语音输入'"
+          @click="toggleVoiceInput"
+        >
+          <svg v-if="isVoiceRecording" class="voice-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+          <svg v-else class="voice-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+        </button>
+      </el-tooltip>
+
       <el-button
         type="primary"
         :disabled="!chatStore.runnerAlive || !canSendMessage || isUploading"
@@ -960,3 +1114,76 @@ const handleSendMessage = async () => {
     </div>
   </div>
 </template>
+
+<style scoped>
+/* 语音输入按钮 */
+.voice-mic-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border: 1px solid #dcdfe6;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.voice-mic-btn:hover:not(:disabled) {
+  border-color: #409eff;
+  background: #ecf5ff;
+}
+
+.voice-mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.voice-mic-btn--recording {
+  border-color: #f56c6c;
+  background: #fef0f0;
+  animation: voice-pulse 1.5s ease-in-out infinite;
+}
+
+.voice-mic-btn--recording:hover {
+  border-color: #f56c6c;
+  background: #fde2e2;
+}
+
+.voice-mic-icon {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes voice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 108, 108, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 6px rgba(245, 108, 108, 0);
+  }
+}
+
+/* 录音状态指示灯 */
+.voice-recording-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #409eff;
+  animation: voice-dot-blink 1s ease-in-out infinite;
+}
+
+@keyframes voice-dot-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+</style>

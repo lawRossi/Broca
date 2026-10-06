@@ -277,10 +277,12 @@
     "@aws-sdk/client-s3": "^3.1048.0",
     "@types/node": "^25.8.0",
     "axios": "^1.16.1",
-    "socket.io-client": "^4.8.3"
+    "socket.io-client": "^4.8.3",
+    "ws": "^8.22.0"
   },
   "devDependencies": {
     "@types/vscode": "^1.85.0",
+    "@types/ws": "^8.18.2",
     "@typescript-eslint/eslint-plugin": "^8.64.0",
     "@typescript-eslint/parser": "^8.64.0",
     "@vitejs/plugin-vue": "^5.2.4",

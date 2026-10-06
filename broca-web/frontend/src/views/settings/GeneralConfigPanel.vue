@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Loading, WarningFilled } from '@element-plus/icons-vue'
-import configApi, { LOG_LEVELS, type GeneralConfig } from '@/api/config'
+import configApi, { LOG_LEVELS, type GeneralConfig, type ASRConfig } from '@/api/config'
 
 // ==================== 状态 ====================
 const loading = ref(false)
@@ -76,6 +76,29 @@ const EXECUTION_FIELDS: {
   { key: 'dead_loop_window', label: '死循环判定窗口', unit: '步', hint: '最近 N 步工具调用完全相同时判定为死循环', min: 2, step: 1 },
   { key: 'message_queue_size', label: '消息队列容量', unit: '条', hint: 'Agent 消息队列最大消息数', min: 1, step: 1 },
 ]
+
+/** ASR 解码方式选项 */
+const DECODING_METHODS = [
+  { value: 'modified_beam_search', label: 'Modified Beam Search（推荐，准确率更高）' },
+  { value: 'greedy_search', label: 'Greedy Search（更快，适合低端设备）' },
+]
+
+// ==================== ASR 配置辅助 ====================
+const asrValue = (fieldKey: keyof ASRConfig): string | number | undefined => {
+  const asr = config.value.asr
+  return asr && typeof asr === 'object' ? asr[fieldKey] : undefined
+}
+
+const setAsrValue = (fieldKey: keyof ASRConfig, value: string | number | undefined | null) => {
+  const current = config.value.asr
+  const asr: ASRConfig = current ? { ...current } : {}
+  if (value === undefined || value === null || value === '') {
+    delete asr[fieldKey]
+  } else {
+    asr[fieldKey] = value as any
+  }
+  config.value = { ...config.value, asr }
+}
 
 // ==================== 数据加载 ====================
 const loadConfig = async () => {
@@ -334,6 +357,67 @@ defineExpose({ saveNow, reset })
                   <span class="text-xs text-gray-400 flex-shrink-0">{{ field.unit }}</span>
                 </div>
                 <p class="mt-1.5 text-xs text-gray-400">{{ field.hint }}</p>
+              </div>
+            </el-form-item>
+          </el-form>
+        </div>
+
+        <!-- ASR 语音识别配置（asr 分组） -->
+        <div class="mt-6 border-t border-gray-100 pt-5">
+          <h3 class="text-sm font-medium text-gray-700 mb-1">语音识别（ASR）</h3>
+          <p class="text-xs text-gray-400 mb-4">语音输入使用的 ASR 模型与解码参数（configs.json 的 asr 分组，修改后需重启后端生效）</p>
+          <el-form label-width="150px" label-position="left" @submit.prevent>
+            <el-form-item label="模型名称">
+              <div class="w-full">
+                <el-input
+                  :model-value="asrValue('model_name') as string | undefined"
+                  placeholder="如 sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"
+                  @update:model-value="(val: string) => setAsrValue('model_name', val)"
+                />
+                <p class="mt-1.5 text-xs text-gray-400">
+                  模型目录：~/.broca/models/asr/&lt;模型名称&gt;/。留空使用默认模型。
+                </p>
+              </div>
+            </el-form-item>
+            <el-form-item label="解码方式">
+              <div class="w-full">
+                <el-select
+                  :model-value="asrValue('decoding_method') as string | undefined"
+                  placeholder="默认: modified_beam_search"
+                  clearable
+                  @update:model-value="(val: string) => setAsrValue('decoding_method', val)"
+                >
+                  <el-option
+                    v-for="m in DECODING_METHODS"
+                    :key="m.value"
+                    :label="m.label"
+                    :value="m.value"
+                  />
+                </el-select>
+                <p class="mt-1.5 text-xs text-gray-400">
+                  modified_beam_search 准确率更高但稍慢；greedy_search 速度更快。
+                </p>
+              </div>
+            </el-form-item>
+            <el-form-item label="噪声门控阈值">
+              <div class="w-full">
+                <div class="flex items-center gap-2">
+                  <el-input-number
+                    :model-value="asrValue('noise_gate_rms') as number | undefined"
+                    :min="0"
+                    :max="1"
+                    :step="0.001"
+                    :precision="4"
+                    controls-position="right"
+                    style="width: 180px"
+                    placeholder="默认: 0.005"
+                    @update:model-value="(val: number | undefined) => setAsrValue('noise_gate_rms', val)"
+                  />
+                  <span class="text-xs text-gray-400 flex-shrink-0">RMS</span>
+                </div>
+                <p class="mt-1.5 text-xs text-gray-400">
+                  RMS 低于此值的帧被替换为静音（0 禁用）。默认 0.005 ≈ -46 dB，用于抑制背景噪声导致的多字。
+                </p>
               </div>
             </el-form-item>
           </el-form>

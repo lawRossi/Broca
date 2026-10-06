@@ -19,7 +19,9 @@ dependencies = [
     "bcrypt (>=4.0.0,<5.0.0)",
     "python-jose[cryptography] (>=3.5.0,<4.0.0)",
     "PyJWT[cryptography]>=2.8.0",
-    "pydantic (>=2.12.5,<3.0.0)"
+    "pydantic (>=2.12.5,<3.0.0)",
+    "sherpa-onnx (>=1.10.0,<2.0.0)",
+    "onnxruntime (>=1.16.0,<2.0.0)"
 ]
 
 [tool.poetry]

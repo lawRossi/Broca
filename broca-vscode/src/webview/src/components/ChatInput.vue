@@ -432,11 +432,76 @@ function handleClickOutside(event: MouseEvent) {
   }
 }
 
+// ==================== 语音输入方法 ====================
+
+/** 停止语音输入（通知 Extension Host 停止采集） */
+function stopVoiceInput() {
+  if (!isVoiceRecording.value) return
+  postMessage({ type: 'stopVoiceInput' })
+  // voiceInputStopped 消息会重置 isVoiceRecording
+}
+
+/** 切换语音输入 */
+function toggleVoiceInput() {
+  if (isVoiceRecording.value) {
+    stopVoiceInput()
+  } else {
+    voiceError.value = ''
+    isVoiceRecording.value = true
+    postMessage({ type: 'startVoiceInput' })
+  }
+}
+
+/** 处理来自 Extension Host 的 ASR 事件 */
+function handleAsrEvent(event: any) {
+  switch (event.type) {
+    case 'partial':
+      voicePartialText.value = event.text
+      break
+    case 'final':
+      // 累积 final 文本到输入框
+      voicePartialText.value = ''
+      if (event.text) {
+        const current = chatStore.inputText
+        chatStore.inputText = current ? current + event.text : event.text
+      }
+      break
+    case 'error':
+      voiceError.value = event.message || '语音识别错误'
+      isVoiceRecording.value = false
+      voicePartialText.value = ''
+      break
+    case 'status':
+      // loading → ready，无需额外处理
+      break
+  }
+}
+
+// 监听 Extension Host 发来的语音相关消息
+function initVoiceInputListeners() {
+  onMessage((data: any) => {
+    if (data.type === 'asrEvent') {
+      handleAsrEvent(data.payload)
+    } else if (data.type === 'voiceInputStopped') {
+      isVoiceRecording.value = false
+      voicePartialText.value = ''
+    } else if (data.type === 'voiceInputSupported') {
+      voiceSupported.value = data.payload?.supported ?? false
+    }
+  })
+}
+
 onMounted(() => {
   document.addEventListener('click', handleClickOutside)
 
   // Fetch available commands for autocomplete
   fetchCommands()
+
+  // 检查语音输入支持
+  postMessage({ type: 'checkVoiceInput' })
+
+  // 初始化语音输入监听
+  initVoiceInputListeners()
 
   // 监听文件上传错误（统一 upload 模块不再需要监听 fileUploaded，通过 Promise 处理）
   onMessage((data: any) => {
@@ -456,6 +521,10 @@ onMounted(() => {
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
+  // 清理语音录音
+  if (isVoiceRecording.value) {
+    stopVoiceInput()
+  }
 })
 
 const pendingFiles = ref<
@@ -483,6 +552,24 @@ const uploadingFileIds = ref<Set<string>>(new Set())
 const canSend = computed(() => {
   const text = chatStore.inputText.trim()
   return text.length > 0 || pendingFiles.value.some((f) => f.status === 'success')
+})
+
+// ==================== 语音输入状态 ====================
+const isVoiceRecording = ref(false)
+const voiceSupported = ref<boolean | null>(null) // null = 检测中
+const voicePartialText = ref('')
+const voiceError = ref('')
+
+const voiceDisabled = computed(() => {
+  if (!chatStore.runnerAlive) return true
+  if (voiceSupported.value === false) return true
+  return false
+})
+
+const voiceTooltip = computed(() => {
+  if (voiceSupported.value === false) return '系统未安装音频采集工具 (sox/ffmpeg)'
+  if (!chatStore.runnerAlive) return '进程未运行'
+  return ''
 })
 
 function triggerFileSelect() {
@@ -543,6 +630,11 @@ function handleSend() {
   // 如果刚选择了命令、mention 或路径，跳过发送
   if (justSelectedCommand.value || justSelectedMention.value || justSelectedPath.value) {
     return
+  }
+
+  // 如果正在录音，先停止
+  if (isVoiceRecording.value) {
+    stopVoiceInput()
   }
 
   const text = chatStore.inputText.trim()
@@ -732,6 +824,24 @@ const targetAgentDisplay = computed(() => {
       发送给: <span class="target-agent-name">@{{ targetAgentDisplay }}</span>
     </div>
 
+    <!-- 语音输入状态条 -->
+    <div
+      v-if="isVoiceRecording || voiceError"
+      class="voice-status-bar"
+      :class="{ 'voice-status-bar--error': !!voiceError }"
+    >
+      <template v-if="voiceError">
+        <span class="voice-status-icon">⚠️</span>
+        <span class="voice-status-text">{{ voiceError }}</span>
+        <button class="voice-status-close" @click="voiceError = ''">✕</button>
+      </template>
+      <template v-else>
+        <span class="voice-recording-dot" />
+        <span v-if="voicePartialText" class="voice-status-text voice-partial-text">{{ voicePartialText }}</span>
+        <span v-else class="voice-status-text voice-listening">正在聆听…</span>
+      </template>
+    </div>
+
     <!-- File preview area -->
     <div v-if="pendingFiles.length > 0" class="file-preview-area">
       <div
@@ -834,6 +944,21 @@ const targetAgentDisplay = computed(() => {
         📎
       </button>
       <input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileChange" />
+
+      <!-- 语音输入按钮 -->
+      <button
+        class="voice-mic-btn"
+        :class="{
+          'voice-mic-btn--recording': isVoiceRecording,
+          'voice-mic-btn--disabled': voiceDisabled,
+        }"
+        :disabled="voiceDisabled"
+        :title="isVoiceRecording ? '停止录音' : voiceTooltip || '语音输入'"
+        @click="toggleVoiceInput"
+      >
+        <svg v-if="isVoiceRecording" class="voice-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
+        <svg v-else class="voice-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+      </button>
 
       <button class="send-button" :disabled="!canSend || !chatStore.runnerAlive" @click="handleSend">Send</button>
     </div>
@@ -1218,5 +1343,125 @@ const targetAgentDisplay = computed(() => {
   font-size: 13px;
   color: var(--text-secondary);
   cursor: not-allowed;
+}
+
+/* ==================== 语音输入 ==================== */
+.voice-mic-btn {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  transition: all 0.2s;
+  flex-shrink: 0;
+}
+
+.voice-mic-btn:hover:not(:disabled) {
+  border-color: var(--focus-border);
+  background: var(--bg-tertiary);
+}
+
+.voice-mic-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.voice-mic-btn--recording {
+  border-color: var(--error-fg, #f56c6c);
+  background: rgba(245, 108, 108, 0.1);
+  animation: voice-pulse 1.5s ease-in-out infinite;
+}
+
+.voice-mic-btn--recording:hover {
+  border-color: var(--error-fg, #f56c6c);
+}
+
+.voice-mic-icon {
+  width: 18px;
+  height: 18px;
+}
+
+@keyframes voice-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(245, 108, 108, 0.4);
+  }
+  50% {
+    box-shadow: 0 0 0 5px rgba(245, 108, 108, 0);
+  }
+}
+
+.voice-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  margin-bottom: 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  background: rgba(64, 158, 255, 0.08);
+  color: var(--text-link);
+}
+
+.voice-status-bar--error {
+  background: rgba(245, 108, 108, 0.08);
+  color: var(--error-fg, #f56c6c);
+}
+
+.voice-status-icon {
+  font-size: 12px;
+}
+
+.voice-status-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.voice-partial-text {
+  font-style: italic;
+}
+
+.voice-listening {
+  opacity: 0.7;
+}
+
+.voice-status-close {
+  background: none;
+  border: none;
+  color: var(--error-fg, #f56c6c);
+  cursor: pointer;
+  padding: 0 2px;
+  font-size: 11px;
+  opacity: 0.6;
+}
+
+.voice-status-close:hover {
+  opacity: 1;
+}
+
+.voice-recording-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-link, #409eff);
+  animation: voice-dot-blink 1s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes voice-dot-blink {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
 }
 </style>

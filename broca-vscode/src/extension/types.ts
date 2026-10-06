@@ -317,6 +317,9 @@ export interface ExtensionToWebView {
     | 'workspacePath'
     | 'refreshSession'
     | 'files'
+    | 'asrEvent'
+    | 'voiceInputStopped'
+    | 'voiceInputSupported'
   payload: any
 }
 
@@ -380,5 +383,8 @@ export interface WebViewToExtension {
     | 'searchMessages'
     | 'getSearchFilters'
     | 'listFiles'
+    | 'startVoiceInput'
+    | 'stopVoiceInput'
+    | 'checkVoiceInput'
   payload?: any
 }

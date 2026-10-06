@@ -58,7 +58,6 @@ class AuthService:
             payload = jwt.decode(token, settings.jwt_secret, algorithms=[settings.jwt_algorithm])
             return payload
         except JWTError as e:
-            logger.error(f"Failed to decode token: {e}")
             raise AuthError("Invalid or expired token") from e
 
     @staticmethod

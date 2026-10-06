@@ -41,6 +41,16 @@ export interface LLMProviderConfig {
 /** 完整 LLM 配置：provider id → 提供商配置 */
 export type LLMConfig = Record<string, LLMProviderConfig>
 
+/** ASR 语音识别配置（configs.json 中的 asr 分组） */
+export interface ASRConfig {
+  /** 模型名称（~/.broca/models/asr/ 下的子目录名） */
+  model_name?: string
+  /** 解码方式: greedy_search | modified_beam_search */
+  decoding_method?: string
+  /** RMS 噪声门控阈值（0 禁用） */
+  noise_gate_rms?: number
+}
+
 /** 基础配置（configs.json）：仅已知字段 */
 export interface GeneralConfig {
   database_dir?: string
@@ -50,6 +60,7 @@ export interface GeneralConfig {
   socket_server_url?: string
   api_server_url?: string
   execution?: ExecutionConfig
+  asr?: ASRConfig
 }
 
 /** 执行引擎配置（configs.json 中的 execution 分组，数字型） */

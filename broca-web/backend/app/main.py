@@ -88,7 +88,10 @@ def verify_token(req: Request, cred: HTTPAuthorizationCredentials = Depends(secu
         raise HTTPException(401, "Unauthorized") from e
 
 
-app = FastAPI(dependencies=[Depends(verify_token)])
+# NOTE: auth dependency is applied at the router level (api_router) rather than
+# the app level, so that WebSocket routes (e.g. /api/asr/stream) can define
+# their own authentication without HTTPBearer interfering.
+app = FastAPI()
 
 # 注册全局异常处理器 — 统一所有 API 错误响应为 ApiResponse 格式
 app.add_exception_handler(HTTPException, http_exception_handler)  # type: ignore[arg-type]
@@ -212,4 +215,12 @@ async def health_check() -> dict[str, Any]:
     }
 
 
-app.include_router(api_router, prefix="/api")
+# HTTP API router — auth via verify_token (Bearer token)
+app.include_router(api_router, prefix="/api", dependencies=[Depends(verify_token)])
+
+# ASR WebSocket router — registered separately WITHOUT the verify_token
+# dependency because HTTPBearer is incompatible with WebSocket routes.
+# The ASR endpoint implements its own auth: query-param token + loopback check.
+from app.api.asr import router as asr_router  # noqa: E402
+
+app.include_router(asr_router, prefix="/api")

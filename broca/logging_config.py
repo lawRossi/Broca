@@ -10,12 +10,39 @@
   BROCA_LOG_LEVEL  日志级别（默认 INFO）
 """
 
+import logging
 import os
 import sys
 from pathlib import Path
 from typing import Optional
 
 from loguru import logger
+
+
+class _StdlibLoguruBridge(logging.Handler):
+    """将标准库 logging 的 record 转发到 loguru。
+
+    这样项目中任何使用 ``logging.getLogger()`` 的模块（如 ASR 服务）
+    的日志都能通过 loguru 的统一管道输出。
+    """
+
+    def emit(self, record: logging.LogRecord):
+        try:
+            level = logger.level(record.levelname).name
+        except ValueError:
+            level = record.levelno
+
+        # 找到真正的调用者（跳过 logging 内部帧）
+        frame_info = sys._getframe(0)
+        while frame_info and frame_info.f_code.co_filename.endswith("logging/__init__.py"):
+            frame_info = frame_info.f_back
+        if frame_info:
+            record = logging.makeLogRecord(record.__dict__)
+            record.pathname = frame_info.f_code.co_filename
+            record.lineno = frame_info.f_lineno
+            record.funcName = frame_info.f_code.co_name
+
+        logger.opt(depth=0, exception=record.exc_info).log(level, record.getMessage())
 
 
 def get_log_dir() -> str:
@@ -27,8 +54,37 @@ def get_log_dir() -> str:
 
 
 def get_log_level() -> str:
-    """获取日志级别，优先环境变量"""
-    return os.getenv("BROCA_LOG_LEVEL", "INFO")
+    """获取日志级别，优先级：环境变量 > configs.json > 默认 INFO"""
+    env_level = os.getenv("BROCA_LOG_LEVEL")
+    if env_level:
+        return env_level
+    # 尝试从配置文件读取
+    try:
+        config_path = _resolve_config_file()
+        if config_path and config_path.exists():
+            import json
+            with open(config_path) as f:
+                data = json.load(f)
+            level = data.get("log_level")
+            if level:
+                return level.upper()
+    except Exception:
+        pass
+    return "INFO"
+
+
+def _resolve_config_file() -> Optional[Path]:
+    """解析配置文件路径（与 app/api/config.py 逻辑一致）"""
+    env_path = os.getenv("BROCA_CONFIG")
+    if env_path:
+        return Path(env_path).expanduser()
+    new_path = Path.home() / ".broca" / "configs" / "configs.json"
+    if new_path.exists():
+        return new_path
+    legacy_path = Path.home() / ".broca" / "configs.json"
+    if legacy_path.exists():
+        return legacy_path
+    return None
 
 
 class LoggingConfig:
@@ -86,6 +142,14 @@ class LoggingConfig:
             backtrace=True,
             diagnose=True,
         )
+
+        # 3. 桥接标准库 logging → loguru
+        #    使 logging.getLogger("broca.asr") 等标准 logging 调用
+        #    也能通过 loguru 管道输出
+        bridge = _StdlibLoguruBridge()
+        root = logging.getLogger()
+        root.handlers = [bridge]  # 替换默认 handler，避免重复
+        root.setLevel(getattr(logging, log_level.upper(), logging.INFO))
 
         cls._initialized = True
 

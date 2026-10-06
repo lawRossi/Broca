@@ -36,6 +36,7 @@ KNOWN_GENERAL_CONFIG_FIELDS = (
     "socket_server_url",
     "api_server_url",
     "execution",
+    "asr",
 )
 # execution 分组下的已知字段（数字型，执行引擎相关；顺序保持写回）
 KNOWN_EXECUTION_CONFIG_FIELDS = (
@@ -48,6 +49,13 @@ KNOWN_EXECUTION_CONFIG_FIELDS = (
     "dead_loop_window",
     "message_queue_size",
 )
+# asr 分组下的已知字段（ASR 语音识别相关）
+KNOWN_ASR_CONFIG_FIELDS = (
+    "model_name",
+    "decoding_method",
+    "noise_gate_rms",
+)
+VALID_DECODING_METHODS = {"greedy_search", "modified_beam_search"}
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_PERMISSIONS = {"allow", "ask", "forbidden"}
 
@@ -180,9 +188,36 @@ def _validate_execution_config(config: Any) -> None:
             logger.warning("Unknown execution config field '%s' will be dropped on save", key)
 
 
+def _validate_asr_config(config: Any) -> None:
+    """校验 asr 分组：必须 object；字段类型/值范围检查。"""
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=400, detail="ASR config field 'asr' must be an object")
+    for key, value in config.items():
+        if key not in KNOWN_ASR_CONFIG_FIELDS:
+            logger.warning("Unknown ASR config field '%s' will be dropped on save", key)
+    model_name = config.get("model_name")
+    if model_name is not None and (not isinstance(model_name, str) or not model_name.strip()):
+        raise HTTPException(
+            status_code=400, detail="ASR config field 'model_name' must be a non-empty string"
+        )
+    decoding_method = config.get("decoding_method")
+    if decoding_method is not None and decoding_method not in VALID_DECODING_METHODS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ASR config field 'decoding_method' must be one of {sorted(VALID_DECODING_METHODS)}",
+        )
+    noise_gate = config.get("noise_gate_rms")
+    if noise_gate is not None:
+        if isinstance(noise_gate, bool) or not isinstance(noise_gate, (int, float)) or noise_gate < 0:
+            raise HTTPException(
+                status_code=400,
+                detail="ASR config field 'noise_gate_rms' must be a non-negative number",
+            )
+
+
 def _validate_general_config(config: Any) -> None:
     """校验 general 配置：必须 object；已知字段若存在必须为 string；log_level 必须合法；
-    execution 分组有独立的 object 校验；未知字段仅记录 warning（写回时丢弃）。"""
+    execution/asr 分组有独立的 object 校验；未知字段仅记录 warning（写回时丢弃）。"""
     if not isinstance(config, dict):
         raise HTTPException(status_code=400, detail="General config must be an object")
     for key, value in config.items():
@@ -191,6 +226,8 @@ def _validate_general_config(config: Any) -> None:
     for key, value in config.items():
         if key == "execution":
             _validate_execution_config(value)
+        elif key == "asr":
+            _validate_asr_config(value)
         elif key in KNOWN_GENERAL_CONFIG_FIELDS:
             if not isinstance(value, str):
                 raise HTTPException(
@@ -206,7 +243,7 @@ def _validate_general_config(config: Any) -> None:
 
 def _filter_general_config(config: dict[str, Any]) -> dict[str, Any]:
     """仅保留已知字段，并按 KNOWN_GENERAL_CONFIG_FIELDS 顺序写回；
-    execution 分组进一步过滤为已知 execution 字段。"""
+    execution 分组进一步过滤为已知 execution 字段；asr 分组过滤为已知 asr 字段。"""
     result: dict[str, Any] = {}
     for key in KNOWN_GENERAL_CONFIG_FIELDS:
         if key not in config:
@@ -218,6 +255,14 @@ def _filter_general_config(config: dict[str, Any]) -> dict[str, Any]:
                     fk: exec_src[fk]
                     for fk in KNOWN_EXECUTION_CONFIG_FIELDS
                     if fk in exec_src
+                }
+        elif key == "asr":
+            asr_src = config[key]
+            if isinstance(asr_src, dict):
+                result[key] = {
+                    fk: asr_src[fk]
+                    for fk in KNOWN_ASR_CONFIG_FIELDS
+                    if fk in asr_src
                 }
         else:
             result[key] = config[key]

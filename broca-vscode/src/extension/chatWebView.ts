@@ -4,6 +4,8 @@ import { ConfigManager } from './config'
 import { ApiClient } from './api'
 import { SocketClient } from './socket'
 import { extractErrorMessage, showErrorNotification } from './errors'
+import { AudioCapture, audioCapture } from './audioCapture'
+import { asrClient } from './asrClient'
 import type { WebViewMessage, ExtensionToWebView } from './types'
 
 export class ChatWebViewManager {
@@ -932,6 +934,19 @@ export class ChatWebViewManager {
       // ==================== File diff handlers ====================
       case 'viewDiff':
         await this.handleViewFileDiff(panel, sessionId, message.payload)
+        break
+
+      // ==================== Voice input handlers ====================
+      case 'checkVoiceInput':
+        await this.handleCheckVoiceInput(panel)
+        break
+
+      case 'startVoiceInput':
+        await this.handleStartVoiceInput(panel)
+        break
+
+      case 'stopVoiceInput':
+        this.handleStopVoiceInput(panel)
         break
     }
   }
@@ -2079,6 +2094,69 @@ export class ChatWebViewManager {
     }
   }
 
+  // ==================== Voice Input Handler Methods ====================
+
+  /** 检查系统是否支持语音输入（音频采集工具是否可用） */
+  private async handleCheckVoiceInput(panel: vscode.WebviewPanel) {
+    try {
+      const supported = await AudioCapture.isSupported()
+      this.postToPanel(panel, { type: 'voiceInputSupported', payload: { supported } } as ExtensionToWebView)
+    } catch {
+      this.postToPanel(panel, { type: 'voiceInputSupported', payload: { supported: false } } as ExtensionToWebView)
+    }
+  }
+
+  /** 启动语音输入：连接 ASR WS + 启动音频采集 */
+  private async handleStartVoiceInput(panel: vscode.WebviewPanel) {
+    // 如果已在录音，先停止
+    if (audioCapture.isCapturing) {
+      this.handleStopVoiceInput(panel)
+    }
+
+    try {
+      // 1. 获取后端 URL 和 token
+      const serverUrl = this.configManager.get('serverUrl') || 'http://localhost:9000'
+      const token = this.authManager.token || ''
+
+      // 2. 连接 ASR WebSocket
+      await asrClient.connect(serverUrl, token, (event) => {
+        this.postToPanel(panel, { type: 'asrEvent', payload: event } as ExtensionToWebView)
+      })
+
+      // 3. 启动音频采集
+      await audioCapture.start({
+        onAudioFrame: (data: Buffer) => {
+          asrClient.sendAudioFrame(data)
+        },
+        onError: (error: string) => {
+          this.postToPanel(panel, {
+            type: 'asrEvent',
+            payload: { type: 'error', message: error },
+          } as ExtensionToWebView)
+        },
+      })
+
+      console.log('[ChatWebView] Voice input started')
+    } catch (error: any) {
+      console.error('[ChatWebView] Failed to start voice input:', error.message)
+      // 清理已启动的资源
+      audioCapture.stop()
+      asrClient.disconnect()
+      this.postToPanel(panel, {
+        type: 'asrEvent',
+        payload: { type: 'error', message: error.message || '语音输入启动失败' },
+      } as ExtensionToWebView)
+    }
+  }
+
+  /** 停止语音输入 */
+  private handleStopVoiceInput(panel: vscode.WebviewPanel) {
+    audioCapture.stop()
+    asrClient.disconnect()
+    console.log('[ChatWebView] Voice input stopped')
+    this.postToPanel(panel, { type: 'voiceInputStopped' } as ExtensionToWebView)
+  }
+
   dispose() {
     // Dispose all panels and resources
     for (const [sessionId] of this.panels) {
@@ -2086,6 +2164,9 @@ export class ChatWebViewManager {
     }
     this.panels.clear()
     this.webviewAwayTimestamps.clear()
+    // Cleanup voice input resources
+    audioCapture.stop()
+    asrClient.disconnect()
     // Cleanup window state listener
     if (this._windowStateDisposable) {
       this._windowStateDisposable.dispose()

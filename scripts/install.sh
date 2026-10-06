@@ -432,6 +432,27 @@ fi
 info "broca 模块安装完成。"
 
 # ============================================================================
+# Step 2.5: 下载 ASR 语音识别模型（可选，用于语音输入功能）
+# ============================================================================
+ASR_MODEL_DIR="$BROCA_HOME/models/asr/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20"
+if [[ ! -d "$ASR_MODEL_DIR" ]] || [[ -z "$(ls "$ASR_MODEL_DIR" 2>/dev/null)" ]]; then
+    # 检查 sherpa-onnx 是否已安装
+    if $BROCA_PYTHON -c "import sherpa_onnx" 2>/dev/null; then
+        step "下载 ASR 语音识别模型 (ModelScope)..."
+        # 确保 modelscope 包可用
+        $BROCA_PIP install -q modelscope 2>/dev/null || true
+        if $BROCA_PYTHON "$PROJECT_ROOT/broca-web/backend/scripts/download_asr_model.py" 2>&1 | tail -3; then
+            info "ASR 模型下载完成: $ASR_MODEL_DIR"
+        else
+            warn "ASR 模型下载失败，可稍后手动执行:"
+            warn "  $BROCA_PYTHON $PROJECT_ROOT/broca-web/backend/scripts/download_asr_model.py"
+        fi
+    else
+        info "sherpa-onnx 未安装，跳过 ASR 模型下载"
+    fi
+fi
+
+# ============================================================================
 # Step 3: 数据库迁移
 # ============================================================================
 step "Step 3/9: 数据库迁移..."
@@ -932,9 +953,12 @@ server {
     gzip on;
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
 
-    # API 反向代理 (后端)
+    # API 反向代理 (后端, 含 WebSocket)
     location /api/ {
         proxy_pass http://127.0.0.1:9000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
