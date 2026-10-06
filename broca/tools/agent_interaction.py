@@ -185,7 +185,12 @@ class AskUser(Tool):
             )
 
             try:
-                await asyncio.wait_for(response_event.wait(), timeout=300)
+                query_timeout = getattr(
+                    getattr(agent.config, "execution_config", None),
+                    "agent_query_timeout",
+                    300,
+                )
+                await asyncio.wait_for(response_event.wait(), timeout=query_timeout)
             except asyncio.TimeoutError:
                 logger.warning(f"User question {request_id} timed out")
                 return ToolResult(

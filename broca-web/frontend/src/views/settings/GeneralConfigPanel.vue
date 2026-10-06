@@ -75,6 +75,8 @@ const EXECUTION_FIELDS: {
   { key: 'llm_first_chunk_timeout', label: 'LLM 首块超时', unit: '秒', hint: '等待 LLM 返回首块内容的超时时间', min: 5, step: 5 },
   { key: 'dead_loop_window', label: '死循环判定窗口', unit: '步', hint: '最近 N 步工具调用完全相同时判定为死循环', min: 2, step: 1 },
   { key: 'message_queue_size', label: '消息队列容量', unit: '条', hint: 'Agent 消息队列最大消息数', min: 1, step: 1 },
+  { key: 'permission_request_timeout', label: '权限请求超时', unit: '秒', hint: '等待用户授权/拒绝的超时时间，超时后自动拒绝。服务端消息缓存 TTL 会据此自动对齐', min: 10, step: 10 },
+  { key: 'agent_query_timeout', label: '用户问答超时', unit: '秒', hint: 'ask_user 等待用户回答的超时时间，超时后返回错误。服务端消息缓存 TTL 会据此自动对齐', min: 30, step: 30 },
 ]
 
 /** ASR 解码方式选项 */

@@ -796,7 +796,7 @@ class LoopEngine:
 
         以下工具由自身内部 timeout 控制，不需要 LoopEngine 的外层 wait_for 限制：
         - bash 的 background 模式：在工具内部快速通过 Scheduler 异步返回
-        - ask_user：等待用户回答，由内部 timeout（当前 180s）控制
+        - ask_user：等待用户回答，由内部 timeout（agent_query_timeout，默认 300s）控制
         """
         if tool_name == "bash":
             try:

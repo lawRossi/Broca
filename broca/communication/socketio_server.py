@@ -37,11 +37,16 @@ class SocketIOServer:
     """
 
     def __init__(
-        self, host: str = "0.0.0.0", port: int = 8000, cors_allowed_origins: str = "*"
+        self,
+        host: str = "0.0.0.0",
+        port: int = 8000,
+        cors_allowed_origins: str = "*",
+        pending_message_ttl: int = 600,
     ):
         self.host = host
         self.port = port
         self.cors_allowed_origins = cors_allowed_origins
+        self._pending_message_ttl = pending_message_ttl
 
         self.sio = AsyncServer(
             async_mode="aiohttp",
@@ -85,7 +90,7 @@ class SocketIOServer:
             return
 
         msg_key = f"{message.message_type}_{request_id}"
-        expire_at = time.time() + 600  # TTL 600s
+        expire_at = time.time() + self._pending_message_ttl
 
         async with self._lock:
             entry = {

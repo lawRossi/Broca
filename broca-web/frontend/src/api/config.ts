@@ -73,6 +73,8 @@ export interface ExecutionConfig {
   llm_first_chunk_timeout?: number
   dead_loop_window?: number
   message_queue_size?: number
+  permission_request_timeout?: number
+  agent_query_timeout?: number
 }
 
 /** 工具权限配置（tool_permission_config.json） */

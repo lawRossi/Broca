@@ -15,6 +15,8 @@ class ExecutionConfig:
         self.llm_first_chunk_timeout = 30  # LLM 首块超时（秒）
         self.dead_loop_window = 3  # 最近 N 步工具调用相同判定死循环
         self.message_queue_size = 3  # agent 消息队列大小
+        self.permission_request_timeout = 90  # 权限请求等待超时（秒）
+        self.agent_query_timeout = 300  # ask_user 用户问答等待超时（秒）
 
     @classmethod
     def from_config(cls, config):

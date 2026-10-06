@@ -13,6 +13,8 @@
         "llm_timeout": 300,
         "llm_first_chunk_timeout": 30,
         "dead_loop_window": 3,
-        "message_queue_size": 3
+        "message_queue_size": 3,
+        "permission_request_timeout": 90,
+        "agent_query_timeout": 300
     }
 }

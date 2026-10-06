@@ -48,6 +48,8 @@ KNOWN_EXECUTION_CONFIG_FIELDS = (
     "llm_first_chunk_timeout",
     "dead_loop_window",
     "message_queue_size",
+    "permission_request_timeout",
+    "agent_query_timeout",
 )
 # asr 分组下的已知字段（ASR 语音识别相关）
 KNOWN_ASR_CONFIG_FIELDS = (

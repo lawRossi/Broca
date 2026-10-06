@@ -276,9 +276,11 @@ class Agent:
 
     def _setup_permission_manager(self):
         """Set up permission manager"""
+        exec_cfg = getattr(self.config, "execution_config", None)
         self.permission_manager = PermissionManager(
             communicator=self.communicator,
             session_manager=self.session_manager,
+            permission_request_timeout=getattr(exec_cfg, "permission_request_timeout", 90),
         )
 
     async def _receive_message(self, message: Message):

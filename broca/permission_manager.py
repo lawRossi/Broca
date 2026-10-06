@@ -37,6 +37,7 @@ class PermissionManager:
         self,
         communicator: Any,
         session_manager: SessionManager,
+        permission_request_timeout: int = 90,
     ):
         """
         Initialize the permission manager
@@ -44,9 +45,11 @@ class PermissionManager:
         Args:
             communicator: Communication interface for sending messages
             session_manager: Session manager for persistence
+            permission_request_timeout: 权限请求等待超时（秒），超时后自动拒绝
         """
         self.communicator = communicator
         self.session_manager = session_manager
+        self.permission_request_timeout = permission_request_timeout
 
         # Permission request tracking
         self._permission_requests: Dict[str, Dict] = {}
@@ -152,7 +155,7 @@ class PermissionManager:
 
             # Wait for response with timeout
             try:
-                await asyncio.wait_for(response_event.wait(), timeout=90)
+                await asyncio.wait_for(response_event.wait(), timeout=self.permission_request_timeout)
             except asyncio.TimeoutError:
                 logger.warning(f"Permission request {request_id} timed out")
                 await self._log_permission_timeout(request_id)
