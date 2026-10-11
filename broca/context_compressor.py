@@ -254,7 +254,7 @@ class ContextCompressor:
 
         # 2. 提取记忆（用被压缩的旧消息，最新几步不写入记忆避免丢信息）
         old_history = copy.copy(context.history[:keep_index])
-        extraction_ok = await session_memory_manager.extract(context, old_history)
+        extraction_ok = await session_memory_manager.extract(old_history)
         if not extraction_ok:
             logger.info("Session Memory：记忆提取失败，跳过压缩")
             return

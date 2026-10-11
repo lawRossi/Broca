@@ -154,7 +154,7 @@ class SessionMemoryManager:
                     content="Extracting session memory",
                     subscription=self.agent.session_id,
                 )
-                success = await self._do_extract(context, old_history)
+                success = await self._do_extract(old_history)
                 if not success:
                     with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
                         f.write(original_content)
@@ -239,7 +239,7 @@ class SessionMemoryManager:
     # 提取（通过子代理）
     # ========================================================================
 
-    async def _do_extract(self, context, old_history) -> bool:
+    async def _do_extract(self, old_history) -> bool:
         """实际提取逻辑——创建子代理执行"""
         current_content = self._read_session_memory_content()
         user_prompt = build_extraction_user_prompt(
