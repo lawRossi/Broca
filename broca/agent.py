@@ -565,6 +565,7 @@ class Agent:
         """Reset agent state"""
         self.execution_engine.reset()
         await self.permission_manager.reset()
+        self.context._init_history()
         self.turn_id = None
         await self._set_status(self.STATUS_IDEL)
 
@@ -674,4 +675,7 @@ class Agent:
 
     async def restore_from_session(self, agent_id):
         """Restore agent state from session"""
-        await self.context.build_history_from_session(agent_id)
+        if self.config.save_history:
+            await self.context.build_history_from_session(agent_id)
+        else:
+            self.context._init_history()
