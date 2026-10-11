@@ -518,11 +518,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
               <input type="checkbox" :checked="allVisible" @change="toggleAll" />
               <span>全部</span>
             </label>
-            <label
-              v-for="agent in chatStore.agents"
-              :key="agent.agent_id"
-              class="filter-item"
-            >
+            <label v-for="agent in chatStore.agents" :key="agent.agent_id" class="filter-item">
               <input
                 type="checkbox"
                 :checked="chatStore.visibleAgentIds.includes(agent.agent_id)"
@@ -847,11 +843,7 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                   </div>
                   <div class="field">
                     <label>保留最近 Step 数</label>
-                    <input
-                      type="number"
-                      v-model.number="configForm.compact_config.keep_steps"
-                      min="1"
-                    />
+                    <input type="number" v-model.number="configForm.compact_config.keep_steps" min="1" />
                   </div>
                 </div>
               </div>

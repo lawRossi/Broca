@@ -30,7 +30,9 @@ function resolveBinary(name: string): string | null {
     const out = execFileSync(sh, ['/c', cmd], {
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5000,
-    }).toString().trim()
+    })
+      .toString()
+      .trim()
     if (out) return out.split('\n')[0].trim()
   } catch {
     // not in PATH
@@ -75,11 +77,7 @@ class AudioCapture {
     const platform = os.platform()
 
     const tools =
-      platform === 'darwin'
-        ? ['sox', 'ffmpeg']
-        : platform === 'win32'
-          ? ['ffmpeg']
-          : ['arecord', 'sox', 'ffmpeg'] // linux
+      platform === 'darwin' ? ['sox', 'ffmpeg'] : platform === 'win32' ? ['ffmpeg'] : ['arecord', 'sox', 'ffmpeg'] // linux
 
     for (const tool of tools) {
       if (resolveBinary(tool)) return true
@@ -197,9 +195,22 @@ class AudioCapture {
       // ffmpeg on macOS uses avfoundation for audio input
       candidates.push({
         command: 'ffmpeg',
-        args: ['-y', '-f', 'avfoundation', '-i', ':0', '-ar', '16000', '-ac', '1',
-          '-af', 'highpass=f=100,lowpass=f=8000,volume=2',
-          '-f', 's16le', '-'],
+        args: [
+          '-y',
+          '-f',
+          'avfoundation',
+          '-i',
+          ':0',
+          '-ar',
+          '16000',
+          '-ac',
+          '1',
+          '-af',
+          'highpass=f=100,lowpass=f=8000,volume=2',
+          '-f',
+          's16le',
+          '-',
+        ],
       })
     } else if (platform === 'linux') {
       // Linux: arecord → sox → ffmpeg
@@ -213,17 +224,43 @@ class AudioCapture {
       })
       candidates.push({
         command: 'ffmpeg',
-        args: ['-y', '-f', 'alsa', '-i', 'default', '-ar', '16000', '-ac', '1',
-          '-af', 'highpass=f=100,lowpass=f=8000,volume=2',
-          '-f', 's16le', '-'],
+        args: [
+          '-y',
+          '-f',
+          'alsa',
+          '-i',
+          'default',
+          '-ar',
+          '16000',
+          '-ac',
+          '1',
+          '-af',
+          'highpass=f=100,lowpass=f=8000,volume=2',
+          '-f',
+          's16le',
+          '-',
+        ],
       })
     } else {
       // Windows: ffmpeg
       candidates.push({
         command: 'ffmpeg',
-        args: ['-y', '-f', 'dshow', '-i', 'audio=Default-Audio Device', '-ar', '16000', '-ac', '1',
-          '-af', 'highpass=f=100,lowpass=f=8000,volume=2',
-          '-f', 's16le', '-'],
+        args: [
+          '-y',
+          '-f',
+          'dshow',
+          '-i',
+          'audio=Default-Audio Device',
+          '-ar',
+          '16000',
+          '-ac',
+          '1',
+          '-af',
+          'highpass=f=100,lowpass=f=8000,volume=2',
+          '-f',
+          's16le',
+          '-',
+        ],
       })
     }
 

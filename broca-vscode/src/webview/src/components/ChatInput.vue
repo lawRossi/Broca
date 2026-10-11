@@ -162,7 +162,10 @@ function handleFilesReply(data: any) {
   // 竞态保护：仅采纳与最近一次请求前缀一致的回包
   if (payload.prefix !== pathLatestPrefix) return
   // 收到回包，取消 3s 超时定时器，避免列表被误关
-  if (pathRequestTimer) { clearTimeout(pathRequestTimer); pathRequestTimer = undefined }
+  if (pathRequestTimer) {
+    clearTimeout(pathRequestTimer)
+    pathRequestTimer = undefined
+  }
   const completions: PathCompletionItem[] = Array.isArray(payload.completions) ? payload.completions : []
   showPathSuggestions.value = completions.length > 0
   pathSuggestions.value = completions
@@ -870,97 +873,119 @@ const targetAgentDisplay = computed(() => {
 
     <!-- Input row -->
     <div class="input-row">
-      <div class="input-wrapper">
-        <textarea
-          ref="inputRef"
-          v-model="chatStore.inputText"
-          class="chat-input"
-          :placeholder="chatStore.runnerAlive ? '输入/执行命令，@指定agent，#引用文件' : '进程未运行，无法发送消息'"
-          rows="1"
-          :disabled="!chatStore.runnerAlive"
-          @keydown="handleKeydown"
-        ></textarea>
+      <textarea
+        ref="inputRef"
+        v-model="chatStore.inputText"
+        class="chat-input"
+        :placeholder="chatStore.runnerAlive ? '输入/执行命令，@指定agent，#引用文件' : '进程未运行，无法发送消息'"
+        rows="1"
+        :disabled="!chatStore.runnerAlive"
+        @keydown="handleKeydown"
+      ></textarea>
 
-        <!-- /command 建议列表 -->
+      <!-- /command 建议列表 -->
+      <div
+        v-if="showCommandSuggestions && commandSuggestions.length > 0"
+        ref="commandSuggestionsRef"
+        class="command-suggestions"
+      >
         <div
-          v-if="showCommandSuggestions && commandSuggestions.length > 0"
-          ref="commandSuggestionsRef"
-          class="command-suggestions"
+          v-for="(suggestion, index) in commandSuggestions"
+          :key="suggestion.name"
+          class="command-item"
+          :class="{ 'command-selected': index === selectedCommandIndex }"
+          @click="handleCommandClick($event, suggestion.name)"
         >
-          <div
-            v-for="(suggestion, index) in commandSuggestions"
-            :key="suggestion.name"
-            class="command-item"
-            :class="{ 'command-selected': index === selectedCommandIndex }"
-            @click="handleCommandClick($event, suggestion.name)"
-          >
-            <span class="command-prefix">/</span>
-            <div class="command-info">
-              <span class="command-name">{{ suggestion.name }}</span>
-              <span class="command-desc">{{ suggestion.short_description || suggestion.description }}</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- @mention 建议列表 -->
-        <div
-          v-if="showMentionSuggestions && mentionSuggestions.length > 0"
-          ref="mentionListRef"
-          class="mention-suggestions"
-        >
-          <div
-            v-for="(suggestion, index) in mentionSuggestions"
-            :key="suggestion.id"
-            class="mention-item"
-            :class="{ 'mention-selected': index === selectedMentionIndex }"
-            @click="handleMentionClick($event, suggestion.id, suggestion.name)"
-          >
-            <span class="mention-prefix">@</span>
-            <span class="mention-name">{{ suggestion.name }}</span>
-          </div>
-        </div>
-
-        <!-- # 文件路径建议列表 -->
-        <div
-          v-if="showPathSuggestions && pathSuggestions.length > 0"
-          ref="pathSuggestionsRef"
-          class="path-suggestions"
-        >
-          <div
-            v-for="(suggestion, index) in pathSuggestions"
-            :key="suggestion.path"
-            class="path-item"
-            :class="{ 'path-selected': index === selectedPathIndex }"
-            @click="handlePathClick($event, suggestion)"
-          >
-            <span class="path-prefix">#</span>
-            <span class="path-name">{{ suggestion.path }}{{ suggestion.is_dir ? '/' : '' }}</span>
-            <span v-if="suggestion.is_dir" class="path-dir-icon">📁</span>
+          <span class="command-prefix">/</span>
+          <div class="command-info">
+            <span class="command-name">{{ suggestion.name }}</span>
+            <span class="command-desc">{{ suggestion.short_description || suggestion.description }}</span>
           </div>
         </div>
       </div>
 
-      <button class="tool-button" title="Attach file" :disabled="!chatStore.runnerAlive" @click="triggerFileSelect">
-        📎
-      </button>
-      <input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileChange" />
-
-      <!-- 语音输入按钮 -->
-      <button
-        class="voice-mic-btn"
-        :class="{
-          'voice-mic-btn--recording': isVoiceRecording,
-          'voice-mic-btn--disabled': voiceDisabled,
-        }"
-        :disabled="voiceDisabled"
-        :title="isVoiceRecording ? '停止录音' : voiceTooltip || '语音输入'"
-        @click="toggleVoiceInput"
+      <!-- @mention 建议列表 -->
+      <div
+        v-if="showMentionSuggestions && mentionSuggestions.length > 0"
+        ref="mentionListRef"
+        class="mention-suggestions"
       >
-        <svg v-if="isVoiceRecording" class="voice-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="6" width="12" height="12" rx="2"/></svg>
-        <svg v-else class="voice-mic-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-      </button>
+        <div
+          v-for="(suggestion, index) in mentionSuggestions"
+          :key="suggestion.id"
+          class="mention-item"
+          :class="{ 'mention-selected': index === selectedMentionIndex }"
+          @click="handleMentionClick($event, suggestion.id, suggestion.name)"
+        >
+          <span class="mention-prefix">@</span>
+          <span class="mention-name">{{ suggestion.name }}</span>
+        </div>
+      </div>
 
-      <button class="send-button" :disabled="!canSend || !chatStore.runnerAlive" @click="handleSend">Send</button>
+      <!-- # 文件路径建议列表 -->
+      <div v-if="showPathSuggestions && pathSuggestions.length > 0" ref="pathSuggestionsRef" class="path-suggestions">
+        <div
+          v-for="(suggestion, index) in pathSuggestions"
+          :key="suggestion.path"
+          class="path-item"
+          :class="{ 'path-selected': index === selectedPathIndex }"
+          @click="handlePathClick($event, suggestion)"
+        >
+          <span class="path-prefix">#</span>
+          <span class="path-name">{{ suggestion.path }}{{ suggestion.is_dir ? '/' : '' }}</span>
+          <span v-if="suggestion.is_dir" class="path-dir-icon">📁</span>
+        </div>
+      </div>
+
+      <!-- 悬浮操作按钮 -->
+      <div class="chat-input-actions">
+        <button class="tool-button" title="Attach file" :disabled="!chatStore.runnerAlive" @click="triggerFileSelect">
+          📎
+        </button>
+        <input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileChange" />
+
+        <!-- 语音输入按钮 -->
+        <button
+          class="voice-mic-btn"
+          :class="{
+            'voice-mic-btn--recording': isVoiceRecording,
+            'voice-mic-btn--disabled': voiceDisabled,
+          }"
+          :disabled="voiceDisabled"
+          :title="isVoiceRecording ? '停止录音' : voiceTooltip || '语音输入'"
+          @click="toggleVoiceInput"
+        >
+          <svg
+            v-if="isVoiceRecording"
+            class="voice-mic-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <rect x="6" y="6" width="12" height="12" rx="2" />
+          </svg>
+          <svg
+            v-else
+            class="voice-mic-icon"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+            <line x1="12" y1="19" x2="12" y2="23" />
+            <line x1="8" y1="23" x2="16" y2="23" />
+          </svg>
+        </button>
+
+        <button class="send-button" :disabled="!canSend || !chatStore.runnerAlive" @click="handleSend">Send</button>
+      </div>
     </div>
   </div>
 </template>
@@ -1070,14 +1095,24 @@ const targetAgentDisplay = computed(() => {
 
 /* ==================== 输入区域 ==================== */
 .input-row {
-  display: flex;
-  align-items: flex-end;
-  gap: 8px;
+  position: relative;
 }
 
-.input-wrapper {
-  flex: 1;
-  position: relative;
+.chat-input-actions {
+  position: absolute;
+  top: -16px;
+  right: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 10;
+  padding: 3px;
+  background: var(--bg-primary);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 8px;
+  border: 1px solid var(--border-color);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
 .chat-input {
@@ -1086,7 +1121,7 @@ const targetAgentDisplay = computed(() => {
   color: var(--input-text);
   border: 1px solid var(--input-border);
   border-radius: 4px;
-  padding: 8px 12px;
+  padding: 26px 12px 8px;
   font-family: var(--font-family);
   font-size: var(--font-size);
   resize: none;

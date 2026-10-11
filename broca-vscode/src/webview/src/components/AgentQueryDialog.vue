@@ -65,10 +65,7 @@ function handleClose() {
 <template>
   <Teleport to="body">
     <div v-if="chatStore.agentQueryDialog.visible" class="dialog-overlay">
-      <div
-        class="dialog-container"
-        :style="{ transform: `translate(${offset.x}px, ${offset.y}px)` }"
-      >
+      <div class="dialog-container" :style="{ transform: `translate(${offset.x}px, ${offset.y}px)` }">
         <div class="dialog-header" @mousedown="onHeaderMouseDown">
           <span class="dialog-icon">❓</span>
           <span class="dialog-title">Agent 提问</span>

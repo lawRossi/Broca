@@ -77,6 +77,104 @@ export interface LLMModel {
   name: string
 }
 
+// ==================== Config Types (aligned with broca-web/frontend/src/api/config.ts) ====================
+
+/** 模型元信息（modality、上下文窗口等） */
+export interface LLMModelMeta {
+  modality?: Record<string, unknown>
+  context_window?: number
+  [key: string]: unknown
+}
+
+/** 单个模型配置 */
+export interface LLMModelConfig {
+  model: string
+  temperature?: number
+  max_tokens?: number
+  extra_body?: Record<string, unknown>
+  reasoning_effort?: string
+  allowed_openai_params?: string[]
+  meta?: LLMModelMeta
+  [key: string]: unknown
+}
+
+/** 单个提供商配置 */
+export interface LLMProviderConfig {
+  base_url: string
+  api_key: string
+  models: Record<string, LLMModelConfig>
+  [key: string]: unknown
+}
+
+/** 完整 LLM 配置：provider id → 提供商配置 */
+export type LLMConfig = Record<string, LLMProviderConfig>
+
+/** ASR 语音识别配置 */
+export interface ASRConfig {
+  model_name?: string
+  decoding_method?: string
+  noise_gate_rms?: number
+}
+
+/** 基础配置（configs.json） */
+export interface GeneralConfig {
+  database_dir?: string
+  log_file?: string
+  log_level?: string
+  llm_config_file?: string
+  socket_server_url?: string
+  api_server_url?: string
+  execution?: ExecutionConfig
+  asr?: ASRConfig
+}
+
+/** 执行引擎配置 */
+export interface ExecutionConfig {
+  step_max_errors?: number
+  llm_retry_delay?: number
+  tool_call_timeout?: number
+  assign_task_timeout?: number
+  llm_timeout?: number
+  llm_first_chunk_timeout?: number
+  dead_loop_window?: number
+  message_queue_size?: number
+  permission_request_timeout?: number
+  agent_query_timeout?: number
+}
+
+/** 工具权限配置 */
+export interface ToolPermissionConfig {
+  _description?: string
+  _permission_values?: Record<string, string>
+  tools: Record<string, string>
+}
+
+/** 合法权限值 */
+export const PERMISSION_VALUES = ['allow', 'ask', 'forbidden'] as const
+export type PermissionValue = (typeof PERMISSION_VALUES)[number]
+
+/** 合法日志级别 */
+export const LOG_LEVELS = ['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'] as const
+
+/** 单个 MCP 服务器配置 */
+export interface McpServerConfig {
+  command?: string
+  args?: string[]
+  env?: Record<string, string>
+  cwd?: string
+  url?: string
+  headers?: Record<string, string>
+  tool_timeout?: number
+  [key: string]: unknown
+}
+
+/** 完整 MCP 配置：服务器名 → 服务器配置 */
+export type McpConfig = Record<string, McpServerConfig>
+
+/** MCP 传输类型 */
+export const MCP_TRANSPORTS = ['stdio', 'http'] as const
+export type McpTransport = (typeof MCP_TRANSPORTS)[number]
+
 // ==================== Crew (Orchestration) Types ====================
 
 export type OrchestratorType =

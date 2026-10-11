@@ -14,6 +14,10 @@ import type {
   TurnsResponse,
   LLMProvider,
   LLMModel,
+  LLMConfig,
+  GeneralConfig,
+  ToolPermissionConfig,
+  McpConfig,
   CrewExecution,
   CrewConfigFile,
   CrewConfigDetail,
@@ -234,6 +238,42 @@ export class ApiClient {
     return response.data
   }
 
+  async getLLMConfig(): Promise<LLMConfig> {
+    const response = await this.client.get('/config/llm')
+    return response.data
+  }
+
+  async saveLLMConfig(config: LLMConfig): Promise<void> {
+    await this.client.put('/config/llm', { config })
+  }
+
+  async getGeneralConfig(): Promise<GeneralConfig> {
+    const response = await this.client.get('/config/general')
+    return response.data
+  }
+
+  async saveGeneralConfig(config: GeneralConfig): Promise<void> {
+    await this.client.put('/config/general', { config })
+  }
+
+  async getToolPermissionConfig(): Promise<ToolPermissionConfig> {
+    const response = await this.client.get('/config/tool-permission')
+    return response.data
+  }
+
+  async saveToolPermissionConfig(config: ToolPermissionConfig): Promise<void> {
+    await this.client.put('/config/tool-permission', { config })
+  }
+
+  async getMcpConfig(): Promise<McpConfig> {
+    const response = await this.client.get('/config/mcp')
+    return response.data
+  }
+
+  async saveMcpConfig(config: McpConfig): Promise<void> {
+    await this.client.put('/config/mcp', { config })
+  }
+
   // ==================== Commands API ====================
 
   async getCommands(): Promise<CommandInfo[]> {
@@ -243,7 +283,10 @@ export class ApiClient {
 
   // ==================== Files Completion API ====================
 
-  async completeFiles(base: string, prefix: string): Promise<{
+  async completeFiles(
+    base: string,
+    prefix: string
+  ): Promise<{
     base: string
     prefix: string
     completions: Array<{ name: string; path: string; is_dir: boolean }>

@@ -208,6 +208,15 @@ export class ChatWebViewManager {
 
     panel.webview.html = this.getConfigWebviewContent(panel.webview)
 
+    // Helper: determine if an error represents a missing/corrupt config file (404/500)
+    const isFileError = (e: any): boolean => e?.response?.status === 404 || e?.response?.status === 500
+
+    // Helper: return empty config shape for a given kind
+    const emptyConfigFor = (kind: string): any => {
+      if (kind === 'toolPermission') return { tools: {} }
+      return {}
+    }
+
     panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
       if (message.type === 'getConfig') {
         this.postToPanel(panel, {
@@ -253,6 +262,128 @@ export class ChatWebViewManager {
         } catch (error: any) {
           this.postToPanel(panel, {
             type: 'error',
+            payload: { message: extractErrorMessage(error) },
+          } as ExtensionToWebView)
+        }
+      }
+      // ==================== Server-side config panels ====================
+      else if (message.type === 'getGeneralConfig') {
+        try {
+          const config = await this.apiClient.getGeneralConfig()
+          this.postToPanel(panel, {
+            type: 'generalConfig',
+            payload: { config, damaged: false },
+          } as ExtensionToWebView)
+        } catch (error: any) {
+          if (isFileError(error)) {
+            this.postToPanel(panel, {
+              type: 'generalConfig',
+              payload: { config: emptyConfigFor('general'), damaged: true },
+            } as ExtensionToWebView)
+          } else {
+            this.postToPanel(panel, {
+              type: 'generalConfigError',
+              payload: { message: extractErrorMessage(error) },
+            } as ExtensionToWebView)
+          }
+        }
+      } else if (message.type === 'saveGeneralConfig') {
+        try {
+          await this.apiClient.saveGeneralConfig(message.payload)
+          this.postToPanel(panel, { type: 'generalConfigSaved' } as ExtensionToWebView)
+        } catch (error: any) {
+          this.postToPanel(panel, {
+            type: 'generalConfigError',
+            payload: { message: extractErrorMessage(error) },
+          } as ExtensionToWebView)
+        }
+      } else if (message.type === 'getLLMConfig') {
+        try {
+          const config = await this.apiClient.getLLMConfig()
+          this.postToPanel(panel, {
+            type: 'llmConfig',
+            payload: { config, damaged: false },
+          } as ExtensionToWebView)
+        } catch (error: any) {
+          if (isFileError(error)) {
+            this.postToPanel(panel, {
+              type: 'llmConfig',
+              payload: { config: emptyConfigFor('llm'), damaged: true },
+            } as ExtensionToWebView)
+          } else {
+            this.postToPanel(panel, {
+              type: 'llmConfigError',
+              payload: { message: extractErrorMessage(error) },
+            } as ExtensionToWebView)
+          }
+        }
+      } else if (message.type === 'saveLLMConfig') {
+        try {
+          await this.apiClient.saveLLMConfig(message.payload)
+          this.postToPanel(panel, { type: 'llmConfigSaved' } as ExtensionToWebView)
+        } catch (error: any) {
+          this.postToPanel(panel, {
+            type: 'llmConfigError',
+            payload: { message: extractErrorMessage(error) },
+          } as ExtensionToWebView)
+        }
+      } else if (message.type === 'getToolPermissionConfig') {
+        try {
+          const config = await this.apiClient.getToolPermissionConfig()
+          this.postToPanel(panel, {
+            type: 'toolPermission',
+            payload: { config, damaged: false },
+          } as ExtensionToWebView)
+        } catch (error: any) {
+          if (isFileError(error)) {
+            this.postToPanel(panel, {
+              type: 'toolPermission',
+              payload: { config: emptyConfigFor('toolPermission'), damaged: true },
+            } as ExtensionToWebView)
+          } else {
+            this.postToPanel(panel, {
+              type: 'toolPermissionError',
+              payload: { message: extractErrorMessage(error) },
+            } as ExtensionToWebView)
+          }
+        }
+      } else if (message.type === 'saveToolPermissionConfig') {
+        try {
+          await this.apiClient.saveToolPermissionConfig(message.payload)
+          this.postToPanel(panel, { type: 'toolPermissionSaved' } as ExtensionToWebView)
+        } catch (error: any) {
+          this.postToPanel(panel, {
+            type: 'toolPermissionError',
+            payload: { message: extractErrorMessage(error) },
+          } as ExtensionToWebView)
+        }
+      } else if (message.type === 'getMcpConfig') {
+        try {
+          const config = await this.apiClient.getMcpConfig()
+          this.postToPanel(panel, {
+            type: 'mcpConfig',
+            payload: { config, damaged: false },
+          } as ExtensionToWebView)
+        } catch (error: any) {
+          if (isFileError(error)) {
+            this.postToPanel(panel, {
+              type: 'mcpConfig',
+              payload: { config: emptyConfigFor('mcp'), damaged: true },
+            } as ExtensionToWebView)
+          } else {
+            this.postToPanel(panel, {
+              type: 'mcpError',
+              payload: { message: extractErrorMessage(error) },
+            } as ExtensionToWebView)
+          }
+        }
+      } else if (message.type === 'saveMcpConfig') {
+        try {
+          await this.apiClient.saveMcpConfig(message.payload)
+          this.postToPanel(panel, { type: 'mcpSaved' } as ExtensionToWebView)
+        } catch (error: any) {
+          this.postToPanel(panel, {
+            type: 'mcpError',
             payload: { message: extractErrorMessage(error) },
           } as ExtensionToWebView)
         }
@@ -1987,11 +2118,7 @@ export class ChatWebViewManager {
     }
   }
 
-  private async handleListFiles(
-    panel: vscode.WebviewPanel,
-    sessionId: string,
-    payload: { prefix?: string }
-  ) {
+  private async handleListFiles(panel: vscode.WebviewPanel, sessionId: string, payload: { prefix?: string }) {
     try {
       // 获取会话 workspace 作为补全根目录；无则用空串（后端回退 cwd）
       let workspace = ''
