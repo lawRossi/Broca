@@ -37,6 +37,7 @@ KNOWN_GENERAL_CONFIG_FIELDS = (
     "api_server_url",
     "execution",
     "asr",
+    "storage",
 )
 # execution 分组下的已知字段（数字型，执行引擎相关；顺序保持写回）
 KNOWN_EXECUTION_CONFIG_FIELDS = (
@@ -57,9 +58,23 @@ KNOWN_ASR_CONFIG_FIELDS = (
     "decoding_method",
     "noise_gate_rms",
 )
+# storage 分组下的已知字段（文件上传存储相关）
+KNOWN_STORAGE_CONFIG_FIELDS = (
+    "backend",
+    "cloudflare_account_id",
+    "cloudflare_access_key_id",
+    "cloudflare_secret_access_key",
+    "cloudflare_bucket",
+    "cloudflare_public_url",
+    "supabase_url",
+    "supabase_s3_access_key_id",
+    "supabase_s3_secret_access_key",
+    "supabase_bucket",
+)
 VALID_DECODING_METHODS = {"greedy_search", "modified_beam_search"}
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_PERMISSIONS = {"allow", "ask", "forbidden"}
+VALID_STORAGE_BACKENDS = {"cloudflare", "supabase"}
 
 
 def _resolve_general_config_path() -> Path:
@@ -176,27 +191,43 @@ def _write_llm_config(config: dict[str, Any]) -> None:
 
 
 def _validate_execution_config(config: Any) -> None:
-    """校验 execution 分组：必须 object；字段若存在必须为数字且非负；未知字段记录 warning。"""
+    """校验 execution 分组：必须 object；字段若存在必须为数字且非负。
+
+    未知字段直接报错（而非静默丢弃）：避免前端字段定义与后端白名单漂移时，
+    接口仍返回“保存成功”却把数据悄悄丢掉。
+    """
     if not isinstance(config, dict):
         raise HTTPException(status_code=400, detail="General config field 'execution' must be an object")
+    unknown = [key for key in config if key not in KNOWN_EXECUTION_CONFIG_FIELDS]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown execution config field(s): {sorted(unknown)}. "
+                f"Allowed fields: {list(KNOWN_EXECUTION_CONFIG_FIELDS)}"
+            ),
+        )
     for key, value in config.items():
-        if key in KNOWN_EXECUTION_CONFIG_FIELDS:
-            if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Execution config field '{key}' must be a non-negative number",
-                )
-        else:
-            logger.warning("Unknown execution config field '%s' will be dropped on save", key)
+        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Execution config field '{key}' must be a non-negative number",
+            )
 
 
 def _validate_asr_config(config: Any) -> None:
-    """校验 asr 分组：必须 object；字段类型/值范围检查。"""
+    """校验 asr 分组：必须 object；字段类型/值范围检查；未知字段直接报错（避免静默丢弃）。"""
     if not isinstance(config, dict):
         raise HTTPException(status_code=400, detail="ASR config field 'asr' must be an object")
-    for key, value in config.items():
-        if key not in KNOWN_ASR_CONFIG_FIELDS:
-            logger.warning("Unknown ASR config field '%s' will be dropped on save", key)
+    unknown = [key for key in config if key not in KNOWN_ASR_CONFIG_FIELDS]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown ASR config field(s): {sorted(unknown)}. "
+                f"Allowed fields: {list(KNOWN_ASR_CONFIG_FIELDS)}"
+            ),
+        )
     model_name = config.get("model_name")
     if model_name is not None and (not isinstance(model_name, str) or not model_name.strip()):
         raise HTTPException(
@@ -217,19 +248,58 @@ def _validate_asr_config(config: Any) -> None:
             )
 
 
+def _validate_storage_config(config: Any) -> None:
+    """校验 storage 分组：必须 object；所有字段值必须为字符串（允许空）；未知字段直接报错。"""
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=400, detail="Storage config field 'storage' must be an object")
+    unknown = [key for key in config if key not in KNOWN_STORAGE_CONFIG_FIELDS]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown storage config field(s): {sorted(unknown)}. "
+                f"Allowed fields: {list(KNOWN_STORAGE_CONFIG_FIELDS)}"
+            ),
+        )
+    for key, value in config.items():
+        if value is not None and not isinstance(value, str):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Storage config field '{key}' must be a string",
+            )
+    backend = config.get("backend")
+    if backend is not None and backend != "" and backend not in VALID_STORAGE_BACKENDS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Storage config field 'backend' must be one of {sorted(VALID_STORAGE_BACKENDS)} or empty string",
+        )
+
+
 def _validate_general_config(config: Any) -> None:
     """校验 general 配置：必须 object；已知字段若存在必须为 string；log_level 必须合法；
-    execution/asr 分组有独立的 object 校验；未知字段仅记录 warning（写回时丢弃）。"""
+    execution/asr 分组有独立的 object 校验。
+
+    未知字段直接报错（而非静默丢弃）：避免前端字段定义与后端白名单漂移时，
+    接口仍返回“保存成功”却把数据悄悄丢掉。
+    """
     if not isinstance(config, dict):
         raise HTTPException(status_code=400, detail="General config must be an object")
-    for key, value in config.items():
-        if key not in KNOWN_GENERAL_CONFIG_FIELDS:
-            logger.warning("Unknown general config field '%s' will be dropped on save", key)
+    unknown = [key for key in config if key not in KNOWN_GENERAL_CONFIG_FIELDS]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown general config field(s): {sorted(unknown)}. "
+                f"Allowed fields: {list(KNOWN_GENERAL_CONFIG_FIELDS)}"
+            ),
+        )
     for key, value in config.items():
         if key == "execution":
             _validate_execution_config(value)
         elif key == "asr":
             _validate_asr_config(value)
+        elif key == "storage":
+            _validate_storage_config(value)
         elif key in KNOWN_GENERAL_CONFIG_FIELDS:
             if not isinstance(value, str):
                 raise HTTPException(
@@ -265,6 +335,14 @@ def _filter_general_config(config: dict[str, Any]) -> dict[str, Any]:
                     fk: asr_src[fk]
                     for fk in KNOWN_ASR_CONFIG_FIELDS
                     if fk in asr_src
+                }
+        elif key == "storage":
+            storage_src = config[key]
+            if isinstance(storage_src, dict):
+                result[key] = {
+                    fk: storage_src[fk]
+                    for fk in KNOWN_STORAGE_CONFIG_FIELDS
+                    if fk in storage_src
                 }
         else:
             result[key] = config[key]

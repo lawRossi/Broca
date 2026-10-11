@@ -740,14 +740,14 @@ const uploadSingleFile = async (
   const { file, id } = fileRecord
 
   // 检查存储是否已配置
-  if (!isStorageConfigured()) {
-    console.error('[Upload] No storage backend configured. Please set VITE_CLOUDFLARE_* or VITE_SUPABASE_* env vars.')
+  if (!(await isStorageConfigured())) {
+    console.error('[Upload] No storage backend configured. Please configure in Settings > Basic Config.')
     const index = pendingFiles.value.findIndex((f) => f.id === id)
     if (index !== -1) {
       const record = pendingFiles.value[index]
       if (record) {
         record.status = 'error'
-        record.error = '存储未配置，请联系管理员'
+        record.error = '存储未配置，请在设置页「基础配置」中配置'
       }
     }
     return null
@@ -983,9 +983,8 @@ const handleSendMessage = async () => {
       </div>
     </div>
 
-    <div class="flex gap-2">
-      <div class="flex-1 relative">
-        <!-- 隐藏的文件输入 -->
+    <div class="relative">
+      <!-- 隐藏的文件输入 -->
         <input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileChange" />
 
         <el-input
@@ -1070,14 +1069,14 @@ const handleSendMessage = async () => {
             </div>
           </div>
         </div>
-      </div>
 
-      <!-- 文件上传按钮 -->
+      <!-- 悬浮操作按钮 -->
+      <div class="chat-input-actions">
       <el-button
         type="default"
         :disabled="!chatStore.runnerAlive || isUploading"
-        size="default"
-        class="!px-3"
+        size="small"
+        class="!px-2.5"
         title="上传文件"
         @click="triggerFileSelect"
       >
@@ -1105,24 +1104,57 @@ const handleSendMessage = async () => {
       <el-button
         type="primary"
         :disabled="!chatStore.runnerAlive || !canSendMessage || isUploading"
-        size="default"
+        size="small"
         @click="handleSendMessage"
       >
         <span class="hidden sm:inline">Send</span>
         <span class="sm:hidden">➤</span>
       </el-button>
+      </div>
     </div>
   </div>
 </template>
 
 <style scoped>
+/* ===== 悬浮操作按钮容器 ===== */
+.chat-input-actions {
+  position: absolute;
+  top: -16px;
+  right: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  z-index: 10;
+  padding: 3px;
+  background: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-radius: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.06);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+/* textarea 顶部留出空间，避免文字被悬浮按钮遮挡 */
+:deep(.el-textarea__inner) {
+  padding-top: 26px;
+}
+
+/* 让 el-input 的边框更柔和，与外层容器融合 */
+:deep(.el-textarea) {
+  border-color: transparent;
+  box-shadow: none;
+}
+:deep(.el-textarea.is-focus) {
+  border-color: #409eff;
+}
+
 /* 语音输入按钮 */
 .voice-mic-btn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 30px;
+  height: 30px;
   border: 1px solid #dcdfe6;
   border-radius: 6px;
   background: #fff;

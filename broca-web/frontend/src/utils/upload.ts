@@ -4,9 +4,13 @@
  * - Supabase Storage (S3 兼容端点)
  * - Cloudflare R2 (S3 兼容)
  * 无需用户登录，路径为 uploads/日期/文件名
+ *
+ * 配置来源：运行时通过 API (GET /api/config/general) 获取 configs.json 中的 storage 分组，
+ * 不再依赖构建时的 VITE_* 环境变量。
  */
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import configApi, { type StorageConfig } from '@/api/config'
 
 // ==================== 类型定义 ====================
 
@@ -29,65 +33,103 @@ interface S3Config {
   publicUrlBase: string // 公开访问的基础 URL
 }
 
-// ==================== 配置检测 ====================
+// ==================== 运行时配置获取 ====================
 
-function detectConfig(): S3Config | null {
-  // 1. Cloudflare R2（优先）
-  const cfAccountId = import.meta.env.VITE_CLOUDFLARE_ACCOUNT_ID as string | undefined
-  const cfAccessKey = import.meta.env.VITE_CLOUDFLARE_ACCESS_KEY_ID as string | undefined
-  const cfSecretKey = import.meta.env.VITE_CLOUDFLARE_SECRET_ACCESS_KEY as string | undefined
-  const cfBucket = (import.meta.env.VITE_CLOUDFLARE_BUCKET as string) || 'upload'
-  const cfPublicUrl = import.meta.env.VITE_CLOUDFLARE_PUBLIC_URL as string | undefined
+/** 从 API 获取并缓存存储配置 */
+let cachedS3Config: S3Config | null = null
+let cachedAt = 0
+const CACHE_TTL = 30_000 // 已配置时 30 秒缓存
+const NULL_CACHE_TTL = 5_000 // 未配置时 5 秒短期缓存
 
-  if (cfAccountId && cfAccessKey && cfSecretKey) {
+async function getStorageConfig(forceRefresh = false): Promise<S3Config | null> {
+  const now = Date.now()
+  if (!forceRefresh && cachedS3Config !== null && now - cachedAt < CACHE_TTL) {
+    return cachedS3Config
+  }
+  if (cachedS3Config === null && !forceRefresh && now - cachedAt < NULL_CACHE_TTL) {
+    return null
+  }
+  try {
+    const general = await configApi.getGeneralConfig()
+    const storage = general?.storage
+    cachedS3Config = buildS3Config(storage)
+    cachedAt = now
+    return cachedS3Config
+  } catch {
+    return null
+  }
+}
+
+/**
+ * 根据 configs.json 的 storage 分组构建 S3 客户端配置
+ */
+function buildS3Config(storage?: StorageConfig): S3Config | null {
+  if (!storage || !storage.backend) return null
+
+  if (
+    storage.backend === 'cloudflare' &&
+    storage.cloudflare_account_id &&
+    storage.cloudflare_access_key_id &&
+    storage.cloudflare_secret_access_key
+  ) {
+    const accountId = storage.cloudflare_account_id
+    const bucket = storage.cloudflare_bucket || 'upload'
     return {
       type: 'cloudflare',
       region: 'auto',
-      endpoint: `https://${cfAccountId}.r2.cloudflarestorage.com`,
-      bucket: cfBucket,
-      credentials: { accessKeyId: cfAccessKey, secretAccessKey: cfSecretKey },
-      publicUrlBase: cfPublicUrl || `https://${cfBucket}.${cfAccountId}.r2.dev`,
+      endpoint: `https://${accountId}.r2.cloudflarestorage.com`,
+      bucket,
+      credentials: {
+        accessKeyId: storage.cloudflare_access_key_id,
+        secretAccessKey: storage.cloudflare_secret_access_key,
+      },
+      publicUrlBase:
+        storage.cloudflare_public_url || `https://${bucket}.${accountId}.r2.dev`,
     }
   }
 
-  // 2. Supabase Storage（S3 兼容）
-  const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string | undefined
-  const s3AccessKey = import.meta.env.VITE_SUPABASE_S3_ACCESS_KEY_ID as string | undefined
-  const s3SecretKey = import.meta.env.VITE_SUPABASE_S3_SECRET_ACCESS_KEY as string | undefined
-  const supabaseBucket = (import.meta.env.VITE_SUPABASE_BUCKET as string) || 'upload'
-
-  if (supabaseUrl && s3AccessKey && s3SecretKey) {
+  if (
+    storage.backend === 'supabase' &&
+    storage.supabase_url &&
+    storage.supabase_s3_access_key_id &&
+    storage.supabase_s3_secret_access_key
+  ) {
+    const url = storage.supabase_url
+    const bucket = storage.supabase_bucket || 'upload'
     return {
       type: 'supabase',
       region: 'auto',
-      endpoint: `${supabaseUrl}/storage/v1/s3`,
-      bucket: supabaseBucket,
-      credentials: { accessKeyId: s3AccessKey, secretAccessKey: s3SecretKey },
-      publicUrlBase: `${supabaseUrl}/storage/v1/object/public/${supabaseBucket}`,
+      endpoint: `${url}/storage/v1/s3`,
+      bucket,
+      credentials: {
+        accessKeyId: storage.supabase_s3_access_key_id,
+        secretAccessKey: storage.supabase_s3_secret_access_key,
+      },
+      publicUrlBase: `${url}/storage/v1/object/public/${bucket}`,
     }
   }
 
-  console.warn('[Upload] No storage configuration found. Set VITE_CLOUDFLARE_* or VITE_SUPABASE_* env vars.')
   return null
 }
 
-// 模块初始化时立即检测配置，确保 isStorageConfigured() 等函数可正确判断
-const s3Config: S3Config | null = detectConfig()
+// ==================== S3 客户端管理 ====================
 
-// S3 客户端延迟初始化（仅在首次上传时创建）
-let s3Client: S3Client | null = null
+/** 按配置标识缓存 S3 客户端实例，配置变更时自动重建 */
+const clientCache = new Map<string, S3Client>()
 
-function getClient(): S3Client {
-  if (!s3Client) {
-    if (!s3Config) throw new Error('No storage backend configured.')
-    s3Client = new S3Client({
-      region: s3Config.region,
-      endpoint: s3Config.endpoint,
-      credentials: s3Config.credentials,
+function getClient(cfg: S3Config): S3Client {
+  const cacheKey = `${cfg.endpoint}:${cfg.credentials.accessKeyId}`
+  let client = clientCache.get(cacheKey)
+  if (!client) {
+    client = new S3Client({
+      region: cfg.region,
+      endpoint: cfg.endpoint,
+      credentials: cfg.credentials,
       forcePathStyle: true,
     })
+    clientCache.set(cacheKey, client)
   }
-  return s3Client
+  return client
 }
 
 // ==================== 工具函数 ====================
@@ -129,9 +171,10 @@ export function generateStoragePath(originalName: string): string {
  * @returns 上传结果
  */
 export async function uploadFile(file: File, customPath?: string): Promise<UploadResult> {
-  const client = getClient()
-  if (!s3Config) throw new Error('No storage backend configured.')
+  const cfg = await getStorageConfig()
+  if (!cfg) throw new Error('存储未配置，请在设置页「基础配置」中配置文件上传存储')
 
+  const client = getClient(cfg)
   const path = customPath || generateStoragePath(file.name)
 
   // 将 File 转为 Uint8Array，避免 S3 SDK 对 Blob 误调用 getReader()
@@ -139,7 +182,7 @@ export async function uploadFile(file: File, customPath?: string): Promise<Uploa
   const body = new Uint8Array(arrayBuffer)
 
   const command = new PutObjectCommand({
-    Bucket: s3Config.bucket,
+    Bucket: cfg.bucket,
     Key: path,
     Body: body,
     ContentType: file.type,
@@ -149,7 +192,7 @@ export async function uploadFile(file: File, customPath?: string): Promise<Uploa
 
   return {
     name: file.name,
-    url: `${s3Config.publicUrlBase}/${path}`,
+    url: `${cfg.publicUrlBase}/${path}`,
     path,
     size: file.size,
     type: file.type,
@@ -157,15 +200,17 @@ export async function uploadFile(file: File, customPath?: string): Promise<Uploa
 }
 
 /**
- * 获取当前存储配置类型
+ * 获取当前存储配置类型（异步）
  */
-export function getStorageType(): StorageType {
-  return s3Config?.type ?? 'none'
+export async function getStorageType(): Promise<StorageType> {
+  const cfg = await getStorageConfig()
+  return cfg?.type ?? 'none'
 }
 
 /**
- * 检查存储是否已配置
+ * 检查存储是否已配置（异步）
  */
-export function isStorageConfigured(): boolean {
-  return s3Config !== null
+export async function isStorageConfigured(): Promise<boolean> {
+  const cfg = await getStorageConfig()
+  return cfg !== null
 }

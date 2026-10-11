@@ -151,7 +151,7 @@ echo -e "${NC}"
 # ============================================================================
 # Step 1: 检查系统依赖
 # ============================================================================
-step "Step 1/9: 检查系统依赖..."
+step "Step 1/8: 检查系统依赖..."
 
 # --- Python ---
 PYTHON=""
@@ -284,7 +284,7 @@ fi
 # ============================================================================
 # Step 2: 安装 broca Python 模块（虚拟环境感知）
 # ============================================================================
-step "Step 2/9: 安装 broca Python 模块..."
+step "Step 2/8: 安装 broca Python 模块..."
 
 BROCA_VENV="$BROCA_HOME/venv"
 cd "$PROJECT_ROOT"
@@ -455,7 +455,7 @@ fi
 # ============================================================================
 # Step 3: 数据库迁移
 # ============================================================================
-step "Step 3/9: 数据库迁移..."
+step "Step 3/8: 数据库迁移..."
 
 cd "$PROJECT_ROOT"
 
@@ -558,187 +558,14 @@ fi
 echo ""
 
 # ============================================================================
-# Step 5: 配置文件上传存储 (交互式)
+# Step 4: 前端环境变量（nginx 同域代理）
 # ============================================================================
 if $SKIP_FRONTEND; then
     info "跳过前端配置（未部署 nginx）"
     echo ""
 else
-step "Step 4/9: 配置文件上传存储..."
-
 FRONTEND_DIR="$BROCA_WEB_DIR/frontend"
 ENV_FILE="$FRONTEND_DIR/.env.production"
-
-# 检测是否已有配置
-has_storage_config() {
-    local env_file="$1"
-    [[ ! -f "$env_file" ]] && return 1
-
-    # Cloudflare R2 配置检测
-    if grep -qE '^VITE_CLOUDFLARE_ACCOUNT_ID='   "$env_file" && \
-       grep -qE '^VITE_CLOUDFLARE_ACCESS_KEY_ID=' "$env_file" && \
-       grep -qE '^VITE_CLOUDFLARE_SECRET_ACCESS_KEY=' "$env_file"; then
-        return 0
-    fi
-
-    # Supabase S3 配置检测
-    if grep -qE '^VITE_SUPABASE_URL='                 "$env_file" && \
-       grep -qE '^VITE_SUPABASE_S3_ACCESS_KEY_ID='    "$env_file" && \
-       grep -qE '^VITE_SUPABASE_S3_SECRET_ACCESS_KEY=' "$env_file"; then
-        return 0
-    fi
-
-    return 1
-}
-
-if has_storage_config "$ENV_FILE"; then
-    info "检测到文件上传存储已配置：$(grep -E '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" | head -1)"
-    echo "  如需要更改配置，请编辑 $ENV_FILE 后重新构建前端。"
-else
-    echo ""
-    echo "  Broca 前端支持文件上传功能，需要配置 S3 兼容的存储后端。"
-    echo "  支持的存储后端："
-    echo "    (1) Cloudflare R2  — 推荐，免费额度高，全球加速"
-    echo "    (2) Supabase S3    — 如已使用 Supabase 可复用"
-    echo ""
-    echo "  你可以现在配置，也可以跳过（之后手动编辑 .env.production 再构建）。"
-    echo ""
-
-    prompt "是否配置文件上传存储？(y/N) "
-    read -r configure_storage
-    echo ""
-
-    if [[ "$configure_storage" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-        echo "  请选择存储后端："
-        echo "    1) Cloudflare R2"
-        echo "    2) Supabase S3"
-        prompt "  请输入 1 或 2 [1] "
-        read -r storage_choice
-        echo ""
-
-        # 生成 .env.production (保留可能已存在的非存储配置)
-        touch "$ENV_FILE"
-
-        case "${storage_choice:-1}" in
-            2)
-                # ---- Supabase S3 ----
-                echo "  ┌─────────────────────────────────────────────────────┐"
-                echo "  │          配置 Supabase S3 存储                       │"
-                echo "  │                                                     │"
-                echo "  │  获取方式: Supabase Dashboard → Storage → Settings  │"
-                echo "  │  S3 Credentials → 生成新的 S3 Access Key            │"
-                echo "  └─────────────────────────────────────────────────────┘"
-                echo ""
-
-                # 已有值检测（|| true 防止 set -e 因 grep 无匹配而退出）
-                current_supabase_url=$(grep -E '^VITE_SUPABASE_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-                current_s3_key=$(grep -E '^VITE_SUPABASE_S3_ACCESS_KEY_ID=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-                current_s3_secret=$(grep -E '^VITE_SUPABASE_S3_SECRET_ACCESS_KEY=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-                current_bucket=$(grep -E '^VITE_SUPABASE_BUCKET=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-
-                prompt "  Supabase Project URL (例如 https://xxx.supabase.co) [${current_supabase_url:-}]: "
-                read -r input_supabase_url
-                supabase_url="${input_supabase_url:-${current_supabase_url:-}}"
-
-                prompt "  S3 Access Key ID [${current_s3_key:-}]: "
-                read -r input_s3_key
-                s3_key="${input_s3_key:-${current_s3_key:-}}"
-
-                prompt "  S3 Secret Access Key [${current_s3_secret:-}]: "
-                read -r -s input_s3_secret
-                echo "  ********"
-                s3_secret="${input_s3_secret:-${current_s3_secret:-}}"
-
-                prompt "  Bucket 名称 [${current_bucket:-upload}]: "
-                read -r input_bucket
-                bucket="${input_bucket:-${current_bucket:-upload}}"
-
-                if [[ -n "$supabase_url" && -n "$s3_key" && -n "$s3_secret" ]]; then
-                    # 写入 .env.production（清除同组旧配置）
-                    sed_inplace -e '/^VITE_SUPABASE_URL=/d; /^VITE_SUPABASE_S3_ACCESS_KEY_ID=/d; /^VITE_SUPABASE_S3_SECRET_ACCESS_KEY=/d; /^VITE_SUPABASE_BUCKET=/d; /^VITE_CLOUDFLARE_/d' "$ENV_FILE"
-                    {
-                        echo "VITE_SUPABASE_URL=$supabase_url"
-                        echo "VITE_SUPABASE_S3_ACCESS_KEY_ID=$s3_key"
-                        echo "VITE_SUPABASE_S3_SECRET_ACCESS_KEY=$s3_secret"
-                        echo "VITE_SUPABASE_BUCKET=$bucket"
-                        echo "# VITE_CLOUDFLARE_ACCOUNT_ID="
-                        echo "# VITE_CLOUDFLARE_ACCESS_KEY_ID="
-                        echo "# VITE_CLOUDFLARE_SECRET_ACCESS_KEY="
-                        echo "# VITE_CLOUDFLARE_BUCKET="
-                        echo "# VITE_CLOUDFLARE_PUBLIC_URL="
-                    } >> "$ENV_FILE"
-                    info "Supabase S3 存储配置已保存。"
-                else
-                    warn "配置不完整（URL、Access Key、Secret 为必填），已跳过。"
-                    echo "  可之后编辑 $ENV_FILE 手动配置。"
-                fi
-                ;;
-            *)
-                # ---- Cloudflare R2 (default) ----
-                echo "  ┌─────────────────────────────────────────────────────┐"
-                echo "  │       配置 Cloudflare R2 存储                       │"
-                echo "  │                                                     │"
-                echo "  │  获取方式: Cloudflare Dashboard → R2 → 管理 API 令牌 │"
-                echo "  └─────────────────────────────────────────────────────┘"
-                echo ""
-
-                current_account_id=$(grep -E '^VITE_CLOUDFLARE_ACCOUNT_ID=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-                current_cf_key=$(grep -E '^VITE_CLOUDFLARE_ACCESS_KEY_ID=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-                current_cf_secret=$(grep -E '^VITE_CLOUDFLARE_SECRET_ACCESS_KEY=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-                current_cf_bucket=$(grep -E '^VITE_CLOUDFLARE_BUCKET=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-                current_cf_puburl=$(grep -E '^VITE_CLOUDFLARE_PUBLIC_URL=' "$ENV_FILE" 2>/dev/null | head -1 | cut -d= -f2- || true)
-
-                prompt "  Account ID [${current_account_id:-}]: "
-                read -r input_account_id
-                account_id="${input_account_id:-${current_account_id:-}}"
-
-                prompt "  Access Key ID [${current_cf_key:-}]: "
-                read -r input_cf_key
-                cf_key="${input_cf_key:-${current_cf_key:-}}"
-
-                prompt "  Secret Access Key [${current_cf_secret:-}]: "
-                read -r -s input_cf_secret
-                echo "  ********"
-                cf_secret="${input_cf_secret:-${current_cf_secret:-}}"
-
-                prompt "  Bucket 名称 [${current_cf_bucket:-upload}]: "
-                read -r input_cf_bucket
-                cf_bucket="${input_cf_bucket:-${current_cf_bucket:-upload}}"
-
-                prompt "  公开访问域名 (可选，留空自动生成) [${current_cf_puburl:-}]: "
-                read -r input_cf_puburl
-                cf_puburl="${input_cf_puburl:-${current_cf_puburl:-}}"
-
-                if [[ -n "$account_id" && -n "$cf_key" && -n "$cf_secret" ]]; then
-                    # 写入 .env.production（清除同组旧配置）
-                    sed_inplace -e '/^VITE_CLOUDFLARE_/d; /^VITE_SUPABASE_URL=/d; /^VITE_SUPABASE_S3_ACCESS_KEY_ID=/d; /^VITE_SUPABASE_S3_SECRET_ACCESS_KEY=/d; /^VITE_SUPABASE_BUCKET=/d' "$ENV_FILE"
-                    {
-                        echo "VITE_CLOUDFLARE_ACCOUNT_ID=$account_id"
-                        echo "VITE_CLOUDFLARE_ACCESS_KEY_ID=$cf_key"
-                        echo "VITE_CLOUDFLARE_SECRET_ACCESS_KEY=$cf_secret"
-                        echo "VITE_CLOUDFLARE_BUCKET=$cf_bucket"
-                        if [[ -n "$cf_puburl" ]]; then
-                            echo "VITE_CLOUDFLARE_PUBLIC_URL=$cf_puburl"
-                        else
-                            echo "# VITE_CLOUDFLARE_PUBLIC_URL=https://pub-xxxx.r2.dev"
-                        fi
-                        echo "# VITE_SUPABASE_URL="
-                        echo "# VITE_SUPABASE_S3_ACCESS_KEY_ID="
-                        echo "# VITE_SUPABASE_S3_SECRET_ACCESS_KEY="
-                        echo "# VITE_SUPABASE_BUCKET="
-                    } >> "$ENV_FILE"
-                    info "Cloudflare R2 存储配置已保存。"
-                else
-                    warn "配置不完整（Account ID、Access Key、Secret 为必填），已跳过。"
-                    echo "  可之后编辑 $ENV_FILE 手动配置。"
-                fi
-                ;;
-        esac
-    else
-        info "跳过文件上传存储配置。"
-        echo "  如需后续配置，请编辑 $ENV_FILE 后重新构建前端。"
-    fi
-fi
 
 # nginx 代理 API 和 Socket.IO，前端用同域路径即可
 touch "$ENV_FILE"
@@ -756,7 +583,7 @@ fi  # SKIP_FRONTEND
 if $SKIP_FRONTEND; then
     info "跳过前端构建（未部署 nginx）"
 else
-step "Step 5/9: 安装前端依赖并构建..."
+step "Step 4/8: 安装前端依赖并构建..."
 
 if [[ ! -d "$FRONTEND_DIR" ]]; then
     error "前端目录不存在: $FRONTEND_DIR"
@@ -820,7 +647,7 @@ fi  # SKIP_FRONTEND
 # Step 7: 打包 VS Code 插件（需要 Node.js）
 # ============================================================================
 if $HAS_NODE; then
-step "Step 6/9: 打包 VS Code 插件..."
+step "Step 5/8: 打包 VS Code 插件..."
 
 VSCODE_DIR="$PROJECT_ROOT/broca-vscode"
 if [[ -d "$VSCODE_DIR" ]]; then
@@ -861,7 +688,7 @@ if $SKIP_FRONTEND; then
     echo "  提示: 可使用 VS Code 插件连接后端服务"
     echo "  后端服务端口: 9000"
 else
-step "Step 7/9: 配置前端部署方式..."
+step "Step 6/8: 配置前端部署方式..."
 
 mkdir -p "$BROCA_HOME"
 
@@ -1058,7 +885,7 @@ fi  # SKIP_FRONTEND
 # ============================================================================
 # Step 9: 创建 supervisor 配置
 # ============================================================================
-step "Step 8/9: 创建 supervisor 进程管理配置..."
+step "Step 7/8: 创建 supervisor 进程管理配置..."
 
 SUPERVISOR_DIR="$BROCA_HOME/supervisor"
 RUN_DIR="$BROCA_HOME/run"
@@ -1127,7 +954,7 @@ echo ""
 # ============================================================================
 # Step 10: 配置持久化 & 收尾
 # ============================================================================
-step "Step 9/9: 完成安装..."
+step "Step 8/8: 完成安装..."
 
 # 保存安装信息到 broca home
 cat > "$BROCA_HOME/install.json" << JSONEOF
@@ -1142,7 +969,6 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
   "frontend_mode": $([ "$SKIP_FRONTEND" = true ] && echo '"none"' || echo '"nginx"'),
   "frontend_dist": "$FRONTEND_DIR/dist",
   "nginx_dist_dir": "$NGINX_DIST_DIR",
-  "storage_configured": $([ -f "$ENV_FILE" ] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" && echo "true" || echo "false"),
   "backend_port": 9000,
   "frontend_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || echo '8443'),
   "frontend_http_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || echo '5166'),

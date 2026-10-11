@@ -28,6 +28,33 @@ class ExecutionConfig:
         return exec_config
 
 
+class StorageConfig:
+    """文件上传存储配置（configs.json 的 storage 分组）"""
+
+    def __init__(self):
+        self.backend = ""  # "cloudflare" | "supabase" | ""
+        # Cloudflare R2
+        self.cloudflare_account_id = ""
+        self.cloudflare_access_key_id = ""
+        self.cloudflare_secret_access_key = ""
+        self.cloudflare_bucket = "upload"
+        self.cloudflare_public_url = ""
+        # Supabase S3
+        self.supabase_url = ""
+        self.supabase_s3_access_key_id = ""
+        self.supabase_s3_secret_access_key = ""
+        self.supabase_bucket = "upload"
+
+    @classmethod
+    def from_config(cls, config):
+        storage_config = cls()
+        for key in list(config.keys()):
+            if key not in storage_config.__dict__:
+                del config[key]
+        storage_config.__dict__.update(config)
+        return storage_config
+
+
 class BrocaConfig:
     def __init__(self):
         self.database_dir = None
@@ -37,6 +64,7 @@ class BrocaConfig:
         self.socket_server_url = None
         self.api_server_url = None
         self.execution = ExecutionConfig()
+        self.storage = StorageConfig()
 
     @classmethod
     def from_config(cls, config):
@@ -47,6 +75,9 @@ class BrocaConfig:
             elif key == "execution" and isinstance(config[key], dict):
                 agent_config.execution = ExecutionConfig.from_config(config[key])
                 config[key] = agent_config.execution
+            elif key == "storage" and isinstance(config[key], dict):
+                agent_config.storage = StorageConfig.from_config(config[key])
+                config[key] = agent_config.storage
         agent_config.__dict__.update(config)
         return agent_config
 

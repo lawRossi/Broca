@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Loading, WarningFilled } from '@element-plus/icons-vue'
-import configApi, { LOG_LEVELS, type GeneralConfig, type ASRConfig } from '@/api/config'
+import configApi, { LOG_LEVELS, type GeneralConfig, type ASRConfig, type StorageConfig } from '@/api/config'
 
 // ==================== 状态 ====================
 const loading = ref(false)
@@ -102,6 +102,28 @@ const setAsrValue = (fieldKey: keyof ASRConfig, value: string | number | undefin
   config.value = { ...config.value, asr }
 }
 
+// ==================== 存储配置辅助 ====================
+const STORAGE_BACKENDS = [
+  { value: 'cloudflare', label: 'Cloudflare R2（推荐，免费额度高，全球加速）' },
+  { value: 'supabase', label: 'Supabase S3' },
+]
+
+const storageValue = (fieldKey: keyof StorageConfig): string | undefined => {
+  const storage = config.value.storage
+  return storage && typeof storage === 'object' ? (storage[fieldKey] as string) : undefined
+}
+
+const setStorageValue = (fieldKey: keyof StorageConfig, value: string | undefined | null) => {
+  const current = config.value.storage
+  const storage: StorageConfig = current ? { ...current } : {}
+  if (value === undefined || value === null || value === '') {
+    delete storage[fieldKey]
+  } else {
+    storage[fieldKey] = value as any
+  }
+  config.value = { ...config.value, storage }
+}
+
 // ==================== 数据加载 ====================
 const loadConfig = async () => {
   loading.value = true
@@ -178,6 +200,31 @@ const validateBeforeSave = (): string | null => {
       const value = execution[field.key]
       if (value !== undefined && value !== null && (Number.isNaN(Number(value)) || Number(value) < field.min)) {
         return `${field.label} 必须是不小于 ${field.min} 的数字`
+      }
+    }
+  }
+  // storage 分组：选择后端时必填字段校验
+  const storage = config.value.storage
+  if (storage?.backend === 'cloudflare') {
+    for (const field of ['cloudflare_account_id', 'cloudflare_access_key_id', 'cloudflare_secret_access_key'] as const) {
+      if (!storage[field]?.trim()) {
+        const labels: Record<string, string> = {
+          cloudflare_account_id: 'Account ID',
+          cloudflare_access_key_id: 'Access Key ID',
+          cloudflare_secret_access_key: 'Secret Access Key',
+        }
+        return `选择 Cloudflare R2 后，${labels[field]} 为必填项`
+      }
+    }
+  } else if (storage?.backend === 'supabase') {
+    for (const field of ['supabase_url', 'supabase_s3_access_key_id', 'supabase_s3_secret_access_key'] as const) {
+      if (!storage[field]?.trim()) {
+        const labels: Record<string, string> = {
+          supabase_url: 'Project URL',
+          supabase_s3_access_key_id: 'S3 Access Key ID',
+          supabase_s3_secret_access_key: 'S3 Secret Access Key',
+        }
+        return `选择 Supabase S3 后，${labels[field]} 为必填项`
       }
     }
   }
@@ -422,6 +469,139 @@ defineExpose({ saveNow, reset })
                 </p>
               </div>
             </el-form-item>
+          </el-form>
+        </div>
+
+        <!-- 文件上传存储（storage 分组） -->
+        <div class="mt-6 border-t border-gray-100 pt-5">
+          <h3 class="text-sm font-medium text-gray-700 mb-1">文件上传存储</h3>
+          <p class="text-xs text-gray-400 mb-4">
+            配置文件上传的 S3 兼容存储后端（configs.json 的 storage 分组，修改后即时生效）
+          </p>
+          <el-form label-width="150px" label-position="left" @submit.prevent>
+            <el-form-item label="存储后端">
+              <div class="w-full">
+                <el-select
+                  :model-value="storageValue('backend')"
+                  placeholder="请选择存储后端"
+                  clearable
+                  class="w-full"
+                  @update:model-value="(val: string) => setStorageValue('backend', val)"
+                >
+                  <el-option
+                    v-for="b in STORAGE_BACKENDS"
+                    :key="b.value"
+                    :label="b.label"
+                    :value="b.value"
+                  />
+                </el-select>
+                <p v-if="!storageValue('backend')" class="mt-1.5 text-xs text-amber-600">
+                  请选择存储后端以启用文件上传功能
+                </p>
+              </div>
+            </el-form-item>
+
+            <!-- Cloudflare R2 字段 -->
+            <template v-if="storageValue('backend') === 'cloudflare'">
+              <el-form-item label="Account ID">
+                <div class="w-full">
+                  <el-input
+                    :model-value="storageValue('cloudflare_account_id')"
+                    placeholder="Cloudflare Account ID"
+                    @update:model-value="(val: string) => setStorageValue('cloudflare_account_id', val)"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-400">Cloudflare Dashboard → R2 → 概览页面查看</p>
+                </div>
+              </el-form-item>
+              <el-form-item label="Access Key ID">
+                <div class="w-full">
+                  <el-input
+                    :model-value="storageValue('cloudflare_access_key_id')"
+                    placeholder="API Token Access Key ID"
+                    @update:model-value="(val: string) => setStorageValue('cloudflare_access_key_id', val)"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-400">Cloudflare Dashboard → R2 → 管理 API 令牌</p>
+                </div>
+              </el-form-item>
+              <el-form-item label="Secret Access Key">
+                <div class="w-full">
+                  <el-input
+                    :model-value="storageValue('cloudflare_secret_access_key')"
+                    type="password"
+                    show-password
+                    placeholder="API Token Secret Access Key"
+                    @update:model-value="(val: string) => setStorageValue('cloudflare_secret_access_key', val)"
+                  />
+                </div>
+              </el-form-item>
+              <el-form-item label="Bucket 名称">
+                <div class="w-full">
+                  <el-input
+                    :model-value="storageValue('cloudflare_bucket') || 'upload'"
+                    placeholder="upload"
+                    @update:model-value="(val: string) => setStorageValue('cloudflare_bucket', val)"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-400">留空默认使用 upload</p>
+                </div>
+              </el-form-item>
+              <el-form-item label="公开访问域名">
+                <div class="w-full">
+                  <el-input
+                    :model-value="storageValue('cloudflare_public_url')"
+                    placeholder="可选，留空自动生成 https://&lt;bucket&gt;.&lt;account&gt;.r2.dev"
+                    @update:model-value="(val: string) => setStorageValue('cloudflare_public_url', val)"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-400">
+                    自定义公开访问域名（如使用 Cloudflare 自定义域名时填写）
+                  </p>
+                </div>
+              </el-form-item>
+            </template>
+
+            <!-- Supabase S3 字段 -->
+            <template v-if="storageValue('backend') === 'supabase'">
+              <el-form-item label="Project URL">
+                <div class="w-full">
+                  <el-input
+                    :model-value="storageValue('supabase_url')"
+                    placeholder="如 https://xxx.supabase.co"
+                    @update:model-value="(val: string) => setStorageValue('supabase_url', val)"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-400">Supabase Dashboard → Settings → API → Project URL</p>
+                </div>
+              </el-form-item>
+              <el-form-item label="S3 Access Key ID">
+                <div class="w-full">
+                  <el-input
+                    :model-value="storageValue('supabase_s3_access_key_id')"
+                    placeholder="S3 Access Key ID"
+                    @update:model-value="(val: string) => setStorageValue('supabase_s3_access_key_id', val)"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-400">Supabase Dashboard → Storage → Settings → S3 Credentials</p>
+                </div>
+              </el-form-item>
+              <el-form-item label="S3 Secret Access Key">
+                <div class="w-full">
+                  <el-input
+                    :model-value="storageValue('supabase_s3_secret_access_key')"
+                    type="password"
+                    show-password
+                    placeholder="S3 Secret Access Key"
+                    @update:model-value="(val: string) => setStorageValue('supabase_s3_secret_access_key', val)"
+                  />
+                </div>
+              </el-form-item>
+              <el-form-item label="Bucket 名称">
+                <div class="w-full">
+                  <el-input
+                    :model-value="storageValue('supabase_bucket') || 'upload'"
+                    placeholder="upload"
+                    @update:model-value="(val: string) => setStorageValue('supabase_bucket', val)"
+                  />
+                  <p class="mt-1.5 text-xs text-gray-400">留空默认使用 upload</p>
+                </div>
+              </el-form-item>
+            </template>
           </el-form>
         </div>
     </div>

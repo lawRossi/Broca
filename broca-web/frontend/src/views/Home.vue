@@ -109,8 +109,8 @@ const handleAddUserInfo = async () => {
 
     // 如果有头像文件，先上传
     if (addInfoForm.value.avatarFile) {
-      if (!isStorageConfigured()) {
-        ElMessage.warning('存储未配置，跳过头像上传')
+      if (!(await isStorageConfigured())) {
+        ElMessage.warning('存储未配置，请在设置页「基础配置」中配置，已跳过头像上传')
       } else {
         try {
           const result = await uploadFile(addInfoForm.value.avatarFile)
