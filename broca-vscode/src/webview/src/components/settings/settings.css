@@ -147,35 +147,7 @@ body {
   border-color: var(--focus-border);
 }
 
-/* --- Subsection & divider --- */
-.subsection-title {
-  font-size: 13px;
-  font-weight: 600;
-  margin-bottom: 10px;
-  color: var(--text-primary);
-}
 
-.storage-section {
-  padding: 8px 0;
-}
-
-.storage-divider {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 12px 0;
-  color: var(--text-secondary);
-  font-size: 12px;
-  gap: 12px;
-}
-
-.storage-divider::before,
-.storage-divider::after {
-  content: '';
-  flex: 1;
-  height: 1px;
-  background: var(--border-color);
-}
 
 .divider {
   height: 1px;
