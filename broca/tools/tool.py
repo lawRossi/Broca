@@ -17,11 +17,24 @@ class ToolStatus(str, Enum):
 
 
 class ToolResult:
-    def __init__(self, status: ToolStatus, content: str):
+    def __init__(
+        self,
+        status: ToolStatus,
+        content: str,
+        extra_context_messages: Optional[list[dict]] = None,
+    ):
         self.status = status
         self.content = content
+        # Each dict: {"llm_message": dict, "data": dict, "role": str}
+        # llm_message: LLM API format message to add to context.history
+        # data: DB data field content
+        # role: message role for DB storage (e.g. "user")
+        self.extra_context_messages: list[dict] = (
+            extra_context_messages if extra_context_messages is not None else []
+        )
 
     def to_dict(self) -> dict:
+        # extra_context_messages is NOT part of tool result serialization
         return {"status": self.status, "content": self.content}
 
 

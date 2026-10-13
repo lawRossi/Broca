@@ -188,10 +188,13 @@ class SessionMemoryManager:
         if not messages:
             return None, None
 
-        # 找到当前（进行中）turn 的起点：最近一条 USER_MESSAGE
+        # 找到当前（进行中）turn 的起点：最近一条真正的 USER_MESSAGE
+        # 跳过工具注入的消息（data.tool_injected=True），它们不代表真实 turn 边界
         current_turn_start = None
         for i, m in enumerate(messages):
             if m.message_type == MessageType.USER_MESSAGE:
+                if m.data and m.data.get("tool_injected"):
+                    continue
                 current_turn_start = i
         if current_turn_start is None:
             return None, None

@@ -920,6 +920,30 @@ class LoopEngine:
         await self.context.add_message(
             self.context.format_tool_call_result(message), message_id
         )
+
+        # Process extra context messages (e.g. image messages injected by tools)
+        if tool_result.extra_context_messages:
+            for extra in tool_result.extra_context_messages:
+                extra_msg_id = f"msg_{uuid.uuid4().hex[:16]}"
+                llm_message = extra["llm_message"]
+                data = dict(extra.get("data", {}))
+                data["tool_injected"] = True
+                role = extra.get("role", "user")
+
+                # Save to DB (no frontend broadcast — tool-injected messages
+                # are internal context, not user-visible)
+                await self.session_manager.save_message(
+                    role=role,
+                    content=json.dumps(llm_message, ensure_ascii=False),
+                    message_type=MessageType.USER_MESSAGE,
+                    turn_id=self.turn_id,
+                    agent_id=self.agent_id,
+                    data=data,
+                    message_id=extra_msg_id,
+                )
+
+                # Add to context history
+                await self.context.add_message(llm_message, extra_msg_id)
         return True
 
     async def _build_round_result(

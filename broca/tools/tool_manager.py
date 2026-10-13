@@ -34,6 +34,7 @@ class ToolManager:
         "read_blackboard",
         "list_blackboard",
         "blackboard_changes",
+        "read_image",
     }
 
     MODIFY_TOOLS = {"edit_file", "write_file"}
