@@ -3,6 +3,8 @@ from fastapi import APIRouter
 from .auth import router as auth_router
 from .commands import router as commands_router
 from .config import router as config_router
+from .skills import router as skills_router
+from .tools import router as tools_router
 from .crew import router as crew_router
 from .files import router as files_router
 from .job import router as job_router
@@ -23,3 +25,5 @@ api_router.include_router(files_router, tags=["files"])
 api_router.include_router(config_router, prefix="/config", tags=["config"])
 api_router.include_router(commands_router, prefix="/commands", tags=["commands"])
 api_router.include_router(crew_router, prefix="/crews", tags=["crews"])
+api_router.include_router(tools_router, prefix="/tools", tags=["tools"])
+api_router.include_router(skills_router, prefix="/skills", tags=["skills"])

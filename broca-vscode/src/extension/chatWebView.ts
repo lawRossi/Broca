@@ -1038,6 +1038,14 @@ export class ChatWebViewManager {
         await this.handleFetchLLMModels(panel, message.payload)
         break
 
+      case 'fetchAvailableTools':
+        await this.handleFetchAvailableTools(panel)
+        break
+
+      case 'fetchAvailableSkills':
+        await this.handleFetchAvailableSkills(panel)
+        break
+
       // ==================== Commands handlers ====================
       case 'fetchCommands':
         await this.handleFetchCommands(panel)
@@ -2098,6 +2106,38 @@ export class ChatWebViewManager {
       this.postToPanel(panel, {
         type: 'error',
         payload: { message: extractErrorMessage(error) },
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchAvailableTools(panel: vscode.WebviewPanel) {
+    try {
+      const tools = await this.apiClient.getAvailableTools()
+      this.postToPanel(panel, {
+        type: 'availableTools',
+        payload: tools,
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      // Silently fail — webview will keep its existing list
+      this.postToPanel(panel, {
+        type: 'availableTools',
+        payload: [],
+      } as ExtensionToWebView)
+    }
+  }
+
+  private async handleFetchAvailableSkills(panel: vscode.WebviewPanel) {
+    try {
+      const skills = await this.apiClient.getAvailableSkills()
+      this.postToPanel(panel, {
+        type: 'availableSkills',
+        payload: skills,
+      } as ExtensionToWebView)
+    } catch (error: any) {
+      // Silently fail — webview will keep its existing list
+      this.postToPanel(panel, {
+        type: 'availableSkills',
+        payload: [],
       } as ExtensionToWebView)
     }
   }

@@ -97,6 +97,22 @@ export const agentApi = {
       config: config || undefined,
     }
   },
+
+  /**
+   * 获取所有可用的内置工具列表
+   */
+  async getAvailableTools(): Promise<string[]> {
+    const res = await request.get<{ tools: string[] }>('/tools')
+    return res.tools || []
+  },
+
+  /**
+   * 获取所有可用的内置技能列表
+   */
+  async getAvailableSkills(): Promise<string[]> {
+    const res = await request.get<{ skills: string[] }>('/skills')
+    return res.skills || []
+  },
 }
 
 export default agentApi

@@ -163,6 +163,22 @@ export class ApiClient {
     return response.data
   }
 
+  /**
+   * 获取所有可用的内置工具列表
+   */
+  async getAvailableTools(): Promise<string[]> {
+    const response = await this.client.get('/tools')
+    return response.data.tools || []
+  }
+
+  /**
+   * 获取所有可用的内置技能列表
+   */
+  async getAvailableSkills(): Promise<string[]> {
+    const response = await this.client.get('/skills')
+    return response.data.skills || []
+  }
+
   // ==================== Stats API ====================
 
   async getSessionStats(sessionId: string): Promise<SessionStats> {

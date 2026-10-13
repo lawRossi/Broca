@@ -69,7 +69,7 @@ const configForm = ref<any>({
   role: '',
   server_url: '',
   tools: [] as string[],
-  skills: '',
+  skills: [] as string[],
   mcp_servers: '',
   interactive: true,
   save_history: true,
@@ -91,32 +91,21 @@ const configForm = ref<any>({
   },
 })
 
-// 可选工具列表（用于 tools 多选，允许用户自定义输入）
-const availableTools = ref<string[]>([
-  'read_file',
-  'write_file',
-  'edit_file',
-  'glob',
-  'grep',
-  'list_dir',
-  'tree_dir',
-  'web_fetch',
-  'web_search',
-  'ask_user',
-  'assign_task',
-  'bash',
-  'cron',
-  'task_management',
-  'todo_management',
-  'load_skill',
-  'skill_manage',
-  'memory',
-  'read_blackboard',
-  'write_blackboard',
-  'list_blackboard',
-  'delete_blackboard',
-  'blackboard_changes',
-])
+// 可选工具列表（从后端 API 动态获取，允许用户自定义输入）
+const availableTools = ref<string[]>([])
+
+function fetchAvailableTools() {
+  if (availableTools.value.length > 0) return // 已加载过则跳过
+  postMessage({ type: 'fetchAvailableTools' })
+}
+
+// 可选技能列表（从后端 API 动态获取，允许用户自定义输入）
+const availableSkills = ref<string[]>([])
+
+function fetchAvailableSkills() {
+  if (availableSkills.value.length > 0) return // 已加载过则跳过
+  postMessage({ type: 'fetchAvailableSkills' })
+}
 
 function resetConfigForm() {
   configForm.value = {
@@ -124,7 +113,7 @@ function resetConfigForm() {
     role: '',
     server_url: '',
     tools: [],
-    skills: '',
+    skills: [],
     mcp_servers: '',
     interactive: true,
     save_history: true,
@@ -176,6 +165,45 @@ function addCustomTool() {
   toolsSearch.value = ''
 }
 
+// ==================== 技能多选下拉 ====================
+const showSkillsMenu = ref(false)
+const skillsSearch = ref('')
+
+const filteredSkills = computed(() => {
+  const q = skillsSearch.value.trim().toLowerCase()
+  if (!q) return availableSkills.value
+  return availableSkills.value.filter((s) => s.toLowerCase().includes(q))
+})
+
+function hasSkill(skill: string): boolean {
+  return configForm.value.skills?.includes(skill) ?? false
+}
+
+function toggleSkill(skill: string) {
+  const idx = configForm.value.skills.indexOf(skill)
+  if (idx === -1) {
+    configForm.value.skills.push(skill)
+  } else {
+    configForm.value.skills.splice(idx, 1)
+  }
+}
+
+function removeSkill(skill: string) {
+  toggleSkill(skill)
+}
+
+function addCustomSkill() {
+  const name = skillsSearch.value.trim()
+  if (!name) return
+  if (!configForm.value.skills.includes(name)) {
+    configForm.value.skills.push(name)
+  }
+  if (!availableSkills.value.includes(name)) {
+    availableSkills.value.push(name)
+  }
+  skillsSearch.value = ''
+}
+
 function handleAgentClick(agent: any) {
   // 打开配置弹窗时暂停自动刷新，避免覆盖用户编辑
   stopAutoRefresh()
@@ -183,6 +211,10 @@ function handleAgentClick(agent: any) {
   showConfigDialog.value = true
   configLoading.value = true
   agentConfig.value = null
+
+  // 确保工具/技能列表已加载（首次打开时从 API 获取）
+  fetchAvailableTools()
+  fetchAvailableSkills()
 
   // 请求获取 Agent 配置
   postMessage({
@@ -256,7 +288,14 @@ function initConfigEdit() {
             .map((s: string) => s.trim())
             .filter(Boolean)
         : [],
-    skills: config.skills ?? '',
+    skills: config.skills === 'all'
+      ? ['all']
+      : config.skills
+        ? String(config.skills)
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+        : [],
     mcp_servers:
       config.mcp_servers !== undefined && config.mcp_servers !== null
         ? JSON.stringify(config.mcp_servers, null, 2)
@@ -309,7 +348,9 @@ function buildConfigContent(): Record<string, any> {
     role: form.role,
     server_url: form.server_url,
     tools: form.tools,
-    skills: form.skills,
+    skills: form.skills.length === 1 && form.skills[0] === 'all'
+      ? 'all'
+      : form.skills.join(','),
     interactive: form.interactive,
     save_history: form.save_history,
     enable_context_compression: form.enable_context_compression,
@@ -400,6 +441,18 @@ onMounted(() => {
 
       case 'models':
         availableModels.value = data.payload || []
+        break
+
+      case 'availableTools':
+        if (data.payload && data.payload.length > 0) {
+          availableTools.value = data.payload
+        }
+        break
+
+      case 'availableSkills':
+        if (data.payload && data.payload.length > 0) {
+          availableSkills.value = data.payload
+        }
         break
 
       case 'error':
@@ -706,6 +759,10 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                             @keydown.enter.prevent="addCustomTool"
                           />
                         </div>
+                        <div class="tools-select-all-row">
+                          <button class="tools-select-all-btn" @click="configForm.tools = [...availableTools]">全选</button>
+                          <button class="tools-select-all-btn" @click="configForm.tools = []">全不选</button>
+                        </div>
                         <div
                           v-if="toolsSearch.trim() && !availableTools.includes(toolsSearch.trim())"
                           class="tools-add"
@@ -721,9 +778,46 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                       </div>
                     </div>
                   </div>
-                  <div class="field">
+                  <div class="field full">
                     <label>Skills</label>
-                    <input v-model="configForm.skills" placeholder="如 all 或以逗号分隔" />
+                    <div class="tools-select" @click.stop>
+                      <div class="tools-trigger" @click="showSkillsMenu = !showSkillsMenu">
+                        <div class="tools-tags">
+                          <span v-for="s in configForm.skills" :key="s" class="tool-tag">
+                            {{ s }}
+                            <span class="tool-tag-remove" @click.stop="removeSkill(s)">×</span>
+                          </span>
+                          <span v-if="!configForm.skills.length" class="tools-placeholder">选择或输入技能名称</span>
+                        </div>
+                        <span class="tools-caret">▾</span>
+                      </div>
+                      <div v-if="showSkillsMenu" class="tools-menu">
+                        <div class="tools-search-row">
+                          <input
+                            v-model="skillsSearch"
+                            class="tools-search"
+                            placeholder="搜索或输入新增..."
+                            @keydown.enter.prevent="addCustomSkill"
+                          />
+                        </div>
+                        <div class="tools-select-all-row">
+                          <button class="tools-select-all-btn" @click="configForm.skills = [...availableSkills]">全选</button>
+                          <button class="tools-select-all-btn" @click="configForm.skills = []">全不选</button>
+                        </div>
+                        <div
+                          v-if="skillsSearch.trim() && !availableSkills.includes(skillsSearch.trim())"
+                          class="tools-add"
+                        >
+                          <button class="tools-add-btn" @click="addCustomSkill">新增 "{{ skillsSearch.trim() }}"</button>
+                        </div>
+                        <div class="tools-list">
+                          <label v-for="s in filteredSkills" :key="s" class="tools-option" @click.stop="toggleSkill(s)">
+                            <input type="checkbox" :checked="hasSkill(s)" />
+                            <span>{{ s }}</span>
+                          </label>
+                        </div>
+                      </div>
+                    </div>
                   </div>
                   <div class="field full">
                     <label>MCP Servers（JSON）</label>
@@ -1516,6 +1610,28 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
 .tools-search-row {
   padding: 6px;
   border-bottom: 1px solid var(--border-color, #3c3c3c);
+}
+
+.tools-select-all-row {
+  display: flex;
+  gap: 6px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border-color, #3c3c3c);
+}
+
+.tools-select-all-btn {
+  font-size: 11px;
+  padding: 2px 8px;
+  color: var(--text-link);
+  background: transparent;
+  border: 1px solid var(--border-color, #3c3c3c);
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.tools-select-all-btn:hover {
+  background: rgba(0, 127, 212, 0.12);
+  border-color: var(--focus-border, #007fd4);
 }
 
 .tools-search {

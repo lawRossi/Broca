@@ -2,6 +2,7 @@
 import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
 import { useChatStore, useAgentStore } from '@/stores'
 import type { Agent } from '@/stores/agent'
+import { agentApi } from '@/api/agent'
 import {
   ElIcon,
   ElTooltip,
@@ -51,7 +52,7 @@ const configForm = ref<any>({
   role: '',
   server_url: '',
   tools: [] as string[],
-  skills: '',
+  skills: [] as string[],
   mcp_servers: '',
   interactive: true,
   save_history: true,
@@ -73,32 +74,29 @@ const configForm = ref<any>({
   },
 })
 
-// 可选工具列表（用于 tools 多选，允许用户自定义输入）
-const availableTools = ref<string[]>([
-  'read_file',
-  'write_file',
-  'edit_file',
-  'glob',
-  'grep',
-  'list_dir',
-  'tree_dir',
-  'web_fetch',
-  'web_search',
-  'ask_user',
-  'assign_task',
-  'bash',
-  'cron',
-  'task_management',
-  'todo_management',
-  'load_skill',
-  'skill_manage',
-  'memory',
-  'read_blackboard',
-  'write_blackboard',
-  'list_blackboard',
-  'delete_blackboard',
-  'blackboard_changes',
-])
+// 可选工具列表（从后端 API 动态获取，允许用户自定义输入）
+const availableTools = ref<string[]>([])
+
+const fetchAvailableTools = async () => {
+  if (availableTools.value.length > 0) return // 已加载过则跳过
+  try {
+    availableTools.value = await agentApi.getAvailableTools()
+  } catch (err: any) {
+    console.error('获取可用工具列表失败:', err)
+  }
+}
+
+// 可选技能列表（从后端 API 动态获取，允许用户自定义输入）
+const availableSkills = ref<string[]>([])
+
+const fetchAvailableSkills = async () => {
+  if (availableSkills.value.length > 0) return // 已加载过则跳过
+  try {
+    availableSkills.value = await agentApi.getAvailableSkills()
+  } catch (err: any) {
+    console.error('获取可用技能列表失败:', err)
+  }
+}
 
 // 使用 computed 从 agentStore 获取 agents 列表（main_agent 排第一）
 const agents = computed(() => agentStore.agents)
@@ -252,7 +250,14 @@ const initConfigEdit = async () => {
             .map((s: string) => s.trim())
             .filter(Boolean)
         : [],
-    skills: config.skills ?? '',
+    skills: config.skills === 'all'
+      ? ['all']
+      : config.skills
+        ? String(config.skills)
+            .split(',')
+            .map((s: string) => s.trim())
+            .filter(Boolean)
+        : [],
     mcp_servers:
       config.mcp_servers !== undefined && config.mcp_servers !== null
         ? JSON.stringify(config.mcp_servers, null, 2)
@@ -309,7 +314,9 @@ const buildConfigContent = (): Record<string, any> => {
     role: form.role,
     server_url: form.server_url,
     tools: form.tools,
-    skills: form.skills,
+    skills: form.skills.length === 1 && form.skills[0] === 'all'
+      ? 'all'
+      : form.skills.join(','),
     interactive: form.interactive,
     save_history: form.save_history,
     enable_context_compression: form.enable_context_compression,
@@ -361,6 +368,9 @@ const handleAgentClick = async (agent: Agent) => {
   // 打开配置弹窗时暂停自动刷新，避免覆盖用户编辑
   stopAutoRefresh()
   selectedAgent.value = agent
+  // 确保工具/技能列表已加载（首次打开时从 API 获取）
+  fetchAvailableTools()
+  fetchAvailableSkills()
   // 使用 agentStore 的 selectAgent 方法来获取配置
   if (chatStore.sessionId) {
     await agentStore.selectAgent(agent.agent_id, chatStore.sessionId)
@@ -379,7 +389,7 @@ const closeConfigDialog = () => {
     role: '',
     server_url: '',
     tools: [],
-    skills: '',
+    skills: [],
     mcp_servers: '',
     interactive: true,
     save_history: true,
@@ -706,7 +716,13 @@ onUnmounted(() => {
         </div>
         <div class="space-y-3">
           <div>
-            <label class="block text-xs text-gray-600 mb-1">Tools（可在下拉中勾选，也可直接输入新增）</label>
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs text-gray-600">Tools</label>
+              <div class="flex gap-1">
+                <el-button size="small" link type="primary" @click="configForm.tools = [...availableTools]">全选</el-button>
+                <el-button size="small" link @click="configForm.tools = []">全不选</el-button>
+              </div>
+            </div>
             <el-select
               v-model="configForm.tools"
               multiple
@@ -722,8 +738,26 @@ onUnmounted(() => {
             </el-select>
           </div>
           <div>
-            <label class="block text-xs text-gray-600 mb-1">Skills</label>
-            <el-input v-model="configForm.skills" size="small" placeholder="如 all 或以逗号分隔的技能列表" />
+            <div class="flex items-center justify-between mb-1">
+              <label class="block text-xs text-gray-600">Skills</label>
+              <div class="flex gap-1">
+                <el-button size="small" link type="primary" @click="configForm.skills = [...availableSkills]">全选</el-button>
+                <el-button size="small" link @click="configForm.skills = []">全不选</el-button>
+              </div>
+            </div>
+            <el-select
+              v-model="configForm.skills"
+              multiple
+              filterable
+              allow-create
+              default-first-option
+              :reserve-keyword="false"
+              size="small"
+              style="width: 100%"
+              placeholder="选择或输入技能名称"
+            >
+              <el-option v-for="s in availableSkills" :key="s" :label="s" :value="s" />
+            </el-select>
           </div>
           <div>
             <label class="block text-xs text-gray-600 mb-1">MCP Servers（JSON）</label>
