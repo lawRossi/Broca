@@ -8,14 +8,6 @@ import './settings.css'
 const config = ref({
   serverUrl: 'http://localhost:8000',
   wsUrl: 'http://localhost:8000',
-  cloudflareAccountId: '',
-  cloudflareAccessKeyId: '',
-  cloudflareSecretAccessKey: '',
-  cloudflareBucket: '',
-  cloudflarePublicUrl: '',
-  supabaseUrl: '',
-  supabaseS3AccessKeyId: '',
-  supabaseS3SecretAccessKey: '',
   defaultProvider: '',
   defaultModel: '',
 })
@@ -129,67 +121,6 @@ function saveConfig() {
       <div class="field">
         <label class="field-label">WebSocket Server URL</label>
         <input v-model="config.wsUrl" class="field-input" placeholder="http://localhost:8000" />
-      </div>
-    </section>
-
-    <!-- Storage Configuration -->
-    <section class="section">
-      <h2 class="section-title">Storage Configuration</h2>
-      <p class="field-hint">配置 S3 兼容的存储后端用于文件上传。Cloudflare R2 和 Supabase S3 二选一。</p>
-
-      <div class="storage-section">
-        <h3 class="subsection-title">Option A: Cloudflare R2（推荐）</h3>
-        <div class="field">
-          <label class="field-label">Account ID</label>
-          <input v-model="config.cloudflareAccountId" class="field-input" placeholder="your-account-id" />
-        </div>
-        <div class="field">
-          <label class="field-label">Access Key ID</label>
-          <input v-model="config.cloudflareAccessKeyId" class="field-input" placeholder="your-access-key-id" />
-        </div>
-        <div class="field">
-          <label class="field-label">Secret Access Key</label>
-          <input
-            v-model="config.cloudflareSecretAccessKey"
-            class="field-input"
-            type="password"
-            placeholder="your-secret-access-key"
-          />
-        </div>
-        <div class="field">
-          <label class="field-label">Bucket Name</label>
-          <input v-model="config.cloudflareBucket" class="field-input" placeholder="my-bucket" />
-        </div>
-        <div class="field">
-          <label class="field-label">Public URL (可选)</label>
-          <input v-model="config.cloudflarePublicUrl" class="field-input" placeholder="https://pub-xxxx.r2.dev" />
-          <p class="field-hint">如果不填，将使用默认 R2.dev 域名</p>
-        </div>
-      </div>
-
-      <div class="storage-divider">
-        <span>— 或 —</span>
-      </div>
-
-      <div class="storage-section">
-        <h3 class="subsection-title">Option B: Supabase S3</h3>
-        <div class="field">
-          <label class="field-label">Supabase URL</label>
-          <input v-model="config.supabaseUrl" class="field-input" placeholder="https://your-project.supabase.co" />
-        </div>
-        <div class="field">
-          <label class="field-label">S3 Access Key ID</label>
-          <input v-model="config.supabaseS3AccessKeyId" class="field-input" placeholder="your-s3-access-key" />
-        </div>
-        <div class="field">
-          <label class="field-label">S3 Secret Access Key</label>
-          <input
-            v-model="config.supabaseS3SecretAccessKey"
-            class="field-input"
-            type="password"
-            placeholder="your-s3-secret-key"
-          />
-        </div>
       </div>
     </section>
 

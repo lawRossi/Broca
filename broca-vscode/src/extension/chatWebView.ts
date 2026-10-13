@@ -1473,40 +1473,47 @@ export class ChatWebViewManager {
       // 将 base64 转为 Buffer
       const buffer = Buffer.from(payload.base64Data, 'base64')
 
-      const storageType = this.configManager.storageType
+      // 从后端 API 获取 storage 配置（与 Web 端一致）
+      const general = await this.apiClient.getGeneralConfig()
+      const storage = general?.storage
       let s3Endpoint: string
       let s3Bucket: string
       let s3Credentials: { accessKeyId: string; secretAccessKey: string }
       let publicUrlBase: string
 
-      if (storageType === 'cloudflare') {
+      if (
+        storage?.backend === 'cloudflare' &&
+        storage.cloudflare_account_id &&
+        storage.cloudflare_access_key_id &&
+        storage.cloudflare_secret_access_key
+      ) {
         // Cloudflare R2
-        s3Endpoint = `https://${this.configManager.cloudflareAccountId}.r2.cloudflarestorage.com`
-        s3Bucket = this.configManager.cloudflareBucket || 'upload'
+        const accountId = storage.cloudflare_account_id
+        s3Endpoint = `https://${accountId}.r2.cloudflarestorage.com`
+        s3Bucket = storage.cloudflare_bucket || 'upload'
         s3Credentials = {
-          accessKeyId: this.configManager.cloudflareAccessKeyId,
-          secretAccessKey: this.configManager.cloudflareSecretAccessKey,
+          accessKeyId: storage.cloudflare_access_key_id,
+          secretAccessKey: storage.cloudflare_secret_access_key,
         }
-        const cfPublicUrl = this.configManager.cloudflarePublicUrl
-        publicUrlBase = cfPublicUrl
-          ? cfPublicUrl
-          : `https://${s3Bucket}.${this.configManager.cloudflareAccountId}.r2.dev`
-      } else if (storageType === 'supabase') {
+        publicUrlBase =
+          storage.cloudflare_public_url || `https://${s3Bucket}.${accountId}.r2.dev`
+      } else if (
+        storage?.backend === 'supabase' &&
+        storage.supabase_url &&
+        storage.supabase_s3_access_key_id &&
+        storage.supabase_s3_secret_access_key
+      ) {
         // Supabase Storage (S3 兼容端点)
-        const supabaseUrl = this.configManager.supabaseUrl
-        const s3AccessKey = this.configManager.supabaseS3AccessKeyId
-        const s3SecretKey = this.configManager.supabaseS3SecretAccessKey
-        if (!supabaseUrl || !s3AccessKey || !s3SecretKey) {
-          throw new Error(
-            'Supabase S3 configuration incomplete. Set supabaseUrl, supabaseS3AccessKeyId and supabaseS3SecretAccessKey.'
-          )
-        }
+        const supabaseUrl = storage.supabase_url
         s3Endpoint = `${supabaseUrl}/storage/v1/s3`
-        s3Bucket = 'upload'
-        s3Credentials = { accessKeyId: s3AccessKey, secretAccessKey: s3SecretKey }
+        s3Bucket = storage.supabase_bucket || 'upload'
+        s3Credentials = {
+          accessKeyId: storage.supabase_s3_access_key_id,
+          secretAccessKey: storage.supabase_s3_secret_access_key,
+        }
         publicUrlBase = `${supabaseUrl}/storage/v1/object/public/${s3Bucket}`
       } else {
-        throw new Error('No storage backend configured. Please set Supabase or Cloudflare R2 settings.')
+        throw new Error('存储未配置，请在设置页「基础配置」中配置文件上传存储')
       }
 
       // 统一使用 S3 兼容 API 上传

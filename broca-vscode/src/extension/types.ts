@@ -208,6 +208,23 @@ export interface ASRConfig {
   noise_gate_rms?: number
 }
 
+/** 文件上传存储配置（configs.json 中的 storage 分组） */
+export interface StorageConfig {
+  /** 存储后端: cloudflare | supabase | 空（未配置） */
+  backend?: string
+  // Cloudflare R2
+  cloudflare_account_id?: string
+  cloudflare_access_key_id?: string
+  cloudflare_secret_access_key?: string
+  cloudflare_bucket?: string
+  cloudflare_public_url?: string
+  // Supabase S3
+  supabase_url?: string
+  supabase_s3_access_key_id?: string
+  supabase_s3_secret_access_key?: string
+  supabase_bucket?: string
+}
+
 /** 基础配置（configs.json） */
 export interface GeneralConfig {
   database_dir?: string
@@ -218,6 +235,7 @@ export interface GeneralConfig {
   api_server_url?: string
   execution?: ExecutionConfig
   asr?: ASRConfig
+  storage?: StorageConfig
 }
 
 /** 执行引擎配置 */

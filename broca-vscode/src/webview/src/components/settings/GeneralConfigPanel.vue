@@ -1,10 +1,15 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { postMessage, onMessage } from '../../api/vscode'
-import type { GeneralConfig, ExecutionConfig, ASRConfig } from '../../types'
+import type { GeneralConfig, ExecutionConfig, ASRConfig, StorageConfig } from '../../types'
 import { LOG_LEVELS } from '../../types'
 
 const DECODING_METHODS = ['modified_beam_search', 'greedy_search'] as const
+
+const STORAGE_BACKENDS = [
+  { value: 'cloudflare', label: 'Cloudflare R2' },
+  { value: 'supabase', label: 'Supabase S3' },
+] as const
 
 // --- State ---
 const loading = ref(true)
@@ -25,17 +30,17 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 let loadTimeout: ReturnType<typeof setTimeout> | null = null
 let saveTimeout: ReturnType<typeof setTimeout> | null = null
 
-const EXECUTION_FIELDS: { key: keyof ExecutionConfig; label: string; unit: string; min?: number }[] = [
-  { key: 'step_max_errors', label: 'Step Max Errors', unit: '次' },
-  { key: 'llm_retry_delay', label: 'LLM Retry Delay', unit: '秒' },
-  { key: 'tool_call_timeout', label: 'Tool Call Timeout', unit: '秒' },
-  { key: 'assign_task_timeout', label: 'Assign Task Timeout', unit: '秒' },
-  { key: 'llm_timeout', label: 'LLM Timeout', unit: '秒' },
-  { key: 'llm_first_chunk_timeout', label: 'LLM First Chunk Timeout', unit: '秒' },
-  { key: 'dead_loop_window', label: 'Dead Loop Window', unit: '次' },
-  { key: 'message_queue_size', label: 'Message Queue Size', unit: '条' },
-  { key: 'permission_request_timeout', label: 'Permission Request Timeout', unit: '秒' },
-  { key: 'agent_query_timeout', label: 'Agent Query Timeout', unit: '秒' },
+const EXECUTION_FIELDS: { key: keyof ExecutionConfig; label: string; unit: string; min: number; step: number; hint: string }[] = [
+  { key: 'step_max_errors', label: 'Step Max Errors', unit: '次', min: 1, step: 1, hint: 'LLM 调用失败/限流时的最大重试次数' },
+  { key: 'llm_retry_delay', label: 'LLM Retry Delay', unit: '秒', min: 0, step: 1, hint: '两次 LLM 重试之间的等待时间' },
+  { key: 'tool_call_timeout', label: 'Tool Call Timeout', unit: '秒', min: 1, step: 10, hint: '普通工具调用超时时间（assign_task 除外）' },
+  { key: 'assign_task_timeout', label: 'Assign Task Timeout', unit: '秒', min: 1, step: 60, hint: 'assign_task 工具调用超时时间' },
+  { key: 'llm_timeout', label: 'LLM Timeout', unit: '秒', min: 1, step: 10, hint: 'LLM 流式请求总超时（含外层等待）' },
+  { key: 'llm_first_chunk_timeout', label: 'LLM First Chunk Timeout', unit: '秒', min: 5, step: 5, hint: '等待 LLM 返回首块内容的超时时间' },
+  { key: 'dead_loop_window', label: 'Dead Loop Window', unit: '次', min: 2, step: 1, hint: '最近 N 步工具调用完全相同时判定为死循环' },
+  { key: 'message_queue_size', label: 'Message Queue Size', unit: '条', min: 1, step: 1, hint: 'Agent 消息队列最大消息数' },
+  { key: 'permission_request_timeout', label: 'Permission Request Timeout', unit: '秒', min: 10, step: 10, hint: '等待用户授权/拒绝的超时，超时后自动拒绝' },
+  { key: 'agent_query_timeout', label: 'Agent Query Timeout', unit: '秒', min: 30, step: 30, hint: 'ask_user 等待用户回答的超时，超时后返回错误' },
 ]
 
 // --- Load ---
@@ -148,8 +153,8 @@ function validateBeforeSave(): string | null {
   if (exec) {
     for (const f of EXECUTION_FIELDS) {
       const v = exec[f.key]
-      if (v !== undefined && v !== null && (isNaN(v as number) || (v as number) < 0)) {
-        return `execution.${f.key} 必须为非负数字`
+      if (v !== undefined && v !== null && (isNaN(v as number) || (v as number) < f.min)) {
+        return `execution.${f.key} 必须是不小于 ${f.min} 的数字`
       }
     }
   }
@@ -157,6 +162,30 @@ function validateBeforeSave(): string | null {
   if (asr) {
     if (asr.noise_gate_rms !== undefined && isNaN(asr.noise_gate_rms as number)) {
       return 'asr.noise_gate_rms 必须为数字'
+    }
+  }
+  const storage = config.value.storage
+  if (storage?.backend === 'cloudflare') {
+    for (const field of ['cloudflare_account_id', 'cloudflare_access_key_id', 'cloudflare_secret_access_key'] as const) {
+      if (!storage[field]?.trim()) {
+        const labels: Record<string, string> = {
+          cloudflare_account_id: 'Account ID',
+          cloudflare_access_key_id: 'Access Key ID',
+          cloudflare_secret_access_key: 'Secret Access Key',
+        }
+        return `选择 Cloudflare R2 后，${labels[field]} 为必填项`
+      }
+    }
+  } else if (storage?.backend === 'supabase') {
+    for (const field of ['supabase_url', 'supabase_s3_access_key_id', 'supabase_s3_secret_access_key'] as const) {
+      if (!storage[field]?.trim()) {
+        const labels: Record<string, string> = {
+          supabase_url: 'Project URL',
+          supabase_s3_access_key_id: 'S3 Access Key ID',
+          supabase_s3_secret_access_key: 'S3 Secret Access Key',
+        }
+        return `选择 Supabase S3 后，${labels[field]} 为必填项`
+      }
     }
   }
   return null
@@ -252,6 +281,23 @@ function setAsrField(key: keyof ASRConfig, raw: string) {
   }
   config.value = { ...config.value, asr }
 }
+
+// --- Storage field helpers ---
+function storageValue(key: keyof StorageConfig): string | undefined {
+  const storage = config.value.storage
+  return storage && typeof storage === 'object' ? (storage[key] as string | undefined) : undefined
+}
+
+function setStorageValue(key: keyof StorageConfig, value: string | undefined) {
+  const current = config.value.storage
+  const storage: StorageConfig = current ? { ...current } : {}
+  if (value === undefined || value === null || value === '') {
+    delete storage[key]
+  } else {
+    storage[key] = value as any
+  }
+  config.value = { ...config.value, storage }
+}
 </script>
 
 <template>
@@ -304,10 +350,12 @@ function setAsrField(key: keyof ASRConfig, raw: string) {
         <div class="field">
           <label class="field-label">Database Directory</label>
           <input v-model="config.database_dir" class="field-input" placeholder="~/.broca/data" />
+          <p class="field-hint">会话、记忆等数据的存放目录</p>
         </div>
         <div class="field">
           <label class="field-label">Log File</label>
           <input v-model="config.log_file" class="field-input" placeholder="~/.broca/logs/broca.log" />
+          <p class="field-hint">Broca 运行时日志文件路径</p>
         </div>
         <div class="field">
           <label class="field-label">Log Level</label>
@@ -315,18 +363,22 @@ function setAsrField(key: keyof ASRConfig, raw: string) {
             <option value="">-- 默认 --</option>
             <option v-for="lv in LOG_LEVELS" :key="lv" :value="lv">{{ lv }}</option>
           </select>
+          <p class="field-hint">日志输出级别（DEBUG 最详细，CRITICAL 最少）</p>
         </div>
         <div class="field">
           <label class="field-label">LLM Config File</label>
           <input v-model="config.llm_config_file" class="field-input" placeholder="~/.broca/configs/llm_config.json" />
+          <p class="field-hint">LLM 提供商/模型配置所在文件</p>
         </div>
         <div class="field">
           <label class="field-label">Socket Server URL</label>
           <input v-model="config.socket_server_url" class="field-input" placeholder="ws://localhost:9000" />
+          <p class="field-hint">TUI 客户端连接的 SocketIO 服务地址</p>
         </div>
         <div class="field">
           <label class="field-label">API Server URL</label>
           <input v-model="config.api_server_url" class="field-input" placeholder="http://localhost:9000" />
+          <p class="field-hint">TUI 客户端调用的 REST API 服务地址</p>
         </div>
       </section>
 
@@ -338,10 +390,12 @@ function setAsrField(key: keyof ASRConfig, raw: string) {
           <input
             type="number"
             class="field-input"
-            :min="f.min ?? 0"
+            :min="f.min"
+            :step="f.step"
             :value="execValue(f.key) ?? ''"
             @change="setExecField(f.key, ($event.target as HTMLInputElement).value)"
           />
+          <p class="field-hint">{{ f.hint }}</p>
         </div>
       </section>
 
@@ -377,6 +431,123 @@ function setAsrField(key: keyof ASRConfig, raw: string) {
             @change="setAsrField('noise_gate_rms', ($event.target as HTMLInputElement).value)"
           />
         </div>
+      </section>
+
+      <!-- Storage -->
+      <section class="section">
+        <h2 class="section-title">文件上传存储</h2>
+        <p class="field-hint" style="margin-bottom: 12px">配置 S3 兼容的文件上传存储后端（configs.json 的 storage 分组）</p>
+
+        <div class="field">
+          <label class="field-label">Storage Backend</label>
+          <select
+            :value="storageValue('backend') ?? ''"
+            class="field-select"
+            @change="setStorageValue('backend', ($event.target as HTMLSelectElement).value || undefined)"
+          >
+            <option value="">-- 未配置 --</option>
+            <option v-for="b in STORAGE_BACKENDS" :key="b.value" :value="b.value">{{ b.label }}</option>
+          </select>
+          <p v-if="!storageValue('backend')" class="field-hint">请选择存储后端以启用文件上传功能</p>
+        </div>
+
+        <!-- Cloudflare R2 fields -->
+        <template v-if="storageValue('backend') === 'cloudflare'">
+          <div class="field">
+            <label class="field-label">Account ID</label>
+            <input
+              :value="storageValue('cloudflare_account_id') ?? ''"
+              class="field-input"
+              placeholder="Cloudflare Account ID"
+              @input="setStorageValue('cloudflare_account_id', ($event.target as HTMLInputElement).value || undefined)"
+            />
+            <p class="field-hint">Cloudflare Dashboard → R2 → 概览页面查看</p>
+          </div>
+          <div class="field">
+            <label class="field-label">Access Key ID</label>
+            <input
+              :value="storageValue('cloudflare_access_key_id') ?? ''"
+              class="field-input"
+              placeholder="API Token Access Key ID"
+              @input="setStorageValue('cloudflare_access_key_id', ($event.target as HTMLInputElement).value || undefined)"
+            />
+            <p class="field-hint">Cloudflare Dashboard → R2 → 管理 API 令牌</p>
+          </div>
+          <div class="field">
+            <label class="field-label">Secret Access Key</label>
+            <input
+              :value="storageValue('cloudflare_secret_access_key') ?? ''"
+              class="field-input"
+              type="password"
+              placeholder="API Token Secret Access Key"
+              @input="setStorageValue('cloudflare_secret_access_key', ($event.target as HTMLInputElement).value || undefined)"
+            />
+          </div>
+          <div class="field">
+            <label class="field-label">Bucket 名称</label>
+            <input
+              :value="storageValue('cloudflare_bucket') || 'upload'"
+              class="field-input"
+              placeholder="upload"
+              @input="setStorageValue('cloudflare_bucket', ($event.target as HTMLInputElement).value || undefined)"
+            />
+            <p class="field-hint">留空默认使用 upload</p>
+          </div>
+          <div class="field">
+            <label class="field-label">公开访问域名（可选）</label>
+            <input
+              :value="storageValue('cloudflare_public_url') ?? ''"
+              class="field-input"
+              placeholder="可选，留空自动生成默认域名"
+              @input="setStorageValue('cloudflare_public_url', ($event.target as HTMLInputElement).value || undefined)"
+            />
+            <p class="field-hint">自定义公开访问域名（如使用 Cloudflare 自定义域名时填写）</p>
+          </div>
+        </template>
+
+        <!-- Supabase S3 fields -->
+        <template v-if="storageValue('backend') === 'supabase'">
+          <div class="field">
+            <label class="field-label">Project URL</label>
+            <input
+              :value="storageValue('supabase_url') ?? ''"
+              class="field-input"
+              placeholder="如 https://xxx.supabase.co"
+              @input="setStorageValue('supabase_url', ($event.target as HTMLInputElement).value || undefined)"
+            />
+            <p class="field-hint">Supabase Dashboard → Settings → API → Project URL</p>
+          </div>
+          <div class="field">
+            <label class="field-label">S3 Access Key ID</label>
+            <input
+              :value="storageValue('supabase_s3_access_key_id') ?? ''"
+              class="field-input"
+              placeholder="S3 Access Key ID"
+              @input="setStorageValue('supabase_s3_access_key_id', ($event.target as HTMLInputElement).value || undefined)"
+            />
+            <p class="field-hint">Supabase Dashboard → Storage → Settings → S3 Credentials</p>
+          </div>
+          <div class="field">
+            <label class="field-label">S3 Secret Access Key</label>
+            <input
+              :value="storageValue('supabase_s3_secret_access_key') ?? ''"
+              class="field-input"
+              type="password"
+              placeholder="S3 Secret Access Key"
+              @input="setStorageValue('supabase_s3_secret_access_key', ($event.target as HTMLInputElement).value || undefined)"
+            />
+          </div>
+          <div class="field">
+            <label class="field-label">Bucket 名称</label>
+            <input
+              :value="storageValue('supabase_bucket') || 'upload'"
+              class="field-input"
+              placeholder="upload"
+              @input="setStorageValue('supabase_bucket', ($event.target as HTMLInputElement).value || undefined)"
+            />
+            <p class="field-hint">留空默认使用 upload</p>
+          </div>
+        </template>
       </section>
 
       <!-- Actions -->
