@@ -432,18 +432,16 @@ class TestGeneralConfigAPI:
         self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
     ):
         """PUT valid general config: file reloads as valid JSON, only known
-        fields kept (unknown dropped, KNOWN order preserved), .bak backup created."""
+        fields kept (KNOWN order preserved), .bak backup created."""
         config_file = tmp_path / "configs.json"
-        original = {"database_dir": "/old", "unknown_field": "should-be-dropped"}
+        original = {"database_dir": "/old"}
         config_file.write_text(json.dumps(original), encoding="utf-8")
         monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
 
         payload = {
             "database_dir": "/new/data",
-            "unknown_key": 123,
             "log_level": "DEBUG",
             "api_server_url": "http://localhost:9000",
-            "extra_unknown": "x",
         }
         response = await async_client.put(
             "/api/config/general",
@@ -455,13 +453,31 @@ class TestGeneralConfigAPI:
         saved = json.loads(config_file.read_text(encoding="utf-8"))
         # 仅保留已知字段，且按 KNOWN 顺序
         assert list(saved.keys()) == ["database_dir", "log_level", "api_server_url"]
-        assert "unknown_key" not in saved
-        assert "extra_unknown" not in saved
         assert saved["log_level"] == "DEBUG"
         # 旧文件备份为 .bak
         backup_file = tmp_path / "configs.json.bak"
         assert backup_file.exists()
         assert json.loads(backup_file.read_text(encoding="utf-8")) == original
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_unknown_field_rejected(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with an unknown top-level field returns 400 and leaves the file unchanged."""
+        config_file = tmp_path / "configs.json"
+        original = json.dumps(self.VALID_CONFIG)
+        config_file.write_text(original, encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": {**self.VALID_CONFIG, "unknown_key": 123}},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert "unknown_key" in response.json().get("msg", "")
+        assert config_file.read_text(encoding="utf-8") == original
 
     @pytest.mark.asyncio
     async def test_put_general_config_invalid_log_level(
@@ -505,8 +521,7 @@ class TestGeneralConfigAPI:
     async def test_put_general_config_with_execution(
         self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
     ):
-        """PUT general config with execution group: preserved in KNOWN order,
-        unknown execution fields dropped, .bak backup created."""
+        """PUT general config with execution group: preserved in KNOWN order, .bak backup created."""
         config_file = tmp_path / "configs.json"
         original = {"database_dir": "/old"}
         config_file.write_text(json.dumps(original), encoding="utf-8")
@@ -523,7 +538,6 @@ class TestGeneralConfigAPI:
                 "llm_first_chunk_timeout": 15,
                 "dead_loop_window": 4,
                 "message_queue_size": 10,
-                "bogus_field": "should-be-dropped",
             },
         }
         response = await async_client.put(
@@ -535,7 +549,7 @@ class TestGeneralConfigAPI:
         assert response.status_code == 200
         saved = json.loads(config_file.read_text(encoding="utf-8"))
         assert "execution" in saved
-        # execution 字段按 KNOWN 顺序写回，未知字段被过滤
+        # execution 字段按 KNOWN 顺序写回
         assert list(saved["execution"].keys()) == [
             "step_max_errors",
             "llm_retry_delay",
@@ -548,11 +562,81 @@ class TestGeneralConfigAPI:
         ]
         assert saved["execution"]["step_max_errors"] == 5
         assert saved["execution"]["dead_loop_window"] == 4
-        assert "bogus_field" not in saved["execution"]
         # 旧文件备份为 .bak
         backup_file = tmp_path / "configs.json.bak"
         assert backup_file.exists()
         assert json.loads(backup_file.read_text(encoding="utf-8")) == original
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_unknown_execution_field_rejected(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with an unknown execution field returns 400 and leaves the file unchanged."""
+        config_file = tmp_path / "configs.json"
+        original = json.dumps(self.VALID_CONFIG)
+        config_file.write_text(original, encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        payload = {
+            "database_dir": "/new/data",
+            "execution": {"step_max_errors": 5, "bogus_field": 1},
+        }
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": payload},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert "bogus_field" in response.json().get("msg", "")
+        assert config_file.read_text(encoding="utf-8") == original
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_new_execution_fields_persisted(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """Regression: permission_request_timeout / agent_query_timeout must be persisted."""
+        config_file = tmp_path / "configs.json"
+        config_file.write_text(json.dumps(self.VALID_CONFIG), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        payload = {
+            "execution": {
+                "permission_request_timeout": 90,
+                "agent_query_timeout": 300,
+            }
+        }
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": payload},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved["execution"]["permission_request_timeout"] == 90
+        assert saved["execution"]["agent_query_timeout"] == 300
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_unknown_asr_field_rejected(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT with an unknown asr field must return 400 (rather than silently drop)."""
+        config_file = tmp_path / "configs.json"
+        original = json.dumps(self.VALID_CONFIG)
+        config_file.write_text(original, encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        payload = {"asr": {"model_name": "foo", "bogus_asr": 1}}
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": payload},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 400
+        assert "bogus_asr" in response.json().get("msg", "")
+        assert config_file.read_text(encoding="utf-8") == original
 
     @pytest.mark.asyncio
     async def test_put_general_config_execution_not_object(
