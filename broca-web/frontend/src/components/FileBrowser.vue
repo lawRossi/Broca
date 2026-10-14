@@ -39,7 +39,6 @@ const previewLoading = ref(false)
 const isEditing = ref(false)
 const editedContent = ref('')
 const saveLoading = ref(false)
-const showSaveConfirm = ref(false)
 const contentChanged = ref(false)
 const isMobile = ref(false)
 
@@ -356,13 +355,12 @@ const handleClosePreview = () => {
 }
 
 const confirmSave = () => {
-  showSaveConfirm.value = true
+  saveFile()
 }
 
 const saveFile = async () => {
   try {
     saveLoading.value = true
-    showSaveConfirm.value = false
 
     // 找到当前预览的文件
     const currentFile = files.value.find((f) => f.name === previewFileName.value)
@@ -789,35 +787,6 @@ defineExpose({
           <el-button v-if="!isEditing && isTextFile" type="primary" @click="startEditing"> Edit </el-button>
           <el-button v-if="isEditing" @click="cancelEditing"> Cancel </el-button>
           <el-button v-if="isEditing" type="primary" :loading="saveLoading" @click="confirmSave"> Save </el-button>
-        </span>
-      </template>
-    </el-dialog>
-
-    <!-- Save Confirmation Dialog -->
-    <el-dialog
-      v-model="showSaveConfirm"
-      title="Confirm Save"
-      :width="isMobile ? '90%' : '400px'"
-      :fullscreen="isMobile"
-    >
-      <div class="space-y-4">
-        <div class="flex items-start gap-3">
-          <el-icon class="text-yellow-500 mt-0.5">
-            <Warning />
-          </el-icon>
-          <div>
-            <p class="font-medium text-gray-900">Are you sure you want to save changes?</p>
-            <p class="text-sm text-gray-600 mt-1">
-              This will overwrite the original file. A backup will be created with .bak extension.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <template #footer>
-        <span class="dialog-footer">
-          <el-button @click="showSaveConfirm = false">Cancel</el-button>
-          <el-button type="primary" :loading="saveLoading" @click="saveFile"> Save Changes </el-button>
         </span>
       </template>
     </el-dialog>
