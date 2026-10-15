@@ -5,7 +5,6 @@
 # 本脚本会完成以下操作：
 #   1. 检查系统依赖 (Python 3.12+, Node.js/pnpm)
 #   2. 安装 broca Python 模块到当前 Python 环境
-#   3. 配置前端文件上传存储 (交互式，可跳过)
 #   4. 安装前端依赖并构建
 #   5. 检测 nginx 情况，配置前端部署方式
 #   6. 创建 supervisor 配置，管理后端/前端进程
@@ -1068,11 +1067,6 @@ if $SKIP_FRONTEND; then
     fi
 else
     echo "  前端模式:   nginx"
-    if [[ -f "$ENV_FILE" ]] && grep -qE '^VITE_(CLOUDFLARE_ACCOUNT_ID|SUPABASE_URL)=' "$ENV_FILE" 2>/dev/null; then
-        echo "  文件存储:   ✅ 已配置"
-    else
-        echo -e "  文件存储:   ${YELLOW}⚠ 未配置${NC} (编辑 ${ENV_FILE} 后重新构建)"
-    fi
     echo ""
     echo "  nginx 前端配置文件已就绪: $NGINX_SITE_CONF"
     echo ""
