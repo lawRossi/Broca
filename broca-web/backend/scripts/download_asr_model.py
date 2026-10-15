@@ -1,37 +1,35 @@
 #!/usr/bin/env python3
-"""Download Sherpa-ONNX ASR model files from ModelScope.
+"""Download Sherpa-ONNX ASR model files (INT8 models only).
 
 Usage:
     python download_asr_model.py [--model MODEL_NAME]
 
-Downloads the specified streaming ASR model to ~/.broca/models/asr/{model_name}/.
-Files already present on disk are skipped.
+Available models:
+    sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30        (default, ~168 MB)
+    sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30 (xlarge, ~400 MB)
+
+Downloads via hf-mirror.com (HuggingFace China mirror) by default,
+falls back to official huggingface.co if the mirror is unavailable.
+Model files are saved to ~/.broca/models/asr/{model_name}/.
 """
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
-# Model IDs by source (owner/model_name)
-# ModelScope mirrors (faster in China)
-MODELSCOPE_MODEL_IDS = {
-    "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20":
-        "pkufool/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20",
-    "sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23":
-        "pkufool/sherpa-onnx-streaming-zipformer-zh-14M-2023-02-23",
-    "sherpa-onnx-streaming-zipformer-en-20M-2023-02-17":
-        "pkufool/sherpa-onnx-streaming-zipformer-en-20M-2023-02-17",
-}
-
-# HuggingFace repos (official source, all models available)
-HUGGINGFACE_MODEL_IDS = {
-    "sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30":
-        "csukuangfj/sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30",
+# HuggingFace repos (official source)
+HF_MODEL_IDS = {
     "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30":
         "csukuangfj/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30",
-    "sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20":
-        "csukuangfj/sherpa-onnx-streaming-zipformer-bilingual-zh-en-2023-02-20",
+    "sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30":
+        "csukuangfj/sherpa-onnx-streaming-zipformer-zh-xlarge-int8-2025-06-30",
 }
+
+# 国内镜像
+HF_MIRROR_ENDPOINT = "https://hf-mirror.com"
+# 官方源（回退）
+HF_OFFICIAL_ENDPOINT = "https://huggingface.co"
 
 DEFAULT_MODEL = "sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"
 
@@ -42,13 +40,36 @@ def _log(msg: str) -> None:
     print(f"[ASR Download] {msg}", flush=True)
 
 
-def download_model(model_name: str) -> None:
-    """Download model files for the given model from ModelScope.
+def _snapshot_download(repo_id: str, local_dir: str, endpoint: str) -> bool:
+    """Try to download from the given endpoint. Returns True on success."""
+    try:
+        from huggingface_hub import snapshot_download
+        # 通过环境变量切换端点
+        os.environ["HF_ENDPOINT"] = endpoint
+        snapshot_download(
+            repo_id,
+            local_dir=local_dir,
+            allow_patterns=["*.onnx", "tokens.txt", "bpe.model"],
+            max_workers=4,
+        )
+        return True
+    except ImportError:
+        _log("ERROR: 'huggingface_hub' is not installed.")
+        _log("Install it with: pip install huggingface_hub")
+        return False
+    except Exception as e:
+        _log(f"Download from {endpoint} failed: {e}")
+        return False
 
-    Strategy:
-    1. If the model directory already has the required files, skip.
-    2. Use modelscope SDK snapshot_download to fetch missing files.
-    """
+
+def download_model(model_name: str) -> None:
+    """Download model files for the given model."""
+    if model_name not in HF_MODEL_IDS:
+        _log(f"ERROR: Unknown model '{model_name}'")
+        _log(f"Available models: {', '.join(HF_MODEL_IDS.keys())}")
+        raise SystemExit(1)
+
+    repo_id = HF_MODEL_IDS[model_name]
     dest_dir = MODEL_DIR / model_name
     dest_dir.mkdir(parents=True, exist_ok=True)
 
@@ -63,69 +84,25 @@ def download_model(model_name: str) -> None:
         _log(f"Model '{model_name}' already exists in {dest_dir}. Nothing to do.")
         return
 
-    # Determine download source: prefer ModelScope (fast in China), fallback to HuggingFace
-    modelscope_id = MODELSCOPE_MODEL_IDS.get(model_name)
-    huggingface_id = HUGGINGFACE_MODEL_IDS.get(model_name)
-
     missing = [k for k, v in required.items() if not v]
-    if missing:
-        _log(f"Missing: {', '.join(missing)}")
-    _log(f"Target directory: {dest_dir}")
+    _log(f"Model: {model_name}")
+    _log(f"Source:  {repo_id}")
+    _log(f"Missing: {', '.join(missing)}")
+    _log(f"Target:  {dest_dir}")
 
-    # Download all .onnx model files + tokenizer files.
-    allow_patterns = [
-        "*.onnx",
-        "tokens.txt",
-        "bpe.model",
-    ]
-
-    downloaded = False
-
-    # Try ModelScope first
-    if modelscope_id:
-        _log(f"Trying ModelScope: {modelscope_id}")
-        try:
-            from modelscope.hub.snapshot_download import snapshot_download
-            snapshot_download(
-                modelscope_id,
-                local_dir=str(dest_dir),
-                allow_patterns=allow_patterns,
-                max_workers=4,
-            )
-            downloaded = True
-            _log("Download complete (ModelScope).")
-        except ImportError:
-            _log("ModelScope SDK not installed, trying HuggingFace...")
-        except Exception as e:
-            _log(f"ModelScope download failed: {e}")
-
-    # Fallback to HuggingFace
-    if not downloaded and huggingface_id:
-        _log(f"Trying HuggingFace: {huggingface_id}")
-        try:
-            from huggingface_hub import snapshot_download as hf_download
-            hf_download(
-                huggingface_id,
-                local_dir=str(dest_dir),
-                allow_patterns=allow_patterns,
-                max_workers=4,
-            )
-            downloaded = True
-            _log("Download complete (HuggingFace).")
-        except ImportError:
-            _log("ERROR: Neither 'modelscope' nor 'huggingface_hub' is installed.")
-            _log("Install one with: pip install modelscope  OR  pip install huggingface_hub")
-            raise SystemExit(1)
-        except Exception as e:
-            _log(f"HuggingFace download failed: {e}")
-            _log(f"You can also download manually: "
-                 f"hf download {huggingface_id} "
-                 f'--include "*.onnx" "tokens.txt" "bpe.model" '
-                 f"--local-dir {dest_dir}")
-            raise SystemExit(1)
+    # 优先使用国内镜像，失败后回退到官方源
+    downloaded = _snapshot_download(repo_id, str(dest_dir), HF_MIRROR_ENDPOINT)
+    if not downloaded:
+        _log("Fallback to official HuggingFace...")
+        downloaded = _snapshot_download(repo_id, str(dest_dir), HF_OFFICIAL_ENDPOINT)
 
     if not downloaded:
-        _log("ERROR: No download source available for this model.")
+        _log("ERROR: Failed to download from both mirror and official source.")
+        _log(f"  Mirror:   {HF_MIRROR_ENDPOINT}")
+        _log(f"  Official: {HF_OFFICIAL_ENDPOINT}")
+        _log(f"You can also try manually:  hf download {repo_id} "
+             f'--include "*.onnx" "tokens.txt" "bpe.model" '
+             f"--local-dir {dest_dir}")
         raise SystemExit(1)
 
     # Verify (re-glob after download)
@@ -143,10 +120,13 @@ def download_model(model_name: str) -> None:
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Download Sherpa-ONNX ASR model from ModelScope")
+    parser = argparse.ArgumentParser(
+        description="Download Sherpa-ONNX INT8 ASR model (via hf-mirror.com)",
+    )
     parser.add_argument(
         "--model",
         default=DEFAULT_MODEL,
+        choices=list(HF_MODEL_IDS.keys()),
         help=f"Model name (default: {DEFAULT_MODEL})",
     )
     args = parser.parse_args()
