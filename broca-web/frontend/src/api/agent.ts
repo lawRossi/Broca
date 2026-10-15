@@ -107,10 +107,12 @@ export const agentApi = {
   },
 
   /**
-   * 获取所有可用的内置技能列表
+   * 获取所有可用的技能列表（全局 + workspace）
    */
-  async getAvailableSkills(): Promise<string[]> {
-    const res = await request.get<{ skills: string[] }>('/skills')
+  async getAvailableSkills(workspace?: string): Promise<string[]> {
+    const res = await request.get<{ skills: string[] }>('/skills', {
+      params: workspace ? { workspace } : {},
+    })
     return res.skills || []
   },
 }

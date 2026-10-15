@@ -2135,7 +2135,8 @@ export class ChatWebViewManager {
 
   private async handleFetchAvailableSkills(panel: vscode.WebviewPanel) {
     try {
-      const skills = await this.apiClient.getAvailableSkills()
+      const workspace = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || undefined
+      const skills = await this.apiClient.getAvailableSkills(workspace)
       this.postToPanel(panel, {
         type: 'availableSkills',
         payload: skills,

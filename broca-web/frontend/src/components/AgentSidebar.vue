@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref, watch, computed } from 'vue'
-import { useChatStore, useAgentStore } from '@/stores'
+import { useChatStore, useAgentStore, useSessionStore } from '@/stores'
 import type { Agent } from '@/stores/agent'
 import { agentApi } from '@/api/agent'
 import {
@@ -32,6 +32,7 @@ import {
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
+const sessionStore = useSessionStore()
 
 const showConfigDialog = ref(false)
 const loading = ref(false)
@@ -92,7 +93,12 @@ const availableSkills = ref<string[]>([])
 const fetchAvailableSkills = async () => {
   if (availableSkills.value.length > 0) return // 已加载过则跳过
   try {
-    availableSkills.value = await agentApi.getAvailableSkills()
+    // 从当前会话获取 workspace，使 workspace 级别 skills 也出现在列表中
+    const currentSession = sessionStore.sessions.find(
+      (s: any) => s.session_id === chatStore.sessionId,
+    )
+    const workspace = currentSession?.workspace || ''
+    availableSkills.value = await agentApi.getAvailableSkills(workspace || undefined)
   } catch (err: any) {
     console.error('获取可用技能列表失败:', err)
   }

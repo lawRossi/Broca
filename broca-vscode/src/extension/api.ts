@@ -172,10 +172,12 @@ export class ApiClient {
   }
 
   /**
-   * 获取所有可用的内置技能列表
+   * 获取所有可用的技能列表（全局 + workspace）
    */
-  async getAvailableSkills(): Promise<string[]> {
-    const response = await this.client.get('/skills')
+  async getAvailableSkills(workspace?: string): Promise<string[]> {
+    const response = await this.client.get('/skills', {
+      params: workspace ? { workspace } : {},
+    })
     return response.data.skills || []
   }
 
