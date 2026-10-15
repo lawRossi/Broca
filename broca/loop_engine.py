@@ -335,7 +335,7 @@ class LoopEngine:
         重试参数统一为 step_max_errors 次 / llm_retry_delay 秒：
         - 限流 (LLM_RATE_LIMIT)：等待后自动重试，最多连续重试 step_max_errors 次，
           某次调用成功后限流计数清零。
-        - 其他 LLMError：立即向上抛出，结束 turn。
+        - 其他 LLMError：按同一重试参数重试，超过 step_max_errors 次后中止。
         - 超时/未知异常：按同一重试参数重试。
         """
         errors = 0
@@ -377,7 +377,17 @@ class LoopEngine:
                     )
                     await asyncio.sleep(self.llm_retry_delay)
                     continue
-                raise
+                errors += 1
+                logger.error(f"LLM error ({e.error_code}): {e}")
+                if errors == self.step_max_errors:
+                    logger.error("Too many LLM errors, aborting...")
+                    raise
+                await self._send_llm_error(
+                    "LLM 调用失败，正在重试...",
+                    e.error_code.value,
+                    "error",
+                )
+                await asyncio.sleep(self.llm_retry_delay)
             except asyncio.TimeoutError:
                 errors += 1
                 logger.error("LLM call timed out")

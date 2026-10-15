@@ -259,16 +259,36 @@ class TestRateLimitRetry:
         assert mock_sleep.await_count == 3
 
     @pytest.mark.asyncio
-    async def test_non_rate_limit_llm_error_not_retried(self, loop_engine):
-        """非限流 LLM 错误保持原行为：立即抛出，不重试"""
+    async def test_non_rate_limit_llm_error_retried(self, loop_engine):
+        """非限流 LLM 错误现在也会重试，超过 step_max_errors 次后抛出"""
         err = LLMError("API Key 认证失败", error_code=ErrorCode.LLM_AUTH_ERROR)
-        loop_engine._call_llm_streaming = AsyncMock(side_effect=[err, MagicMock()])
+        # step_max_errors 默认为 3，需要连续失败 3 次才会 raise
+        loop_engine._call_llm_streaming = AsyncMock(
+            side_effect=[err, err, err]
+        )
 
         with patch("broca.loop_engine.asyncio.sleep", new=AsyncMock()) as mock_sleep:
             with pytest.raises(LLMError):
                 await loop_engine._call_llm_with_retry()
 
-        mock_sleep.assert_not_awaited()
+        # 前两次失败后 sleep 重试，第三次达到上限直接 raise 不再 sleep
+        assert mock_sleep.await_count == 2
+        assert loop_engine._consecutive_rate_limit_errors == 0
+
+    @pytest.mark.asyncio
+    async def test_non_rate_limit_llm_error_retries_then_succeeds(self, loop_engine):
+        """非限流 LLM 错误重试后成功"""
+        err = LLMError("API Key 认证失败", error_code=ErrorCode.LLM_AUTH_ERROR)
+        success_response = MagicMock()
+        loop_engine._call_llm_streaming = AsyncMock(
+            side_effect=[err, success_response]
+        )
+
+        with patch("broca.loop_engine.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            result = await loop_engine._call_llm_with_retry()
+
+        assert result == success_response
+        assert mock_sleep.await_count == 1
         assert loop_engine._consecutive_rate_limit_errors == 0
 
 
