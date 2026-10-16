@@ -571,5 +571,5 @@ alembic/versions
 # Worktrees
 .worktrees/
 
-.vsix
+*.vsix
 .broca
