@@ -1056,8 +1056,51 @@ for link_dir in "${HOME}/.local/bin" "${HOME}/bin"; do
     fi
 done
 
-# 如果 ~/.local/bin 不在 PATH 但 macOS 上常见 Homebrew 路径在 PATH 中
-# 则创建 ~/.local/bin 并提示用户添加到 shell 配置
+# 辅助：检测当前 shell 对应的 rc 配置文件
+detect_shell_rc() {
+    local shell_name
+    shell_name="$(basename "${SHELL:-/bin/sh}")"
+    case "$shell_name" in
+        zsh)
+            echo "${HOME}/.zshrc"
+            ;;
+        bash)
+            if [[ -f "${HOME}/.bashrc" ]]; then
+                echo "${HOME}/.bashrc"
+            else
+                echo "${HOME}/.bash_profile"
+            fi
+            ;;
+        *)
+            if $IS_MACOS; then
+                echo "${HOME}/.zshrc"
+            else
+                echo "${HOME}/.bashrc"
+            fi
+            ;;
+    esac
+}
+
+# 辅助：确保目录已追加到 shell rc 的 PATH 中（幂等，不会重复追加）
+ensure_path_in_rc() {
+    local dir="$1"
+    local rc_file
+    rc_file="$(detect_shell_rc)"
+    # 幂等检查：rc 文件中已包含该目录则跳过
+    if [[ -f "$rc_file" ]] && grep -qF "$dir" "$rc_file" 2>/dev/null; then
+        info "PATH 配置已存在，跳过写入: $rc_file"
+        return 0
+    fi
+    {
+        echo ""
+        echo "# Added by Broca installer"
+        echo "export PATH=\"\$PATH:$dir\""
+    } >> "$rc_file"
+    info "已自动将 $dir 添加到 PATH ($rc_file)"
+    echo "  请执行: source $rc_file  （或重新打开终端窗口）"
+}
+
+# 回退：创建 ~/.local/bin 并链接
 if ! $BROCA_LINK_CREATED; then
     LOCAL_BIN="${HOME}/.local/bin"
     mkdir -p "$LOCAL_BIN"
@@ -1067,30 +1110,16 @@ if ! $BROCA_LINK_CREATED; then
             BROCA_LINK_CREATED=true
         else
             warn "broca 命令已安装到 $LOCAL_BIN/broca，但该目录不在 PATH 中"
-            echo "  请将该目录添加到 PATH："
-            if $IS_MACOS; then
-                echo "    echo 'export PATH=\"\$PATH:$LOCAL_BIN\"' >> ~/.zshrc"
-                echo "    source ~/.zshrc"
-            else
-                echo "    echo 'export PATH=\"\$PATH:$LOCAL_BIN\"' >> ~/.bashrc"
-                echo "    source ~/.bashrc"
-            fi
-            echo ""
-            echo "  或者直接使用完整路径运行: $BROCA_BIN"
-            BROCA_LINK_CREATED=true  # 文件已创建，只是不在 PATH 中
+            ensure_path_in_rc "$LOCAL_BIN"
+            BROCA_LINK_CREATED=true
         fi
     fi
 fi
 
+# 最终兜底：连软链接都创建失败时，把 venv/bin 加入 PATH
 if ! $BROCA_LINK_CREATED; then
-    warn "无法创建 broca 软链接，请手动添加到 PATH"
-    echo "  请执行以下命令之一:"
-    echo "    export PATH=\"\$PATH:$BROCA_VENV/bin\"    # 临时生效"
-    if $IS_MACOS; then
-        echo "    echo 'export PATH=\"\$PATH:$BROCA_VENV/bin\"' >> ~/.zshrc  # 永久生效"
-    else
-        echo "    echo 'export PATH=\"\$PATH:$BROCA_VENV/bin\"' >> ~/.bashrc  # 永久生效"
-    fi
+    warn "无法创建 broca 软链接，将 $BROCA_VENV/bin 添加到 PATH"
+    ensure_path_in_rc "$BROCA_VENV/bin"
 fi
 
 echo ""
