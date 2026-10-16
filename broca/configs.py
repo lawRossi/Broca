@@ -55,6 +55,26 @@ class StorageConfig:
         return storage_config
 
 
+class SearchConfig:
+    """搜索 API 配置（configs.json 的 search 分组）"""
+
+    def __init__(self):
+        self.tavily_api_key = ""
+        self.anysearch_api_key = ""
+        self.anysearch_api_base_url = "https://api.anysearch.com"
+        self.default_search_provider = "tavily"   # "tavily" | "anysearch"
+        self.default_fetch_provider = "anysearch"  # "anysearch" | "playwright"
+
+    @classmethod
+    def from_config(cls, config):
+        search_config = cls()
+        for key in list(config.keys()):
+            if key not in search_config.__dict__:
+                del config[key]
+        search_config.__dict__.update(config)
+        return search_config
+
+
 class BrocaConfig:
     def __init__(self):
         self.database_dir = None
@@ -65,6 +85,7 @@ class BrocaConfig:
         self.api_server_url = None
         self.execution = ExecutionConfig()
         self.storage = StorageConfig()
+        self.search = SearchConfig()
 
     @classmethod
     def from_config(cls, config):
@@ -78,6 +99,9 @@ class BrocaConfig:
             elif key == "storage" and isinstance(config[key], dict):
                 agent_config.storage = StorageConfig.from_config(config[key])
                 config[key] = agent_config.storage
+            elif key == "search" and isinstance(config[key], dict):
+                agent_config.search = SearchConfig.from_config(config[key])
+                config[key] = agent_config.search
         agent_config.__dict__.update(config)
         return agent_config
 

@@ -116,6 +116,18 @@ export interface ASRConfig {
   noise_gate_rms?: number
 }
 
+/** 搜索 API 配置（configs.json 中的 search 分组） */
+export interface SearchConfig {
+  tavily_api_key?: string
+  anysearch_api_key?: string
+  anysearch_api_base_url?: string
+  default_search_provider?: 'tavily' | 'anysearch'
+  default_fetch_provider?: 'anysearch' | 'playwright'
+}
+
+export const SEARCH_PROVIDERS = ['tavily', 'anysearch'] as const
+export const FETCH_PROVIDERS = ['anysearch', 'playwright'] as const
+
 /** 文件上传存储配置（configs.json 中的 storage 分组） */
 export interface StorageConfig {
   /** 存储后端: cloudflare | supabase | 空（未配置） */
@@ -144,6 +156,7 @@ export interface GeneralConfig {
   execution?: ExecutionConfig
   asr?: ASRConfig
   storage?: StorageConfig
+  search?: SearchConfig
 }
 
 /** 执行引擎配置 */

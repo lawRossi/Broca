@@ -38,6 +38,7 @@ KNOWN_GENERAL_CONFIG_FIELDS = (
     "execution",
     "asr",
     "storage",
+    "search",
 )
 # execution 分组下的已知字段（数字型，执行引擎相关；顺序保持写回）
 KNOWN_EXECUTION_CONFIG_FIELDS = (
@@ -74,6 +75,16 @@ KNOWN_STORAGE_CONFIG_FIELDS = (
 VALID_DECODING_METHODS = {"greedy_search", "modified_beam_search"}
 VALID_LOG_LEVELS = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
 VALID_PERMISSIONS = {"allow", "ask", "forbidden"}
+# search 分组下的已知字段（搜索 API 密钥、地址与默认 provider）
+KNOWN_SEARCH_CONFIG_FIELDS = (
+    "tavily_api_key",
+    "anysearch_api_key",
+    "anysearch_api_base_url",
+    "default_search_provider",
+    "default_fetch_provider",
+)
+VALID_SEARCH_PROVIDERS = {"tavily", "anysearch"}
+VALID_FETCH_PROVIDERS = {"anysearch", "playwright"}
 VALID_STORAGE_BACKENDS = {"cloudflare", "supabase"}
 
 
@@ -275,6 +286,38 @@ def _validate_storage_config(config: Any) -> None:
         )
 
 
+def _validate_search_config(config: Any) -> None:
+    """校验 search 分组：必须 object；所有字段值必须为字符串；
+    provider 字段值必须合法；未知字段直接报错。"""
+    if not isinstance(config, dict):
+        raise HTTPException(status_code=400, detail="Search config field 'search' must be an object")
+    unknown = [key for key in config if key not in KNOWN_SEARCH_CONFIG_FIELDS]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Unknown search config field(s): {sorted(unknown)}. "
+                f"Allowed fields: {list(KNOWN_SEARCH_CONFIG_FIELDS)}"
+            ),
+        )
+    for key, value in config.items():
+        if value is not None and not isinstance(value, str):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Search config field '{key}' must be a string",
+            )
+    if (v := config.get("default_search_provider")) is not None and v not in VALID_SEARCH_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'default_search_provider' must be one of {sorted(VALID_SEARCH_PROVIDERS)}",
+        )
+    if (v := config.get("default_fetch_provider")) is not None and v not in VALID_FETCH_PROVIDERS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"'default_fetch_provider' must be one of {sorted(VALID_FETCH_PROVIDERS)}",
+        )
+
+
 def _validate_general_config(config: Any) -> None:
     """校验 general 配置：必须 object；已知字段若存在必须为 string；log_level 必须合法；
     execution/asr 分组有独立的 object 校验。
@@ -300,6 +343,8 @@ def _validate_general_config(config: Any) -> None:
             _validate_asr_config(value)
         elif key == "storage":
             _validate_storage_config(value)
+        elif key == "search":
+            _validate_search_config(value)
         elif key in KNOWN_GENERAL_CONFIG_FIELDS:
             if not isinstance(value, str):
                 raise HTTPException(
@@ -343,6 +388,14 @@ def _filter_general_config(config: dict[str, Any]) -> dict[str, Any]:
                     fk: storage_src[fk]
                     for fk in KNOWN_STORAGE_CONFIG_FIELDS
                     if fk in storage_src
+                }
+        elif key == "search":
+            search_src = config[key]
+            if isinstance(search_src, dict):
+                result[key] = {
+                    fk: search_src[fk]
+                    for fk in KNOWN_SEARCH_CONFIG_FIELDS
+                    if fk in search_src
                 }
         else:
             result[key] = config[key]

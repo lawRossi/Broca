@@ -2,7 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { ElMessage } from 'element-plus'
 import { Refresh, Loading, WarningFilled } from '@element-plus/icons-vue'
-import configApi, { LOG_LEVELS, type GeneralConfig, type ASRConfig, type StorageConfig } from '@/api/config'
+import configApi, { LOG_LEVELS, SEARCH_PROVIDERS, FETCH_PROVIDERS, type GeneralConfig, type ASRConfig, type StorageConfig, type SearchConfig } from '@/api/config'
 
 // ==================== 状态 ====================
 const loading = ref(false)
@@ -122,6 +122,29 @@ const setStorageValue = (fieldKey: keyof StorageConfig, value: string | undefine
     storage[fieldKey] = value as any
   }
   config.value = { ...config.value, storage }
+}
+
+// ==================== 搜索 API 配置辅助 ====================
+const SEARCH_FIELDS: { key: keyof SearchConfig; label: string; placeholder: string; hint: string; isSecret: boolean }[] = [
+  { key: 'tavily_api_key', label: 'Tavily API Key', placeholder: 'tvly-...', hint: '在 https://tavily.com 获取，用于 web_search (provider=tavily)', isSecret: true },
+  { key: 'anysearch_api_key', label: 'AnySearch API Key', placeholder: 'as_sk_...', hint: '在 https://anysearch.com 获取（可选，匿名可用但限速更低）', isSecret: true },
+  { key: 'anysearch_api_base_url', label: 'AnySearch API 地址', placeholder: 'https://api.anysearch.com', hint: 'AnySearch API 基础地址，留空使用默认值', isSecret: false },
+]
+
+const searchValue = (fieldKey: keyof SearchConfig): string | undefined => {
+  const search = config.value.search
+  return search && typeof search === 'object' ? (search[fieldKey] as string) : undefined
+}
+
+const setSearchValue = (fieldKey: keyof SearchConfig, value: string | undefined | null) => {
+  const current = config.value.search
+  const search: SearchConfig = current ? { ...current } : {}
+  if (value === undefined || value === null || value === '') {
+    delete search[fieldKey]
+  } else {
+    search[fieldKey] = value as any
+  }
+  config.value = { ...config.value, search }
 }
 
 // ==================== 数据加载 ====================
@@ -602,6 +625,59 @@ defineExpose({ saveNow, reset })
                 </div>
               </el-form-item>
             </template>
+          </el-form>
+        </div>
+
+        <!-- 搜索 API 配置（search 分组） -->
+        <div class="mt-6 border-t border-gray-100 pt-5">
+          <h3 class="text-sm font-medium text-gray-700 mb-1">搜索 API</h3>
+          <p class="text-xs text-gray-400 mb-4">
+            web_search / web_fetch 工具使用的搜索服务配置（configs.json 的 search 分组，修改后对新启动的工具调用生效）
+          </p>
+          <el-form label-width="150px" label-position="left" @submit.prevent>
+            <!-- 默认 Provider -->
+            <el-form-item label="默认搜索 Provider">
+              <div class="w-full">
+                <el-select
+                  :model-value="searchValue('default_search_provider')"
+                  placeholder="默认: tavily"
+                  clearable
+                  class="w-full"
+                  @update:model-value="(val: string) => setSearchValue('default_search_provider', val)"
+                >
+                  <el-option v-for="p in SEARCH_PROVIDERS" :key="p" :label="p" :value="p" />
+                </el-select>
+                <p class="mt-1.5 text-xs text-gray-400">web_search 工具未指定 provider 时使用</p>
+              </div>
+            </el-form-item>
+            <el-form-item label="默认抓取 Provider">
+              <div class="w-full">
+                <el-select
+                  :model-value="searchValue('default_fetch_provider')"
+                  placeholder="默认: anysearch"
+                  clearable
+                  class="w-full"
+                  @update:model-value="(val: string) => setSearchValue('default_fetch_provider', val)"
+                >
+                  <el-option v-for="p in FETCH_PROVIDERS" :key="p" :label="p" :value="p" />
+                </el-select>
+                <p class="mt-1.5 text-xs text-gray-400">web_fetch 工具未指定 provider 时使用</p>
+              </div>
+            </el-form-item>
+
+            <!-- API Keys -->
+            <el-form-item v-for="field in SEARCH_FIELDS" :key="field.key" :label="field.label">
+              <div class="w-full">
+                <el-input
+                  :model-value="searchValue(field.key)"
+                  :type="field.isSecret ? 'password' : 'text'"
+                  :show-password="field.isSecret"
+                  :placeholder="field.placeholder"
+                  @update:model-value="(val: string) => setSearchValue(field.key, val)"
+                />
+                <p class="mt-1.5 text-xs text-gray-400">{{ field.hint }}</p>
+              </div>
+            </el-form-item>
           </el-form>
         </div>
     </div>

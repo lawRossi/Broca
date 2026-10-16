@@ -68,6 +68,23 @@ export interface StorageConfig {
   supabase_bucket?: string
 }
 
+/** 搜索 API 配置（configs.json 中的 search 分组） */
+export interface SearchConfig {
+  /** Tavily API 密钥（https://tavily.com 获取） */
+  tavily_api_key?: string
+  /** AnySearch API 密钥（https://anysearch.com 获取，可选，匿名可用） */
+  anysearch_api_key?: string
+  /** AnySearch API 地址（默认 https://api.anysearch.com） */
+  anysearch_api_base_url?: string
+  /** web_search 默认 provider: tavily | anysearch */
+  default_search_provider?: 'tavily' | 'anysearch'
+  /** web_fetch 默认 provider: anysearch | playwright */
+  default_fetch_provider?: 'anysearch' | 'playwright'
+}
+
+export const SEARCH_PROVIDERS = ['tavily', 'anysearch'] as const
+export const FETCH_PROVIDERS = ['anysearch', 'playwright'] as const
+
 /** 基础配置（configs.json）：仅已知字段 */
 export interface GeneralConfig {
   database_dir?: string
@@ -79,6 +96,7 @@ export interface GeneralConfig {
   execution?: ExecutionConfig
   asr?: ASRConfig
   storage?: StorageConfig
+  search?: SearchConfig
 }
 
 /** 执行引擎配置（configs.json 中的 execution 分组，数字型） */

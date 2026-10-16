@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { postMessage, onMessage } from '../../api/vscode'
-import type { GeneralConfig, ExecutionConfig, ASRConfig, StorageConfig } from '../../types'
-import { LOG_LEVELS } from '../../types'
+import type { GeneralConfig, ExecutionConfig, ASRConfig, StorageConfig, SearchConfig } from '../../types'
+import { LOG_LEVELS, SEARCH_PROVIDERS, FETCH_PROVIDERS } from '../../types'
 
 const DECODING_METHODS = ['modified_beam_search', 'greedy_search'] as const
 
@@ -282,6 +282,29 @@ function setAsrField(key: keyof ASRConfig, raw: string) {
   config.value = { ...config.value, asr }
 }
 
+// --- Search field helpers ---
+const SEARCH_FIELDS: { key: keyof SearchConfig; label: string; placeholder: string; hint: string; isSecret: boolean }[] = [
+  { key: 'tavily_api_key', label: 'Tavily API Key', placeholder: 'tvly-...', hint: '在 tavily.com 获取，用于 web_search (provider=tavily)', isSecret: true },
+  { key: 'anysearch_api_key', label: 'AnySearch API Key', placeholder: 'as_sk_...', hint: '在 anysearch.com 获取（可选，匿名可用但限速更低）', isSecret: true },
+  { key: 'anysearch_api_base_url', label: 'AnySearch API 地址', placeholder: 'https://api.anysearch.com', hint: '留空使用默认值', isSecret: false },
+]
+
+function searchValue(key: keyof SearchConfig): string | undefined {
+  const search = config.value.search
+  return search && typeof search === 'object' ? (search[key] as string | undefined) : undefined
+}
+
+function setSearchValue(key: keyof SearchConfig, value: string | undefined) {
+  const current = config.value.search
+  const search: SearchConfig = current ? { ...current } : {}
+  if (value === undefined || value === null || value === '') {
+    delete search[key]
+  } else {
+    search[key] = value as any
+  }
+  config.value = { ...config.value, search }
+}
+
 // --- Storage field helpers ---
 function storageValue(key: keyof StorageConfig): string | undefined {
   const storage = config.value.storage
@@ -548,6 +571,50 @@ function setStorageValue(key: keyof StorageConfig, value: string | undefined) {
             <p class="field-hint">留空默认使用 upload</p>
           </div>
         </template>
+      </section>
+
+      <!-- Search API -->
+      <section class="section">
+        <h2 class="section-title">搜索 API</h2>
+        <p class="field-hint" style="margin-bottom: 12px">web_search / web_fetch 工具使用的搜索服务配置（configs.json 的 search 分组）</p>
+
+        <div class="field">
+          <label class="field-label">默认搜索 Provider</label>
+          <select
+            :value="(searchValue('default_search_provider') as string | undefined) ?? ''"
+            class="field-select"
+            @change="setSearchValue('default_search_provider', ($event.target as HTMLSelectElement).value || undefined)"
+          >
+            <option value="">-- 默认 (tavily) --</option>
+            <option v-for="p in SEARCH_PROVIDERS" :key="p" :value="p">{{ p }}</option>
+          </select>
+          <p class="field-hint">web_search 工具未指定 provider 时使用</p>
+        </div>
+
+        <div class="field">
+          <label class="field-label">默认抓取 Provider</label>
+          <select
+            :value="(searchValue('default_fetch_provider') as string | undefined) ?? ''"
+            class="field-select"
+            @change="setSearchValue('default_fetch_provider', ($event.target as HTMLSelectElement).value || undefined)"
+          >
+            <option value="">-- 默认 (anysearch) --</option>
+            <option v-for="p in FETCH_PROVIDERS" :key="p" :value="p">{{ p }}</option>
+          </select>
+          <p class="field-hint">web_fetch 工具未指定 provider 时使用</p>
+        </div>
+
+        <div v-for="field in SEARCH_FIELDS" :key="field.key" class="field">
+          <label class="field-label">{{ field.label }}</label>
+          <input
+            :type="field.isSecret ? 'password' : 'text'"
+            :value="searchValue(field.key) ?? ''"
+            class="field-input"
+            :placeholder="field.placeholder"
+            @input="setSearchValue(field.key, ($event.target as HTMLInputElement).value || undefined)"
+          />
+          <p class="field-hint">{{ field.hint }}</p>
+        </div>
       </section>
 
       <!-- Actions -->

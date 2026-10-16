@@ -16,5 +16,12 @@
         "message_queue_size": 3,
         "permission_request_timeout": 90,
         "agent_query_timeout": 300
+    },
+    "search": {
+        "tavily_api_key": "",
+        "anysearch_api_key": "",
+        "anysearch_api_base_url": "https://api.anysearch.com",
+        "default_search_provider": "tavily",
+        "default_fetch_provider": "anysearch"
     }
 }
