@@ -421,16 +421,17 @@ class TurnService(BaseService[Turn]):
                                     stats["current_file_path"] = parsed["path"]
                             except (json.JSONDecodeError, TypeError):
                                 pass
-                    # 提取 TODO 列表
+                    # 提取 TODO 列表（调用失败时不更新）
                     if tool_name == "todo_management":
-                        args = m.data.get("arguments")
-                        if args:
-                            try:
-                                parsed = json.loads(args) if isinstance(args, str) else args
-                                if isinstance(parsed, dict) and parsed.get("todos"):
-                                    stats["current_todo_list"] = parsed["todos"]
-                            except (json.JSONDecodeError, TypeError):
-                                pass
+                        if not (m.data and m.data.get("status") == "error"):
+                            args = m.data.get("arguments") if m.data else None
+                            if args:
+                                try:
+                                    parsed = json.loads(args) if isinstance(args, str) else args
+                                    if isinstance(parsed, dict) and parsed.get("todos"):
+                                        stats["current_todo_list"] = parsed["todos"]
+                                except (json.JSONDecodeError, TypeError):
+                                    pass
 
             elif m.message_type == MessageType.TURN_END:
                 if m.data and "changed_files" in m.data:

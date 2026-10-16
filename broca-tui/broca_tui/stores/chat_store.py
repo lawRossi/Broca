@@ -856,18 +856,19 @@ class ChatStore:
                 if path:
                     turn.current_file_path = path
 
-        # 提取 TODO 列表
+        # 提取 TODO 列表（调用失败时不更新）
         if tool_name == "todo_management":
-            args = data.get("arguments", {})
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except (json.JSONDecodeError, TypeError):
-                    args = {}
-            if isinstance(args, dict):
-                todos = args.get("todos", [])
-                if todos:
-                    turn.current_todo_list = todos
+            if data.get("status") != "error":
+                args = data.get("arguments", {})
+                if isinstance(args, str):
+                    try:
+                        args = json.loads(args)
+                    except (json.JSONDecodeError, TypeError):
+                        args = {}
+                if isinstance(args, dict):
+                    todos = args.get("todos", [])
+                    if todos:
+                        turn.current_todo_list = todos
 
         # 收到 tool_call → 思考阶段已结束（进入工具执行），清空 reasoning_content，
         # 避免下次思考阶段把上一次的推理内容先展示出来。

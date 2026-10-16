@@ -1309,8 +1309,8 @@ export const useChatStore = defineStore('chat', () => {
           }
         }
 
-        // 提取 TODO 列表（todo_management）
-        if (toolName === 'todo_management') {
+        // 提取 TODO 列表（todo_management，调用失败时不更新）
+        if (toolName === 'todo_management' && message.data?.status !== 'error') {
           const args = message.data?.arguments
           if (args) {
             try {
