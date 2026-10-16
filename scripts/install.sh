@@ -141,6 +141,19 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BROCA_HOME="${HOME}/.broca"
 
+# ---- 命令行参数 ----
+ENABLE_HTTPS=""   # 空 = 未指定，稍后交互询问; "true"/"false" = 已通过 --https/--no-https 指定
+for arg in "$@"; do
+    case "$arg" in
+        --https)
+            ENABLE_HTTPS="true"
+            ;;
+        --no-https)
+            ENABLE_HTTPS="false"
+            ;;
+    esac
+done
+
 echo -e "${BLUE}"
 echo "==========================================="
 echo "       Broca - One-Click Installer"
@@ -681,6 +694,18 @@ mkdir -p "$BROCA_HOME"
 
 info "配置 nginx 站点..."
 
+# ---- HTTPS 选择 ----
+if [[ -z "$ENABLE_HTTPS" ]]; then
+    echo ""
+    prompt "是否启用 HTTPS？(iPhone/Android 使用麦克风权限时需要 HTTPS) (y/N) "
+    read -r https_input
+    if [[ "${https_input:-n}" =~ ^[Yy]([Ee][Ss])?$ ]]; then
+        ENABLE_HTTPS="true"
+    else
+        ENABLE_HTTPS="false"
+    fi
+fi
+
 if $IS_MACOS; then
     # macOS: Homebrew nginx 以 _www 用户运行，家目录默认不可读
     # 需要设置权限让 nginx 能访问前端静态文件
@@ -749,35 +774,42 @@ else
     fi
 fi
 
-    # 生成自签 HTTPS 证书（iOS/Android 要求 HTTPS 才能使用麦克风权限）
-    NGINX_CERT_DIR="$BROCA_HOME/certs"
-    NGINX_CERT="$NGINX_CERT_DIR/broca-cert.pem"
-    NGINX_KEY="$NGINX_CERT_DIR/broca-key.pem"
-    if [[ ! -f "$NGINX_CERT" || ! -f "$NGINX_KEY" ]]; then
-        mkdir -p "$NGINX_CERT_DIR"
-        info "生成自签 HTTPS 证书（有效期 10 年）..."
-        # 尝试获取本机外网 IP / 域名作为 SAN
-        LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "192.168.1.100")
-        openssl req -x509 -newkey rsa:2048 \
-            -keyout "$NGINX_KEY" -out "$NGINX_CERT" \
-            -days 3650 -nodes \
-            -subj "/CN=broca/O=Broca" \
-            -addext "subjectAltName=DNS:localhost,DNS:*.local,IP:127.0.0.1,IP:${LOCAL_IP}" \
-            2>/dev/null
-        chmod 600 "$NGINX_KEY"
-        info "证书已生成: $NGINX_CERT"
-        info "  (如使用 DynDNS/外网域名，请重新生成证书并将域名加入 SAN)"
-    else
-        info "复用已有证书: $NGINX_CERT"
-    fi
-
-    # 生成 nginx 配置（使用转义保留 nginx 变量）
-    # HTTPS 端口 8443
     NGINX_SITE_CONF="$BROCA_HOME/nginx-broca.conf"
-    cat > "$NGINX_SITE_CONF" <<- NGINXEOF
+
+    if [[ "$ENABLE_HTTPS" = "true" ]]; then
+        # ---- HTTPS 模式：生成自签证书 ----
+        NGINX_CERT_DIR="$BROCA_HOME/certs"
+        NGINX_CERT="$NGINX_CERT_DIR/broca-cert.pem"
+        NGINX_KEY="$NGINX_CERT_DIR/broca-key.pem"
+        if [[ ! -f "$NGINX_CERT" || ! -f "$NGINX_KEY" ]]; then
+            mkdir -p "$NGINX_CERT_DIR"
+            info "生成自签 HTTPS 证书（有效期 10 年）..."
+            LOCAL_IP=$(ipconfig getifaddr en0 2>/dev/null || hostname -I 2>/dev/null | awk '{print $1}' || echo "192.168.1.100")
+            openssl req -x509 -newkey rsa:2048 \
+                -keyout "$NGINX_KEY" -out "$NGINX_CERT" \
+                -days 3650 -nodes \
+                -subj "/CN=broca/O=Broca" \
+                -addext "subjectAltName=DNS:localhost,DNS:*.local,IP:127.0.0.1,IP:${LOCAL_IP}" \
+                2>/dev/null
+            chmod 600 "$NGINX_KEY"
+            info "证书已生成: $NGINX_CERT"
+            info "  (如使用 DynDNS/外网域名，请重新生成证书并将域名加入 SAN)"
+        else
+            info "复用已有证书: $NGINX_CERT"
+        fi
+
+        # ---- HTTPS 模式：nginx 配置 (8443 SSL + 5166 重定向) ----
+        cat > "$NGINX_SITE_CONF" <<- NGINXEOF
 # Broca Web - Nginx 配置
 # 由 broca service install 自动生成
-# HTTPS (8443)
+# HTTPS (8443) + HTTP 重定向 (5166)
+
+# HTTP -> HTTPS 重定向
+server {
+    listen       5166;
+    server_name  _;
+    return 301 https://\$host:8443\$request_uri;
+}
 
 # HTTPS 主站点
 server {
@@ -827,6 +859,59 @@ server {
     }
 }
 NGINXEOF
+        info "已启用 HTTPS (端口 8443)，HTTP (端口 5166) 将自动重定向到 HTTPS"
+    else
+        # ---- HTTP 模式：nginx 配置 (5166) ----
+        cat > "$NGINX_SITE_CONF" <<- NGINXEOF
+# Broca Web - Nginx 配置
+# 由 broca service install 自动生成
+# HTTP (5166)
+
+server {
+    listen       5166;
+    server_name  _;
+
+    # 前端静态文件
+    root ${NGINX_DIST_DIR};
+    index index.html;
+
+    # gzip 压缩
+    gzip on;
+    gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript;
+
+    # API 反向代理 (后端, 含 WebSocket)
+    location /api/ {
+        proxy_pass http://127.0.0.1:9000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+        proxy_read_timeout 300s;
+    }
+
+    # Socket.IO 反向代理
+    location /socket.io/ {
+        proxy_pass http://127.0.0.1:6868;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade \$http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto http;
+    }
+
+    # SPA 路由: 所有非文件请求返回 index.html
+    location / {
+        try_files \$uri \$uri/ /index.html;
+    }
+}
+NGINXEOF
+        info "未启用 HTTPS，前端将使用 HTTP (端口 5166)"
+    fi
 
     info "nginx 配置文件已生成: $NGINX_SITE_CONF"
 
@@ -950,7 +1035,8 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
   "frontend_dist": "$FRONTEND_DIR/dist",
   "nginx_dist_dir": "$NGINX_DIST_DIR",
   "backend_port": 9000,
-  "frontend_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || echo '8443'),
+  "frontend_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || { [ "$ENABLE_HTTPS" = "true" ] && echo '8443' || echo '5166'; }),
+  "enable_https": $([ "$SKIP_FRONTEND" = true ] && echo 'false' || echo "$ENABLE_HTTPS"),
   "skip_frontend": $SKIP_FRONTEND
 }
 JSONEOF
@@ -1047,6 +1133,7 @@ if $SKIP_FRONTEND; then
     fi
 else
     echo "  前端模式:   nginx"
+    echo "  HTTPS:      $([ "$ENABLE_HTTPS" = "true" ] && echo "已启用 (端口 8443, 5166 自动重定向)" || echo "未启用 (端口 5166, HTTP)")"
     echo ""
     echo "  nginx 前端配置文件已就绪: $NGINX_SITE_CONF"
     echo ""
@@ -1056,8 +1143,13 @@ else
     echo "    broca service status     # 查看服务状态"
     echo "    broca web                # 启动开发模式 (前后端同时启动)"
     echo ""
-    echo "  broca service start 后访问: https://localhost:8443"
-    echo "  (iPhone 首次访问需信任自签证书)"
+    if [[ "$ENABLE_HTTPS" = "true" ]]; then
+        echo "  broca service start 后访问: https://localhost:8443"
+        echo "  (iPhone 首次访问需信任自签证书)"
+        echo "  (访问 http://localhost:5166 将自动重定向到 HTTPS)"
+    else
+        echo "  broca service start 后访问: http://localhost:5166"
+    fi
 fi
 
 echo ""
