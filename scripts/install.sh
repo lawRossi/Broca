@@ -431,24 +431,12 @@ fi
 info "broca 模块安装完成。"
 
 # ============================================================================
-# Step 2.5: 下载 ASR 语音识别模型（可选，用于语音输入功能）
+# Step 2.5: ASR 语音识别模型（默认不下载，需要时手动执行）
 # ============================================================================
 ASR_MODEL_DIR="$BROCA_HOME/models/asr/sherpa-onnx-streaming-zipformer-zh-int8-2025-06-30"
 if [[ ! -d "$ASR_MODEL_DIR" ]] || [[ -z "$(ls "$ASR_MODEL_DIR" 2>/dev/null)" ]]; then
-    # 检查 sherpa-onnx 是否已安装
-    if $BROCA_PYTHON -c "import sherpa_onnx" 2>/dev/null; then
-        step "下载 ASR 语音识别模型 (ModelScope)..."
-        # 确保 modelscope 包可用
-        $BROCA_PIP install -q modelscope 2>/dev/null || true
-        if $BROCA_PYTHON "$PROJECT_ROOT/broca-web/backend/scripts/download_asr_model.py" 2>&1 | tail -3; then
-            info "ASR 模型下载完成: $ASR_MODEL_DIR"
-        else
-            warn "ASR 模型下载失败，可稍后手动执行:"
-            warn "  $BROCA_PYTHON $PROJECT_ROOT/broca-web/backend/scripts/download_asr_model.py"
-        fi
-    else
-        info "sherpa-onnx 未安装，跳过 ASR 模型下载"
-    fi
+    info "跳过 ASR 模型下载（如需语音输入功能，请手动执行:）"
+    info "  $BROCA_PYTHON $PROJECT_ROOT/broca-web/backend/scripts/download_asr_model.py"
 fi
 
 # ============================================================================
@@ -784,19 +772,12 @@ fi
     fi
 
     # 生成 nginx 配置（使用转义保留 nginx 变量）
-    # HTTPS 端口 8443，HTTP 5166 自动跳转
+    # HTTPS 端口 8443
     NGINX_SITE_CONF="$BROCA_HOME/nginx-broca.conf"
     cat > "$NGINX_SITE_CONF" <<- NGINXEOF
 # Broca Web - Nginx 配置
 # 由 broca service install 自动生成
-# HTTPS (8443) + HTTP→HTTPS 跳转 (5166)
-
-# HTTP → HTTPS 跳转
-server {
-    listen       5166;
-    server_name  _;
-    return 301 https://\$host:8443\$request_uri;
-}
+# HTTPS (8443)
 
 # HTTPS 主站点
 server {
@@ -970,7 +951,6 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
   "nginx_dist_dir": "$NGINX_DIST_DIR",
   "backend_port": 9000,
   "frontend_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || echo '8443'),
-  "frontend_http_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || echo '5166'),
   "skip_frontend": $SKIP_FRONTEND
 }
 JSONEOF
@@ -1077,7 +1057,7 @@ else
     echo "    broca web                # 启动开发模式 (前后端同时启动)"
     echo ""
     echo "  broca service start 后访问: https://localhost:8443"
-    echo "  (HTTP 5166 自动跳转 HTTPS；iPhone 首次访问需信任自签证书)"
+    echo "  (iPhone 首次访问需信任自签证书)"
 fi
 
 echo ""
