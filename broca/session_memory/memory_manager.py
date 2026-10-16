@@ -129,14 +129,13 @@ class SessionMemoryManager:
     # 记忆提取（由 ContextCompressor 在压缩前调用）
     # ========================================================================
 
-    async def extract(self, context: Context, old_history) -> bool:
+    async def extract(self, old_history) -> bool:
         """
         执行记忆提取（通过子代理），用将被压缩的旧消息更新 snapshot 文件。
 
         只负责"提取记忆"，截断压缩由 ContextCompressor 负责。
 
         Args:
-            context: 当前 Context 实例
             old_history: 被压缩的旧消息（context.history[:keep_index]），
                 最新几步不写入记忆，避免丢信息
 
@@ -171,7 +170,7 @@ class SessionMemoryManager:
     # 保留边界 pivot 计算
     # ========================================================================
 
-    async def compute_keep_pivot(self, context, keep_steps: int):
+    async def compute_keep_pivot(self, context: Context, keep_steps: int):
         """
         计算保留边界。
 
