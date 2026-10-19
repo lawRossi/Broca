@@ -281,6 +281,8 @@ class SessionMemoryManager:
                 agent_id=agent_id,
             )
         else:
+            agent_config["provider"] = self.agent.agent_config["provider"]
+            agent_config["model"] = self.agent.agent_config["model"]
             sub_agent = agent_factory.get_agent(  # type: ignore[assignment]
                 session_manager.session_id, agent_config["name"]
             )
@@ -294,7 +296,7 @@ class SessionMemoryManager:
             content=user_prompt,
         )
         result = await sub_agent.run(
-            trigger_message, from_agent=True, allowed_tools=["write_file"], max_steps=3
+            trigger_message, from_agent=True, allowed_tools=["write_file"], max_steps=2
         )
 
         if result.status != ExecutionStatus.COMPLETED:
