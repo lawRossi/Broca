@@ -309,6 +309,9 @@ function selectMention(agentId: string, agentName: string) {
     setTimeout(() => {
       justSelectedMention.value = false
     }, 100)
+
+    // 恢复输入框焦点
+    setTimeout(() => { inputRef.value?.focus() }, 0)
   } else {
     showMentionSuggestions.value = false
     mentionSearch.value = ''
@@ -340,6 +343,9 @@ function selectCommand(commandName: string) {
     setTimeout(() => {
       justSelectedCommand.value = false
     }, 100)
+
+    // 恢复输入框焦点
+    setTimeout(() => { inputRef.value?.focus() }, 0)
   } else {
     showCommandSuggestions.value = false
     commandSearch.value = ''
@@ -388,6 +394,8 @@ function selectPath(item: PathCompletionItem) {
     pathSuggestions.value = []
     selectedPathIndex.value = -1
     updatePathSuggestions(chatStore.inputText)
+    // 恢复输入框焦点
+    setTimeout(() => { inputRef.value?.focus() }, 0)
   } else {
     // 选中文件 → 插入纯路径（无 #）+ 尾随空格，关闭列表
     chatStore.inputText = base + ' '
@@ -398,6 +406,8 @@ function selectPath(item: PathCompletionItem) {
     setTimeout(() => {
       justSelectedPath.value = false
     }, 100)
+    // 恢复输入框焦点
+    setTimeout(() => { inputRef.value?.focus() }, 0)
   }
 }
 

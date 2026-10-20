@@ -14,6 +14,7 @@ const socketStore = useSocketStore()
 
 // 文件上传相关状态
 const fileInputRef = ref<HTMLInputElement>()
+const inputElRef = ref() // el-input 组件 ref，用于恢复焦点
 const pendingFiles = ref<
   Array<{
     file: File
@@ -324,6 +325,9 @@ const selectMention = (_agentId: string, agentName: string) => {
     setTimeout(() => {
       justSelectedMention.value = false
     }, 100)
+
+    // 恢复输入框焦点
+    setTimeout(() => { inputElRef.value?.focus() }, 0)
   } else {
     showMentionSuggestions.value = false
     mentionSearch.value = ''
@@ -362,6 +366,9 @@ const selectCommand = (commandName: string) => {
     setTimeout(() => {
       justSelectedCommand.value = false
     }, 100)
+
+    // 恢复输入框焦点
+    setTimeout(() => { inputElRef.value?.focus() }, 0)
   } else {
     showCommandSuggestions.value = false
     commandSearch.value = ''
@@ -400,6 +407,8 @@ const selectPath = (item: FileCompleteItem) => {
     pathSuggestions.value = []
     selectedPathIndex.value = -1
     updatePathSuggestions(chatStore.input)
+    // 恢复输入框焦点
+    setTimeout(() => { inputElRef.value?.focus() }, 0)
   } else {
     // 选中文件 → 插入纯路径（无 #）+ 尾随空格，关闭列表
     chatStore.input = base + ' '
@@ -411,6 +420,8 @@ const selectPath = (item: FileCompleteItem) => {
     setTimeout(() => {
       justSelectedPath.value = false
     }, 100)
+    // 恢复输入框焦点
+    setTimeout(() => { inputElRef.value?.focus() }, 0)
   }
 }
 
@@ -988,6 +999,7 @@ const handleSendMessage = async () => {
         <input ref="fileInputRef" type="file" multiple class="hidden" @change="handleFileChange" />
 
         <el-input
+          ref="inputElRef"
           v-model="chatStore.input"
           type="textarea"
           :autosize="{ minRows: 1, maxRows: 6 }"
