@@ -1345,7 +1345,6 @@ export class ChatWebViewManager {
     try {
       if (payload.action === 'stop') {
         await this.apiClient.stopRunner(sessionId)
-        vscode.window.showInformationMessage('Runner stopped')
         // 延迟刷新状态
         setTimeout(async () => {
           try {
@@ -1357,7 +1356,6 @@ export class ChatWebViewManager {
         }, 3000)
       } else {
         await this.apiClient.restartRunner(sessionId)
-        vscode.window.showInformationMessage('Runner starting...')
         // 轮询等待 runner 真正变为 alive（最多等 30 秒，每 2 秒检查一次）
         // 避免立即 getRunnerStatus() 时 runner 尚在 'starting' 状态，
         // 导致 WebView 中 runnerAlive computed 未变为 true，AgentSidebar 的自动轮询无法启动

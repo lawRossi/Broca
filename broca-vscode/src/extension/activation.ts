@@ -142,7 +142,6 @@ export async function activate(context: vscode.ExtensionContext) {
       if (!sessionId) return
       try {
         await apiClient.stopRunner(sessionId)
-        vscode.window.showInformationMessage('Runner stopped')
       } catch (error: any) {
         vscode.window.showErrorMessage(`Failed to stop runner: ${error.message}`)
       }
