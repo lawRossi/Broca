@@ -1178,9 +1178,19 @@ const targetAgentDisplay = computed(() => {
   border-bottom: none;
 }
 
-.command-item:hover,
-.command-selected {
+.command-item:hover {
   background: var(--bg-tertiary);
+}
+
+.command-item.command-selected {
+  background: var(--vscode-list-activeSelectionBackground, #04395e);
+  color: var(--vscode-list-activeSelectionForeground, #f1f1f1);
+}
+
+.command-item.command-selected .command-prefix,
+.command-item.command-selected .command-name,
+.command-item.command-selected .command-desc {
+  color: var(--vscode-list-activeSelectionForeground, #f1f1f1);
 }
 
 .command-prefix {
@@ -1261,9 +1271,18 @@ const targetAgentDisplay = computed(() => {
   border-bottom: none;
 }
 
-.mention-item:hover,
-.mention-selected {
+.mention-item:hover {
   background: var(--bg-tertiary);
+}
+
+.mention-item.mention-selected {
+  background: var(--vscode-list-activeSelectionBackground, #04395e);
+  color: var(--vscode-list-activeSelectionForeground, #f1f1f1);
+}
+
+.mention-item.mention-selected .mention-prefix,
+.mention-item.mention-selected .mention-name {
+  color: var(--vscode-list-activeSelectionForeground, #f1f1f1);
 }
 
 .mention-prefix {
@@ -1306,9 +1325,19 @@ const targetAgentDisplay = computed(() => {
   border-bottom: none;
 }
 
-.path-item:hover,
-.path-selected {
+.path-item:hover {
   background: var(--bg-tertiary);
+}
+
+.path-item.path-selected {
+  background: var(--vscode-list-activeSelectionBackground, #04395e);
+  color: var(--vscode-list-activeSelectionForeground, #f1f1f1);
+}
+
+.path-item.path-selected .path-prefix,
+.path-item.path-selected .path-name,
+.path-item.path-selected .path-dir-icon {
+  color: var(--vscode-list-activeSelectionForeground, #f1f1f1);
 }
 
 .path-prefix {
