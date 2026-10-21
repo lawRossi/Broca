@@ -437,7 +437,6 @@ class WebSearch(Tool):
                                 "description": "Result language (AnySearch)",
                             },
                         },
-                        "required": ["query"],
                     },
                     "minItems": 1,
                     "maxItems": 5,

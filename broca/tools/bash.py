@@ -53,11 +53,11 @@ class Bash(Tool):
                     "description": "Run in background without timeout. Use for long-running commands like dev servers, file watchers, or any command that doesn't terminate. The output is redirected to files and can be tracked via process tool. When False (default), commands have a 120s timeout.",
                     "default": False,
                 },
-                "notify": {
-                    "type": "boolean",
-                    "description": "When background=True, whether to send a notification when the process completes. Default: False (no notification). Use process tool to check status instead.",
-                    "default": False,
-                },
+                # "notify": {
+                #     "type": "boolean",
+                #     "description": "When background=True, whether to send a notification when the process completes. Default: False (no notification). Use process tool to check status instead.",
+                #     "default": False,
+                # },
             }
         }
 

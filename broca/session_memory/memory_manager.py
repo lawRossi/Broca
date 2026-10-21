@@ -281,8 +281,8 @@ class SessionMemoryManager:
                 agent_id=agent_id,
             )
         else:
-            agent_config["provider"] = self.agent.agent_config["provider"]
-            agent_config["model"] = self.agent.agent_config["model"]
+            agent_config["provider"] = self.agent.config.provider
+            agent_config["model"] = self.agent.config.model
             sub_agent = agent_factory.get_agent(  # type: ignore[assignment]
                 session_manager.session_id, agent_config["name"]
             )
