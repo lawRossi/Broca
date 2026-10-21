@@ -41,12 +41,14 @@ class SocketIOServer:
         host: str = "0.0.0.0",
         port: int = 8000,
         cors_allowed_origins: str = "*",
-        pending_message_ttl: int = 600,
+        agent_query_ttl: int = 300,
+        permission_request_ttl: int = 90,
     ):
         self.host = host
         self.port = port
         self.cors_allowed_origins = cors_allowed_origins
-        self._pending_message_ttl = pending_message_ttl
+        self._agent_query_ttl = agent_query_ttl
+        self._permission_request_ttl = permission_request_ttl
 
         self.sio = AsyncServer(
             async_mode="aiohttp",
@@ -90,7 +92,11 @@ class SocketIOServer:
             return
 
         msg_key = f"{message.message_type}_{request_id}"
-        expire_at = time.time() + self._pending_message_ttl
+        if message.message_type == MessageType.AGENT_QUERY:
+            ttl = self._agent_query_ttl
+        else:
+            ttl = self._permission_request_ttl
+        expire_at = time.time() + ttl
 
         async with self._lock:
             entry = {

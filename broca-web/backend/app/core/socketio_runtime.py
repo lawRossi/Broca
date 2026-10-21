@@ -43,22 +43,21 @@ class SocketIOServerRuntime:
             logger.warning("SocketIOServer already started")
             return
 
-        # 从 Broca 全局配置计算 pending message 缓存 TTL：
-        # 取 agent 侧两个超时的较大值 + 60s 重连缓冲，保证服务端缓存
-        # 在 agent 超时放弃之前始终有效，超时后额外保留一小段重连窗口
+        # 从 Broca 全局配置计算各类 pending message 缓存 TTL，
+        # 与 agent 侧超时一一对齐，确保 agent 超时放弃后缓存立即失效，
+        # 避免客户端重连时收到已过期的 query
         from broca.configs import get_configs
 
         exec_cfg = get_configs().execution
-        ttl = max(
-            getattr(exec_cfg, "permission_request_timeout", 90),
-            getattr(exec_cfg, "agent_query_timeout", 300),
-        ) + 60
+        agent_query_ttl = getattr(exec_cfg, "agent_query_timeout", 300)
+        permission_request_ttl = getattr(exec_cfg, "permission_request_timeout", 90)
 
         self._server = SocketIOServer(
             host=self.config.host,
             port=self.config.port,
             cors_allowed_origins=self.config.cors_allowed_origins,
-            pending_message_ttl=ttl,
+            agent_query_ttl=agent_query_ttl,
+            permission_request_ttl=permission_request_ttl,
         )
 
         async def _runner() -> None:
