@@ -58,6 +58,7 @@ const configForm = ref<any>({
   interactive: true,
   save_history: true,
   enable_context_compression: false,
+  skill_loading_mode: 'eager',
   workspace: '',
   environment: '',
   system_prompt_template: '',
@@ -271,6 +272,7 @@ const initConfigEdit = async () => {
     interactive: config.interactive ?? true,
     save_history: config.save_history ?? true,
     enable_context_compression: config.enable_context_compression ?? false,
+    skill_loading_mode: config.skill_loading_mode ?? 'eager',
     workspace: config.workspace ?? '',
     environment: config.environment ?? '',
     system_prompt_template: config.system_prompt_template ?? '',
@@ -326,6 +328,7 @@ const buildConfigContent = (): Record<string, any> => {
     interactive: form.interactive,
     save_history: form.save_history,
     enable_context_compression: form.enable_context_compression,
+    skill_loading_mode: form.skill_loading_mode,
     workspace: form.workspace,
     environment: form.environment,
     system_prompt_template: form.system_prompt_template,
@@ -798,6 +801,13 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <span class="text-xs text-gray-600">启用上下文压缩</span>
             <el-switch v-model="configForm.enable_context_compression" size="small" />
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-600">Skill 加载模式</span>
+            <el-select v-model="configForm.skill_loading_mode" size="small" style="width: 140px">
+              <el-option label="Eager" value="eager" />
+              <el-option label="Lazy" value="lazy" />
+            </el-select>
           </div>
         </div>
       </div>

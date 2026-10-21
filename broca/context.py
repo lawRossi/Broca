@@ -102,7 +102,7 @@ class Context:
             kwargs["role_description"] = config.role_description
         skill_manager = SkillManager()
         skills = skill_manager.get_skills(config.workspace, skill_names=config.skills)
-        kwargs["skills"] = self._format_skills(skills)
+        kwargs["skills"] = self._format_skills(skills, loading_mode=getattr(config, "skill_loading_mode", "eager"))
         boostrap_content = self._load_bootstrap_files(config.workspace)
         if boostrap_content:
             kwargs["bootstrap_content"] = boostrap_content
@@ -111,10 +111,18 @@ class Context:
             kwargs["memory_index"] = memory_index
         return Template(prompt_template).render(**kwargs).strip()
 
-    def _format_skills(self, skills: dict[str, dict]) -> str:
+    def _format_skills(self, skills: dict[str, dict], loading_mode: str = "eager") -> str:
         skills_str = ""
-        for name, skill in skills.items():
-            skills_str += f"{name}: {skill['description']}\n"
+        if loading_mode == "lazy":
+            # Lazy mode: only show skill names, use skill_manage view to see descriptions
+            for name in skills:
+                skills_str += f"- {name}\n"
+            if skills:
+                skills_str += "\nUse skill_manage(action='view', name='...') to see a skill's description, then load_skill to use it.\n"
+        else:
+            # Eager mode (default): show name + description
+            for name, skill in skills.items():
+                skills_str += f"{name}: {skill['description']}\n"
         return skills_str.strip()
 
     def _load_session_memory(self) -> str:

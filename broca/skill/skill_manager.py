@@ -125,6 +125,22 @@ class SkillManager:
 
         raise ValidationError(f"Skill '{skill_name}' not found.")
 
+    def get_skill_description(self, skill_name: str, workspace: str) -> str:
+        """获取指定 skill 的描述信息（frontmatter 中的 description 字段）。"""
+        if skill_name in self.skills:
+            return self.skills[skill_name].get("description", "No description available.")
+
+        workspace_skills = self._load_workspace_skills(workspace)
+        if skill_name in workspace_skills:
+            return workspace_skills[skill_name].get("description", "No description available.")
+
+        raise ValidationError(f"Skill '{skill_name}' not found.")
+
+    def get_skill_names(self, workspace: str, skill_names: str | None) -> list[str]:
+        """获取 skill 名称列表（用于懒加载模式下仅展示名称）。"""
+        skills = self.get_skills(workspace, skill_names)
+        return sorted(skills.keys())
+
     def refresh_index(self):
         """重新扫描所有 Skill 目录，刷新索引。"""
         self._initialized = False

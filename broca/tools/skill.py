@@ -75,6 +75,7 @@ class SkillManage(Tool):
                     "description": "The operation to perform",
                     "enum": [
                         "create",
+                        "view",
                         "patch",
                         "delete",
                         "list",
@@ -111,6 +112,7 @@ class SkillManage(Tool):
 
         handlers = {
             "create": self._handle_create,
+            "view": self._handle_view,
             "patch": self._handle_patch,
             "delete": self._handle_delete,
             "list": self._handle_list,
@@ -164,6 +166,27 @@ class SkillManage(Tool):
             status=ToolStatus.SUCCESS,
             content=f"Skill '{slug}' created at {skill_dir}.",
         )
+
+    async def _handle_view(self, args: dict, context: ToolCallContext) -> ToolResult:
+        """查看指定 Skill 的描述信息。"""
+        name = args.get("name", "")
+        if not name:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content="'name' is required for view action.",
+            )
+
+        from broca.skill.skill_manager import SkillManager
+
+        skill_manager = SkillManager()
+        try:
+            description = skill_manager.get_skill_description(name, context.workspace)
+            return ToolResult(
+                status=ToolStatus.SUCCESS,
+                content=f"Skill '{name}':\n{description}",
+            )
+        except Exception as e:
+            return ToolResult(status=ToolStatus.ERROR, content=str(e))
 
     async def _handle_patch(self, args: dict, context: ToolCallContext) -> ToolResult:
         name = args["name"]

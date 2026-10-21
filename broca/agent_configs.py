@@ -42,6 +42,7 @@ class AgentConfig:
         self.system_prompt_template = None
         self.tools = None
         self.skills = None
+        self.skill_loading_mode = "eager"  # "eager" (default) | "lazy"
         self.mcp_servers = None
         self.server_url = "http://localhost:6868"
         self.interactive = True

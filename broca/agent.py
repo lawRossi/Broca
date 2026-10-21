@@ -183,7 +183,7 @@ class Agent:
         else:
             mcp_tool_names = []
 
-        tool_names = self.config.tools + mcp_tool_names
+        tool_names = list(self.config.tools) + mcp_tool_names
         tools = tool_manager.get_tools(tool_names=tool_names)
         self.tools = [tool.format() for tool in tools]
         self.tool_mapping = {tool.name: tool for tool in tools}
