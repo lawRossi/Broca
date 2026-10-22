@@ -338,7 +338,7 @@ LoopEngine 是 Agent 的执行核心，管理完整的执行生命周期：
 
 ### 5. 通信层
 
-**核心文件**: `broca/comm/socketio_server.py`
+**核心文件**: `broca/communication/socketio_server.py`
 
 SocketIOServer 是一个多端通信服务器，支持：
 
@@ -1316,11 +1316,11 @@ Agent 通过 `mcp_servers` 配置指定要使用哪些 MCP 服务器（对应配
 ## 项目结构
 
 ```
-broca/
+Broca/
 ├── broca/                          # 核心 Python 包
 │   ├── cli/                        # CLI 入口
 │   │   └── main.py                 # 命令行解析与服务启动
-│   ├── comm/                       # 通信层
+│   ├── communication/              # 通信层
 │   │   ├── socketio_server.py      # Socket.IO 服务端
 │   │   ├── socketio_client.py      # Socket.IO 客户端
 │   │   └── agent_communicator.py   # Agent 通信接口
@@ -1341,6 +1341,10 @@ broca/
 │   │   ├── manager.py              # 提取管理器（自动 + on-demand 触发）
 │   │   └── prompts.py              # 提取子 Agent 提示词
 │   ├── snapshot/                   # 快照系统
+│   │   ├── git_manager.py          # Git 操作
+│   │   ├── track.py                # 快照捕获
+│   │   ├── patch.py                # 变更计算
+│   │   └── restore.py              # 文件恢复
 │   ├── session_runner/             # 子进程 Runner
 │   │   ├── manager.py              # 进程管理器
 │   │   ├── runner.py               # 子进程入口
@@ -1348,35 +1352,36 @@ broca/
 │   │   ├── ipc.py                  # 进程间通信
 │   │   ├── models.py               # 数据结构
 │   │   └── heartbeat.py            # 心跳监控
-│   ├── snapshot/                   # 快照系统
-│   │   ├── git_manager.py          # Git 操作
-│   │   ├── track.py                # 快照捕获
-│   │   ├── patch.py                # 变更计算
-│   │   └── restore.py              # 文件恢复
 │   ├── tools/                      # 工具系统
 │   │   ├── tool.py                 # 工具基类
 │   │   ├── tool_manager.py         # 工具管理器
-│   │   ├── filesystem.py           # 文件操作工具
-│   │   ├── web.py                  # 网络工具
-│   │   ├── memory.py               # 记忆工具（触发提取，原增删改已移除）
+│   │   ├── tool_permission_manager.py # 工具权限管理
+│   │   ├── filesystem.py           # 文件操作工具（read/edit/write/list/tree）
+│   │   ├── glob.py / grep.py       # 文件搜索工具
 │   │   ├── bash.py                 # 命令执行工具
+│   │   ├── process.py              # 进程管理工具
+│   │   ├── web.py                  # 网络工具（fetch/search）
+│   │   ├── image.py                # 图像工具
+│   │   ├── task.py / todo.py       # 任务管理工具
+│   │   ├── cron.py                 # 定时任务工具
 │   │   ├── skill.py                # 技能加载 + 管理工具（LoadSkill / SkillManage）
+│   │   ├── blackboard.py           # 黑板读写工具
+│   │   ├── agent_interaction.py    # Agent 间交互工具
+│   │   └── mcp.py                  # MCP 工具加载
 │   ├── skill/                      # Skill 系统
-│   │   ├── __init__.py
 │   │   ├── skill_manager.py        # Skill 加载/解析/索引管理
 │   │   ├── skill_store.py          # Skill 元数据管理（来源标记/状态/统计/归档恢复）
 │   │   └── skill_evolution.py      # 子 Agent Skill 进化工具函数
-│   │   ├── task.py                 # 任务管理工具
-│   │   ├── cron.py                 # 定时任务工具
-│   │   └── ...                     # 其他工具
+│   ├── errors/                     # 异常体系
+│   │   ├── exceptions.py           # 异常类定义
+│   │   ├── types.py                # 错误码枚举
+│   │   └── utils.py                # 错误处理工具
 │   ├── utils/                      # 安全工具模块
-│   │   ├── __init__.py             # 包文件
 │   │   ├── content_security.py     # 内容安全检测（提示注入/数据泄露）
 │   │   └── shell_security.py       # Shell 命令安全检测（危险命令扫描）
 │   ├── agent.py                    # Agent 类
 │   ├── agent_configs.py            # Agent 配置
-│   ├── agent_crew.py               # [遗留] 旧的 Agent 编排（已迁移至 orchestration/）
-│   ├── agent_manager.py            # Agent 工厂
+│   ├── agent_manager.py            # Agent 工厂（AgentFactory 单例）
 │   ├── orchestration/              # 多 Agent 编排系统
 │   │   ├── orchestrator.py         # 编排器基类 + 共享并行执行器 + 工厂 + 条件求值
 │   │   ├── crew.py                 # 编排数据结构 (CrewConfig/OrchestratorType/角色/校验器)
@@ -1388,12 +1393,12 @@ broca/
 │   │   ├── round_table.py          # Round-Table 圆桌讨论拓扑（独立实现，支持每轮自定义配置）
 │   │   ├── composite.py            # Composite 组合嵌套（有向图版，继承 GraphOrchestrator，支持 CREW 节点）
 │   │   ├── prompt_loader.py        # Jinja2 提示词模板加载器
+│   │   ├── templates.py            # 模板辅助函数
 │   │   └── prompts/                # 按拓扑分组的 Jinja2 提示词模板
 │   │       ├── graph/              #   图编排通用模板（task_context, execute_step, fan_in_agent, human_node, agent_route）
 │   │       ├── supervisor_worker/  #   supervisor-worker 模板（plan, check_and_plan, synthesize）
-│   │       ├── round_table/        #   round-table 模板（discussion, moderator_*）
-│   ├── loop_engine.py                # 循环执行引擎（LLM 调用→工具执行→快照→压缩）
-│   ├── commands/                     # 命令系统
+│   │       └── round_table/        #   round-table 模板（discussion, moderator_*）
+│   ├── commands/                   # 命令系统
 │   │   ├── base.py                 # 命令基类（CommandBase/LocalCommand/PromptCommand）
 │   │   ├── registry.py             # 命令注册中心
 │   │   ├── loader.py               # 命令自动加载器
@@ -1401,20 +1406,28 @@ broca/
 │   │   ├── manager.py              # 命令管理器
 │   │   ├── builtin/                # 内置本地命令（help/abort/undo/redo/skill/skill-create/skill-suggest）
 │   │   └── prompt/                 # 内置提示命令（init/plan/debug/review-code/review-execution/execute-plan）
+│   ├── loop_engine.py              # 循环执行引擎（LLM 调用→工具执行→快照→压缩）
 │   ├── context.py                  # 上下文管理
 │   ├── context_compressor.py       # 上下文压缩
-│   ├── llm.py                      # LLM 客户端
-│   ├── skill/                      # Skill 系统（skill_manager/skill_store/skill_evolution）
+│   ├── llm.py                      # LLM 客户端（litellm 封装）
+│   ├── logging_config.py           # 日志配置
 │   ├── scheduler.py                # 任务调度器
 │   ├── permission_manager.py       # 权限管理
-│   ├── error_handler.py            # 错误处理
+│   ├── process_manager.py          # 进程管理
+│   ├── service_manager.py          # 服务管理（supervisor 集成）
+│   ├── task_manager.py             # 任务管理
+│   ├── alembic/                    # 数据库迁移脚本
+│   ├── tests/                      # 测试
 │   └── configs.py                  # 全局配置
 ├── broca-tui/                      # TUI 终端界面（Textual）
-│   └── src/
+│   └── broca_tui/
+│       ├── app.py                  # TUI 应用入口
+│       ├── config.py               # TUI 配置
+│       ├── api/                    # Socket.IO API 客户端
 │       ├── screens/                # 屏幕组件（Chat, Sessions, Settings）
 │       ├── widgets/                # 小组件（AgentCard, MessageItem, InputBar）
-│       ├── client.py               # Socket.IO 客户端
-│       └── app.py                  # TUI 应用入口
+│       ├── stores/                 # 状态管理
+│       └── theme/                  # 主题样式
 ├── broca-web/                      # Web 应用
 │   ├── backend/                    # FastAPI 后端
 │   │   ├── app/
@@ -1423,28 +1436,41 @@ broca/
 │   │   │   ├── models/             # 数据模型
 │   │   │   ├── schemas/            # Pydantic schema
 │   │   │   ├── services/           # 业务服务
+│   │   │   ├── asr/                # 语音识别（ASR）
+│   │   │   ├── utils/              # 工具函数
 │   │   │   └── main.py             # 应用入口
 │   │   ├── alembic/                # 数据库迁移脚本
-│   │   ├── alembic.ini             # Alembic 配置（路径动态）
+│   │   ├── alembic.ini             # Alembic 配置
+│   │   ├── manage.py               # 管理脚本
 │   │   └── pyproject.toml
 │   └── frontend/                   # Vue 3 前端
 │       └── src/
 │           ├── api/                # API 客户端
 │           ├── components/         # UI 组件
-│           ├── stores/             # Pinia 状态
 │           ├── views/              # 页面视图
-│           └── utils/              # 工具函数
+│           ├── stores/             # Pinia 状态
+│           ├── router/             # 路由
+│           ├── services/           # 前端服务
+│           ├── styles/             # 样式
+│           ├── utils/              # 工具函数
+│           └── App.vue             # 根组件
 ├── broca-vscode/                   # VS Code 扩展
 │   └── src/
 │       ├── extension/              # 扩展主逻辑
 │       └── webview/                # Chat Webview
+├── alembic/                        # 顶层数据库迁移
 ├── configs/                        # 配置文件
 │   ├── configs.json                # 全局配置
 │   ├── llm_config.json             # LLM 配置
-│   └── agents/                     # Agent 配置
+│   ├── tool_permission_config.json # 工具权限配置
+│   └── agents/                     # Agent 角色配置
+├── data/                           # 数据目录（SQLite 数据库）
 ├── skills/                         # 内置 Skills
-├── tests/                          # 测试
+├── examples/                       # 编排示例
+├── plans/                          # 计划文档
 ├── docs/                           # 文档
+├── scripts/                        # 安装/部署脚本
+├── resource/                       # 资源文件
 └── pyproject.toml                  # 项目元数据
 ```
 
@@ -1462,6 +1488,6 @@ broca/
 | **模板方法 (Template)** | 执行步骤生命周期 (capture → LLM → tool → compress)；编排器基类 run() / GraphOrchestrator._run_main_loop() 流程　　　　　 |
 | **组合 (Composite)**　　| Composite 编排器嵌套子编排器（CREW 节点），子编排器共享父编排器的黑板和 Agent 实例　　　　　　　　　　　　　　　　　　　 |
 | **桥接 (Bridge)**　　　　| GraphOrchestrator 抽象图遍历逻辑，子类 PipelineOrchestrator / CompositeOrchestrator 实现 _execute_node() 分发　　　　　　|
-| **黑板（Blackboard）** | agent crew数据共享｜
+| **黑板（Blackboard）** | Agent 间数据共享（多智能体编排） |
 
 ---
