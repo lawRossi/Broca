@@ -1399,7 +1399,9 @@ export const useChatStore = defineStore('chat', () => {
         turn.errorSeverity = message.data?.severity || null
         turn.recoveryHint = message.data?.recovery_hint || null
         turn.isActive = false
-        turn.lastMessageId = message.message_id
+        // 注意：不更新 lastMessageId。error 通知（如 _send_turn_error_notification）
+        // 不持久化到数据库，其 message_id 在后端找不到，用它做 undo 会报
+        // "No pivot message found"。turn_end 的 message_id 才是可靠的撤销锚点。
         break
     }
   }
