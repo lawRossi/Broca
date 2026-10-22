@@ -2117,7 +2117,8 @@ export class ChatWebViewManager {
 
   private async handleFetchAvailableTools(panel: vscode.WebviewPanel) {
     try {
-      const tools = await this.apiClient.getAvailableTools()
+      const workspace = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || undefined
+      const tools = await this.apiClient.getAvailableTools(workspace)
       this.postToPanel(panel, {
         type: 'availableTools',
         payload: tools,

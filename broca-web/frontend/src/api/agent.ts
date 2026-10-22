@@ -99,10 +99,12 @@ export const agentApi = {
   },
 
   /**
-   * 获取所有可用的内置工具列表
+   * 获取所有可用的工具列表（内置 + 自定义）
    */
-  async getAvailableTools(): Promise<string[]> {
-    const res = await request.get<{ tools: string[] }>('/tools')
+  async getAvailableTools(workspace?: string): Promise<string[]> {
+    const res = await request.get<{ tools: string[] }>('/tools', {
+      params: workspace ? { workspace } : {},
+    })
     return res.tools || []
   },
 

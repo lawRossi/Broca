@@ -82,7 +82,12 @@ const availableTools = ref<string[]>([])
 const fetchAvailableTools = async () => {
   if (availableTools.value.length > 0) return // 已加载过则跳过
   try {
-    availableTools.value = await agentApi.getAvailableTools()
+    // 从当前会话获取 workspace，使 workspace 级别自定义工具也出现在列表中
+    const currentSession = sessionStore.sessions.find(
+      (s: any) => s.session_id === chatStore.sessionId,
+    )
+    const workspace = currentSession?.workspace || ''
+    availableTools.value = await agentApi.getAvailableTools(workspace || undefined)
   } catch (err: any) {
     console.error('获取可用工具列表失败:', err)
   }
@@ -449,6 +454,11 @@ watch(
 watch(
   () => chatStore.sessionId,
   (newSessionId, oldSessionId) => {
+    // 切换 session 时重置工具/技能缓存，避免跨 workspace 数据泄漏
+    if (newSessionId && newSessionId !== oldSessionId) {
+      availableTools.value = []
+      availableSkills.value = []
+    }
     if (newSessionId && newSessionId !== oldSessionId && chatStore.runnerAlive) {
       startAutoRefresh(10000)
     } else if (!newSessionId) {
