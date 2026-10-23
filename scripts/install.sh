@@ -939,8 +939,40 @@ NGINXEOF
         fi
     fi
 
-    # 仅生成配置，不启用站点（用户通过 broca service start 启用）
-    info "nginx 前端配置就绪（未启用，执行 broca service start 后启用）"
+    # 如果 nginx 已在运行且 broca 站点已启用，自动 reload 使新配置生效
+    sites_enabled_dir=""
+    for candidate in /etc/nginx/sites-enabled /usr/local/etc/nginx/servers /etc/nginx/conf.d; do
+        if [[ -d "$candidate" ]]; then
+            sites_enabled_dir="$candidate"
+            break
+        fi
+    done
+    broca_link=""
+    if [[ -n "$sites_enabled_dir" ]]; then
+        for f in "$sites_enabled_dir/broca.conf" "$sites_enabled_dir/broca" "$sites_enabled_dir/broca_site.conf"; do
+            [[ -e "$f" ]] && broca_link="$f" && break
+        done
+    fi
+
+    if [[ -n "$broca_link" ]]; then
+        # 站点已启用，尝试 reload nginx
+        info "broca 站点已启用，尝试 reload nginx..."
+        reloaded=false
+        if $IS_ROOT; then
+            nginx -s reload 2>/dev/null && reloaded=true
+        elif command -v sudo &>/dev/null; then
+            sudo -n nginx -s reload 2>/dev/null && reloaded=true
+            $reloaded || { sudo nginx -s reload 2>/dev/null && reloaded=true; }
+        fi
+        if $reloaded; then
+            info "nginx 已重载，新配置已生效"
+        else
+            warn "nginx reload 失败，请手动执行: sudo nginx -s reload"
+        fi
+    else
+        # 仅生成配置，不启用站点（用户通过 broca service start 启用）
+        info "nginx 前端配置就绪（未启用，执行 broca service start 后启用）"
+    fi
     echo ""
     echo "  可用命令:"
     echo "    broca service start      # 创建 symlink + reload nginx，启用前端"
