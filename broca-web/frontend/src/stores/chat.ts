@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed, reactive } from 'vue'
+import { ref, computed, reactive, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAgentStore, useSocketStore } from '@/stores'
@@ -120,6 +120,17 @@ export const useChatStore = defineStore('chat', () => {
     return runnerInfo.value?.status === 'alive'
   })
 
+  // Runner 停止/崩溃时清除撤销/重做状态（兜底：覆盖 runner 自行退出的场景）
+  watch(
+    () => runnerInfo.value?.status,
+    (newStatus, oldStatus) => {
+      if (oldStatus === 'alive' && newStatus !== 'alive' && newStatus != null) {
+        showRedoButton.value = false
+        redoReceiverId.value = undefined
+      }
+    }
+  )
+
   const fetchRunnerStatus = async () => {
     if (!sessionId.value) return
     try {
@@ -165,6 +176,9 @@ export const useChatStore = defineStore('chat', () => {
       await sessionApi.stopRunner(sessionId.value)
       ElMessage.success('进程已停止')
       runnerInfo.value = { ...runnerInfo.value!, status: 'dead' } as RunnerInfo
+      // 进程已停止，清除撤销/重做状态
+      showRedoButton.value = false
+      redoReceiverId.value = undefined
     } catch (error: any) {
       const { ElMessage } = await import('element-plus')
       ElMessage.error('停止失败: ' + (error.message || '未知错误'))
@@ -1471,6 +1485,9 @@ export const useChatStore = defineStore('chat', () => {
     messageStates.value.clear()
     pendingChunks.value.clear()
     agentStore.clearCache()
+    // 清理撤销/重做状态
+    showRedoButton.value = false
+    redoReceiverId.value = undefined
     // 清理 Runner 状态
     stopRunnerPolling()
     runnerInfo.value = null

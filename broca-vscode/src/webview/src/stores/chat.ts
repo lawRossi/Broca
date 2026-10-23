@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { postMessage, onMessage, getInitialData, getVSCodeAPI } from '../api/vscode'
 import type { Message, RunnerInfo } from '../types'
 
@@ -266,6 +266,17 @@ export const useChatStore = defineStore('chat', () => {
   const redoReceiverId = ref<string | undefined>()
 
   const runnerAlive = computed(() => runnerInfo.value?.status === 'alive')
+
+  // Runner 停止/崩溃时清除撤销/重做状态（兜底：覆盖 runner 自行退出的场景）
+  watch(
+    () => runnerInfo.value?.status,
+    (newStatus, oldStatus) => {
+      if (oldStatus === 'alive' && newStatus !== 'alive' && newStatus != null) {
+        showRedoButton.value = false
+        redoReceiverId.value = undefined
+      }
+    }
+  )
 
   // ==================== 简洁模式计算属性 ====================
   const filteredTurnSummaries = computed(() => {
