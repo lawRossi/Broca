@@ -370,7 +370,7 @@ async def get_search_filters(session_id: str) -> ApiResponse:
 
 @router.delete("/sessions", response_model=ApiResponse)
 async def delete_sessions(request: dict) -> ApiResponse:
-    """批量删除会话"""
+    """批量删除会话（删除后清理残留资源）"""
     try:
         session_ids = request.get("session_ids", [])
         if not session_ids:
@@ -386,8 +386,35 @@ async def delete_sessions(request: dict) -> ApiResponse:
         for session_id in session_ids:
             await runner_manager.stop_session(session_id, timeout=2.0)
 
+        # 批量查询所有待删 session 的 workspace（在删除前提取）
+        from sqlmodel import select
+        from broca.session.database import db_manager
+        from broca.session.models import Session
+
+        workspace_map: dict[str, str | None] = {}
+        async with db_manager.get_session() as db_session:
+            stmt = select(Session.session_id, Session.workspace).where(
+                Session.session_id.in_(session_ids)
+            )
+            result = await db_session.exec(stmt)
+            for row in result.all():
+                workspace_map[row[0]] = row[1]
+
         # 再从数据库删除
         deleted_count = await session_service.delete_batch(session_ids)
+
+        # 清理残留资源
+        from broca.session.cleanup_service import SessionCleanupService
+
+        cleanup_service = SessionCleanupService()
+        for session_id in session_ids:
+            try:
+                workspace = workspace_map.get(session_id)
+                await cleanup_service.cleanup_session(workspace, session_id)
+            except Exception as e:
+                logger.warning(
+                    f"Failed to cleanup session {session_id} during batch delete: {e}"
+                )
 
         logger.info(f"Batch delete sessions: {session_ids}, deleted: {deleted_count}")
         return ApiResponse.success(
@@ -429,13 +456,16 @@ async def update_session(session_id: str, request: UpdateSessionRequest) -> ApiR
 
 @router.delete("/{session_id}", response_model=ApiResponse)
 async def delete_session(session_id: str) -> ApiResponse:
-    """删除单个会话（先停止 Runner，再删除数据库记录）"""
+    """删除单个会话（先停止 Runner，再删除数据库记录，最后清理残留资源）"""
     try:
         session_service = get_session_service()
         session = await session_service.get(session_id)
 
         if not session:
             raise HTTPException(status_code=404, detail="Session not found")
+
+        # 提前保存 workspace（session 对象在 delete 后可能被 GC）
+        workspace = session.workspace
 
         # 先停止 Runner 进程（超时缩短至2秒，避免用户等待太久）
         runner_manager = RunnerManager()
@@ -446,6 +476,12 @@ async def delete_session(session_id: str) -> ApiResponse:
 
         if not success:
             raise HTTPException(status_code=500, detail="Failed to delete session")
+
+        # 清理残留资源（workspace 文件、runner 日志、git 快照、孤儿 jobs）
+        from broca.session.cleanup_service import SessionCleanupService
+
+        cleanup_service = SessionCleanupService()
+        await cleanup_service.cleanup_session(workspace, session_id)
 
         logger.info(f"Session deleted: {session_id}")
         return ApiResponse.success(msg="Session deleted successfully")

@@ -1153,7 +1153,12 @@ class RunnerManager:
         """
         关闭所有 Runner 进程
 
-        在 Web 服务关闭时调用。
+        在 Web 服务关闭时调用。仅停止子进程，不执行资源清理
+        （不删除 DB 记录、不清理文件/日志/快照）。
+
+        设计意图：服务重启后 session 应可恢复（Runner 进程重新启动，
+        session 文件/日志/快照均保留）。资源清理由用户主动删除
+        session 时通过 SessionCleanupService 触发。
 
         Returns:
             成功关闭的数量

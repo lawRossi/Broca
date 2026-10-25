@@ -819,13 +819,13 @@ class ScheduledJob(BaseModel, table=True):
     # 关联字段（可选）
     session_id: Optional[str] = Field(
         foreign_key="session.session_id",
-        ondelete="SET NULL",
+        ondelete="CASCADE",
         default=None,
         description="关联的会话ID",
     )
     agent_id: Optional[str] = Field(
         foreign_key="agent.agent_id",
-        ondelete="SET NULL",
+        ondelete="CASCADE",
         default=None,
         description="关联的Agent ID（用于指定执行任务的Agent）",
     )
