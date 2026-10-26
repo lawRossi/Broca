@@ -18,6 +18,7 @@ def make_msg(mid: str, mtype: MessageType, seq: int):
     m.message_id = mid
     m.message_type = mtype
     m.sequence_number = seq
+    m.data = None
     return m
 
 

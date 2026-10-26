@@ -288,6 +288,9 @@ class SessionMemoryManager:
             )
             if sub_agent is None:
                 sub_agent = await agent_factory.restore_agent(agent_id, session_manager)
+            # 同步主 agent 当前的 LLM 配置，确保 sidebar 修改后子 agent 能跟随
+            sub_agent.config.provider = self.agent.config.provider
+            sub_agent.config.model = self.agent.config.model
         if not sub_agent.running:
             task = asyncio.create_task(sub_agent.start())
             task.add_done_callback(lambda t, a=sub_agent: a.stop())  # type: ignore[misc]
