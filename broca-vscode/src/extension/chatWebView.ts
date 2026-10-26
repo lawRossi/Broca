@@ -497,11 +497,7 @@ export class ChatWebViewManager {
     // Get workspace path for pre-fill
     const workspacePath = vscode.workspace.workspaceFolders?.[0]?.uri?.fsPath || ''
 
-    // Get defaults from config
-    const defaultProvider = this.configManager.get('defaultProvider') || ''
-    const defaultModel = this.configManager.get('defaultModel') || ''
-
-    panel.webview.html = this.getCreateSessionHtml(workspacePath, defaultProvider, defaultModel)
+    panel.webview.html = this.getCreateSessionHtml(workspacePath)
 
     panel.webview.onDidReceiveMessage(async (message: WebViewMessage) => {
       switch (message.type) {
@@ -572,7 +568,7 @@ export class ChatWebViewManager {
     })
   }
 
-  private getCreateSessionHtml(workspacePath: string, defaultProvider: string, defaultModel: string): string {
+  private getCreateSessionHtml(workspacePath: string): string {
     return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -707,7 +703,7 @@ export class ChatWebViewManager {
     <div class="field">
       <label for="provider">LLM 提供商</label>
       <select id="provider">
-        <option value="">-- 使用默认${defaultProvider ? ' (' + defaultProvider + ')' : ''} --</option>
+        <option value="">-- 使用 LLM 配置默认 --</option>
       </select>
       <div class="hint">选择提供商，留空则使用默认配置</div>
     </div>
@@ -753,9 +749,6 @@ export class ChatWebViewManager {
       let providers = [];
       let models = [];
 
-      const defaultProviderVal = ${JSON.stringify(defaultProvider)};
-      const defaultModelVal = ${JSON.stringify(defaultModel)};
-
       function selectCategory(el) {
         document.querySelectorAll('.category-option').forEach(opt => opt.classList.remove('selected'));
         el.classList.add('selected');
@@ -794,7 +787,7 @@ export class ChatWebViewManager {
       });
 
       function renderProviders() {
-        providerSelect.innerHTML = '<option value="">-- 使用默认' + (defaultProviderVal ? ' (' + defaultProviderVal + ')' : '') + ' --</option>';
+        providerSelect.innerHTML = '<option value="">-- 使用 LLM 配置默认 --</option>';
         providers.forEach(p => {
           const opt = document.createElement('option');
           opt.value = p.id;
@@ -804,7 +797,7 @@ export class ChatWebViewManager {
       }
 
       function renderModels() {
-        modelSelect.innerHTML = '<option value="">-- 使用默认' + (defaultModelVal ? ' (' + defaultModelVal + ')' : '') + ' --</option>';
+        modelSelect.innerHTML = '<option value="">-- 使用 LLM 配置默认 --</option>';
         models.forEach(m => {
           const opt = document.createElement('option');
           opt.value = m.id;
@@ -838,8 +831,8 @@ export class ChatWebViewManager {
         errorMsg.style.display = 'none';
 
         const description = descriptionInput.value.trim() || undefined;
-        const provider = providerSelect.value || defaultProviderVal || undefined;
-        const model = modelSelect.value || defaultModelVal || undefined;
+        const provider = providerSelect.value || undefined;
+        const model = modelSelect.value || undefined;
         const workspace = workspaceInput.value.trim() || undefined;
         const category = document.querySelector('input[name="category"]:checked')?.value || 'normal';
 
@@ -2123,7 +2116,7 @@ export class ChatWebViewManager {
         type: 'availableTools',
         payload: tools,
       } as ExtensionToWebView)
-    } catch (error: any) {
+    } catch {
       // Silently fail — webview will keep its existing list
       this.postToPanel(panel, {
         type: 'availableTools',
@@ -2140,7 +2133,7 @@ export class ChatWebViewManager {
         type: 'availableSkills',
         payload: skills,
       } as ExtensionToWebView)
-    } catch (error: any) {
+    } catch {
       // Silently fail — webview will keep its existing list
       this.postToPanel(panel, {
         type: 'availableSkills',

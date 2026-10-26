@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { postMessage, onMessage } from '../../api/vscode'
-import type { LLMConfig, LLMModelConfig } from '../../types'
+import type { LLMConfig, LLMModelConfig, LLMDefaultConfig, LLMWireConfig } from '../../types'
+import { LLM_DEFAULT_KEY } from '../../types'
 
 import './settings.css'
 
@@ -9,9 +10,19 @@ import './settings.css'
 const loading = ref(false)
 const saving = ref(false)
 const config = ref<LLMConfig>({})
+// 全局默认 provider/model（对应 llm_config.json 中的 __default__ 保留键）
+const llmDefault = ref<LLMDefaultConfig>({ provider: '', model: '' })
 const initialJson = ref('{}')
 const activeProviders = ref<string[]>([])
-const dirty = computed(() => JSON.stringify(config.value) !== initialJson.value)
+// 组装完整配置（提供商 + 可选 __default__）；__default__ 仅含 provider/model 两个字符串，
+// 可安全 JSON 序列化参与脏检测
+const buildFullConfig = (): LLMWireConfig => {
+  const full: LLMWireConfig = { ...config.value }
+  if (llmDefault.value.provider) full[LLM_DEFAULT_KEY] = { ...llmDefault.value }
+  return full
+}
+// 脏检测需同时覆盖提供商配置与默认 provider/model
+const dirty = computed(() => JSON.stringify(buildFullConfig()) !== initialJson.value)
 const providerCount = computed(() => Object.keys(config.value).length)
 const modelCount = computed(() =>
   Object.values(config.value).reduce((sum, p) => sum + Object.keys(p.models || {}).length, 0)
@@ -26,6 +37,12 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 let loadTimeout: ReturnType<typeof setTimeout> | null = null
 let saveTimeout: ReturnType<typeof setTimeout> | null = null
 let mutatedDuringSave = false
+
+// 默认 provider/model 下拉的选项来源
+const providerIds = computed(() => Object.keys(config.value))
+const defaultModelOptions = computed(() =>
+  llmDefault.value.provider ? Object.keys(config.value[llmDefault.value.provider]?.models || {}) : []
+)
 
 const loadError = ref('')
 
@@ -96,11 +113,23 @@ onMounted(() => {
         loading.value = false
         if (dmg) {
           config.value = {}
+          llmDefault.value = { provider: '', model: '' }
           initialJson.value = '{}'
           activeProviders.value = []
         } else {
-          config.value = JSON.parse(JSON.stringify(cfg || {}))
-          initialJson.value = JSON.stringify(config.value)
+          // 拆出保留键 __default__（全局默认 provider/model），其余为提供商配置
+          const wire = JSON.parse(JSON.stringify(cfg || {}))
+          const defaultRaw = (wire as Record<string, unknown>)[LLM_DEFAULT_KEY]
+          delete (wire as Record<string, unknown>)[LLM_DEFAULT_KEY]
+          config.value = wire
+          const def = (defaultRaw as LLMDefaultConfig) || {}
+          llmDefault.value = { provider: def.provider || '', model: def.model || '' }
+          // 防御：provider 已设但 model 为空 → 补该提供商的首个模型，保持成对
+          if (llmDefault.value.provider && !llmDefault.value.model) {
+            const first = Object.keys(config.value[llmDefault.value.provider]?.models || {})[0]
+            if (first) llmDefault.value.model = first
+          }
+          initialJson.value = JSON.stringify(buildFullConfig())
           const ids = Object.keys(config.value)
           activeProviders.value = ids.length > 0 ? [ids[0]] : []
         }
@@ -174,6 +203,10 @@ function removeProvider(providerId: string) {
   }
   config.value = rebuilt
   activeProviders.value = activeProviders.value.filter((id) => id !== providerId)
+  // 若默认配置引用了该提供商，清空默认，避免指向已删除的提供商
+  if (llmDefault.value.provider === providerId) {
+    llmDefault.value = { provider: '', model: '' }
+  }
   showToast(`已删除提供商 "${providerId}"`, 'success', 2000)
 }
 
@@ -223,6 +256,12 @@ function removeModel(providerId: string, alias: string) {
     if (k !== alias) rebuilt[k] = v
   }
   config.value[providerId].models = rebuilt
+  // 若默认模型正是被删除的模型，重新指向剩余首个或清空
+  if (llmDefault.value.provider === providerId && llmDefault.value.model === alias) {
+    const first = Object.keys(rebuilt)[0]
+    if (first) llmDefault.value.model = first
+    else llmDefault.value = { provider: '', model: '' }
+  }
   showToast(`已删除模型 "${alias}"`, 'success', 2000)
 }
 
@@ -544,8 +583,27 @@ function scheduleAutoSave() {
   }, AUTO_SAVE_DELAY)
 }
 
+// 选默认提供商时自动填充该提供商的首个模型；清空提供商则清空模型（保持 provider/model 成对）
 watch(
-  config,
+  () => llmDefault.value.provider,
+  (newProvider, oldProvider) => {
+    if (loading.value || newProvider === oldProvider) return
+    if (!newProvider) {
+      if (llmDefault.value.model) llmDefault.value.model = ''
+      return
+    }
+    const models = config.value[newProvider]?.models || {}
+    if (!llmDefault.value.model || !(llmDefault.value.model in models)) {
+      const first = Object.keys(models)[0]
+      if (first) llmDefault.value.model = first
+      else llmDefault.value.model = ''
+    }
+  }
+)
+
+// 脏检测同时覆盖提供商与默认配置，任一变即触发自动保存
+watch(
+  [config, llmDefault],
   () => {
     if (loading.value) return
     if (saving.value) {
@@ -593,9 +651,9 @@ function persistConfig() {
     }
   }, 10000)
   try {
-    // 深度序列化为纯 JSON，避免 payload 内含 Vue 响应式 Proxy 导致 postMessage 序列化抛错
-    const plainConfig = JSON.parse(JSON.stringify(config.value))
-    postMessage({ type: 'saveLLMConfig', payload: plainConfig })
+    // 深度序列化为纯 JSON（含 __default__ 默认配置），避免 payload 内含 Vue 响应式 Proxy 导致 postMessage 序列化抛错
+    const payload = JSON.parse(JSON.stringify(buildFullConfig()))
+    postMessage({ type: 'saveLLMConfig', payload })
   } catch (e: any) {
     if (saveTimeout) {
       clearTimeout(saveTimeout)
@@ -681,6 +739,62 @@ function reset() {
         <button class="save-button" :disabled="saving || !dirty" @click="saveNow">
           {{ saving ? '保存中…' : '保存' }}
         </button>
+      </div>
+    </div>
+
+    <!-- 默认提供商 / 默认模型（全局，未指定 provider/model 时生效） -->
+    <div
+      v-if="!loading && !loadError"
+      style="
+        border: 1px solid var(--border-color);
+        border-radius: 6px;
+        padding: 12px 14px;
+        margin-bottom: 12px;
+      "
+    >
+      <div style="font-weight: 600; font-size: 12px; margin-bottom: 4px">默认提供商 / 默认模型</div>
+      <div style="font-size: 11px; color: var(--text-secondary); margin-bottom: 10px">
+        当会话未指定提供商 / 模型时（如 TUI「默认」）使用此默认值；留空则回退到内置 deepseek。
+      </div>
+      <div style="display: flex; gap: 16px; flex-wrap: wrap; align-items: flex-end">
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <label style="font-size: 11px; color: var(--text-secondary)">默认提供商</label>
+          <select
+            v-model="llmDefault.provider"
+            style="
+              min-width: 180px;
+              padding: 4px 8px;
+              border: 1px solid var(--border-color);
+              border-radius: 4px;
+              background: var(--bg-secondary, #1e1e1e);
+              color: var(--text-primary);
+              font-size: 12px;
+            "
+          >
+            <option value="">（不设置）</option>
+            <option v-for="pid in providerIds" :key="pid" :value="pid">{{ pid }}</option>
+          </select>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 4px">
+          <label style="font-size: 11px; color: var(--text-secondary)">默认模型</label>
+          <select
+            v-model="llmDefault.model"
+            :disabled="!llmDefault.provider"
+            style="
+              min-width: 180px;
+              padding: 4px 8px;
+              border: 1px solid var(--border-color);
+              border-radius: 4px;
+              background: var(--bg-secondary, #1e1e1e);
+              color: var(--text-primary);
+              font-size: 12px;
+            "
+          >
+            <option v-if="!llmDefault.provider" value="" disabled>请先选择提供商</option>
+            <option v-else-if="defaultModelOptions.length === 0" value="" disabled>该提供商下无可用模型</option>
+            <option v-for="m in defaultModelOptions" :key="m" :value="m">{{ m }}</option>
+          </select>
+        </div>
       </div>
     </div>
 

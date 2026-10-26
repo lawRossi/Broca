@@ -17,20 +17,10 @@ export class ConfigManager {
     return this.get('wsUrl') || 'http://localhost:8000'
   }
 
-  get defaultProvider(): string {
-    return this.get('defaultProvider')
-  }
-
-  get defaultModel(): string {
-    return this.get('defaultModel')
-  }
-
   getAll(): Record<string, string> {
     return {
       serverUrl: this.serverUrl,
       wsUrl: this.wsUrl,
-      defaultProvider: this.defaultProvider,
-      defaultModel: this.defaultModel,
     }
   }
 

@@ -1,21 +1,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onBeforeUnmount } from 'vue'
 import { postMessage, onMessage } from '../../api/vscode'
-import type { LLMProvider, LLMModel } from '../../types'
 
 import './settings.css'
 
 const config = ref({
   serverUrl: 'http://localhost:8000',
   wsUrl: 'http://localhost:8000',
-  defaultProvider: '',
-  defaultModel: '',
 })
 
-const providers = ref<LLMProvider[]>([])
-const models = ref<LLMModel[]>([])
-const loadingProviders = ref(false)
-const loadingModels = ref(false)
 const saving = ref(false)
 
 // Error toast
@@ -41,24 +34,11 @@ function hideError() {
 
 onMounted(() => {
   postMessage({ type: 'getConfig' })
-  postMessage({ type: 'getProviders' })
 
   unlisten = onMessage((data: any) => {
     switch (data.type) {
       case 'config':
         config.value = { ...config.value, ...data.payload }
-        if (config.value.defaultProvider) {
-          const provider = config.value.defaultProvider
-          setTimeout(() => {
-            postMessage({ type: 'getModels', payload: { provider } })
-          }, 100)
-        }
-        break
-      case 'providers':
-        providers.value = data.payload || []
-        break
-      case 'models':
-        models.value = data.payload || []
         break
       case 'saved':
         saving.value = false
@@ -75,14 +55,6 @@ onBeforeUnmount(() => {
   if (unlisten) unlisten()
   if (errorToastTimer) clearTimeout(errorToastTimer)
 })
-
-function onProviderChange() {
-  config.value.defaultModel = ''
-  models.value = []
-  if (config.value.defaultProvider) {
-    postMessage({ type: 'getModels', payload: { provider: config.value.defaultProvider } })
-  }
-}
 
 function saveConfig() {
   saving.value = true
@@ -121,27 +93,6 @@ function saveConfig() {
       <div class="field">
         <label class="field-label">WebSocket Server URL</label>
         <input v-model="config.wsUrl" class="field-input" placeholder="http://localhost:8000" />
-      </div>
-    </section>
-
-    <!-- Default LLM Configuration -->
-    <section class="section">
-      <h2 class="section-title">Default LLM Configuration</h2>
-
-      <div class="field">
-        <label class="field-label">Default Provider</label>
-        <select v-model="config.defaultProvider" class="field-select" @change="onProviderChange">
-          <option value="">-- None (use default) --</option>
-          <option v-for="p in providers" :key="p.id" :value="p.id">{{ p.name }}</option>
-        </select>
-      </div>
-
-      <div class="field">
-        <label class="field-label">Default Model</label>
-        <select v-model="config.defaultModel" class="field-select" :disabled="!config.defaultProvider">
-          <option value="">-- None (use default) --</option>
-          <option v-for="m in models" :key="m.id" :value="m.id">{{ m.name }}</option>
-        </select>
       </div>
     </section>
 
