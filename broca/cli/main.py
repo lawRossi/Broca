@@ -745,6 +745,44 @@ examples:
         "--server", default=None, help="Socket.IO server URL"
     )
 
+    # ---- worktree command ----
+    wt_sub = sub.add_parser(
+        "worktree",
+        help="Manage git worktrees with Broca sessions",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  Broca worktree create feature/auth       Create a worktree + session
+  Broca worktree delete feature/auth       Delete a worktree + session
+  Broca worktree delete feature/auth -f    Force delete (discard changes)
+  Broca worktree list                      List all Broca worktrees
+""",
+    )
+    wt_sub.add_argument(
+        "action",
+        choices=["create", "delete", "list"],
+        help="Action to perform",
+    )
+    wt_sub.add_argument(
+        "branch",
+        nargs="?",
+        default=None,
+        help="Branch name (required for create/delete)",
+    )
+    wt_sub.add_argument(
+        "--description", "-d", default=None, help="Session description"
+    )
+    wt_sub.add_argument(
+        "--provider", "-p", default=None, help="LLM provider override"
+    )
+    wt_sub.add_argument(
+        "--model", "-m", default=None, help="LLM model override"
+    )
+    wt_sub.add_argument(
+        "--force", "-f", action="store_true",
+        help="Force remove (for dirty worktrees)",
+    )
+
     return parser
 
 
@@ -871,6 +909,21 @@ def main():
                 print(f"⚠ Could not submit via Web API: {e}")
                 print()
                 print("Alternative: Start an agent session and use load_skill + execute-tasks")
+
+    # ---- worktree command ----
+    elif command == "worktree":
+        from broca.cli.worktree import (
+            cmd_worktree_create,
+            cmd_worktree_delete,
+            cmd_worktree_list,
+        )
+
+        if args.action == "create":
+            cmd_worktree_create(args)
+        elif args.action == "delete":
+            cmd_worktree_delete(args)
+        elif args.action == "list":
+            cmd_worktree_list(args)
 
     # ---- no command (TUI) ----
     elif command is None:
