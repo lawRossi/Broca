@@ -3,6 +3,52 @@ import os
 from pathlib import Path
 
 
+# llm_config.json 中的保留键：存放全局默认 provider / model。
+# 该键不是真实提供商，遍历时需跳过。
+LLM_DEFAULT_KEY = "__default__"
+
+# 内置兜底默认值：llm_config.json 未配置 __default__ 时使用
+DEFAULT_LLM_PROVIDER = "deepseek"
+DEFAULT_LLM_MODEL = "deepseek-v4-flash"
+
+
+def _resolve_llm_config_path() -> Path:
+    """解析 llm_config.json 路径，与 broca.llm.LLMClient 保持一致：
+    BROCA_LLM_CONFIG 环境变量 > 项目默认 configs/llm_config.json。
+    保证解析出的默认 provider/model 与 LLMClient 实际读取的文件相同。
+    """
+    env_path = os.getenv("BROCA_LLM_CONFIG")
+    if env_path:
+        return Path(env_path)
+    return Path(__file__).parent.parent / "configs" / "llm_config.json"
+
+
+def get_llm_defaults() -> tuple[str, str]:
+    """读取 llm_config.json 的 __default__ 条目，返回 (provider, model)。
+
+    未配置或读取失败时回退到内置默认值。永不抛异常。
+    """
+    provider = DEFAULT_LLM_PROVIDER
+    model = DEFAULT_LLM_MODEL
+    try:
+        path = _resolve_llm_config_path()
+        if path.exists():
+            with open(path) as f:
+                config = json.load(f)
+            default = config.get(LLM_DEFAULT_KEY)
+            if isinstance(default, dict):
+                p = default.get("provider")
+                m = default.get("model")
+                if isinstance(p, str) and p.strip():
+                    provider = p
+                if isinstance(m, str) and m.strip():
+                    model = m
+    except Exception:
+        # 读取失败时静默回退到内置默认值
+        pass
+    return provider, model
+
+
 class ExecutionConfig:
     """执行引擎相关配置（loop_engine / llm / agent）"""
 

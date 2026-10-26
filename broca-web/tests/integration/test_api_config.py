@@ -45,6 +45,32 @@ class TestLLMProvidersAPI:
             assert "deepseek" in provider_ids
 
     @pytest.mark.asyncio
+    async def test_get_providers_skips_default_key(self, async_client: AsyncClient, auth_headers: dict):
+        """The reserved __default__ key must not be exposed as a provider."""
+        config_data = {
+            "openai": {"models": {"gpt-4": {}}},
+            "__default__": {"provider": "openai", "model": "gpt-4"},
+        }
+        config_json = json.dumps(config_data)
+
+        with (
+            patch("app.api.config.LLM_CONFIG_PATH") as mock_path,
+            patch("builtins.open", mock_open(read_data=config_json)),
+        ):
+            mock_path.exists = MagicMock(return_value=True)
+            mock_path.__str__ = MagicMock(return_value="/tmp/test_llm_config.json")
+            mock_path.__fspath__ = MagicMock(return_value="/tmp/test_llm_config.json")
+
+            response = await async_client.get(
+                "/api/config/llm/providers",
+                headers=auth_headers,
+            )
+
+            assert response.status_code == 200
+            provider_ids = [p["id"] for p in response.json()["data"]]
+            assert provider_ids == ["openai"]
+
+    @pytest.mark.asyncio
     async def test_get_providers_no_config(self, async_client: AsyncClient, auth_headers: dict):
         """Missing config file should return error response."""
         with patch("app.api.config.LLM_CONFIG_PATH") as mock_path:
@@ -357,6 +383,82 @@ class TestLLMConfigAPI:
             json={"config": bad_config},
             headers=auth_headers,
         )
+
+        assert response.status_code == 400
+
+    # ---------- __default__ 保留键：全局默认 provider / model ----------
+
+    @pytest.mark.asyncio
+    async def test_put_llm_config_default_valid(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """PUT config with a valid __default__ (provider+model pair) should persist it."""
+        config_file = tmp_path / "llm_config.json"
+        config_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr("app.api.config.LLM_CONFIG_PATH", config_file)
+
+        config = {**self.VALID_CONFIG, "__default__": {"provider": "deepseek", "model": "m2"}}
+        response = await async_client.put("/api/config/llm", json={"config": config}, headers=auth_headers)
+
+        assert response.status_code == 200
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved["__default__"] == {"provider": "deepseek", "model": "m2"}
+
+    @pytest.mark.asyncio
+    async def test_put_llm_config_default_unset_allowed(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """A __default__ with empty provider/model (unset) is valid and persisted as-is."""
+        config_file = tmp_path / "llm_config.json"
+        config_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr("app.api.config.LLM_CONFIG_PATH", config_file)
+
+        config = {**self.VALID_CONFIG, "__default__": {"provider": "", "model": ""}}
+        response = await async_client.put("/api/config/llm", json={"config": config}, headers=auth_headers)
+
+        assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_put_llm_config_default_provider_only_rejected(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """provider without a paired model must be rejected (avoid partial default)."""
+        config_file = tmp_path / "llm_config.json"
+        original = json.dumps(self.VALID_CONFIG)
+        config_file.write_text(original, encoding="utf-8")
+        monkeypatch.setattr("app.api.config.LLM_CONFIG_PATH", config_file)
+
+        config = {**self.VALID_CONFIG, "__default__": {"provider": "deepseek"}}
+        response = await async_client.put("/api/config/llm", json={"config": config}, headers=auth_headers)
+
+        assert response.status_code == 400
+        assert config_file.read_text(encoding="utf-8") == original
+
+    @pytest.mark.asyncio
+    async def test_put_llm_config_default_unknown_provider(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """__default__ referencing an unknown provider should be rejected."""
+        config_file = tmp_path / "llm_config.json"
+        config_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr("app.api.config.LLM_CONFIG_PATH", config_file)
+
+        config = {**self.VALID_CONFIG, "__default__": {"provider": "ghost", "model": "m2"}}
+        response = await async_client.put("/api/config/llm", json={"config": config}, headers=auth_headers)
+
+        assert response.status_code == 400
+
+    @pytest.mark.asyncio
+    async def test_put_llm_config_default_model_not_in_provider(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """__default__ whose model is not under the referenced provider should be rejected."""
+        config_file = tmp_path / "llm_config.json"
+        config_file.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr("app.api.config.LLM_CONFIG_PATH", config_file)
+
+        config = {**self.VALID_CONFIG, "__default__": {"provider": "deepseek", "model": "does-not-exist"}}
+        response = await async_client.put("/api/config/llm", json={"config": config}, headers=auth_headers)
 
         assert response.status_code == 400
 

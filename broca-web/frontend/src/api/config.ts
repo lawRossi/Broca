@@ -38,8 +38,22 @@ export interface LLMProviderConfig {
   [key: string]: unknown
 }
 
-/** 完整 LLM 配置：provider id → 提供商配置 */
+/** 全局默认 LLM 配置（llm_config.json 中的保留键 __default__） */
+export interface LLMDefaultConfig {
+  /** 默认提供商 id（需为已存在的提供商） */
+  provider?: string
+  /** 默认模型别名（需为该提供商下已存在的模型） */
+  model?: string
+}
+
+/** llm_config.json 中的保留键：存放全局默认 provider / model */
+export const LLM_DEFAULT_KEY = '__default__'
+
+/** 完整 LLM 配置（工作集）：provider id → 提供商配置（不含 __default__ 保留键） */
 export type LLMConfig = Record<string, LLMProviderConfig>
+
+/** 传给后端的完整 LLM 配置：提供商 + 可选的 __default__ 保留键 */
+export type LLMWireConfig = Record<string, LLMProviderConfig | LLMDefaultConfig>
 
 /** ASR 语音识别配置（configs.json 中的 asr 分组） */
 export interface ASRConfig {
@@ -171,14 +185,14 @@ export const configApi = {
   /**
    * 获取完整 LLM 配置（含提供商、模型、api_key）
    */
-  async getLLMConfig(): Promise<LLMConfig> {
+  async getLLMConfig(): Promise<LLMWireConfig> {
     return await request.get('/config/llm')
   },
 
   /**
    * 保存完整 LLM 配置
    */
-  async saveLLMConfig(config: LLMConfig): Promise<void> {
+  async saveLLMConfig(config: LLMWireConfig): Promise<void> {
     await request.put('/config/llm', { config })
   },
 

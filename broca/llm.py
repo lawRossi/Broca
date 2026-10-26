@@ -21,6 +21,7 @@ from litellm.exceptions import (
     Timeout,
 )
 
+from broca.configs import LLM_DEFAULT_KEY
 from broca.errors import ErrorCode, LLMError, ValidationError
 from broca.logging_config import get_logger
 from broca.session.models import Message, MessageType
@@ -67,6 +68,9 @@ class LLMClient:
           export BROCA_API_BASE_URL_DEEPSEEK="https://api.deepseek.com/v1"
         """
         for provider in list(self.config.keys()):
+            if provider == LLM_DEFAULT_KEY:
+                # 保留键 __default__ 不是真实提供商，跳过环境变量覆盖
+                continue
             if not isinstance(self.config[provider], dict):
                 continue
             # provider 名中的连字符转下划线，全大写

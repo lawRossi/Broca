@@ -4,7 +4,8 @@ import { onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Setting, Delete, Loading } from '@element-plus/icons-vue'
 import configApi from '@/api/config'
-import type { LLMConfig, LLMModelConfig } from '@/api/config'
+import type { LLMConfig, LLMModelConfig, LLMDefaultConfig, LLMWireConfig } from '@/api/config'
+import { LLM_DEFAULT_KEY } from '@/api/config'
 import GeneralConfigPanel from './settings/GeneralConfigPanel.vue'
 import ToolPermissionPanel from './settings/ToolPermissionPanel.vue'
 import McpConfigPanel from './settings/McpConfigPanel.vue'
@@ -15,9 +16,50 @@ const saving = ref(false)
 const config = ref<LLMConfig>({})
 const initialJson = ref<string>('{}')
 const activeProviders = ref<string[]>([])
+/** 全局默认 provider / model（存于 llm_config.json 的 __default__ 保留键） */
+const llmDefault = ref<LLMDefaultConfig>({ provider: '', model: '' })
 
-// 脏状态：本地修改与初始加载不一致
-const dirty = computed(() => JSON.stringify(config.value) !== initialJson.value)
+/** 组装传给后端的完整配置：提供商 + 可选的 __default__ 保留键（未设置默认时省略该键） */
+const buildFullConfig = (): LLMWireConfig => {
+  const full: LLMWireConfig = { ...config.value }
+  if (llmDefault.value.provider) {
+    full[LLM_DEFAULT_KEY] = {
+      provider: llmDefault.value.provider,
+      model: llmDefault.value.model || undefined,
+    }
+  }
+  return full
+}
+
+/** 默认提供商下拉的候选：当前所有已配置的提供商 id */
+const providerIds = computed(() => Object.keys(config.value))
+
+/** 默认模型下拉的候选：默认提供商下已配置的模型 */
+const defaultModelOptions = computed(() => {
+  const pid = llmDefault.value.provider
+  if (!pid || !config.value[pid]) return []
+  return Object.keys(config.value[pid].models || {})
+})
+
+// 默认提供商切换时：
+//  - 清空 provider → 清空 model（默认需成对设置）
+//  - 设置 provider 且当前 model 缺失或不属于该 provider → 自动填充该 provider 的首个模型
+watch(
+  () => llmDefault.value.provider,
+  (pid) => {
+    if (!pid) {
+      llmDefault.value.model = ''
+      return
+    }
+    const options = Object.keys(config.value[pid]?.models || {})
+    if (!llmDefault.value.model || !options.includes(llmDefault.value.model)) {
+      llmDefault.value.model = options[0] || ''
+    }
+  }
+)
+
+// 脏状态：本地修改（含默认 provider/model）与初始加载不一致
+const dirty = computed(() => JSON.stringify(buildFullConfig()) !== initialJson.value)
 
 const providerCount = computed(() => Object.keys(config.value).length)
 const modelCount = computed(() =>
@@ -41,9 +83,25 @@ const loadConfig = async () => {
   loading.value = true
   try {
     const data = await configApi.getLLMConfig()
-    // 深拷贝到本地工作副本，避免直接改动接口返回对象
-    config.value = JSON.parse(JSON.stringify(data || {}))
-    initialJson.value = JSON.stringify(config.value)
+    const wire = JSON.parse(JSON.stringify(data || {})) as LLMWireConfig
+    // 拆分 __default__ 保留键：默认 provider/model 与提供商分开管理
+    const defaultEntry = (wire[LLM_DEFAULT_KEY] as LLMDefaultConfig | undefined) || {}
+    delete wire[LLM_DEFAULT_KEY]
+    llmDefault.value = {
+      provider: defaultEntry.provider || '',
+      model: defaultEntry.model || '',
+    }
+    // 深拷贝到本地工作副本（仅提供商），避免直接改动接口返回对象
+    config.value = wire as LLMConfig
+    // 归一化：若历史数据出现「有 provider 无 model」，自动补全该 provider 的首个模型，
+    // 避免 provider/model 不成对导致无法保存
+    if (llmDefault.value.provider) {
+      const options = Object.keys(config.value[llmDefault.value.provider]?.models || {})
+      if (!llmDefault.value.model || !options.includes(llmDefault.value.model)) {
+        llmDefault.value.model = options[0] || ''
+      }
+    }
+    initialJson.value = JSON.stringify(buildFullConfig())
     // 默认展开第一个提供商
     const ids = Object.keys(config.value)
     activeProviders.value = ids.length > 0 ? [ids[0]] : []
@@ -108,6 +166,10 @@ const removeProvider = async (providerId: string) => {
   }
   config.value = rebuilt
   activeProviders.value = activeProviders.value.filter((id) => id !== providerId)
+  // 若删除的提供商正是默认提供商，则清空默认设置，避免残留失效引用
+  if (llmDefault.value.provider === providerId) {
+    llmDefault.value = { provider: '', model: '' }
+  }
   ElMessage.success(`已删除提供商 "${providerId}"（保存后生效）`)
 }
 
@@ -313,6 +375,10 @@ const removeModel = async (providerId: string, alias: string) => {
     if (k !== alias) rebuilt[k] = v
   }
   config.value[providerId].models = rebuilt
+  // 若删除的模型正是默认模型，则清空默认模型
+  if (llmDefault.value.provider === providerId && llmDefault.value.model === alias) {
+    llmDefault.value.model = ''
+  }
   ElMessage.success(`已删除模型 "${alias}"（保存后生效）`)
 }
 
@@ -638,9 +704,9 @@ const scheduleAutoSave = () => {
   }, AUTO_SAVE_DELAY)
 }
 
-// 深度监听配置变化，驱动自动保存
+// 深度监听配置变化（含默认 provider/model），驱动自动保存
 watch(
-  config,
+  [config, llmDefault],
   () => {
     if (loading.value) return
     if (saving.value) {
@@ -654,10 +720,11 @@ watch(
 
 /** 落盘保存：成功后以「发起保存时」的内容作为新基线（不重新拉取，避免展开状态等 UI 被重置） */
 const persistConfig = async (): Promise<boolean> => {
-  const snapshot = JSON.stringify(config.value)
+  const full = buildFullConfig()
+  const snapshot = JSON.stringify(full)
   saving.value = true
   try {
-    await configApi.saveLLMConfig(config.value)
+    await configApi.saveLLMConfig(full)
     initialJson.value = snapshot
     lastSavedAt.value = new Date()
     saveFailed.value = false
@@ -841,9 +908,42 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
             <el-button class="mt-4" type="primary" :icon="Plus" @click="openProviderDialog">添加提供商</el-button>
           </div>
 
+          <template v-else>
+          <!-- 默认 provider / model：未显式指定 provider/model 的 Agent 与「默认」会话使用此配置 -->
+          <div class="bg-white rounded-lg border shadow-sm px-4 py-3 mb-4">
+            <div class="flex flex-wrap items-end gap-x-6 gap-y-3">
+              <div>
+                <label class="block text-xs text-gray-600 mb-1">默认提供商</label>
+                <el-select
+                  v-model="llmDefault.provider"
+                  clearable
+                  filterable
+                  placeholder="选择默认提供商"
+                  style="width: 200px"
+                >
+                  <el-option v-for="pid in providerIds" :key="pid" :label="pid" :value="pid" />
+                </el-select>
+              </div>
+              <div>
+                <label class="block text-xs text-gray-600 mb-1">默认模型</label>
+                <el-select
+                  v-model="llmDefault.model"
+                  filterable
+                  :disabled="!llmDefault.provider"
+                  :placeholder="llmDefault.provider ? '选择默认模型' : '先选择默认提供商'"
+                  style="width: 200px"
+                >
+                  <el-option v-for="mid in defaultModelOptions" :key="mid" :label="mid" :value="mid" />
+                </el-select>
+              </div>
+              <span class="text-xs text-gray-400 leading-5 pb-1.5">
+                未指定 provider / model 的 Agent 与选择「默认」的会话将使用此配置（保存后生效）
+              </span>
+            </div>
+          </div>
+
           <!-- 提供商配置列表 -->
           <el-collapse
-            v-else
             v-model="activeProviders"
             class="bg-white rounded-lg border shadow-sm overflow-hidden settings-collapse"
           >
@@ -1095,6 +1195,7 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
               </div>
             </el-collapse-item>
           </el-collapse>
+          </template>
         </el-tab-pane>
 
         <!-- ============ Tab 3: 工具权限 ============ -->

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from broca.configs import get_configs
+from broca.configs import LLM_DEFAULT_KEY, get_configs
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
@@ -152,11 +152,65 @@ def _read_llm_config() -> dict[str, Any]:
     return _read_json_config(LLM_CONFIG_PATH)
 
 
+def _validate_llm_default(default: Any, config: dict[str, Any]) -> None:
+    """校验 __default__ 保留键。
+
+    规则：
+      - 必须是 object；
+      - provider / model 若出现必须是字符串；
+      - provider 与 model 必须成对设置（不能只设其一，否则运行时会出现
+        provider 有效但 model 回退到内置默认的矛盾状态）；
+      - 两者都未设置（缺失或空字符串）视为“未设置默认”，合法；
+      - 两者都设置时，provider 必须是已存在的提供商，model 必须是该提供商下已存在的模型。
+    """
+    if not isinstance(default, dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reserved key '{LLM_DEFAULT_KEY}' must be an object",
+        )
+    provider = default.get("provider")
+    model = default.get("model")
+    if provider is not None and not isinstance(provider, str):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reserved key '{LLM_DEFAULT_KEY}' field 'provider' must be a string",
+        )
+    if model is not None and not isinstance(model, str):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reserved key '{LLM_DEFAULT_KEY}' field 'model' must be a string",
+        )
+    has_provider = isinstance(provider, str) and bool(provider.strip())
+    has_model = isinstance(model, str) and bool(model.strip())
+    if not has_provider and not has_model:
+        return  # 未设置默认（缺失或空字符串），合法
+    if has_provider != has_model:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reserved key '{LLM_DEFAULT_KEY}': 'provider' and 'model' must be set together",
+        )
+    # 两者都设置：校验引用有效性
+    provider_config = config.get(provider)
+    if not isinstance(provider_config, dict) or not isinstance(provider_config.get("models"), dict):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reserved key '{LLM_DEFAULT_KEY}' references unknown provider '{provider}'",
+        )
+    if model not in provider_config.get("models", {}):
+        raise HTTPException(
+            status_code=400,
+            detail=f"Reserved key '{LLM_DEFAULT_KEY}' model '{model}' is not a model of provider '{provider}'",
+        )
+
+
 def _validate_llm_config(config: Any) -> None:
     """校验 LLM 配置结构，不合法时抛出 HTTPException(400)"""
     if not isinstance(config, dict):
         raise HTTPException(status_code=400, detail="LLM config must be an object")
     for provider_id, provider_config in config.items():
+        if provider_id == LLM_DEFAULT_KEY:
+            # 保留键单独校验（见 _validate_llm_default）
+            continue
         if not isinstance(provider_id, str) or not provider_id.strip():
             raise HTTPException(status_code=400, detail="Provider id must be a non-empty string")
         if not isinstance(provider_config, dict):
@@ -194,6 +248,10 @@ def _validate_llm_config(config: Any) -> None:
                     status_code=400,
                     detail=f"Model '{model_id}' of provider '{provider_id}' requires an object 'meta.modality'",
                 )
+
+    # 校验保留键 __default__ 的引用有效性（provider/model 必须真实存在）
+    if LLM_DEFAULT_KEY in config:
+        _validate_llm_default(config[LLM_DEFAULT_KEY], config)
 
 
 def _write_llm_config(config: dict[str, Any]) -> None:
@@ -545,6 +603,9 @@ async def get_llm_providers() -> ApiResponse:
         # 将提供商ID转换为前端需要的格式
         providers = []
         for provider_id, _ in config.items():
+            if provider_id == LLM_DEFAULT_KEY:
+                # 跳过保留键 __default__（非真实提供商）
+                continue
             # 从配置中提取提供商显示名称
             provider_name = provider_id.capitalize()
             if provider_id == "z-ai":

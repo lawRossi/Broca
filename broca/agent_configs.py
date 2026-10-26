@@ -1,7 +1,7 @@
 import json
 from dataclasses import asdict, dataclass
 
-from broca.configs import ExecutionConfig
+from broca.configs import ExecutionConfig, get_llm_defaults
 
 
 @dataclass
@@ -37,8 +37,9 @@ class AgentConfig:
         self.name = None
         self.role = None
         self.role_description = None
-        self.provider = "deepseek"
-        self.model = "deepseek-v4-flash"
+        # 默认 provider/model 取自 llm_config.json 的 __default__ 条目（可在 LLM 配置页配置），
+        # 未配置时回退到内置默认值；agent 配置或显式参数可覆盖此默认。
+        self.provider, self.model = get_llm_defaults()
         self.system_prompt_template = None
         self.tools = None
         self.skills = None
