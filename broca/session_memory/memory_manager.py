@@ -198,11 +198,13 @@ class SessionMemoryManager:
         if current_turn_start is None:
             return None, None
 
-        # 从最新消息向前扫描，统计 assistant step，遇到 user message 停止
+        # 从最新消息向前扫描，统计 assistant step，遇到 user message 或 turn_end 停止
         keep_from_message_id = None
         step_count = 0
         for i in range(len(messages) - 1, current_turn_start - 1, -1):
             m = messages[i]
+            if m.message_type == MessageType.TURN_END:
+                break
             if m.message_type == MessageType.AGENT_RESPONSE:
                 step_count += 1
                 if step_count == keep_steps:
