@@ -160,7 +160,7 @@ class ContextCompressor:
         total_chars = 0
         for msg in context.history:
             if isinstance(msg, dict):
-                total_chars += len([msg["content"]])
+                total_chars += len(msg.get("content") or "")
             elif hasattr(msg, "content"):
                 # litellm.Message 对象：统计 content + reasoning_content + tool_calls
                 total_chars += len(str(msg.content or ""))
