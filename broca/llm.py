@@ -351,9 +351,12 @@ class LLMClient:
 
     def aggregate_message(self, content_chunks, tool_call_chunks) -> LLMMessage | None:
         content = self.aggregate_content(content_chunks)
-        text_content = content.get("content")
+        text_content = (content.get("content") or "").strip()
+        reasoning_content = (content.get("reasoning_content") or "").strip()
         tool_calls = self.aggregate_tool_calls(tool_call_chunks)
-        if (not text_content or not text_content.strip()) and not tool_calls:
+        # 只要有正文、推理内容（思考块）或工具调用之一，即视为有效响应。
+        # 推理型模型可能只返回思考块而正文为空，不能误判为"空响应"触发无谓重试。
+        if not text_content and not reasoning_content and not tool_calls:
             return None
 
         return LLMMessage.model_validate(

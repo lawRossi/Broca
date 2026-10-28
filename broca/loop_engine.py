@@ -337,8 +337,12 @@ class LoopEngine:
           某次调用成功后限流计数清零。
         - 其他 LLMError：按同一重试参数重试，超过 step_max_errors 次后中止。
         - 超时/未知异常：按同一重试参数重试。
+        - 空响应（接口成功但聚合为空，常见于推理模型仅返回思考块）：作为软失败，
+          warning 提示并自动重试，连续 step_max_errors 次后返回 None（不抛异常、
+          不触发限流计数）。
         """
         errors = 0
+        empty_retries = 0
         while errors < self.step_max_errors:
             if self.abort_event.is_set():
                 logger.info("Agent execution aborted during LLM call")
@@ -349,7 +353,35 @@ class LoopEngine:
                     self._call_llm_streaming(), timeout=self.llm_timeout
                 )
                 if not response:
-                    raise LLMError("LLM 调用返回空响应")
+                    # 接口调用本身成功但聚合结果为空：常见于推理型模型仅返回思考块、
+                    # 或某些供应商返回空流。这是"软失败"，用 warning 提示并自动重试，
+                    # 避免误报"LLM 调用失败"误导前端（对应 aggregate_message 空响应）。
+                    empty_retries += 1
+                    if empty_retries >= self.step_max_errors:
+                        logger.error(
+                            "LLM returned empty response %d consecutive times, giving up",
+                            empty_retries,
+                        )
+                        await self._send_llm_error(
+                            "LLM 连续返回空响应，已停止重试",
+                            "LLM_EMPTY_RESPONSE",
+                            "error",
+                        )
+                        return None
+                    logger.warning(
+                        "LLM returned empty response (%d/%d), retrying in %ds",
+                        empty_retries,
+                        self.step_max_errors,
+                        self.llm_retry_delay,
+                    )
+                    await self._send_llm_error(
+                        f"LLM 返回空响应，{self.llm_retry_delay} 秒后自动重试 "
+                        f"({empty_retries}/{self.step_max_errors})...",
+                        "LLM_EMPTY_RESPONSE",
+                        "warning",
+                    )
+                    await asyncio.sleep(self.llm_retry_delay)
+                    continue
                 # 调用成功：限流连续失败计数清零
                 if self._consecutive_rate_limit_errors:
                     self._consecutive_rate_limit_errors = 0

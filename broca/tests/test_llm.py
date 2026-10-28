@@ -245,6 +245,25 @@ class TestAggregateFunctions:
         result = llm_client.aggregate_message([], [])
         assert result is None
 
+    def test_aggregate_message_reasoning_only_not_empty(self, llm_client):
+        """回归：仅有 reasoning_content（思考块）而正文为空时不应被判为"空响应"。
+
+        推理型模型可能只返回思考块，此前会被误判为空响应从而触发无谓重试。
+        """
+        content_chunks = [{"type": "reasoning_content", "data": "thinking..."}]
+        result = llm_client.aggregate_message(content_chunks, [])
+        assert result is not None
+        assert result["content"] is None or result["content"] == ""
+        # 思考块应被保留在聚合结果中
+        provider_fields = getattr(result, "provider_specific_fields", None) or {}
+        assert (result.get("reasoning_content") or provider_fields.get("reasoning_content")) == "thinking..."
+
+    def test_aggregate_message_whitespace_only_still_empty(self, llm_client):
+        """仅空白正文 + 无思考块 + 无工具调用，仍应判为空响应"""
+        content_chunks = [{"type": "content", "data": "   \n\t  "}]
+        result = llm_client.aggregate_message(content_chunks, [])
+        assert result is None
+
 
 class TestGetStreamResponseErrors:
     """测试 get_stream_response 异常处理"""

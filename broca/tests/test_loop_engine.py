@@ -292,6 +292,48 @@ class TestRateLimitRetry:
         assert loop_engine._consecutive_rate_limit_errors == 0
 
 
+class TestEmptyResponseRetry:
+    """测试 LLM 空响应的软失败重试（接口成功但聚合为空）。
+
+    回归：此前空响应会被包装成 LLMError 走"LLM 调用失败"报错路径，
+    前端偶发出现"接口没出错但提示 LLM 调用失败"。现在空响应作为
+    软失败：warning 提示 + 自动重试，连续超限后返回 None（不抛异常）。
+    """
+
+    @pytest.mark.asyncio
+    async def test_empty_response_retries_then_succeeds(self, loop_engine):
+        """首次空响应后重试，第二次成功即返回响应，且不抛异常"""
+        response = MagicMock()
+        loop_engine._call_llm_streaming = AsyncMock(
+            side_effect=[None, response]
+        )
+
+        with patch("broca.loop_engine.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            result = await loop_engine._call_llm_with_retry()
+
+        assert result is response
+        # 仅第一次空响应触发一次重试等待
+        assert mock_sleep.await_count == 1
+        mock_sleep.assert_awaited_with(5)
+
+    @pytest.mark.asyncio
+    async def test_empty_response_exhausts_returns_none(self, loop_engine):
+        """连续空响应达到上限后返回 None（不再抛 LLMError）"""
+        loop_engine.step_max_errors = 3
+        loop_engine._call_llm_streaming = AsyncMock(
+            side_effect=[None, None, None]
+        )
+
+        with patch("broca.loop_engine.asyncio.sleep", new=AsyncMock()) as mock_sleep:
+            result = await loop_engine._call_llm_with_retry()
+
+        # 达到上限后返回 None，而非抛出异常
+        assert result is None
+        # 前两次空响应各等待一次，第三次达到上限直接放弃不再等待
+        assert mock_sleep.await_count == 2
+        assert mock_sleep.awaited
+
+
 class TestDeadLoopDetection:
     """测试死循环检测"""
 
