@@ -118,17 +118,50 @@ class TestComputeKeepPivot:
         assert keep_index is None
 
     @pytest.mark.asyncio
-    async def test_unresolvable_context_index_returns_none(self, tmp_path):
-        """无法在 context 中定位 pivot 消息时返回 (None, None)"""
+    async def test_pivot_not_in_context_resolved_by_order(self, tmp_path):
+        """pivot 消息不在 context 中时，按 DB 顺序定位（其后无 context 消息则全部压缩）"""
         messages = [
             make_msg("u1", MessageType.USER_MESSAGE, 0),
             make_msg("a1", MessageType.AGENT_RESPONSE, 1),
             make_msg("a2", MessageType.AGENT_RESPONSE, 2),
         ]
         manager = make_manager(tmp_path, messages)
-        # db_ids 中找不到 pivot 消息
+        # db_ids 中找不到 pivot 消息 a2
         context = make_context([None, "u1", "a1"])
+
+        keep_from, keep_index = await manager.compute_keep_pivot(context, keep_steps=1)
+        # a2 不在 context 中，且所有 context 消息都在其之前 → 全部压缩
+        assert keep_from == "a2"
+        assert keep_index == 3
+
+    @pytest.mark.asyncio
+    async def test_no_db_ids_returns_none(self, tmp_path):
+        """context 无 _message_db_ids 时返回 (None, None)"""
+        messages = [
+            make_msg("u1", MessageType.USER_MESSAGE, 0),
+            make_msg("a1", MessageType.AGENT_RESPONSE, 1),
+        ]
+        manager = make_manager(tmp_path, messages)
+        context = make_context(None)
 
         keep_from, keep_index = await manager.compute_keep_pivot(context, keep_steps=1)
         assert keep_from is None
         assert keep_index is None
+
+    @pytest.mark.asyncio
+    async def test_turn_end_compresses_entire_turn(self, tmp_path):
+        """最后一条是 TURN_END 时，整个 turn 全部送入压缩"""
+        messages = [
+            make_msg("u1", MessageType.USER_MESSAGE, 0),
+            make_msg("a1", MessageType.AGENT_RESPONSE, 1),
+            make_msg("a2", MessageType.AGENT_RESPONSE, 2),
+            make_msg("t1", MessageType.TURN_END, 3),
+        ]
+        manager = make_manager(tmp_path, messages)
+        # TURN_END 不写入 context.history
+        context = make_context([None, "u1", "a1", "a2"])
+
+        keep_from, keep_index = await manager.compute_keep_pivot(context, keep_steps=5)
+        # 保留边界为 TURN_END 本身；其后无 context 消息 → 全部压缩
+        assert keep_from == "t1"
+        assert keep_index == 4

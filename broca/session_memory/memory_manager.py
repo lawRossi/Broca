@@ -219,7 +219,13 @@ class SessionMemoryManager:
             keep_from_message_id = messages[current_turn_start].message_id
 
         # 将 keep_from_message_id 映射到 context.history 索引
+        # 优先精确匹配；若不在 context 中（如 TURN_END 不写入 history），
+        # 则按 DB 顺序定位到其后第一条 context 消息
         keep_index = self._resolve_context_index(context, keep_from_message_id)
+        if keep_index is None:
+            keep_index = self._resolve_context_index_by_order(
+                context, messages, keep_from_message_id
+            )
         if keep_index is None:
             return None, None
 
@@ -236,11 +242,37 @@ class SessionMemoryManager:
         for idx, db_id in enumerate(db_ids):
             if db_id == message_id:
                 return idx
-        logger.warning(
-            f"_resolve_context_index: 未在 context 中找到 "
-            f"message_id={message_id}（db_ids 长度={len(db_ids)}）"
-        )
         return None
+
+    def _resolve_context_index_by_order(self, context, messages, message_id):
+        """
+        按 DB 顺序解析 keep_index（用于 keep_from_message_id 不在 context 中的情况，
+        例如 TURN_END 只存在于数据库、不写入 context.history）。
+
+        返回 context 中第一条 DB 位置 >= message_id 位置的消息索引；
+        若所有 context 消息都在其之前，则返回 len(history)（即全部压缩）。
+        """
+        db_ids = getattr(context, "_message_db_ids", None)
+        if not db_ids:
+            logger.warning(
+                "_resolve_context_index_by_order: context 无 _message_db_ids，无法定位"
+            )
+            return None
+
+        db_position = {m.message_id: i for i, m in enumerate(messages)}
+        target_pos = db_position.get(message_id)
+        if target_pos is None:
+            logger.warning(
+                f"_resolve_context_index_by_order: 消息 {message_id} 不在 DB 序列中"
+            )
+            return None
+
+        for idx, db_id in enumerate(db_ids):
+            pos = db_position.get(db_id) if db_id is not None else None
+            if pos is not None and pos >= target_pos:
+                return idx
+        # 所有 context 消息都在 target 之前 → 全部压缩
+        return len(db_ids)
 
     # ========================================================================
     # 提取（通过子代理）
