@@ -198,12 +198,15 @@ class SessionMemoryManager:
         if current_turn_start is None:
             return None, None
 
-        # 从最新消息向前扫描，统计 assistant step，遇到 user message 或 turn_end 停止
+        # 从最新消息向前扫描，统计 assistant step
+        # - 遇到 turn_end：当前 turn 已结束，保留边界设为 turn_end（其前全部压缩）
+        # - 遇到 user message：扫描结束（不跨 turn）
         keep_from_message_id = None
         step_count = 0
         for i in range(len(messages) - 1, current_turn_start - 1, -1):
             m = messages[i]
             if m.message_type == MessageType.TURN_END:
+                keep_from_message_id = m.message_id
                 break
             if m.message_type == MessageType.AGENT_RESPONSE:
                 step_count += 1
