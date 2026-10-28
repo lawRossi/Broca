@@ -9,6 +9,7 @@ export default defineConfig({
   build: {
     outDir: resolve(__dirname, 'dist/webview'),
     emptyOutDir: true,
+    minify: 'terser',
     rollupOptions: {
       input: {
         index: resolve(__dirname, 'src/webview/index.html'),

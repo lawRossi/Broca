@@ -222,31 +222,38 @@ function openModelDialog(providerId: string) {
 }
 
 function confirmAddModel() {
-  const alias = newModelAlias.value.trim()
-  const modelName = newModelName.value.trim()
-  const providerId = modelDialogProvider.value
-  if (!alias) return showToast('模型别名不能为空', 'error')
-  if (!modelName) return showToast('实际模型名不能为空', 'error')
-  if (newModelModalities.value.length === 0) return showToast('请至少勾选一项多模态能力', 'error')
-  const models = config.value[providerId]?.models || {}
-  if (alias in models) return showToast(`模型别名 "${alias}" 已存在`, 'error')
+  try {
+    const alias = newModelAlias.value.trim()
+    const modelName = newModelName.value.trim()
+    const providerId = modelDialogProvider.value
+    if (!alias) return showToast('模型别名不能为空', 'error')
+    if (!modelName) return showToast('实际模型名不能为空', 'error')
+    if (newModelModalities.value.length === 0) return showToast('请至少勾选一项多模态能力', 'error')
+    const models = config.value[providerId]?.models || {}
+    if (alias in models) return showToast(`模型别名 "${alias}" 已存在`, 'error')
 
-  const modality: Record<string, unknown> = {}
-  for (const key of newModelModalities.value) {
-    modality[key] = key === 'text' ? '' : {}
+    const modality: Record<string, unknown> = {}
+    for (const key of newModelModalities.value) {
+      modality[key] = key === 'text' ? '' : {}
+    }
+    const modelConfig: LLMModelConfig = { model: modelName, meta: { modality } }
+    // 防御：v-model 对 type=number 可能产生 undefined/NaN
+    const mtRaw = String(newModelMaxTokens.value ?? '').trim()
+    if (mtRaw) {
+      const mt = Number(mtRaw)
+      if (!isNaN(mt) && mt > 0) modelConfig.max_tokens = mt
+    }
+    const cwRaw = String(newModelContextWindow.value ?? '').trim()
+    if (cwRaw) {
+      const cw = Number(cwRaw)
+      if (!isNaN(cw) && cw > 0) modelConfig.meta.context_window = cw
+    }
+    config.value[providerId].models = { ...models, [alias]: modelConfig }
+    modelDialogVisible.value = false
+    showToast(`已添加模型 "${alias}"`, 'success', 2000)
+  } catch (e: any) {
+    showToast(`添加模型失败：${e?.message || e}`, 'error')
   }
-  const modelConfig: LLMModelConfig = { model: modelName, meta: { modality } }
-  if (newModelMaxTokens.value.trim()) {
-    const mt = Number(newModelMaxTokens.value)
-    if (!isNaN(mt)) modelConfig.max_tokens = mt
-  }
-  if (newModelContextWindow.value.trim()) {
-    const cw = Number(newModelContextWindow.value)
-    if (!isNaN(cw)) modelConfig.meta.context_window = cw
-  }
-  config.value[providerId].models = { ...models, [alias]: modelConfig }
-  modelDialogVisible.value = false
-  showToast(`已添加模型 "${alias}"`, 'success', 2000)
 }
 
 function removeModel(providerId: string, alias: string) {
@@ -897,6 +904,7 @@ function reset() {
                   <th>模型名</th>
                   <th>Max Tokens</th>
                   <th>上下文窗口</th>
+                  <th>更多参数</th>
                   <th>操作</th>
                 </tr>
               </thead>
@@ -956,6 +964,15 @@ function reset() {
                         "
                       />
                     </td>
+                    <td>
+                      <button
+                        class="action-button action-button--secondary"
+                        style="padding: 2px 8px; font-size: 11px"
+                        @click="toggleParamsExpanded(providerId as string, alias as string)"
+                      >
+                        {{ isParamsExpanded(providerId as string, alias as string) ? '收起' : `展开 (${extraParamKeys(model).length})` }}
+                      </button>
+                    </td>
                     <td style="white-space: nowrap">
                       <button
                         class="delete-btn"
@@ -964,19 +981,12 @@ function reset() {
                       >
                         ✕
                       </button>
-                      <button
-                        class="action-button action-button--secondary"
-                        style="padding: 2px 8px; font-size: 11px; margin-left: 4px"
-                        @click="toggleParamsExpanded(providerId as string, alias as string)"
-                      >
-                        {{ isParamsExpanded(providerId as string, alias as string) ? '收起' : '更多参数' }}
-                      </button>
                     </td>
                   </tr>
 
                   <!-- Expanded: extra_body + modality + extra params -->
                   <tr v-if="isParamsExpanded(providerId as string, alias as string)">
-                    <td colspan="5" style="background: var(--bg-primary); padding: 12px">
+                    <td colspan="6" style="background: var(--bg-primary); padding: 12px">
                       <!-- extra_body -->
                       <div class="field">
                         <label class="field-label">Extra Body (JSON)</label>
