@@ -895,7 +895,6 @@ function reset() {
                 <tr>
                   <th>别名</th>
                   <th>模型名</th>
-                  <th>Temperature</th>
                   <th>Max Tokens</th>
                   <th>上下文窗口</th>
                   <th>操作</th>
@@ -922,25 +921,6 @@ function reset() {
                     </td>
                     <td>
                       <input v-model="model.model" class="cell-input" style="width: 100%; min-width: 120px" />
-                    </td>
-                    <td>
-                      <input
-                        type="number"
-                        class="cell-input"
-                        style="width: 70px"
-                        min="0"
-                        max="2"
-                        step="0.1"
-                        :value="model.temperature ?? ''"
-                        @change="
-                          () => {
-                            const v = Number(($event.target as HTMLInputElement).value)
-                            if ($event.target instanceof HTMLInputElement && $event.target.value === '')
-                              delete model.temperature
-                            else if (!isNaN(v)) model.temperature = v
-                          }
-                        "
-                      />
                     </td>
                     <td>
                       <input
@@ -996,7 +976,7 @@ function reset() {
 
                   <!-- Expanded: extra_body + modality + extra params -->
                   <tr v-if="isParamsExpanded(providerId as string, alias as string)">
-                    <td colspan="6" style="background: var(--bg-primary); padding: 12px">
+                    <td colspan="5" style="background: var(--bg-primary); padding: 12px">
                       <!-- extra_body -->
                       <div class="field">
                         <label class="field-label">Extra Body (JSON)</label>
