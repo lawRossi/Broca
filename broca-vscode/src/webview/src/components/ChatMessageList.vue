@@ -77,6 +77,16 @@ function isNearBottom(): boolean {
   return container.scrollHeight - container.scrollTop - container.clientHeight < 150
 }
 
+// ==================== 焦点保持（防止 VS Code webview 焦点回跳到输入框） ====================
+function onMessageAreaMouseDown() {
+  // 将焦点锚定在消息列表容器上，避免焦点"落空"后
+  // 被 VS Code webview focus 系统异步恢复到 textarea，
+  // 导致 Cmd+C 时复制的是空输入框而非消息列表选区
+  if (containerRef.value && document.activeElement !== containerRef.value) {
+    containerRef.value.focus({ preventScroll: true })
+  }
+}
+
 // ==================== 滚动位置保持 ====================
 function saveScrollState() {
   if (!containerRef.value) return null
@@ -231,7 +241,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="containerRef" class="message-list" @scroll="handleScroll">
+  <div ref="containerRef" class="message-list" tabindex="0" @scroll="handleScroll" @mousedown="onMessageAreaMouseDown">
     <!-- 简洁模式：Turn 摘要视图 -->
     <template v-if="chatStore.displayMode === 'concise'">
       <!-- Loading more (turn history) -->
@@ -301,6 +311,7 @@ onUnmounted(() => {
   height: 100%;
   overflow-y: auto;
   padding: 12px 16px;
+  outline: none; /* 焦点锚定在容器上，去除 focus outline 避免视觉干扰 */
 }
 
 .load-more-indicator {
