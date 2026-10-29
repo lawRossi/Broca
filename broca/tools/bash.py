@@ -63,6 +63,12 @@ class Bash(Tool):
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         code = arguments.get("code") or arguments.get("command")
+        if not code:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content="You must provide the parameter `code`"
+            )
+
         background = arguments.get("background", False)
         notify = False
 
