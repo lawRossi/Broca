@@ -59,6 +59,9 @@ export class AudioRecorder {
   /**
    * 请求麦克风权限并开始录音。
    *
+   * 首次调用时通过 getUserMedia 获取 MediaStream（会触发权限弹窗 / iOS 提示），
+   * 后续调用复用已缓存的 stream，不再触发浏览器提示。
+   *
    * @param onAudioFrame 每 ~128ms 回调一次，参数为 16kHz Int16 PCM 数据的 ArrayBuffer
    * @throws DOMException (NotAllowedError) 如果用户拒绝权限
    * @throws Error 如果不是安全上下文（iPhone 通过 HTTP 访问时）
@@ -75,20 +78,22 @@ export class AudioRecorder {
       throw new Error('浏览器不支持 getUserMedia，请使用最新版 Safari / Chrome')
     }
 
-    // 重复调用时先清理上一次
+    // 重复调用时先清理上一次（仅断开音频图，不释放 stream）
     if (this._isRecording) {
       this.stop()
     }
 
-    // 1. 请求麦克风权限
-    this.mediaStream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        sampleRate: TARGET_SAMPLE_RATE,
-        channelCount: 1,
-        echoCancellation: true,
-        noiseSuppression: true,
-      },
-    })
+    // 1. 获取麦克风 stream（优先复用缓存，避免重复触发 iOS 权限提示）
+    if (!this.mediaStream || !this.mediaStream.getTracks().some((t) => t.readyState === 'live')) {
+      this.mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: TARGET_SAMPLE_RATE,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        },
+      })
+    }
 
     // 2. 创建 AudioContext（优先 16kHz，不支持时用默认）
     try {
@@ -154,7 +159,10 @@ export class AudioRecorder {
     this._isRecording = true
   }
 
-  /** 停止录音，清理所有资源 */
+  /**
+   * 停止录音，断开音频图节点，但保留 MediaStream 缓存。
+   * 这样下次 start() 无需重新 getUserMedia，避免 iOS 反复弹出权限提示。
+   */
   stop(): void {
     this._isRecording = false
 
@@ -171,13 +179,22 @@ export class AudioRecorder {
       this.zeroGain.disconnect()
       this.zeroGain = null
     }
-    if (this.mediaStream) {
-      this.mediaStream.getTracks().forEach((t) => t.stop())
-      this.mediaStream = null
-    }
+    // 注意：不停 mediaStream tracks，保留给下次 start() 复用
     if (this.audioContext) {
       this.audioContext.close().catch(() => {})
       this.audioContext = null
+    }
+  }
+
+  /**
+   * 彻底释放所有资源（包括 MediaStream tracks）。
+   * 应在页面卸载 / 组件销毁时调用。
+   */
+  destroy(): void {
+    this.stop()
+    if (this.mediaStream) {
+      this.mediaStream.getTracks().forEach((t) => t.stop())
+      this.mediaStream = null
     }
   }
 

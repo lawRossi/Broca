@@ -5,7 +5,7 @@ import { uploadFile, isStorageConfigured } from '@/utils/upload'
 import { commandsApi, type CommandInfo } from '@/api/commands'
 import { filesApi, type FileCompleteItem } from '@/api/files'
 import { sessionApi } from '@/api/session'
-import { AudioRecorder, audioRecorder } from '@/services/audioRecorder'
+import { audioRecorder } from '@/services/audioRecorder'
 import { asrClient, type AsrEvent } from '@/services/asrClient'
 
 const chatStore = useChatStore()
@@ -681,16 +681,40 @@ onMounted(async () => {
   document.addEventListener('click', handleClickOutside)
   // 获取命令列表
   await fetchCommands()
-  // 检查麦克风可用性
-  micAvailable.value = await AudioRecorder.checkPermission()
+  // 静默检查麦克风权限（不触发系统权限弹窗）
+  micAvailable.value = await checkMicPermissionSilently()
 })
+
+/**
+ * 静默检测麦克风权限，不会触发系统权限对话框。
+ * 使用 navigator.permissions.query() API（Chrome 70+ / Safari 16.4+ / iOS 16.4+）。
+ * 若 API 不可用则返回 null（未知），保持按钮可点击，
+ * 实际权限弹窗会在用户点击录音按钮时由 getUserMedia 触发。
+ */
+async function checkMicPermissionSilently(): Promise<boolean | null> {
+  if (!window.isSecureContext || !navigator.mediaDevices?.getUserMedia) {
+    return false
+  }
+  try {
+    const result = await navigator.permissions.query({ name: 'microphone' as PermissionName })
+    if (result.state === 'granted') return true
+    if (result.state === 'denied') return false
+    // 'prompt' 状态 — 权限尚未被用户决定，保持 null 让按钮可用
+    // 用户点击录音按钮时 getUserMedia 才会触发系统弹窗
+    return null
+  } catch {
+    // API 不支持（如 Firefox）— 返回 null，按钮保持可用
+    return null
+  }
+}
 
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside)
-  // 清理语音录音资源
+  // 清理语音录音资源，彻底释放麦克风 stream
   if (isVoiceRecording.value) {
     stopVoiceRecording(false)
   }
+  audioRecorder.destroy()
 })
 
 // 触发文件选择
@@ -1149,6 +1173,8 @@ const handleSendMessage = async () => {
 /* textarea 顶部留出空间，避免文字被悬浮按钮遮挡 */
 :deep(.el-textarea__inner) {
   padding-top: 26px;
+  /* iOS Safari 对 < 16px 的 input/textarea 聚焦时会自动放大页面，设为 16px 避免此行为 */
+  font-size: 16px;
 }
 
 /* 让 el-input 的边框更柔和，与外层容器融合 */
