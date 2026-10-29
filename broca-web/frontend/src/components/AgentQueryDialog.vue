@@ -103,6 +103,11 @@ const selectOption = (optionName: string) => {
   overflow-wrap: break-word;
 }
 
+/* iOS Safari 对 < 16px 的 textarea 聚焦时会自动放大页面 */
+:deep(.el-textarea__inner) {
+  font-size: 16px;
+}
+
 .option-card {
   @apply flex items-start justify-between p-3 sm:p-4 rounded-lg border border-gray-200 bg-white cursor-pointer;
   @apply transition-all duration-200 hover:border-primary-300 hover:shadow-sm hover:bg-primary-50/50;

@@ -757,3 +757,10 @@
     border: 1px solid #ccc !important;
   }
 }
+
+/* iOS Safari: textarea/input 字体 < 16px 时聚焦会触发页面自动放大。
+   统一将 Element Plus textarea 设为 16px，避免所有弹窗/表单中的缩放问题。 */
+.el-textarea__inner,
+.el-input__inner {
+  font-size: 16px;
+}
