@@ -75,6 +75,8 @@ const configForm = ref<any>({
   save_history: true,
   enable_context_compression: false,
   enable_snapshot_tracking: true,
+  tool_execution_mode: '',
+  max_parallel_tools: null as number | null,
   skill_loading_mode: 'eager',
   workspace: '',
   environment: '',
@@ -121,6 +123,8 @@ function resetConfigForm() {
     save_history: true,
     enable_context_compression: false,
     enable_snapshot_tracking: true,
+    tool_execution_mode: '',
+    max_parallel_tools: null as number | null,
     skill_loading_mode: 'eager',
     workspace: '',
     environment: '',
@@ -308,6 +312,8 @@ function initConfigEdit() {
     save_history: config.save_history ?? true,
     enable_context_compression: config.enable_context_compression ?? false,
     enable_snapshot_tracking: config.enable_snapshot_tracking ?? true,
+    tool_execution_mode: config.tool_execution_mode ?? '',
+    max_parallel_tools: config.max_parallel_tools ?? null,
     skill_loading_mode: config.skill_loading_mode ?? 'eager',
     workspace: config.workspace ?? '',
     environment: config.environment ?? '',
@@ -361,6 +367,8 @@ function buildConfigContent(): Record<string, any> {
     save_history: form.save_history,
     enable_context_compression: form.enable_context_compression,
     enable_snapshot_tracking: form.enable_snapshot_tracking,
+    tool_execution_mode: form.tool_execution_mode || undefined,
+    max_parallel_tools: form.max_parallel_tools || undefined,
     skill_loading_mode: form.skill_loading_mode,
     workspace: form.workspace,
     environment: form.environment,
@@ -855,6 +863,18 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                   <label class="switch-item">
                     <span>快照跟踪（undo 恢复文件）</span>
                     <input type="checkbox" v-model="configForm.enable_snapshot_tracking" />
+                  </label>
+                  <label class="switch-item">
+                    <span>工具执行方式</span>
+                    <select v-model="configForm.tool_execution_mode">
+                      <option value="">全局</option>
+                      <option value="parallel">Parallel</option>
+                      <option value="serial">Serial</option>
+                    </select>
+                  </label>
+                  <label class="switch-item">
+                    <span>最大并行工具数</span>
+                    <input type="number" v-model.number="configForm.max_parallel_tools" min="1" max="50" placeholder="全局" style="width: 80px" />
                   </label>
                   <label class="switch-item">
                     <span>Skill 加载模式</span>

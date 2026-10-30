@@ -59,6 +59,8 @@ const configForm = ref<any>({
   save_history: true,
   enable_context_compression: false,
   enable_snapshot_tracking: true,
+  tool_execution_mode: '',
+  max_parallel_tools: null as number | null,
   skill_loading_mode: 'eager',
   workspace: '',
   environment: '',
@@ -279,6 +281,8 @@ const initConfigEdit = async () => {
     save_history: config.save_history ?? true,
     enable_context_compression: config.enable_context_compression ?? false,
     enable_snapshot_tracking: config.enable_snapshot_tracking ?? true,
+    tool_execution_mode: config.tool_execution_mode ?? '',
+    max_parallel_tools: config.max_parallel_tools ?? null,
     skill_loading_mode: config.skill_loading_mode ?? 'eager',
     workspace: config.workspace ?? '',
     environment: config.environment ?? '',
@@ -336,6 +340,8 @@ const buildConfigContent = (): Record<string, any> => {
     save_history: form.save_history,
     enable_context_compression: form.enable_context_compression,
     enable_snapshot_tracking: form.enable_snapshot_tracking,
+    tool_execution_mode: form.tool_execution_mode || undefined,
+    max_parallel_tools: form.max_parallel_tools || undefined,
     skill_loading_mode: form.skill_loading_mode,
     workspace: form.workspace,
     environment: form.environment,
@@ -412,6 +418,8 @@ const closeConfigDialog = () => {
     save_history: true,
     enable_context_compression: false,
     enable_snapshot_tracking: true,
+    tool_execution_mode: '',
+    max_parallel_tools: null as number | null,
     workspace: '',
     environment: '',
     system_prompt_template: '',
@@ -819,6 +827,17 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <span class="text-xs text-gray-600">快照跟踪（undo 恢复文件）</span>
             <el-switch v-model="configForm.enable_snapshot_tracking" size="small" />
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-600">工具执行方式</span>
+            <el-select v-model="configForm.tool_execution_mode" size="small" style="width: 140px" clearable placeholder="全局">
+              <el-option label="Parallel" value="parallel" />
+              <el-option label="Serial" value="serial" />
+            </el-select>
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-600">最大并行工具数</span>
+            <el-input-number v-model="configForm.max_parallel_tools" size="small" :min="1" :max="50" :controls="false" style="width: 100px" placeholder="全局" />
           </div>
           <div class="flex items-center justify-between">
             <span class="text-xs text-gray-600">Skill 加载模式</span>

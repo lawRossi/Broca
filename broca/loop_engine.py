@@ -167,10 +167,17 @@ class LoopEngine:
         )
         self.dead_loop_window = getattr(exec_cfg, "dead_loop_window", 3)
         self.llm_timeout = getattr(exec_cfg, "llm_timeout", 300)
-        self.tool_execution_mode = getattr(
-            exec_cfg, "tool_execution_mode", "parallel"
+        # 工具执行方式：per-agent 覆盖 > 全局 ExecutionConfig > 默认值
+        _mode = getattr(config, "tool_execution_mode", None)
+        self.tool_execution_mode = (
+            _mode if isinstance(_mode, str) and _mode
+            else getattr(exec_cfg, "tool_execution_mode", "parallel")
         )
-        self.max_parallel_tools = getattr(exec_cfg, "max_parallel_tools", 10)
+        _mp = getattr(config, "max_parallel_tools", None)
+        self.max_parallel_tools = (
+            _mp if isinstance(_mp, int) and _mp > 0
+            else getattr(exec_cfg, "max_parallel_tools", 10)
+        )
 
         # 快照跟踪
         self.snapshot_tracker: Optional[SnapshotTracker] = None

@@ -53,6 +53,8 @@ class AgentConfig:
         self.persistent_memory_config = DEFAULT_PERSISTENT_MEMORY_CONFIG
         self.enable_context_compression = False
         self.enable_snapshot_tracking = True  # 是否跟踪文件快照（undo/redo 时恢复文件）
+        self.tool_execution_mode: str | None = None  # 工具执行方式（None=使用全局配置）
+        self.max_parallel_tools: int | None = None  # 最大并行工具数（None=使用全局配置）
         self.compact_config = DEFAULT_COMPACT_CONFIG
         self.execution_config = ExecutionConfig()
 
