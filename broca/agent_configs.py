@@ -52,6 +52,7 @@ class AgentConfig:
         self.workspace = ""
         self.persistent_memory_config = DEFAULT_PERSISTENT_MEMORY_CONFIG
         self.enable_context_compression = False
+        self.enable_snapshot_tracking = True  # 是否跟踪文件快照（undo/redo 时恢复文件）
         self.compact_config = DEFAULT_COMPACT_CONFIG
         self.execution_config = ExecutionConfig()
 

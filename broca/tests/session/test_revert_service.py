@@ -148,20 +148,26 @@ class TestRedo:
 
     @pytest.mark.asyncio
     async def test_redo_no_snapshot(self, revert_service, mock_session_manager):
-        """测试撤销记录中没有快照信息"""
+        """测试无快照模式下的 redo（仅标记消息，无文件恢复）"""
         mock_session_manager.get_session = AsyncMock(return_value=MagicMock())
+        mock_session_manager.get_messages = AsyncMock(return_value=[])
+        mock_session_manager.batch_update_messages = AsyncMock()
+        mock_session_manager.batch_update_turns = AsyncMock()
 
         revert_service.undo_stack.append({
             "patches": [],
-            "message_ids_to_revert": [],
-            # 没有 snapshot_hash
+            "message_ids_to_revert": ["msg-1", "msg-2"],
+            "snapshot_hash": "",
         })
 
         result = await revert_service.redo(
             session_id="session-1",
             agent_id="agent-1",
         )
-        assert result["success"] is False
+        # 无快照模式下 redo 仅标记消息，应成功
+        assert result["success"] is True
+        # 不应调用 snapshot_restorer
+        assert not revert_service.undo_stack  # 栈已被 pop
 
 
 class TestCollectPatches:
@@ -188,17 +194,19 @@ class TestCollectPatches:
 
     @pytest.mark.asyncio
     async def test_no_matching_step_start(self, revert_service):
-        """测试没有匹配的 STEP_START"""
+        """测试没有匹配的 STEP_START（无快照模式 fallback：用目标消息作为 pivot）"""
         msg = MagicMock()
         msg.message_id = "msg_target"
         msg.data = {"step_id": "step-1"}
+        msg.message_type = "agent_response"
 
-        # 没有 STEP_START 类型的消息
+        # 没有 STEP_START 类型的消息 → fallback 到目标消息自身
         patches, pivot_id = await revert_service._collect_patches_to_message(
             [msg], "msg_target", "step"
         )
         assert patches == []
-        assert pivot_id is None
+        # fallback: 目标消息自身作为 pivot
+        assert pivot_id == "msg_target"
 
 
 class TestCreateUndoMetaInfo:
@@ -259,3 +267,113 @@ class TestMarkMessages:
         )
         # 验证 batch_update_messages 被调用
         mock_session_manager.batch_update_messages.assert_called_once()
+
+
+class TestNoSnapshotMode:
+    """测试 enable_snapshot_tracking=False 时的 undo/redo 行为"""
+
+    @pytest.fixture
+    def no_snapshot_service(self, mock_session_manager):
+        """创建无快照跟踪的 RevertService"""
+        service = SessionRevertService(
+            session_manager=mock_session_manager,
+            workspace_path="/tmp/workspace",
+            enable_snapshot_tracking=False,
+        )
+        service.snapshot_tracker = MagicMock()
+        service.snapshot_tracker.track = AsyncMock(return_value="")
+        service.patch_calculator = MagicMock()
+        service.snapshot_restorer = MagicMock()
+        return service
+
+    @pytest.mark.asyncio
+    async def test_undo_only_marks_messages(self, no_snapshot_service, mock_session_manager):
+        """无快照模式下 undo 仅标记消息，不执行文件操作"""
+        # 模拟消息：没有 STEP_START/STEP_END
+        turn_start = MagicMock()
+        turn_start.message_id = "msg_turn_start"
+        turn_start.message_type = "turn_start"
+        turn_start.turn_id = "turn-1"
+        turn_start.data = {}
+
+        agent_response = MagicMock()
+        agent_response.message_id = "msg_response"
+        agent_response.message_type = "agent_response"
+        agent_response.turn_id = "turn-1"
+        agent_response.data = {"step_id": "step-1"}
+
+        tool_call = MagicMock()
+        tool_call.message_id = "msg_tool"
+        tool_call.message_type = "tool_call"
+        tool_call.turn_id = "turn-1"
+        tool_call.data = {"step_id": "step-1"}
+
+        mock_session_manager.get_session = AsyncMock(return_value=MagicMock())
+        mock_session_manager.get_messages = AsyncMock(
+            return_value=[turn_start, agent_response, tool_call]
+        )
+
+        result = await no_snapshot_service.undo(
+            session_id="session-1",
+            agent_id="agent-1",
+            target_message_id="msg_response",
+            level="step",
+        )
+
+        assert result["success"] is True
+        assert result["patches_reverted"] == 0
+        # snapshot_restorer 不应被调用
+        no_snapshot_service.snapshot_restorer.revert_patches.assert_not_called()
+        # 但消息标记应被调用
+        mock_session_manager.batch_update_messages.assert_called()
+
+    @pytest.mark.asyncio
+    async def test_undo_auto_target(self, no_snapshot_service, mock_session_manager):
+        """无快照模式下 /undo 不指定 target 时自动定位最后 AGENT_RESPONSE"""
+        agent_response = MagicMock()
+        agent_response.message_id = "msg_response"
+        agent_response.message_type = "agent_response"
+        agent_response.turn_id = "turn-1"
+        agent_response.data = {"step_id": "step-1"}
+
+        tool_call = MagicMock()
+        tool_call.message_id = "msg_tool"
+        tool_call.message_type = "tool_call"
+        tool_call.turn_id = "turn-1"
+        tool_call.data = {"step_id": "step-1"}
+
+        mock_session_manager.get_session = AsyncMock(return_value=MagicMock())
+        mock_session_manager.get_messages = AsyncMock(
+            return_value=[agent_response, tool_call]
+        )
+
+        result = await no_snapshot_service.undo(
+            session_id="session-1",
+            agent_id="agent-1",
+            target_message_id=None,  # 不指定，自动定位
+            level="step",
+        )
+
+        assert result["success"] is True
+
+    @pytest.mark.asyncio
+    async def test_redo_only_unmarks_messages(self, no_snapshot_service, mock_session_manager):
+        """无快照模式下 redo 仅取消标记消息"""
+        mock_session_manager.get_session = AsyncMock(return_value=MagicMock())
+        mock_session_manager.get_messages = AsyncMock(return_value=[])
+
+        no_snapshot_service.undo_stack.append({
+            "patches": [],
+            "message_ids_to_revert": ["msg-1"],
+            "snapshot_hash": "",
+        })
+
+        result = await no_snapshot_service.redo(
+            session_id="session-1",
+            agent_id="agent-1",
+        )
+
+        assert result["success"] is True
+        # snapshot_restorer 不应被调用
+        no_snapshot_service.snapshot_restorer.restore.assert_not_called()
+        assert no_snapshot_service.undo_stack == []

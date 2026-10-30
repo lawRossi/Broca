@@ -63,6 +63,8 @@ class ExecutionConfig:
         self.message_queue_size = 3  # agent 消息队列大小
         self.permission_request_timeout = 90  # 权限请求等待超时（秒）
         self.agent_query_timeout = 300  # ask_user 用户问答等待超时（秒）
+        self.tool_execution_mode = "parallel"  # 工具执行方式: "parallel" | "serial"
+        self.max_parallel_tools = 10  # 并行模式下最大同时执行的工具数
 
     @classmethod
     def from_config(cls, config):

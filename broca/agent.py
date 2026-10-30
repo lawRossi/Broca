@@ -47,7 +47,11 @@ class Agent:
         self.role = config.role
         self.status = self.STATUS_DISCONNECTED
         self.revert_service = SessionRevertService(
-            self.session_manager, self.config.workspace
+            self.session_manager,
+            self.config.workspace,
+            enable_snapshot_tracking=getattr(
+                self.config, "enable_snapshot_tracking", True
+            ),
         )
 
         self.session_id: Optional[str] = session_manager.session_id

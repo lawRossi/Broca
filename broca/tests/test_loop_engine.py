@@ -529,3 +529,265 @@ class TestToolTimeout:
         result = await engine._execute_single_tool_call(tool_call, MagicMock())
         assert result.status == ToolStatus.ERROR
         assert "timed out" in result.content
+
+
+# ============================================================================
+# 并行工具执行测试
+# ============================================================================
+
+
+class TestParallelToolExecution:
+    """测试并行工具执行模式（_process_tool_calls / _process_tool_calls_parallel）"""
+
+    @staticmethod
+    def _make_tool_call(name: str, call_id: str = None, arguments: str = "{}") -> MagicMock:
+        """创建一个模拟的 tool_call 对象"""
+        tc = MagicMock()
+        tc.id = call_id or f"call_{name}"
+        tc.function.name = name
+        tc.function.arguments = arguments
+        return tc
+
+    @staticmethod
+    def _make_tool(result_content: str = "ok", delay: float = 0) -> MagicMock:
+        """创建一个模拟工具，执行后返回 ToolResult"""
+        tool = MagicMock()
+
+        async def _execute(arguments, context):
+            if delay > 0:
+                await asyncio.sleep(delay)
+            return ToolResult(status=ToolStatus.SUCCESS, content=result_content)
+
+        tool.execute = _execute
+        return tool
+
+    def _setup_parallel_engine(self, loop_engine, tool_names, delays=None):
+        """配置引擎为并行模式并注册 mock 工具"""
+        loop_engine.tool_execution_mode = "parallel"
+        loop_engine.max_parallel_tools = 10
+        delays = delays or {}
+        for name in tool_names:
+            loop_engine.tool_mapping[name] = self._make_tool(
+                result_content=f"result_{name}", delay=delays.get(name, 0)
+            )
+        # 默认所有工具权限为 allow
+        loop_engine.tool_permission_manager = MagicMock()
+        loop_engine.tool_permission_manager.get_permission = MagicMock(return_value="allow")
+        return loop_engine
+
+    @pytest.mark.asyncio
+    async def test_parallel_execution_completes(self, loop_engine):
+        """并行模式下多个工具都能成功执行并返回结果"""
+        tools = ["read_file", "grep", "glob"]
+        self._setup_parallel_engine(loop_engine, tools)
+
+        # mock process_tool_call_result
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+        tool_calls = [self._make_tool_call(t) for t in tools]
+
+        await loop_engine._process_tool_calls(tool_calls)
+
+        # 所有工具的结果都被处理（按原始顺序）
+        assert loop_engine.process_tool_call_result.call_count == 3
+        # 验证按原始顺序处理
+        calls = loop_engine.process_tool_call_result.call_args_list
+        for i, t in enumerate(tools):
+            assert calls[i].args[0].function.name == t
+
+    @pytest.mark.asyncio
+    async def test_parallel_actually_concurrent(self, loop_engine):
+        """验证并行模式确实同时执行（总时间 < 各工具时间之和）"""
+        import time
+
+        tools = ["slow_a", "slow_b", "slow_c"]
+        self._setup_parallel_engine(loop_engine, tools, delays={
+            "slow_a": 0.2, "slow_b": 0.2, "slow_c": 0.2,
+        })
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+        tool_calls = [self._make_tool_call(t) for t in tools]
+
+        start = time.monotonic()
+        await loop_engine._process_tool_calls(tool_calls)
+        elapsed = time.monotonic() - start
+
+        # 串行需要 0.6s，并行应约 0.2s
+        assert elapsed < 0.5, f"Expected parallel execution < 0.5s, got {elapsed:.3f}s"
+
+    @pytest.mark.asyncio
+    async def test_serial_mode_still_works(self, loop_engine):
+        """串行模式保持原有逻辑"""
+        loop_engine.tool_execution_mode = "serial"
+        tools = ["read_file", "grep"]
+        self._setup_parallel_engine(loop_engine, tools)
+        loop_engine.tool_execution_mode = "serial"
+
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+        tool_calls = [self._make_tool_call(t) for t in tools]
+
+        await loop_engine._process_tool_calls(tool_calls)
+
+        assert loop_engine.process_tool_call_result.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_single_tool_uses_serial_path(self, loop_engine):
+        """只有 1 个工具调用时走串行路径"""
+        loop_engine.tool_execution_mode = "parallel"
+        tools = ["read_file"]
+        self._setup_parallel_engine(loop_engine, tools)
+
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+        tool_calls = [self._make_tool_call("read_file")]
+
+        await loop_engine._process_tool_calls(tool_calls)
+        assert loop_engine.process_tool_call_result.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_ask_permission_tool_serial(self, loop_engine):
+        """ask 权限工具被分离到串行执行"""
+        loop_engine.tool_execution_mode = "parallel"
+        loop_engine.max_parallel_tools = 10
+
+        # 一个 allow 工具 + 一个 ask 工具
+        loop_engine.tool_mapping["safe_tool"] = self._make_tool("safe_ok", delay=0.1)
+        loop_engine.tool_mapping["dangerous_tool"] = self._make_tool("danger_ok", delay=0.1)
+
+        def mock_get_permission(name):
+            if name == "dangerous_tool":
+                return "ask"
+            return "allow"
+
+        loop_engine.tool_permission_manager = MagicMock()
+        loop_engine.tool_permission_manager.get_permission = mock_get_permission
+
+        # mock agent's ask_for_tool_permission (called by _execute_tool_with_ask)
+        loop_engine.agent.ask_for_tool_permission = AsyncMock(return_value=(True, None))
+
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+        tool_calls = [
+            self._make_tool_call("safe_tool"),
+            self._make_tool_call("dangerous_tool"),
+        ]
+
+        await loop_engine._process_tool_calls(tool_calls)
+
+        # 两个工具的结果都被处理
+        assert loop_engine.process_tool_call_result.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_abort_stops_execution(self, loop_engine):
+        """abort 事件设置后，并行任务不再执行"""
+        loop_engine.tool_execution_mode = "parallel"
+        tools = ["a", "b", "c"]
+        self._setup_parallel_engine(loop_engine, tools)
+
+        # 在引擎启动后立即 abort
+        loop_engine.abort_event.set()
+
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+        tool_calls = [self._make_tool_call(t) for t in tools]
+
+        await loop_engine._process_tool_calls(tool_calls)
+
+        # 所有结果应为 ERROR（abort）
+        calls = loop_engine.process_tool_call_result.call_args_list
+        for call in calls:
+            tool_result = call.args[1]
+            assert tool_result.status == ToolStatus.ERROR
+            assert "aborted" in tool_result.content
+
+    @pytest.mark.asyncio
+    async def test_max_parallel_tools_limit(self, loop_engine):
+        """并发数受 max_parallel_tools 限制"""
+        # 4 个工具各 0.1s，max=2 意味着至少两轮
+        tools = ["t1", "t2", "t3", "t4"]
+        self._setup_parallel_engine(loop_engine, tools, delays={
+            "t1": 0.1, "t2": 0.1, "t3": 0.1, "t4": 0.1,
+        })
+        # 必须在 _setup_parallel_engine 之后设置（helper 会覆盖为 10）
+        loop_engine.max_parallel_tools = 2
+
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+        tool_calls = [self._make_tool_call(t) for t in tools]
+
+        import time
+        start = time.monotonic()
+        await loop_engine._process_tool_calls(tool_calls)
+        elapsed = time.monotonic() - start
+
+        # 4 个 0.1s 工具，max 2 并发 → 至少 0.2s（两轮）
+        assert elapsed >= 0.15, f"Should take at least 2 rounds, got {elapsed:.3f}s"
+
+    @pytest.mark.asyncio
+    async def test_unknown_tool_returns_error(self, loop_engine):
+        """并行模式下未知工具返回错误但不影响其他工具"""
+        loop_engine.tool_execution_mode = "parallel"
+        self._setup_parallel_engine(loop_engine, ["read_file"])
+        # "nonexistent" 不在 tool_mapping 中
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+
+        tool_calls = [
+            self._make_tool_call("read_file"),
+            self._make_tool_call("nonexistent"),
+        ]
+
+        await loop_engine._process_tool_calls(tool_calls)
+
+        calls = loop_engine.process_tool_call_result.call_args_list
+        # read_file 成功
+        assert calls[0].args[1].status == ToolStatus.SUCCESS
+        # nonexistent 报错
+        assert calls[1].args[1].status == ToolStatus.ERROR
+        assert "not found" in calls[1].args[1].content
+
+    @pytest.mark.asyncio
+    async def test_results_in_original_order(self, loop_engine):
+        """慢工具先完成不影响 context 顺序（按原始 tool_call 顺序处理）"""
+        loop_engine.tool_execution_mode = "parallel"
+        # fast 0.01s, slow 0.1s — fast 会先完成
+        self._setup_parallel_engine(loop_engine, ["slow", "fast"], delays={
+            "slow": 0.1, "fast": 0.01,
+        })
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+
+        tool_calls = [
+            self._make_tool_call("slow"),
+            self._make_tool_call("fast"),
+        ]
+
+        await loop_engine._process_tool_calls(tool_calls)
+
+        # 即使 fast 先完成，process_tool_call_result 仍按原始顺序调用
+        calls = loop_engine.process_tool_call_result.call_args_list
+        assert calls[0].args[0].function.name == "slow"
+        assert calls[1].args[0].function.name == "fast"
+
+    @pytest.mark.asyncio
+    async def test_tool_error_does_not_block_others(self, loop_engine):
+        """一个工具执行报错不影响其他工具"""
+        loop_engine.tool_execution_mode = "parallel"
+
+        # good_tool 正常，bad_tool 抛异常
+        good = self._make_tool("good_ok")
+        bad = MagicMock()
+
+        async def bad_execute(arguments, context):
+            raise Exception("Something went wrong")
+
+        bad.execute = bad_execute
+        loop_engine.tool_mapping["good_tool"] = good
+        loop_engine.tool_mapping["bad_tool"] = bad
+
+        loop_engine.tool_permission_manager = MagicMock()
+        loop_engine.tool_permission_manager.get_permission = MagicMock(return_value="allow")
+
+        loop_engine.process_tool_call_result = AsyncMock(return_value=True)
+        tool_calls = [
+            self._make_tool_call("good_tool"),
+            self._make_tool_call("bad_tool"),
+        ]
+
+        await loop_engine._process_tool_calls(tool_calls)
+
+        calls = loop_engine.process_tool_call_result.call_args_list
+        assert calls[0].args[1].status == ToolStatus.SUCCESS
+        assert calls[1].args[1].status == ToolStatus.ERROR

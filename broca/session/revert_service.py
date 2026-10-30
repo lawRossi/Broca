@@ -19,19 +19,27 @@ logger = get_logger(__name__)
 class SessionRevertService:
     """会话撤销服务"""
 
-    def __init__(self, session_manager: SessionManager, workspace_path: str):
+    def __init__(
+        self,
+        session_manager: SessionManager,
+        workspace_path: str,
+        enable_snapshot_tracking: bool = True,
+    ):
         """
         初始化会话撤销服务
 
         Args:
             session_manager: 会话管理器
             workspace_path: 工作空间路径
+            enable_snapshot_tracking: 是否启用快照跟踪。
+                False 时 undo/redo 仅标记消息，不执行文件恢复。
         """
         self.session_manager = session_manager
         self.workspace_path = workspace_path
-        self.snapshot_tracker = SnapshotTracker(self.workspace_path)
-        self.patch_calculator = PatchCalculator(self.workspace_path)
-        self.snapshot_restorer = SnapshotRestorer(self.workspace_path)
+        self.enable_snapshot_tracking = enable_snapshot_tracking
+        self.snapshot_tracker = SnapshotTracker(workspace_path)
+        self.patch_calculator = PatchCalculator(workspace_path)
+        self.snapshot_restorer = SnapshotRestorer(workspace_path)
         self.undo_stack: List[dict] = []  # undo 栈，支持多级撤销
 
     async def undo(
@@ -63,6 +71,10 @@ class SessionRevertService:
         # 获取agent所有消息
         messages = await self.session_manager.get_messages(agent_id)
 
+        # 未指定 target_message_id 时，自动定位最后一条 AGENT_RESPONSE 作为撤销目标
+        if not target_message_id and messages:
+            target_message_id = self._find_last_target_message(messages)
+
         patches_to_revert, pivot_message_id = await self._collect_patches_to_message(
             messages, target_message_id, level
         )
@@ -78,13 +90,17 @@ class SessionRevertService:
             }
 
         # 捕获当前快照（用于重做）
-        # 注意：每次 undo 都要捕获当前工作区的实际快照，不能复用上次 undo 的快照
-        current_snapshot_hash = await self.snapshot_tracker.track()
+        # 仅在需要文件恢复时才执行 track()（有 patches 且启用了快照跟踪）
+        if patches_to_revert and self.enable_snapshot_tracking:
+            # 注意：每次 undo 都要捕获当前工作区的实际快照，不能复用上次 undo 的快照
+            current_snapshot_hash = await self.snapshot_tracker.track()
+        else:
+            current_snapshot_hash = ""
 
-        # 如果有patch，反向应用patch
+        # 如果有patch且启用了快照跟踪，反向应用patch
         diff_content = ""
         diff_summary = {}
-        if patches_to_revert:
+        if patches_to_revert and self.enable_snapshot_tracking:
             # 反向应用patch
             await self.snapshot_restorer.revert_patches(patches_to_revert)
 
@@ -140,12 +156,9 @@ class SessionRevertService:
 
         undo_meta_info = self.undo_stack[-1]
 
-        # 从撤销记录中恢复快照
-        snapshot_hash = undo_meta_info.get("snapshot_hash")
-        if not snapshot_hash:
-            return {"success": False, "message": "撤销记录中没有快照信息"}
-
-        if undo_meta_info["patches"]:
+        # 从撤销记录中恢复快照（仅在启用快照跟踪且有 patches 时执行文件恢复）
+        snapshot_hash = undo_meta_info.get("snapshot_hash", "")
+        if undo_meta_info["patches"] and snapshot_hash and self.enable_snapshot_tracking:
             await self.snapshot_restorer.restore(snapshot_hash)
 
             # 清理孤儿文件：遍历 undo patch 中出现过的文件，
@@ -175,6 +188,19 @@ class SessionRevertService:
 
         logger.info("redo成功")
         return {"success": True}
+
+    def _find_last_target_message(self, messages: List[Message]) -> Optional[str]:
+        """在未指定 target_message_id 时，找到最后一条有意义的消息作为撤销目标。
+
+        优先级：AGENT_RESPONSE > TOOL_CALL > 最后一条消息
+        """
+        for msg in reversed(messages):
+            if msg.message_type == MessageType.AGENT_RESPONSE:
+                return msg.message_id
+        # 没有 AGENT_RESPONSE，回退到最后一条消息
+        if messages:
+            return messages[-1].message_id
+        return None
 
     async def _collect_patches_to_message(
         self, messages: List[Message], target_message_id: Optional[str], level: str
@@ -207,6 +233,10 @@ class SessionRevertService:
                     pivot_message = msg
                     pivot_message_id = pivot_message.message_id
                     break
+            # Fallback: 未找到 TURN_START 时（无快照模式），用目标消息自身作为 pivot
+            if not pivot_message:
+                pivot_message = target_message
+                pivot_message_id = pivot_message.message_id
         else:
             step_id = target_message.data.get("step_id")
             if step_id:
@@ -218,9 +248,11 @@ class SessionRevertService:
                         pivot_message = msg
                         pivot_message_id = pivot_message.message_id
                         break
-
-        if not pivot_message:
-            return [], pivot_message_id
+            # Fallback: 未找到 STEP_START（无快照模式下不存在 STEP_START 消息），
+            # 用目标消息自身作为 pivot → undo 仅标记消息，不做文件恢复
+            if not pivot_message:
+                pivot_message = target_message
+                pivot_message_id = pivot_message.message_id
 
         # 收集pivot message往后的所有patch
         collecting = False

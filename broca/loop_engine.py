@@ -167,6 +167,10 @@ class LoopEngine:
         )
         self.dead_loop_window = getattr(exec_cfg, "dead_loop_window", 3)
         self.llm_timeout = getattr(exec_cfg, "llm_timeout", 300)
+        self.tool_execution_mode = getattr(
+            exec_cfg, "tool_execution_mode", "parallel"
+        )
+        self.max_parallel_tools = getattr(exec_cfg, "max_parallel_tools", 10)
 
         # 快照跟踪
         self.snapshot_tracker: Optional[SnapshotTracker] = None
@@ -194,7 +198,9 @@ class LoopEngine:
         self.allowed_tools: Optional[List[str]] = None
 
     def _initialize_snapshot_tracking(self):
-        """初始化快照跟踪"""
+        """初始化快照跟踪（仅在 enable_snapshot_tracking=True 时生效）"""
+        if not getattr(self.config, "enable_snapshot_tracking", True):
+            return
         if self.config and hasattr(self.config, "workspace") and self.config.workspace:
             self.snapshot_tracker = SnapshotTracker(self.config.workspace)
             self.patch_calculator = PatchCalculator(self.config.workspace)
@@ -816,21 +822,118 @@ class LoopEngine:
 
     async def _process_tool_calls(self, tool_calls: List[Any]):
         """
-        Process tool calls from LLM response
+        Process tool calls from LLM response.
+
+        Supports two execution modes (configurable per-agent via
+        ExecutionConfig.tool_execution_mode):
+        - "serial" (legacy): execute tool calls one by one
+        - "parallel" (default): execute tool calls concurrently, with
+          a semaphore limiting max concurrency. Tools requiring user
+          permission ("ask") are executed serially to avoid multiple
+          simultaneous permission prompts.
+
+        In both modes, tool results are processed (broadcast, DB save,
+        context append) in the original tool_call order after all
+        execution is complete, ensuring deterministic context ordering.
 
         Args:
             tool_calls: List of tool calls from LLM
         """
         context = self._build_tool_context()
 
-        for tool_call in tool_calls:
+        if (
+            self.tool_execution_mode == "serial"
+            or len(tool_calls) <= 1
+        ):
+            # ── Serial mode (legacy behavior) ──────────────────────────────
+            for tool_call in tool_calls:
+                if self.abort_event.is_set():
+                    logger.info("Agent execution aborted during tool call processing")
+                    return
+
+                tool_result = await self._execute_single_tool_call(tool_call, context)
+
+                if not await self.process_tool_call_result(tool_call, tool_result):
+                    raise Exception("Tool call result processing failed")
+        else:
+            # ── Parallel mode ──────────────────────────────────────────────
+            await self._process_tool_calls_parallel(tool_calls, context)
+
+    async def _process_tool_calls_parallel(
+        self, tool_calls: List[Any], context: ToolCallContext
+    ):
+        """
+        Execute tool calls in parallel with concurrency control.
+
+        - Partition tools into "parallel-safe" and "serial" (ask permission)
+        - Execute parallel-safe tools concurrently (bounded by semaphore)
+        - Execute serial tools one-by-one in a separate task
+        - After all complete, process results in original order
+        """
+        max_parallel = self.max_parallel_tools
+        semaphore = asyncio.Semaphore(max_parallel)
+        results: List[Optional[ToolResult]] = [None] * len(tool_calls)
+
+        # ── Partition: identify tools needing serial execution ─────────────
+        serial_indices: set = set()
+        for i, tc in enumerate(tool_calls):
+            tool_name = tc.function.name
+            if tool_name in self.tool_mapping:
+                permission = self.tool_permission_manager.get_permission(tool_name)
+                if permission == "ask":
+                    serial_indices.add(i)
+
+        parallel_indices = [
+            i for i in range(len(tool_calls)) if i not in serial_indices
+        ]
+        serial_list = sorted(serial_indices)
+
+        # ── Worker: execute a single parallel-safe tool ────────────────────
+        async def _run_parallel_tool(index: int) -> None:
             if self.abort_event.is_set():
-                logger.info("Agent execution aborted during tool call processing")
+                results[index] = ToolResult(
+                    status=ToolStatus.ERROR, content="Execution aborted"
+                )
                 return
+            async with semaphore:
+                if self.abort_event.is_set():
+                    results[index] = ToolResult(
+                        status=ToolStatus.ERROR, content="Execution aborted"
+                    )
+                    return
+                results[index] = await self._execute_single_tool_call(
+                    tool_calls[index], context
+                )
 
-            tool_result = await self._execute_single_tool_call(tool_call, context)
+        # ── Worker: execute serial (ask-permission) tools one by one ───────
+        async def _run_serial_tools() -> None:
+            for i in serial_list:
+                if self.abort_event.is_set():
+                    results[i] = ToolResult(
+                        status=ToolStatus.ERROR, content="Execution aborted"
+                    )
+                    continue
+                results[i] = await self._execute_single_tool_call(
+                    tool_calls[i], context
+                )
 
-            if not await self.process_tool_call_result(tool_call, tool_result):
+        # ── Launch all tasks and wait ──────────────────────────────────────
+        tasks = [asyncio.create_task(_run_parallel_tool(i)) for i in parallel_indices]
+        tasks.append(asyncio.create_task(_run_serial_tools()))
+
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+        # ── Handle any None results (cancelled tasks / unexpected errors) ──
+        for i in range(len(tool_calls)):
+            if results[i] is None:
+                results[i] = ToolResult(
+                    status=ToolStatus.ERROR,
+                    content="Tool execution failed (task cancelled or error)",
+                )
+
+        # ── Process results in original order (broadcast + DB + context) ──
+        for i, tool_call in enumerate(tool_calls):
+            if not await self.process_tool_call_result(tool_call, results[i]):
                 raise Exception("Tool call result processing failed")
 
     def _should_skip_tool_timeout(self, tool_name: str, arguments: str) -> bool:
