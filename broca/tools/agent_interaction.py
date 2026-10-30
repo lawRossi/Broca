@@ -133,9 +133,18 @@ class AssignTask(Tool):
                     content=f"Task {task_id} does not exist. Create it first via task_management.",
                 )
 
+            # Append reminder for executor to update task report
+            task_with_reminder = (
+                f"{task}\n\n"
+                f"[IMPORTANT] You are executing task '{task_id}' in background mode. "
+                f"When you complete the work, you MUST update the task report via "
+                f"task_management (action='update', task_id='{task_id}', "
+                f"report=<your summary of what was done>)."
+            )
+
             # Dispatch to target agent in background
             await agent.communicator.send_task_start(
-                task_id, task, receiver_id=agent_id
+                task_id, task_with_reminder, receiver_id=agent_id
             )
             logger.info(
                 f"Task {task_id} assigned to agent {agent_name} (background). "
