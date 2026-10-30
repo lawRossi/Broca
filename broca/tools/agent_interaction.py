@@ -39,7 +39,12 @@ class AssignTask(Tool):
 
     @property
     def description(self):
-        return "Use this tool to assign a task to an agent."
+        return (
+            "Use this tool to assign a task to an agent. "
+            "For background execution, task_id is required and must reference an existing task. "
+            "No completion notification is sent for background tasks — the assigner should "
+            "monitor task status via task_management."
+        )
 
     @property
     def parameters(self):
@@ -52,7 +57,10 @@ class AssignTask(Tool):
                 },
                 "task_id": {
                     "type": "string",
-                    "description": "the id of the task",
+                    "description": (
+                        "the id of the task (required for background execution, "
+                        "must be a pre-created task)"
+                    ),
                 },
                 "task": {
                     "type": "string",
@@ -65,12 +73,13 @@ class AssignTask(Tool):
                     "enum": ["blocking", "background"],
                 },
             },
-            "required": ["agent", "task_id", "task"],
+            "required": ["agent", "task"],
         }
 
     async def _execute(self, arguments, context: ToolCallContext) -> ToolResult:
         from broca.agent_manager import AgentFactory
         from broca.loop_engine import ExecutionStatus
+        from broca.task_manager import TaskManager
 
         agent = context.agent
         factory = AgentFactory()
@@ -82,9 +91,10 @@ class AssignTask(Tool):
             )
 
         agent_id = target_agent.agent_id
-        task_id = arguments["task_id"]
+        task_id = arguments.get("task_id")
         task = arguments["task"]
         execution_type = arguments.get("execution_type", "blocking")
+
         if execution_type == "blocking":
             trigger_message = MessageProtocol.create_user_message(content=task)
             execution_result = await target_agent.run(trigger_message, from_agent=True)
@@ -104,12 +114,40 @@ class AssignTask(Tool):
                     content=f"The agent {target_agent.agent_id} failed to finish the task: {execution_result.error}",
                 )
         else:
+            # Background mode: task_id is required and must reference an existing task
+            if not task_id:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content=(
+                        "task_id is required for background execution. "
+                        "Create the task first via task_management (action='create').",
+                    ),
+                )
+
+            # Validate task exists
+            task_manager = TaskManager()
+            existing_task = await task_manager.get_task(task_id)
+            if existing_task is None:
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content=f"Task {task_id} does not exist. Create it first via task_management.",
+                )
+
+            # Dispatch to target agent in background
             await agent.communicator.send_task_start(
                 task_id, task, receiver_id=agent_id
             )
+            logger.info(
+                f"Task {task_id} assigned to agent {agent_name} (background). "
+                f"Assigner should monitor status via task_management."
+            )
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                content="The task has been assigned to the agent and you will be notified when it is completed.",
+                content=(
+                    f"Task {task_id} has been assigned to agent '{agent_name}' in background. "
+                    f"No completion notification will be sent. "
+                    f"Monitor progress via task_management (action='get', task_id='{task_id}')."
+                ),
             )
 
 
