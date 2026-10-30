@@ -77,6 +77,7 @@ const EXECUTION_FIELDS: {
   { key: 'message_queue_size', label: '消息队列容量', unit: '条', hint: 'Agent 消息队列最大消息数', min: 1, step: 1 },
   { key: 'permission_request_timeout', label: '权限请求超时', unit: '秒', hint: '等待用户授权/拒绝的超时时间，超时后自动拒绝。服务端消息缓存 TTL 会据此自动对齐', min: 10, step: 10 },
   { key: 'agent_query_timeout', label: '用户问答超时', unit: '秒', hint: 'ask_user 等待用户回答的超时时间，超时后返回错误。服务端消息缓存 TTL 会据此自动对齐', min: 30, step: 30 },
+  { key: 'max_parallel_tools', label: '最大并行工具数', unit: '个', hint: '并行模式下同时执行的工具数量上限', min: 1, step: 1 },
 ]
 
 /** ASR 解码方式选项 */
@@ -414,7 +415,7 @@ defineExpose({ saveNow, reset })
           <h3 class="text-sm font-medium text-gray-700 mb-1">执行引擎配置</h3>
           <p class="text-xs text-gray-400 mb-4">LLM 重试、工具执行超时、死循环检测等运行参数（configs.json 的 execution 分组）</p>
           <el-form label-width="150px" label-position="left" @submit.prevent>
-            <el-form-item v-for="field in EXECUTION_FIELDS" :key="field.key" :label="field.label">
+              <el-form-item v-for="field in EXECUTION_FIELDS" :key="field.key" :label="field.label">
               <div class="w-full">
                 <div class="flex items-center gap-2">
                   <el-input-number
@@ -429,6 +430,24 @@ defineExpose({ saveNow, reset })
                   <span class="text-xs text-gray-400 flex-shrink-0">{{ field.unit }}</span>
                 </div>
                 <p class="mt-1.5 text-xs text-gray-400">{{ field.hint }}</p>
+              </div>
+            </el-form-item>
+            <el-form-item label="工具执行模式">
+              <div class="w-full">
+                <el-select
+                  :model-value="(config.execution as any)?.tool_execution_mode ?? 'parallel'"
+                  style="width: 180px"
+                  @update:model-value="(val: string) => {
+                    const exec = { ...(config.execution || {}) }
+                    if (val) exec.tool_execution_mode = val as any
+                    else delete exec.tool_execution_mode
+                    config.value = { ...config.value, execution: exec }
+                  }"
+                >
+                  <el-option label="Parallel（并行）" value="parallel" />
+                  <el-option label="Serial（串行）" value="serial" />
+                </el-select>
+                <p class="mt-1.5 text-xs text-gray-400">工具调用执行方式：parallel 为并行执行（默认），serial 为逐个串行执行</p>
               </div>
             </el-form-item>
           </el-form>

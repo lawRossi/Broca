@@ -185,6 +185,8 @@ export interface ExecutionConfig {
   message_queue_size?: number
   permission_request_timeout?: number
   agent_query_timeout?: number
+  tool_execution_mode?: 'parallel' | 'serial'
+  max_parallel_tools?: number
 }
 
 /** 工具权限配置 */

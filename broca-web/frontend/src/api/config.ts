@@ -113,7 +113,7 @@ export interface GeneralConfig {
   search?: SearchConfig
 }
 
-/** 执行引擎配置（configs.json 中的 execution 分组，数字型） */
+/** 执行引擎配置（configs.json 中的 execution 分组） */
 export interface ExecutionConfig {
   step_max_errors?: number
   llm_retry_delay?: number
@@ -125,6 +125,8 @@ export interface ExecutionConfig {
   message_queue_size?: number
   permission_request_timeout?: number
   agent_query_timeout?: number
+  tool_execution_mode?: 'parallel' | 'serial'
+  max_parallel_tools?: number
 }
 
 /** 工具权限配置（tool_permission_config.json） */

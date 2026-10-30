@@ -41,6 +41,7 @@ const EXECUTION_FIELDS: { key: keyof ExecutionConfig; label: string; unit: strin
   { key: 'message_queue_size', label: 'Message Queue Size', unit: '条', min: 1, step: 1, hint: 'Agent 消息队列最大消息数' },
   { key: 'permission_request_timeout', label: 'Permission Request Timeout', unit: '秒', min: 10, step: 10, hint: '等待用户授权/拒绝的超时，超时后自动拒绝' },
   { key: 'agent_query_timeout', label: 'Agent Query Timeout', unit: '秒', min: 30, step: 30, hint: 'ask_user 等待用户回答的超时，超时后返回错误' },
+  { key: 'max_parallel_tools', label: 'Max Parallel Tools', unit: '个', min: 1, step: 1, hint: '并行模式下同时执行的工具数量上限' },
 ]
 
 // --- Load ---
@@ -262,6 +263,13 @@ function setExecField(key: keyof ExecutionConfig, raw: string) {
   config.value = { ...config.value, execution: exec }
 }
 
+function setToolExecutionMode(value: string) {
+  const current = config.value.execution
+  const exec: ExecutionConfig = current ? { ...current } : {}
+  exec.tool_execution_mode = value as 'parallel' | 'serial'
+  config.value = { ...config.value, execution: exec }
+}
+
 function setAsrField(key: keyof ASRConfig, raw: string) {
   const current = config.value.asr
   const asr: ASRConfig = current ? { ...current } : {}
@@ -419,6 +427,18 @@ function setStorageValue(key: keyof StorageConfig, value: string | undefined) {
             @change="setExecField(f.key, ($event.target as HTMLInputElement).value)"
           />
           <p class="field-hint">{{ f.hint }}</p>
+        </div>
+        <div class="field">
+          <label class="field-label">Tool Execution Mode</label>
+          <select
+            class="field-select"
+            :value="(config.execution?.tool_execution_mode as string) ?? 'parallel'"
+            @change="setToolExecutionMode(($event.target as HTMLSelectElement).value)"
+          >
+            <option value="parallel">Parallel（并行）</option>
+            <option value="serial">Serial（串行）</option>
+          </select>
+          <p class="field-hint">工具调用执行方式：parallel 为并行执行（默认），serial 为逐个串行执行</p>
         </div>
       </section>
 
