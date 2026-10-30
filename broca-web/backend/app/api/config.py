@@ -52,7 +52,11 @@ KNOWN_EXECUTION_CONFIG_FIELDS = (
     "message_queue_size",
     "permission_request_timeout",
     "agent_query_timeout",
+    "tool_execution_mode",
+    "max_parallel_tools",
 )
+# execution 分组中允许字符串类型的字段（其余字段必须为非负数字）
+_EXECUTION_STRING_FIELDS = frozenset({"tool_execution_mode"})
 # asr 分组下的已知字段（ASR 语音识别相关）
 KNOWN_ASR_CONFIG_FIELDS = (
     "model_name",
@@ -277,7 +281,13 @@ def _validate_execution_config(config: Any) -> None:
             ),
         )
     for key, value in config.items():
-        if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
+        if key in _EXECUTION_STRING_FIELDS:
+            if not isinstance(value, str):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Execution config field '{key}' must be a string",
+                )
+        elif isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
             raise HTTPException(
                 status_code=400,
                 detail=f"Execution config field '{key}' must be a non-negative number",
