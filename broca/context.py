@@ -92,6 +92,13 @@ class Context:
             return db_id
         return None
 
+    def reload_system_prompt(self) -> None:
+        """Rebuild the system prompt in-place without clearing conversation history."""
+        self.system_prompt = self._build_system_prompt()
+        if self._history and self._history[0].get("role") == "system":
+            self._history[0]["content"] = self.system_prompt
+        logger.info("System prompt reloaded in-place")
+
     def _build_system_prompt(self) -> str:
         config = self.agent_config
         kwargs = self.system_prompt_kwargs

@@ -71,6 +71,7 @@ class PromptCommand(CommandBase):
 
     use_sub_agent: bool = False  # True = dispatch to sub_agent asynchronously
     sub_agent_name: str = "sub-agent"  # Sub-agent name
+    reload_context: bool = False  # After sub-agent completes, reload main agent's system prompt
     prompt_template: str = ""  # Prompt template with {args} placeholder
 
     async def build_prompt(self, args: str, ctx: CommandContext) -> str:

@@ -95,6 +95,7 @@ def _build_command_from_md(cmd_dir: Path) -> Optional[CommandBase]:
     if isinstance(instance, PromptCommand):
         instance.use_sub_agent = header.get("use_sub_agent", instance.use_sub_agent)
         instance.sub_agent_name = header.get("sub_agent_name", instance.sub_agent_name)
+        instance.reload_context = header.get("reload_context", instance.reload_context)
         instance.prompt_template = body  # body is the prompt template
 
     return instance

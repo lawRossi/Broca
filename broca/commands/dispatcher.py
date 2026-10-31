@@ -82,21 +82,30 @@ async def dispatch_command(
                 message.data["raw_input"] = ctx.raw_input
 
             if cmd.use_sub_agent:
-                # Sub Agent execution: async dispatch, non-blocking
                 from broca.agent_manager import AgentFactory
 
                 factory = AgentFactory()
                 sub_agent = factory.get_agent(ctx.session_id, cmd.sub_agent_name)
-                if sub_agent:
+                if not sub_agent:
+                    return CommandResult(
+                        type="error",
+                        value=f"Sub-agent '{cmd.sub_agent_name}' not found",
+                    )
+
+                if cmd.reload_context:
+                    # Blocking: await sub-agent completion, then reload main agent's context
+                    await sub_agent.run(message)
+                    ctx.context.reload_system_prompt()
+                    return CommandResult(
+                        type="text",
+                        value=f"Task completed by {cmd.sub_agent_name}, context reloaded",
+                    )
+                else:
+                    # Non-blocking: fire and forget
                     asyncio.create_task(sub_agent.run(message))
                     return CommandResult(
                         type="text",
                         value=f"Task dispatched to {cmd.sub_agent_name} via /{name}",
-                    )
-                else:
-                    return CommandResult(
-                        type="error",
-                        value=f"Sub-agent '{cmd.sub_agent_name}' not found",
                     )
             else:
                 # Current Agent execution: blocking wait

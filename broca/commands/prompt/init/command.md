@@ -5,6 +5,7 @@ short_description: 初始化项目并生成概要
 type: prompt
 use_sub_agent: true
 sub_agent_name: assistant
+reload_context: true
 ---
 请对当前 workspace 进行初始化扫描，了解项目概要情况,编写.agents/AGENTS.md。
 
