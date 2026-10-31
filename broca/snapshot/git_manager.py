@@ -276,6 +276,11 @@ class GitManager:
         # 创建目录
         self.repo_path.mkdir(parents=True, exist_ok=True)
 
+        # 记录 workspace 路径（供 GC 使用）
+        workspace_file = self.repo_path / ".workspace"
+        if not workspace_file.exists():
+            workspace_file.write_text(str(self.workspace_path), encoding="utf-8")
+
         # 初始化 Git 仓库
         try:
             self.repo = git.Repo.init(self.repo_path)
@@ -579,3 +584,52 @@ class GitManager:
             )
         except git.GitCommandError as e:
             logger.error(f"Failed to remove cached files: {e}")
+
+
+# ---------------------------------------------------------------------------
+# GC: 清理 workspace 已不存在的 snapshot 目录
+# ---------------------------------------------------------------------------
+
+_gc_done = False
+
+
+def gc_snapshots() -> None:
+    """
+    扫描 snapshot 目录，删除 workspace 已不存在的 repo。
+
+    进程内只执行一次（懒触发：首次 GitManager.initialize() 时调用）。
+    无 .workspace 元数据的旧目录会被跳过（不强制删除）。
+    """
+    global _gc_done
+    if _gc_done:
+        return
+    _gc_done = True
+
+    snapshot_home = Path(
+        os.environ.get("BROCA_SNAPSHOT_HOME", os.path.expanduser("~/.broca/snapshots"))
+    )
+    if not snapshot_home.exists():
+        return
+
+    removed = 0
+    for repo_dir in snapshot_home.iterdir():
+        if not repo_dir.is_dir():
+            continue
+        ws_file = repo_dir / ".workspace"
+        if not ws_file.exists():
+            # 旧数据无元数据，安全跳过
+            continue
+        try:
+            workspace = Path(ws_file.read_text(encoding="utf-8").strip())
+        except OSError:
+            continue
+        if not workspace.exists():
+            try:
+                shutil.rmtree(repo_dir)
+                removed += 1
+                logger.info(f"Snapshot GC: removed {repo_dir.name} (workspace {workspace} deleted)")
+            except OSError as e:
+                logger.warning(f"Snapshot GC: failed to remove {repo_dir}: {e}")
+
+    if removed:
+        logger.info(f"Snapshot GC: cleaned up {removed} orphaned snapshot(s)")
