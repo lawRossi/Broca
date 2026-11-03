@@ -1,11 +1,30 @@
 {
-    "socket_server_url": "http://localhost:6666",
-    "api_server_url": "http://localhost:9001",
     "database_dir": "./.local-data",
-    "log_file": "agent.log",
+    "log_file": "./logs/agent.log",
     "log_dir": "./logs",
     "log_level": "DEBUG",
     "llm_config_file": "~/.broca/configs/llm_config.json",
     "agents_config_dir": "../../configs/agents",
-    "snapshot_home": "../../.local-data/snapshots"
+    "snapshot_home": "./.local-data/snapshots",
+    "socket_server_url": "http://localhost:6666",
+    "api_server_url": "http://localhost:9001",
+    "execution": {
+        "step_max_errors": 3,
+        "llm_retry_delay": 5,
+        "tool_call_timeout": 120,
+        "assign_task_timeout": 1800,
+        "llm_timeout": 300,
+        "llm_first_chunk_timeout": 30,
+        "dead_loop_window": 3,
+        "message_queue_size": 3,
+        "permission_request_timeout": 90,
+        "agent_query_timeout": 300
+    },
+    "search": {
+        "tavily_api_key": "",
+        "anysearch_api_key": "",
+        "anysearch_api_base_url": "https://api.anysearch.com",
+        "default_search_provider": "tavily",
+        "default_fetch_provider": "anysearch"
+    }
 }

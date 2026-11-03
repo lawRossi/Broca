@@ -211,17 +211,19 @@ const toolCallErrorsFromApi = computed(() => {
   return stats.value?.tool_call_errors || 0
 })
 
-// Runner 状态显示配置
+// Runner 状态显示配置（需覆盖 RunnerStatus 枚举全部取值）
 const runnerStatusConfig: Record<string, { type: string; label: string }> = {
   alive: { type: 'success', label: '运行中' },
   starting: { type: 'warning', label: '启动中' },
+  shutting_down: { type: 'warning', label: '停止中' },
   error: { type: 'danger', label: '进程异常' },
   dead: { type: 'info', label: '已停止' },
+  unknown: { type: 'info', label: '状态未知' },
   none: { type: 'info', label: '未运行' },
 }
 
 const getRunnerConfig = (status: string | undefined) => {
-  return runnerStatusConfig[status || 'none'] || runnerStatusConfig.none
+  return runnerStatusConfig[status || 'none'] || runnerStatusConfig.unknown
 }
 </script>
 
@@ -332,7 +334,10 @@ const getRunnerConfig = (status: string | undefined) => {
               重启进程
             </el-button>
           </div>
-          <div v-else-if="runnerInfo && runnerInfo.status !== 'starting'" class="pt-2">
+          <div
+            v-else-if="runnerInfo && runnerInfo.status !== 'starting' && runnerInfo.status !== 'shutting_down'"
+            class="pt-2"
+          >
             <el-button type="warning" size="small" :loading="restarting" @click="handleRestartRunner">
               启动进程
             </el-button>

@@ -114,8 +114,8 @@ def _read_asr_from_configs_json() -> dict:
     # 如果有显式配置路径
     try:
         from app.core.config import settings
-        if settings.broca_config:
-            candidates.insert(0, settings.broca_config)
+        if settings.broca_config_path is not None:
+            candidates.insert(0, str(settings.broca_config_path))
     except Exception:
         pass
 

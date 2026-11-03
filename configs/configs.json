@@ -18,7 +18,10 @@
         "dead_loop_window": 3,
         "message_queue_size": 3,
         "permission_request_timeout": 90,
-        "agent_query_timeout": 300
+        "agent_query_timeout": 300,
+        "runner_heartbeat_interval": 5,
+        "runner_heartbeat_timeout": 45,
+        "runner_heartbeat_check_interval": 15
     },
     "search": {
         "tavily_api_key": "",

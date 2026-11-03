@@ -270,57 +270,19 @@ if (Test-Path $tuiDir) {
 $Python = $BrocaPython
 
 # ============================================================================
-# Step 3: 数据库迁移
+# Step 3: 同步配置 + 数据库迁移
 # ============================================================================
-Write-Step "Step 3/9: 数据库迁移..."
+Write-Step "Step 3/9: 同步配置并迁移数据库..."
 
 # Windows 中文系统默认编码为 GBK，强制 Python 使用 UTF-8 读取配置文件
 $env:PYTHONUTF8 = 1
 
-$null = New-Item -ItemType Directory -Force -Path $BrocaDbDir
-Write-Info "数据库目录: $BrocaDbDir"
-
-# 迁移1: broca 主数据库
-Write-Info "迁移 broca 主数据库..."
-Set-Location $ProjectRoot
-$env:BROCA_DATABASE_DIR = $BrocaDbDir
-$alembicOutput = & $Python -m alembic -c broca/alembic.ini upgrade head 2>&1
-if ($LASTEXITCODE -eq 0) {
-    Write-Info "broca 主数据库迁移完成"
-} else {
-    Write-Warn "broca 主数据库迁移失败（可之后手动执行: alembic -c broca/alembic.ini upgrade head）"
-    Write-Host $alembicOutput
-}
-
-# 迁移2: 后端数据库
-Write-Info "迁移后端数据库..."
-$backendDb = "$BrocaDbDir\backend.db"
-Set-Location "$ProjectRoot\broca-web\backend"
-$env:SQLITE_DATABASE_PATH = "sqlite:///${backendDb}"
-$alembicOutput = & $Python -m alembic upgrade head 2>&1
-if ($LASTEXITCODE -eq 0) {
-    Write-Info "后端数据库迁移完成"
-} else {
-    Write-Warn "后端数据库迁移失败（可之后手动执行: alembic upgrade head）"
-    Write-Host $alembicOutput
-}
-
-Remove-Item Env:\BROCA_DATABASE_DIR -ErrorAction SilentlyContinue
-Remove-Item Env:\SQLITE_DATABASE_PATH -ErrorAction SilentlyContinue
-Remove-Item Env:\PYTHONUTF8 -ErrorAction SilentlyContinue
-Set-Location $ProjectRoot
-
-# ============================================================================
-# Step 4: 配置 LLM 与用户配置
-# ============================================================================
-Write-Step "Step 4/9: 配置 LLM 与用户配置..."
-
-$null = New-Item -ItemType Directory -Force -Path $BrocaConfigDir
-
-# ---- 同步配置文件（configs.json / llm_config / agents / tool_permission / skills）----
-# 统一由独立 Python 脚本处理（install.sh 与 install.ps1 复用，跨平台一致）
 $null = New-Item -ItemType Directory -Force -Path $BrocaConfigDir, $BrocaDbDir, $BrocaLogDir
 
+# ---- 同步配置文件（configs.json / llm_config / agents / tool_permission / skills）----
+# 必须先于迁移：运行时读写哪个库由 $BrocaConfigDir\configs.json 的 database_dir 决定，
+# 若先迁移后同步，alembic 会回退到仓库模板 configs/configs.json。
+# 统一由独立 Python 脚本处理（install.sh 与 install.ps1 复用，跨平台一致）
 Write-Info "同步配置文件到 $BrocaHome ..."
 & $BrocaPython "$ProjectRoot\scripts\sync_configs.py" `
     --project-root $ProjectRoot `
@@ -330,6 +292,52 @@ if ($LASTEXITCODE -eq 0) {
 } else {
     Write-Warn "配置文件同步失败，请检查后手动处理 $BrocaConfigDir"
 }
+
+# ---- 迁移目标库必须与运行时读写的库完全一致 ----
+# 注意：不能用环境变量传目标库。broca/configs.py 与
+# broca-web/backend/app/core/config.py 都是纯文件驱动（不读 os.environ），
+# 环境变量在运行时会被静默忽略 —— 历史 bug：SQLITE_DATABASE_PATH 对后端
+# alembic 无效，迁移实际写进 broca-web/backend/dev.db，而运行时读
+# ~/.broca/data/backend.db。因此改用 `-x db_url=` 显式指定。
+$sessionsDb = Join-Path $BrocaDbDir "sessions.db"
+$backendDb = Join-Path $BrocaDbDir "backend.db"
+
+Write-Info "sessions.db 迁移目标: $sessionsDb"
+Write-Info "backend.db  迁移目标: $backendDb"
+
+# 迁移1: broca 主数据库
+Write-Info "迁移 broca 主数据库..."
+Set-Location $ProjectRoot
+$alembicOutput = & $Python -m alembic -c broca/alembic.ini -x "db_url=sqlite:///$sessionsDb" upgrade head 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Info "broca 主数据库迁移完成"
+} else {
+    Write-Host $alembicOutput
+    Write-Error "broca 主数据库迁移失败（目标: $sessionsDb）"
+    Write-Error "没有表就无法使用 Web 会话功能；请修复后重新执行安装脚本"
+    exit 1
+}
+
+# 迁移2: 后端数据库
+Write-Info "迁移后端数据库..."
+Set-Location "$ProjectRoot\broca-web\backend"
+$alembicOutput = & $Python -m alembic -x "db_url=sqlite:///$backendDb" upgrade head 2>&1
+if ($LASTEXITCODE -eq 0) {
+    Write-Info "后端数据库迁移完成"
+} else {
+    Write-Host $alembicOutput
+    Write-Error "后端数据库迁移失败（目标: $backendDb）"
+    Write-Error "没有表就无法登录；请修复后重新执行安装脚本"
+    exit 1
+}
+
+Remove-Item Env:\PYTHONUTF8 -ErrorAction SilentlyContinue
+Set-Location $ProjectRoot
+
+# ============================================================================
+# Step 4: 配置 LLM 与用户配置
+# ============================================================================
+Write-Step "Step 4/9: 配置 LLM 与用户配置..."
 
 Write-Host ""
 Write-Host "  配置文件"
@@ -356,7 +364,35 @@ $backendDst = "$BrocaWebDir\backend"
 if (Test-Path $backendSrc) {
     if (Test-Path $backendDst) { Remove-Item $backendDst -Recurse -Force -ErrorAction SilentlyContinue }
     Copy-Item $backendSrc $backendDst -Recurse -Force
+    # 清掉只属于开发环境的产物：它们一旦进入安装目录，生产实例就可能真的读到
+    # （例如开发 .env 里 BROCA_CONFIG=./configs.dev.json，会让后端把数据写进
+    #  backend/.local-data/sessions.db，而迁移写的是 ~\.broca\data\sessions.db
+    #  —— 这就是"web 读的库和实际写入的库不是同一个"）
+    $backendDevArtifacts = @(
+        'configs.dev.json', '.env.local', '.env.production', '.env.development',
+        '.local-data', 'dev.db', 'test.db', 'nohup.out', 'logs',
+        '__pycache__', '.pytest_cache', '.mypy_cache', '.ruff_cache'
+    )
+    foreach ($item in $backendDevArtifacts) {
+        $target = Join-Path $backendDst $item
+        if (Test-Path $target) { Remove-Item $target -Recurse -Force -ErrorAction SilentlyContinue }
+    }
     Write-Info "后端代码已部署: $backendDst"
+
+    # 生成后端 .env（生产配置的唯一来源；与 install.sh 共用同一生成器）
+    Write-Info "生成后端 .env ..."
+    & $BrocaPython "$ProjectRoot\scripts\gen_backend_env.py" `
+        --out "$backendDst\.env" `
+        --backend-dir $backendDst `
+        --broca-home $BrocaHome `
+        --port 9001 `
+        --socketio-port 6666
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error "后端 .env 生成失败（生产安全护栏自检未通过）"
+        pause
+        exit 1
+    }
+    Write-Info "后端 .env 已生成: $backendDst\.env"
 } else {
     Write-Error "后端代码目录不存在: $backendSrc"
     pause
@@ -833,7 +869,11 @@ if ($IsAdmin) {
         & nssm.exe set BrocaBackend Start SERVICE_AUTO_START 2>&1 | Out-Null
         & nssm.exe set BrocaBackend AppStdout "$BrocaLogDir\backend.out.log" 2>&1 | Out-Null
         & nssm.exe set BrocaBackend AppStderr "$BrocaLogDir\backend.err.log" 2>&1 | Out-Null
-        & nssm.exe set BrocaBackend AppEnvironmentExtra "PYTHONPATH=$backendDst" "BROCA_CONFIG=$BrocaConfigDir\configs.json" "BROCA_DATABASE_DIR=$BrocaDbDir" "BROCA_LLM_CONFIG=$BrocaConfigDir\llm_config.json" "BROCA_AGENTS_CONFIG_DIR=$BrocaConfigDir\agents" "BROCA_LOG_DIR=$BrocaLogDir" "SQLITE_DATABASE_PATH=sqlite:///$BrocaDbDir\backend.db" 2>&1 | Out-Null
+        # 只注入 PYTHONPATH：其余配置全部由 backend\.env 提供。
+        # 历史坑：这里曾注入 BROCA_DATABASE_DIR / SQLITE_DATABASE_PATH 等环境变量，
+        # 但 broca/configs.py 与 app/core/config.py 都是纯文件驱动（不读 os.environ），
+        # 这些变量从来没生效过 —— 属于"看起来生效其实无效"的陷阱。
+        & nssm.exe set BrocaBackend AppEnvironmentExtra "PYTHONPATH=$backendDst" 2>&1 | Out-Null
 
         # 前端服务 (nginx，与 Linux 部署方式一致)
         if ($HasNode -and $NginxFound) {

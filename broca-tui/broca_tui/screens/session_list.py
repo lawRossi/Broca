@@ -419,14 +419,17 @@ class SessionListScreen(Screen):
 
         # Runner status
         runner_status = session.get("runner_status", "none") or "none"
+        # 需覆盖 RunnerStatus 枚举全部取值，否则未知状态会显示英文原值
         status_map = {
             "alive": "● 运行中",
             "starting": "◐ 启动中",
+            "shutting_down": "◐ 停止中",
             "error": "⚠ 进程异常",
             "dead": "● 已停止",
+            "unknown": "○ 状态未知",
             "none": "○ 未运行",
         }
-        status_text = status_map.get(runner_status, runner_status)
+        status_text = status_map.get(runner_status, "○ 状态未知")
 
         # Build meta labels list
         meta_labels = [

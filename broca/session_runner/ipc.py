@@ -68,8 +68,11 @@ class IPCServer:
         self._connection: Any = None
         self._running = False
         self._handlers: dict[IPCMessageType, Callable] = {}
-        # 保护连接读写的锁，防止 stop_session 与 _ipc_listener_loop 竞态
+        # 保护发送的锁，防止并发 send 交错写坏消息帧
         self._lock = threading.Lock()
+        # 保护接收的锁。与 _lock 分离，避免 poll() 长时间持锁阻塞 send_message
+        # （历史上 send 与 recv 共用一把锁，导致 poll(5s) 期间事件循环下发命令被卡住）
+        self._recv_lock = threading.Lock()
 
     def register_handler(self, msg_type: IPCMessageType, handler: Callable) -> None:
         """注册消息处理器"""
@@ -187,29 +190,36 @@ class IPCServer:
         """
         接收来自 Runner 进程的消息
 
+        约定：同一连接只允许一个消费者线程调用本方法（Manager 的
+        ``_ipc_listener_loop`` 轮询线程）。命令响应通过消息分发回流给
+        等待者，不再由 send_command 直接 recv，避免抢消息吞掉心跳。
+
         Args:
             timeout: 接收超时时间（秒）
 
         Returns:
             接收到的消息，超时返回 None
         """
-        if not self._connection:
+        connection = self._connection
+        if not connection:
             raise IPCConnectionError("No IPC connection established")
 
-        with self._lock:
-            try:
-                if not self._connection.poll(timeout):
-                    return None
+        try:
+            # poll() 不持锁：send_message 与 recv 使用独立锁，poll 等待期间
+            # 仍可正常下发命令，不会阻塞调用方的事件循环
+            if not connection.poll(timeout):
+                return None
 
-                raw_data = self._connection.recv()
-                data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
-                msg = IPCMessage.from_dict(data)
-                logger.debug("IPC received: %s <- %s", msg.type.value, self.session_id)
-                return msg
-            except (BrokenPipeError, ConnectionError, EOFError) as e:
-                raise IPCConnectionError(
-                    f"IPC receive failed (connection broken): {e}"
-                ) from e
+            with self._recv_lock:
+                raw_data = connection.recv()
+            data = json.loads(raw_data) if isinstance(raw_data, str) else raw_data
+            msg = IPCMessage.from_dict(data)
+            logger.debug("IPC received: %s <- %s", msg.type.value, self.session_id)
+            return msg
+        except (BrokenPipeError, ConnectionError, EOFError) as e:
+            raise IPCConnectionError(
+                f"IPC receive failed (connection broken): {e}"
+            ) from e
 
     def close(self) -> None:
         """关闭 IPC 连接和服务端"""

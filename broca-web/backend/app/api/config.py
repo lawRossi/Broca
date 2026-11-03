@@ -102,8 +102,8 @@ def _resolve_general_config_path() -> Path:
     # 1. 从 settings 读取（.env 文件中的 BROCA_CONFIG）
     try:
         from app.core.config import settings
-        if settings.broca_config:
-            return Path(settings.broca_config).expanduser()
+        if settings.broca_config_path is not None:
+            return settings.broca_config_path
     except Exception:
         pass
 

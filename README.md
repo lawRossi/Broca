@@ -1373,8 +1373,7 @@ Broca/
 │   │   ├── runner.py               # 子进程入口
 │   │   ├── orchestrator_runner.py  # 编排运行器（管理编排生命周期/进度推送）
 │   │   ├── ipc.py                  # 进程间通信
-│   │   ├── models.py               # 数据结构
-│   │   └── heartbeat.py            # 心跳监控
+│   │   └── models.py               # 数据结构
 │   ├── tools/                      # 工具系统
 │   │   ├── tool.py                 # 工具基类
 │   │   ├── tool_manager.py         # 工具管理器

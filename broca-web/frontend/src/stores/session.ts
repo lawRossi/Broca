@@ -46,8 +46,13 @@ export const useSessionStore = defineStore('session', () => {
   })
 
   // Actions
-  const fetchSessions = async (params?: { skip?: number; limit?: number; keyword?: string }) => {
-    loading.value = true
+  /**
+   * 拉取会话列表
+   * @param params 分页/搜索参数
+   * @param silent 静默模式：不切换 loading、不弹错误提示（用于后台轮询刷新状态）
+   */
+  const fetchSessions = async (params?: { skip?: number; limit?: number; keyword?: string }, silent = false) => {
+    if (!silent) loading.value = true
 
     try {
       const response = await sessionApi.getSessions({
@@ -60,10 +65,10 @@ export const useSessionStore = defineStore('session', () => {
       total.value = response.total || 0
     } catch (error: any) {
       console.error('获取会话列表失败:', error)
-      ElMessage.error('加载会话列表失败')
+      if (!silent) ElMessage.error('加载会话列表失败')
       throw error
     } finally {
-      loading.value = false
+      if (!silent) loading.value = false
     }
   }
 

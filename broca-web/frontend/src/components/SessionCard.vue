@@ -61,11 +61,14 @@ const isAgentOrchestrationSession = computed(() => {
 })
 
 // 状态类型映射（仅使用 runner_status）
+// 必须覆盖 RunnerStatus 枚举的全部取值，否则未知状态会把英文原值直接显示给用户
 const statusTypeMap: Record<string, string> = {
   alive: 'success',
   starting: 'warning',
+  shutting_down: 'warning',
   error: 'danger',
   dead: 'info',
+  unknown: 'info',
   none: 'info',
 }
 
@@ -73,8 +76,10 @@ const statusTypeMap: Record<string, string> = {
 const statusLabelMap: Record<string, string> = {
   alive: '运行中',
   starting: '启动中',
+  shutting_down: '停止中',
   error: '进程异常',
   dead: '已停止',
+  unknown: '状态未知',
   none: '未运行',
 }
 
@@ -87,7 +92,8 @@ const getDisplayStatusType = (session: Session) => {
 // 获取显示用的状态标签
 const getDisplayStatusLabel = (session: Session) => {
   const status = session.runner_status || 'none'
-  return statusLabelMap[status] || status
+  // 兜底：后端新增状态时不再把英文原值暴露给用户
+  return statusLabelMap[status] || '未知状态'
 }
 
 // 截断ID显示
@@ -234,6 +240,20 @@ const handleKeydown = (event: KeyboardEvent) => {
 
 // Runner 进程启停
 const togglingRunner = ref(false)
+
+// 过渡态（启动中 / 停止中）不允许重复操作
+const isRunnerTransitioning = computed(() => {
+  const status = props.session.runner_status
+  return status === 'starting' || status === 'shutting_down'
+})
+
+const runnerToggleLabel = computed(() => {
+  const status = props.session.runner_status
+  if (status === 'alive') return '停止'
+  if (status === 'starting') return '启动中'
+  if (status === 'shutting_down') return '停止中'
+  return '启动'
+})
 
 const handleToggleRunner = async () => {
   if (togglingRunner.value) return
@@ -386,7 +406,7 @@ const handleToggleRunner = async () => {
           :type="session.runner_status === 'alive' ? 'warning' : 'primary'"
           size="small"
           plain
-          :disabled="isEditing || session.runner_status === 'starting'"
+          :disabled="isEditing || isRunnerTransitioning"
           :loading="togglingRunner"
           :title="session.runner_status === 'alive' ? '停止进程' : '启动进程'"
           @click.stop="handleToggleRunner"
@@ -395,7 +415,7 @@ const handleToggleRunner = async () => {
             <VideoPlay v-if="session.runner_status !== 'alive'" />
             <VideoPause v-else />
           </el-icon>
-          {{ session.runner_status === 'alive' ? '停止' : session.runner_status === 'starting' ? '启动中' : '启动' }}
+          {{ runnerToggleLabel }}
         </el-button>
         <el-button
           type="danger"

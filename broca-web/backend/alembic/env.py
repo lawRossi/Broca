@@ -34,14 +34,34 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 
+def _x_argument_db_url() -> str:
+    """读取 `alembic -x db_url=...`（显式目标库，优先级最高）。
+
+    `app/core/config.py::Settings` 明确移除了 `env_settings` 源（纯 .env 文件驱动，
+    不读 os.environ），所以 `SQLITE_DATABASE_PATH` 之类的环境变量在迁移期会被
+    静默忽略 —— 历史 bug：install.sh 用环境变量传目标库，迁移实际写到了
+    backend 目录下的 dev.db，而运行时读的是 ~/.broca/data/backend.db。
+    """
+    try:
+        x_args = context.get_x_argument(as_dictionary=True)
+    except Exception:
+        return ""
+    return (x_args.get("db_url") or "").strip()
+
+
 def get_database_url() -> str:
     """获取数据库连接URL"""
-    # 首先尝试从alembic.ini获取
+    # 1. -x db_url=...（安装脚本显式指定，保证与运行时同源）
+    url = _x_argument_db_url()
+    if url:
+        return url
+
+    # 2. 首先尝试从alembic.ini获取
     url = config.get_main_option("sqlalchemy.url")
     if url:
         return url
 
-    # 如果alembic.ini中没有配置，则从应用配置获取
+    # 3. 如果alembic.ini中没有配置，则从应用配置获取
     return settings.sync_database_url
 
 

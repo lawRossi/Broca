@@ -117,6 +117,9 @@ class RunnerProcessInfo:
     restart_count: int = 0
     error_message: Optional[str] = None
     recovery_hint: Optional[str] = None
+    # 心跳健康度（由心跳监控循环维护，用于区分"进程已死"与"心跳短暂延迟"）
+    heartbeat_stale: bool = False  # 最近一次巡检发现心跳已超过阈值
+    missed_heartbeats: int = 0  # 连续心跳超时的巡检次数（收到心跳即清零）
 
 
 @dataclass

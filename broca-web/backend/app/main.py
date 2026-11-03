@@ -113,6 +113,18 @@ async def setup() -> None:
     """应用启动时初始化"""
     logger.info("Starting up")
 
+    # === 0. 数据目录隔离检查（防止 dev 实例读写生产数据）===
+    from app.core.config import check_data_dir_isolation
+
+    leaked = check_data_dir_isolation()
+    if leaked:
+        logger.warning(
+            "ENV=%s 但数据目录指向生产路径: %s — 请检查 BROCA_CONFIG 是否指向 "
+            "configs.dev.json（参见 backend/.env.example）",
+            settings.env,
+            ", ".join(leaked),
+        )
+
     # === 1. 启动 SocketIO Server ===
     enabled = settings.broca_socketio_enabled
     host = settings.broca_socketio_host

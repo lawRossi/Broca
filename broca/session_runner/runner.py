@@ -28,6 +28,7 @@ from broca.session_runner.ipc import (
     IPCClient,
     IPCConnectionError,
     create_ipc_message,
+    create_response_message,
 )
 from broca.session_runner.models import (
     IPCMessage,
@@ -83,7 +84,9 @@ def collect_resource_usage() -> Dict[str, Any]:
 
         proc = psutil.Process()
         mem = proc.memory_info()
-        cpu_percent = proc.cpu_percent(interval=0.1)
+        # interval=None 表示非阻塞：返回自上次调用以来的平均 CPU 占用。
+        # 不要用 interval=0.1（会同步 sleep 100ms，卡住心跳所在的事件循环）
+        cpu_percent = proc.cpu_percent(interval=None)
         create_time = proc.create_time()
         uptime = time.time() - create_time
 
@@ -101,15 +104,29 @@ def collect_resource_usage() -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-async def heartbeat_loop(ipc_client: IPCChannel, interval: float = 5.0) -> None:
+def get_heartbeat_interval() -> float:
+    """心跳上报间隔（秒），来自 configs.json → execution.runner_heartbeat_interval"""
+    try:
+        from broca.configs import get_configs
+
+        return float(getattr(get_configs().execution, "runner_heartbeat_interval", 5))
+    except Exception:
+        return 5.0
+
+
+async def heartbeat_loop(
+    ipc_client: IPCChannel, interval: Optional[float] = None
+) -> None:
     """
     心跳发送循环
 
     Args:
         ipc_client: IPC 客户端
-        interval: 心跳间隔（秒）
+        interval: 心跳间隔（秒），None 时读配置
     """
     global _running
+    if interval is None:
+        interval = get_heartbeat_interval()
     while _running:
         try:
             resource_usage = collect_resource_usage()
@@ -162,10 +179,10 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCChannel) -> None:
     logger.info("Received IPC command: %s", msg.type.value)
 
     if msg.type == IPCMessageType.CMD_STATUS:
-        # 返回当前状态
-        response = create_ipc_message(
-            IPCMessageType.RESPONSE,
-            msg.session_id,
+        # 返回当前状态（回显 request message_id，供 Manager 精确匹配响应）
+        response = create_response_message(
+            msg,
+            status=IPCStatusCode.SUCCESS,
             payload={
                 "status": RunnerStatus.ALIVE.value
                 if _running
@@ -174,7 +191,6 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCChannel) -> None:
                 "resource_usage": collect_resource_usage(),
                 "uptime": time.time() - _start_time if _start_time else 0,
             },
-            status=IPCStatusCode.SUCCESS,
         )
         ipc_client.send_message(response)
 
@@ -187,11 +203,10 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCChannel) -> None:
             except Exception:
                 pass
 
-        response = create_ipc_message(
-            IPCMessageType.RESPONSE,
-            msg.session_id,
-            payload={"agents_stats": stats},
+        response = create_response_message(
+            msg,
             status=IPCStatusCode.SUCCESS,
+            payload={"agents_stats": stats},
         )
         ipc_client.send_message(response)
 
@@ -204,22 +219,20 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCChannel) -> None:
             except Exception as e:
                 logger.error("Failed to abort agent %s: %s", agent.agent_id, e)
 
-        response = create_ipc_message(
-            IPCMessageType.RESPONSE,
-            msg.session_id,
-            payload={"message": "All agents aborted"},
+        response = create_response_message(
+            msg,
             status=IPCStatusCode.SUCCESS,
+            payload={"message": "All agents aborted"},
         )
         ipc_client.send_message(response)
 
     elif msg.type == IPCMessageType.CMD_SHUTDOWN:
         # 优雅关闭
         logger.info("Received shutdown command")
-        response = create_ipc_message(
-            IPCMessageType.RESPONSE,
-            msg.session_id,
-            payload={"message": "Shutting down..."},
+        response = create_response_message(
+            msg,
             status=IPCStatusCode.SUCCESS,
+            payload={"message": "Shutting down..."},
         )
         ipc_client.send_message(response)
 
@@ -269,13 +282,12 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCChannel) -> None:
                 )
 
             if not agent_refs:
-                response = create_ipc_message(
-                    IPCMessageType.RESPONSE,
-                    msg.session_id,
+                response = create_response_message(
+                    msg,
+                    status=IPCStatusCode.ERROR,
                     payload={
                         "error": f"No agents matched. Crew requires: {[a.name for a in crew_config.agents]}, Session has: {[a.name for a in _agents]}"
                     },
-                    status=IPCStatusCode.ERROR,
                 )
                 ipc_client.send_message(response)
                 return
@@ -320,26 +332,24 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCChannel) -> None:
 
             asyncio.create_task(_run_crew_safe())
 
-            response = create_ipc_message(
-                IPCMessageType.RESPONSE,
-                msg.session_id,
+            response = create_response_message(
+                msg,
+                status=IPCStatusCode.SUCCESS,
                 payload={
                     "message": "Crew orchestration started",
                     "crew_id": crew_config.name,
                     "agent_count": len(agent_refs),
                     "orchestrator_type": crew_config.orchestrator.type.value,
                 },
-                status=IPCStatusCode.SUCCESS,
             )
             ipc_client.send_message(response)
 
         except Exception as e:
             logger.error(f"Failed to start crew: {e}")
-            response = create_ipc_message(
-                IPCMessageType.RESPONSE,
-                msg.session_id,
-                payload={"error": str(e)},
+            response = create_response_message(
+                msg,
                 status=IPCStatusCode.ERROR,
+                payload={"error": str(e)},
             )
             ipc_client.send_message(response)
 
@@ -352,43 +362,39 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCChannel) -> None:
                 aborted = await _crew_runner.abort_crew()
                 if aborted:
                     logger.info(f"Crew '{crew_id}' aborted successfully")
-                    response = create_ipc_message(
-                        IPCMessageType.RESPONSE,
-                        msg.session_id,
-                        payload={"message": f"Crew {crew_id} aborted", "success": True},
+                    response = create_response_message(
+                        msg,
                         status=IPCStatusCode.SUCCESS,
+                        payload={"message": f"Crew {crew_id} aborted", "success": True},
                     )
                 else:
                     logger.warning(
                         f"No active orchestrator to abort for crew '{crew_id}'"
                     )
-                    response = create_ipc_message(
-                        IPCMessageType.RESPONSE,
-                        msg.session_id,
+                    response = create_response_message(
+                        msg,
+                        status=IPCStatusCode.ERROR,
                         payload={
                             "error": f"No active orchestrator for crew {crew_id}",
                             "success": False,
                         },
-                        status=IPCStatusCode.ERROR,
                     )
             except Exception as e:
                 logger.error(f"Error aborting crew: {e}")
-                response = create_ipc_message(
-                    IPCMessageType.RESPONSE,
-                    msg.session_id,
-                    payload={"error": str(e), "success": False},
+                response = create_response_message(
+                    msg,
                     status=IPCStatusCode.ERROR,
+                    payload={"error": str(e), "success": False},
                 )
         else:
             logger.warning(f"No active crew runner to abort (crew_id={crew_id})")
-            response = create_ipc_message(
-                IPCMessageType.RESPONSE,
-                msg.session_id,
+            response = create_response_message(
+                msg,
+                status=IPCStatusCode.ERROR,
                 payload={
                     "error": f"No active crew runner for {crew_id}",
                     "success": False,
                 },
-                status=IPCStatusCode.ERROR,
             )
         ipc_client.send_message(response)
 

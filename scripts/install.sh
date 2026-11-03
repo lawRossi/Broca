@@ -459,49 +459,27 @@ if [[ ! -d "$ASR_MODEL_DIR" ]] || [[ -z "$(ls "$ASR_MODEL_DIR" 2>/dev/null)" ]];
 fi
 
 # ============================================================================
-# Step 3: 数据库迁移
+# Step 3: 同步配置 + 数据库迁移
 # ============================================================================
-step "Step 3/8: 数据库迁移..."
+step "Step 3/8: 同步配置并迁移数据库..."
 
-cd "$PROJECT_ROOT"
+# 配置同步必须**先于**数据库迁移：
+#   运行时读写哪个库，完全由 ~/.broca/configs/configs.json 的 database_dir
+#   决定（后端 .env 的 BROCA_CONFIG 指向它）。若先迁移后同步，迁移时用户配置
+#   还不存在，alembic 会回退到仓库模板 configs/configs.json —— 用户改过
+#   database_dir 时就会出现「表建在一个库、运行时读写另一个库」。
+# 配置复制/同步统一由独立脚本处理（install.sh 与 install.ps1 复用，跨平台一致）
+mkdir -p "$BROCA_HOME/configs" "$BROCA_HOME/data" "$BROCA_HOME/logs"
 
-# 数据库文件统一存到 ~/.broca/data/
-BROCA_DB_DIR="$BROCA_HOME/data"
-mkdir -p "$BROCA_DB_DIR"
-BROCA_DB_PATH="$BROCA_DB_DIR/sessions.db"
-BACKEND_DB_PATH="$BROCA_DB_DIR/backend.db"
-
-info "数据库目录: $BROCA_DB_DIR"
-
-# ---- 迁移1: broca 主数据库 ----
-info "迁移 broca 主数据库..."
-cd "$PROJECT_ROOT"
-if ALEMBIC_OUTPUT=$(BROCA_DATABASE_DIR="$BROCA_DB_DIR" $PYTHON -m alembic -c broca/alembic.ini upgrade head 2>&1); then
-    echo "$ALEMBIC_OUTPUT" | tail -5
-    info "broca 主数据库迁移完成"
+info "同步配置文件到 $BROCA_HOME ..."
+if $BROCA_PYTHON "$SCRIPT_DIR/sync_configs.py" \
+    --project-root "$PROJECT_ROOT" \
+    --broca-home "$BROCA_HOME"; then
+    info "配置文件同步完成"
 else
-    echo "$ALEMBIC_OUTPUT" | tail -10
-    warn "broca 主数据库迁移失败（可之后手动执行: alembic -c broca/alembic.ini upgrade head）"
+    warn "配置文件同步失败，请检查后手动处理 $BROCA_HOME/configs"
 fi
 
-# ---- 迁移2: 后端数据库 ----
-info "迁移后端数据库..."
-cd "$PROJECT_ROOT/broca-web/backend"
-if ALEMBIC_OUTPUT=$(SQLITE_DATABASE_PATH="sqlite:///${BACKEND_DB_PATH}" $PYTHON -m alembic upgrade head 2>&1); then
-    echo "$ALEMBIC_OUTPUT" | tail -5
-    info "后端数据库迁移完成"
-else
-    echo "$ALEMBIC_OUTPUT" | tail -10
-    warn "后端数据库迁移失败（可之后手动执行: alembic upgrade head）"
-fi
-
-cd "$PROJECT_ROOT"
-
-echo ""
-
-# ============================================================================
-# 配置 LLM
-# ============================================================================
 echo ""
 echo "  配置文件"
 echo "  ────────────────────────────────────────────"
@@ -514,18 +492,73 @@ echo "    export BROCA_API_KEY_{PROVIDER}=\"your-key\""
 echo "  ────────────────────────────────────────────"
 echo ""
 
-# 同步配置文件（configs.json / llm_config / agents / tool_permission / skills）
-mkdir -p "$BROCA_HOME/configs" "$BROCA_HOME/data" "$BROCA_HOME/logs"
+cd "$PROJECT_ROOT"
 
-# 配置复制/同步统一由独立脚本处理（install.sh 与 install.ps1 复用，跨平台一致）
-info "同步配置文件到 $BROCA_HOME ..."
-if $BROCA_PYTHON "$SCRIPT_DIR/sync_configs.py" \
-    --project-root "$PROJECT_ROOT" \
-    --broca-home "$BROCA_HOME"; then
-    info "配置文件同步完成"
-else
-    warn "配置文件同步失败，请检查后手动处理 $BROCA_HOME/configs"
+# ---- 解析迁移目标库（必须与运行时读写的库完全一致）----
+# 注意：不能用环境变量传目标库。`broca/configs.py` 与
+# `broca-web/backend/app/core/config.py` 都是纯文件驱动（不读 os.environ），
+# 环境变量在运行时会被静默忽略，于是迁移会写到另一个库：
+#   - 历史 bug 1: BROCA_DATABASE_DIR 对 broca alembic 无效
+#   - 历史 bug 2: SQLITE_DATABASE_PATH 对后端 alembic 无效，迁移实际写进
+#                 broca-web/backend/dev.db（仓库开发 .env 的值）
+# 所以这里从"运行时的唯一配置源"反解路径，再用 `-x db_url=` 显式传给 alembic。
+#   1. sessions.db ← ~/.broca/configs/configs.json 的 database_dir
+#   2. backend.db  ← 与 scripts/gen_backend_env.py 写入 .env 的
+#                    SQLITE_DATABASE_PATH 保持同一公式（$BROCA_HOME/data/backend.db）
+BROCA_DB_DIR=$("$BROCA_PYTHON" - "$BROCA_HOME/configs/configs.json" <<'PYEOF'
+import json
+import sys
+from pathlib import Path
+
+fallback = Path.home() / ".broca" / "data"
+try:
+    data = json.loads(Path(sys.argv[1]).read_text(encoding="utf-8"))
+    value = data.get("database_dir") or str(fallback)
+except Exception:
+    value = str(fallback)
+print(Path(value).expanduser().resolve())
+PYEOF
+)
+if [[ -z "$BROCA_DB_DIR" ]]; then
+    BROCA_DB_DIR="$BROCA_HOME/data"
+    warn "无法从 configs.json 解析 database_dir，回退到 $BROCA_DB_DIR"
 fi
+mkdir -p "$BROCA_DB_DIR"
+
+BROCA_DB_PATH="$BROCA_DB_DIR/sessions.db"
+BACKEND_DB_PATH="$BROCA_HOME/data/backend.db"
+
+info "sessions.db 迁移目标: $BROCA_DB_PATH"
+info "backend.db  迁移目标: $BACKEND_DB_PATH"
+
+# ---- 迁移1: broca 主数据库 ----
+info "迁移 broca 主数据库..."
+if ALEMBIC_OUTPUT=$("$BROCA_PYTHON" -m alembic -c broca/alembic.ini \
+        -x "db_url=sqlite:///${BROCA_DB_PATH}" upgrade head 2>&1); then
+    echo "$ALEMBIC_OUTPUT" | tail -5
+    info "broca 主数据库迁移完成"
+else
+    echo "$ALEMBIC_OUTPUT" | tail -10
+    error "broca 主数据库迁移失败（目标: $BROCA_DB_PATH）"
+    error "没有表就无法使用 Web 会话功能；请修复后重新执行: sh scripts/install.sh"
+    exit 1
+fi
+
+# ---- 迁移2: 后端数据库 ----
+info "迁移后端数据库..."
+cd "$PROJECT_ROOT/broca-web/backend"
+if ALEMBIC_OUTPUT=$("$BROCA_PYTHON" -m alembic \
+        -x "db_url=sqlite:///${BACKEND_DB_PATH}" upgrade head 2>&1); then
+    echo "$ALEMBIC_OUTPUT" | tail -5
+    info "后端数据库迁移完成"
+else
+    echo "$ALEMBIC_OUTPUT" | tail -10
+    error "后端数据库迁移失败（目标: $BACKEND_DB_PATH）"
+    error "没有表就无法登录；请修复后重新执行: sh scripts/install.sh"
+    exit 1
+fi
+
+cd "$PROJECT_ROOT"
 
 echo ""
 
@@ -540,9 +573,51 @@ BROCA_WEB_DIR="$BROCA_HOME/web"
 mkdir -p "$BROCA_WEB_DIR"
 
 # 复制后端代码
+#
+# 注意：backend 目录里混着**只属于开发环境**的产物（开发 .env、configs.dev.json、
+# dev.db、.local-data、logs/、各种 cache）。它们一旦被搬进安装目录，就有机会被
+# 生产实例真的读到 —— 例如部署目录里出现 .env.local（pydantic-settings 的
+# env_file 列表里 .env.local 优先级高于 .env），其中若写着
+# BROCA_CONFIG=./configs.dev.json，生产后端就会静默改用 dev 配置、把数据写进
+# ~/.broca/web/backend/.local-data。所以这里既用 --exclude 挡在源头，
+# 也用 purge_backend_dev_artifacts 清掉历史遗留（rsync --delete 不会删除被
+# exclude 保护的文件，重装时需要显式清理）。
+BACKEND_DEV_ARTIFACTS=(
+    configs.dev.json
+    .env.local
+    .env.production
+    .env.development
+    .local-data
+    dev.db
+    test.db
+    nohup.out
+    logs
+    __pycache__
+    .pytest_cache
+    .mypy_cache
+    .ruff_cache
+)
+
+# 清理安装目录里的开发产物（保留 .env —— 生成器要靠它复用 JWT_SECRET）
+purge_backend_dev_artifacts() {
+    local dir="$1"
+    [[ -d "$dir" ]] || return 0
+    local item
+    for item in "${BACKEND_DEV_ARTIFACTS[@]}"; do
+        rm -rf "${dir:?}/$item" 2>/dev/null || true
+    done
+}
+
 if [[ -d "$PROJECT_ROOT/broca-web/backend" ]]; then
-    rsync -a --delete "$PROJECT_ROOT/broca-web/backend/" "$BROCA_WEB_DIR/backend/" 2>/dev/null || \
+    BACKEND_RSYNC_EXCLUDES=()
+    for item in "${BACKEND_DEV_ARTIFACTS[@]}"; do
+        BACKEND_RSYNC_EXCLUDES+=(--exclude="$item")
+    done
+    rsync -a --delete "${BACKEND_RSYNC_EXCLUDES[@]}" \
+        "$PROJECT_ROOT/broca-web/backend/" "$BROCA_WEB_DIR/backend/" 2>/dev/null || \
         cp -r "$PROJECT_ROOT/broca-web/backend" "$BROCA_WEB_DIR/"
+    # 兜底清理：cp 回退路径会全量复制；rsync 的 --delete 也不会删被 exclude 的历史文件
+    purge_backend_dev_artifacts "$BROCA_WEB_DIR/backend"
     info "后端代码已部署: $BROCA_WEB_DIR/backend/"
 else
     error "后端代码目录不存在: $PROJECT_ROOT/broca-web/backend"
@@ -550,20 +625,39 @@ else
 fi
 
 # 生成后端 .env 文件（纯文件配置，替代环境变量注入）
+#
+# 注意：生成内容必须满足 app/core/config.py 的生产护栏 ——
+# ENV=production 时 JWT_SECRET 不能为空、CORS_ALLOW_ORIGINS 不能是 `*`。
+# 否则 Settings() 会在 import 阶段抛 ValidationError，uvicorn 秒退，
+# supervisor 变 FATAL，nginx 对 /api/* 全部返回 502（页面打不开）。
+# 因此这里交给 scripts/gen_backend_env.py 生成 + 用 App 自身自检；
+# 它还会复用已有 .env 里的 JWT_SECRET，避免重装后所有登录态失效。
 BACKEND_ENV_FILE="$BROCA_WEB_DIR/backend/.env"
-cat > "$BACKEND_ENV_FILE" << ENVEOF
-# 生产环境配置（由 install.sh 自动生成）
-ENV=production
-PORT=${BROCA_BACKEND_PORT}
-BROCA_SOCKETIO_PORT=${BROCA_SOCKETIO_PORT}
-BROCA_CONFIG=${BROCA_HOME}/configs/configs.json
-BROCA_DATABASE_DIR=${BROCA_HOME}/data
-SQLITE_DATABASE_PATH=sqlite:///${BROCA_HOME}/data/backend.db
-BROCA_LLM_CONFIG=${BROCA_HOME}/configs/llm_config.json
-JWT_SECRET=${JWT_SECRET:-}
-CORS_ALLOW_ORIGINS=${CORS_ORIGINS:-*}
-ENVEOF
+info "生成后端 .env ..."
+if ! "$BROCA_PYTHON" "$SCRIPT_DIR/gen_backend_env.py" \
+    --out "$BACKEND_ENV_FILE" \
+    --backend-dir "$BROCA_WEB_DIR/backend" \
+    --broca-home "$BROCA_HOME" \
+    --port "$BROCA_BACKEND_PORT" \
+    --socketio-port "$BROCA_SOCKETIO_PORT" \
+    --jwt-secret "${JWT_SECRET:-}" \
+    --cors-origins "${CORS_ORIGINS:-}"; then
+    error "后端 .env 生成失败（生产安全护栏自检未通过）"
+    exit 1
+fi
 info "后端 .env 已生成: $BACKEND_ENV_FILE"
+
+# ---- 一致性护栏：迁移用的库必须就是后端运行时读的库 ----
+# gen_backend_env.py 是 backend.db 路径的唯一来源（写进 .env 的
+# SQLITE_DATABASE_PATH）；Step 3 的迁移按同一公式预先算了一份。
+# 任何一边改了公式，这里立刻报错，避免又出现"迁移写 A、运行时读 B"。
+ENV_BACKEND_DB=$(sed -n 's/^SQLITE_DATABASE_PATH=sqlite:\/\/\///p' "$BACKEND_ENV_FILE" | head -1)
+if [[ -n "$ENV_BACKEND_DB" && "$ENV_BACKEND_DB" != "$BACKEND_DB_PATH" ]]; then
+    error "后端 .env 的 SQLITE_DATABASE_PATH ($ENV_BACKEND_DB) 与迁移目标 ($BACKEND_DB_PATH) 不一致"
+    error "请同步 scripts/gen_backend_env.py 与 scripts/install.sh 的 backend.db 路径公式"
+    exit 1
+fi
+info "库路径一致性校验通过: $BACKEND_DB_PATH"
 
 # 复制前端源码（不含 node_modules/dist）
 if [[ -d "$PROJECT_ROOT/broca-web/frontend" ]]; then

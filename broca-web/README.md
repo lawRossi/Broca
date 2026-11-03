@@ -91,9 +91,35 @@ SUPABASE_JWT_SECRET=your_jwt_secret
 
 #### 数据库迁移
 
+dev 环境有**两个**库，都需要迁移：
+
+| 库 | 内容 | 默认路径（dev） |
+|----|------|-----------------|
+| `sessions.db` | session / turn / message / session_runner 等 | `backend/.local-data/sessions.db` |
+| `backend.db` | 登录用户 / 用户资料 | `backend/dev.db` |
+
+`./dev.sh` 启动时会**自动迁移**（幂等，已在 head 时是 no-op），通常无需手动执行。
+切换 `BROCA_CONFIG` 指向新的数据目录后也不用管，重启 dev.sh 即可。
+
+需要手动迁移时，**必须用 `-x db_url=` 显式指定目标库**：`broca/configs.py` 和
+`app/core/config.py` 都是纯文件驱动（不读 `os.environ`），环境变量会被静默忽略，
+而裸 `alembic upgrade head` 会回退到仓库 `configs/configs.json` ——
+把迁移应用到**生产库** `~/.broca/data/sessions.db`。
+
 ```bash
-poetry run alembic upgrade head
+cd broca-web/backend
+
+# 会话库（broca 核心）
+PYTHONPATH=$(cd ../.. && pwd) python -m alembic -c ../../broca/alembic.ini \
+  -x "db_url=sqlite:///$PWD/.local-data/sessions.db" upgrade head
+
+# 后端库（登录/用户）
+python -m alembic -x "db_url=sqlite:///$PWD/dev.db" upgrade head
 ```
+
+> 忘了迁移的症状：启动日志里出现
+> `Failed to restore active sessions: ... no such table: session_runner`。
+> 原因是 SQLAlchemy 连接时 SQLite 会自动创建一个 0 表空文件，看起来"库存在"但表不存在。
 
 ### 3. 前端设置
 

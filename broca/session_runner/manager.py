@@ -36,6 +36,14 @@ from broca.utils.datetime_util import serialize_dt
 
 logger = logging.getLogger(__name__)
 
+# 心跳巡检策略
+# 1) 先看进程是否还活着（process.poll）：进程已退出 → 直接收敛为 DEAD
+# 2) 进程存活但心跳超时 → 先宽限，连续 N 次巡检都超时才升级为 ERROR，
+#    避免 runner 事件循环短暂卡顿（长工具调用、快照加锁等）被误判为异常
+HEARTBEAT_GRACE_MULTIPLIER = 3
+# 心跳落库的最小间隔（秒）：避免每次巡检都写库，又保证 DB 不会长期陈旧
+HEARTBEAT_PERSIST_INTERVAL = 60.0
+
 
 class RunnerManagerError(SessionError):
     """Runner Manager 异常"""
@@ -66,12 +74,30 @@ class IPCSessionRunner(SessionRunnerABC):
             self._ipc_servers: Dict[str, IPCChannel] = {}
             # IPC 监听线程映射: {session_id: threading.Thread}
             self._ipc_listener_threads: Dict[str, threading.Thread] = {}
+            # IPC 监听任务映射: {session_id: asyncio.Task}
+            self._ipc_listener_tasks: Dict[str, asyncio.Task] = {}
+            # 等待中的 IPC 命令响应: {message_id: asyncio.Future}
+            # 由唯一的 IPC 监听循环分发 RESPONSE，避免多消费者抢消息吞掉心跳
+            self._pending_responses: Dict[str, asyncio.Future] = {}
             # 配置
+            # 心跳阈值（configs.json → execution 分组）
+            self._heartbeat_interval = 5.0
+            self._heartbeat_timeout = 45.0
+            self._heartbeat_check_interval = 15.0
             try:
                 from broca.configs import get_configs
                 _cfg = get_configs()
                 # 未来可加入 configs.json 的 execution.max_concurrent_runners
                 self._max_concurrent_runners = getattr(_cfg.execution, "max_concurrent_runners", 10)
+                self._heartbeat_interval = float(
+                    getattr(_cfg.execution, "runner_heartbeat_interval", 5)
+                )
+                self._heartbeat_timeout = float(
+                    getattr(_cfg.execution, "runner_heartbeat_timeout", 45)
+                )
+                self._heartbeat_check_interval = float(
+                    getattr(_cfg.execution, "runner_heartbeat_check_interval", 15)
+                )
             except Exception:
                 self._max_concurrent_runners = 10
             self._runner_script = self._find_runner_script()
@@ -82,6 +108,9 @@ class IPCSessionRunner(SessionRunnerABC):
             # 心跳上报的 agent 状态缓存: {session_id: {agent_id: status}}
             # 用于变更检测，避免每次心跳都产生无效 DB 写入
             self._agent_status_cache: Dict[str, Dict[str, str]] = {}
+            # 已落库的 runner 状态缓存: {session_id: (status, last_heartbeat)}
+            # 心跳监控循环据此只写有变化的行，避免每 15s 全量写库
+            self._db_state_cache: Dict[str, tuple] = {}
             # 日志目录
             self._log_dir = Path.home() / ".broca/logs/runners"
 
@@ -404,8 +433,12 @@ class IPCSessionRunner(SessionRunnerABC):
             # 持久化到数据库
             await self._save_runner_to_db(runner_info)
 
-            # 启动 IPC 消息监听循环（接收 heartbeat 等）
-            asyncio.create_task(self._ipc_listener_loop(session_id))
+            # 启动 IPC 消息监听循环（接收 heartbeat / response 等）
+            # 保存 task 引用：既便于 stop_session 主动取消，也避免异常被静默吞掉
+            self._ipc_listener_tasks[session_id] = asyncio.create_task(
+                self._ipc_listener_loop(session_id),
+                name=f"ipc-listener-{session_id}",
+            )
 
             return runner_info
 
@@ -467,8 +500,16 @@ class IPCSessionRunner(SessionRunnerABC):
             logger.warning("Failed to kill process pid=%d: %s", pid, e)
             return False
 
+    def _cancel_ipc_listener_task(self, session_id: str) -> None:
+        """取消 IPC 监听任务（幂等）"""
+        task = self._ipc_listener_tasks.pop(session_id, None)
+        if task is not None and not task.done():
+            task.cancel()
+
     async def _cleanup_ipc_resources(self, session_id: str) -> None:
         """清理 IPC 相关资源（socket 文件、监听线程等）"""
+        # 取消监听任务（否则任务会随 _runners 变化自行退出，但引用会残留）
+        self._cancel_ipc_listener_task(session_id)
         # 清理监听线程（daemon 线程随 ipc_server.close() 触发 IPCConnectionError 自然退出）
         self._ipc_listener_threads.pop(session_id, None)
 
@@ -653,6 +694,7 @@ class IPCSessionRunner(SessionRunnerABC):
 
         # 清理心跳状态缓存，避免 session 重启后残留旧数据影响变更检测
         self._agent_status_cache.pop(session_id, None)
+        self._db_state_cache.pop(session_id, None)
 
         # 清理 IPC socket 文件
         await self._cleanup_ipc_resources(session_id)
@@ -729,46 +771,59 @@ class IPCSessionRunner(SessionRunnerABC):
         }
 
     async def send_command(
-        self, session_id: str, msg_type: IPCMessageType, payload: Dict[str, Any]
+        self,
+        session_id: str,
+        msg_type: IPCMessageType,
+        payload: Dict[str, Any],
+        timeout: float = 10.0,
     ) -> Optional[Dict[str, Any]]:
         """
         向指定 Session 的 Runner 发送 IPC 命令并等待响应
+
+        实现要点（修复两个历史问题）：
+        1. send_message 是同步阻塞调用，放到线程池执行，避免卡住事件循环；
+        2. 不再自己 recv 抢消息（那会把心跳当响应吞掉），而是注册一个
+           以 message_id 为键的 Future，由唯一的 IPC 监听循环分发响应。
 
         Args:
             session_id: Session ID
             msg_type: IPC 消息类型
             payload: 消息载荷
+            timeout: 等待响应超时（秒）
 
         Returns:
-            响应数据，失败返回 None
+            响应数据，失败返回 {"error": ...}
         """
         ipc_server = self._ipc_servers.get(session_id)
         if not ipc_server:
-            logger.warning(f"No IPC server found for session {session_id}")
+            logger.warning("No IPC server found for session %s", session_id)
             return None
 
+        loop = asyncio.get_running_loop()
+        msg = create_ipc_message(msg_type, session_id, payload=payload)
+        future: asyncio.Future = loop.create_future()
+        self._pending_responses[msg.message_id] = future
+
         try:
-            msg = create_ipc_message(msg_type, session_id, payload=payload)
-            ipc_server.send_message(msg)
-
-            # 等待响应
-            import asyncio
-
-            loop = asyncio.get_event_loop()
-            response = await loop.run_in_executor(
-                None, ipc_server.receive_message, 10.0
+            await loop.run_in_executor(None, ipc_server.send_message, msg)
+            response = await asyncio.wait_for(future, timeout=timeout)
+            return response.payload
+        except asyncio.TimeoutError:
+            logger.error(
+                "IPC command %s for session %s timed out after %.0fs",
+                msg_type.value,
+                session_id,
+                timeout,
             )
-
-            if response:
-                return response.payload
             return {"error": "No response from runner"}
-
         except IPCConnectionError as e:
-            logger.error(f"IPC send command failed for session {session_id}: {e}")
+            logger.error("IPC send command failed for session %s: %s", session_id, e)
             return {"error": str(e)}
         except Exception as e:
-            logger.error(f"Failed to send command to session {session_id}: {e}")
+            logger.error("Failed to send command to session %s: %s", session_id, e)
             return {"error": str(e)}
+        finally:
+            self._pending_responses.pop(msg.message_id, None)
 
     def _runner_info_to_dict(self, info: RunnerProcessInfo) -> Dict[str, Any]:
         """将 RunnerProcessInfo 转为字典"""
@@ -782,6 +837,8 @@ class IPCSessionRunner(SessionRunnerABC):
             "last_heartbeat": serialize_dt(info.last_heartbeat),
             "restart_count": info.restart_count,
             "error_message": info.error_message,
+            "heartbeat_stale": info.heartbeat_stale,
+            "missed_heartbeats": info.missed_heartbeats,
             "uptime_seconds": (
                 (datetime.now(timezone.utc) - info.started_at).total_seconds()
                 if info.started_at
@@ -807,6 +864,20 @@ class IPCSessionRunner(SessionRunnerABC):
             session_id: Session ID
             msg: IPC 消息
         """
+        if msg.type == IPCMessageType.RESPONSE:
+            # 命令响应：只由监听循环分发，按 message_id 唤醒等待者。
+            # 这样 send_command 不再直接 recv，也就不会把心跳当响应吞掉。
+            future = self._pending_responses.pop(msg.message_id, None)
+            if future is not None and not future.done():
+                future.set_result(msg)
+            else:
+                logger.debug(
+                    "Dropped unmatched IPC response for session %s (id=%s)",
+                    session_id,
+                    msg.message_id,
+                )
+            return
+
         runner_info = self._runners.get(session_id)
         if not runner_info:
             return
@@ -815,6 +886,22 @@ class IPCSessionRunner(SessionRunnerABC):
             # 更新心跳
             runner_info.last_heartbeat = datetime.now(timezone.utc)
             runner_info.resource_usage = msg.payload.get("resource_usage", {})
+            # 心跳恢复：清除巡检期累积的"心跳陈旧"标记
+            if runner_info.heartbeat_stale or runner_info.missed_heartbeats:
+                logger.info(
+                    "Runner %s heartbeat recovered (was stale, missed=%d)",
+                    session_id,
+                    runner_info.missed_heartbeats,
+                )
+                runner_info.heartbeat_stale = False
+                runner_info.missed_heartbeats = 0
+            if runner_info.status == RunnerStatus.ERROR and runner_info.error_message:
+                logger.info(
+                    "Runner %s recovered from error state: %s",
+                    session_id,
+                    runner_info.error_message,
+                )
+                runner_info.error_message = None
 
             # 更新运行状态
             status_str = msg.payload.get("status")
@@ -833,7 +920,7 @@ class IPCSessionRunner(SessionRunnerABC):
                 asyncio.ensure_future(
                     self._sync_agent_statuses(session_id, agent_statuses)
                 )
-            # DB 持久化由心跳监控循环定期统一处理
+            # DB 持久化由心跳监控循环的 _persist_runner_state() 定期统一处理
 
         elif msg.type == IPCMessageType.EVT_ERROR:
             runner_info.status = RunnerStatus.ERROR
@@ -934,26 +1021,48 @@ class IPCSessionRunner(SessionRunnerABC):
     # ==================== 心跳监控 ====================
 
     async def start_heartbeat_monitor(
-        self, interval: float = 15.0, timeout: float = 45.0
+        self, interval: Optional[float] = None, timeout: Optional[float] = None
     ) -> None:
         """
         启动心跳监控
 
+        阈值统一来自 configs.json 的 execution 分组：
+        - runner_heartbeat_check_interval → interval
+        - runner_heartbeat_timeout        → timeout
+        （此前散落在 manager 的默认参数里，另有已删除的死代码
+          session_runner/heartbeat.py 使用 30/60 的另一套阈值）
+
         Args:
-            interval: 检查间隔（秒）
-            timeout: 心跳超时阈值（秒）
+            interval: 检查间隔（秒），None 时读配置
+            timeout: 心跳超时阈值（秒），None 时读配置
         """
         if self._heartbeat_monitor_task and not self._heartbeat_monitor_task.done():
             logger.warning("Heartbeat monitor already running")
             return
 
+        interval = (
+            float(self._heartbeat_check_interval)
+            if interval is None
+            else interval
+        )
+        timeout = float(self._heartbeat_timeout) if timeout is None else timeout
+
+        if timeout < self._heartbeat_interval * 3:
+            logger.warning(
+                "Heartbeat timeout (%ss) is too close to the report interval (%ss); "
+                "false positives are likely. Recommended: timeout >= 3 x interval.",
+                timeout,
+                self._heartbeat_interval,
+            )
+
         self._heartbeat_monitor_task = asyncio.create_task(
             self._heartbeat_monitor_loop(interval, timeout)
         )
         logger.info(
-            "Heartbeat monitor started (interval=%ds, timeout=%ds)",
+            "Heartbeat monitor started (interval=%ss, timeout=%ss, grace=%ss)",
             interval,
             timeout,
+            timeout * HEARTBEAT_GRACE_MULTIPLIER,
         )
 
     async def stop_heartbeat_monitor(self) -> None:
@@ -973,63 +1082,170 @@ class IPCSessionRunner(SessionRunnerABC):
             try:
                 await asyncio.sleep(interval)
                 await self._check_heartbeats(timeout)
+                # 把内存中的 runner 状态/心跳周期写入 DB（仅写有变化的行）
+                await self._persist_runner_state()
             except asyncio.CancelledError:
                 break
             except Exception as e:
                 logger.error("Heartbeat monitor error: %s", e)
 
+    async def _persist_runner_state(self) -> None:
+        """把内存中的 Runner 状态与心跳时间同步到 DB。
+
+        历史问题：_save_runner_to_db() 只在 start_session 时调用一次，
+        DB 里的 status/last_heartbeat 永远停留在启动瞬间，导致
+        _get_runner_from_db() / restore_active_sessions() 读到脏数据。
+        这里按 HEARTBEAT_PERSIST_INTERVAL 节流写入。
+        """
+        now = datetime.now(timezone.utc)
+        for session_id, info in list(self._runners.items()):
+            prev = self._db_state_cache.get(session_id)
+            status = info.status.value
+            if prev is not None:
+                prev_status, prev_hb = prev
+                same_status = prev_status == status
+                hb_fresh = (
+                    prev_hb is not None
+                    and (now - prev_hb).total_seconds() < HEARTBEAT_PERSIST_INTERVAL
+                )
+                if same_status and hb_fresh:
+                    continue
+            try:
+                await self._save_runner_to_db(info)
+                self._db_state_cache[session_id] = (status, now)
+            except Exception as e:
+                logger.warning(
+                    "Failed to persist runner state for session %s: %s", session_id, e
+                )
+
     async def _check_heartbeats(self, timeout: float) -> None:
         """
-        检查所有 Runner 的心跳
+        巡检所有 Runner 的存活状态。
+
+        判定顺序（重要）：
+        1. 进程已退出（process.poll() 非 None）→ 立即收敛为 DEAD 并清理，
+           不再让条目永久停留在 error 状态（历史 bug：进程早已不存在，
+           /runner/status 却一直返回 error，前端永久显示"进程异常"）。
+        2. 进程存活但心跳超时 → 先打"心跳陈旧"标记并宽限
+           HEARTBEAT_GRACE_MULTIPLIER 倍阈值，仍无心跳才升级为 ERROR；
+           升级后继续巡检，心跳恢复即自动回到 ALIVE。
 
         Args:
             timeout: 心跳超时阈值（秒）
         """
         now = datetime.now(timezone.utc)
-        dead_sessions = []
+        dead_sessions: list[str] = []
+        grace = timeout * HEARTBEAT_GRACE_MULTIPLIER
 
-        for session_id, runner_info in self._runners.items():
-            if runner_info.status != RunnerStatus.ALIVE:
+        for session_id, runner_info in list(self._runners.items()):
+            # STARTING 阶段由 start_session 自己负责（它会等 READY 并自行清理），
+            # 这里只在明显卡死后兜底，避免与启动流程竞态重复清理
+            if runner_info.status == RunnerStatus.STARTING:
+                started_at = runner_info.started_at
+                if started_at is not None:
+                    if (now - started_at).total_seconds() < grace:
+                        continue
+
+            # ---- 1) 进程维度：进程没了就是死了，与心跳无关 ----
+            process = runner_info.process
+            if process is not None:
+                returncode = process.poll()
+                if returncode is not None:
+                    logger.error(
+                        "Runner %s (pid=%s) has exited with code %s",
+                        session_id,
+                        runner_info.pid,
+                        returncode,
+                    )
+                    runner_info.status = RunnerStatus.DEAD
+                    runner_info.error_message = f"Process exited with code {returncode}"
+                    dead_sessions.append(session_id)
+                    continue
+
+            # ---- 2) 心跳维度：只对"本应活着"的状态做判定 ----
+            if runner_info.status not in (RunnerStatus.ALIVE, RunnerStatus.ERROR):
                 continue
-
             if runner_info.last_heartbeat is None:
                 continue
 
             elapsed = (now - runner_info.last_heartbeat).total_seconds()
-            if elapsed > timeout:
+            if elapsed <= timeout:
+                runner_info.heartbeat_stale = False
+                runner_info.missed_heartbeats = 0
+                continue
+
+            runner_info.missed_heartbeats += 1
+            runner_info.heartbeat_stale = True
+
+            if elapsed <= grace:
+                # 宽限期内：只记录，不改状态，避免事件循环短暂卡顿被误判
                 logger.warning(
-                    "Runner %s heartbeat timeout (elapsed=%.1fs, timeout=%ds)",
+                    "Runner %s heartbeat delayed (elapsed=%.1fs, timeout=%ds, "
+                    "missed=%d, grace=%ds)",
                     session_id,
                     elapsed,
                     timeout,
+                    runner_info.missed_heartbeats,
+                    grace,
                 )
+                continue
 
-                # 检查进程是否还在运行
-                poll = runner_info.process.poll()
-                if poll is not None:
-                    # 进程已退出
-                    logger.error(
-                        "Runner %s (pid=%d) has exited with code %s",
-                        session_id,
-                        runner_info.pid,
-                        poll,
-                    )
-                    runner_info.status = RunnerStatus.ERROR
-                    runner_info.error_message = f"Process exited with code {poll}"
-                else:
-                    # 进程还在但心跳超时
-                    runner_info.status = RunnerStatus.ERROR
-                    runner_info.error_message = f"Heartbeat timeout ({elapsed:.0f}s)"
+            if runner_info.status != RunnerStatus.ERROR:
+                logger.error(
+                    "Runner %s heartbeat lost (elapsed=%.1fs > grace=%ds, pid=%s alive)",
+                    session_id,
+                    elapsed,
+                    grace,
+                    runner_info.pid,
+                )
+                runner_info.status = RunnerStatus.ERROR
+                runner_info.error_message = f"Heartbeat lost ({elapsed:.0f}s)"
+                # 进程还活着，条目保留继续巡检，心跳恢复会自动回到 ALIVE；
+                # 此时不把 agent 标记为 disconnected，避免前端反复闪断。
+                await self._trigger_event("session_crashed", runner_info)
 
-                dead_sessions.append(session_id)
-
-        # 触发事件 & 更新 Agent DB 状态
+        # ---- 3) 收敛真正死亡的 runner ----
         for session_id in dead_sessions:
-            crashed_runner = self._runners.get(session_id)
-            if crashed_runner:
-                await self._trigger_event("session_crashed", crashed_runner)
-                # 将对应 session 的所有 agent 标记为 disconnected
-                await self._mark_session_agents_disconnected(session_id)
+            await self._converge_dead_runner(session_id)
+
+    async def _converge_dead_runner(self, session_id: str) -> None:
+        """把已死亡的 Runner 收敛掉：置 DEAD、清理 IPC/内存、写库、通知前端。
+
+        历史问题：进程退出后只把状态改成 ERROR，既不移除内存条目也不写库，
+        导致 /runner/status 永远返回 error（前端永久"进程异常"）。
+        """
+        runner_info = self._runners.get(session_id)
+        if runner_info is None:
+            return
+
+        runner_info.status = RunnerStatus.DEAD
+        runner_info.heartbeat_stale = False
+        runner_info.missed_heartbeats = 0
+        reason = runner_info.error_message or "Process exited"
+
+        # 先写库（dead），再清理内存，保证外部读 DB 也能看到真实状态
+        try:
+            await self._save_runner_to_db(runner_info)
+            self._db_state_cache[session_id] = (runner_info.status.value, None)
+        except Exception as e:
+            logger.warning(
+                "Failed to persist dead runner for session %s: %s", session_id, e
+            )
+
+        # 通知前端 + 标记 agent 断连
+        await self._trigger_event("session_crashed", runner_info)
+        await self._mark_session_agents_disconnected(session_id)
+
+        # 清理 IPC 资源与内存条目。
+        # 内存条目必须移除，否则 /runner/status 会一直返回这条僵尸记录
+        # （历史 bug：进程早已不存在，前端却永久显示"进程异常"）。
+        # DB 记录保留为 dead，便于排查历史失败原因。
+        self._runners.pop(session_id, None)
+        self._agent_status_cache.pop(session_id, None)
+        await self._cleanup_ipc_resources(session_id)
+        logger.warning(
+            "Runner for session %s converged to DEAD (%s)", session_id, reason
+        )
 
     async def _mark_session_agents_disconnected(self, session_id: str) -> None:
         """当 Runner 进程死亡时，将该 Session 下所有 Agent 标记为 disconnected
@@ -1121,13 +1337,51 @@ class IPCSessionRunner(SessionRunnerABC):
                 "Failed to sync agent statuses for session %s: %s", session_id, e
             )
 
+    def _start_poll_thread(
+        self,
+        session_id: str,
+        ipc_server: Any,
+        loop: asyncio.AbstractEventLoop,
+        msg_queue: "asyncio.Queue",
+    ) -> threading.Thread:
+        """启动 IPC 轮询线程（唯一消费者），消息经 asyncio.Queue 送回事件循环。"""
+
+        def _thread_poll() -> None:
+            while session_id in self._runners:
+                try:
+                    msg = ipc_server.receive_message(5.0)
+                    if msg is not None:
+                        loop.call_soon_threadsafe(msg_queue.put_nowait, msg)
+                except IPCConnectionError as e:
+                    logger.warning(
+                        "IPC connection lost for session %s: %s", session_id, e
+                    )
+                    loop.call_soon_threadsafe(msg_queue.put_nowait, None)
+                    break
+                except Exception as e:
+                    logger.error("IPC listener thread error for %s: %s", session_id, e)
+                    loop.call_soon_threadsafe(msg_queue.put_nowait, None)
+                    break
+
+        thread = threading.Thread(
+            target=_thread_poll, name=f"ipc-poll-{session_id}", daemon=True
+        )
+        thread.start()
+        self._ipc_listener_threads[session_id] = thread
+        return thread
+
     async def _ipc_listener_loop(self, session_id: str) -> None:
         """
-        IPC 消息监听循环，持续接收 Runner 发来的消息（heartbeat 等）。
+        IPC 消息监听循环，持续接收 Runner 发来的消息（heartbeat / response 等）。
 
         使用专用 daemon 线程执行阻塞的 receive_message，通过
         asyncio.Queue + call_soon_threadsafe 将消息送回 event loop，
         避免占用默认线程池。
+
+        自愈保证（历史 bug：这里一旦抛异常，任务静默死掉，该 session 的
+        心跳再也不会被消费，45s 后被判 error 且永久无法恢复）：
+        - 单条消息处理失败只记录日志，不中断循环
+        - 轮询线程意外退出时自动重启
         """
         ipc_server = self._ipc_servers.get(session_id)
         if not ipc_server:
@@ -1136,33 +1390,47 @@ class IPCSessionRunner(SessionRunnerABC):
 
         loop = asyncio.get_running_loop()
         msg_queue: asyncio.Queue = asyncio.Queue()
-
-        def _thread_poll():
-            while session_id in self._runners:
-                try:
-                    msg = ipc_server.receive_message(5.0)
-                    if msg:
-                        loop.call_soon_threadsafe(msg_queue.put_nowait, msg)
-                except IPCConnectionError:
-                    loop.call_soon_threadsafe(msg_queue.put_nowait, None)
-                    break
-                except Exception as e:
-                    logger.error("IPC listener thread error for %s: %s", session_id, e)
-                    loop.call_soon_threadsafe(msg_queue.put_nowait, None)
-                    break
-
-        thread = threading.Thread(target=_thread_poll, name=f"ipc-poll-{session_id}", daemon=True)
-        thread.start()
-        self._ipc_listener_threads[session_id] = thread
+        thread = self._start_poll_thread(session_id, ipc_server, loop, msg_queue)
 
         while session_id in self._runners:
             try:
-                msg = await asyncio.wait_for(msg_queue.get(), timeout=1.0)
+                try:
+                    msg = await asyncio.wait_for(msg_queue.get(), timeout=1.0)
+                except asyncio.TimeoutError:
+                    # 线程意外死亡 → 重启，保证心跳通道不断
+                    if not thread.is_alive() and session_id in self._runners:
+                        ipc_server = self._ipc_servers.get(session_id)
+                        if ipc_server is None:
+                            break
+                        logger.warning(
+                            "IPC poll thread for session %s died, restarting",
+                            session_id,
+                        )
+                        thread = self._start_poll_thread(
+                            session_id, ipc_server, loop, msg_queue
+                        )
+                    continue
+
                 if msg is None:
                     break
-                self._handle_runner_event(session_id, msg)
-            except asyncio.TimeoutError:
-                continue
+
+                try:
+                    self._handle_runner_event(session_id, msg)
+                except Exception as e:
+                    # 单条消息处理异常不允许拖垮整个监听循环
+                    logger.error(
+                        "Failed to handle IPC message %s for session %s: %s",
+                        getattr(msg, "type", "?"),
+                        session_id,
+                        e,
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(
+                    "IPC listener loop error for session %s: %s", session_id, e
+                )
+                await asyncio.sleep(0.5)
 
     # ==================== 生命周期管理（Web 服务启停） ====================
 

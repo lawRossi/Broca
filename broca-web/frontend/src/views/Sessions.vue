@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, watch, ref } from 'vue'
+import { computed, onMounted, onUnmounted, watch, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore, useSessionStore } from '@/stores'
 import type { Session } from '@/api/session'
@@ -169,16 +169,50 @@ watch(
   { deep: true }
 )
 
-// 监听 sessions 列表变化，重新获取 job counts
-watch(
-  sessions,
-  () => {
-    if (sessions.value.length > 0) {
-      fetchJobCounts()
-    }
-  },
-  { deep: true }
-)
+// 监听会话集合变化，重新获取 job counts
+// 只比较 session_id 列表：状态轮询会替换 sessions 数组（内容相同），
+// 若用 deep watch 每次轮询都会触发 N 个 job 请求
+const sessionIdsKey = computed(() => sessions.value.map((s) => s.session_id).join(','))
+watch(sessionIdsKey, () => {
+  if (sessions.value.length > 0) {
+    fetchJobCounts()
+  }
+})
+
+// ===== Runner 状态轮询 =====
+// 会话列表里的 runner_status 由后端内存中的 RunnerManager 提供，进程崩溃/被回收
+// 时不会主动推送，只能靠轮询发现变化。此前列表页只在挂载/操作后刷新，导致
+// 卡片长期显示过期状态（明明已停止却显示运行中，反之亦然）。
+const STATUS_POLL_INTERVAL = 10000 // 10s，与聊天页 runner 状态轮询保持一致
+let statusPollTimer: ReturnType<typeof setInterval> | null = null
+
+let isPolling = false
+
+const pollSessionsSilently = async () => {
+  // 页面不可见 / 正在加载 / 正在删除 / 上一轮未完成时跳过，避免请求堆积与状态抖动
+  if (document.hidden) return
+  if (isPolling || sessionStore.loading || sessionStore.deleteLoading) return
+  isPolling = true
+  try {
+    await sessionStore.fetchSessions(undefined, true)
+  } catch {
+    // 后台轮询失败静默处理，不打扰用户
+  } finally {
+    isPolling = false
+  }
+}
+
+const startStatusPolling = () => {
+  stopStatusPolling()
+  statusPollTimer = setInterval(pollSessionsSilently, STATUS_POLL_INTERVAL)
+}
+
+const stopStatusPolling = () => {
+  if (statusPollTimer) {
+    clearInterval(statusPollTimer)
+    statusPollTimer = null
+  }
+}
 
 // 组件挂载
 onMounted(async () => {
@@ -191,6 +225,11 @@ onMounted(async () => {
   await sessionStore.fetchHomeDirectory()
   await sessionStore.fetchSessions()
   await fetchJobCounts()
+  startStatusPolling()
+})
+
+onUnmounted(() => {
+  stopStatusPolling()
 })
 </script>
 

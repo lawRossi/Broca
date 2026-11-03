@@ -11,6 +11,28 @@ from pathlib import Path
 from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+# backend 目录（app/core/config.py → core → app → backend）
+# 用于解析 BROCA_CONFIG 等相对路径，使其不依赖进程 CWD。
+BACKEND_DIR = Path(__file__).resolve().parents[2]
+
+# 开发环境专用的 broca 配置文件。生产环境禁止通过 BROCA_CONFIG 指向它
+# （它把 database_dir/log_dir/snapshot_home 都隔离到 backend/.local-data）。
+DEV_CONFIG_FILENAME = "configs.dev.json"
+
+
+def resolve_broca_config_path(raw: str | None) -> Path | None:
+    """把 BROCA_CONFIG 解析成绝对路径。
+
+    相对路径以 backend 目录为基准（而非进程 CWD）。dev.sh / start.sh / pytest
+    的启动目录各不相同，用 CWD 解析会导致同一份 .env 指向不同配置文件。
+    """
+    if not raw or not raw.strip():
+        return None
+    path = Path(raw.strip()).expanduser()
+    if not path.is_absolute():
+        path = (BACKEND_DIR / path).resolve()
+    return path
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
@@ -68,10 +90,13 @@ class Settings(BaseSettings):
 
     # --- Broca 配置路径 ---
     # 指向 configs.json 的路径（传给 broca.configs.get_configs()）
+    # 相对路径以 backend 目录为基准解析，见 resolve_broca_config_path()
     broca_config: str = ""
 
-    # --- 数据库目录覆盖 ---
-    broca_database_dir: str = ""
+    @property
+    def broca_config_path(self) -> Path | None:
+        """BROCA_CONFIG 的绝对路径；未设置时返回 None。"""
+        return resolve_broca_config_path(self.broca_config)
 
     @model_validator(mode="before")
     @classmethod
@@ -86,7 +111,7 @@ class Settings(BaseSettings):
             from urllib.parse import urlparse
 
             # 如果有显式 BROCA_CONFIG 路径，传给 get_configs
-            config_path = values.get("broca_config") or None
+            config_path = resolve_broca_config_path(values.get("broca_config"))
             configs = get_configs(config_path)
         except ImportError:
             # broca core 未安装 — 回退到 .env / 硬编码默认值
@@ -117,6 +142,7 @@ class Settings(BaseSettings):
         """生产环境安全护栏：
         - JWT_SECRET 必须显式设置（不能用默认 dev 值）
         - CORS 不允许通配符 *
+        - BROCA_CONFIG 不允许指向开发专用配置 configs.dev.json
         """
         if self.env == "production":
             _DEV_JWT_DEFAULT = "broca-default-dev-secret-change-in-production"
@@ -129,6 +155,19 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "ENV=production 要求显式设置 CORS_ALLOW_ORIGINS（不允许 *）。"
                     "请设置为具体的域名列表，如 https://example.com。"
+                )
+            # dev 配置把 database_dir/log_dir/snapshot_home 都隔离到
+            # backend/.local-data —— 生产实例读它等于数据凭空"消失"。
+            # 注意：必须比较文件名而非字符串包含，避免误伤
+            # ~/.broca/configs/configs.json 之类路径。
+            config_path = self.broca_config_path
+            if config_path is not None and config_path.name == DEV_CONFIG_FILENAME:
+                raise ValueError(
+                    "ENV=production 不允许 BROCA_CONFIG 指向 configs.dev.json"
+                    f"（当前: {config_path}）。生产环境应指向 "
+                    "~/.broca/configs/configs.json；请检查部署目录里是否残留了 "
+                    ".env.local / .env.production / .env.development —— "
+                    "它们的优先级高于 .env。"
                 )
         return self
 
@@ -148,3 +187,49 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+# broca 核心的"生产"数据根目录。ENV != production 时若仍指向这里，
+# 说明开发实例正在读写生产数据（sessions.db / 日志 / 快照）。
+_PRODUCTION_DATA_ROOTS = (
+    Path.home() / ".broca" / "data",
+    Path.home() / ".broca" / "logs",
+    Path.home() / ".broca" / "snapshots",
+)
+
+
+def check_data_dir_isolation() -> list[str]:
+    """检查非 production 环境下是否误用了生产数据目录。
+
+    Returns:
+        命中的生产路径列表（空列表 = 隔离正常）。
+
+    Note:
+        这是一个纯函数，不做日志输出，方便单测直接断言。
+
+    """
+    if settings.env == "production":
+        return []
+
+    try:
+        from broca.configs import get_configs
+
+        configs = get_configs()
+    except Exception:
+        return []
+
+    hits: list[str] = []
+    for value in (configs.database_dir, configs.log_dir, configs.snapshot_home):
+        if not isinstance(value, str) or not value:
+            continue
+        try:
+            resolved = Path(value).expanduser().resolve()
+        except OSError:
+            continue
+        for root in _PRODUCTION_DATA_ROOTS:
+            root_resolved = root.resolve()
+            if resolved == root_resolved or root_resolved in resolved.parents:
+                hits.append(str(resolved))
+                break
+    return hits
+

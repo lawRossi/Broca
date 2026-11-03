@@ -190,12 +190,13 @@ class InfoSidebar(Widget):
         color_map = {
             "alive": "● 运行中",
             "starting": "◐ 启动中",
+            "shutting_down": "◐ 停止中",
             "error": "● 异常",
             "dead": "○ 已停止",
             "none": "○ 已停止",
             "unknown": "-",
         }
-        display = color_map.get(status, f"● {status}")
+        display = color_map.get(status, "-")
         status_label.update(display)
 
         # 对齐 Web：不同状态显示不同按钮
@@ -206,14 +207,15 @@ class InfoSidebar(Widget):
             "unknown",
             "error",
             "starting",
+            "shutting_down",
         )
         self.query_one("#btn-stop-runner").display = status == "alive"
         self.query_one("#btn-restart-runner").display = status == "error"
 
-        # 所有按钮在 starting/loading 时禁用
+        # 所有按钮在 starting/shutting_down/loading 时禁用
         for btn_id in ("#btn-start-runner", "#btn-stop-runner", "#btn-restart-runner"):
             self.query_one(btn_id).disabled = (
-                status == "starting"
+                status in ("starting", "shutting_down")
             ) or self.runner_action_loading
 
     def watch_runner_action_loading(self, loading: bool):

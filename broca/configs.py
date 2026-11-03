@@ -38,6 +38,11 @@ class ExecutionConfig:
         self.tool_execution_mode = "parallel"  # 工具执行方式: "parallel" | "serial"
         self.max_parallel_tools = 10  # 并行模式下最大同时执行的工具数
         self.max_concurrent_runners = 10  # 最大并发 session runner 数
+        # Session Runner 心跳（子进程 → Web 进程）
+        # 发送间隔 5s、判定超时 45s（≈9 个周期）、巡检间隔 15s
+        self.runner_heartbeat_interval = 5  # Runner 上报心跳间隔（秒）
+        self.runner_heartbeat_timeout = 45  # 心跳超时判定阈值（秒）
+        self.runner_heartbeat_check_interval = 15  # Manager 心跳巡检间隔（秒）
 
     @classmethod
     def from_config(cls, config):

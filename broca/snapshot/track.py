@@ -7,6 +7,7 @@
   所有 Git 操作通过 GitManager 的文件锁保护，确保多进程并发访问安全。
 """
 
+import asyncio
 import os
 from pathlib import Path
 from typing import List, Optional
@@ -49,9 +50,11 @@ class SnapshotTracker:
 
     async def _track_snapshot(self, ignore_patterns: Optional[list[str]] = None) -> str:
         """实际执行快照捕获（在文件锁保护下原子执行）"""
-        self.git_manager.ensure_initialized()
-
-        self.git_manager.acquire_lock(blocking=True)
+        # ensure_initialized / acquire_lock 都是同步阻塞操作（git init、fcntl.flock）。
+        # 必须在工作线程执行，否则会卡住 runner 的事件循环——心跳任务同样跑在
+        # 该事件循环上，阻塞超过心跳超时阈值就会被 Manager 误判为进程异常。
+        await asyncio.to_thread(self.git_manager.ensure_initialized)
+        await asyncio.to_thread(self.git_manager.acquire_lock, True)
         try:
             # 同步忽略规则
             self.git_manager.sync_ignore_rules(ignore_patterns)
