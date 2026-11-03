@@ -227,6 +227,8 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
             response_agents.append(response_agent)
 
         return ApiResponse.success(response_agents)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Error getting session agents")
         raise HTTPException(500, f"Internal server error: {e!s}") from e

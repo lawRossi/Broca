@@ -17,7 +17,7 @@ class Settings(BaseSettings):
 
     # 服务器配置
     host: str = os.getenv("HOST", "0.0.0.0")  # noqa: S104
-    port: int = int(os.getenv("PORT", "8000"))
+    port: int = int(os.getenv("PORT", "9000"))
 
     # JWT 配置（自有认证系统）
     jwt_secret: str = os.getenv("JWT_SECRET", "broca-default-dev-secret-change-in-production")
@@ -25,7 +25,7 @@ class Settings(BaseSettings):
     jwt_expire_minutes: int = int(os.getenv("JWT_EXPIRE_MINUTES", "2880"))
 
     class Config:  # noqa: D106
-        env_file: ClassVar[list[str]] = [".env.local", ".env.production", ".env.development"]
+        env_file: ClassVar[list[str]] = [".env", ".env.local", ".env.production", ".env.development"]
 
     @property
     def async_database_url(self) -> str:

@@ -572,7 +572,7 @@ touch "$ENV_FILE"
 sed_inplace -e '/^VITE_API_BASE_URL=/d' "$ENV_FILE"
 echo "# VITE_API_BASE_URL=" >> "$ENV_FILE"
 sed_inplace -e '/^VITE_BROCA_SOCKET_SERVER_URL=/d' "$ENV_FILE"
-echo "# VITE_BROCA_SOCKET_SERVER_URL=" >> "$ENV_FILE"
+echo "VITE_BROCA_SOCKET_SERVER_URL=" >> "$ENV_FILE"
 
 echo ""
 fi  # SKIP_FRONTEND

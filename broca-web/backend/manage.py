@@ -12,6 +12,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.absolute()
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# Load .env files (order: .env → .env.local → .env.development, later overrides earlier)
+from dotenv import load_dotenv
+for _env_file in (".env", ".env.local", ".env.development"):
+    _path = PROJECT_ROOT / _env_file
+    if _path.exists():
+        load_dotenv(_path, override=False)
+
 # 配置日志
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)

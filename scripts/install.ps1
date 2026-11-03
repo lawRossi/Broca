@@ -523,7 +523,7 @@ VITE_SUPABASE_BUCKET=$supabaseBucket
 
 # API 基地址使用相对路径（由 nginx/IIS 代理）
 "# VITE_API_BASE_URL=" | Out-File $envFile -Append -Encoding UTF8
-"# VITE_BROCA_SOCKET_SERVER_URL=" | Out-File $envFile -Append -Encoding UTF8
+"VITE_BROCA_SOCKET_SERVER_URL=" | Out-File $envFile -Append -Encoding UTF8
 
 # ============================================================================
 # Step 7: 安装前端依赖并构建（需要 Node.js）

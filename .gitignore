@@ -173,9 +173,7 @@ jspm_packages/
 # Yarn Integrity file
 .yarn-integrity
 
-# dotenv environment variables file
-.env
-.env.local
+# dotenv environment variables file (.env 已在上方 Environments 段忽略)
 .env.development.local
 .env.test.local
 .env.production.local

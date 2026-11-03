@@ -4,6 +4,15 @@
 BACKEND_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$BACKEND_DIR"
 
+# Load .env files (order: .env → .env.local → .env.development, later overrides earlier)
+for env_file in .env .env.local .env.development; do
+    if [ -f "$env_file" ]; then
+        set -a
+        source "$env_file"
+        set +a
+    fi
+done
+
 # Fix sherpa-onnx dylib path on macOS (libonnxruntime.dylib symlink)
 if [ "$(uname)" = "Darwin" ]; then
     SHERPA_LIB=$(python3 -c "import sherpa_onnx, os; print(os.path.join(os.path.dirname(sherpa_onnx.__file__), 'lib'))" 2>/dev/null)
@@ -25,4 +34,5 @@ if [ -f "scripts/download_asr_model.py" ]; then
     fi
 fi
 
-nohup uvicorn app.main:app --port 9000 2>&1 &
+PORT="${PORT:-9000}"
+nohup uvicorn app.main:app --port "$PORT" 2>&1 &

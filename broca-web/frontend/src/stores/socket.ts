@@ -4,7 +4,11 @@ import { ElMessage } from 'element-plus'
 import { useUserStore } from '@/stores'
 import { BrocaSocketClient, type Message } from '@/api/brocaSocket'
 
-const serverUrl = import.meta.env.VITE_BROCA_SOCKET_SERVER_URL
+// Fallback: 若 env 未显式配置（install.sh 会将 .env.production 中该变量置空），
+// 则使用 window.location.origin 同域连接，依赖 nginx 的 /socket.io/ 反向代理。
+// 开发模式下 .env 中配置了 http://127.0.0.1:6868，会直接使用该值。
+const envUrl = import.meta.env.VITE_BROCA_SOCKET_SERVER_URL
+const serverUrl = envUrl || window.location.origin
 
 export const useSocketStore = defineStore('socket', () => {
   const userStore = useUserStore()
