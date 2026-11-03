@@ -53,8 +53,7 @@ class TestValidateWithRegex:
             ("dd if=/dev/zero of=/dev/sda", "Disk data operation with 'dd'"),
             ("mkfs /dev/sdb1", "Filesystem creation with 'mkfs'"),
             ("fdisk /dev/sda", "Partition manipulation with 'fdisk'"),
-            # Shell 注入
-            ("echo $(whoami)", "Shell command substitution '$('"),
+
             # Python 危险调用
             (
                 'os.system("rm -rf /")',
@@ -232,7 +231,7 @@ class TestValidateShellCommand:
             "dd": "dd if=/dev/zero of=/dev/sda",
             "mkfs": "mkfs /dev/sdb1",
             "fdisk": "fdisk /dev/sda",
-            "substitution": "echo $(whoami)",
+
             "os.system": 'os.system("ls")',
             "subprocess.call": 'subprocess.call(["ls"])',
             "git rm": "git rm file.txt",

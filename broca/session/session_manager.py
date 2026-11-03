@@ -18,7 +18,9 @@ if TYPE_CHECKING:
 from litellm import Message as LLMMessage
 
 from broca.errors import SessionError
+from broca.components.session_manager import SessionManager as SessionManagerABC
 from broca.logging_config import get_logger
+from broca.session.database import db_manager
 from broca.session.models import Message, MessageRole, MessageType
 from broca.session.service import (
     AgentConfigService,
@@ -37,9 +39,9 @@ from broca.tools.tool import ToolResult
 logger = get_logger(__name__)
 
 
-class SessionManager:
+class SQLSessionManager(SessionManagerABC):
     """
-    Session管理器
+    Session管理器（默认实现）
 
     负责session的创建、保存、加载和管理，与现有Agent系统集成，
     实现session持久化和重载能力。
@@ -184,7 +186,7 @@ class SessionManager:
             if content:
                 message_data["content"] = content
 
-            seq_num = await self.message_service.get_next_sequence_number(
+            seq_num = await self.message_service.next_sequence_for_session(
                 self.session_id
             )
 
@@ -261,30 +263,40 @@ class SessionManager:
         try:
             await self._ensure_initialized()
             turn_id = f"turn_{uuid.uuid4().hex[:16]}"
-            seq_num = await self.turn_service.get_next_sequence_number(self.session_id)
 
-            turn = await self.turn_service.create_turn(
-                turn_id=turn_id,
-                session_id=self.session_id,
-                agent_id=agent_id,
-                sequence_number=seq_num,
-                turn_description=description,
-                execution_id=self.current_execution_id,
-            )
-            if not turn:
-                return None
+            async with db_manager.get_multi_session() as db_session:
+                # 1. 获取 turn 序列号
+                seq_num = await self.turn_service.next_turn_seq_in_session(
+                    db_session, self.session_id
+                )
+                # 2. 创建 turn 记录
+                await self.turn_service.create_turn_in_session(
+                    db_session,
+                    turn_id=turn_id,
+                    session_id=self.session_id,
+                    agent_id=agent_id,
+                    sequence_number=seq_num,
+                    turn_description=description,
+                    execution_id=self.current_execution_id,
+                )
+                # 3. 创建 TURN_START 消息
+                msg_seq = await self.message_service.next_sequence_in_session(
+                    db_session, self.session_id
+                )
+                await self.message_service.create_message_in_session(
+                    db_session,
+                    message_id=f"msg_{uuid.uuid4().hex[:16]}",
+                    session_id=self.session_id,
+                    turn_id=turn_id,
+                    agent_id=agent_id,
+                    role=MessageRole.AGENT,
+                    message_type=MessageType.TURN_START,
+                    sequence_number=msg_seq,
+                    data={},
+                )
 
-            if not await self.save_message(
-                role=MessageRole.AGENT,
-                content="",
-                message_type=MessageType.TURN_START,
-                turn_id=turn_id,
-                agent_id=agent_id,
-            ):
-                return None
-
+            # 自动 commit 在 context exit 时发生
             logger.info(f"Started new turn: {turn_id}")
-
             return turn_id
 
         except Exception as e:
@@ -654,3 +666,6 @@ class SessionManager:
             message_ids_to_mark, is_truncated=True
         )
         return count
+
+# Backward-compatibility alias
+SessionManager = SQLSessionManager

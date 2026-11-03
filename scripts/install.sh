@@ -154,6 +154,12 @@ for arg in "$@"; do
     esac
 done
 
+# ---- 端口配置（可通过环境变量覆盖）----
+# 后端 HTTP 端口 (默认 9000)
+BROCA_BACKEND_PORT="${PORT:-9000}"
+# SocketIO 端口 (默认 6868)
+BROCA_SOCKETIO_PORT="${BROCA_SOCKETIO_PORT:-6868}"
+
 echo -e "${BLUE}"
 echo "==========================================="
 echo "       Broca - One-Click Installer"
@@ -543,6 +549,22 @@ else
     exit 1
 fi
 
+# 生成后端 .env 文件（纯文件配置，替代环境变量注入）
+BACKEND_ENV_FILE="$BROCA_WEB_DIR/backend/.env"
+cat > "$BACKEND_ENV_FILE" << ENVEOF
+# 生产环境配置（由 install.sh 自动生成）
+ENV=production
+PORT=${BROCA_BACKEND_PORT}
+BROCA_SOCKETIO_PORT=${BROCA_SOCKETIO_PORT}
+BROCA_CONFIG=${BROCA_HOME}/configs/configs.json
+BROCA_DATABASE_DIR=${BROCA_HOME}/data
+SQLITE_DATABASE_PATH=sqlite:///${BROCA_HOME}/data/backend.db
+BROCA_LLM_CONFIG=${BROCA_HOME}/configs/llm_config.json
+JWT_SECRET=${JWT_SECRET:-}
+CORS_ALLOW_ORIGINS=${CORS_ORIGINS:-*}
+ENVEOF
+info "后端 .env 已生成: $BACKEND_ENV_FILE"
+
 # 复制前端源码（不含 node_modules/dist）
 if [[ -d "$PROJECT_ROOT/broca-web/frontend" ]]; then
     rsync -a --delete \
@@ -686,7 +708,7 @@ if $SKIP_FRONTEND; then
         info "跳过前端部署和 VS Code 插件打包（未检测到 Node.js）"
     fi
     echo "  提示: 可使用 VS Code 插件连接后端服务"
-    echo "  后端服务端口: 9000"
+    echo "  后端服务端口: ${BROCA_BACKEND_PORT}"
 else
 step "Step 6/8: 配置前端部署方式..."
 
@@ -830,7 +852,7 @@ server {
 
     # API 反向代理 (后端, 含 WebSocket)
     location /api/ {
-        proxy_pass http://127.0.0.1:9000;
+        proxy_pass http://127.0.0.1:${BROCA_BACKEND_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -843,7 +865,7 @@ server {
 
     # Socket.IO 反向代理
     location /socket.io/ {
-        proxy_pass http://127.0.0.1:6868;
+        proxy_pass http://127.0.0.1:${BROCA_SOCKETIO_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -881,7 +903,7 @@ server {
 
     # API 反向代理 (后端, 含 WebSocket)
     location /api/ {
-        proxy_pass http://127.0.0.1:9000;
+        proxy_pass http://127.0.0.1:${BROCA_BACKEND_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -894,7 +916,7 @@ server {
 
     # Socket.IO 反向代理
     location /socket.io/ {
-        proxy_pass http://127.0.0.1:6868;
+        proxy_pass http://127.0.0.1:${BROCA_SOCKETIO_PORT};
         proxy_http_version 1.1;
         proxy_set_header Upgrade \$http_upgrade;
         proxy_set_header Connection "upgrade";
@@ -1023,7 +1045,7 @@ serverurl=unix://$SUPERVISOR_DIR/supervisor.sock
 ; Backend (FastAPI / Uvicorn)
 ; ====================
 [program:backend]
-command=$BROCA_VENV/bin/uvicorn app.main:app --host $BACKEND_HOST --port 9000 --log-level info
+command=$BROCA_VENV/bin/uvicorn app.main:app --host $BACKEND_HOST --port ${BROCA_BACKEND_PORT} --log-level info
 directory=$BROCA_WEB_DIR/backend
 user=$USER
 autostart=true
@@ -1033,7 +1055,7 @@ stderr_logfile=$LOG_DIR/backend.err.log
 stdout_logfile=$LOG_DIR/backend.out.log
 stdout_logfile_maxbytes=20MB
 stderr_logfile_maxbytes=20MB
-environment=PYTHONPATH="$BROCA_WEB_DIR/backend",BROCA_CONFIG="$BROCA_HOME/configs/configs.json",BROCA_DATABASE_DIR="$BROCA_HOME/data",BROCA_LLM_CONFIG="$BROCA_HOME/configs/llm_config.json",BROCA_AGENTS_CONFIG_DIR="$BROCA_HOME/configs/agents",BROCA_LOG_DIR="$BROCA_HOME/logs",SQLITE_DATABASE_PATH="sqlite:///${BROCA_HOME}/data/backend.db"
+environment=PYTHONPATH="$BROCA_WEB_DIR/backend"
 stopasgroup=true
 killasgroup=true
 SUPEOF
@@ -1066,7 +1088,7 @@ cat > "$BROCA_HOME/install.json" << JSONEOF
   "frontend_mode": $([ "$SKIP_FRONTEND" = true ] && echo '"none"' || echo '"nginx"'),
   "frontend_dist": "$FRONTEND_DIR/dist",
   "nginx_dist_dir": "$NGINX_DIST_DIR",
-  "backend_port": 9000,
+  "backend_port": ${BROCA_BACKEND_PORT},
   "frontend_port": $([ "$SKIP_FRONTEND" = true ] && echo 'null' || { [ "$ENABLE_HTTPS" = "true" ] && echo '8443' || echo '5166'; }),
   "enable_https": $([ "$SKIP_FRONTEND" = true ] && echo 'false' || echo "$ENABLE_HTTPS"),
   "skip_frontend": $SKIP_FRONTEND
@@ -1166,14 +1188,14 @@ echo "  日志目录:   $LOG_DIR"
 if $SKIP_FRONTEND; then
     if $HAS_NODE; then
         echo "  前端:       未部署（未安装 nginx）"
-        echo "  后端端口:   9000"
+        echo "  后端端口:   ${BROCA_BACKEND_PORT}"
         echo ""
         echo "  快速开始:"
         echo "    broca service start      # 启动后端服务"
         echo "    broca service stop       # 停止后端服务"
         echo "    broca service status     # 查看服务状态"
         echo ""
-        echo "  访问后端 API: http://localhost:9000"
+        echo "  访问后端 API: http://localhost:${BROCA_BACKEND_PORT}"
         echo "  如需前端页面，请安装 VS Code 插件或重新安装 nginx 后运行:"
         echo "    sudo apt install nginx   # Ubuntu"
         echo "    brew install nginx       # macOS"
@@ -1181,14 +1203,14 @@ if $SKIP_FRONTEND; then
     else
         echo "  前端:       未部署（未检测到 Node.js）"
         echo "  VS Code 插件: 未打包（需要 Node.js）"
-        echo "  后端端口:   9000"
+        echo "  后端端口:   ${BROCA_BACKEND_PORT}"
         echo ""
         echo "  快速开始:"
         echo "    broca service start      # 启动后端服务"
         echo "    broca service stop       # 停止后端服务"
         echo "    broca service status     # 查看服务状态"
         echo ""
-        echo "  访问后端 API: http://localhost:9000"
+        echo "  访问后端 API: http://localhost:${BROCA_BACKEND_PORT}"
         echo "  如需前端页面或 VS Code 插件，请安装 Node.js 后重新运行:"
         echo "    broca service install    # 重新安装"
     fi

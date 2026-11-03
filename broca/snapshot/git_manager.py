@@ -15,6 +15,7 @@ import errno
 import hashlib
 import os
 import shutil
+import threading
 import time
 from pathlib import Path
 from typing import Optional
@@ -225,26 +226,36 @@ class FileLock:
 
 
 class GitManager:
-    """Git 仓库管理器（每个 workspace 只有一个实例）"""
+    """Git 仓库管理器（每个 workspace 只有一个实例）
+
+    线程安全：_class_lock 保护 _instances 字典的并发访问；
+    每个实例有 _instance_lock 防止并发初始化。
+    """
 
     _instances: dict[str, "GitManager"] = {}
+    _class_lock = threading.Lock()
 
     def __new__(cls, workspace_path: str):
         normalized = str(Path(workspace_path).resolve())
-        if normalized not in cls._instances:
-            instance = super().__new__(cls)
-            instance._initialized = False  # type: ignore[has-type]
-            cls._instances[normalized] = instance
+        with cls._class_lock:
+            if normalized not in cls._instances:
+                instance = super().__new__(cls)
+                instance._initialized = False  # type: ignore[has-type]
+                instance._instance_lock = threading.Lock()  # type: ignore[has-type]
+                cls._instances[normalized] = instance
         return cls._instances[normalized]
 
     def __init__(self, workspace_path: str):
-        if self._initialized:  # type: ignore[has-type]
+        if getattr(self, "_initialized", False):
             return
-        self._initialized = True
-        self.workspace_path = Path(workspace_path).resolve()
-        self.repo_path = self._get_repo_path()
-        self.repo: Optional[git.Repo] = None
-        self._file_lock: Optional[FileLock] = None
+        with self._instance_lock:  # type: ignore[attr-defined]
+            if self._initialized:  # type: ignore[attr-defined]  # double-check
+                return
+            self._initialized = True  # type: ignore[attr-defined]
+            self.workspace_path = Path(workspace_path).resolve()
+            self.repo_path = self._get_repo_path()
+            self.repo: Optional[git.Repo] = None
+            self._file_lock: Optional[FileLock] = None
 
     @property
     def _lock(self) -> FileLock:
@@ -264,9 +275,8 @@ class GitManager:
         workspace_str = str(self.workspace_path)
         workspace_hash = hashlib.sha256(workspace_str.encode()).hexdigest()[:16]
 
-        snapshot_home = os.environ.get(
-            "BROCA_SNAPSHOT_HOME", os.path.expanduser("~/.broca/snapshots")
-        )
+        from broca.configs import get_configs
+        snapshot_home = get_configs().snapshot_home or os.path.expanduser("~/.broca/snapshots")
         repo_dir = Path(snapshot_home) / workspace_hash
 
         return repo_dir

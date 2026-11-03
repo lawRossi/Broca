@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from dataclasses import dataclass
 
 from broca.communication.socketio_server import SocketIOServer
@@ -24,7 +25,9 @@ logger = logging.getLogger(__name__)
 class SocketIOServerConfig:
     enabled: bool = True
     host: str = "0.0.0.0"  # noqa: S104
-    port: int = 6868
+    # 默认值仅为 fallback；实际端口由 main.py 从 settings.socketio_port 传入
+    # (优先级: BROCA_SOCKETIO_PORT env > configs.json > 6666)
+    port: int = 6666
     cors_allowed_origins: str = "*"
 
 

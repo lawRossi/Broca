@@ -15,6 +15,7 @@ from socketio import AsyncClient
 from broca.logging_config import get_logger
 from broca.errors import CommunicationError
 from broca.session.models import Message, MessageProtocol, MessageRole, MessageType
+from broca.components.communicator import Communicator
 
 logger = get_logger(__name__)
 
@@ -31,7 +32,64 @@ class ConnectionInfo:
     subscriptions: List[str] = field(default_factory=list)
 
 
-class SocketIOClient:
+class _MessageDispatcher:
+    """消息事件分发器：根据 message_type 路由到对应的 event handler。
+
+    从 SocketIOClient 提取，将 if-elif 链替换为 dispatch table 查找。
+    """
+
+    def __init__(self, trigger_event: Callable, get_connection_info: Callable):
+        self._trigger = trigger_event
+        self._get_info = get_connection_info
+        self._table: Dict[MessageType, str] = {
+            MessageType.USER_MESSAGE: "user_message",
+            MessageType.AGENT_RESPONSE: "agent_response",
+            MessageType.TASK_START: "task_start",
+            MessageType.TASK_COMPLETE: "task_complete",
+            MessageType.TASK_ERROR: "task_error",
+            MessageType.TURN_START: "turn_start",
+            MessageType.TURN_END: "turn_end",
+            MessageType.TOOL_CALL: "tool_call",
+            MessageType.COMMAND: "command",
+            MessageType.COMMAND_RESULT: "command_result",
+            MessageType.PERMISSION_REQUEST: "permission_request",
+            MessageType.PERMISSION_RESPONSE: "permission_response",
+            MessageType.AGENT_QUERY: "agent_query",
+            MessageType.USER_ANSWER: "user_answer",
+            MessageType.ERROR: "error",
+            MessageType.SUBSCRIBE: "subscribe",
+            MessageType.UNSUBSCRIBE: "unsubscribe",
+            MessageType.BROADCAST: "broadcast",
+        }
+
+    async def dispatch(self, message: Message) -> None:
+        # subscribe/unsubscribe 有额外副作用
+        if message.message_type == MessageType.SUBSCRIBE:
+            info = self._get_info()
+            if message.subscription and message.subscription not in info.subscriptions:
+                info.subscriptions.append(message.subscription)
+            await self._trigger("subscribe", message)
+            return
+        if message.message_type == MessageType.UNSUBSCRIBE:
+            info = self._get_info()
+            if message.subscription and message.subscription in info.subscriptions:
+                info.subscriptions.remove(message.subscription)
+            await self._trigger("unsubscribe", message)
+            return
+
+        # ERROR 类型有额外日志
+        if message.message_type == MessageType.ERROR:
+            logger.error(f"Error from server: {message.data.get('error_message')}")
+
+        # 通用 dispatch
+        event_name = self._table.get(message.message_type)
+        if event_name is None:
+            logger.debug(f"Unhandled message type: {message.message_type}")
+            return
+        await self._trigger(event_name, message)
+
+
+class SocketIOClient(Communicator):
     """
     Socket.io client for multi-endpoint communication.
 
@@ -45,7 +103,7 @@ class SocketIOClient:
 
     def __init__(
         self,
-        server_url: str = "http://localhost:6868",
+        server_url: str = "http://localhost:6666",
         client_type: str = "cli",
         client_id: Optional[str] = None,
         user_id: Optional[str] = None,
@@ -86,6 +144,9 @@ class SocketIOClient:
 
         # Event handlers
         self.event_handlers: Dict[str, List[Callable]] = {}
+
+        # Message dispatcher
+        self._dispatcher = _MessageDispatcher(self._trigger_event, self.get_connection_info)
 
         # Message callbacks
         self.message_callbacks: Dict[str, Callable] = {}
@@ -153,25 +214,14 @@ class SocketIOClient:
         async def message(data):
             """Handle incoming messages"""
             try:
-                # Parse message
                 message_data = json.loads(data) if isinstance(data, str) else data
                 message = MessageProtocol.from_dict(message_data)
-
-                # Log message
                 logger.debug(f"Received message: {message}")
-
-                # Handle message based on type
-                await self._handle_message(message)
-
-                # Trigger message event
+                await self._dispatcher.dispatch(message)
                 await self._trigger_event("message", message)
-
-                # Call message callback if exists
                 if message.message_id in self.message_callbacks:
-                    callback = self.message_callbacks[message.message_id]
+                    callback = self.message_callbacks.pop(message.message_id)
                     await callback(message)
-                    del self.message_callbacks[message.message_id]
-
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse message: {e}")
             except Exception as e:
@@ -182,122 +232,6 @@ class SocketIOClient:
             """Handle error messages"""
             logger.error(f"Server error: {data}")
             await self._trigger_event("error", data)
-
-    async def _handle_message(self, message: Message):
-        """Handle incoming message"""
-        if message.message_type == MessageType.USER_MESSAGE:
-            await self._handle_user_message(message)
-        elif message.message_type == MessageType.AGENT_RESPONSE:
-            await self._handle_agent_response(message)
-        elif message.message_type == MessageType.TASK_START:
-            await self._handle_task_start(message)
-        elif message.message_type == MessageType.TASK_COMPLETE:
-            await self._handle_task_complete(message)
-        elif message.message_type == MessageType.TURN_START:
-            await self._handle_turn_start(message)
-        elif message.message_type == MessageType.TURN_END:
-            await self._handle_turn_end(message)
-        elif message.message_type == MessageType.TOOL_CALL:
-            await self._handle_tool_call(message)
-        elif message.message_type == MessageType.COMMAND:
-            await self._handle_command(message)
-        elif message.message_type == MessageType.COMMAND_RESULT:
-            await self._handle_command_result(message)
-        elif message.message_type == MessageType.PERMISSION_REQUEST:
-            await self._handle_permission_request(message)
-        elif message.message_type == MessageType.PERMISSION_RESPONSE:
-            await self._handle_permission_response(message)
-        elif message.message_type == MessageType.AGENT_QUERY:
-            await self._handle_agent_query(message)
-        elif message.message_type == MessageType.USER_ANSWER:
-            await self._handle_user_answer(message)
-        elif message.message_type == MessageType.ERROR:
-            await self._handle_error(message)
-        elif message.message_type == MessageType.SUBSCRIBE:
-            await self._handle_subscribe(message)
-        elif message.message_type == MessageType.UNSUBSCRIBE:
-            await self._handle_unsubscribe(message)
-        elif message.message_type == MessageType.BROADCAST:
-            await self._handle_broadcast(message)
-
-    async def _handle_user_message(self, message: Message):
-        """Handle user message"""
-        await self._trigger_event("user_message", message)
-
-    async def _handle_agent_response(self, message: Message):
-        """Handle agent response"""
-        await self._trigger_event("agent_response", message)
-
-    async def _handle_task_start(self, message: Message):
-        """Handle task start"""
-        await self._trigger_event("task_start", message)
-
-    async def _handle_task_complete(self, message: Message):
-        """Handle task complete"""
-        await self._trigger_event("task_complete", message)
-
-    async def _handle_turn_start(self, message: Message):
-        """Handle turn start"""
-        await self._trigger_event("turn_start", message)
-
-    async def _handle_turn_end(self, message: Message):
-        """Handle turn end"""
-        await self._trigger_event("turn_end", message)
-
-    async def _handle_tool_call(self, message: Message):
-        """Handle tool call"""
-        await self._trigger_event("tool_call", message)
-
-    async def _handle_command(self, message: Message):
-        """Handle command"""
-        await self._trigger_event("command", message)
-
-    async def _handle_command_result(self, message: Message):
-        """Handle command result"""
-        await self._trigger_event("command_result", message)
-
-    async def _handle_error(self, message: Message):
-        """Handle error message"""
-        logger.error(f"Error from server: {message.data.get('error_message')}")
-        await self._trigger_event("error", message)
-
-    async def _handle_subscribe(self, message: Message):
-        """Handle subscribe acknowledgment"""
-        if (
-            message.subscription
-            and message.subscription not in self.connection_info.subscriptions
-        ):
-            self.connection_info.subscriptions.append(message.subscription)
-        await self._trigger_event("subscribe", message)
-
-    async def _handle_unsubscribe(self, message: Message):
-        """Handle unsubscribe acknowledgment"""
-        if (
-            message.subscription
-            and message.subscription in self.connection_info.subscriptions
-        ):
-            self.connection_info.subscriptions.remove(message.subscription)
-        await self._trigger_event("unsubscribe", message)
-
-    async def _handle_broadcast(self, message: Message):
-        """Handle broadcast message"""
-        await self._trigger_event("broadcast", message)
-
-    async def _handle_permission_request(self, message: Message):
-        """Handle permission request"""
-        await self._trigger_event("permission_request", message)
-
-    async def _handle_permission_response(self, message: Message):
-        """Handle permission response"""
-        await self._trigger_event("permission_response", message)
-
-    async def _handle_agent_query(self, message: Message):
-        """Handle agent query"""
-        await self._trigger_event("agent_query", message)
-
-    async def _handle_user_answer(self, message: Message):
-        """Handle user answer"""
-        await self._trigger_event("user_answer", message)
 
     async def _trigger_event(self, event_name: str, *args):
         """Trigger event handlers"""
@@ -458,9 +392,9 @@ class SocketIOClient:
     async def send_user_message(
         self,
         content: str,
+        subscription: Optional[str] = None,
         receiver_id: Optional[str] = None,
         room: Optional[str] = None,
-        subscription: Optional[str] = None,
         callback: Optional[Callable] = None,
     ) -> str:
         """Send user message"""
@@ -496,16 +430,17 @@ class SocketIOClient:
 
     async def send_tool_call(
         self,
-        tool_name: str,
-        arguments: Dict[str, Any],
-        tool_call_id: str,
-        result: Optional[str] = None,
-        status: Optional[bool] = None,
+        tool_call_id: Optional[str] = None,
+        tool_name: str = "",
+        arguments: Any = None,
         turn_id: Optional[str] = None,
         agent_id: Optional[str] = None,
+        subscription: Optional[str] = None,
+        # 以下为 SocketIOClient 扩展参数
+        result: Optional[str] = None,
+        status: Optional[bool] = None,
         receiver_id: Optional[str] = None,
         room: Optional[str] = None,
-        subscription: Optional[str] = None,
         callback: Optional[Callable] = None,
         message_id: Optional[str] = None,
     ) -> str:
@@ -950,3 +885,22 @@ class SocketIOClient:
     def get_subscriptions(self) -> List[str]:
         """Get list of subscriptions"""
         return self.connection_info.subscriptions.copy()
+
+    async def initialize(
+        self,
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
+        config: Any = None,
+    ) -> None:
+        """延迟初始化（registry 无参构造后调用）"""
+        self._session_id = session_id
+        if agent_id is not None:
+            self.client_id = agent_id
+            self.connection_info.client_id = agent_id
+            if config is not None and getattr(config, "server_url", None):
+                self.server_url = config.server_url
+                self.connection_info.server_url = config.server_url
+
+    async def shutdown(self) -> None:
+        """BaseComponent 生命周期：断开 SocketIO 连接。"""
+        await self.disconnect()

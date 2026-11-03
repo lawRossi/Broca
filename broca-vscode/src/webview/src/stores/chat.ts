@@ -281,10 +281,12 @@ export const useChatStore = defineStore('chat', () => {
   // ==================== 简洁模式计算属性 ====================
   const filteredTurnSummaries = computed(() => {
     const visibleIds = visibleAgentIds.value
-    const base = turnSummaries.value.filter((t) => !(t.isActive && t.status === 'error'))
+    let base = turnSummaries.value.filter((t) => !(t.isActive && t.status === 'error'))
     // 应用 Agent 可见性过滤（与 filteredMessages 一致）
-    if (visibleIds.length === 0) return base
-    return base.filter((t) => visibleIds.includes(t.agentId))
+    if (visibleIds.length > 0) {
+      base = base.filter((t) => visibleIds.includes(t.agentId))
+    }
+    return base
   })
 
   // ==================== 消息处理 ====================
@@ -348,9 +350,13 @@ export const useChatStore = defineStore('chat', () => {
             last_context_length: a.last_context_length,
           }))
           agents.value = agentList
-          // 用户未手动筛选过时，默认全部可见
+          // 用户未手动筛选过时，默认全部可见（explorer / 记忆提取子 agent 默认隐藏）
           if (!_userModified) {
-            visibleAgentIds.value = agentList.map((a: any) => a.agent_id)
+            const HIDDEN_NAMES = new Set(['explorer'])
+            const HIDDEN_ROLES = new Set(['session_memory_manager', 'persistent_memory_manager'])
+            visibleAgentIds.value = agentList
+              .filter((a) => !HIDDEN_NAMES.has(a.name || '') && !HIDDEN_ROLES.has(a.role || ''))
+              .map((a) => a.agent_id)
           }
           // Initialize agent statuses to 'idle' for all known agents
           const initialStatuses: Record<string, AgentStatus> = {}
@@ -1320,8 +1326,8 @@ export const useChatStore = defineStore('chat', () => {
           }
         }
 
-        // 提取 TODO 列表（todo_management，调用失败时不更新）
-        if (toolName === 'todo_management' && message.data?.status !== 'error') {
+        // 提取 TODO 列表（todo_management，仅成功结果才更新；start broadcast 无 status 字段）
+        if (toolName === 'todo_management' && message.data?.status === 'success') {
           const args = message.data?.arguments
           if (args) {
             try {

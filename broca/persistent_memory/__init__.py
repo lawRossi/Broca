@@ -20,7 +20,7 @@ from .types import (
 )
 from .store import MemoryStore
 from .state import PersistentMemoryState
-from .manager import PersistentMemoryManager
+from .manager import SubAgentMemoryManager, PersistentMemoryManager
 from .prompts import build_extraction_prompt
 
 __all__ = [
@@ -30,6 +30,7 @@ __all__ = [
     "INDEX_LINE_RE",
     "MemoryStore",
     "PersistentMemoryState",
+    "SubAgentMemoryManager",
     "PersistentMemoryManager",
     "build_extraction_prompt",
     "parse_frontmatter",

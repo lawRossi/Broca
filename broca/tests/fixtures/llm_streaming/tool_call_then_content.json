@@ -1,0 +1,46 @@
+{
+  "name": "tool_call_then_content",
+  "chunks": [
+    {
+      "type": "tool_call",
+      "data": {
+        "id": "call_1",
+        "index": 0,
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\": \"ls\"}"
+        }
+      }
+    },
+    {
+      "type": "content",
+      "data": "done"
+    }
+  ],
+  "expected_message": {
+    "content": "done",
+    "reasoning_content": null,
+    "tool_calls": [
+      {
+        "id": "call_1",
+        "type": "function",
+        "function": {
+          "name": "bash",
+          "arguments": "{\"command\": \"ls\"}"
+        }
+      }
+    ]
+  },
+  "expected_on_chunk_events": [
+    {
+      "type": "tool_call",
+      "id": "call_1"
+    },
+    {
+      "type": "content",
+      "data": "done",
+      "index": 0
+    }
+  ]
+}

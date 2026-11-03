@@ -800,7 +800,7 @@ def _win_nssm_start_services(wait: bool = True) -> dict[str, Any]:
     # 前端 (nginx)
     running, status = _win_nssm_service_status(nssm, "BrocaFrontend")
     if running:
-        details.append("前端服务 (nginx) 已在运行，http://localhost:5166")
+        details.append("前端服务 (nginx) 已在运行，http://localhost:7001")
     else:
         ret, out, err = _win_nssm_run(nssm, "start", "BrocaFrontend")
         if ret != 0:
@@ -809,7 +809,7 @@ def _win_nssm_start_services(wait: bool = True) -> dict[str, Any]:
                 "  提示: 请确认 nginx 已安装且 install.bat 已注册 BrocaFrontend 服务"
             )
         else:
-            details.append("前端服务 (nginx) 已启动，http://localhost:5166")
+            details.append("前端服务 (nginx) 已启动，http://localhost:7001")
 
     return {
         "success": True,
@@ -948,19 +948,9 @@ def _win_stop_process(pid: int | None) -> None:
 
 
 def _win_backend_env(backend_dir: Path) -> dict[str, str]:
-    """构造后端进程环境变量"""
+    """构造后端进程环境变量（仅 PYTHONPATH，其余由 .env 文件提供）"""
     env = os.environ.copy()
-    env.update(
-        {
-            "PYTHONPATH": str(backend_dir),
-            "BROCA_CONFIG": str(BROCA_HOME / "configs" / "configs.json"),
-            "BROCA_DATABASE_DIR": str(BROCA_HOME / "data"),
-            "BROCA_LLM_CONFIG": str(BROCA_HOME / "configs" / "llm_config.json"),
-            "BROCA_AGENTS_CONFIG_DIR": str(BROCA_HOME / "configs" / "agents"),
-            "BROCA_LOG_DIR": str(LOG_DIR),
-            "SQLITE_DATABASE_PATH": f"sqlite:///{BROCA_HOME}/data/backend.db",
-        }
-    )
+    env["PYTHONPATH"] = str(backend_dir)
     return env
 
 
@@ -985,7 +975,7 @@ def _win_start_backend() -> tuple[bool, str, int | None]:
                 "--host",
                 "127.0.0.1",
                 "--port",
-                "9000",
+                "9001",
                 "--log-level",
                 "info",
             ],
@@ -1102,7 +1092,7 @@ http {{
 
     # ---- Broca Web 站点 ----
     server {{
-        listen       5166;
+        listen       7001;
         server_name  _;
 
         # 前端静态文件
@@ -1115,7 +1105,7 @@ http {{
 
         # API 反向代理 (后端)
         location /api/ {{
-            proxy_pass http://127.0.0.1:9000;
+            proxy_pass http://127.0.0.1:9001;
             proxy_set_header Host $host;
             proxy_set_header X-Real-IP $remote_addr;
             proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
@@ -1124,7 +1114,7 @@ http {{
 
         # Socket.IO 反向代理
         location /socket.io/ {{
-            proxy_pass http://127.0.0.1:6868;
+            proxy_pass http://127.0.0.1:6666;
             proxy_http_version 1.1;
             proxy_set_header Upgrade $http_upgrade;
             proxy_set_header Connection "upgrade";
@@ -1185,8 +1175,8 @@ def _win_start_frontend() -> tuple[bool, str, int | None]:
 
         for _ in range(10):
             try:
-                with socket_mod.create_connection(("127.0.0.1", 5166), timeout=0.5):
-                    return True, "前端 (nginx) 已启动，http://localhost:5166", None
+                with socket_mod.create_connection(("127.0.0.1", 7001), timeout=0.5):
+                    return True, "前端 (nginx) 已启动，http://localhost:7001", None
             except OSError:
                 time.sleep(0.5)
 
@@ -1195,7 +1185,7 @@ def _win_start_frontend() -> tuple[bool, str, int | None]:
         err_detail = ""
         if err_log.exists():
             err_detail = err_log.read_text(encoding="utf-8", errors="replace")[-1000:]
-        return False, f"nginx 启动失败（端口 5166 未就绪）\n{err_detail}", None
+        return False, f"nginx 启动失败（端口 7001 未就绪）\n{err_detail}", None
     except Exception as e:
         return False, f"nginx 启动失败: {e}", None
 
@@ -1227,7 +1217,7 @@ def _win_stop_frontend() -> tuple[bool, str]:
     import socket as socket_mod
 
     try:
-        with socket_mod.create_connection(("127.0.0.1", 5166), timeout=0.5):
+        with socket_mod.create_connection(("127.0.0.1", 7001), timeout=0.5):
             # 端口仍占用，强制 kill nginx 进程
             try:
                 import psutil
@@ -1254,7 +1244,7 @@ def _win_frontend_running() -> bool:
     import socket as socket_mod
 
     try:
-        with socket_mod.create_connection(("127.0.0.1", 5166), timeout=0.5):
+        with socket_mod.create_connection(("127.0.0.1", 7001), timeout=0.5):
             return True
     except OSError:
         return False
@@ -1283,7 +1273,7 @@ def _win_bare_start_services(wait: bool = True) -> dict[str, Any]:
 
         for _ in range(20):  # 最多 10 秒
             try:
-                with socket_mod.create_connection(("127.0.0.1", 9000), timeout=0.5):
+                with socket_mod.create_connection(("127.0.0.1", 9001), timeout=0.5):
                     break
             except OSError:
                 time.sleep(0.5)
@@ -1292,7 +1282,7 @@ def _win_bare_start_services(wait: bool = True) -> dict[str, Any]:
     install_info = _load_install_info()
     if install_info.get("frontend_dist"):
         if _win_frontend_running():
-            details.append("前端 (nginx) 已在运行，http://localhost:5166")
+            details.append("前端 (nginx) 已在运行，http://localhost:7001")
         else:
             ok, msg, pid = _win_start_frontend()
             details.append(msg)
@@ -1692,7 +1682,7 @@ def restart_services() -> dict[str, Any]:
 
 
 def _generate_supervisor_config(
-    backend_port: int = 9000,
+    backend_port: int = 9001,
 ) -> str:
     """
     生成 supervisor 配置内容（nginx 代理模式，支持 Windows/Linux）
@@ -1816,7 +1806,7 @@ def _generate_supervisor_config(
         f"stdout_logfile={LOG_DIR}/backend.out.log",
         "stdout_logfile_maxbytes=20MB",
         "stderr_logfile_maxbytes=20MB",
-        f'environment={env_prefix},BROCA_CONFIG="{BROCA_HOME}/configs/configs.json",BROCA_DATABASE_DIR="{BROCA_HOME}/data",BROCA_LLM_CONFIG="{BROCA_HOME}/configs/llm_config.json",BROCA_AGENTS_CONFIG_DIR="{BROCA_HOME}/configs/agents",BROCA_LOG_DIR="{BROCA_HOME}/logs",SQLITE_DATABASE_PATH="sqlite:///{BROCA_HOME}/data/backend.db"',
+        f"environment={env_prefix}",
         "stopasgroup=true",
         "killasgroup=true",
     ]
@@ -1825,7 +1815,7 @@ def _generate_supervisor_config(
 
 
 def write_supervisor_config(
-    backend_port: int = 9000,
+    backend_port: int = 9001,
 ) -> str:
     """
     生成并写入 supervisor 配置文件

@@ -332,6 +332,25 @@ class Message(BaseModel, table=True):
     agent: Optional["Agent"] = Relationship(back_populates="messages")
 
 
+class MessageSeqCounter(BaseModel, table=True):
+    """辅助计数器表：为每个 session 维护 message 和 turn 的序列号
+
+    使用 UPSERT 原子操作避免 SELECT MAX + 1 的竞态问题。
+    counter_key 格式: {session_id}（message）或 turn_{session_id}（turn）
+    """
+
+    __tablename__ = "message_seq_counter"
+
+    counter_key: str = Field(
+        primary_key=True,
+        description="格式: {session_id} 或 turn_{session_id}",
+    )
+    last_seq: int = Field(
+        default=0,
+        sa_column=Column(Integer, nullable=False, server_default="0"),
+        description="最后分配的序列号",
+    )
+
 
 class AgentConfig(BaseModel, table=True):
     """

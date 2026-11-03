@@ -17,24 +17,20 @@ logger = get_logger(__name__)
 def _anysearch_config() -> tuple[str, str]:
     """Return (api_key, base_url) for AnySearch.
 
-    Priority: configs.json search section > environment variables.
+    Priority: configs.json search section > defaults.
     """
     try:
         from broca.configs import get_configs
 
         cfg = get_configs()
-        api_key = cfg.search.anysearch_api_key or os.environ.get("ANYSEARCH_API_KEY", "")
+        api_key = cfg.search.anysearch_api_key
         base_url = (
             cfg.search.anysearch_api_base_url
-            or os.environ.get("ANYSEARCH_API_BASE_URL", "https://api.anysearch.com")
+            or "https://api.anysearch.com"
         ).rstrip("/")
         return api_key, base_url
     except Exception:
-        api_key = os.environ.get("ANYSEARCH_API_KEY", "")
-        base_url = os.environ.get(
-            "ANYSEARCH_API_BASE_URL", "https://api.anysearch.com"
-        ).rstrip("/")
-        return api_key, base_url
+        return "", "https://api.anysearch.com"
 
 
 def _anysearch_headers(api_key: str) -> dict:
@@ -78,6 +74,7 @@ class WebFetch(Tool):
         super().__init__()
         self.browser = None
         self.playwright = None
+        self._pw_lock = asyncio.Lock()
 
     @property
     def name(self):
@@ -129,31 +126,33 @@ class WebFetch(Tool):
     # ----------------------------------------------------------------
 
     async def _init_playwright(self):
-        """Initialize Playwright browser"""
-        if self.playwright is None:
-            try:
-                from playwright.async_api import async_playwright
+        """Initialize Playwright browser (concurrency-safe)."""
+        async with self._pw_lock:
+            if self.playwright is None:
+                try:
+                    from playwright.async_api import async_playwright
 
-                self.playwright = await async_playwright().start()
-                self.browser = await self.playwright.chromium.launch(headless=True)
-            except ImportError:
-                logger.warning(
-                    "playwright package not installed. Please install it with: pip install playwright && playwright install chromium"
-                )
-                return False
-            except Exception as e:
-                logger.error(f"Failed to launch Playwright browser: {e}")
-                return False
+                    self.playwright = await async_playwright().start()
+                    self.browser = await self.playwright.chromium.launch(headless=True)
+                except ImportError:
+                    logger.warning(
+                        "playwright package not installed. Please install it with: pip install playwright && playwright install chromium"
+                    )
+                    return False
+                except Exception as e:
+                    logger.error(f"Failed to launch Playwright browser: {e}")
+                    return False
         return True
 
     async def _close(self):
-        """Close Playwright browser"""
-        if self.browser:
-            await self.browser.close()
-        if self.playwright:
-            await self.playwright.stop()
-        self.browser = None
-        self.playwright = None
+        """Close Playwright browser (concurrency-safe)."""
+        async with self._pw_lock:
+            if self.browser:
+                await self.browser.close()
+            if self.playwright:
+                await self.playwright.stop()
+            self.browser = None
+            self.playwright = None
 
     def _html_to_markdown(self, html: str) -> str:
         """Convert HTML to markdown"""
@@ -447,7 +446,7 @@ class WebSearch(Tool):
                     ),
                 },
             },
-            "required": ["query"],
+            "required": [],
         }
 
     # ----------------------------------------------------------------
@@ -476,7 +475,7 @@ class WebSearch(Tool):
 
         # Tavily
         try:
-            key = self.api_key or cfg_tavily_key or os.environ.get("TAVILY_API_KEY")
+            key = self.api_key or cfg_tavily_key
             if key:
                 self.tavily_client = TavilyClient(api_key=key)
             else:
@@ -485,10 +484,10 @@ class WebSearch(Tool):
             logger.warning("tavily-python package not installed. Tavily search will be unavailable.")
 
         # AnySearch (always initialisable – works anonymously)
-        self._anysearch_api_key = cfg_anysearch_key or os.environ.get("ANYSEARCH_API_KEY", "")
+        self._anysearch_api_key = cfg_anysearch_key or ""
         self._anysearch_base_url = (
             cfg_anysearch_url
-            or os.environ.get("ANYSEARCH_API_BASE_URL", "https://api.anysearch.com")
+            or "https://api.anysearch.com"
         ).rstrip("/")
 
     # ----------------------------------------------------------------
@@ -496,6 +495,15 @@ class WebSearch(Tool):
     # ----------------------------------------------------------------
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
+        # Manual validation: at least one of 'query' or 'queries' is required
+        has_single = bool(arguments.get("query"))
+        has_batch = bool(arguments.get("queries"))
+        if not has_single and not has_batch:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content="Either 'query' or 'queries' must be provided",
+            )
+
         provider = (arguments.get("provider") or _default_search_provider()).lower()
         if provider == "anysearch":
             return await self._execute_anysearch(arguments)

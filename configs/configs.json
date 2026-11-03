@@ -1,10 +1,13 @@
 {
-    "database_dir": "/home/ubuntu/code/Broca/data",
-    "log_file": "agent.log",
+    "database_dir": "~/.broca/data",
+    "log_file": "~/.broca/logs/agent.log",
+    "log_dir": "~/.broca/logs",
     "log_level": "INFO",
-    "llm_config_file": "/home/ubuntu/code/Broca/configs/llm_config.json",
-    "socket_server_url": "http://localhost:6868",
-    "api_server_url": "http://localhost:9000",
+    "llm_config_file": "~/.broca/configs/llm_config.json",
+    "agents_config_dir": "~/.broca/configs/agents",
+    "snapshot_home": "~/.broca/snapshots",
+    "socket_server_url": "http://localhost:6666",
+    "api_server_url": "http://localhost:9001",
     "execution": {
         "step_max_errors": 3,
         "llm_retry_delay": 5,

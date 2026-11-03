@@ -29,7 +29,7 @@ class AsrClient {
   /**
    * 连接到 ASR 服务。
    *
-   * @param serverUrl 后端基础 URL，如 http://localhost:9000
+   * @param serverUrl 后端基础 URL，如 http://localhost:9001
    * @param token JWT token
    * @param onEvent 事件回调
    */

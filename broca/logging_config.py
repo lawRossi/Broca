@@ -5,9 +5,9 @@
   - stderr → supervisor 捕获到 backend.err.log （关键日志实时可见）
   - 文件   → ~/.broca/logs/agent.log         （完整轮转归档）
 
-可通过环境变量覆盖：
-  BROCA_LOG_DIR    日志目录（默认 ~/.broca/logs）
-  BROCA_LOG_LEVEL  日志级别（默认 INFO）
+配置来源：configs.json（通过 get_configs() 读取）
+  - log_dir: 日志目录（默认 ~/.broca/logs）
+  - log_level: 日志级别（默认 INFO）
 """
 
 import logging
@@ -46,45 +46,27 @@ class _StdlibLoguruBridge(logging.Handler):
 
 
 def get_log_dir() -> str:
-    """获取日志目录，优先环境变量"""
-    env_dir = os.getenv("BROCA_LOG_DIR")
-    if env_dir:
-        return env_dir
+    """获取日志目录，从 configs.json 读取"""
+    try:
+        from broca.configs import get_configs
+        log_dir = get_configs().log_dir
+        if log_dir:
+            return log_dir
+    except Exception:
+        pass
     return str(Path.home() / ".broca" / "logs")
 
 
 def get_log_level() -> str:
-    """获取日志级别，优先级：环境变量 > configs.json > 默认 INFO"""
-    env_level = os.getenv("BROCA_LOG_LEVEL")
-    if env_level:
-        return env_level
-    # 尝试从配置文件读取
+    """获取日志级别，从 configs.json 读取，默认 INFO"""
     try:
-        config_path = _resolve_config_file()
-        if config_path and config_path.exists():
-            import json
-            with open(config_path) as f:
-                data = json.load(f)
-            level = data.get("log_level")
-            if level:
-                return level.upper()
+        from broca.configs import get_configs
+        level = get_configs().log_level
+        if level:
+            return level.upper()
     except Exception:
         pass
     return "INFO"
-
-
-def _resolve_config_file() -> Optional[Path]:
-    """解析配置文件路径（与 app/api/config.py 逻辑一致）"""
-    env_path = os.getenv("BROCA_CONFIG")
-    if env_path:
-        return Path(env_path).expanduser()
-    new_path = Path.home() / ".broca" / "configs" / "configs.json"
-    if new_path.exists():
-        return new_path
-    legacy_path = Path.home() / ".broca" / "configs.json"
-    if legacy_path.exists():
-        return legacy_path
-    return None
 
 
 class LoggingConfig:
@@ -112,10 +94,21 @@ class LoggingConfig:
         log_dir = get_log_dir()
 
         if log_file is None:
-            log_file = os.path.join(log_dir, "agent.log")
+            # 优先从 configs.json 读取
+            try:
+                from broca.configs import get_configs
+                cfg_log_file = get_configs().log_file
+                if cfg_log_file:
+                    log_file = cfg_log_file
+            except Exception:
+                pass
+
+            if log_file is None:
+                log_file = os.path.join(log_dir, "agent.log")
 
         # 确保日志目录存在
-        os.makedirs(os.path.dirname(log_file), exist_ok=True)
+        log_file_path = Path(log_file).expanduser()
+        os.makedirs(log_file_path.parent, exist_ok=True)
 
         # 移除默认的 stderr 处理器（loguru 自带的），替换为自定义配置
         logger.remove()
@@ -132,7 +125,7 @@ class LoggingConfig:
 
         # 2. 文件输出（完整轮转归档，记录更多细节）
         logger.add(
-            log_file,
+            str(log_file_path),
             format="{time:YYYY-MM-DD HH:mm:ss} | {level: <8} | {name}:{function}:{line} - {message}",
             level=log_level,
             rotation="10 MB",

@@ -47,6 +47,35 @@ class SkillStore:
 
         self.skills_dir.mkdir(parents=True, exist_ok=True)
         self.archive_dir.mkdir(parents=True, exist_ok=True)
+        self._cache: dict[str, dict] | None = None
+        self._cache_mtime: float = 0.0
+
+    def invalidate_cache(self) -> None:
+        """使缓存失效（跨进程更新后调用）"""
+        self._cache = None
+        self._cache_mtime = 0.0
+
+    def _ensure_cache(self) -> dict[str, dict]:
+        """确保缓存有效，必要时从文件加载"""
+        if self._cache is not None:
+            # 检查 mtime 是否变化（跨进程安全）
+            if self.store_path.exists():
+                try:
+                    current_mtime = self.store_path.stat().st_mtime
+                    if current_mtime != self._cache_mtime:
+                        self._cache = None
+                        self._cache_mtime = 0.0
+                except OSError:
+                    pass
+            else:
+                return self._cache
+        if self._cache is None:
+            self._ensure_store()
+            with self._file_lock():
+                raw = self.store_path.read_text(encoding="utf-8")
+                self._cache = json.loads(raw) if raw.strip() else {}
+                self._cache_mtime = self.store_path.stat().st_mtime
+        return self._cache
 
     # ─── Store 读写（含文件锁） ────────────────────────
 
@@ -73,18 +102,11 @@ class SkillStore:
             self.store_path.write_text("{}", encoding="utf-8")
 
     def read(self) -> dict[str, dict]:
-        """读取全部 store 数据。"""
-        self._ensure_store()
-        with self._file_lock():
-            try:
-                raw = self.store_path.read_text(encoding="utf-8")
-                return json.loads(raw) if raw.strip() else {}
-            except (json.JSONDecodeError, OSError) as e:
-                logger.error(f"Failed to read skill store: {e}")
-                return {}
+        """读取全部 store 数据（优先从缓存返回）。"""
+        return self._ensure_cache()
 
     def save(self, data: dict[str, dict]):
-        """写入全部 store 数据（原子写：先写临时文件再 rename）。"""
+        """写入全部 store 数据（原子写 + 更新缓存）。"""
         self._ensure_store()
         with self._file_lock():
             tmp = self.store_path.with_suffix(".json.tmp")
@@ -92,6 +114,12 @@ class SkillStore:
                 json.dumps(data, indent=2, ensure_ascii=False), encoding="utf-8"
             )
             tmp.replace(self.store_path)
+        # 更新缓存
+        self._cache = data
+        try:
+            self._cache_mtime = self.store_path.stat().st_mtime
+        except OSError:
+            self._cache_mtime = 0.0
 
     # ─── 单条操作 ─────────────────────────────────────
 

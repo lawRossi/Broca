@@ -1,0 +1,6 @@
+{
+  "name": "empty_stream_no_chunks",
+  "chunks": [],
+  "expected_message": null,
+  "expected_on_chunk_events": []
+}

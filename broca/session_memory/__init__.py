@@ -4,9 +4,8 @@ Session Memory 模块
 提供会话笔记的自动维护功能，在后台使用子代理提取关键信息。
 """
 
-from .memory_manager import SessionMemoryManager, SessionMemoryState
+from .memory_manager import SessionMemoryManager
 
 __all__ = [
     "SessionMemoryManager",
-    "SessionMemoryState",
 ]

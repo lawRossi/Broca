@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional
 
 from pydantic import BaseModel
 
+from broca.components.task_manager import TaskManager as TaskManagerABC
 from .session.models import Task, TaskComment, TaskPriority, TaskStatus
 from .session.service import get_task_comment_service, get_task_service
 
@@ -19,9 +20,9 @@ class TaskContext(BaseModel):
     notes: Optional[str] = None
 
 
-class TaskManager:
+class DBTaskManager(TaskManagerABC):
     """
-    任务管理器
+    任务管理器（数据库版本，默认实现）
 
     使用数据库进行任务持久化存储，提供CRUD操作和高级查询功能。
     所有方法都是异步的。
@@ -320,3 +321,6 @@ class TaskManager:
             根Task对象列表
         """
         return await self._task_service.get_root_tasks(session_id=session_id)
+
+# Backward-compatibility alias
+TaskManager = DBTaskManager

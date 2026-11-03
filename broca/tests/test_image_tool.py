@@ -481,10 +481,10 @@ class TestMessageSequence:
         Verify that process_tool_call_result adds extra messages AFTER the tool result
         in context.history.
         """
-        from broca.loop_engine import LoopEngine
+        from broca.loop_engine import DefaultLoopEngine
 
         # Create a minimal LoopEngine mock
-        engine = MagicMock(spec=LoopEngine)
+        engine = MagicMock(spec=DefaultLoopEngine)
         engine.config = MagicMock()
         engine.config.interactive = False
         engine.turn_id = "turn_1"
@@ -547,7 +547,7 @@ class TestMessageSequence:
         )
 
         # Run process_tool_call_result
-        result = await LoopEngine.process_tool_call_result(engine, tool_call, tool_result)
+        result = await DefaultLoopEngine.process_tool_call_result(engine, tool_call, tool_result)
 
         assert result is True
 

@@ -12,8 +12,7 @@ compression regardless of current token count. This is useful when:
 
 from typing import Optional
 
-from broca.commands.base import LocalCommand, CommandContext, CommandResult
-from broca.context_compressor import ContextCompressor
+from broca.commands.base import CommandContext, CommandResult, LocalCommand
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -45,13 +44,35 @@ class CompactCommand(LocalCommand):
                 )
 
             # ================================================================
-            # Perform forced context compression
+            # Perform forced context compression via shared compressor
             # ================================================================
-            compressor = ContextCompressor()
+            compressor = getattr(agent, "context_compressor", None)
+            if compressor is None:
+                # Fallback: get from registry (non-interactive scenario)
+                from broca.components import ContextCompressor
+                from broca.components.registry import ComponentRegistry
+
+                registry = ComponentRegistry.get_instance()
+                compressor = registry.get(ContextCompressor, scope_key=agent.agent_id)
+                await compressor.initialize(
+                    agent_ref=agent,
+                    session_manager=execution_engine.session_manager,
+                    config=agent.config,
+                )
+
+            from broca.components.compressor_context_factory import build_compressor_context
+
+            cc_ctx = build_compressor_context(
+                agent_ref=agent,
+                config=agent.config,
+                communicator=agent.communicator,
+                session_manager=execution_engine.session_manager,
+                agent_id=agent.agent_id,
+                session_id=execution_engine.session_id,
+            )
             stats = await compressor.check_and_compress(
                 context=context,
-                execution_engine=execution_engine,
-                agent=agent,
+                compressor_context=cc_ctx,
                 force=True,
             )
 

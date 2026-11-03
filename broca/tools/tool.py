@@ -45,6 +45,8 @@ class ToolCallContext:
         self.session_id = None
         self.execution_id: Optional[str] = None
         self.namespace: Optional[str] = None
+        self.turn_id: Optional[str] = None
+        self.agent_id: Optional[str] = None
 
 
 class Tool:
@@ -143,6 +145,12 @@ class Tool:
     @staticmethod
     def _check_type(value, expected_type: str) -> bool:
         """Check if a value matches the expected JSON Schema type."""
+        if isinstance(value, bool):
+            if isinstance(expected_type, str):
+                return expected_type == "boolean"
+            elif isinstance(expected_type, list):
+                return "boolean" in expected_type
+            return False
         type_map: dict[str, type | tuple[type, ...]] = {
             "string": str,
             "integer": int,
@@ -173,6 +181,13 @@ class Tool:
             logger.error("Invalid JSON arguments")
             return ToolResult(status=ToolStatus.ERROR, content="Invalid JSON arguments")
 
+        # Guard against non-dict JSON (e.g. "null", "[1,2,3]", '"string"')
+        if not isinstance(args_dict, dict):
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=f"Tool arguments must be a JSON object, got {type(args_dict).__name__}",
+            )
+
         # Unified parameter validation
         validation_error = self.validate_arguments(args_dict)
         if validation_error:
@@ -199,6 +214,23 @@ class Tool:
             return ToolResult(
                 status=ToolStatus.ERROR, content=f"Error executing tool: {e}"
             )
+
+    def pre_execute_check(
+        self, arguments: str, context: ToolCallContext
+    ) -> Optional[str]:
+        """Pre-execution content-aware security check.
+
+        Called by the executor BEFORE tool execution begins.  Override in
+        subclasses that need to inspect the arguments and request user
+        permission for dangerous operations.
+
+        Returns:
+            A permission prompt message if user approval is required before
+            execution, or ``None`` if the tool can proceed safely.
+
+        The default implementation returns ``None`` (no check needed).
+        """
+        return None
 
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         return ToolResult(

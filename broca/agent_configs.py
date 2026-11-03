@@ -45,7 +45,7 @@ class AgentConfig:
         self.skills = None
         self.skill_loading_mode = "eager"  # "eager" (default) | "lazy"
         self.mcp_servers = None
-        self.server_url = "http://localhost:6868"
+        self.server_url = "http://localhost:6666"  # fallback，生产环境由 configs.json 的 socket_server_url 覆盖
         self.interactive = True
         self.save_history = True
         self.environment = None

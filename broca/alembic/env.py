@@ -30,10 +30,14 @@ target_metadata = SQLModel.metadata
 
 def get_database_url() -> str:
     """获取数据库 URL，按优先级返回"""
-    # 1. 环境变量 BROCA_DATABASE_DIR
-    db_dir = os.getenv("BROCA_DATABASE_DIR")
-    if db_dir:
-        return f"sqlite:///{Path(db_dir, 'sessions.db')}"
+    # 1. 从 configs.json 读取
+    try:
+        from broca.configs import get_configs
+        db_dir = get_configs().database_dir
+        if db_dir:
+            return f"sqlite:///{Path(db_dir, 'sessions.db')}"
+    except Exception:
+        pass
 
     # 2. alembic.ini 中的配置
     url = config.get_main_option("sqlalchemy.url")

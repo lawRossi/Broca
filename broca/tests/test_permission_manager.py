@@ -52,13 +52,21 @@ class MockSessionManager:
 
 @pytest.fixture
 def permission_manager():
-    """创建 PermissionManager 实例"""
+    """创建 DefaultPermissionProvider 实例 (via initialize)"""
+    import asyncio
+    from broca.permission_provider import DefaultPermissionProvider
+
     communicator = MockCommunicator()
     session_manager = MockSessionManager()
-    return PermissionManager(
+    provider = DefaultPermissionProvider()
+    asyncio.run(provider.initialize(
         communicator=communicator,
         session_manager=session_manager,
-    )
+        config=None,
+        agent_id="agent-1",
+        session_id="session-1",
+    ))
+    return provider
 
 
 class TestPermissionManager:
@@ -70,8 +78,8 @@ class TestPermissionManager:
         assert permission_manager.session_manager is not None
         assert permission_manager.get_pending_requests_count() == 0
         assert permission_manager.turn_id is None
-        assert permission_manager.agent_id is None
-        assert permission_manager.session_id is None
+        assert permission_manager.agent_id == "agent-1"
+        assert permission_manager.session_id == "session-1"
 
     def test_set_state(self, permission_manager):
         """测试设置状态"""
@@ -86,10 +94,10 @@ class TestPermissionManager:
 
     def test_set_state_partial(self, permission_manager):
         """测试部分设置状态"""
-        permission_manager.set_state(agent_id="agent-1")
-        assert permission_manager.agent_id == "agent-1"
+        permission_manager.set_state(agent_id="agent-2")
+        assert permission_manager.agent_id == "agent-2"
         assert permission_manager.turn_id is None
-        assert permission_manager.session_id is None
+        assert permission_manager.session_id == "session-1"
 
     @pytest.mark.asyncio
     async def test_request_permission_timeout(self, permission_manager):
@@ -104,7 +112,7 @@ class TestPermissionManager:
         """测试工具权限请求超时"""
         with patch("asyncio.wait_for", AsyncMock(side_effect=__import__("asyncio").TimeoutError)):
             granted, session_action = await permission_manager.request_tool_permission(
-                "Can I run bash?"
+                "bash"
             )
             assert granted is False
             assert session_action is None
@@ -139,8 +147,8 @@ class TestPermissionManager:
 
         assert permission_manager.get_pending_requests_count() == 0
         assert permission_manager.turn_id is None
-        assert permission_manager.agent_id is None
-        assert permission_manager.session_id is None
+        assert permission_manager.agent_id == "agent-1"
+        assert permission_manager.session_id == "session-1"
 
     @pytest.mark.asyncio
     async def test_handle_permission_response_unknown(self, permission_manager):

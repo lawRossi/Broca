@@ -67,11 +67,30 @@ class MemoryStore:
         """
         self.memory_dir = (memory_dir or DEFAULT_MEMORY_DIR).resolve()
         self.freshness_warning_days = freshness_warning_days
+        self._cache: list[MemoryIndexEntry] | None = None
+        self._cache_mtime: float = 0.0
 
     @property
     def index_path(self) -> Path:
         """MEMORY.md 索引文件路径"""
         return self.memory_dir / INDEX_FILENAME
+
+    def _cache_valid(self) -> bool:
+        """检查缓存是否有效（mtime 未变）"""
+        if self._cache is None:
+            return False
+        if not self.index_path.exists():
+            return True
+        try:
+            current_mtime = self.index_path.stat().st_mtime
+            return current_mtime == self._cache_mtime
+        except OSError:
+            return False
+
+    def invalidate_cache(self) -> None:
+        """显式使缓存失效（外部修改文件后调用）"""
+        self._cache = None
+        self._cache_mtime = 0.0
 
     # ────────────────────────────────────────
     # 公共方法
@@ -79,15 +98,20 @@ class MemoryStore:
 
     def read_index(self) -> list[MemoryIndexEntry]:
         """
-        解析 MEMORY.md，返回索引条目列表。
+        解析 MEMORY.md，返回索引条目列表（带内存缓存）。
 
         每行格式: - [Title](file.md) — one-line hook (2025-06-15)
 
         Returns:
             按更新时间降序排列的索引列表。文件不存在或为空时返回 []。
         """
+        # 缓存命中
+        if self._cache_valid():
+            return self._cache
+
         if not self.index_path.exists():
-            return []
+            self._cache = []
+            return self._cache
 
         raw = self._read_file(self.index_path)
         entries: list[MemoryIndexEntry] = []
@@ -119,6 +143,9 @@ class MemoryStore:
             )
 
         entries.sort(key=lambda e: e.updated, reverse=True)
+        # 更新缓存
+        self._cache = entries
+        self._cache_mtime = self.index_path.stat().st_mtime
         return entries
 
     def update_index(self, entry: MemoryIndexEntry) -> None:
@@ -288,10 +315,16 @@ class MemoryStore:
         return "\n".join(result)
 
     def _write_index_file(self, entries: list[MemoryIndexEntry]) -> None:
-        """将索引条目列表写入 MEMORY.md"""
+        """将索引条目列表写入 MEMORY.md，并更新缓存"""
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         text = self._build_index_text(entries)
         self._write_file(self.index_path, text)
+        # 写入后更新缓存（缓存截断后的条目，与文件内容一致）
+        self._cache = entries[:MAX_INDEX_LINES]
+        try:
+            self._cache_mtime = self.index_path.stat().st_mtime
+        except OSError:
+            self.invalidate_cache()
 
     @staticmethod
     def _read_file(path: Path) -> str:

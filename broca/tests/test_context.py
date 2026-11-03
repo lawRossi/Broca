@@ -119,6 +119,26 @@ class TestHistoryManagement:
         ctx.history = new_history
         assert ctx.history == new_history
 
+    @pytest.mark.asyncio
+    async def test_reset_history(self, mock_agent_config, mock_session_manager):
+        """reset_history() restores initial state: only system prompt remains."""
+        ctx = Context(
+            agent_config=mock_agent_config,
+            session_manager=mock_session_manager,
+        )
+        # Add some messages to dirty the history
+        await ctx.add_message({"role": "user", "content": "Hello"})
+        await ctx.add_message({"role": "assistant", "content": "Hi there"})
+        assert len(ctx.history) > 1  # system + user + assistant
+
+        # Reset
+        ctx.reset_history()
+
+        # History should be back to just the system prompt
+        assert len(ctx.history) == 1
+        assert ctx.history[0]["role"] == "system"
+        assert ctx.history[0]["content"] == ctx.system_prompt
+
 
 class TestMessageDbId:
     """测试消息数据库 ID 管理"""

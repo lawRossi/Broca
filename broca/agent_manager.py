@@ -4,6 +4,7 @@ import os
 import platform
 import subprocess
 import sys
+import uuid
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -11,34 +12,39 @@ from typing import Optional
 import yaml
 
 from broca.agent import Agent, AgentConfig
+from broca.components.agent_factory import AgentFactory as AgentFactoryABC
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
 from broca.session import SessionManager
-from broca.tools.tool_manager import ToolManager
+# ToolManager is now accessed via ComponentRegistry (broca.components)
 
 logger = get_logger(__name__)
 
 
-class AgentFactory:
-    _instance = None
+class DefaultAgentFactory(AgentFactoryABC):
+    """Default AgentFactory implementation (singleton scope via ComponentRegistry).
+
+    Renamed from ``AgentFactory`` in Phase 6.2.  The old ``__new__``
+    singleton pattern is removed — the registry's ``singleton`` scope
+    now guarantees a single instance.
+    """
 
     def _resolve_agent_config_dir(self) -> str:
-        """获取 Agent 配置目录，优先级: 环境变量 > ~/.broca > 包默认"""
-        # 1. 环境变量
-        env_dir = os.getenv("BROCA_AGENTS_CONFIG_DIR")
-        if env_dir:
-            return env_dir
+        """获取 Agent 配置目录，优先级: configs.json > ~/.broca > 包默认"""
+        # 1. 从 configs.json 读取
+        try:
+            from broca.configs import get_configs
+            cfg_dir = get_configs().agents_config_dir
+            if cfg_dir and os.path.isdir(cfg_dir):
+                return cfg_dir
+        except Exception:
+            pass
         # 2. ~/.broca/configs/agents/
         user_dir = str(Path.home() / ".broca" / "configs" / "agents")
         if os.path.isdir(user_dir):
             return user_dir
         # 3. 包内默认路径（editable 安装时指向项目，非 editable 时指向 site-packages）
         return str(Path(__file__).parent.parent / "configs" / "agents")
-
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(AgentFactory, cls).__new__(cls)
-        return cls._instance
 
     def __init__(self):
         if not hasattr(self, "_initialized"):
@@ -92,6 +98,91 @@ class AgentFactory:
                 )
 
             return agents, new_session_id
+
+    async def create_session_records(
+        self,
+        workspace: str | None = None,
+        provider: str | None = None,
+        model: str | None = None,
+        category: str = "normal",
+    ) -> tuple[list[dict], str]:
+        """轻量级：仅创建 Session + Agent 配置记录到 DB，不初始化 Agent 对象。
+
+        完整的 Agent 初始化（LLMClient、ToolManager、Context 等）
+        留给 Runner 子进程通过 ``restore_agents_from_session`` 执行。
+
+        Returns:
+            (agent_records, session_id)
+            agent_records: [{"agent_id": ..., "name": ..., "role": ...}, ...]
+        """
+        session_manager = SessionManager()
+        await session_manager.create_session(workspace=workspace)
+        session_id = session_manager.session_id
+
+        if category == "agent-orchestration":
+            configs = self._load_orchestration_configs(workspace)
+        else:
+            configs = self._load_agent_configs(self._resolve_agent_config_dir())
+            bootstrap_dir = Path(os.getcwd()) / ".agents/agents"
+            configs.extend(self._load_agent_configs(str(bootstrap_dir)))
+
+        agent_records = []
+        for config in configs:
+            agent_config = AgentConfig.from_config(config)
+            if workspace:
+                agent_config.workspace = workspace
+            elif not agent_config.workspace:
+                agent_config.workspace = os.getcwd()
+            if provider is not None:
+                agent_config.provider = provider
+            if model is not None:
+                agent_config.model = model
+
+            # 注入全局 execution 配置（与 create_agent 保持一致）
+            from broca.configs import get_configs
+
+            agent_config.execution_config = get_configs().execution
+            if agent_config.environment is None:
+                agent_config.environment = self._init_environment(agent_config)
+
+            agent_id = uuid.uuid4().hex
+
+            # 直接写入 DB（与 save_agent 逻辑一致）
+            config_content = agent_config.to_json()
+            saved_config = await session_manager.agent_config_service.create_config(
+                session_id=session_id,
+                name=agent_config.config_name or agent_config.name or "agent",
+                config_content=config_content,
+            )
+            await session_manager.agent_service.create_agent(
+                agent_id=agent_id,
+                config_id=saved_config.config_id,
+                session_id=session_id,
+                name=agent_config.name or agent_config.config_name or "agent",
+                role=agent_config.role or "agent",
+            )
+
+            agent_records.append(
+                {
+                    "agent_id": agent_id,
+                    "name": agent_config.name or agent_config.config_name,
+                    "role": agent_config.role,
+                }
+            )
+
+        logger.info(
+            "Created session %s with %d agent records (lightweight)",
+            session_id,
+            len(agent_records),
+        )
+        return agent_records, session_id
+
+    def _load_orchestration_configs(self, workspace: str | None) -> list[dict]:
+        """加载编排类 Agent 配置（从 workspace/.agents/agents/）"""
+        if not workspace:
+            return []
+        custom_dir = Path(workspace) / ".agents" / "agents"
+        return self._load_agent_configs(str(custom_dir))
 
     async def _init_normal_session_agents(
         self, session_manager, workspace=None, provider=None, model=None
@@ -170,10 +261,6 @@ class AgentFactory:
         from broca.configs import get_configs
 
         config.execution_config = get_configs().execution
-
-        # Initialize ToolManager (loads custom tools + MCP servers).
-        # Idempotent: only happens once across all agents in this process.
-        await ToolManager().init(config.workspace)
 
         # 覆盖 LLM provider 和 model（如果提供了的话）
         if provider is not None:
@@ -255,10 +342,11 @@ class AgentFactory:
         # 注入全局 execution 配置（configs.json 中的 execution 分组）
         from broca.configs import get_configs
 
-        agent_config.execution_config = get_configs().execution
-
-        # Ensure ToolManager is initialized (idempotent — safe to call on restore)
-        await ToolManager().init(agent_config.workspace)
+        configs = get_configs()
+        agent_config.execution_config = configs.execution
+        # 动态覆盖 server_url（DB 中可能存了旧端口）
+        if configs.socket_server_url:
+            agent_config.server_url = configs.socket_server_url
 
         llm_client = LLMClient()
         agent = await Agent.create(
@@ -380,7 +468,7 @@ class AgentFactory:
             seen_real.add(real_candidate)
             if real_candidate == real_active:
                 continue
-            ver = AgentFactory._get_python_version(candidate)
+            ver = DefaultAgentFactory._get_python_version(candidate)
             if ver:
                 return ver, candidate
 
@@ -419,7 +507,7 @@ class AgentFactory:
             else:
                 continue
 
-            ver = AgentFactory._get_python_version(venv_py)
+            ver = DefaultAgentFactory._get_python_version(venv_py)
             venv_dirs.append((candidate, ver))
 
         return venv_dirs
@@ -460,3 +548,7 @@ class AgentFactory:
         if session_id not in self._session_agents:
             return None
         return self._session_agents[session_id].get(agent_name)
+
+
+# Backward-compatible alias
+AgentFactory = DefaultAgentFactory

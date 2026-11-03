@@ -3,18 +3,19 @@ from pathlib import Path
 
 import yaml
 
+from broca.components.skill_manager import SkillManager as SkillManagerABC
 from broca.logging_config import get_logger
 from broca.errors import ValidationError
 
 logger = get_logger(__name__)
 
 
-class SkillManager:
+class FileSkillManager(SkillManagerABC):
     _instance = None
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(SkillManager, cls).__new__(cls)
+            cls._instance = super(FileSkillManager, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
@@ -22,6 +23,8 @@ class SkillManager:
             self._initialized = True
             self.skill_spec_template = "Base path of skill: {base_path}\nSpecification of {skill_name}:{skill_spec}"
             self._load_installed_skills()
+
+    # -- ABC implementation -------------------------------------------------
 
     def get_skills(self, workspace: str, skill_names: str | None) -> dict[str, dict]:
         skills: dict[str, dict] = {}
@@ -141,6 +144,17 @@ class SkillManager:
         skills = self.get_skills(workspace, skill_names)
         return sorted(skills.keys())
 
+    def load_skill(self, name: str) -> str | None:
+        """Load a skill's content by name. Returns the skill spec or None."""
+        skill = self.skills.get(name)
+        if skill is None:
+            return None
+        return self._wrap_skill(skill)
+
+    def list_skills(self, workspace: str) -> list[str]:
+        """List all available skill names for the given workspace."""
+        return self.get_skill_names(workspace, "all")
+
     def refresh_index(self):
         """重新扫描所有 Skill 目录，刷新索引。"""
         self._initialized = False
@@ -155,3 +169,6 @@ class SkillManager:
         )
         logger.debug(f"Loaded skill spec for '{skill['name']}'.")
         return skill_spec
+
+# Backward-compatibility alias
+SkillManager = FileSkillManager

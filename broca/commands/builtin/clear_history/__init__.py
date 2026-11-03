@@ -7,10 +7,9 @@ Clears **all agents'** history in the same session by:
 3. Rebuilding context for ALL agents in the session via build_history_from_session
 """
 
-from pathlib import Path
 from typing import List, Optional
 
-from broca.commands.base import LocalCommand, CommandContext, CommandResult
+from broca.commands.base import CommandContext, CommandResult, LocalCommand
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -66,26 +65,13 @@ class ClearHistoryCommand(LocalCommand):
             # 3. Clear session memory (shared across agents in the session)
             # ================================================================
             cleared_session_memory = False
-            if agent.session_memory_manager is not None:
+            if getattr(agent.config, "enable_context_compression", False):
                 try:
-                    agent.session_memory_manager.reset()
-
-                    from broca.session_memory.memory_prompts import DEFAULT_MEMORY_TEMPLATE
-
-                    snapshot_path = Path(
-                        agent.session_memory_manager.snapshot_memory_path
-                    )
-                    if snapshot_path.exists():
-                        snapshot_path.write_text(
-                            DEFAULT_MEMORY_TEMPLATE.strip(), encoding="utf-8"
-                        )
-
-                    frozen_path = Path(agent.session_memory_manager.memory_path)
-                    if frozen_path.exists():
-                        frozen_path.unlink()
-
-                    cleared_session_memory = True
-                    logger.info("Session memory cleared")
+                    compressor = getattr(agent, "context_compressor", None)
+                    if compressor is not None:
+                        compressor.reset_session_memory()
+                        cleared_session_memory = True
+                        logger.info("Session memory cleared")
                 except Exception as e:
                     logger.error(f"Failed to clear session memory: {e}")
 
@@ -96,9 +82,12 @@ class ClearHistoryCommand(LocalCommand):
             # covering all agents (main, sub, explorer, custom, etc.) in this session.
             rebuilt_agents: List[str] = []
             try:
-                from broca.agent_manager import AgentFactory
+                from broca.components import ComponentRegistry
+                from broca.components.agent_factory import (
+                    AgentFactory as AgentFactoryABC,
+                )
 
-                factory = AgentFactory()
+                factory = ComponentRegistry.get_instance().get(AgentFactoryABC)
                 session_agents_map = factory._session_agents.get(session_id, {})
                 all_agents = list(session_agents_map.values())
 

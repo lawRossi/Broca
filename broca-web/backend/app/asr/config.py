@@ -86,11 +86,39 @@ class ASRConfig:
 
 def _read_asr_from_configs_json() -> dict:
     """从 configs.json 的 asr 分组读取配置（不存在时返回空 dict）。"""
+    from broca.configs import get_configs
+
+    try:
+        configs = get_configs()
+        # get_configs 已解析了正确的 configs.json 路径
+        # 从该路径读取 asr 分组
+        config_path = None
+        if configs.database_dir:
+            # 通过已解析的 configs 对象找到源文件路径
+            pass
+
+        # 直接从 get_configs 的缓存实例获取源路径
+        # 这里简化处理：从 broca.configs 模块获取实际加载的文件路径
+        from broca import configs as broca_configs
+        if broca_configs._config_instance and broca_configs._config_instance.database_dir:
+            # 推断配置文件路径
+            pass
+    except Exception:
+        pass
+
+    # 回退：按标准路径搜索
     candidates = [
-        os.getenv("BROCA_CONFIG"),
         str(Path.home() / ".broca" / "configs" / "configs.json"),
         str(Path.home() / ".broca" / "configs.json"),
     ]
+    # 如果有显式配置路径
+    try:
+        from app.core.config import settings
+        if settings.broca_config:
+            candidates.insert(0, settings.broca_config)
+    except Exception:
+        pass
+
     for path_str in candidates:
         if not path_str:
             continue
@@ -104,7 +132,7 @@ def _read_asr_from_configs_json() -> dict:
                     return asr
             except (json.JSONDecodeError, OSError):
                 pass
-            break  # 找到第一个存在的文件即停止
+            break
     return {}
 
 
@@ -112,28 +140,24 @@ def get_asr_config() -> ASRConfig:
     """Create an ASRConfig.
 
     Priority (highest → lowest):
-      1. Env vars: BROCA_ASR_MODEL / BROCA_ASR_DECODING / BROCA_ASR_NOISE_GATE
-      2. configs.json → asr 分组（Web 配置页）
-      3. 代码默认值
+      1. configs.json → asr 分组（Web 配置页）
+      2. 代码默认值
     """
     file_cfg = _read_asr_from_configs_json()
     kwargs = {}
 
-    # model_name: env > file > default
-    model_name = os.environ.get("BROCA_ASR_MODEL") or file_cfg.get("model_name")
+    # model_name: file > default
+    model_name = file_cfg.get("model_name")
     if model_name:
         kwargs["model_name"] = model_name
 
-    # decoding_method: env > file > default
-    decoding = os.environ.get("BROCA_ASR_DECODING") or file_cfg.get("decoding_method")
+    # decoding_method: file > default
+    decoding = file_cfg.get("decoding_method")
     if decoding:
         kwargs["decoding_method"] = decoding
 
-    # noise_gate_rms: env > file > default
-    noise_gate = os.environ.get("BROCA_ASR_NOISE_GATE")
-    if noise_gate is not None:
-        kwargs["noise_gate_rms"] = float(noise_gate)
-    elif "noise_gate_rms" in file_cfg:
+    # noise_gate_rms: file > default
+    if "noise_gate_rms" in file_cfg:
         kwargs["noise_gate_rms"] = float(file_cfg["noise_gate_rms"])
 
     return ASRConfig(**kwargs)

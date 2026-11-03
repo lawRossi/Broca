@@ -1,0 +1,30 @@
+{
+  "name": "reasoning_multi_chunk",
+  "chunks": [
+    {
+      "type": "reasoning_content",
+      "data": "step 1; "
+    },
+    {
+      "type": "reasoning_content",
+      "data": "step 2"
+    }
+  ],
+  "expected_message": {
+    "content": null,
+    "reasoning_content": "step 1; step 2",
+    "tool_calls": []
+  },
+  "expected_on_chunk_events": [
+    {
+      "type": "reasoning_content",
+      "data": "step 1; ",
+      "index": 0
+    },
+    {
+      "type": "reasoning_content",
+      "data": "step 2",
+      "index": 1
+    }
+  ]
+}

@@ -10,7 +10,7 @@ SessionRevertService 单元测试
 - _create_undo_meta_info
 """
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -289,36 +289,24 @@ class TestNoSnapshotMode:
     @pytest.mark.asyncio
     async def test_undo_only_marks_messages(self, no_snapshot_service, mock_session_manager):
         """无快照模式下 undo 仅标记消息，不执行文件操作"""
-        # 模拟消息：没有 STEP_START/STEP_END
-        turn_start = MagicMock()
-        turn_start.message_id = "msg_turn_start"
-        turn_start.message_type = "turn_start"
-        turn_start.turn_id = "turn-1"
-        turn_start.data = {}
-
-        agent_response = MagicMock()
-        agent_response.message_id = "msg_response"
-        agent_response.message_type = "agent_response"
-        agent_response.turn_id = "turn-1"
-        agent_response.data = {"step_id": "step-1"}
-
-        tool_call = MagicMock()
-        tool_call.message_id = "msg_tool"
-        tool_call.message_type = "tool_call"
-        tool_call.turn_id = "turn-1"
-        tool_call.data = {"step_id": "step-1"}
-
         mock_session_manager.get_session = AsyncMock(return_value=MagicMock())
-        mock_session_manager.get_messages = AsyncMock(
-            return_value=[turn_start, agent_response, tool_call]
-        )
 
-        result = await no_snapshot_service.undo(
-            session_id="session-1",
-            agent_id="agent-1",
-            target_message_id="msg_response",
-            level="step",
+        # Mock the SQL-based message service methods
+        mock_msg_svc = MagicMock()
+        mock_msg_svc.find_pivot_message_id = AsyncMock(return_value="msg_response")
+        mock_msg_svc.get_messages_from_pivot = AsyncMock(return_value=[])
+        mock_msg_svc.get_message_ids_from_pivot = AsyncMock(
+            return_value={"message_ids": {"msg_response"}, "turn_ids": {"turn-1"}}
         )
+        mock_msg_svc.get_last_agent_response_id = AsyncMock(return_value=None)
+
+        with patch("broca.session.revert_service.get_message_service", return_value=mock_msg_svc):
+            result = await no_snapshot_service.undo(
+                session_id="session-1",
+                agent_id="agent-1",
+                target_message_id="msg_response",
+                level="step",
+            )
 
         assert result["success"] is True
         assert result["patches_reverted"] == 0
@@ -330,29 +318,24 @@ class TestNoSnapshotMode:
     @pytest.mark.asyncio
     async def test_undo_auto_target(self, no_snapshot_service, mock_session_manager):
         """无快照模式下 /undo 不指定 target 时自动定位最后 AGENT_RESPONSE"""
-        agent_response = MagicMock()
-        agent_response.message_id = "msg_response"
-        agent_response.message_type = "agent_response"
-        agent_response.turn_id = "turn-1"
-        agent_response.data = {"step_id": "step-1"}
-
-        tool_call = MagicMock()
-        tool_call.message_id = "msg_tool"
-        tool_call.message_type = "tool_call"
-        tool_call.turn_id = "turn-1"
-        tool_call.data = {"step_id": "step-1"}
-
         mock_session_manager.get_session = AsyncMock(return_value=MagicMock())
-        mock_session_manager.get_messages = AsyncMock(
-            return_value=[agent_response, tool_call]
+
+        # Mock the SQL-based message service methods
+        mock_msg_svc = MagicMock()
+        mock_msg_svc.get_last_agent_response_id = AsyncMock(return_value="msg_response")
+        mock_msg_svc.find_pivot_message_id = AsyncMock(return_value="msg_response")
+        mock_msg_svc.get_messages_from_pivot = AsyncMock(return_value=[])
+        mock_msg_svc.get_message_ids_from_pivot = AsyncMock(
+            return_value={"message_ids": {"msg_response"}, "turn_ids": {"turn-1"}}
         )
 
-        result = await no_snapshot_service.undo(
-            session_id="session-1",
-            agent_id="agent-1",
-            target_message_id=None,  # 不指定，自动定位
-            level="step",
-        )
+        with patch("broca.session.revert_service.get_message_service", return_value=mock_msg_svc):
+            result = await no_snapshot_service.undo(
+                session_id="session-1",
+                agent_id="agent-1",
+                target_message_id=None,  # 不指定，自动定位
+                level="step",
+            )
 
         assert result["success"] is True
 
@@ -377,3 +360,150 @@ class TestNoSnapshotMode:
         # snapshot_restorer 不应被调用
         no_snapshot_service.snapshot_restorer.restore.assert_not_called()
         assert no_snapshot_service.undo_stack == []
+
+
+class TestMarkMessagesSql:
+    """回归测试：_mark_messages_as_reverted_sql 的 turn 完整性检查
+
+    Bug: 重构后 _mark_messages_as_reverted_sql 将 pivot 之后所有 turn_ids
+    直接标记为 reverted，未检查 turn 是否所有消息都被 revert。
+    导致 step-level undo（pivot 在 turn 中间）时，整个 turn 被错误隐藏。
+    """
+
+    @pytest.mark.asyncio
+    async def test_partial_turn_not_marked_as_reverted(self, revert_service, mock_session_manager):
+        """step-level undo: pivot 在 turn 中间时，该 turn 不应被标记为 reverted
+
+        场景：turn-1 有 msg-1, msg-2, msg-3, msg-4
+        pivot 在 msg-2，revert 集合为 {msg-2, msg-3, msg-4}
+        msg-1 不在 revert 集合中 → turn-1 不应被标记
+        """
+        from unittest.mock import patch as _patch
+
+        mock_msg_svc = MagicMock()
+        mock_msg_svc.get_message_ids_from_pivot = AsyncMock(
+            return_value={
+                "message_ids": {"msg-2", "msg-3", "msg-4"},
+                "turn_ids": {"turn-1"},
+            }
+        )
+
+        # Mock db_manager session：返回 turn-1 有未被 revert 的消息（msg-1）
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock()
+        # 模拟查询结果：turn-1 有未 revert 消息（partial）
+        mock_result = MagicMock()
+        mock_result.scalars = MagicMock()
+        mock_result.scalars.return_value = MagicMock()
+        mock_result.scalars.return_value.all = MagicMock(return_value=["turn-1"])
+        mock_session.execute.return_value = mock_result
+
+        mock_db_session_ctx = MagicMock()
+        mock_db_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_db_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with _patch(
+            "broca.session.revert_service.get_message_service", return_value=mock_msg_svc
+        ), _patch(
+            "broca.session.revert_service.db_manager.get_session", return_value=mock_db_session_ctx
+        ):
+            result = await revert_service._mark_messages_as_reverted_sql(
+                "agent-1", "msg-2"
+            )
+
+        # 消息应被标记
+        assert result == {"msg-2", "msg-3", "msg-4"}
+        mock_session_manager.batch_update_messages.assert_called_once()
+
+        # turn-1 不应被标记为 reverted（因为它还有 msg-1 未 revert）
+        mock_session_manager.batch_update_turns.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_fully_reverted_turn_is_marked(self, revert_service, mock_session_manager):
+        """turn-level undo: 所有消息被 revert 时，turn 应被正确标记
+
+        场景：turn-1 有 msg-1, msg-2, msg-3
+        pivot 在 msg-1（TURN_START），revert 集合为 {msg-1, msg-2, msg-3}
+        所有消息都在 revert 集合中 → turn-1 应被标记
+        """
+        from unittest.mock import patch as _patch
+
+        mock_msg_svc = MagicMock()
+        mock_msg_svc.get_message_ids_from_pivot = AsyncMock(
+            return_value={
+                "message_ids": {"msg-1", "msg-2", "msg-3"},
+                "turn_ids": {"turn-1"},
+            }
+        )
+
+        # Mock db_manager session：返回空结果（没有 partial turns）
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars = MagicMock()
+        mock_result.scalars.return_value = MagicMock()
+        mock_result.scalars.return_value.all = MagicMock(return_value=[])
+        mock_session.execute.return_value = mock_result
+
+        mock_db_session_ctx = MagicMock()
+        mock_db_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_db_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with _patch(
+            "broca.session.revert_service.get_message_service", return_value=mock_msg_svc
+        ), _patch(
+            "broca.session.revert_service.db_manager.get_session", return_value=mock_db_session_ctx
+        ):
+            result = await revert_service._mark_messages_as_reverted_sql(
+                "agent-1", "msg-1"
+            )
+
+        # turn-1 应被标记为 reverted
+        mock_session_manager.batch_update_turns.assert_called_once_with(
+            ["turn-1"], reverted=True
+        )
+
+    @pytest.mark.asyncio
+    async def test_mixed_turns_partial_and_full(self, revert_service, mock_session_manager):
+        """混合场景：turn-1 部分 revert，turn-2 完全 revert
+
+        场景：
+        - turn-1: msg-1, msg-2（pivot=msg-2，仅 msg-2 被 revert）→ 不标记
+        - turn-2: msg-3, msg-4（全部被 revert）→ 标记
+        """
+        from unittest.mock import patch as _patch
+
+        mock_msg_svc = MagicMock()
+        mock_msg_svc.get_message_ids_from_pivot = AsyncMock(
+            return_value={
+                "message_ids": {"msg-2", "msg-3", "msg-4"},
+                "turn_ids": {"turn-1", "turn-2"},
+            }
+        )
+
+        # Mock db_manager session：turn-1 是 partial（有 msg-1 未 revert）
+        mock_session = MagicMock()
+        mock_session.execute = AsyncMock()
+        mock_result = MagicMock()
+        mock_result.scalars = MagicMock()
+        mock_result.scalars.return_value = MagicMock()
+        mock_result.scalars.return_value.all = MagicMock(return_value=["turn-1"])
+        mock_session.execute.return_value = mock_result
+
+        mock_db_session_ctx = MagicMock()
+        mock_db_session_ctx.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_db_session_ctx.__aexit__ = AsyncMock(return_value=False)
+
+        with _patch(
+            "broca.session.revert_service.get_message_service", return_value=mock_msg_svc
+        ), _patch(
+            "broca.session.revert_service.db_manager.get_session", return_value=mock_db_session_ctx
+        ):
+            result = await revert_service._mark_messages_as_reverted_sql(
+                "agent-1", "msg-2"
+            )
+
+        # 仅 turn-2 应被标记（turn-1 是 partial，被排除）
+        mock_session_manager.batch_update_turns.assert_called_once_with(
+            ["turn-2"], reverted=True
+        )

@@ -1,0 +1,49 @@
+{
+  "implementation": "legacy",
+  "python": "3.14.1",
+  "platform": "macOS-26.6.2-arm64-arm-64bit-Mach-O",
+  "timestamp": "2026-11-01T20:10:44",
+  "warmup": 3,
+  "benchmarks": {
+    "execute_round": {
+      "iterations": 10,
+      "mean_ms": 0.069112,
+      "median_ms": 0.067958,
+      "min_ms": 0.064167,
+      "max_ms": 0.074541,
+      "stdev_ms": 0.003333,
+      "unit": "ms/round",
+      "description": "one round: 1 step, 3 streamed chunks, no tool calls"
+    },
+    "llm_call": {
+      "iterations": 10,
+      "mean_ms": 0.013371,
+      "median_ms": 0.013355,
+      "min_ms": 0.012834,
+      "max_ms": 0.013959,
+      "stdev_ms": 0.000354,
+      "unit": "ms/call",
+      "description": "one LLM call, 3 streamed chunks, no retry"
+    },
+    "parallel_tools": {
+      "iterations": 10,
+      "mean_ms": 0.082637,
+      "median_ms": 0.082645,
+      "min_ms": 0.081166,
+      "max_ms": 0.084833,
+      "stdev_ms": 0.001032,
+      "unit": "ms/batch",
+      "description": "10 tool calls executed in parallel"
+    },
+    "hook_dispatch": {
+      "iterations": 2000,
+      "mean_ms": 0.046806,
+      "median_ms": 0.047667,
+      "min_ms": 0.042875,
+      "max_ms": 0.056125,
+      "stdev_ms": 0.001939,
+      "unit": "ms/call",
+      "description": "one _dispatch over the 4 default hooks (4 awaits) / one step-message broadcast (legacy)"
+    }
+  }
+}

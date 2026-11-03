@@ -3,16 +3,15 @@ Clear Context Command
 
 Clears the **current agent's** context by:
 1. Marking all agent messages as compressed (is_expired=True, is_truncated=True) in database
-2. If it's the main agent (has session_memory_manager), also clears session memory
+2. If enable_context_compression is on, also clears session memory via ContextCompressor
 3. Rebuilds context from scratch via build_history_from_session
 
 Use /clear_all_context to clear context for ALL agents in the session.
 """
 
-from pathlib import Path
 from typing import Optional
 
-from broca.commands.base import LocalCommand, CommandContext, CommandResult
+from broca.commands.base import CommandContext, CommandResult, LocalCommand
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -51,29 +50,16 @@ class ClearContextCommand(LocalCommand):
             )
 
             # ================================================================
-            # 2. Clear session memory (if this is the main agent)
+            # 2. Clear session memory (gated by enable_context_compression)
             # ================================================================
             cleared_session_memory = False
-            if agent.session_memory_manager is not None:
+            if getattr(agent.config, "enable_context_compression", False):
                 try:
-                    agent.session_memory_manager.reset()
-
-                    from broca.session_memory.memory_prompts import DEFAULT_MEMORY_TEMPLATE
-
-                    snapshot_path = Path(
-                        agent.session_memory_manager.snapshot_memory_path
-                    )
-                    if snapshot_path.exists():
-                        snapshot_path.write_text(
-                            DEFAULT_MEMORY_TEMPLATE.strip(), encoding="utf-8"
-                        )
-
-                    frozen_path = Path(agent.session_memory_manager.memory_path)
-                    if frozen_path.exists():
-                        frozen_path.unlink()
-
-                    cleared_session_memory = True
-                    logger.info("Session memory cleared")
+                    compressor = getattr(agent, "context_compressor", None)
+                    if compressor is not None:
+                        compressor.reset_session_memory()
+                        cleared_session_memory = True
+                        logger.info("Session memory cleared")
                 except Exception as e:
                     logger.error(f"Failed to clear session memory: {e}")
 

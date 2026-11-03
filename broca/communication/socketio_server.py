@@ -39,7 +39,7 @@ class SocketIOServer:
     def __init__(
         self,
         host: str = "0.0.0.0",
-        port: int = 8000,
+        port: int = 6666,
         cors_allowed_origins: str = "*",
         agent_query_ttl: int = 300,
         permission_request_ttl: int = 90,
@@ -73,6 +73,7 @@ class SocketIOServer:
 
         # 保存 runner 引用以便正确清理
         self._runner = None
+        self._cleanup_task: Optional[asyncio.Task] = None
 
         self._setup_event_handlers()
         logger.info(f"Socket.io server initialized on {host}:{port}")
@@ -170,6 +171,29 @@ class SocketIOServer:
             logger.debug(
                 f"Removed pending message [{request_id}] from {subscription}"
             )
+
+    async def _cleanup_expired_pending(self) -> None:
+        """每 60s 扫描并清除 _pending_messages 中的过期条目"""
+        while True:
+            try:
+                await asyncio.sleep(60)
+                now = time.time()
+                async with self._lock:
+                    for sub in list(self._pending_messages.keys()):
+                        entries = self._pending_messages[sub]
+                        expired = [k for k, e in entries.items() if now > e["expire_at"]]
+                        for k in expired:
+                            rid = entries[k]["request_id"]
+                            del entries[k]
+                            self._request_to_subscription.pop(rid, None)
+                        if not entries:
+                            del self._pending_messages[sub]
+                        if expired:
+                            logger.info("Cleaned %d expired pending msgs from %s", len(expired), sub)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error("Pending cleanup error: %s", e)
 
     def _setup_event_handlers(self):
         """Setup Socket.io event handlers"""
@@ -635,9 +659,22 @@ class SocketIOServer:
         site = web.TCPSite(self._runner, self.host, self.port)
         await site.start()
 
+        # 启动后台过期清理任务
+        self._cleanup_task = asyncio.create_task(self._cleanup_expired_pending())
+
     async def stop(self):
         """Stop the server"""
         logger.info("Stopping Socket.io server")
+
+        # 停止清理任务
+        if self._cleanup_task:
+            self._cleanup_task.cancel()
+            try:
+                await self._cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self._cleanup_task = None
+
         await self.sio.shutdown()
 
         # 清理 runner 资源

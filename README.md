@@ -141,18 +141,18 @@ broca service stop
 ### 部署架构
 
 ```
-浏览器 ──→ nginx(:5166) ──proxy──→ FastAPI(:9000)    REST API
-                        ──proxy──→ Socket.IO(:6868)  实时通信
+浏览器 ──→ nginx(:7001) ──proxy──→ FastAPI(:9001)    REST API
+                        ──proxy──→ Socket.IO(:6666)  实时通信
                         ──static──→ /var/www/broca/frontend/  前端静态文件
 ```
 
-**单端口访问**，只需放行 5166 端口。WebSocket 代理自动处理跨域。
+**单端口访问**，只需放行 7001 端口。WebSocket 代理自动处理跨域。
 
 ### 访问
 
-- Web 界面：`http://localhost:5166`
-- REST API：`http://localhost:9000/api/`
-- Socket.IO：`http://localhost:6868`
+- Web 界面：`http://localhost:7001`
+- REST API：`http://localhost:9001/api/`
+- Socket.IO：`http://localhost:6666`
 
 ### TUI 终端界面
 
@@ -189,13 +189,36 @@ code --install-extension broca-vscode/broca-chat-0.1.0.vsix
 
 安装完成后，VS Code 左侧活动栏会出现 Broca 图标，点击即可使用。
 
-**配置连接**：安装后需要配置 Broca 后端地址（默认为 `http://localhost:8000`）和 WebSocket 地址（默认为 `http://localhost:6868`），可在 VS Code 设置中搜索 `broca` 进行配置。
+**配置连接**：安装后需要配置 Broca 后端地址（默认为 `http://localhost:9001`）和 WebSocket 地址（默认为 `http://localhost:6666`），可在 VS Code 设置中搜索 `broca` 进行配置。
 
 ---
 
 ## 核心架构
 
 ![系统架构图](resource/system_architecture.png)
+
+### 组件化插件架构
+
+Broca 采用**组件化插件架构**，所有核心功能模块均通过 `ComponentRegistry` 统一管理：
+
+- **20 个组件接口**（ABC），涵盖 LLM 客户端、工具执行器、通信器、权限提供者、上下文压缩器、循环引擎等
+- **4 种作用域**：`singleton`（进程级共享）、`per-agent`（每个 Agent 独立实例）、`per-session`（会话级）、`transient`（每次新建）
+- **3 级解析优先级**：`override`（配置/手动）> `discovered`（entry point 插件）> `default`（内置实现）
+- **惰性加载**：插件模块仅在 `resolve()` 时才被 import，未使用的插件不进入 `sys.modules`
+
+```python
+# 自定义组件示例
+from broca.components.tool_executor import ToolExecutor
+
+class MySandboxExecutor(ToolExecutor):
+    async def initialize(self, tool_mapping, permission_provider, config, communicator):
+        ...
+    async def execute_tool(self, tool_name, arguments, tool_call_id, context, tool, allowed_tools=None):
+        ...
+```
+
+详细开发指南见 [docs/plugin-development-guide.md](docs/plugin-development-guide.md)。
+
 ---
 
 ## 技术栈

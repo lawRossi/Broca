@@ -25,7 +25,7 @@ export type AsrEvent =
  * 构建 ASR WebSocket URL。
  *
  * 优先级：
- *   1. VITE_ASR_WS_URL（完整 WebSocket 基础地址，如 ws://localhost:9000）
+ *   1. VITE_ASR_WS_URL（完整 WebSocket 基础地址，如 ws://localhost:9001）
  *   2. 从 VITE_API_BASE_URL 推导
  *   3. 默认使用当前页面 origin
  */

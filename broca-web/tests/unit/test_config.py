@@ -21,7 +21,7 @@ class TestSettings:
         s = Settings()
         assert s.database_type == "sqlite"
         assert s.host == "0.0.0.0"
-        assert s.port == 8000
+        assert s.port == 9001
         assert s.jwt_algorithm == "HS256"
         assert s.jwt_expire_minutes == 2880
 

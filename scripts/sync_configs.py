@@ -2,8 +2,9 @@
 """同步/初始化 Broca 配置文件到用户目录（~/.broca）。
 
 由 install.sh 与 install.ps1 共同调用，统一跨平台的配置复制逻辑：
-  1. configs.json      — 首次创建（复制源码并改写路径为实际安装路径）；
-                          已存在时合并缺失字段（如 execution 分组），保留用户自定义值。
+  1. configs.json      — 首次创建（复制源码并改写所有路径字段为实际安装路径）；
+                          已存在时合并缺失的子对象字段（execution/storage/search 等），
+                          保留用户自定义值。
   2. llm_config.json   — 首次创建（同时复制模板）。
   3. agents/           — 递归复制（覆盖更新）。
   4. tool_permission_config.json — 覆盖复制。
@@ -53,7 +54,48 @@ def write_json(path: Path, config: dict) -> None:
 # ---------------------------------------------------------------------------
 # 1. configs.json
 # ---------------------------------------------------------------------------
-def sync_configs_json(src: Path, dst: Path, db_dir: Path, config_dir: Path, log_dir: Path) -> None:
+
+def _rewrite_paths(config: dict, broca_home: Path) -> None:
+    """将配置中的 ~ 路径字段改写为基于 broca_home 的绝对路径。"""
+    config_dir = broca_home / "configs"
+    log_dir = broca_home / "logs"
+    rewrites = {
+        "database_dir": str(broca_home / "data"),
+        "log_file": str(log_dir / "agent.log"),
+        "log_dir": str(log_dir),
+        "llm_config_file": str(config_dir / "llm_config.json"),
+        "agents_config_dir": str(config_dir / "agents"),
+        "snapshot_home": str(broca_home / "snapshots"),
+    }
+    for field, value in rewrites.items():
+        if field in config:
+            config[field] = value
+
+
+def _merge_sub_objects(user_cfg: dict, src_cfg: dict) -> bool:
+    """将 src_cfg 中的 dict 子对象新增字段合并到 user_cfg，保留用户已有值。
+
+    返回是否有变更。
+    """
+    changed = False
+    for key, src_val in src_cfg.items():
+        if not isinstance(src_val, dict):
+            continue  # 只合并子对象（dict 类型），标量字段保留用户值
+        user_val = user_cfg.get(key)
+        if not isinstance(user_val, dict):
+            # 用户没有该子对象 → 整体添加
+            user_cfg[key] = dict(src_val)
+            changed = True
+        else:
+            # 逐 key 合并，仅添加用户缺失的字段
+            for k, v in src_val.items():
+                if k not in user_val:
+                    user_val[k] = v
+                    changed = True
+    return changed
+
+
+def sync_configs_json(src: Path, dst: Path, broca_home: Path) -> None:
     """configs.json 同步：首次创建则复制并改写路径；已存在则合并缺失字段。"""
     dst.parent.mkdir(parents=True, exist_ok=True)
     if not src.exists():
@@ -65,36 +107,24 @@ def sync_configs_json(src: Path, dst: Path, db_dir: Path, config_dir: Path, log_
         if not isinstance(config, dict):
             warn(f"默认配置 {src} 内容非法，跳过创建")
             return
-        # 改写路径为实际安装路径（跨平台刷新为字符串值）
-        config["database_dir"] = str(db_dir)
-        config["llm_config_file"] = str(config_dir / "llm_config.json")
-        config["log_file"] = str(log_dir / "agent.log")
+        # 改写路径为实际安装路径（跨平台刷新为绝对路径值）
+        _rewrite_paths(config, broca_home)
         write_json(dst, config)
         log(f"已创建用户配置: {dst}")
         return
 
-    # 已存在：合并缺失字段（如 execution 分组），保留用户已有值
+    # 已存在：合并缺失子对象字段，保留用户已有值
     user_cfg = read_json(dst)
     if not isinstance(user_cfg, dict):
         warn(f"用户配置 {dst} 内容非法，跳过合并")
         return
     src_cfg = read_json(src)
-    changed = False
-    if isinstance(src_cfg, dict):
-        src_exec = src_cfg.get("execution")
-        if isinstance(src_exec, dict):
-            user_exec = user_cfg.get("execution")
-            if not isinstance(user_exec, dict):
-                user_exec = {}
-            for k, v in src_exec.items():
-                if k not in user_exec:
-                    user_exec[k] = v
-                    changed = True
-            if changed:
-                user_cfg["execution"] = user_exec
+    if not isinstance(src_cfg, dict):
+        return
+    changed = _merge_sub_objects(user_cfg, src_cfg)
     if changed:
         write_json(dst, user_cfg)
-        log(f"用户配置已存在: {dst}，已合并缺失字段（execution 等）")
+        log(f"用户配置已存在: {dst}，已合并缺失字段")
     else:
         log(f"用户配置已存在: {dst}（无需合并）")
 
@@ -165,13 +195,11 @@ def main() -> int:
     broca_home = Path(args.broca_home)
 
     config_dir = broca_home / "configs"
-    db_dir = broca_home / "data"
-    log_dir = broca_home / "logs"
     skills_dir = broca_home / "skills"
 
     src_configs = project_root / "configs" / "configs.json"
     dst_configs = config_dir / "configs.json"
-    sync_configs_json(src_configs, dst_configs, db_dir, config_dir, log_dir)
+    sync_configs_json(src_configs, dst_configs, broca_home)
 
     src_llm = project_root / "configs" / "llm_config_template.json"
     sync_llm_config(

@@ -126,7 +126,7 @@ class CrewOrchestratorRunner:
         for agent_cfg in crew_config.agents:
             agent = agent_refs.get(agent_cfg.name)
             if agent and not agent_cfg.use_history:
-                agent.context._init_history()
+                agent.context.reset_history()
                 logger.info(
                     f"Cleared history for agent '{agent_cfg.name}' "
                     f"(use_history={agent_cfg.use_history})"

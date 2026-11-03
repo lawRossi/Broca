@@ -13,7 +13,7 @@ import uuid
 from collections.abc import Callable
 from datetime import UTC, datetime
 from multiprocessing.connection import Client, Listener
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from broca.errors import CommunicationError
 from broca.session_runner.models import (
@@ -33,6 +33,23 @@ class IPCConnectionError(CommunicationError):
 
 class IPCTimeoutError(CommunicationError):
     """IPC 超时异常"""
+
+
+@runtime_checkable
+class IPCChannel(Protocol):
+    """IPC 通道统一接口。
+
+    IPCServer（Web 进程）和 IPCClient（Runner 进程）均满足此 Protocol。
+    发送和接收是独立操作，可在不同线程/协程中并发调用。
+    """
+
+    session_id: str
+    address: str
+
+    def start(self) -> None: ...
+    def send_message(self, msg: IPCMessage) -> None: ...
+    def receive_message(self, timeout: float = 10.0) -> IPCMessage | None: ...
+    def close(self) -> None: ...
 
 
 class IPCServer:
@@ -233,6 +250,11 @@ class IPCClient:
     IPC 客户端（在 Runner 进程中运行）
 
     负责连接 Web 进程的 IPC 服务端，发送事件和接收控制命令。
+
+    注意：multiprocessing.connection.Client 底层是 socket，send()/recv()
+    是不同方向的独立操作，Unix Domain Socket 上可跨线程并发调用。
+    ⚠️ Windows AF_PIPE (named pipe) 是串行的，并发 send/recv 未经验证。
+    若需跨平台支持，应为此类添加 threading.Lock 保护。
     """
 
     def __init__(self, session_id: str):
@@ -241,6 +263,11 @@ class IPCClient:
         self.family = get_ipc_family()
         self._connection: Any = None
         self._connected = False
+
+    def start(self) -> None:
+        """Protocol 兼容：包装 connect()。"""
+        if not self.connect():
+            raise IPCConnectionError(f"IPCClient failed to connect to {self.address}")
 
     def connect(self) -> bool:
         """

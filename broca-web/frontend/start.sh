@@ -1,1 +1,1 @@
-sudo pnpm dev --host 0.0.0.0 --port 5166
+sudo pnpm dev --host 0.0.0.0 --port 7001

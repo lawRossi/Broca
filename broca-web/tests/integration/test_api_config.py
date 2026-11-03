@@ -471,8 +471,8 @@ class TestGeneralConfigAPI:
         "log_file": "/tmp/broca/logs/agent.log",
         "log_level": "INFO",
         "llm_config_file": "/tmp/broca/configs/llm_config.json",
-        "socket_server_url": "http://localhost:6868",
-        "api_server_url": "http://localhost:9000",
+        "socket_server_url": "http://localhost:6666",
+        "api_server_url": "http://localhost:9001",
         "execution": {
             "step_max_errors": 3,
             "llm_retry_delay": 5,
@@ -543,7 +543,7 @@ class TestGeneralConfigAPI:
         payload = {
             "database_dir": "/new/data",
             "log_level": "DEBUG",
-            "api_server_url": "http://localhost:9000",
+            "api_server_url": "http://localhost:9001",
         }
         response = await async_client.put(
             "/api/config/general",

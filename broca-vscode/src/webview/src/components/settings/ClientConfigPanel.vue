@@ -5,8 +5,8 @@ import { postMessage, onMessage } from '../../api/vscode'
 import './settings.css'
 
 const config = ref({
-  serverUrl: 'http://localhost:8000',
-  wsUrl: 'http://localhost:8000',
+  serverUrl: 'http://localhost:9001',
+  wsUrl: 'http://localhost:6666',
 })
 
 const saving = ref(false)
@@ -87,12 +87,12 @@ function saveConfig() {
 
       <div class="field">
         <label class="field-label">API Server URL</label>
-        <input v-model="config.serverUrl" class="field-input" placeholder="http://localhost:8000" />
+        <input v-model="config.serverUrl" class="field-input" placeholder="http://localhost:9001" />
       </div>
 
       <div class="field">
         <label class="field-label">WebSocket Server URL</label>
-        <input v-model="config.wsUrl" class="field-input" placeholder="http://localhost:8000" />
+        <input v-model="config.wsUrl" class="field-input" placeholder="http://localhost:6666" />
       </div>
     </section>
 

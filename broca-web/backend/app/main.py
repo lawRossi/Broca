@@ -12,6 +12,7 @@ from loguru import logger
 
 from app.api import api_router
 from app.core.exception_handlers import general_exception_handler, http_exception_handler
+from app.core.config import settings
 from app.core.socketio_runtime import SocketIOServerConfig, SocketIOServerRuntime
 from app.services.auth_service import AuthService
 
@@ -100,7 +101,7 @@ app.add_exception_handler(Exception, general_exception_handler)
 # CORS 中间件 — 允许前端跨域访问（vite preview / nginx 均需）
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ALLOW_ORIGINS", "*").split(","),
+    allow_origins=settings.cors_allow_origins.split(","),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -113,10 +114,10 @@ async def setup() -> None:
     logger.info("Starting up")
 
     # === 1. 启动 SocketIO Server ===
-    enabled = os.getenv("BROCA_SOCKETIO_ENABLED", "true").lower() == "true"
-    host = os.getenv("BROCA_SOCKETIO_HOST", "0.0.0.0")  # noqa: S104
-    port = int(os.getenv("BROCA_SOCKETIO_PORT", "6868"))
-    cors = os.getenv("BROCA_SOCKETIO_CORS", "*")
+    enabled = settings.broca_socketio_enabled
+    host = settings.broca_socketio_host
+    port = settings.socketio_port
+    cors = settings.broca_socketio_cors
 
     app.state.socketio_runtime = SocketIOServerRuntime(
         SocketIOServerConfig(enabled=enabled, host=host, port=port, cors_allowed_origins=cors)

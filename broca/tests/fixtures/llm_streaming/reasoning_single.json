@@ -1,0 +1,21 @@
+{
+  "name": "reasoning_single",
+  "chunks": [
+    {
+      "type": "reasoning_content",
+      "data": "thinking..."
+    }
+  ],
+  "expected_message": {
+    "content": null,
+    "reasoning_content": "thinking...",
+    "tool_calls": []
+  },
+  "expected_on_chunk_events": [
+    {
+      "type": "reasoning_content",
+      "data": "thinking...",
+      "index": 0
+    }
+  ]
+}

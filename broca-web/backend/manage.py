@@ -12,6 +12,13 @@ from pathlib import Path
 PROJECT_ROOT = Path(__file__).parent.absolute()
 sys.path.insert(0, str(PROJECT_ROOT))
 
+# Load .env files (order: .env → .env.local → .env.development, later overrides earlier)
+from dotenv import load_dotenv
+for _env_file in (".env", ".env.local", ".env.development"):
+    _path = PROJECT_ROOT / _env_file
+    if _path.exists():
+        load_dotenv(_path, override=False)
+
 # 配置日志
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -105,9 +112,15 @@ class ServerManager:
 
     def __init__(self):
         self.app_module = "app.main:app"
-        self.host = os.getenv("HOST", "127.0.0.1")
-        self.port = int(os.getenv("PORT", "9000"))
-        self.reload = os.getenv("RELOAD", "true").lower() == "true"
+        try:
+            from app.core.config import settings
+            self.host = settings.host
+            self.port = settings.port
+            self.reload = settings.reload
+        except Exception:
+            self.host = "127.0.0.1"
+            self.port = 9001
+            self.reload = True
 
     def start(self, host: str | None = None, port: int | None = None, reload: bool | None = None):
         """启动服务"""
@@ -272,7 +285,7 @@ def main():
     # 启动服务子命令
     run_parser = server_subparsers.add_parser("run", help="启动服务")
     run_parser.add_argument("--host", default="127.0.0.1", help="主机地址")
-    run_parser.add_argument("--port", type=int, default=9000, help="端口号")
+    run_parser.add_argument("--port", type=int, default=9001, help="端口号")
     run_parser.add_argument("--no-reload", action="store_true", help="禁用热重载")
 
     server_subparsers.add_parser("dev", help="开发环境启动")

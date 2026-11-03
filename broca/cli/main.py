@@ -62,7 +62,7 @@ def check_pnpm():
         return False
 
 
-def run_frontend(host: str = "127.0.0.1", port: int = 5166):
+def run_frontend(host: str = "127.0.0.1", port: int = 7001):
     """Start the frontend development server"""
     frontend_path = get_web_frontend_path()
 
@@ -91,7 +91,7 @@ def run_frontend(host: str = "127.0.0.1", port: int = 5166):
         return None
 
 
-def run_backend(host: str = "127.0.0.1", port: int = 9000, reload: bool = True):
+def run_backend(host: str = "127.0.0.1", port: int = 9001, reload: bool = True):
     """Start the backend service"""
     backend_path = get_web_backend_path()
 
@@ -131,9 +131,9 @@ def run_backend(host: str = "127.0.0.1", port: int = 9000, reload: bool = True):
 
 def run_all_services(
     frontend_host="127.0.0.1",
-    frontend_port=5166,
+    frontend_port=7001,
     backend_host="127.0.0.1",
-    backend_port=9000,
+    backend_port=9001,
     reload=False,
 ):
     """Start both frontend and backend services"""
@@ -231,7 +231,7 @@ def run_all_services(
         print("All services stopped")
 
 
-def run_frontend_only(host="127.0.0.1", port=5166):
+def run_frontend_only(host="127.0.0.1", port=7001):
     """Start only the frontend service"""
     import time
 
@@ -279,7 +279,7 @@ def run_frontend_only(host="127.0.0.1", port=5166):
                     print("Frontend could not be stopped")
 
 
-def run_backend_only(host="127.0.0.1", port=9000, reload=False):
+def run_backend_only(host="127.0.0.1", port=9001, reload=False):
     """Start only the backend service"""
     import time
 
@@ -587,7 +587,7 @@ examples:
 
     parser.add_argument("--version", action="version", version=f"Broca {get_version()}")
     parser.add_argument(
-        "--server", default="http://localhost:6868", help="Socket.io server URL"
+        "--server", default="http://localhost:6666", help="Socket.io server URL"
     )
     parser.add_argument("--session", "-s", default=None, help="Session identifier")
 
@@ -609,20 +609,20 @@ examples:
   Broca web                           Start all services
   Broca web --frontend-port 8080      Start with custom frontend port
   Broca web frontend                  Start only frontend
-  Broca web backend --port 9000       Start only backend with custom port
+  Broca web backend --port 9001       Start only backend with custom port
 """,
     )
     web_sub.add_argument(
         "--frontend-host", default="0.0.0.0", help="Frontend host address (default: 0.0.0.0)"
     )
     web_sub.add_argument(
-        "--frontend-port", type=int, default=5166, help="Frontend port number (default: 5166)"
+        "--frontend-port", type=int, default=7001, help="Frontend port number (default: 7001)"
     )
     web_sub.add_argument(
         "--backend-host", default="127.0.0.1", help="Backend host address (default: 127.0.0.1)"
     )
     web_sub.add_argument(
-        "--backend-port", type=int, default=9000, help="Backend port number (default: 9000)"
+        "--backend-port", type=int, default=9001, help="Backend port number (default: 9001)"
     )
     web_sub.add_argument(
         "--reload", action="store_true", help="Enable backend auto-reload"
@@ -632,10 +632,10 @@ examples:
     )
     frontend_sub = web_sub.subcommands.add_parser("frontend", help="Start only the frontend service")
     frontend_sub.add_argument("--host", default="0.0.0.0", help="Frontend host address")
-    frontend_sub.add_argument("--port", type=int, default=5166, help="Frontend port number")
+    frontend_sub.add_argument("--port", type=int, default=7001, help="Frontend port number")
     backend_sub = web_sub.subcommands.add_parser("backend", help="Start only the backend service")
     backend_sub.add_argument("--host", default="127.0.0.1", help="Backend host address")
-    backend_sub.add_argument("--port", type=int, default=9000, help="Backend port number")
+    backend_sub.add_argument("--port", type=int, default=9001, help="Backend port number")
     backend_sub.add_argument("--no-reload", action="store_true", help="Disable backend auto-reload")
 
     # ---- run command (crew orchestration) ----
@@ -659,8 +659,8 @@ examples:
         help="Only validate the configuration, don't execute",
     )
     run_sub.add_argument(
-        "--server", default="http://localhost:6868",
-        help="Socket.io server URL (default: http://localhost:6868)",
+        "--server", default="http://localhost:6666",
+        help="Socket.io server URL (default: http://localhost:6666)",
     )
 
     # ---- service command (production mode) ----
@@ -689,12 +689,12 @@ examples:
     # service start
     svc_start = svc_sub.subcommands.add_parser("start", help="Start all services")
     svc_start.add_argument(
-        "--backend-port", type=int, default=9000,
-        help="Backend port (default: 9000)"
+        "--backend-port", type=int, default=9001,
+        help="Backend port (default: 9001)"
     )
     svc_start.add_argument(
-        "--frontend-port", type=int, default=5166,
-        help="Frontend port (default: 5166)"
+        "--frontend-port", type=int, default=7001,
+        help="Frontend port (default: 7001)"
     )
 
     # service stop
@@ -846,7 +846,7 @@ def main():
     # ---- run commands ----
     elif command == "run":
         yaml_file = args.yaml_file
-        server = getattr(args, "server", "http://localhost:6868")
+        server = getattr(args, "server", "http://localhost:6666")
 
         if not os.path.exists(yaml_file):
             print(f"Error: YAML file not found: {yaml_file}")
@@ -883,7 +883,7 @@ def main():
             print("Use 'broca run' in an active agent session or via the Web API.")
             print()
             print("To run via Web API:")
-            print('  curl -X POST http://localhost:9000/api/crews \\')
+            print('  curl -X POST http://localhost:9001/api/crews \\')
             print('    -H "Content-Type: application/json" \\')
             print(f'    -d \'{{"yaml_path": "{yaml_file}"}}\'')
             print()
@@ -895,7 +895,7 @@ def main():
             try:
                 data = json.dumps({"yaml_path": os.path.abspath(yaml_file)}).encode()
                 req = urllib.request.Request(
-                    f"{server.replace(':6868', ':9000')}/api/crews",
+                    f"{server.replace(':6666', ':9001')}/api/crews",
                     data=data,
                     headers={"Content-Type": "application/json"},
                     method="POST",

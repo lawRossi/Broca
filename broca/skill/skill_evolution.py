@@ -8,7 +8,7 @@ Skill Evolution — 子 Agent 工具函数
 import asyncio
 import copy
 
-from broca.agent_manager import AgentFactory
+# AgentFactory is now accessed via ComponentRegistry (broca.components)
 from broca.logging_config import get_logger
 from broca.loop_engine import ExecutionStatus
 from broca.session import MessageProtocol
@@ -35,7 +35,10 @@ async def run_skill_sub_agent(
     Returns:
         (success: bool, message: str)
     """
-    agent_factory = AgentFactory()
+    from broca.components import ComponentRegistry
+    from broca.components.agent_factory import AgentFactory as AgentFactoryABC
+
+    agent_factory = ComponentRegistry.get_instance().get(AgentFactoryABC)
     session_manager = agent.session_manager
     agent_id = session_manager.session_id + "#skill-evolution-agent"
 

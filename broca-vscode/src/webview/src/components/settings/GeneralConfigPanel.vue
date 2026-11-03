@@ -403,12 +403,12 @@ function setStorageValue(key: keyof StorageConfig, value: string | undefined) {
         </div>
         <div class="field">
           <label class="field-label">Socket Server URL</label>
-          <input v-model="config.socket_server_url" class="field-input" placeholder="ws://localhost:9000" />
+          <input v-model="config.socket_server_url" class="field-input" placeholder="ws://localhost:6666" />
           <p class="field-hint">TUI 客户端连接的 SocketIO 服务地址</p>
         </div>
         <div class="field">
           <label class="field-label">API Server URL</label>
-          <input v-model="config.api_server_url" class="field-input" placeholder="http://localhost:9000" />
+          <input v-model="config.api_server_url" class="field-input" placeholder="http://localhost:9001" />
           <p class="field-hint">TUI 客户端调用的 REST API 服务地址</p>
         </div>
       </section>

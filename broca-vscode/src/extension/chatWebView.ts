@@ -1338,15 +1338,19 @@ export class ChatWebViewManager {
     try {
       if (payload.action === 'stop') {
         await this.apiClient.stopRunner(sessionId)
-        // 延迟刷新状态
-        setTimeout(async () => {
+        // 轮询确认 runner 真正退出（最多 10 次 × 1s = 10s）
+        for (let i = 0; i < 10; i++) {
+          await new Promise((r) => setTimeout(r, 1000))
           try {
             const status = await this.apiClient.getRunnerStatus(sessionId)
             if (status) {
               this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
+              if (status.status === 'dead' || status.status === 'none') break
+            } else {
+              break // runner 已完全移除
             }
-          } catch {}
-        }, 3000)
+          } catch { break }
+        }
       } else {
         await this.apiClient.restartRunner(sessionId)
         // 轮询等待 runner 真正变为 alive（最多等 30 秒，每 2 秒检查一次）
@@ -1948,8 +1952,8 @@ export class ChatWebViewManager {
     const initData: Record<string, any> = {
       sessionId,
       token: token || '',
-      serverUrl: serverUrl || 'http://localhost:8000',
-      wsUrl: wsUrl || 'http://localhost:8000',
+      serverUrl: serverUrl || 'http://localhost:9001',
+      wsUrl: wsUrl || 'http://localhost:6666',
     }
     if (category) {
       initData.category = category
@@ -2008,8 +2012,8 @@ export class ChatWebViewManager {
     const initData = {
       sessionId,
       token: token || '',
-      serverUrl: serverUrl || 'http://localhost:8000',
-      wsUrl: wsUrl || 'http://localhost:8000',
+      serverUrl: serverUrl || 'http://localhost:9001',
+      wsUrl: wsUrl || 'http://localhost:6666',
     }
     const initTag = `<script type="application/json" id="init-data">${JSON.stringify(initData)}</script>`
     html = html.replace('</head>', initTag + '</head>')
@@ -2282,7 +2286,7 @@ export class ChatWebViewManager {
 
     try {
       // 1. 获取后端 URL 和 token
-      const serverUrl = this.configManager.get('serverUrl') || 'http://localhost:9000'
+      const serverUrl = this.configManager.get('serverUrl') || 'http://localhost:9001'
       const token = this.authManager.token || ''
 
       // 2. 连接 ASR WebSocket

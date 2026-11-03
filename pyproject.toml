@@ -50,6 +50,18 @@ dependencies = [
 [project.scripts]
 broca = "broca.cli.main:main"
 
+[project.entry-points."broca.components"]
+# Example: third-party plugins register implementations via this group.
+# Built-in defaults are loaded via defaults.py, NOT entry points.
+# tool_executor = "my_package.executor:SandboxToolExecutor"
+
+[tool.pytest.ini_options]
+markers = [
+    "perf: performance tests (skipped by default, run with --run-perf)",
+    "integration: integration tests requiring real services",
+]
+addopts = "-m 'not perf'"
+
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"

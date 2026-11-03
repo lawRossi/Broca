@@ -136,12 +136,6 @@ class ReadBlackboard(Tool):
         try:
             import json
 
-            def read_single(k: str):
-                internal = _internal_key(namespace, k)
-                val = blackboard.get(internal)  # 注意：get 是 async，需要 await
-                return val, internal
-            # 上面这个 def 不能直接 await，用内联写法
-
             # 支持批量读取：单个 key（string）或多个 key（list）
             if isinstance(raw_key, list):
                 if not raw_key:
@@ -457,9 +451,11 @@ class BlackboardChanges(Tool):
             for c in changes:
                 display_key = _strip_namespace(namespace, c["key"])
                 val_str = str(c["value"])[:100].replace("\n", " ")
+                ts = c["timestamp"]
+                ts_str = ts.isoformat() if hasattr(ts, "isoformat") else str(ts)
                 lines.append(
                     f"  [{c['event_type']}] {display_key} "
-                    f"(by {c['producer']} @ {c['timestamp'][11:19]}): {val_str}"
+                    f"(by {c['producer']} @ {ts_str[11:19]}): {val_str}"
                 )
             lines.append(
                 f"\nTotal: {len(changes)} change(s). "

@@ -1,0 +1,61 @@
+{
+  "name": "tool_call_two_sequential",
+  "chunks": [
+    {
+      "type": "tool_call",
+      "data": {
+        "id": "call_1",
+        "index": 0,
+        "type": "function",
+        "function": {
+          "name": "read_file",
+          "arguments": "{\"path\": \"a.py\"}"
+        }
+      }
+    },
+    {
+      "type": "tool_call",
+      "data": {
+        "id": "call_2",
+        "index": 1,
+        "type": "function",
+        "function": {
+          "name": "list_dir",
+          "arguments": "{\"path\": \".\"}"
+        }
+      }
+    }
+  ],
+  "expected_message": {
+    "content": null,
+    "reasoning_content": null,
+    "tool_calls": [
+      {
+        "id": "call_1",
+        "type": "function",
+        "function": {
+          "name": "read_file",
+          "arguments": "{\"path\": \"a.py\"}"
+        }
+      },
+      {
+        "id": "call_2",
+        "type": "function",
+        "function": {
+          "name": "list_dir",
+          "arguments": "{\"path\": \".\"}"
+        }
+      }
+    ]
+  },
+  "expected_on_chunk_events": [
+    {
+      "type": "tool_call",
+      "id": "call_1"
+    },
+    {
+      "type": "tool_call",
+      "id": "call_2"
+    }
+  ]
+}

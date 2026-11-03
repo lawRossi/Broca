@@ -79,9 +79,9 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             workspace = tempfile.mkdtemp(prefix="broca_session_")
             logger.info(f"Created temporary workspace: {workspace}")
 
-        # === 阶段1: 在数据库中创建 Session 和 Agent 记录 ===
+        # === 阶段1: 在数据库中创建 Session 和 Agent 配置记录（轻量，不初始化 Agent 对象） ===
         factory = AgentFactory()
-        agents, session_id = await factory.init_session_agents(
+        agents, session_id = await factory.create_session_records(
             workspace=workspace,
             provider=request.provider,
             model=request.model,
@@ -227,6 +227,8 @@ async def get_session_agents(session_id: str, req: Request) -> ApiResponse:
             response_agents.append(response_agent)
 
         return ApiResponse.success(response_agents)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("Error getting session agents")
         raise HTTPException(500, f"Internal server error: {e!s}") from e

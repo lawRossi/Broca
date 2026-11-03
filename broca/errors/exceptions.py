@@ -58,6 +58,11 @@ class ToolError(BrocaError):
     default_error_code: ErrorCode = ErrorCode.TOOL_ERROR
 
 
+class ToolResultProcessingError(BrocaError):
+    """工具结果持久化 / 广播处理失败"""
+    default_error_code: ErrorCode = ErrorCode.TOOL_RESULT_PROCESSING_ERROR
+
+
 class SessionError(BrocaError):
     """会话管理 + Runner 子进程错误"""
     default_error_code: ErrorCode = ErrorCode.SESSION_ERROR

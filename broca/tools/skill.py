@@ -286,7 +286,7 @@ class SkillManage(Tool):
 
         # 路径穿越防护
         target = (skill_dir / file_path).resolve()
-        if not str(target).startswith(str(skill_dir.resolve())):
+        if not target.is_relative_to(skill_dir.resolve()):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content=f"Path '{file_path}' escapes skill directory.",

@@ -102,7 +102,7 @@ class TodoManagement(Tool):
             if "status" not in item:
                 return "each todo must have a status"
             if item["status"] not in ["pending", "in_progress", "completed"]:
-                return "Invalid status. Valid values: pending, completed"
+                return "Invalid status. Valid values: pending, in_progress, completed"
         return None
 
     def _create_todos(self, arguments) -> ToolResult:

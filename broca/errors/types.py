@@ -57,6 +57,10 @@ class ErrorCode(str, Enum):
     TOOL_NOT_FOUND = ("TOOL_NOT_FOUND", "error", "工具不存在", "请检查工具名称是否正确")
     TOOL_PERMISSION_DENIED = ("TOOL_PERMISSION_DENIED", "error", "工具执行被拒绝", "需要你的授权")
 
+    TOOL_RESULT_PROCESSING_ERROR = (
+        "TOOL_RESULT_PROCESSING_ERROR", "error", "工具结果处理失败", None
+    )
+
     # == Session (含 Runner 子进程管理) ==
     SESSION_ERROR = ("SESSION_ERROR", "error", "会话错误", None)
     SESSION_NOT_FOUND = ("SESSION_NOT_FOUND", "error", "会话不存在", "可能已被清除")

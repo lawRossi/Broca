@@ -82,9 +82,10 @@ async def dispatch_command(
                 message.data["raw_input"] = ctx.raw_input
 
             if cmd.use_sub_agent:
-                from broca.agent_manager import AgentFactory
+                from broca.components import ComponentRegistry
+                from broca.components.agent_factory import AgentFactory as AgentFactoryABC
 
-                factory = AgentFactory()
+                factory = ComponentRegistry.get_instance().get(AgentFactoryABC)
                 sub_agent = factory.get_agent(ctx.session_id, cmd.sub_agent_name)
                 if not sub_agent:
                     return CommandResult(

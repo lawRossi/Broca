@@ -1,380 +1,73 @@
 """
-Session Memory 管理器
+Session Memory 管理器 — 薄兼容层
 
-负责会话笔记的自动维护，在后台使用子代理提取关键信息并更新笔记文件。
+Phase 3 起，所有压缩/提取/pivot/冻结逻辑已迁入
+``SessionMemoryCompressor`` (``broca.context_compressor``).
 
-触发方式（统一"提取 + 压缩"流程）：
-- 由 loop_engine 在 step 完成后调用 check_and_extract()
-- 当 context token 数超过有效阈值时，先执行记忆提取，再执行截断压缩
-- 保留最近 keep_steps 个 step（不跨 turn），更早的消息被压缩进 session memory
+本模块仅保留路径属性与 ``reset()`` 作为向后兼容入口。
+新代码应直接使用 ``ContextCompressor`` (via ``ComponentRegistry``).
 """
 
-import asyncio
-import copy
-import shutil
-import time
-from dataclasses import dataclass
-from pathlib import Path
+import warnings
+from typing import TYPE_CHECKING, Optional
 
-from broca.agent_manager import AgentFactory
-from broca.context import Context
-from broca.loop_engine import ExecutionStatus
 from broca.logging_config import get_logger
-from broca.session import MessageProtocol, MessageType
-from broca.session_memory.memory_prompts import (
-    DEFAULT_MEMORY_TEMPLATE,
-    build_extraction_user_prompt,
-)
+
+if TYPE_CHECKING:
+    from broca.components.context_compressor import ContextCompressor
 
 logger = get_logger(__name__)
 
 
-@dataclass
-class SessionMemoryState:
-    """Session Memory 状态"""
-
-    extraction_in_progress: bool = False
-
-    def reset(self):
-        """重置状态"""
-        self.extraction_in_progress = False
-
-
 class SessionMemoryManager:
-    """Session Memory 管理器"""
+    """兼容层：仅保留路径属性与 reset()，逻辑委托给 ContextCompressor.
 
-    FROSEN_MEMORY_FILENAME = "session-memory.md"
-    SNAPSHOT_MEMORY_FILENAME = "session-memory_latest.md"
-    AGENT_ID_POSTFIX = "#session-memory-agent"
+    .. deprecated::
+        Use ``ContextCompressor`` (``broca.components.ContextCompressor``)
+        instead. This class no longer holds extract/pivot/freeze logic.
+    """
 
     def __init__(
         self,
-        workspace: str,
-        agent,
-        config,
-        task_timeout: int = 120,
+        compressor: "ContextCompressor",
+        workspace: Optional[str] = None,
     ):
-        # config 为 ContextCompactConfig
-        self.workspace = workspace
-        self.agent = agent
-        self.config = config
-        self.state = SessionMemoryState()
-        self.task_timeout = task_timeout
-        self._lock = asyncio.Lock()
-
-        # 初始化时确保模板文件存在
-        self._ensure_template_exists()
-
-    @property
-    def _agent_memory_dir(self) -> Path:
-        """agent 级记忆目录"""
-        return (
-            Path(self.workspace)
-            / ".broca"
-            / (self.agent.session_id or "")
-            / (self.agent.agent_id or "")
+        """
+        Args:
+            compressor: The ``ContextCompressor`` instance to delegate to.
+            workspace: Retained for backward compat (unused).
+        """
+        warnings.warn(
+            "SessionMemoryManager is deprecated. "
+            "Use ContextCompressor (broca.components.ContextCompressor) instead.",
+            DeprecationWarning,
+            stacklevel=2,
         )
+        self._compressor = compressor
+        self._workspace = workspace or ""
+
+    # ------------------------------------------------------------------
+    # Path properties (delegate to compressor)
+    # ------------------------------------------------------------------
 
     @property
     def snapshot_memory_path(self) -> str:
-        """获取 memory 文件路径"""
-        return str(self._agent_memory_dir / self.SNAPSHOT_MEMORY_FILENAME)
+        return self._compressor.snapshot_memory_path
 
     @property
     def memory_path(self) -> str:
-        """获取 memory 文件路径"""
-        return str(self._agent_memory_dir / self.FROSEN_MEMORY_FILENAME)
+        return self._compressor.memory_path
+
+    # ------------------------------------------------------------------
+    # Operations (delegate to compressor)
+    # ------------------------------------------------------------------
+
+    def reset(self) -> None:
+        """Delegate to ``ContextCompressor.reset_session_memory()``."""
+        self._compressor.reset_session_memory()
 
     def is_session_memory_empty(self) -> bool:
-        try:
-            content = Path(self.snapshot_memory_path).read_text(
-                encoding="utf-8"
-            ).strip()
-        except FileNotFoundError:
-            logger.warning(
-                f"Session memory snapshot not found: {self.snapshot_memory_path}"
-            )
-            return True
-        return content == "" or content == DEFAULT_MEMORY_TEMPLATE.strip()
-
-    def frozen_session_memory(self):
-        """将 snapshot 冻结为 frozen memory（snapshot → frozen）"""
-        try:
-            shutil.copyfile(self.snapshot_memory_path, self.memory_path)
-        except FileNotFoundError:
-            logger.error(
-                f"Cannot freeze session memory: snapshot not found "
-                f"{self.snapshot_memory_path}"
-            )
-            raise
-        except OSError as e:
-            logger.error(
-                f"Failed to freeze session memory "
-                f"({self.snapshot_memory_path} → {self.memory_path}): {e}"
-            )
-            raise
-
-    def _read_session_memory_content(self):
-        return Path(self.snapshot_memory_path).read_text(encoding="utf-8").strip()
-
-    def _ensure_template_exists(self):
-        """确保模板文件存在（启动时创建）"""
-        memory_file = Path(self.snapshot_memory_path)
-        if not memory_file.exists():
-            memory_file.parent.mkdir(parents=True, exist_ok=True)
-            memory_file.write_text(DEFAULT_MEMORY_TEMPLATE.strip(), encoding="utf-8")
-            logger.info(f"Created session memory template at {memory_file}")
-
-    # ========================================================================
-    # 记忆提取（由 ContextCompressor 在压缩前调用）
-    # ========================================================================
-
-    async def extract(self, old_history) -> bool:
-        """
-        执行记忆提取（通过子代理），用将被压缩的旧消息更新 snapshot 文件。
-
-        只负责"提取记忆"，截断压缩由 ContextCompressor 负责。
-
-        Args:
-            old_history: 被压缩的旧消息（context.history[:keep_index]），
-                最新几步不写入记忆，避免丢信息
-
-        Returns:
-            提取是否成功（成功才允许后续压缩）
-        """
-        async with self._lock:
-            if self.state.extraction_in_progress:
-                return False
-
-            self.state.extraction_in_progress = True
-            try:
-                original_content = self._read_session_memory_content()
-                await self.agent.communicator.send_agent_system_message(
-                    content="Extracting session memory",
-                    subscription=self.agent.session_id,
-                )
-                success = await self._do_extract(old_history)
-                if not success:
-                    with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
-                        f.write(original_content)
-                return success
-            except Exception as e:
-                logger.error(f"Session memory extraction failed: {e}")
-                with open(self.snapshot_memory_path, "w", encoding="utf-8") as f:
-                    f.write(original_content)
-                return False
-            finally:
-                self.state.extraction_in_progress = False
-
-    # ========================================================================
-    # 保留边界 pivot 计算
-    # ========================================================================
-
-    async def compute_keep_pivot(self, context: Context, keep_steps: int):
-        """
-        计算保留边界。
-
-        通过 agent 的 DB 消息序列计算：一个 assistant message 为一个 step，
-        遇到 user message 即停止（不跨 turn）。
-
-        Returns:
-            (keep_from_message_id, keep_index)（无法计算时返回 (None, None)）
-        """
-        session_manager = self.agent.session_manager
-        agent_id = self.agent.agent_id
-
-        messages = await session_manager.get_messages(agent_id=agent_id)
-        if not messages:
-            return None, None
-
-        # 找到当前（进行中）turn 的起点：最近一条真正的 USER_MESSAGE
-        # 跳过工具注入的消息（data.tool_injected=True），它们不代表真实 turn 边界
-        current_turn_start = None
-        for i, m in enumerate(messages):
-            if m.message_type == MessageType.USER_MESSAGE:
-                if m.data and m.data.get("tool_injected"):
-                    continue
-                current_turn_start = i
-        if current_turn_start is None:
-            return None, None
-
-        # 从最新消息向前扫描，统计 assistant step
-        # - 遇到 turn_end：当前 turn 已结束，保留边界设为 turn_end（其前全部压缩）
-        # - 遇到 user message：扫描结束（不跨 turn）
-        keep_from_message_id = None
-        step_count = 0
-        for i in range(len(messages) - 1, current_turn_start - 1, -1):
-            m = messages[i]
-            if m.message_type == MessageType.TURN_END:
-                keep_from_message_id = m.message_id
-                break
-            if m.message_type == MessageType.AGENT_RESPONSE:
-                step_count += 1
-                if step_count == keep_steps:
-                    keep_from_message_id = m.message_id
-                    break
-
-        if keep_from_message_id is None:
-            # 当前 turn 的 step 数 ≤ keep_steps → 保留整个当前 turn
-            keep_from_message_id = messages[current_turn_start].message_id
-
-        # 将 keep_from_message_id 映射到 context.history 索引
-        # 优先精确匹配；若不在 context 中（如 TURN_END 不写入 history），
-        # 则按 DB 顺序定位到其后第一条 context 消息
-        keep_index = self._resolve_context_index(context, keep_from_message_id)
-        if keep_index is None:
-            keep_index = self._resolve_context_index_by_order(
-                context, messages, keep_from_message_id
-            )
-        if keep_index is None:
-            return None, None
-
-        return keep_from_message_id, keep_index
-
-    def _resolve_context_index(self, context, message_id):
-        """在 context 中根据 message_id 找到对应索引（仅精确匹配）"""
-        db_ids = getattr(context, "_message_db_ids", None)
-        if not db_ids:
-            logger.warning(
-                "_resolve_context_index: context 无 _message_db_ids，无法定位"
-            )
-            return None
-        for idx, db_id in enumerate(db_ids):
-            if db_id == message_id:
-                return idx
-        return None
-
-    def _resolve_context_index_by_order(self, context, messages, message_id):
-        """
-        按 DB 顺序解析 keep_index（用于 keep_from_message_id 不在 context 中的情况，
-        例如 TURN_END 只存在于数据库、不写入 context.history）。
-
-        返回 context 中第一条 DB 位置 >= message_id 位置的消息索引；
-        若所有 context 消息都在其之前，则返回 len(history)（即全部压缩）。
-        """
-        db_ids = getattr(context, "_message_db_ids", None)
-        if not db_ids:
-            logger.warning(
-                "_resolve_context_index_by_order: context 无 _message_db_ids，无法定位"
-            )
-            return None
-
-        db_position = {m.message_id: i for i, m in enumerate(messages)}
-        target_pos = db_position.get(message_id)
-        if target_pos is None:
-            logger.warning(
-                f"_resolve_context_index_by_order: 消息 {message_id} 不在 DB 序列中"
-            )
-            return None
-
-        for idx, db_id in enumerate(db_ids):
-            pos = db_position.get(db_id) if db_id is not None else None
-            if pos is not None and pos >= target_pos:
-                return idx
-        # 所有 context 消息都在 target 之前 → 全部压缩
-        return len(db_ids)
-
-    # ========================================================================
-    # 提取（通过子代理）
-    # ========================================================================
-
-    async def _do_extract(self, old_history) -> bool:
-        """实际提取逻辑——创建子代理执行"""
-        current_content = self._read_session_memory_content()
-        user_prompt = build_extraction_user_prompt(
-            memory_path=self.snapshot_memory_path
-        )
-
-        return await self._run_extraction_subagent(
-            user_prompt=user_prompt,
-            old_history=old_history,
-            current_content=current_content,
-        )
-
-    async def _run_extraction_subagent(
-        self, user_prompt: str, old_history, current_content: str
-    ) -> bool:
-        """
-        创建并运行提取子代理
-
-        子代理拥有独立的 LLM 调用，可用的工具仅限于文件操作。
-        子代理只看到被压缩的旧消息（old_history），最新几步不写入记忆。
-        """
-        start = time.time()
-        agent_factory = AgentFactory()
-        session_manager = self.agent.session_manager
-        agent_id = session_manager.session_id + self.AGENT_ID_POSTFIX
-        agent_config = await session_manager.get_agent_config(agent_id)
-        if agent_config is None:
-            agent_config = self.agent.config.to_dict()
-            agent_config["name"] = "session-memory-agent"
-            agent_config["role"] = "session_memory_manager"
-            agent_config["enable_context_compression"] = False
-            agent_config["save_history"] = False
-
-            sub_agent = await agent_factory.create_agent(
-                agent_config=agent_config,
-                session_manager=session_manager,
-                agent_id=agent_id,
-            )
-        else:
-            agent_config["provider"] = self.agent.config.provider
-            agent_config["model"] = self.agent.config.model
-            sub_agent = agent_factory.get_agent(  # type: ignore[assignment]
-                session_manager.session_id, agent_config["name"]
-            )
-            if sub_agent is None:
-                sub_agent = await agent_factory.restore_agent(agent_id, session_manager)
-            # 同步主 agent 当前的 LLM 配置，确保 sidebar 修改后子 agent 能跟随
-            sub_agent.config.provider = self.agent.config.provider
-            sub_agent.config.model = self.agent.config.model
-        if not sub_agent.running:
-            task = asyncio.create_task(sub_agent.start())
-            task.add_done_callback(lambda t, a=sub_agent: a.stop())  # type: ignore[misc]
-        sub_agent.context.history = copy.copy(old_history)
-        trigger_message = MessageProtocol.create_user_message(
-            content=user_prompt,
-        )
-        result = await sub_agent.run(
-            trigger_message, from_agent=True, allowed_tools=["write_file"], max_steps=2
-        )
-
-        if result.status != ExecutionStatus.COMPLETED:
-            logger.warning(
-                f"Session memory sub-agent execution failed: {result.status}"
-            )
-            await self.agent.communicator.send_agent_system_message(
-                content="Fail to extract session memory",
-                subscription=self.agent.session_id,
-            )
-            return False
-
-        # 验证文件确实被修改，防止子代理"成功"但未实际写入
-        try:
-            new_content = Path(self.snapshot_memory_path).read_text(encoding="utf-8").strip()
-        except (FileNotFoundError, OSError) as e:
-            logger.error(f"Failed to verify session memory file after extraction: {e}")
-            return False
-
-        if new_content == current_content.strip():
-            logger.warning(
-                "Session memory sub-agent completed but file unchanged, "
-                "treating as failure to prevent data loss"
-            )
-            await self.agent.communicator.send_agent_system_message(
-                content="Session memory extraction produced no changes",
-                subscription=self.agent.session_id,
-            )
-            return False
-
-        end = time.time()
-        logger.info("Session memory updated successfully via sub-agent")
-        time_used = int(end - start)
-        await self.agent.communicator.send_agent_system_message(
-            content=f"Session memory updated successfully in {time_used} seconds",
-            subscription=self.agent.session_id,
-        )
+        """Delegate to compressor (if available)."""
+        if hasattr(self._compressor, "is_session_memory_empty"):
+            return self._compressor.is_session_memory_empty()
         return True
-
-    def reset(self):
-        self.state.reset()

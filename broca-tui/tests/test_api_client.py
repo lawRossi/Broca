@@ -68,7 +68,7 @@ class TestAPIClient:
 
     @pytest.fixture
     def client(self):
-        return APIClient(base_url="http://test:9000")
+        return APIClient(base_url="http://test:9001")
 
     @pytest.mark.asyncio
     async def test_url_construction(self, client):
@@ -83,7 +83,7 @@ class TestAPIClient:
             mock_session.request.assert_called_once()
             call_args = mock_session.request.call_args
             assert call_args[0][0] == "GET"  # method
-            assert "http://test:9000/api/session/sessions" in call_args[0][1]  # url
+            assert "http://test:9001/api/session/sessions" in call_args[0][1]  # url
             # Verify params
             assert call_args[1]["params"] == {"skip": 0, "limit": 10}
 
@@ -184,17 +184,17 @@ class TestAPIClientTimeout:
 
     def test_default_timeout(self):
         """Test default timeout value."""
-        client = APIClient(base_url="http://test:9000")
+        client = APIClient(base_url="http://test:9001")
         assert client._timeout.total == 30
 
     def test_custom_timeout(self):
         """Test custom timeout value."""
-        client = APIClient(base_url="http://test:9000", timeout=60)
+        client = APIClient(base_url="http://test:9001", timeout=60)
         assert client._timeout.total == 60
 
     def test_zero_timeout(self):
         """Test setting timeout to None uses default."""
-        client = APIClient(base_url="http://test:9000", timeout=None)
+        client = APIClient(base_url="http://test:9001", timeout=None)
         assert client._timeout.total == 30
 
 
@@ -204,7 +204,7 @@ class TestAPIClientSessionManagement:
     @pytest.mark.asyncio
     async def test_session_created_on_first_request(self):
         """Test that session is lazily created."""
-        client = APIClient(base_url="http://test:9000")
+        client = APIClient(base_url="http://test:9001")
         assert client._session is None
 
         mock_session = _make_mock_session()
@@ -219,7 +219,7 @@ class TestAPIClientSessionManagement:
     @pytest.mark.asyncio
     async def test_close_cleans_up_session(self):
         """Test that close() properly cleans up."""
-        client = APIClient(base_url="http://test:9000")
+        client = APIClient(base_url="http://test:9001")
         mock_session = _make_mock_session()
 
         client._session = mock_session
@@ -233,7 +233,7 @@ class TestAPIClientEnvelope:
     @pytest.mark.asyncio
     async def test_unwraps_envelope_success(self):
         """Test that {code: 200, data: ...} returns data."""
-        client = APIClient(base_url="http://test:9000")
+        client = APIClient(base_url="http://test:9001")
         mock_session = _make_mock_session()
         _make_request_mock(mock_session, MockResponse(
             text_data=json.dumps({"code": 200, "msg": "ok", "data": {"sessions": [], "total": 0}})
@@ -246,7 +246,7 @@ class TestAPIClientEnvelope:
     @pytest.mark.asyncio
     async def test_unwraps_envelope_list_data(self):
         """Test that {code: 200, data: [...]} returns the list."""
-        client = APIClient(base_url="http://test:9000")
+        client = APIClient(base_url="http://test:9001")
         mock_session = _make_mock_session()
         _make_request_mock(mock_session, MockResponse(
             text_data=json.dumps({"code": 200, "msg": "", "data": [{"id": 1}]})
@@ -259,7 +259,7 @@ class TestAPIClientEnvelope:
     @pytest.mark.asyncio
     async def test_passes_through_plain_response(self):
         """Test that non-envelope responses pass through unchanged."""
-        client = APIClient(base_url="http://test:9000")
+        client = APIClient(base_url="http://test:9001")
         mock_session = _make_mock_session()
         _make_request_mock(mock_session, MockResponse(
             text_data=json.dumps({"plain": "response"})
@@ -272,7 +272,7 @@ class TestAPIClientEnvelope:
     @pytest.mark.asyncio
     async def test_envelope_api_error(self):
         """Test that {code: 400, msg: ...} raises an error."""
-        client = APIClient(base_url="http://test:9000")
+        client = APIClient(base_url="http://test:9001")
         mock_session = _make_mock_session()
         _make_request_mock(mock_session, MockResponse(
             status=200,  # HTTP status is 200 but API code is 400

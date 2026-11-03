@@ -1,0 +1,30 @@
+{
+  "name": "content_then_reasoning",
+  "chunks": [
+    {
+      "type": "content",
+      "data": "answer"
+    },
+    {
+      "type": "reasoning_content",
+      "data": "why"
+    }
+  ],
+  "expected_message": {
+    "content": "answer",
+    "reasoning_content": "why",
+    "tool_calls": []
+  },
+  "expected_on_chunk_events": [
+    {
+      "type": "content",
+      "data": "answer",
+      "index": 0
+    },
+    {
+      "type": "reasoning_content",
+      "data": "why",
+      "index": 1
+    }
+  ]
+}

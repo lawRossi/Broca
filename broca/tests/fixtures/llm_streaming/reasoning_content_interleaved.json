@@ -1,0 +1,48 @@
+{
+  "name": "reasoning_content_interleaved",
+  "chunks": [
+    {
+      "type": "reasoning_content",
+      "data": "a"
+    },
+    {
+      "type": "content",
+      "data": "b"
+    },
+    {
+      "type": "reasoning_content",
+      "data": "c"
+    },
+    {
+      "type": "content",
+      "data": "d"
+    }
+  ],
+  "expected_message": {
+    "content": "bd",
+    "reasoning_content": "ac",
+    "tool_calls": []
+  },
+  "expected_on_chunk_events": [
+    {
+      "type": "reasoning_content",
+      "data": "a",
+      "index": 0
+    },
+    {
+      "type": "content",
+      "data": "b",
+      "index": 1
+    },
+    {
+      "type": "reasoning_content",
+      "data": "c",
+      "index": 2
+    },
+    {
+      "type": "content",
+      "data": "d",
+      "index": 3
+    }
+  ]
+}

@@ -78,11 +78,13 @@ class AssignTask(Tool):
 
     async def _execute(self, arguments, context: ToolCallContext) -> ToolResult:
         from broca.agent_manager import AgentFactory
+        from broca.components import ComponentRegistry
+        from broca.components.agent_factory import AgentFactory as AgentFactoryABC
         from broca.loop_engine import ExecutionStatus
         from broca.task_manager import TaskManager
 
         agent = context.agent
-        factory = AgentFactory()
+        factory = ComponentRegistry.get_instance().get(AgentFactoryABC)
         agent_name = arguments["agent"]
         target_agent = factory.get_agent(agent.session_id, agent_name)
         if target_agent is None:
@@ -99,6 +101,7 @@ class AssignTask(Tool):
             trigger_message = MessageProtocol.create_user_message(content=task)
             execution_result = await target_agent.run(trigger_message, from_agent=True)
             message = target_agent.context.get_latest_assistant_message()
+            content = "Task completed."
             if message:
                 content = "Message from agent: " + message
             if execution_result.status == ExecutionStatus.COMPLETED:
@@ -120,7 +123,7 @@ class AssignTask(Tool):
                     status=ToolStatus.ERROR,
                     content=(
                         "task_id is required for background execution. "
-                        "Create the task first via task_management (action='create').",
+                        "Create the task first via task_management (action='create')."
                     ),
                 )
 

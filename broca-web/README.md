@@ -114,7 +114,7 @@ VITE_SUPABASE_URL=your_supabase_url
 VITE_SUPABASE_KEY=your_supabase_anon_key
 
 # API配置
-VITE_API_BASE_URL=http://127.0.0.1:8000
+VITE_API_BASE_URL=http://127.0.0.1:9001
 VITE_API_MOCK=false
 
 # LLM配置（可选）
@@ -156,7 +156,7 @@ supabase start
 
 ```bash
 cd backend
-poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+poetry run uvicorn app.main:app --reload --host 0.0.0.0 --port 9001
 ```
 
 #### 启动前端服务
@@ -169,7 +169,7 @@ pnpm dev
 #### 访问应用
 
 - 前端应用: http://localhost:5173
-- 后端API文档: http://localhost:8000/docs
+- 后端API文档: http://localhost:9001/docs
 - Supabase Studio: http://localhost:54323
 
 ### 生产构建
@@ -307,9 +307,9 @@ poetry run pytest --cov     # 运行测试并生成覆盖率报告
 
 项目启动后，您可以访问以下URL查看API文档：
 
-- **Swagger UI**: http://localhost:8000/docs
-- **ReDoc**: http://localhost:8000/redoc
-- **OpenAPI JSON**: http://localhost:8000/openapi.json
+- **Swagger UI**: http://localhost:9001/docs
+- **ReDoc**: http://localhost:9001/redoc
+- **OpenAPI JSON**: http://localhost:9001/openapi.json
 
 
 ## 🚀 部署

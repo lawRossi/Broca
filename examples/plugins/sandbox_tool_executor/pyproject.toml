@@ -1,0 +1,13 @@
+[project]
+name = "broca-sandbox-plugin"
+version = "0.1.0"
+description = "Example: sandbox ToolExecutor plugin for Broca"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.entry-points."broca.components"]
+tool_executor = "sandbox_executor:SandboxToolExecutor"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

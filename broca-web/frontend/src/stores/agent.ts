@@ -72,8 +72,12 @@ export const useAgentStore = defineStore('agent', () => {
         const currentIds = new Set(agents.value.map((a) => a.agent_id))
         visibleAgentIds.value = savedVisible.filter((id) => currentIds.has(id))
       } else {
-        // 首次进入该 session，默认全部可见
-        visibleAgentIds.value = agents.value.map((a) => a.agent_id)
+        // 首次进入该 session，默认全部可见（explorer / 记忆提取子 agent 默认隐藏）
+        const HIDDEN_NAMES = new Set(['explorer'])
+        const HIDDEN_ROLES = new Set(['session_memory_manager', 'persistent_memory_manager'])
+        visibleAgentIds.value = agents.value
+          .filter((a) => !HIDDEN_NAMES.has(a.name || '') && !HIDDEN_ROLES.has(a.role || ''))
+          .map((a) => a.agent_id)
       }
 
       const mainAgent = agents.value.find((agent) => agent.role === 'main_agent' || agent.role === 'main-agent')

@@ -15,8 +15,17 @@ logger = logging.getLogger(__name__)
 # ===========================================================================
 # 每条：(pattern, description)
 DANGEROUS_COMMAND_PATTERNS: List[Tuple[str, str]] = [
-    # 文件删除
-    (r"^\s*rm\s+(-rf|-r|-f|-fr)?\s+", "File deletion with 'rm' command"),
+    # Python 危险调用（优先匹配，避免 rm -rf 在字符串中被误归因）
+    (r"^\s*os\.system\s*\(", "Python os.system() call"),
+    (r"^\s*subprocess\.call\s*\(", "Python subprocess.call()"),
+    # Git 破坏性操作（优先于通用 rm，给出更具体的原因）
+    (r"\bgit\s+rm\s+", "Git file removal"),
+    (r"^\s*git\s+reset\s+", "Git reset operation"),
+    (r"^\s*git\s+restore\s+", "Git restore operation"),
+    # 文件删除 — 使用 \b 匹配 rm 出现在命令中任意位置（行首、&& 之后、管道、子 shell 等）
+    (r"\brm\s+-[rRf]+\b", "File deletion with 'rm' command"),
+    (r"\brm\s+--(recursive|force)\b", "File deletion with 'rm' command"),
+    (r"(?:^\s*|&&\s*|\|\|\s*|[;&|]\s*)rm\s+\S", "File deletion with 'rm' command (no flags)"),
     (r"^\s*del\s+", "File deletion with 'del' command"),
     (r"^\s*rd\s+", "Directory removal with 'rd' command"),
     # 系统操作
@@ -29,21 +38,14 @@ DANGEROUS_COMMAND_PATTERNS: List[Tuple[str, str]] = [
     # 网络安全
     (r"^\s*iptables\s+", "Firewall manipulation with 'iptables'"),
     # 权限
+    (r"\bsudo\s+\S", "Privilege escalation with 'sudo'"),
     (r"^\s*chmod\s+[0-7]{3,4}\s+", "Dangerous permission changes with 'chmod'"),
     (r"^\s*chown\s+", "Ownership changes with 'chown'"),
-    (r"^\s*sudo\s+", "Privilege escalation with 'sudo'"),
     (r"^\s*su\s+", "User switching with 'su'"),
     # 磁盘
     (r"^\s*dd\s+", "Disk data operation with 'dd'"),
     (r"^\s*mkfs\s+", "Filesystem creation with 'mkfs'"),
     (r"^\s*fdisk\s+", "Partition manipulation with 'fdisk'"),
-    # Python 危险调用
-    (r"^\s*os\.system\s*\(", "Python os.system() call"),
-    (r"^\s*subprocess\.call\s*\(", "Python subprocess.call()"),
-    # Git 破坏性操作
-    (r"^\s*git\s+rm\s+", "Git file removal"),
-    (r"^\s*git\s+reset\s+", "Git reset operation"),
-    (r"^\s*git\s+restore\s+", "Git restore operation"),
 ]
 
 # ===========================================================================
@@ -86,6 +88,35 @@ def init_tree_sitter() -> bool:
 # ===========================================================================
 
 
+def _strip_comments_for_validation(code: str) -> str:
+    """去除 shell 注释（行首 # 和词边界处的行内 #），避免注释内容触发误报。"""
+    _WORD_BREAK = " \t\r\n;&|()<>"
+    lines = code.split("\n")
+    cleaned = []
+    for line in lines:
+        stripped = line.lstrip()
+        if stripped.startswith("#"):
+            # 整行注释 → 替换为空（保留行结构）
+            cleaned.append("")
+            continue
+        # 去除行内注释：第一个「词首位置」的 # 及其后内容
+        in_single = in_double = False
+        cut = -1
+        for i, ch in enumerate(line):
+            if ch == "'" and not in_double:
+                in_single = not in_single
+            elif ch == '"' and not in_single:
+                in_double = not in_double
+            elif ch == "#" and not in_single and not in_double:
+                if i == 0 or line[i - 1] in _WORD_BREAK:
+                    cut = i
+                    break
+        if cut != -1:
+            line = line[:cut]
+        cleaned.append(line)
+    return "\n".join(cleaned)
+
+
 def validate_with_regex(code: str) -> Tuple[bool, str, str]:
     """使用正则表达式检测危险命令。
 
@@ -98,6 +129,9 @@ def validate_with_regex(code: str) -> Tuple[bool, str, str]:
         - reason: 危险原因描述（安全时为空字符串）
         - snippet: 触发了检测的代码片段（安全时为空字符串）
     """
+    # 去除注释，避免注释中的危险命令文本触发误报
+    if code is not None:
+        code = _strip_comments_for_validation(code)
     for pattern, description in DANGEROUS_COMMAND_PATTERNS:
         match = re.search(pattern, code, re.MULTILINE | re.IGNORECASE)
         if match:

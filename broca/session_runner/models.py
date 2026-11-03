@@ -26,7 +26,6 @@ class IPCMessageType(str, Enum):
     """IPC 消息类型枚举"""
 
     # Web → Runner 控制命令
-    CMD_EXECUTE = "cmd_execute"  # 执行用户消息
     CMD_ABORT = "cmd_abort"  # 中止当前执行
     CMD_STATUS = "cmd_status"  # 查询状态
     CMD_SHUTDOWN = "cmd_shutdown"  # 优雅关闭

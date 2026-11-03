@@ -224,7 +224,8 @@ def git_worktree_list(repo_root: Path) -> list[dict[str, Any]]:
 # Web API helper functions
 # ---------------------------------------------------------------------------
 
-DEFAULT_API_BASE_URL = "http://localhost:9000"
+# 默认值仅为 fallback，生产环境必须通过 configs.json 或 BROCA_CONFIG/BROCA_API_SERVER_URL 配置
+DEFAULT_API_BASE_URL = "http://localhost:9001"
 
 
 def api_request(

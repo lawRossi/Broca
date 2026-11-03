@@ -149,12 +149,8 @@ export const useChatStore = defineStore('chat', () => {
     if (!sessionId.value) return
     try {
       restartingRunner.value = true
-      const { ElMessage } = await import('element-plus')
       await sessionApi.restartRunner(sessionId.value)
-      ElMessage.success('进程启动成功')
       // 轮询等待 runner 真正变为 alive（最多等 30 秒，每 2 秒检查一次）
-      // 避免立即 fetchRunnerStatus() 时 runner 尚在 'starting' 状态，
-      // 导致 runnerAlive 未变为 true，AgentSidebar 的自动轮询无法启动
       for (let i = 0; i < 15; i++) {
         await fetchRunnerStatus()
         if (runnerInfo.value?.status === 'alive') break
@@ -172,20 +168,32 @@ export const useChatStore = defineStore('chat', () => {
     if (!sessionId.value) return
     try {
       stoppingRunner.value = true
-      const { ElMessage } = await import('element-plus')
       await sessionApi.stopRunner(sessionId.value)
-      ElMessage.success('进程已停止')
-      runnerInfo.value = { ...runnerInfo.value!, status: 'dead' } as RunnerInfo
-      // 进程已停止，清除撤销/重做状态
-      showRedoButton.value = false
-      redoReceiverId.value = undefined
+      // 轮询确认 runner 真正退出（最多 10 次 × 1s = 10s）
+      let confirmed = false
+      for (let i = 0; i < 10; i++) {
+        await new Promise((r) => setTimeout(r, 1000))
+        await fetchRunnerStatus()
+        const status = runnerInfo.value?.status
+        if (status === 'dead' || status === 'none' || status === null || !runnerInfo.value) {
+          confirmed = true
+          break
+        }
+      }
+      if (confirmed) {
+        runnerInfo.value = { ...(runnerInfo.value || { status: 'dead' } as any), status: 'dead' } as RunnerInfo
+        showRedoButton.value = false
+        redoReceiverId.value = undefined
+      } else {
+        const { ElMessage } = await import('element-plus')
+        ElMessage.warning('进程停止超时，请检查后端日志')
+        await fetchRunnerStatus()
+      }
     } catch (error: any) {
       const { ElMessage } = await import('element-plus')
       ElMessage.error('停止失败: ' + (error.message || '未知错误'))
     } finally {
       stoppingRunner.value = false
-      // 延迟刷新状态
-      setTimeout(fetchRunnerStatus, 3000)
     }
   }
 
@@ -267,10 +275,12 @@ export const useChatStore = defineStore('chat', () => {
 
   // 根据 Agent 可见性过滤 turn 摘要（简洁模式）
   const filteredTurnSummaries = computed(() => {
-    const summaries = turnSummaries.value
+    let summaries = turnSummaries.value
     const visibleIds = agentStore.visibleAgentIds
-    if (visibleIds.length === 0) return summaries
-    return summaries.filter((t) => visibleIds.includes(t.agentId))
+    if (visibleIds.length > 0) {
+      summaries = summaries.filter((t) => visibleIds.includes(t.agentId))
+    }
+    return summaries
   })
 
   const mergeAgentResponseChunks = (chunks: Message[]) => {
@@ -560,8 +570,8 @@ export const useChatStore = defineStore('chat', () => {
         }
       }
 
-      // 提取 TODO 列表（todo_management，调用失败时不更新）
-      if (toolName === 'todo_management' && message.data?.status !== 'error') {
+      // 提取 TODO 列表（todo_management，仅成功结果才更新；start broadcast 无 status 字段）
+      if (toolName === 'todo_management' && message.data?.status === 'success') {
         const args = message.data?.arguments
         if (args) {
           const parsedArgs = typeof args === 'string' ? JSON.parse(args) : args

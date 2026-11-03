@@ -6,6 +6,7 @@ from contextlib import AsyncExitStack
 from pathlib import Path
 from typing import Optional
 
+from broca.components.tool_manager import ToolManager as ToolManagerABC
 from broca.logging_config import get_logger
 from broca.errors import ErrorCode, ValidationError
 from broca.tools.mcp import connect_mcp_servers
@@ -14,10 +15,14 @@ from broca.tools.tool import Tool
 logger = get_logger(__name__)
 
 
-class ToolManager:
-    _instance = None
+class AutoDiscoverToolManager(ToolManagerABC):
+    """Tool manager with auto-discovery of builtin tools (default impl).
 
-    READONLY_TOOLS = {
+    No longer a singleton — each Agent gets its own instance via
+    ``ComponentRegistry.get(ToolManager, scope_key=agent_id)``.
+    """
+
+    READONLY_TOOLS: frozenset = frozenset({
         "read_file",
         "glob",
         "grep",
@@ -35,9 +40,9 @@ class ToolManager:
         "list_blackboard",
         "blackboard_changes",
         "read_image",
-    }
+    })
 
-    MODIFY_TOOLS = {"edit_file", "write_file"}
+    MODIFY_TOOLS = frozenset({"edit_file", "write_file"})
 
     _SKIP_MODULES = {
         "tool_manager",  # self
@@ -46,21 +51,15 @@ class ToolManager:
         "mcp",  # loaded separately via setup_mcp()
     }
 
-    def __new__(cls):
-        if cls._instance is None:
-            cls._instance = super(ToolManager, cls).__new__(cls)
-        return cls._instance
-
     def __init__(self):
-        if not hasattr(self, "_initialized"):
-            self._initialized = True
-            self.tools = {}
-            self.stack = AsyncExitStack()
-            self._custom_tools_loaded = False
-            self._mcp_config: dict = {}
-            self._mcp_connected: bool = False
-            self._mcp_servers_tools: dict[str, list[Tool]] = {}
-            self._scan_builtin_tools()
+        self.tools = {}
+        self.stack = AsyncExitStack()
+        self._custom_tools_loaded = False
+        self._mcp_config: dict = {}
+        self._mcp_connected: bool = False
+        self._mcp_servers_tools: dict[str, list[Tool]] = {}
+        self._initialized = False
+        self._scan_builtin_tools()
 
     def _scan_builtin_tools(self):
         """Auto-discover all Tool subclasses from broca/tools/ modules."""
@@ -230,17 +229,18 @@ class ToolManager:
 
     async def init(self, workspace: Optional[str] = None):
         """
-        Initialize the ToolManager with workspace context.
+        Initialize the ToolManager with workspace context (idempotent).
 
         Performs the following (all idempotent):
         1. Load custom tools from ``{workspace}/.broca/tools.py``
         2. Load MCP configuration from config files
         3. Connect all configured MCP servers
 
-        Args:
-            workspace: Path to the workspace directory. If None, only global
-                       MCP config is loaded and no custom tools are loaded.
+        Safe to call multiple times — subsequent calls are no-ops.
         """
+        if self._initialized:
+            return
+        self._initialized = True
         self.load_custom_tools(workspace)
         self._load_mcp_config(workspace)
         await self._connect_mcp()
@@ -296,3 +296,6 @@ class ToolManager:
             return tools
         else:
             return list(self.tools.values())
+
+# Backward-compatibility alias
+ToolManager = AutoDiscoverToolManager

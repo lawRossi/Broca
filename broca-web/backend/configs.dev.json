@@ -1,0 +1,11 @@
+{
+    "socket_server_url": "http://localhost:6666",
+    "api_server_url": "http://localhost:9001",
+    "database_dir": "./.local-data",
+    "log_file": "agent.log",
+    "log_dir": "./logs",
+    "log_level": "DEBUG",
+    "llm_config_file": "~/.broca/configs/llm_config.json",
+    "agents_config_dir": "../../configs/agents",
+    "snapshot_home": "../../.local-data/snapshots"
+}

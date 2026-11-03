@@ -44,13 +44,13 @@ const FIELDS: { key: keyof GeneralConfig; label: string; placeholder: string; hi
   {
     key: 'socket_server_url',
     label: 'SocketIO 服务地址',
-    placeholder: 'http://localhost:6868',
+    placeholder: 'http://localhost:6666',
     hint: 'TUI 客户端连接的 SocketIO 服务地址',
   },
   {
     key: 'api_server_url',
     label: 'API 服务地址',
-    placeholder: 'http://localhost:9000',
+    placeholder: 'http://localhost:9001',
     hint: 'TUI 客户端调用的 REST API 服务地址',
   },
 ]

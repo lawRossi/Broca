@@ -39,6 +39,14 @@ class Context:
         self.system_prompt = self._build_system_prompt()
         self._init_history()
 
+    def reset_history(self) -> None:
+        """Reset the conversation history to its initial state.
+
+        Re-initializes the history list with only the system prompt and
+        reloads session memory from disk.
+        """
+        self._init_history()
+
     def _init_history(self) -> None:
         self._history: list = []
         self._message_db_ids: list = []  # 与 _history 一一对应，存储数据库 message_id

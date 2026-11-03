@@ -12,11 +12,13 @@ from typing import Any, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
 from sqlalchemy import String, cast, desc, func, or_, select, text
 from sqlalchemy import update as sql_update
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import SQLModel, and_
 
 from broca.logging_config import get_logger
 from broca.session.database import db_manager
 from broca.snapshot.patch import PatchCalculator
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from broca.session.models import (
     Agent,
     AgentConfig,
@@ -26,6 +28,7 @@ from broca.session.models import (
     Message,
     MessageRole,
     MessageType,
+    MessageSeqCounter,
     ScheduledJob,
     Session,
     Task,
@@ -292,11 +295,73 @@ class TurnService(BaseService[Turn]):
             return result.scalars().first()
 
     async def get_next_sequence_number(self, session_id: str) -> int:
-        """获取下一个轮次序列号"""
-        latest_turn = await self.get_latest_turn(session_id)
-        if latest_turn:
-            return latest_turn.sequence_number + 1
-        return 1
+        """[DEPRECATED] 获取下一个轮次序列号
+
+        .. deprecated::
+            使用 :meth:`next_turn_sequence_for_session` 代替。
+        """
+        import warnings
+        warnings.warn(
+            "TurnService.get_next_sequence_number is deprecated. "
+            "Use next_turn_sequence_for_session instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.next_turn_sequence_for_session(session_id)
+
+    async def next_turn_sequence_for_session(self, session_id: str) -> int:
+        """原子递增并返回该 session 的下一个 turn 序列号"""
+        async with db_manager.get_session() as session:
+            stmt = (
+                sqlite_insert(MessageSeqCounter)
+                .values(counter_key=f"turn_{session_id}", last_seq=1)
+                .on_conflict_do_update(
+                    index_elements=["counter_key"],
+                    set_={"last_seq": MessageSeqCounter.last_seq + 1},
+                )
+                .returning(MessageSeqCounter.last_seq)
+            )
+            result = await session.execute(stmt)
+            value = result.scalar_one()
+            await session.commit()
+            return value
+
+    async def next_turn_seq_in_session(
+        self, db_session: "AsyncSession", session_id: str
+    ) -> int:
+        """在外部事务中递增 turn 序列号。不 commit。
+
+        ⚠️ 调用者必须确保 db_session 处于活跃事务中（通过 get_multi_session 获取）。
+        """
+        assert db_session.in_transaction(), (
+            "next_turn_seq_in_session requires an active transaction (use get_multi_session)"
+        )
+        stmt = (
+            sqlite_insert(MessageSeqCounter)
+            .values(counter_key=f"turn_{session_id}", last_seq=1)
+            .on_conflict_do_update(
+                index_elements=["counter_key"],
+                set_={"last_seq": MessageSeqCounter.last_seq + 1},
+            )
+            .returning(MessageSeqCounter.last_seq)
+        )
+        result = await db_session.execute(stmt)
+        return result.scalar_one()
+
+    async def create_turn_in_session(
+        self, db_session: "AsyncSession", **kwargs
+    ) -> Turn:
+        """在外部事务中创建 turn。
+
+        ⚠️ 此方法不做 commit/rollback——事务生命周期由外层 get_multi_session() 管理。
+        """
+        assert db_session.in_transaction(), (
+            "create_turn_in_session requires an active transaction (use get_multi_session)"
+        )
+        instance = Turn(**kwargs)
+        db_session.add(instance)
+        await db_session.flush()
+        return instance
 
     async def get_turns_by_session(
         self,
@@ -341,7 +406,10 @@ class TurnService(BaseService[Turn]):
         return start_time, end_time
 
     async def get_turn_stats(self, turn_id: str) -> Dict[str, Any]:
-        """获取指定 turn 的统计信息
+        """获取指定 turn 的统计信息（SQL 聚合优化版）
+
+        使用 SQL 聚合查询获取可统计部分（total_steps, tool_call_stats, is_reverted），
+        仅对需要解析 JSON data 字段的消息类型做最小化加载。
 
         返回：
             is_reverted: 该 turn 的所有消息是否都已撤销
@@ -352,13 +420,8 @@ class TurnService(BaseService[Turn]):
             current_todo_list: [{name, status}, ...] 或空列表
             final_response: 拼接后的 agent_response 内容
         """
-        from broca.session.service import get_message_service
-
-        msg_service = get_message_service()
-        messages = await msg_service.get_batch(
-            filters={"turn_id": turn_id},
-            order_by="timestamp asc",
-        )
+        from broca.session.database import db_manager
+        from broca.session.models import Message as MsgModel
 
         stats: Dict[str, Any] = {
             "is_reverted": True,
@@ -372,25 +435,87 @@ class TurnService(BaseService[Turn]):
             "changed_files": {},
         }
 
-        tool_call_counter: Dict[str, int] = {}
+        async with db_manager.get_session() as session:
+            # 1. SQL 聚合：total_steps
+            total_steps = (
+                await session.execute(
+                    select(func.count(MsgModel.message_id))
+                    .where(MsgModel.turn_id == turn_id)
+                    .where(MsgModel.message_type == MessageType.STEP_START)
+                    .where(MsgModel.reverted == False)  # noqa: E712
+                )
+            ).scalar() or 0
+            stats["total_steps"] = total_steps
 
-        active_count = 0
-        for m in messages:
-            # 跳过已撤销的消息
-            if m.reverted:
-                continue
-            active_count += 1
-            # 记录最后一个非撤销消息的 message_id（用于 turn 级撤销定位）
-            stats["last_message_id"] = m.message_id
+            # 2. SQL 聚合：tool_call_stats (GROUP BY tool_name via json_extract)
+            tool_rows = (
+                await session.execute(
+                    select(
+                        func.json_extract(MsgModel.data, "$.tool_name"),
+                        func.count(MsgModel.message_id),
+                    )
+                    .where(MsgModel.turn_id == turn_id)
+                    .where(MsgModel.message_type == MessageType.TOOL_CALL)
+                    .where(MsgModel.reverted == False)  # noqa: E712
+                    .group_by(func.json_extract(MsgModel.data, "$.tool_name"))
+                )
+            ).all()
+            stats["tool_call_stats"] = [
+                {"tool_name": row[0], "count": row[1]}
+                for row in sorted(tool_rows, key=lambda x: -x[1])
+                if row[0]
+            ]
 
+            # 3. SQL：is_reverted 和 last_message_id
+            active_count = (
+                await session.execute(
+                    select(func.count(MsgModel.message_id))
+                    .where(MsgModel.turn_id == turn_id)
+                    .where(MsgModel.reverted == False)  # noqa: E712
+                )
+            ).scalar() or 0
+            stats["is_reverted"] = active_count == 0
+
+            last_msg_id = (
+                await session.execute(
+                    select(MsgModel.message_id)
+                    .where(MsgModel.turn_id == turn_id)
+                    .where(MsgModel.reverted == False)  # noqa: E712
+                    .order_by(MsgModel.sequence_number.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            stats["last_message_id"] = last_msg_id
+
+            # 4. 仅加载需要解析 JSON data 的消息（最小化 Python 处理）
+            content_types = [
+                MessageType.USER_MESSAGE,
+                MessageType.AGENT_RESPONSE,
+                MessageType.TURN_END,
+                MessageType.TOOL_CALL,
+            ]
+            content_messages = list(
+                (
+                    await session.execute(
+                        select(MsgModel)
+                        .where(MsgModel.turn_id == turn_id)
+                        .where(MsgModel.reverted == False)  # noqa: E712
+                        .where(MsgModel.message_type.in_(content_types))
+                        .order_by(MsgModel.sequence_number)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+        # 5. Python 解析（仅对需要的消息）
+        for m in content_messages:
             if m.message_type == MessageType.USER_MESSAGE:
                 if stats["user_message"] is None:
-                    # 优先使用 raw_input（与前端明细模式一致）
                     raw_input = m.data.get("raw_input") if m.data else None
                     if raw_input is not None:
                         stats["user_message"] = str(raw_input)
                     else:
-                        # data["content"] 是 json.dumps({"content": "用户消息", ...})
                         raw = m.data.get("content") if m.data else None
                         if raw:
                             try:
@@ -402,36 +527,27 @@ class TurnService(BaseService[Turn]):
                             except (json.JSONDecodeError, TypeError):
                                 stats["user_message"] = str(raw)
 
-            elif m.message_type == MessageType.STEP_START:
-                stats["total_steps"] += 1
-
             elif m.message_type == MessageType.TOOL_CALL:
                 tool_name = m.data.get("tool_name") if m.data else None
-                if tool_name:
-                    tool_call_counter[tool_name] = (
-                        tool_call_counter.get(tool_name, 0) + 1
-                    )
-                    # 提取文件路径
-                    if tool_name in ("read_file", "edit_file", "write_file"):
-                        args = m.data.get("arguments")
+                if tool_name in ("read_file", "edit_file", "write_file"):
+                    args = m.data.get("arguments")
+                    if args:
+                        try:
+                            parsed = json.loads(args) if isinstance(args, str) else args
+                            if isinstance(parsed, dict) and parsed.get("path"):
+                                stats["current_file_path"] = parsed["path"]
+                        except (json.JSONDecodeError, TypeError):
+                            pass
+                if tool_name == "todo_management":
+                    if not (m.data and m.data.get("status") == "error"):
+                        args = m.data.get("arguments") if m.data else None
                         if args:
                             try:
                                 parsed = json.loads(args) if isinstance(args, str) else args
-                                if isinstance(parsed, dict) and parsed.get("path"):
-                                    stats["current_file_path"] = parsed["path"]
+                                if isinstance(parsed, dict) and parsed.get("todos"):
+                                    stats["current_todo_list"] = parsed["todos"]
                             except (json.JSONDecodeError, TypeError):
                                 pass
-                    # 提取 TODO 列表（调用失败时不更新）
-                    if tool_name == "todo_management":
-                        if not (m.data and m.data.get("status") == "error"):
-                            args = m.data.get("arguments") if m.data else None
-                            if args:
-                                try:
-                                    parsed = json.loads(args) if isinstance(args, str) else args
-                                    if isinstance(parsed, dict) and parsed.get("todos"):
-                                        stats["current_todo_list"] = parsed["todos"]
-                                except (json.JSONDecodeError, TypeError):
-                                    pass
 
             elif m.message_type == MessageType.TURN_END:
                 if m.data and "changed_files" in m.data:
@@ -443,26 +559,20 @@ class TurnService(BaseService[Turn]):
                     try:
                         parsed = json.loads(content)
                         if isinstance(parsed, dict) and parsed.get("content"):
-                            # 同一消息流拼接，新消息流替换（与 TUI chat_store 逻辑一致）
                             is_new_message = stats.get("_last_agent_msg_id") and stats["_last_agent_msg_id"] != m.message_id
                             if is_new_message:
-                                stats["final_response"] = parsed["content"]  # 新消息流，替换
+                                stats["final_response"] = parsed["content"]
                             else:
-                                stats["final_response"] += parsed["content"]  # 同一消息流，拼接
+                                stats["final_response"] += parsed["content"]
                             stats["_last_agent_msg_id"] = m.message_id
                     except (json.JSONDecodeError, TypeError):
                         is_new_message = stats.get("_last_agent_msg_id") and stats["_last_agent_msg_id"] != m.message_id
                         if is_new_message:
-                            stats["final_response"] = str(content)  # 新消息流，替换
+                            stats["final_response"] = str(content)
                         else:
-                            stats["final_response"] += str(content)  # 同一消息流，拼接
+                            stats["final_response"] += str(content)
                         stats["_last_agent_msg_id"] = m.message_id
 
-        stats["tool_call_stats"] = [
-            {"tool_name": name, "count": count}
-            for name, count in sorted(tool_call_counter.items(), key=lambda x: -x[1])
-        ]
-        stats["is_reverted"] = active_count == 0
         return stats
 
     async def get_file_diff(self, session_id: str, turn_id: str, file_path: str) -> Optional[str]:
@@ -620,19 +730,202 @@ class MessageService(BaseService[Message]):
         return await self.get_batch(filters=filters, order_by="sequence_number")
 
     async def get_next_sequence_number(self, session_id: str) -> int:
-        """获取下一个消息序列号"""
+        """[DEPRECATED] 获取下一个消息序列号
+
+        .. deprecated::
+            使用 :meth:`next_sequence_for_session` 代替。
+        """
+        import warnings
+        warnings.warn(
+            "MessageService.get_next_sequence_number is deprecated. "
+            "Use next_sequence_for_session instead.",
+            DeprecationWarning,
+            stacklevel=2,
+        )
+        return await self.next_sequence_for_session(session_id)
+
+    async def next_sequence_for_session(self, session_id: str) -> int:
+        """原子递增并返回该 session 的下一个 message 序列号"""
         async with db_manager.get_session() as session:
-            statement = (
-                select(Message)
-                .where(Message.session_id == session_id)
-                .order_by(Message.sequence_number.desc())
-                .limit(1)
+            stmt = (
+                sqlite_insert(MessageSeqCounter)
+                .values(counter_key=session_id, last_seq=1)
+                .on_conflict_do_update(
+                    index_elements=["counter_key"],
+                    set_={"last_seq": MessageSeqCounter.last_seq + 1},
+                )
+                .returning(MessageSeqCounter.last_seq)
             )
-            result = await session.exec(statement)
-            latest_message = result.scalars().first()
-            if latest_message:
-                return latest_message.sequence_number + 1
-            return 1
+            result = await session.execute(stmt)
+            value = result.scalar_one()
+            await session.commit()
+            return value
+
+    async def next_sequence_in_session(
+        self, db_session: "AsyncSession", session_id: str
+    ) -> int:
+        """在外部事务中递增序列号。不 commit。
+
+        ⚠️ 调用者必须确保 db_session 处于活跃事务中（通过 get_multi_session 获取）。
+        """
+        assert db_session.in_transaction(), (
+            "next_sequence_in_session requires an active transaction (use get_multi_session)"
+        )
+        stmt = (
+            sqlite_insert(MessageSeqCounter)
+            .values(counter_key=session_id, last_seq=1)
+            .on_conflict_do_update(
+                index_elements=["counter_key"],
+                set_={"last_seq": MessageSeqCounter.last_seq + 1},
+            )
+            .returning(MessageSeqCounter.last_seq)
+        )
+        result = await db_session.execute(stmt)
+        return result.scalar_one()
+
+    async def create_message_in_session(
+        self, db_session: "AsyncSession", **kwargs
+    ) -> Message:
+        """在外部事务中创建消息。
+
+        ⚠️ 此方法不做 commit/rollback——事务生命周期由外层 get_multi_session() 管理。
+        调用者必须确保 db_session 处于活跃事务中。
+        """
+        assert db_session.in_transaction(), (
+            "create_message_in_session requires an active transaction (use get_multi_session)"
+        )
+        instance = Message(**kwargs)
+        db_session.add(instance)
+        await db_session.flush()
+        return instance
+
+    async def get_message_ids_from_pivot(
+        self, agent_id: str, pivot_message_id: str
+    ) -> set:
+        """获取从 pivot 开始（含）的所有 message_id（仅查 ID，不加载完整 data）"""
+        async with db_manager.get_session() as session:
+            pivot_seq = (
+                await session.execute(
+                    select(Message.sequence_number).where(
+                        Message.message_id == pivot_message_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if pivot_seq is None:
+                return set()
+            ids = (
+                await session.execute(
+                    select(Message.message_id, Message.turn_id)
+                    .where(Message.agent_id == agent_id)
+                    .where(Message.sequence_number >= pivot_seq)
+                )
+            ).all()
+            # Return (message_ids, turn_ids) as a dict for convenience
+            message_ids = {row[0] for row in ids}
+            turn_ids = {row[1] for row in ids if row[1]}
+            return {"message_ids": message_ids, "turn_ids": turn_ids}
+
+    async def get_messages_from_pivot(
+        self, agent_id: str, pivot_message_id: str
+    ) -> List[Message]:
+        """获取从 pivot 开始（含）到 agent 最后一条消息的完整消息（用于收集 patches）"""
+        async with db_manager.get_session() as session:
+            pivot_seq = (
+                await session.execute(
+                    select(Message.sequence_number).where(
+                        Message.message_id == pivot_message_id
+                    )
+                )
+            ).scalar_one_or_none()
+            if pivot_seq is None:
+                return []
+            return list(
+                (
+                    await session.execute(
+                        select(Message)
+                        .where(Message.agent_id == agent_id)
+                        .where(Message.sequence_number >= pivot_seq)
+                        .order_by(Message.sequence_number)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+    async def find_pivot_message_id(
+        self, agent_id: str, target_message_id: str, level: str
+    ) -> Optional[str]:
+        """通过 SQL 查找 pivot message_id"""
+        async with db_manager.get_session() as session:
+            # 获取目标消息的 turn_id 和 data
+            target_row = (
+                await session.execute(
+                    select(Message.turn_id, Message.data).where(
+                        Message.message_id == target_message_id
+                    )
+                )
+            ).first()
+            if not target_row:
+                return None
+            target_turn_id, target_data = target_row
+
+            if level == "turn":
+                # 找该 turn 的 TURN_START 消息
+                pivot = (
+                    await session.execute(
+                        select(Message.message_id)
+                        .where(Message.turn_id == target_turn_id)
+                        .where(Message.agent_id == agent_id)
+                        .where(Message.message_type == MessageType.TURN_START)
+                        .limit(1)
+                    )
+                ).scalar_one_or_none()
+                if not pivot:
+                    pivot = target_message_id  # fallback
+            else:  # level == "step"
+                step_id = (target_data or {}).get("step_id")
+                if step_id:
+                    pivot = (
+                        await session.execute(
+                            select(Message.message_id)
+                            .where(Message.turn_id == target_turn_id)
+                            .where(Message.agent_id == agent_id)
+                            .where(Message.message_type == MessageType.STEP_START)
+                            .where(func.json_extract(Message.data, "$.step_id") == step_id)
+                            .limit(1)
+                        )
+                    ).scalar_one_or_none()
+                else:
+                    pivot = target_message_id  # fallback
+                if not pivot:
+                    pivot = target_message_id  # fallback
+            return pivot
+
+    async def get_last_agent_response_id(self, agent_id: str) -> Optional[str]:
+        """获取 agent 最后一条 AGENT_RESPONSE 的 message_id"""
+        async with db_manager.get_session() as session:
+            result = (
+                await session.execute(
+                    select(Message.message_id)
+                    .where(Message.agent_id == agent_id)
+                    .where(Message.message_type == MessageType.AGENT_RESPONSE)
+                    .where(Message.reverted == False)
+                    .order_by(Message.sequence_number.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
+            if result:
+                return result
+            # Fallback: last message of any type
+            return (
+                await session.execute(
+                    select(Message.message_id)
+                    .where(Message.agent_id == agent_id)
+                    .where(Message.reverted == False)
+                    .order_by(Message.sequence_number.desc())
+                    .limit(1)
+                )
+            ).scalar_one_or_none()
 
     async def get_message_stats_by_session(self, session_id: str) -> Dict[str, Any]:
         """获取会话的消息统计信息
@@ -1181,36 +1474,25 @@ class TaskService(BaseService[Task]):
     async def search_tasks(
         self, query: str, session_id: Optional[str] = None
     ) -> List[Task]:
-        """搜索任务（按名称和描述）"""
+        """搜索任务（按名称和描述），使用 SQL LIKE 进行模糊匹配"""
         async with db_manager.get_session() as session:
-            statement = select(Task)
-
-            conditions = []
+            like_pattern = f"%{query}%"
+            statement = (
+                select(Task)
+                .where(
+                    or_(
+                        Task.name.ilike(like_pattern),
+                        Task.description.ilike(like_pattern),
+                        Task.details.ilike(like_pattern),
+                    )
+                )
+            )
             if session_id:
-                conditions.append(Task.session_id == session_id)
-
-            # 添加搜索条件
-            query_lower = query.lower()
-            # 由于SQLite的LIKE限制，我们会在Python中进行额外的过滤
+                statement = statement.where(Task.session_id == session_id)
             statement = statement.order_by(Task.created_at)
 
-            if conditions:
-                statement = statement.where(and_(*conditions))
-
             result = await session.exec(statement)
-            tasks = result.scalars().all()
-
-            # 在Python中进行模糊匹配
-            filtered_tasks = []
-            for task in tasks:
-                if (
-                    query_lower in task.name.lower()
-                    or query_lower in task.description.lower()
-                    or (task.details and query_lower in task.details.lower())
-                ):
-                    filtered_tasks.append(task)
-
-            return filtered_tasks
+            return list(result.scalars().all())
 
     async def add_comment(
         self, task_id: str, author: str, content: str

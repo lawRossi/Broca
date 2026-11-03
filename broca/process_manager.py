@@ -17,6 +17,7 @@ from enum import Enum
 from pathlib import Path
 from typing import Dict, List, Optional
 
+from broca.components.process_manager import ProcessManager as ProcessManagerABC
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
@@ -71,8 +72,8 @@ def _preexec():
         pass  # 非 Linux 平台安全降级
 
 
-class ProcessManager:
-    """进程管理器（单例）
+class LocalProcessManager(ProcessManagerABC):
+    """进程管理器（单例，默认实现）
 
     管理所有长时间运行的子进程，包括启动、状态查询、停止和清理。
     输出通过 shell 重定向到文件，不做内存缓冲。
@@ -396,3 +397,6 @@ class ProcessManager:
                 import shutil
                 shutil.rmtree(proc_dir, ignore_errors=True)
                 logger.debug(f"Cleaned up old process: {process_id}")
+
+# Backward-compatibility alias
+ProcessManager = LocalProcessManager

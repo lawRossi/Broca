@@ -1,0 +1,17 @@
+{
+  "name": "reasoning_empty_string",
+  "chunks": [
+    {
+      "type": "reasoning_content",
+      "data": ""
+    }
+  ],
+  "expected_message": null,
+  "expected_on_chunk_events": [
+    {
+      "type": "reasoning_content",
+      "data": "",
+      "index": 0
+    }
+  ]
+}

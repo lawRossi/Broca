@@ -49,6 +49,7 @@ from .service import (
 )
 from .session_manager import (
     SessionManager,
+    SQLSessionManager,
 )
 
 __all__ = [
@@ -84,6 +85,7 @@ __all__ = [
     "get_task_comment_service",
     # Session Manager
     "SessionManager",
+    "SQLSessionManager",
     # Database Migration
     "DatabaseMigrationManager",
     "migration_manager",

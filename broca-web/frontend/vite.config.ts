@@ -22,6 +22,7 @@ export default defineConfig({
     },
   },
   server: {
+    port: Number(process.env.VITE_DEV_PORT) || 5177,
     https: sslConfig,
     allowedHosts: ["app.mynotebook.dpdns.org"],
     headers: {
@@ -29,9 +30,21 @@ export default defineConfig({
     },
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:9000',
+        target: process.env.VITE_BACKEND_URL || 'http://127.0.0.1:9001',
         changeOrigin: true,
         // WebSocket 代理
+        ws: true,
+      },
+      '/socket.io': {
+        // 优先级: VITE_BROCA_SOCKET_SERVER_URL > VITE_BACKEND_URL 同 host + 6666 > 默认
+        // SocketIO 嵌入 Web 后端进程（BROCA_SOCKETIO_ENABLED=true），
+        // 当未显式设置时从 VITE_BACKEND_URL 推导同 host 的 6666 端口
+        target:
+          process.env.VITE_BROCA_SOCKET_SERVER_URL ||
+          (process.env.VITE_BACKEND_URL
+            ? process.env.VITE_BACKEND_URL.replace(/:\d+$/, ':6666')
+            : 'http://127.0.0.1:6666'),
+        changeOrigin: true,
         ws: true,
       },
     },

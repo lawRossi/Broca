@@ -18,6 +18,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from broca.logging_config import get_logger
 from broca.errors import ValidationError
 from broca.process_manager import ProcessManager
+from broca.components.scheduler import SchedulerABC
 from broca.session.models import JobStatus, JobType, MessageProtocol
 from broca.session.service import get_job_execution_service, get_job_service
 from broca.utils.datetime_util import serialize_dt
@@ -37,7 +38,7 @@ def _aps_to_utc(dt: datetime | None) -> datetime | None:
 logger = get_logger(__name__)
 
 
-class Scheduler:
+class Scheduler(SchedulerABC):
     """调度器主类（封装APScheduler）"""
 
     _instance = None
@@ -645,8 +646,9 @@ class Scheduler:
     async def _send_message_to_agent(self, agent_id: str, content: str):
         """向指定agent发送消息"""
         try:
-            # 获取服务器URL，从环境变量或默认值
-            server_url = os.getenv("BROCA_SERVER_URL", "http://localhost:6868")
+            # 获取服务器URL，从 configs.json 读取
+            from broca.configs import get_configs
+            server_url = get_configs().socket_server_url or "http://localhost:6666"
 
             # 创建临时socketio客户端
             from broca.communication.socketio_client import SocketIOClient

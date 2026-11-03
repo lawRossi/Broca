@@ -1,0 +1,11 @@
+{
+  "name": "empty_stream_only_finish",
+  "chunks": [
+    {
+      "type": "finish",
+      "data": null
+    }
+  ],
+  "expected_message": null,
+  "expected_on_chunk_events": []
+}

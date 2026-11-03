@@ -1,10 +1,12 @@
 import asyncio
+import json
 import os
 import shutil
 import signal
 import sys
 import tempfile
 from datetime import datetime
+from typing import Optional
 
 from jinja2 import Template
 
@@ -61,6 +63,34 @@ class Bash(Tool):
             }
         }
 
+    def pre_execute_check(
+        self, arguments: str, context: ToolCallContext
+    ) -> Optional[str]:
+        """检测 bash 命令是否包含危险操作，需要时返回权限弹窗消息。"""
+        try:
+            args_dict = json.loads(arguments) if isinstance(arguments, str) else arguments
+        except (json.JSONDecodeError, TypeError):
+            return None
+        if not isinstance(args_dict, dict):
+            return None
+
+        code = args_dict.get("code") or args_dict.get("command")
+        if not code:
+            return None
+
+        # 后台命令跳过安全检查（与 _execute 行为一致）
+        background = args_dict.get("background", False)
+        has_shell_bg = self._detect_background_ampersand(code)
+        if background or has_shell_bg:
+            return None
+
+        is_safe, reason, snippet = self._validate_code(code)
+        if not is_safe:
+            return (
+                f"Run potentially dangerous code: {reason}\n\n```bash\n{snippet}\n```"
+            )
+        return None
+
     async def _execute(self, arguments: dict, context: ToolCallContext) -> ToolResult:
         code = arguments.get("code") or arguments.get("command")
         if not code:
@@ -79,18 +109,6 @@ class Bash(Tool):
             if has_shell_bg:
                 code = self._strip_background_ampersand(code)
             return await self._run_background(code, context, notify=notify)
-
-        is_safe, reason, snippet = self._validate_code(code)
-        if not is_safe:
-            agent = context.agent
-            permission_message = (
-                f"Run potentially dangerous code: {reason}\n\n```bash\n{snippet}\n```"
-            )
-            if not await agent.ask_for_permission(permission_message):
-                return ToolResult(
-                    status=ToolStatus.ERROR,
-                    content="User refused to run potentially dangerous code",
-                )
 
         return await self._run_code_async(code)
 

@@ -7,20 +7,15 @@ This module defines the core Agent class, which encapsulates the agent's behavio
 import asyncio
 import json
 import uuid
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from broca.agent_configs import AgentConfig
-from broca.communication.agent_communicator import AgentCommunicator
 from broca.context import Context
-
-from broca.loop_engine import LoopEngine, ExecutionResult, ExecutionStatus
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
-from broca.permission_manager import PermissionManager
+from broca.loop_engine import ExecutionResult, ExecutionStatus
 from broca.session import Message, MessageRole, MessageType, SessionManager
 from broca.session.revert_service import SessionRevertService
-from broca.tools.tool_manager import ToolManager
-from broca.tools.tool_permission_manager import ToolPermissionManager
 
 logger = get_logger(__name__)
 
@@ -28,7 +23,7 @@ logger = get_logger(__name__)
 class Agent:
     """Base Agent class with core functionality"""
 
-    STATUS_IDEL = "idle"
+    STATUS_IDLE = "idle"
     STATUS_RUNNING = "running"
     STATUS_DISCONNECTED = "disconnected"
 
@@ -64,14 +59,16 @@ class Agent:
         self.last_context_length: Optional[int] = None
 
         self.message_queue: asyncio.Queue = asyncio.Queue(
-            getattr(getattr(self.config, "execution_config", None), "message_queue_size", 3)
+            self.config.execution_config.message_queue_size
         )
 
         self._abort_task: Optional[asyncio.Task] = None
         self.running = False
         self._run_lock: asyncio.Lock = asyncio.Lock()
 
-        asyncio.create_task(self.load_stats(session_manager))
+        # 半初始化安全：create() 中途失败后 disconnect() 不会抛 AttributeError
+        self.context_compressor = None
+        self.persistent_memory_manager = None
 
     @classmethod
     async def create(
@@ -81,19 +78,160 @@ class Agent:
         session_manager: SessionManager,
         **kwargs,
     ) -> "Agent":
-        """Async factory: creates an Agent and fully initializes it, including MCP connections."""
-        agent = cls.__new__(cls)
-        Agent.__init__(agent, config, llm_client, session_manager, **kwargs)
-        # Initialize core components
-        agent._setup_context(**kwargs)
-        agent._setup_communicator()
-        agent._setup_session_memory()
-        agent._setup_persistent_memory()
-        agent._setup_permission_manager()
-        agent._setup_tool_permission_manager()
+        """Async factory: creates an Agent via ComponentRegistry composition root.
+
+        All components are resolved from the ``ComponentRegistry`` with
+        per-agent scoping.  Dependencies are injected in topological order.
+        """
+        from broca.agent_reference import AgentReferenceAdapter
+        from broca.components import (
+            CommandSystem,
+            Communicator,
+            ComponentRegistry,
+            ContextCompressor,
+            LoopEngine,
+            MemoryManager,
+            PermissionProvider,
+            ToolExecutor,
+            ToolManager,
+        )
+
+        registry = ComponentRegistry.get_instance()
+        registry.register_defaults()
+        registry.load_config_overrides(getattr(config, "workspace", None))
+        registry.discover_plugins()
+
+        agent = cls(config, llm_client, session_manager, **kwargs)
+        key = agent.agent_id
+
+        await agent.load_stats(session_manager)
+
+        # ── 1. No runtime deps: construct first ──────────────────────────
+        agent.context = Context(config, session_manager, **kwargs)
+        agent.permission_provider = registry.get(PermissionProvider, scope_key=key)
+        agent.communicator = registry.get(Communicator, scope_key=key)
+
+        # ── 2. Topological initialize (no deps first) ───────────────────
+        await agent.communicator.initialize(
+            agent_id=key,
+            session_id=session_manager.session_id,
+            config=config,
+        )
+
+        # Register Agent-level event handlers on the communicator
+        agent.communicator.register_event_handler("user_message", agent._receive_message)
+        agent.communicator.register_event_handler("task_start", agent._receive_message)
+        agent.communicator.register_event_handler("task_complete", agent._receive_message)
+        agent.communicator.register_event_handler("task_error", agent._receive_message)
+        agent.communicator.register_event_handler("command", agent._on_command)
+        agent.communicator.register_event_handler(
+            "permission_response", agent._on_permission_response
+        )
+        agent.communicator.register_event_handler("disconnect", agent._on_disconnected)
+        agent.communicator.register_event_handler("connect", agent._on_connected)
+        from broca.tools.agent_interaction import AskUserToolManager
+
+        agent.communicator.register_event_handler(
+            "user_answer", AskUserToolManager.handle_user_answer
+        )
+
+        await agent.permission_provider.initialize(
+            communicator=agent.communicator,
+            session_manager=session_manager,
+            config=config,
+            agent_id=key,
+            session_id=agent.session_id,
+        )
+
+        # ── 3. Tool layer ───────────────────────────────────────────────
+        agent.tool_manager = registry.get(ToolManager, scope_key=key)
+        await agent.tool_manager.init(config.workspace)
         await agent._setup_tools()
-        agent._setup_execution_engine()
-        await agent._setup_command_system()
+
+        # ── 4. Execution layer (depends on tool_mapping / permission) ──
+        tool_executor = registry.get(ToolExecutor, scope_key=key)
+        await tool_executor.initialize(
+            tool_mapping=agent.tool_mapping,
+            permission_provider=agent.permission_provider,
+            config=config,
+            communicator=agent.communicator,
+        )
+
+        context_compressor = registry.get(ContextCompressor, scope_key=key)
+        await context_compressor.initialize(
+            agent_ref=AgentReferenceAdapter(agent),
+            session_manager=session_manager,
+            config=config,
+        )
+
+        memory_manager = registry.get(MemoryManager, scope_key=key)
+        await memory_manager.initialize(
+            agent_ref=AgentReferenceAdapter(agent),
+            workspace=config.workspace,
+            config=config.persistent_memory_config,
+        )
+
+        # ── 5. Execution engine (depends on all above) ──────────────────
+        import functools
+
+        from broca.components.compressor_context_factory import build_compressor_context
+        from broca.loop_engine.hooks.factory import build_hooks_for
+        from broca.loop_engine.strategies.factory import (
+            create_llm_strategy,
+            create_tool_strategy,
+        )
+
+        # Components the engine no longer owns: the compressor / memory manager
+        # belong to CompressionMemoryHook, but the /compact and /clear* commands
+        # plus shutdown() need a handle on them → expose them on the agent.
+        agent.context_compressor = context_compressor
+        agent.persistent_memory_manager = memory_manager
+
+        agent_ref = AgentReferenceAdapter(agent)
+        llm_strategy = create_llm_strategy(config)
+        tool_strategy = create_tool_strategy(config)
+        # Main agents get snapshot + communicator hooks; internal sub agents
+        # (memory extraction / skill evolution) get the reduced set (review M1).
+        hooks = build_hooks_for(
+            config,
+            snapshot_manager=None,  # SnapshotHook lazily creates it
+            communicator=agent.communicator,
+            context_compressor=context_compressor,
+            memory_manager=memory_manager,
+            context=agent.context,
+            session_id=session_manager.session_id,
+            compressor_ctx_builder=functools.partial(
+                build_compressor_context,
+                agent_ref=agent_ref,
+                config=config,
+                communicator=agent.communicator,
+                session_manager=session_manager,
+                agent_id=agent.agent_id,
+                session_id=session_manager.session_id,
+            ),
+            tool_executor=tool_executor,
+        )
+
+        agent.execution_engine = registry.get(LoopEngine, scope_key=key)
+        await agent.execution_engine.initialize(
+            agent_ref=agent_ref,
+            llm_client=llm_client,
+            context=agent.context,
+            tool_executor=tool_executor,
+            communicator=agent.communicator,
+            session_manager=session_manager,
+            config=config,
+            tool_mapping=agent.tool_mapping,
+            permission_provider=agent.permission_provider,
+            llm_strategy=llm_strategy,
+            tool_strategy=tool_strategy,
+            hooks=hooks,
+        )
+
+        # ── 6. Command system (only component that gets full Agent) ─────
+        agent.command_manager = registry.get(CommandSystem, scope_key=key)
+        await agent.command_manager.initialize(agent=agent, communicator=agent.communicator)
+
         return agent
 
     async def load_stats(self, session_manager: SessionManager) -> None:
@@ -114,9 +252,7 @@ class Agent:
         except Exception as e:
             logger.warning(f"Failed to load agent stats: {e}")
 
-    async def update_stats(
-        self, input_tokens: int, output_tokens: int, session_manager: SessionManager
-    ) -> None:
+    async def update_stats(self, input_tokens: int, output_tokens: int) -> None:
         """Update statistics and persist to database"""
         self.total_input_tokens += input_tokens
         self.total_output_tokens += output_tokens
@@ -125,7 +261,7 @@ class Agent:
 
         # Persist to database
         try:
-            await session_manager.agent_service.update(
+            await self.session_manager.agent_service.update(
                 self.agent_id,
                 total_input_tokens=self.total_input_tokens,
                 total_output_tokens=self.total_output_tokens,
@@ -153,7 +289,7 @@ class Agent:
         except Exception as e:
             logger.warning(f"Failed to persist agent status {new_status}: {e}")
 
-    def get_stats(self) -> Dict[str, Any]:
+    def get_stats(self) -> dict[str, Any]:
         """Get current statistics"""
         return {
             "agent_id": self.agent_id,
@@ -162,14 +298,6 @@ class Agent:
             "total_llm_calls": self.total_llm_calls,
             "last_context_length": self.last_context_length,
         }
-
-    def _setup_context(self, **kwargs) -> None:
-        """Set up agent context"""
-        self.context = Context(
-            self.config,
-            self.session_manager,
-            **kwargs,
-        )
 
     async def _setup_tools(self):
         """Set up tools for the agent, including auto-discovered built-in tools,
@@ -180,7 +308,10 @@ class Agent:
         a higher level, e.g., AgentFactory). This method only fetches the
         appropriate MCP tools for this agent based on its ``mcp_servers`` config.
         """
-        tool_manager = ToolManager()
+        from broca.components import ComponentRegistry, ToolManager
+
+        registry = ComponentRegistry.get_instance()
+        tool_manager = registry.get(ToolManager, scope_key=self.agent_id)
         if self.config.mcp_servers:
             mcp_tools = tool_manager.get_mcp_tools(self.config.mcp_servers)
             mcp_tool_names = [tool.name for tool in mcp_tools]
@@ -191,101 +322,6 @@ class Agent:
         tools = tool_manager.get_tools(tool_names=tool_names)
         self.tools = [tool.format() for tool in tools]
         self.tool_mapping = {tool.name: tool for tool in tools}
-
-    def _setup_communicator(self):
-        """Set up communication interface"""
-        self.communicator = AgentCommunicator(
-            agent_id=self.agent_id,
-            server_url=self.config.server_url,
-            client_type="agent",
-        )
-
-        # Set up callbacks
-        self.communicator.register_event_handler("user_message", self._receive_message)
-        self.communicator.register_event_handler("task_start", self._receive_message)
-        self.communicator.register_event_handler("task_complete", self._receive_message)
-        self.communicator.register_event_handler("task_error", self._receive_message)
-        self.communicator.register_event_handler("command", self._on_command)
-        self.communicator.register_event_handler(
-            "permission_response", self._on_permission_response
-        )
-        # 注册断连事件：SocketIO 底层检测到连接断开时，
-        # 立即将 agent 状态持久化为 disconnected
-        self.communicator.register_event_handler("disconnect", self._on_disconnected)
-        # 注册连接/重连成功事件：网络抖动导致短暂断线后 SocketIOClient 自动重连，
-        # 此时 start() 循环中 is_connected() 已为 True，不会再次调用 connect()，
-        # 若不在此处恢复状态，DB 中会残留过期的 disconnected 状态，
-        # 导致前端轮询时误显示"断开连接"
-        self.communicator.register_event_handler("connect", self._on_connected)
-
-        from broca.tools.agent_interaction import AskUserToolManager
-
-        self.communicator.register_event_handler(
-            "user_answer", AskUserToolManager.handle_user_answer
-        )
-
-    def _setup_session_memory(self):
-        """Set up session memory manager (gated by enable_context_compression)"""
-        if not self.config.enable_context_compression:
-            self.session_memory_manager = None
-            return
-
-        logger.debug("Initializing session memory manager")
-
-        from broca.session_memory import SessionMemoryManager
-
-        self.session_memory_manager = SessionMemoryManager(
-            workspace=self.config.workspace,
-            agent=self,
-            config=self.config.compact_config,
-        )
-
-    def _setup_persistent_memory(self):
-        """Set up persistent memory manager"""
-        logger.debug("Initializing persistent memory manager")
-
-        from broca.persistent_memory import PersistentMemoryManager
-
-        self.persistent_memory_manager = PersistentMemoryManager(
-            workspace=self.config.workspace,
-            agent=self,
-            config=self.config.persistent_memory_config,
-        )
-
-    def _setup_tool_permission_manager(self):
-        """Set up tool permission manager"""
-        self.tool_permission_manager = ToolPermissionManager(
-            workspace=self.config.workspace
-        )
-
-    def _setup_execution_engine(self):
-        """Set up execution engine"""
-        self.execution_engine = LoopEngine(
-            agent=self,
-            llm_client=self.llm_client,
-            context=self.context,
-            tool_mapping=self.tool_mapping,
-            config=self.config,
-            communicator=self.communicator,
-            session_manager=self.session_manager,
-            tool_permission_manager=self.tool_permission_manager,
-        )
-
-    async def _setup_command_system(self):
-        """Set up command system (CommandManager with registry, loader, dispatcher)"""
-        from broca.commands.manager import CommandManager
-
-        self.command_manager = CommandManager(self)
-        await self.command_manager.initialize()
-
-    def _setup_permission_manager(self):
-        """Set up permission manager"""
-        exec_cfg = getattr(self.config, "execution_config", None)
-        self.permission_manager = PermissionManager(
-            communicator=self.communicator,
-            session_manager=self.session_manager,
-            permission_request_timeout=getattr(exec_cfg, "permission_request_timeout", 90),
-        )
 
     async def _receive_message(self, message: Message):
         """Receive message from communication channel"""
@@ -320,7 +356,16 @@ class Agent:
         - 初始连接时 start() -> connect() 已设置 idle，此处幂等
         """
         if self.status == self.STATUS_DISCONNECTED:
-            restore_status = self.STATUS_RUNNING if self._abort_task else self.STATUS_IDEL
+            # 用 _abort_task 而非 status 判断：断连时 status 已被覆盖为 DISCONNECTED，
+            # 无法区分断连前的 running/idle。
+            # 注意：当前 _on_disconnected 在 RUNNING 状态下提前 return，
+            # 因此 DISCONNECTED + _abort_task 不为 None 的组合实际不可达，
+            # 此处为防御性保留。
+            restore_status = (
+                self.STATUS_RUNNING
+                if self._abort_task is not None
+                else self.STATUS_IDLE
+            )
             logger.info(
                 "Agent %s socket (re)connected, restoring status to %s",
                 self.agent_id,
@@ -338,26 +383,21 @@ class Agent:
         Returns:
             True if permission is granted, False otherwise
         """
-        # Update permission manager state
-        self.permission_manager.set_state(
-            turn_id=self.turn_id,
-            agent_id=self.agent_id,
-            session_id=self.session_id,
-        )
+        # Update turn_id on the permission provider
+        self.permission_provider.set_turn_id(self.turn_id)
 
-        # Use permission manager to handle the request
-        return await self.permission_manager.request_permission(message)
+        # Use permission provider to handle the request
+        return await self.permission_provider.request_permission(message)
 
     async def ask_for_tool_permission(
         self, tool_name: str, arguments: str
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, Optional[str]]:
         """
         Ask for user permission for a tool execution (tool permission system).
 
-        This is used by the new tool permission system when a tool is configured
-        as "ask". It supports session-level decisions (allow/forbid for the
-        entire session). The existing ask_for_permission() remains unchanged
-        for backward compatibility.
+        Thin wrapper over ``permission_provider.request_tool_permission`` —
+        message construction (including argument truncation) is handled by
+        the permission provider itself.
 
         Args:
             tool_name: Name of the tool
@@ -366,16 +406,9 @@ class Agent:
         Returns:
             Tuple of (granted: bool, session_action: Optional[str])
         """
-        # Update permission manager state
-        self.permission_manager.set_state(
-            turn_id=self.turn_id,
-            agent_id=self.agent_id,
-            session_id=self.session_id,
-        )
-
-        # Use permission manager to handle the request with request_type="tool"
-        return await self.permission_manager.request_tool_permission(
-            f"工具 `{tool_name}` 需要你授权。"
+        self.permission_provider.set_turn_id(self.turn_id)
+        return await self.permission_provider.request_tool_permission(
+            tool_name, arguments
         )
 
     async def _on_permission_response(self, message: Message):
@@ -385,7 +418,7 @@ class Agent:
         Args:
             message: Permission response message
         """
-        await self.permission_manager.handle_permission_response(message)
+        await self.permission_provider.handle_permission_response(message)
 
     def stop(self):
         self.running = False
@@ -404,7 +437,8 @@ class Agent:
                         break
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
                 if message.message_type == MessageType.USER_MESSAGE:
-                    await self.run(message)
+                    if not await self._try_dispatch_inline_command(message):
+                        await self.run(message)
                 elif message.message_type == MessageType.TASK_START:
                     await self._handle_task(message)
                 elif message.message_type in [
@@ -414,13 +448,31 @@ class Agent:
                     await self.run(message, from_agent=True)
             except asyncio.TimeoutError:
                 continue
+            except Exception:
+                logger.exception("Unexpected error in message loop")
+
+    async def _try_dispatch_inline_command(self, message: Message) -> bool:
+        """尝试将用户消息作为 inline command 处理。
+        返回 True 表示已作为命令处理（不再是普通对话）。
+        """
+        if not self.command_manager:
+            return False
+        content = message.data.get("content", "")
+        if not content:
+            return False
+        parsed = self.command_manager.parse(content)
+        if not parsed:
+            return False
+        name, args = parsed
+        await self._handle_command(name, args, message)
+        return True
 
     async def run(
         self,
         message: Message,
         max_steps: Optional[int] = None,
         from_agent: Optional[bool] = False,
-        allowed_tools: Optional[List[str]] = None,
+        allowed_tools: Optional[list[str]] = None,
         namespace: Optional[str] = None,
     ) -> ExecutionResult:
         """
@@ -432,7 +484,9 @@ class Agent:
         Args:
             message: The message to process
             max_steps: Maximum number of steps
-            from_agent: Whether the message is from another agent
+            from_agent: Whether the message is from another agent (inter-agent task,
+                        not a direct user message). Command interception is handled
+                        at the start() message-loop level, not here.
             allowed_tools: Optional list of tool names that are allowed to be called.
                            If provided, any tool not in this list will be skipped
                            with a "this tool is currently not allowed" result.
@@ -440,16 +494,6 @@ class Agent:
         Returns:
             ExecutionResult: Result of the execution with status and details
         """
-        # ═══ Command interception (outside lock — may re-enter run()) ═══
-        if not from_agent and message.message_type == MessageType.USER_MESSAGE:
-            content = message.data.get("content", "")
-            if content and hasattr(self, "command_manager") and self.command_manager:
-                parsed = self.command_manager.parse(content)
-                if parsed:
-                    name, args = parsed
-                    return await self._handle_command(name, args, message)
-        # ════════════════════════════════════════════════════════════════
-
         # ═══ Serial execution lock ═══
         # Prevent concurrent execution of the run() method from multiple call paths
         # (e.g., start() message loop vs. direct run() calls)
@@ -461,13 +505,11 @@ class Agent:
             # Clear undo stack (new operation invalidates undo history)
             self.revert_service.undo_stack.clear()
 
-            # Set execution context before execution
-            self.execution_engine.allowed_tools = allowed_tools
-            self.execution_engine.namespace = namespace
-
             try:
                 return await self.execution_engine.execute(
-                    message, max_steps, from_agent
+                    message, max_steps, from_agent,
+                    allowed_tools=allowed_tools,
+                    namespace=namespace,
                 )
             except Exception as e:
                 logger.error(f"Error in run: {e}")
@@ -477,19 +519,17 @@ class Agent:
                     error=str(e),
                 )
             finally:
-                # Reset allowed_tools to avoid affecting subsequent runs
-                self.execution_engine.allowed_tools = None
                 # Clean up
                 if not self.config.save_history:
                     await self.reset()
                 self._abort_task = None
-                await self._set_status(self.STATUS_IDEL)
+                await self._set_status(self.STATUS_IDLE)
 
     async def _handle_command(
         self, name: str, args: str, original_message: Message
     ) -> ExecutionResult:
         """
-        Handle a command intercepted in run().
+        Handle a command intercepted in the start() message loop.
 
         Dispatches the command via CommandManager and returns an ExecutionResult.
         If the command is not found, continues execution as a normal message.
@@ -505,28 +545,10 @@ class Agent:
         if result is None:
             # Command not found, treat as normal message
             logger.warning(f"Command '{name}' not found, treating as normal message")
-            return await self.run(original_message, from_agent=True)
+            return await self.run(original_message)
 
-        if result.type == "error":
-            await self.communicator.send_error(
-                {"message": result.value, "code": "COMMAND_ERROR", "severity": "error"},
-                subscription=self.session_id,
-            )
-        else:
-            # Send successful command result back to the client for display commands.
-            # Local commands with show_result=True (e.g., help) send their output
-            # to the frontend. Action commands (abort, undo, redo) default to
-            # show_result=False and do not send extra messages.
-            cmd = self.command_manager.registry.get(name)
-            if cmd is not None and getattr(cmd, "show_result", False):
-                await self.communicator.send_command_result(
-                    command=name,
-                    result={
-                        "code": 0,
-                        "message": result.value,
-                    },
-                    subscription=self.session_id,
-                )
+        # Send result via command manager (handles error vs success + show_result)
+        await self.command_manager.send_result(name, result, self.session_id)
 
         return ExecutionResult(
             status=ExecutionStatus.COMPLETED,
@@ -568,10 +590,10 @@ class Agent:
     async def reset(self):
         """Reset agent state"""
         self.execution_engine.reset()
-        await self.permission_manager.reset()
-        self.context._init_history()
+        await self.permission_provider.reset()
+        self.context.reset_history()
         self.turn_id = None
-        await self._set_status(self.STATUS_IDEL)
+        await self._set_status(self.STATUS_IDLE)
 
     async def subscribe(self, subscription: str):
         """Subscribe to channel"""
@@ -589,7 +611,7 @@ class Agent:
         """Connect to server"""
         connected = await self.communicator.connect()
         if connected:
-            await self._set_status(self.STATUS_IDEL)
+            await self._set_status(self.STATUS_IDLE)
             return True
         else:
             await self._set_status(self.STATUS_DISCONNECTED)
@@ -604,7 +626,7 @@ class Agent:
             input_tokens: Number of input tokens used
             output_tokens: Number of output tokens generated
         """
-        await self.update_stats(input_tokens, output_tokens, self.session_manager)
+        await self.update_stats(input_tokens, output_tokens)
 
     async def abort(self):
         """
@@ -657,14 +679,20 @@ class Agent:
                 original_message_id=message.message_id,
             )
             if result:
-                await self.communicator.send_command_result(
-                    command=command,
-                    result={
-                        "code": 0 if result.type != "error" else 1,
-                        "message": result.value,
-                    },
-                    subscription=self.session_id,
-                )
+                if result.type == "error":
+                    await self.communicator.send_error(
+                        {"message": result.value, "code": "COMMAND_ERROR", "severity": "error"},
+                        subscription=self.session_id,
+                    )
+                else:
+                    await self.communicator.send_command_result(
+                        command=command,
+                        result={
+                            "code": 0,
+                            "message": result.value,
+                        },
+                        subscription=self.session_id,
+                    )
                 return
         else:
             await self.communicator.send_error(
@@ -673,13 +701,36 @@ class Agent:
             )
 
     async def disconnect(self):
-        """Disconnect from server"""
+        """Disconnect from server and release per-agent component scope.
+
+        Performs reverse-topological shutdown:
+        1. ``execution_engine.abort()`` — stop in-flight tasks
+        2. ``shutdown()`` each component (only those that declare it)
+        3. ``registry.release(agent_id)`` — release all per-agent instances
+        """
+        self.execution_engine.abort()
         await self.communicator.disconnect()
         await self._set_status(self.STATUS_DISCONNECTED)
+
+        from broca.components import ComponentRegistry
+
+        shutdown_order = [
+            self.execution_engine,
+            self.execution_engine.tool_executor,
+            self.context_compressor,
+            self.persistent_memory_manager,
+            self.permission_provider,
+            self.communicator,
+        ]
+        for comp in shutdown_order:
+            if comp is not None and hasattr(comp, "shutdown"):
+                await comp.shutdown()
+
+        ComponentRegistry.get_instance().release(self.agent_id)
 
     async def restore_from_session(self, agent_id):
         """Restore agent state from session"""
         if self.config.save_history:
             await self.context.build_history_from_session(agent_id)
         else:
-            self.context._init_history()
+            self.context.reset_history()

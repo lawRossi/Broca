@@ -664,7 +664,7 @@ $startScriptContent = @"
 # 由 install.ps1 自动生成
 
 # 后端
-`$backProcess = Start-Process -NoNewWindow -PassThru -FilePath "$BrocaPython" -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 9000 --log-level info" -WorkingDirectory "$backendDst"
+`$backProcess = Start-Process -NoNewWindow -PassThru -FilePath "$BrocaPython" -ArgumentList "-m uvicorn app.main:app --host 127.0.0.1 --port 9001 --log-level info" -WorkingDirectory "$backendDst"
 Write-Host "[INFO] 后端已启动 (PID: `$(`$backProcess.Id))"
 
 "@
@@ -673,7 +673,7 @@ if ($HasNode) {
     $startScriptContent += @"
 
 # 前端 (使用 Python 内置 http.server 提供静态文件)
-`$frontProcess = Start-Process -NoNewWindow -PassThru -FilePath "$BrocaPython" -ArgumentList "-m http.server 5166 --directory $frontendDst\dist" -WorkingDirectory "$frontendDst\dist"
+`$frontProcess = Start-Process -NoNewWindow -PassThru -FilePath "$BrocaPython" -ArgumentList "-m http.server 7001 --directory $frontendDst\dist" -WorkingDirectory "$frontendDst\dist"
 Write-Host "[INFO] 前端已启动 (PID: `$(`$frontProcess.Id))"
 
 "@
@@ -686,17 +686,17 @@ Write-Host "  Broca 服务已启动:"
 
 if ($HasNode) {
     $startScriptContent += @"
-Write-Host "  前端: http://localhost:5166"
+Write-Host "  前端: http://localhost:7001"
 "@
 }
 
 $startScriptContent += @"
-Write-Host "  后端: http://localhost:9000"
+Write-Host "  后端: http://localhost:9001"
 "@
 
 if ($HasNode) {
     $startScriptContent += @"
-Write-Host "  Socket.IO: ws://localhost:6868"
+Write-Host "  Socket.IO: ws://localhost:6666"
 "@
 }
 
@@ -746,7 +746,7 @@ if ($HasNode) {
 
 try {
     $frontPid = Get-CimInstance Win32_Process -Filter "name like 'python%'" -ErrorAction SilentlyContinue |
-        Where-Object { $_.CommandLine -match "http\.server.*5166" } |
+        Where-Object { $_.CommandLine -match "http\.server.*7001" } |
         Select-Object -ExpandProperty ProcessId -First 1
 } catch {
     $frontPid = $null
@@ -826,7 +826,7 @@ if ($IsAdmin) {
         # 后端服务
         & nssm.exe stop BrocaBackend 2>&1 | Out-Null
         & nssm.exe remove BrocaBackend confirm 2>&1 | Out-Null
-        & nssm.exe install BrocaBackend "$BrocaPython" "-m uvicorn app.main:app --host 127.0.0.1 --port 9000 --log-level info" 2>&1 | Out-Null
+        & nssm.exe install BrocaBackend "$BrocaPython" "-m uvicorn app.main:app --host 127.0.0.1 --port 9001 --log-level info" 2>&1 | Out-Null
         & nssm.exe set BrocaBackend AppDirectory "$backendDst" 2>&1 | Out-Null
         & nssm.exe set BrocaBackend DisplayName "Broca Backend Service" 2>&1 | Out-Null
         & nssm.exe set BrocaBackend Description "Broca AI Agent 框架后端服务" 2>&1 | Out-Null
@@ -910,8 +910,8 @@ $installInfo = @{
     frontend_mode   = $(if ($HasNode) { "static" } else { "none" })
     frontend_dist   = $(if ($HasNode) { "$frontendDst\dist" } else { $null })
     storage_configured = (Has-StorageConfig $envFile)
-    backend_port    = 9000
-    frontend_port   = $(if ($HasNode) { 5166 } else { $null })
+    backend_port    = 9001
+    frontend_port   = $(if ($HasNode) { 7001 } else { $null })
 }
 $installInfo | ConvertTo-Json | Out-File "$BrocaHome\install.json" -Encoding UTF8
 
@@ -964,13 +964,13 @@ if ($HasNode) {
     }
     Write-Host ""
     Write-Host "  访问:"
-    Write-Host "    前端页面:   http://localhost:5166"
-    Write-Host "    后端 API:   http://localhost:9000"
+    Write-Host "    前端页面:   http://localhost:7001"
+    Write-Host "    后端 API:   http://localhost:9001"
 } else {
     Write-Host "  前端:       未构建（未检测到 Node.js）"
     Write-Host "  VS Code 插件: 未打包（需要 Node.js）"
     Write-Host ""
-    Write-Host "  后端 API:   http://localhost:9000"
+    Write-Host "  后端 API:   http://localhost:9001"
     Write-Host ""
     Write-Host "  如需前端页面或 VS Code 插件，请安装 Node.js 后重新运行此脚本"
 }

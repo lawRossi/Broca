@@ -1,5 +1,5 @@
 """
-PersistentMemoryManager — 持久化记忆提取管理器
+SubAgentMemoryManager — 持久化记忆提取管理器（默认实现）
 
 管理基于独立子 Agent 的记忆提取，支持自动提取（轮次结束时按阈值触发）
 和 on-demand 提取（通过 memory 工具触发）。
@@ -15,7 +15,8 @@ from pathlib import Path
 from typing import Optional
 
 from broca.agent_configs import PersistentMemoryConfig
-from broca.agent_manager import AgentFactory
+# AgentFactory is now accessed via ComponentRegistry (broca.components)
+from broca.components.memory_manager import MemoryManager
 from broca.context import Context
 from broca.loop_engine import ExecutionStatus
 from broca.session import MessageProtocol
@@ -41,58 +42,70 @@ ALLOWED_TOOLS = [
 AGENT_ID_POSTFIX = "#persistent-memory-agent"
 
 
-class PersistentMemoryManager:
+class SubAgentMemoryManager(MemoryManager):
     """
-    持久化记忆提取管理器。
+    持久化记忆提取管理器（默认实现）。
 
     提供两种提取方式：
     1. 自动提取（check_and_extract）：每轮结束后触发，检查消息/步数阈值
     2. On-demand 提取（trigger_extraction）：被 memory 工具调用，跳过阈值检查
     """
 
-    def __init__(
+    def __init__(self):
+        self.workspace: str = ""
+        self.agent = None
+        self.config: PersistentMemoryConfig | None = None
+        self.state = PersistentMemoryState()
+        self.task_timeout: int = 120
+        self._lock = asyncio.Lock()
+        self._store: MemoryStore | None = None
+
+    async def initialize(
         self,
+        agent_ref,
         workspace: str,
-        agent,
         config: PersistentMemoryConfig,
         task_timeout: int = 120,
-    ):
+    ) -> None:
+        """Initialize with runtime dependencies (called by composition root)."""
         self.workspace = workspace
-        self.agent = agent
+        self.agent = agent_ref
         self.config = config
-        self.state = PersistentMemoryState()
         self.task_timeout = task_timeout
-        self._lock = asyncio.Lock()
-
         self._store = MemoryStore(
             memory_dir=Path(workspace) / ".broca" / "memories",
             freshness_warning_days=config.freshness_warning_days,
         )
 
     # ────────────────────────────────────────
-    # 公共方法
+    # 公共方法（ABC 实现）
     # ────────────────────────────────────────
 
     def increment_step(self):
         """每步调用，递增 step 计数器（用于自动提取节流）"""
         self.state.step_count += 1
 
-    async def check_and_extract(self, context: Context):
+    async def check_and_extract(
+        self, context: Context, hint: Optional[str] = None
+    ) -> bool:
         """
         自动提取入口——在轮次结束时调用。
 
         检查消息数/步数阈值，满足条件且无提取进行中时触发子 Agent。
         """
         if self.state.extraction_in_progress:
-            return
+            return False
 
         if not self._should_extract(context):
-            return
+            return False
 
         logger.info("Persistent memory auto-extraction triggered")
         await self._trigger_internal(context, hint=None)
+        return True
 
-    async def trigger_extraction(self, context: Context, hint: Optional[str] = None):
+    async def trigger_extraction(
+        self, context: Context, hint: Optional[str] = None
+    ) -> bool:
         """
         On-demand 提取入口——被 memory 工具调用。
 
@@ -104,10 +117,15 @@ class PersistentMemoryManager:
         """
         if self.state.extraction_in_progress:
             logger.info("Extraction already in progress, skipping on-demand trigger")
-            return
+            return False
 
         logger.info(f"Persistent memory on-demand extraction triggered (hint: {hint})")
         await self._trigger_internal(context, hint=hint)
+        return True
+
+    def reset(self):
+        """重置状态"""
+        self.state.reset()
 
     # ────────────────────────────────────────
     # 内部方法
@@ -240,7 +258,10 @@ class PersistentMemoryManager:
         子 Agent 拥有独立的 LLM 调用，可用的工具限于 ALLOWED_TOOLS。
         """
         start = time.time()
-        agent_factory = AgentFactory()
+        from broca.components import ComponentRegistry
+        from broca.components.agent_factory import AgentFactory as AgentFactoryABC
+
+        agent_factory = ComponentRegistry.get_instance().get(AgentFactoryABC)
         session_manager = self.agent.session_manager
         agent_id = session_manager.session_id + AGENT_ID_POSTFIX
 
@@ -309,6 +330,6 @@ class PersistentMemoryManager:
         logger.info(f"Persistent memory extraction completed in {elapsed}s")
         return True
 
-    def reset(self):
-        """重置状态"""
-        self.state.reset()
+
+# Backward-compatibility alias
+PersistentMemoryManager = SubAgentMemoryManager

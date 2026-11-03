@@ -1,0 +1,39 @@
+{
+  "name": "content_multi_chunk",
+  "chunks": [
+    {
+      "type": "content",
+      "data": "Hello"
+    },
+    {
+      "type": "content",
+      "data": ", "
+    },
+    {
+      "type": "content",
+      "data": "world"
+    }
+  ],
+  "expected_message": {
+    "content": "Hello, world",
+    "reasoning_content": null,
+    "tool_calls": []
+  },
+  "expected_on_chunk_events": [
+    {
+      "type": "content",
+      "data": "Hello",
+      "index": 0
+    },
+    {
+      "type": "content",
+      "data": ", ",
+      "index": 1
+    },
+    {
+      "type": "content",
+      "data": "world",
+      "index": 2
+    }
+  ]
+}

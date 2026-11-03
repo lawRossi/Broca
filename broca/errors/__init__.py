@@ -27,6 +27,7 @@ from broca.errors.exceptions import (
     OrchestrationError,
     SessionError,
     ToolError,
+    ToolResultProcessingError,
     ValidationError,
 )
 from broca.errors.types import ErrorCode, ErrorInfo
@@ -37,6 +38,7 @@ __all__ = [
     "BrocaError",
     "LLMError",
     "ToolError",
+    "ToolResultProcessingError",
     "SessionError",
     "CommunicationError",
     "OrchestrationError",

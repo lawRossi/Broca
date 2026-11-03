@@ -14,9 +14,14 @@ const standaloneErrorMessages = computed(() => {
   return chatStore.messages.filter((m) => m.message_type === 'error' || m.message_type === 'agent_error')
 })
 
-// 时间轴合并：将 turn 和独立错误消息按时间顺序合并成一个列表
+// 简洁模式下独立渲染的 agent_system_message（如上下文提取状态）
+const standaloneSystemMessages = computed(() => {
+  return chatStore.messages.filter((m) => m.message_type === 'agent_system_message')
+})
+
+// 时间轴合并：将 turn、独立错误消息和系统消息按时间顺序合并成一个列表
 interface TimelineItem {
-  type: 'turn' | 'error'
+  type: 'turn' | 'error' | 'system'
   key: string
   turn?: (typeof chatStore.filteredTurnSummaries.value)[0]
   message?: (typeof standaloneErrorMessages.value)[0]
@@ -42,6 +47,17 @@ const timelineItems = computed<TimelineItem[]>(() => {
     items.push({
       type: 'error',
       key: `error-${msg.message_id}`,
+      message: msg,
+      timestamp: isNaN(ts) ? 0 : ts,
+    })
+  }
+
+  // 添加 agent_system_message（如上下文提取状态）
+  for (const msg of standaloneSystemMessages.value) {
+    const ts = new Date(msg.timestamp || 0).getTime()
+    items.push({
+      type: 'system',
+      key: `system-${msg.message_id}`,
       message: msg,
       timestamp: isNaN(ts) ? 0 : ts,
     })
@@ -275,6 +291,7 @@ const handleRedo = () => {
             :consecutive-agent="isConsecutiveAgentTurn(timelineItems, idx)"
           />
           <ChatMessageItem v-else-if="item.type === 'error' && item.message" :message="item.message" />
+          <ChatMessageItem v-else-if="item.type === 'system' && item.message" :message="item.message" />
         </template>
       </div>
     </template>

@@ -1,0 +1,14 @@
+INFO:     Started server process [47181]
+INFO:     Waiting for application startup.
+[32m15:02:30[0m | [1mINFO    [0m | [36mapp.main[0m:[36msetup[0m:[36m114[0m - [1mStarting up[0m
+[32m15:02:30[0m | [1mINFO    [0m | [36mbroca.communication.socketio_server[0m:[36m__init__[0m:[36m78[0m - [1mSocket.io server initialized on 0.0.0.0:6666[0m
+[32m15:02:30[0m | [1mINFO    [0m | [36mbroca.logging_config[0m:[36memit[0m:[36m45[0m - [1mSocketIOServer started in background: 0.0.0.0:6666[0m
+[32m15:02:30[0m | [1mINFO    [0m | [36mbroca.logging_config[0m:[36memit[0m:[36m45[0m - [1mRunnerManager initialized (max_runners=10, script=python -m broca.session_runner.runner)[0m
+[32m15:02:30[0m | [1mINFO    [0m | [36mapp.services.crew_service[0m:[36mset_socketio_server[0m:[36m560[0m - [1mSocketIO server injected into CrewService[0m
+[32m15:02:30[0m | [1mINFO    [0m | [36mbroca.logging_config[0m:[36memit[0m:[36m45[0m - [1mHeartbeat monitor started (interval=15s, timeout=45s)[0m
+[32m15:02:30[0m | [1mINFO    [0m | [36mbroca.communication.socketio_server[0m:[36mstart[0m:[36m629[0m - [1mStarting Socket.io server on 0.0.0.0:6666[0m
+[32m15:02:30[0m | [1mINFO    [0m | [36mbroca.logging_config[0m:[36memit[0m:[36m45[0m - [1mSession session_f77cee06a88c4029 runner (pid=38122) is still running, keeping alive[0m
+[32m15:02:30[0m | [1mINFO    [0m | [36mbroca.logging_config[0m:[36memit[0m:[36m45[0m - [1mRestore check complete: 1 checked, 1 alive, 0 marked dead[0m
+[32m15:02:30[0m | [1mINFO    [0m | [36mapp.main[0m:[36msetup[0m:[36m180[0m - [1mStartup session check complete: 1 records verified[0m
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:9001 (Press CTRL+C to quit)

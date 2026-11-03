@@ -17,12 +17,14 @@ import logging
 import os
 import signal
 import sys
+import threading
 import time
 from typing import Any, Dict, List, Optional
 
-from broca.agent_manager import AgentFactory
+# AgentFactory is now accessed via ComponentRegistry (broca.components)
 from broca.errors import BrocaError, ValidationError
 from broca.session_runner.ipc import (
+    IPCChannel,
     IPCClient,
     IPCConnectionError,
     create_ipc_message,
@@ -39,6 +41,8 @@ logger = logging.getLogger(__name__)
 
 # 全局状态
 _running = False
+_shutdown_event: Optional[asyncio.Event] = None  # 各循环共享的即时退出信号
+_ipc_lost = False  # IPC 连接断开标志（后端崩溃时让所有循环退出）
 _agent_factory: Optional[AgentFactory] = None
 _agents: List[Any] = []
 _session_manager: Any = None
@@ -68,6 +72,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", default=None, help="LLM Model")
     parser.add_argument("--log-file", default=None, help="日志文件路径")
     parser.add_argument("--log-level", default="INFO", help="日志级别")
+    parser.add_argument("--config", default=None, help="配置文件路径 (configs.json)")
     return parser.parse_args()
 
 
@@ -96,7 +101,7 @@ def collect_resource_usage() -> Dict[str, Any]:
         return {"error": str(e)}
 
 
-async def heartbeat_loop(ipc_client: IPCClient, interval: float = 5.0) -> None:
+async def heartbeat_loop(ipc_client: IPCChannel, interval: float = 5.0) -> None:
     """
     心跳发送循环
 
@@ -123,14 +128,28 @@ async def heartbeat_loop(ipc_client: IPCClient, interval: float = 5.0) -> None:
             ipc_client.send_message(heartbeat_msg)
         except IPCConnectionError:
             logger.warning("Heartbeat send failed, IPC connection may be lost")
+            # IPC 断开（后端崩溃）→ 触发全局 shutdown，避免孤儿进程
+            global _ipc_lost
+            _ipc_lost = True
+            _running = False
+            if _shutdown_event is not None:
+                _shutdown_event.set()
             break
         except Exception as e:
             logger.error("Heartbeat error: %s", e)
 
-        await asyncio.sleep(interval)
+        # 用 event 替代 sleep，shutdown 时立即唤醒
+        if _shutdown_event is not None:
+            try:
+                await asyncio.wait_for(_shutdown_event.wait(), timeout=interval)
+                break  # event set → shutdown
+            except asyncio.TimeoutError:
+                pass  # 正常间隔到达
+        else:
+            await asyncio.sleep(interval)
 
 
-async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
+async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCChannel) -> None:
     """
     处理来自 Web 进程的 IPC 控制命令
 
@@ -204,8 +223,11 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
         )
         ipc_client.send_message(response)
 
-        # 触发关闭
+        # 触发关闭：立即唤醒所有等待中的循环
+        global _shutdown_event
         _running = False
+        if _shutdown_event is not None:
+            _shutdown_event.set()
 
     elif msg.type == IPCMessageType.CMD_RUN_CREW:
         # 运行编排
@@ -370,95 +392,60 @@ async def handle_ipc_command(msg: IPCMessage, ipc_client: IPCClient) -> None:
             )
         ipc_client.send_message(response)
 
-    elif msg.type == IPCMessageType.CMD_EXECUTE:
-        # 执行用户消息 - 将消息放入 agent 的队列
-        agent_id = msg.payload.get("agent_id")
-        message_data = msg.payload.get("message")
-
-        if not agent_id or not message_data:
-            response = create_ipc_message(
-                IPCMessageType.RESPONSE,
-                msg.session_id,
-                payload={"error": "agent_id and message are required"},
-                status=IPCStatusCode.ERROR,
-            )
-            ipc_client.send_message(response)
-            return
-
-        # 查找目标 agent
-        target_agent = None
-        for agent in _agents:
-            if agent.agent_id == agent_id:
-                target_agent = agent
-                break
-
-        if not target_agent:
-            response = create_ipc_message(
-                IPCMessageType.RESPONSE,
-                msg.session_id,
-                payload={"error": f"Agent {agent_id} not found"},
-                status=IPCStatusCode.NOT_FOUND,
-            )
-            ipc_client.send_message(response)
-            return
-
-        # 将消息转换为 Message 对象并放入队列
-        try:
-            from broca.session.models import Message, MessageRole, MessageType
-
-            user_message = Message(
-                message_type=MessageType.USER_MESSAGE,
-                role=MessageRole.USER,
-                data=message_data,
-                sender_id=msg.payload.get("sender_id", "web"),
-                receiver_id=agent_id,
-                session_id=msg.session_id,
-            )
-            await target_agent.message_queue.put(user_message)
-            logger.info("Dispatched message to agent %s", agent_id)
-
-            response = create_ipc_message(
-                IPCMessageType.RESPONSE,
-                msg.session_id,
-                payload={"message": "Message dispatched"},
-                status=IPCStatusCode.SUCCESS,
-            )
-            ipc_client.send_message(response)
-        except Exception as e:
-            logger.error("Failed to dispatch message: %s", e)
-            response = create_ipc_message(
-                IPCMessageType.RESPONSE,
-                msg.session_id,
-                payload={"error": str(e)},
-                status=IPCStatusCode.ERROR,
-            )
-            ipc_client.send_message(response)
+    else:
+        logger.warning("Unknown IPC command: %s (session=%s)", msg.type.value, msg.session_id)
 
 
-async def ipc_listener_loop(ipc_client: IPCClient) -> None:
+async def ipc_listener_loop(ipc_client: IPCChannel) -> None:
     """
     IPC 命令监听循环
 
-    在 executor 中运行阻塞的 receive_message，接收到命令后处理。
+    使用专用 daemon 线程执行阻塞的 receive_message，通过
+    asyncio.Queue + call_soon_threadsafe 将消息送回 event loop，
+    避免占用默认线程池。
+
+    注意：multiprocessing.connection.Client 底层是 socket。
+    send() 和 recv() 是不同方向的独立操作，可在不同线程/协程中并发调用。
+    heartbeat_loop (event loop 线程) 调用 send，_thread_poll (daemon 线程) 调用 recv。
 
     Args:
         ipc_client: IPC 客户端
     """
-    global _running
-    loop = asyncio.get_event_loop()
+    global _running, _ipc_lost
+    loop = asyncio.get_running_loop()
+    msg_queue: asyncio.Queue = asyncio.Queue()
 
-    while _running:
+    def _thread_poll():
+        while _running and not _ipc_lost:
+            try:
+                msg = ipc_client.receive_message(0.5)
+                if msg:
+                    loop.call_soon_threadsafe(msg_queue.put_nowait, msg)
+            except IPCConnectionError as e:
+                logger.warning("IPC connection lost: %s", e)
+                loop.call_soon_threadsafe(msg_queue.put_nowait, None)
+                break
+            except Exception as e:
+                logger.error("IPC listener thread error: %s", e)
+                loop.call_soon_threadsafe(msg_queue.put_nowait, None)
+                break
+
+    thread = threading.Thread(target=_thread_poll, name="ipc-poll-runner", daemon=True)
+    thread.start()
+
+    while _running and not _ipc_lost:
         try:
-            # 在 executor 中执行阻塞的 receive（带超时）
-            msg = await loop.run_in_executor(None, ipc_client.receive_message, 1.0)
-            if msg:
-                await handle_ipc_command(msg, ipc_client)
-        except IPCConnectionError as e:
-            logger.warning("IPC connection lost: %s", e)
-            break
-        except Exception as e:
-            logger.error("IPC listener error: %s", e)
-            await asyncio.sleep(1)
+            msg = await asyncio.wait_for(msg_queue.get(), timeout=1.0)
+            if msg is None:
+                # IPC 断开（后端崩溃）→ 触发全局 shutdown，避免孤儿进程
+                _ipc_lost = True
+                _running = False
+                if _shutdown_event is not None:
+                    _shutdown_event.set()
+                break
+            await handle_ipc_command(msg, ipc_client)
+        except asyncio.TimeoutError:
+            continue
 
 
 async def agent_monitor_loop() -> None:
@@ -480,14 +467,22 @@ async def agent_monitor_loop() -> None:
             _running = False
             break
 
-        await asyncio.sleep(2)
+        # 用 event 替代 sleep，shutdown 时立即唤醒
+        if _shutdown_event is not None:
+            try:
+                await asyncio.wait_for(_shutdown_event.wait(), timeout=1.0)
+                break
+            except asyncio.TimeoutError:
+                pass
+        else:
+            await asyncio.sleep(1)
 
 
 # 记录启动时间
 _start_time: float = 0.0
 
 
-async def async_main(args: argparse.Namespace, ipc_client: IPCClient) -> None:
+async def async_main(args: argparse.Namespace, ipc_client: IPCChannel) -> None:
     """
     异步主逻辑
 
@@ -495,9 +490,10 @@ async def async_main(args: argparse.Namespace, ipc_client: IPCClient) -> None:
         args: 命令行参数
         ipc_client: IPC 客户端
     """
-    global _running, _agent_factory, _agents, _session_manager, _start_time
+    global _running, _agent_factory, _agents, _session_manager, _start_time, _shutdown_event
     _running = True
     _start_time = time.time()
+    _shutdown_event = asyncio.Event()
 
     try:
         # === 1. 初始化数据库连接 ===
@@ -505,7 +501,10 @@ async def async_main(args: argparse.Namespace, ipc_client: IPCClient) -> None:
         logger.info("Initializing session: %s", args.session_id)
 
         # === 2. 创建 AgentFactory 并恢复 Agent ===
-        _agent_factory = AgentFactory()
+        from broca.components import ComponentRegistry
+        from broca.components.agent_factory import AgentFactory as AgentFactoryABC
+
+        _agent_factory = ComponentRegistry.get_instance().get(AgentFactoryABC)
         _agents = await _agent_factory.restore_agents_from_session(args.session_id)
 
         if not _agents:
@@ -573,18 +572,21 @@ async def async_main(args: argparse.Namespace, ipc_client: IPCClient) -> None:
         for agent in _agents:
             agent.stop()
 
-        # 给 Agent 一点时间完成收尾
+        # 给 Agent 短暂时间完成收尾（2s 足够，超时直接 cancel）
         if agent_tasks:
-            done, pending = await asyncio.wait(agent_tasks, timeout=5.0)
+            done, pending = await asyncio.wait(agent_tasks, timeout=2.0)
             for task in pending:
                 task.cancel()
 
-        # === 8. 断开 Agent 连接 ===
-        for agent in _agents:
-            try:
-                await agent.disconnect()
-            except Exception as e:
-                logger.warning("Agent %s disconnect error: %s", agent.agent_id, e)
+        # === 8. 并行断开 Agent 连接 ===
+        if _agents:
+            await asyncio.gather(
+                *[
+                    agent.disconnect()
+                    for agent in _agents
+                ],
+                return_exceptions=True,
+            )
 
         # === 9. 发送关闭完成事件 ===
         try:
@@ -633,14 +635,21 @@ async def async_main(args: argparse.Namespace, ipc_client: IPCClient) -> None:
 def main() -> None:
     """Runner 进程入口"""
     args = parse_args()
+
+    # 尽早初始化配置（必须在其他 broca 模块使用前）
+    if args.config:
+        from broca.configs import get_configs
+        get_configs(config_path=args.config)
+
     setup_logging(args.log_file, args.log_level)
 
     logger.info(
-        "Session Runner starting - session_id=%s workspace=%s provider=%s model=%s",
+        "Session Runner starting - session_id=%s workspace=%s provider=%s model=%s config=%s",
         args.session_id,
         args.workspace,
         args.provider,
         args.model,
+        args.config,
     )
 
     # 初始化 IPC 客户端

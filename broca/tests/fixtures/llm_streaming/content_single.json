@@ -1,0 +1,21 @@
+{
+  "name": "content_single",
+  "chunks": [
+    {
+      "type": "content",
+      "data": "hello"
+    }
+  ],
+  "expected_message": {
+    "content": "hello",
+    "reasoning_content": null,
+    "tool_calls": []
+  },
+  "expected_on_chunk_events": [
+    {
+      "type": "content",
+      "data": "hello",
+      "index": 0
+    }
+  ]
+}

@@ -1,3 +1,12 @@
+"""Broca 核心配置加载模块。
+
+配置来源（纯文件，不读取环境变量）:
+  1. 显式指定的 config_path（由调用方传入）
+  2. 项目 configs/configs.json
+  3. ~/.broca/configs.json
+  4. 代码默认值
+"""
+
 import json
 import os
 from pathlib import Path
@@ -10,43 +19,6 @@ LLM_DEFAULT_KEY = "__default__"
 # 内置兜底默认值：llm_config.json 未配置 __default__ 时使用
 DEFAULT_LLM_PROVIDER = "deepseek"
 DEFAULT_LLM_MODEL = "deepseek-v4-flash"
-
-
-def _resolve_llm_config_path() -> Path:
-    """解析 llm_config.json 路径，与 broca.llm.LLMClient 保持一致：
-    BROCA_LLM_CONFIG 环境变量 > 项目默认 configs/llm_config.json。
-    保证解析出的默认 provider/model 与 LLMClient 实际读取的文件相同。
-    """
-    env_path = os.getenv("BROCA_LLM_CONFIG")
-    if env_path:
-        return Path(env_path)
-    return Path(__file__).parent.parent / "configs" / "llm_config.json"
-
-
-def get_llm_defaults() -> tuple[str, str]:
-    """读取 llm_config.json 的 __default__ 条目，返回 (provider, model)。
-
-    未配置或读取失败时回退到内置默认值。永不抛异常。
-    """
-    provider = DEFAULT_LLM_PROVIDER
-    model = DEFAULT_LLM_MODEL
-    try:
-        path = _resolve_llm_config_path()
-        if path.exists():
-            with open(path) as f:
-                config = json.load(f)
-            default = config.get(LLM_DEFAULT_KEY)
-            if isinstance(default, dict):
-                p = default.get("provider")
-                m = default.get("model")
-                if isinstance(p, str) and p.strip():
-                    provider = p
-                if isinstance(m, str) and m.strip():
-                    model = m
-    except Exception:
-        # 读取失败时静默回退到内置默认值
-        pass
-    return provider, model
 
 
 class ExecutionConfig:
@@ -65,6 +37,7 @@ class ExecutionConfig:
         self.agent_query_timeout = 300  # ask_user 用户问答等待超时（秒）
         self.tool_execution_mode = "parallel"  # 工具执行方式: "parallel" | "serial"
         self.max_parallel_tools = 10  # 并行模式下最大同时执行的工具数
+        self.max_concurrent_runners = 10  # 最大并发 session runner 数
 
     @classmethod
     def from_config(cls, config):
@@ -123,20 +96,43 @@ class SearchConfig:
         return search_config
 
 
+# 需要 expanduser 的路径字段
+_PATH_FIELDS = (
+    "database_dir",
+    "log_file",
+    "log_dir",
+    "llm_config_file",
+    "agents_config_dir",
+    "snapshot_home",
+    "components_config",
+)
+
+
 class BrocaConfig:
+    """Broca 核心配置。所有值从 configs.json 文件加载。"""
+
     def __init__(self):
-        self.database_dir = None
-        self.log_file = None
-        self.log_level = "INFO"
-        self.llm_config_file = None
-        self.socket_server_url = None
-        self.api_server_url = None
+        # 路径
+        self.database_dir: str | None = None
+        self.log_file: str | None = None
+        self.log_dir: str = os.path.expanduser("~/.broca/logs")
+        self.llm_config_file: str | None = None
+        self.agents_config_dir: str = os.path.expanduser("~/.broca/configs/agents")
+        self.snapshot_home: str = os.path.expanduser("~/.broca/snapshots")
+        self.components_config: str = ""
+        # 配置源
+        self.config_source_path: str | None = None
+        # 服务
+        self.log_level: str = "INFO"
+        self.socket_server_url: str | None = None
+        self.api_server_url: str | None = None
+        # 子配置
         self.execution = ExecutionConfig()
         self.storage = StorageConfig()
         self.search = SearchConfig()
 
     @classmethod
-    def from_config(cls, config):
+    def from_config(cls, config: dict) -> "BrocaConfig":
         agent_config = cls()
         for key in list(config.keys()):
             if key not in agent_config.__dict__:
@@ -151,15 +147,33 @@ class BrocaConfig:
                 agent_config.search = SearchConfig.from_config(config[key])
                 config[key] = agent_config.search
         agent_config.__dict__.update(config)
+        # Expand ~ in path fields
+        for path_key in _PATH_FIELDS:
+            val = agent_config.__dict__.get(path_key)
+            if isinstance(val, str) and val.startswith("~"):
+                agent_config.__dict__[path_key] = os.path.expanduser(val)
         return agent_config
 
 
 def _load_config_file(config_file: Path) -> BrocaConfig | None:
-    """尝试从文件加载配置，如果文件不存在或 JSON 解析失败则返回 None"""
+    """尝试从文件加载配置，如果文件不存在或 JSON 解析失败则返回 None。
+
+    相对路径字段会基于配置文件所在目录解析为绝对路径。
+    """
     try:
         if config_file.exists():
             with open(config_file) as f:
-                return BrocaConfig.from_config(json.load(f))
+                config = BrocaConfig.from_config(json.load(f))
+            # 将相对路径解析为基于配置文件目录的绝对路径
+            base_dir = config_file.parent
+            for path_key in _PATH_FIELDS:
+                val = getattr(config, path_key, None)
+                if val and not Path(val).is_absolute() and not val.startswith("~"):
+                    resolved = (base_dir / val).resolve().as_posix()
+                    setattr(config, path_key, resolved)
+            # 记录配置源路径
+            config.config_source_path = str(config_file.resolve())
+            return config
     except (json.JSONDecodeError, OSError) as e:
         import logging
         logging.getLogger(__name__).warning(
@@ -168,29 +182,100 @@ def _load_config_file(config_file: Path) -> BrocaConfig | None:
     return None
 
 
-def get_configs() -> BrocaConfig:
+# 模块级单例缓存
+_config_instance: BrocaConfig | None = None
+
+
+def get_configs(config_path: str | Path | None = None, *, enforce_production: bool = False) -> BrocaConfig:
     """
-    读取配置，优先级:
-      1. BROCA_CONFIG 环境变量指定的路径
-      2. ~/.broca/configs.json
-      3. 项目默认 configs/configs.json
+    读取配置（纯文件驱动，不读取环境变量）。
+
+    优先级:
+      1. config_path 参数（显式指定）
+      2. 项目 configs/configs.json
+      3. ~/.broca/configs.json
+      4. 代码默认值
+
+    Args:
+        config_path: 显式指定配置文件路径。为 None 时走默认发现逻辑。
+        enforce_production: 若为 True，log_level=DEBUG 强制降为 INFO（生产安全护栏）。
     """
-    # 1. 环境变量
-    env_path = os.getenv("BROCA_CONFIG")
-    if env_path:
-        config = _load_config_file(Path(env_path))
+    global _config_instance
+
+    # 如果传了显式路径，加载并更新缓存
+    if config_path is not None:
+        config = _load_config_file(Path(config_path).expanduser())
         if config is not None:
-            return config
+            _config_instance = config
+    else:
+        # 使用缓存（避免重复 IO）
+        if _config_instance is not None:
+            config = _config_instance
+        else:
+            project_config = Path(__file__).parent.parent / "configs" / "configs.json"
+            user_config = Path.home() / ".broca" / "configs.json"
 
-    # 2. 用户配置 ~/.broca/configs.json
-    config = _load_config_file(Path.home() / ".broca" / "configs.json")
-    if config is not None:
-        return config
+            config = _load_config_file(project_config)
+            if config is None:
+                config = _load_config_file(user_config)
 
-    # 3. 项目默认配置
-    config = _load_config_file(Path(__file__).parent.parent / "configs" / "configs.json")
-    if config is not None:
-        return config
+            if config is None:
+                config = BrocaConfig()
 
-    # 4. 都不存在时返回默认值
-    return BrocaConfig()
+            _config_instance = config
+
+    if config is None:
+        config = BrocaConfig()
+
+    # 生产环境安全护栏: log_level=DEBUG 强制降为 INFO
+    if enforce_production and config.log_level == "DEBUG":
+        import logging
+        logging.getLogger(__name__).warning(
+            "enforce_production: log_level=DEBUG 已强制降为 INFO"
+        )
+        config.log_level = "INFO"
+
+    return config
+
+
+def reset_configs_cache() -> None:
+    """重置配置缓存（测试用）"""
+    global _config_instance
+    _config_instance = None
+
+
+def resolve_llm_config_path() -> Path:
+    """解析 llm_config.json 路径。
+
+    优先级: configs.json 的 llm_config_file > 项目默认 configs/llm_config.json
+    """
+    configs = get_configs()
+    if configs.llm_config_file:
+        return Path(configs.llm_config_file).expanduser()
+    return Path(__file__).parent.parent / "configs" / "llm_config.json"
+
+
+def get_llm_defaults() -> tuple[str, str]:
+    """读取 llm_config.json 的 __default__ 条目，返回 (provider, model)。
+
+    未配置或读取失败时回退到内置默认值。永不抛异常。
+    """
+    provider = DEFAULT_LLM_PROVIDER
+    model = DEFAULT_LLM_MODEL
+    try:
+        path = resolve_llm_config_path()
+        if path.exists():
+            with open(path) as f:
+                config = json.load(f)
+            default = config.get(LLM_DEFAULT_KEY)
+            if isinstance(default, dict):
+                p = default.get("provider")
+                m = default.get("model")
+                if isinstance(p, str) and p.strip():
+                    provider = p
+                if isinstance(m, str) and m.strip():
+                    model = m
+    except Exception:
+        # 读取失败时静默回退到内置默认值
+        pass
+    return provider, model

@@ -10,11 +10,11 @@ export class ConfigManager {
   }
 
   get serverUrl(): string {
-    return this.get('serverUrl') || 'http://localhost:8000'
+    return this.get('serverUrl') || 'http://localhost:9001'
   }
 
   get wsUrl(): string {
-    return this.get('wsUrl') || 'http://localhost:8000'
+    return this.get('wsUrl') || 'http://localhost:6666'
   }
 
   getAll(): Record<string, string> {

@@ -290,7 +290,6 @@ export const useSocketStore = defineStore('socket', () => {
         subscription: params.subscription,
         receiverId: params.receiverId,
       })
-      ElMessage.success('Abort 命令已发送')
     } catch (e: any) {
       ElMessage.error(e?.message || '发送 abort 失败')
     }
@@ -351,7 +350,6 @@ export const useSocketStore = defineStore('socket', () => {
         subscription: params.subscription,
         receiverId: params.receiverId,
       })
-      ElMessage.success('撤销命令已发送')
     } catch (e: any) {
       ElMessage.error(e?.message || '发送撤销命令失败')
     }
@@ -368,7 +366,6 @@ export const useSocketStore = defineStore('socket', () => {
         arguments: {},
         receiverId: params.receiverId,
       })
-      ElMessage.success('重做命令已发送')
     } catch (e: any) {
       ElMessage.error(e?.message || '发送重做命令失败')
     }

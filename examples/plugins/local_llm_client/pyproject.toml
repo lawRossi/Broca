@@ -1,0 +1,13 @@
+[project]
+name = "broca-local-llm-plugin"
+version = "0.1.0"
+description = "Example: local LLM client plugin for Broca (Ollama)"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.entry-points."broca.components"]
+llm_client = "local_llm:LocalLLMClient"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"

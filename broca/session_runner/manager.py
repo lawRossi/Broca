@@ -11,13 +11,16 @@ import os
 import signal
 import subprocess
 import sys
+import threading
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from broca.components.session_runner import SessionRunner as SessionRunnerABC
 from broca.errors import SessionError, ValidationError
 from broca.session.session_manager import SessionManager
 from broca.session_runner.ipc import (
+    IPCChannel,
     IPCConnectionError,
     IPCServer,
     IPCTimeoutError,
@@ -40,9 +43,9 @@ class RunnerManagerError(SessionError):
     pass
 
 
-class RunnerManager:
+class IPCSessionRunner(SessionRunnerABC):
     """
-    Runner 进程管理器
+    Runner 进程管理器（默认实现）
 
     单例，管理所有 Session Runner 子进程。
     """
@@ -51,7 +54,7 @@ class RunnerManager:
 
     def __new__(cls):
         if cls._instance is None:
-            cls._instance = super(RunnerManager, cls).__new__(cls)
+            cls._instance = super(IPCSessionRunner, cls).__new__(cls)
         return cls._instance
 
     def __init__(self):
@@ -59,12 +62,18 @@ class RunnerManager:
             self._initialized = True
             # 进程状态映射表: {session_id: RunnerProcessInfo}
             self._runners: Dict[str, RunnerProcessInfo] = {}
-            # IPC 服务端映射: {session_id: IPCServer}
-            self._ipc_servers: Dict[str, IPCServer] = {}
+            # IPC 通道映射: {session_id: IPCChannel}
+            self._ipc_servers: Dict[str, IPCChannel] = {}
+            # IPC 监听线程映射: {session_id: threading.Thread}
+            self._ipc_listener_threads: Dict[str, threading.Thread] = {}
             # 配置
-            self._max_concurrent_runners = int(
-                os.getenv("MAX_CONCURRENT_RUNNERS", "10")
-            )
+            try:
+                from broca.configs import get_configs
+                _cfg = get_configs()
+                # 未来可加入 configs.json 的 execution.max_concurrent_runners
+                self._max_concurrent_runners = getattr(_cfg.execution, "max_concurrent_runners", 10)
+            except Exception:
+                self._max_concurrent_runners = 10
             self._runner_script = self._find_runner_script()
             # 事件处理
             self._event_handlers: Dict[str, List[Callable]] = {}
@@ -262,6 +271,14 @@ class RunnerManager:
             cmd_parts.append(f"--model {model}")
         cmd_parts.append(f"--log-file {log_file}")
         cmd_parts.append("--log-level INFO")
+        # 传递配置文件路径，确保子进程使用与父进程相同的配置
+        try:
+            from broca.configs import get_configs
+            _cfg = get_configs()
+            if _cfg.config_source_path:
+                cmd_parts.append(f'--config "{_cfg.config_source_path}"')
+        except Exception:
+            pass
 
         cmd_str = " ".join(cmd_parts)
 
@@ -269,12 +286,25 @@ class RunnerManager:
         logger.info("Runner log file: %s", log_file)
 
         try:
+            # 构建子进程环境：确保 PYTHONPATH 指向正确的 broca 包
+            env = os.environ.copy()
+            # 将 broca 包所在目录（项目根）放到 PYTHONPATH 最前面
+            broca_pkg_dir = str(Path(__file__).resolve().parents[2])  # broca/session_runner/manager.py → 项目根
+            existing_pp = env.get("PYTHONPATH", "")
+            env["PYTHONPATH"] = broca_pkg_dir + (f":{existing_pp}" if existing_pp else "")
+            # 清除 VIRTUAL_ENV 防止 shell 激活错误的 venv
+            env.pop("VIRTUAL_ENV", None)
+            env.pop("VIRTUAL_ENV_PROMPT", None)
+            # 跳过 litellm 远程 model cost map 拉取（避免 5s SSL 超时）
+            env["LITELLM_LOCAL_MODEL_COST_MAP"] = "true"
+
             # 启动子进程
             process = subprocess.Popen(
                 cmd_str,
                 shell=True,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                env=env,
                 preexec_fn=os.setsid if sys.platform != "win32" else None,
                 cwd=workspace,
             )
@@ -401,7 +431,7 @@ class RunnerManager:
                 return False
 
     async def _force_kill_process_by_pid(self, pid: int) -> bool:
-        """根据 PID 强制杀死进程"""
+        """根据 PID 终止进程（先 SIGTERM 优雅退出，超时后 SIGKILL 兜底）"""
         try:
             if sys.platform == "win32":
                 import ctypes
@@ -410,18 +440,38 @@ class RunnerManager:
                 ctypes.windll.kernel32.TerminateProcess(handle, 1)
                 ctypes.windll.kernel32.CloseHandle(handle)
             else:
-                os.kill(pid, signal.SIGKILL)
-            logger.info("Force killed process by pid=%d", pid)
+                try:
+                    os.kill(pid, signal.SIGTERM)
+                except ProcessLookupError:
+                    logger.debug("Process pid=%d already dead", pid)
+                    return True
+                # 等待进程优雅退出（2s）
+                for _ in range(20):
+                    await asyncio.sleep(0.1)
+                    try:
+                        os.kill(pid, 0)  # 检查是否还活着
+                    except ProcessLookupError:
+                        logger.info("Process pid=%d exited after SIGTERM", pid)
+                        return True
+                # 超时，SIGKILL 兜底
+                try:
+                    os.kill(pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+            logger.info("Killed process by pid=%d", pid)
             return True
         except ProcessLookupError:
             logger.debug("Process pid=%d already dead", pid)
             return True
         except Exception as e:
-            logger.warning("Failed to force kill process pid=%d: %s", pid, e)
+            logger.warning("Failed to kill process pid=%d: %s", pid, e)
             return False
 
     async def _cleanup_ipc_resources(self, session_id: str) -> None:
-        """清理 IPC 相关资源（socket 文件等）"""
+        """清理 IPC 相关资源（socket 文件、监听线程等）"""
+        # 清理监听线程（daemon 线程随 ipc_server.close() 触发 IPCConnectionError 自然退出）
+        self._ipc_listener_threads.pop(session_id, None)
+
         # 关闭 IPC 服务端（如果有）
         ipc_server = self._ipc_servers.pop(session_id, None)
         if ipc_server:
@@ -523,7 +573,9 @@ class RunnerManager:
                 logger.warning(
                     "Runner %s did not exit in time, force killing", session_id
                 )
-                await self._kill_runner(session_id)
+                # 注意：不能通过 _kill_runner(session_id) 杀（_runners 已 pop），
+                # 直接在此处用 runner_info 杀进程组
+                self._force_kill_process(runner_info)
 
             # 4) 清理资源
             await self._cleanup_runner(session_id)
@@ -535,28 +587,54 @@ class RunnerManager:
 
         except Exception as e:
             logger.error("Failed to stop runner for session %s: %s", session_id, e)
+            # 异常时也确保进程被杀（防止僵尸）
+            self._force_kill_process(runner_info)
             return False
 
-    async def _kill_runner(self, session_id: str) -> None:
-        """强制终止 Runner 进程"""
-        runner_info = self._runners.get(session_id)
+    def _force_kill_process(self, runner_info) -> None:
+        """强制终止指定 Runner 进程（直接操作 runner_info，不依赖 _runners 字典）"""
         if not runner_info or not runner_info.process:
             return
 
         try:
             pid = runner_info.pid
             if pid is None:
-                logger.warning("Runner %s has no pid, cannot kill", session_id)
                 return
             if sys.platform == "win32":
-                runner_info.process.terminate()
+                runner_info.process.kill()
             else:
-                # 使用进程组杀死所有子进程
-                os.killpg(os.getpgid(pid), signal.SIGKILL)
-            runner_info.process.wait(timeout=5)
-            logger.info("Runner %s (pid=%d) force killed", session_id, pid)
+                # 先 SIGTERM 给进程组（允许短暂清理），再 SIGKILL 兜底
+                try:
+                    os.killpg(os.getpgid(pid), signal.SIGTERM)
+                except (ProcessLookupError, PermissionError):
+                    pass
+                try:
+                    runner_info.process.wait(timeout=2)
+                except subprocess.TimeoutExpired:
+                    try:
+                        os.killpg(os.getpgid(pid), signal.SIGKILL)
+                    except (ProcessLookupError, PermissionError):
+                        pass
+                    try:
+                        runner_info.process.wait(timeout=3)
+                    except subprocess.TimeoutExpired:
+                        logger.error(
+                            "Runner %s (pid=%d) survived SIGKILL — possible zombie",
+                            runner_info.session_id, pid,
+                        )
+            runner_info.process.wait(timeout=2)
+            logger.info("Runner %s (pid=%d) force killed", runner_info.session_id, pid)
         except Exception as e:
-            logger.error("Failed to kill runner %s: %s", session_id, e)
+            logger.error("Failed to kill runner %s: %s", runner_info.session_id, e)
+
+    async def _kill_runner(self, session_id: str) -> None:
+        """强制终止 Runner 进程（通过 session_id 查找）"""
+        runner_info = self._runners.get(session_id)
+        if runner_info:
+            self._force_kill_process(runner_info)
+        else:
+            # _runners 中已移除，尝试从 IPC 记录中获取 pid
+            logger.warning("_kill_runner: session %s not in _runners, skipping", session_id)
 
     async def _cleanup_runner(self, session_id: str) -> None:
         """清理 Runner 相关资源"""
@@ -1045,38 +1123,55 @@ class RunnerManager:
 
     async def _ipc_listener_loop(self, session_id: str) -> None:
         """
-        IPC 消息监听循环，持续接收 Runner 发来的消息（heartbeat 等）
+        IPC 消息监听循环，持续接收 Runner 发来的消息（heartbeat 等）。
 
-        Args:
-            session_id: Session ID
+        使用专用 daemon 线程执行阻塞的 receive_message，通过
+        asyncio.Queue + call_soon_threadsafe 将消息送回 event loop，
+        避免占用默认线程池。
         """
         ipc_server = self._ipc_servers.get(session_id)
         if not ipc_server:
             logger.warning("IPC server not found for session %s", session_id)
             return
 
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
+        msg_queue: asyncio.Queue = asyncio.Queue()
+
+        def _thread_poll():
+            while session_id in self._runners:
+                try:
+                    msg = ipc_server.receive_message(5.0)
+                    if msg:
+                        loop.call_soon_threadsafe(msg_queue.put_nowait, msg)
+                except IPCConnectionError:
+                    loop.call_soon_threadsafe(msg_queue.put_nowait, None)
+                    break
+                except Exception as e:
+                    logger.error("IPC listener thread error for %s: %s", session_id, e)
+                    loop.call_soon_threadsafe(msg_queue.put_nowait, None)
+                    break
+
+        thread = threading.Thread(target=_thread_poll, name=f"ipc-poll-{session_id}", daemon=True)
+        thread.start()
+        self._ipc_listener_threads[session_id] = thread
+
         while session_id in self._runners:
             try:
-                msg = await loop.run_in_executor(None, ipc_server.receive_message, 5.0)
-                if msg:
-                    self._handle_runner_event(session_id, msg)
-            except IPCTimeoutError:
-                pass
-            except IPCConnectionError:
-                logger.warning("IPC connection lost for session %s", session_id)
-                break
-            except Exception as e:
-                logger.error("IPC listener error for %s: %s", session_id, e)
-                await asyncio.sleep(1)
+                msg = await asyncio.wait_for(msg_queue.get(), timeout=1.0)
+                if msg is None:
+                    break
+                self._handle_runner_event(session_id, msg)
+            except asyncio.TimeoutError:
+                continue
 
     # ==================== 生命周期管理（Web 服务启停） ====================
 
     async def restore_active_sessions(self) -> int:
         """
-        启动时检查数据库中的 SessionRunner 记录：
-        - 如果进程实际还在运行，保持记录
-        - 如果进程已不存在（服务重启后进程消失），标记为 dead
+        启动时回收所有残留 runner（非 dead 状态的 SessionRunner 记录）：
+        - IPC 连接在服务重启后无法重建，任何残留 runner 进程均已无意义
+        - pid 对应的进程存活 → kill + 标记 dead + 重置关联 Agent 状态
+        - 进程已不存在或无 pid → 直接标记 dead + 重置关联 Agent 状态
 
         Returns:
             检查的总记录数
@@ -1085,19 +1180,20 @@ class RunnerManager:
             from sqlmodel import select
 
             from broca.session.database import db_manager
-            from broca.session.models import SessionRunner
+            from broca.session.models import Agent, SessionRunner
 
             async with db_manager.get_session() as session:
-                # 查询所有 alive/starting 状态的 runner 记录
+                # 查询所有非 dead 状态的 runner 记录（含 alive/starting/error/shutting_down）
+                # 只要 pid 对应的进程还活着，就 kill — IPC 已断，进程无意义
                 stmt = select(SessionRunner).where(
-                    SessionRunner.status.in_(["alive", "starting"])  # type: ignore[attr-defined]
+                    SessionRunner.status != "dead"  # type: ignore[operator]
                 )
                 result = await session.exec(stmt)
                 active_runners = result.all()
 
             checked = 0
+            killed = 0
             marked_dead = 0
-            still_alive = 0
 
             for runner in active_runners:
                 checked += 1
@@ -1105,42 +1201,66 @@ class RunnerManager:
                     # 没有 PID，直接标记为 dead
                     runner.status = "dead"
                     runner.error_message = "No PID recorded, marked dead on startup"
-                    async with db_manager.get_session() as db_sess:
-                        db_sess.add(runner)
-                        await db_sess.commit()
                     marked_dead += 1
                     logger.warning(
                         "Session %s runner has no PID, marked dead",
                         runner.session_id,
                     )
-                    continue
-
-                # 检查进程是否还在运行
-                if await self._find_runner_process_by_pid(runner.pid):
-                    still_alive += 1
-                    logger.info(
-                        "Session %s runner (pid=%d) is still running, keeping alive",
-                        runner.session_id,
-                        runner.pid,
-                    )
                 else:
-                    # 进程已不存在，标记为 dead
-                    runner.status = "dead"
-                    runner.error_message = "Process not found on startup, marked dead"
-                    async with db_manager.get_session() as db_sess:
-                        db_sess.add(runner)
-                        await db_sess.commit()
-                    marked_dead += 1
-                    logger.warning(
-                        "Session %s runner (pid=%d) process not found, marked dead",
+                    # 检查进程是否还在运行
+                    if await self._find_runner_process_by_pid(runner.pid):
+                        # IPC 已断，残留 runner 无法通信，终止并标记 dead
+                        killed += 1
+                        logger.info(
+                            "Session %s runner (pid=%d) still running after restart, "
+                            "killing orphaned process",
+                            runner.session_id,
+                            runner.pid,
+                        )
+                        await self._force_kill_process_by_pid(runner.pid)
+                        runner.status = "dead"
+                        runner.error_message = (
+                            f"Orphaned runner (pid={runner.pid}) killed on startup: "
+                            "IPC connection lost after service restart"
+                        )
+                    else:
+                        # 进程已不存在，标记为 dead
+                        marked_dead += 1
+                        runner.status = "dead"
+                        runner.error_message = "Process not found on startup, marked dead"
+                        logger.warning(
+                            "Session %s runner (pid=%d) process not found, marked dead",
+                            runner.session_id,
+                            runner.pid,
+                        )
+
+                # 统一更新 DB：runner 记录 + 关联 Agent 状态
+                async with db_manager.get_session() as db_sess:
+                    db_sess.add(runner)
+                    # 将该 session 下所有 Agent 的 agent_status 重置为 disconnected
+                    agent_stmt = (
+                        select(Agent)
+                        .where(Agent.session_id == runner.session_id)
+                        .where(Agent.agent_status != "disconnected")  # type: ignore[attr-defined]
+                    )
+                    agent_result = await db_sess.exec(agent_stmt)
+                    stale_agents = agent_result.all()
+                    for agent in stale_agents:
+                        agent.agent_status = "disconnected"
+                        db_sess.add(agent)
+                    await db_sess.commit()
+
+                if stale_agents:
+                    logger.info(
+                        "Session %s: reset %d agent(s) to 'disconnected'",
                         runner.session_id,
-                        runner.pid,
+                        len(stale_agents),
                     )
 
             logger.info(
-                "Restore check complete: %d checked, %d alive, %d marked dead",
+                "Restore check complete: %d checked, %d killed, %d marked dead",
                 checked,
-                still_alive,
+                killed,
                 marked_dead,
             )
             return checked
@@ -1238,3 +1358,6 @@ class RunnerManager:
                 return {"error": "Process not found", "pid": runner_info.pid}
         except ImportError:
             return runner_info.resource_usage
+
+# Backward-compatibility alias
+RunnerManager = IPCSessionRunner

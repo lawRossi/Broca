@@ -65,7 +65,7 @@ def llm_config_file():
 @pytest.fixture
 def llm_client(llm_config_file):
     """创建 LLMClient 实例"""
-    with patch.dict(os.environ, {"BROCA_LLM_CONFIG": llm_config_file}):
+    with patch("broca.configs.resolve_llm_config_path", return_value=__import__("pathlib").Path(llm_config_file)):
         client = LLMClient()
         return client
 
@@ -75,39 +75,25 @@ class TestLLMClientInit:
 
     def test_init_with_config_file(self, llm_config_file):
         """测试从配置文件初始化"""
-        with patch.dict(os.environ, {"BROCA_LLM_CONFIG": llm_config_file}):
+        from pathlib import Path
+        with patch("broca.configs.resolve_llm_config_path", return_value=Path(llm_config_file)):
             client = LLMClient()
             assert "openai" in client.config
             assert "deepseek" in client.config
             assert client.config["openai"]["api_key"] == "test-key"
 
-    def test_env_key_override(self, llm_config_file):
-        """测试环境变量覆盖 API Key"""
-        with patch.dict(
-            os.environ,
-            {
-                "BROCA_LLM_CONFIG": llm_config_file,
-                "BROCA_API_KEY_OPENAI": "env-override-key",
-            },
-        ):
+    def test_config_file_values_used_as_is(self, llm_config_file):
+        """测试配置文件中的值直接生效（无环境变量覆盖）"""
+        from pathlib import Path
+        with patch("broca.configs.resolve_llm_config_path", return_value=Path(llm_config_file)):
             client = LLMClient()
-            assert client.config["openai"]["api_key"] == "env-override-key"
-
-    def test_env_base_url_override(self, llm_config_file):
-        """测试环境变量覆盖 Base URL"""
-        with patch.dict(
-            os.environ,
-            {
-                "BROCA_LLM_CONFIG": llm_config_file,
-                "BROCA_API_BASE_URL_DEEPSEEK": "https://custom.deepseek.com",
-            },
-        ):
-            client = LLMClient()
-            assert client.config["deepseek"]["base_url"] == "https://custom.deepseek.com"
+            assert client.config["openai"]["api_key"] == "test-key"
+            assert client.config["deepseek"]["base_url"] == "https://api.deepseek.com"
 
     def test_unknown_provider_raises_error(self, llm_config_file):
         """测试未知提供商抛出异常"""
-        with patch.dict(os.environ, {"BROCA_LLM_CONFIG": llm_config_file}):
+        from pathlib import Path
+        with patch("broca.configs.resolve_llm_config_path", return_value=Path(llm_config_file)):
             client = LLMClient()
             with pytest.raises(ValidationError) as excinfo:
                 client.parse_message("unknown_provider", "gpt-4o", MagicMock())
@@ -115,7 +101,8 @@ class TestLLMClientInit:
 
     def test_unknown_model_raises_error(self, llm_config_file):
         """测试未知模型抛出异常"""
-        with patch.dict(os.environ, {"BROCA_LLM_CONFIG": llm_config_file}):
+        from pathlib import Path
+        with patch("broca.configs.resolve_llm_config_path", return_value=Path(llm_config_file)):
             client = LLMClient()
             with pytest.raises(ValidationError) as excinfo:
                 client.parse_message("openai", "unknown-model", MagicMock())
@@ -123,7 +110,8 @@ class TestLLMClientInit:
 
     def test_token_counters_init(self, llm_config_file):
         """测试 token 计数器初始化"""
-        with patch.dict(os.environ, {"BROCA_LLM_CONFIG": llm_config_file}):
+        from pathlib import Path
+        with patch("broca.configs.resolve_llm_config_path", return_value=Path(llm_config_file)):
             client = LLMClient()
             assert client.input_tokens_used == 0
             assert client.output_tokens_used == 0
