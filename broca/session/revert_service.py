@@ -4,7 +4,9 @@ SessionRevert 服务
 提供撤销/重做功能，管理会话级别的操作回滚。
 """
 
+import asyncio
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import select
@@ -15,7 +17,7 @@ from broca.session.database import db_manager
 from broca.session.models import Message, MessageType
 from broca.session.service import get_message_service
 from broca.session.session_manager import SessionManager
-from broca.snapshot import PatchCalculator, SnapshotRestorer, SnapshotTracker
+from broca.components.snapshot_manager import SnapshotManager
 from broca.components.revert_service import RevertServiceABC
 
 logger = get_logger(__name__)
@@ -27,6 +29,7 @@ class SessionRevertService(RevertServiceABC):
     def __init__(
         self,
         session_manager: SessionManager,
+        snapshot_manager: SnapshotManager,
         workspace_path: str,
         enable_snapshot_tracking: bool = True,
     ):
@@ -35,16 +38,15 @@ class SessionRevertService(RevertServiceABC):
 
         Args:
             session_manager: 会话管理器
+            snapshot_manager: 快照管理器（SnapshotManager 接口实例）
             workspace_path: 工作空间路径
             enable_snapshot_tracking: 是否启用快照跟踪。
                 False 时 undo/redo 仅标记消息，不执行文件恢复。
         """
         self.session_manager = session_manager
+        self._sm: SnapshotManager = snapshot_manager
         self.workspace_path = workspace_path
         self.enable_snapshot_tracking = enable_snapshot_tracking
-        self.snapshot_tracker = SnapshotTracker(workspace_path)
-        self.patch_calculator = PatchCalculator(workspace_path)
-        self.snapshot_restorer = SnapshotRestorer(workspace_path)
         self.undo_stack: List[dict] = []  # undo 栈，支持多级撤销
 
     def can_undo(self, session_id: str) -> bool:
@@ -129,19 +131,22 @@ class SessionRevertService(RevertServiceABC):
 
         logger.info(f"patches_to_revert: {patches_to_revert}")
 
-        # 捕获当前快照（用于重做）
-        if patches_to_revert and self.enable_snapshot_tracking:
-            current_snapshot_hash = await self.snapshot_tracker.track()
-        else:
-            current_snapshot_hash = ""
-
-        # 如果有patch且启用了快照跟踪，反向应用patch
+        # 捕获当前快照（用于重做）+ 反向应用 patch
+        # 全程持锁（acquire_lock 底层 fcntl.flock 是同步阻塞调用，
+        # 必须用 to_thread 包装避免阻塞事件循环）
         diff_content = ""
         diff_summary = {}
         if patches_to_revert and self.enable_snapshot_tracking:
-            await self.snapshot_restorer.revert_patches(patches_to_revert)
-            diff_content = await self._calculate_diff_for_patches(current_snapshot_hash)
-            diff_summary = self.patch_calculator.get_diff_summary(diff_content)
+            await asyncio.to_thread(self._sm.acquire_lock)
+            try:
+                current_snapshot_hash = await self._sm.track(self.workspace_path)
+                await self._sm.restore_patches(patches_to_revert)
+                diff_content = await self._calculate_diff_for_patches(current_snapshot_hash)
+                diff_summary = self._sm.get_diff_summary(diff_content)
+            finally:
+                await asyncio.to_thread(self._sm.release_lock)
+        else:
+            current_snapshot_hash = ""
 
         # 通过 SQL 标记相关消息为已撤销
         message_ids_to_revert = await self._mark_messages_as_reverted_sql(
@@ -191,28 +196,30 @@ class SessionRevertService(RevertServiceABC):
         undo_meta_info = self.undo_stack[-1]
 
         # 从撤销记录中恢复快照（仅在启用快照跟踪且有 patches 时执行文件恢复）
+        # 全程持锁，确保 restore + orphan cleanup 原子性
         snapshot_hash = undo_meta_info.get("snapshot_hash", "")
         if undo_meta_info["patches"] and snapshot_hash and self.enable_snapshot_tracking:
-            await self.snapshot_restorer.restore(snapshot_hash)
+            await asyncio.to_thread(self._sm.acquire_lock)
+            try:
+                await self._sm.restore(snapshot_hash)
 
-            # 清理孤儿文件：遍历 undo patch 中出现过的文件，
-            # 如果 restore 后它们变为未跟踪状态，说明在目标 tree 中已被删除
-            orphan_candidates = set()
-            for patch in undo_meta_info["patches"]:
-                for f in patch.get("files", []):
-                    orphan_candidates.add(f)
+                # 清理孤儿文件：遍历 undo patch 中出现过的文件，
+                # 如果 restore 后它们变为未跟踪状态，说明在目标 tree 中已被删除
+                orphan_candidates = set()
+                for patch in undo_meta_info["patches"]:
+                    for f in patch.get("files", []):
+                        orphan_candidates.add(f)
 
-            if orphan_candidates:
-                result = await self.snapshot_tracker.git_manager._run_git_command(
-                    "ls-files", "--others", "--exclude-standard", "-z"
-                )
-                untracked_files = set(result.strip().split("\0")) if result.strip() else set()
-                orphan_files = orphan_candidates & untracked_files
-                for file_path in orphan_files:
-                    full_path = self.snapshot_restorer.workspace_path / file_path
-                    if full_path.exists():
-                        logger.info(f"删除孤儿文件: {file_path}")
-                        full_path.unlink()
+                if orphan_candidates:
+                    untracked_files = await self._sm.get_untracked_files()
+                    orphan_files = orphan_candidates & untracked_files
+                    for file_path in orphan_files:
+                        full_path = Path(self.workspace_path) / file_path
+                        if full_path.exists():
+                            logger.info(f"删除孤儿文件: {file_path}")
+                            full_path.unlink()
+            finally:
+                await asyncio.to_thread(self._sm.release_lock)
 
         # 标记相关消息为已重做
         await self._mark_messages_as_redone(agent_id, undo_meta_info)
@@ -305,9 +312,9 @@ class SessionRevertService(RevertServiceABC):
 
     async def _calculate_diff_for_patches(self, from_hash: str) -> str:
         """计算patch的差异"""
-        current_hash = await self.snapshot_tracker.track()
+        current_hash = await self._sm.track(self.workspace_path)
 
-        return await self.patch_calculator.calculate_diff(from_hash, current_hash)
+        return await self._sm.calculate_diff(from_hash, current_hash)
 
     def _create_undo_meta_info(
         self,

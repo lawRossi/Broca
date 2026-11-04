@@ -6,6 +6,7 @@ Patch 计算模块
 
 from typing import Any, Dict, List, Optional
 
+import asyncio
 import re
 
 import git
@@ -91,7 +92,7 @@ class PatchCalculator:
         Returns:
             patch 信息字典
         """
-        self.git_manager.ensure_initialized()
+        await asyncio.to_thread(self.git_manager.ensure_initialized)
 
         # 获取变更文件列表
         changed_files = await self._get_changed_files(from_hash, to_hash)
@@ -123,10 +124,10 @@ class PatchCalculator:
                 # 比较树对象和当前工作区
                 # 首先将树对象写入索引
                 await self.git_manager._run_git_command("read-tree", from_hash)
-                # 然后比较索引和工作区
+                # 然后比较索引和工作区（无 HEAD 参数：diff 索引 vs 工作区）
                 result = (
                     await self.git_manager._run_git_command(
-                        "diff", "--name-only", "HEAD", "--", "."
+                        "diff", "--name-only", "--", "."
                     )
                 ).strip()
                 # 重置索引
@@ -167,7 +168,7 @@ class PatchCalculator:
         Returns:
             unified diff 格式的差异
         """
-        self.git_manager.ensure_initialized()
+        await asyncio.to_thread(self.git_manager.ensure_initialized)
 
         try:
             # 比较两个树对象

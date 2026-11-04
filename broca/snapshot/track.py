@@ -149,6 +149,8 @@ class SnapshotTracker:
             # 如果还没有提交，创建一个空的树
             return "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
 
+    # TODO(optimization): 考虑用 git status --porcelain -z 替换 3 条变更发现命令，
+    # 需充分测试 rename/submodule 场景
     async def _discover_changed_files(self) -> List[str]:
         """发现变更文件"""
         changed_files: List[str] = []
@@ -203,6 +205,11 @@ class SnapshotTracker:
         # 批量检查忽略规则（一次 git check-ignore -z --stdin 调用）
         ignored_set = await self.git_manager.is_ignored_batch(file_paths)
 
+        # 分离：磁盘上存在的文件 vs 幽灵候选文件
+        # 场景：diff-index --cached HEAD 可能报告 HEAD 中存在但
+        # 索引/工作区都不存在的"幽灵文件"。对于此类文件，git add
+        # 会报 "pathspec did not match any files" 错误。
+        ghost_candidates: List[str] = []
         for file_path in file_paths:
             # 检查是否被忽略
             if file_path in ignored_set:
@@ -217,22 +224,24 @@ class SnapshotTracker:
                         continue
                 except (OSError, FileNotFoundError):
                     continue
+                filtered_files.append(file_path)
             else:
-                # 文件不在磁盘上：检查是否在索引中
-                # 场景：diff-index --cached HEAD 可能报告 HEAD 中存在但
-                # 索引/工作区都不存在的"幽灵文件"。对于此类文件，git add
-                # 会报 "pathspec did not match any files" 错误。
-                try:
-                    result = await self.git_manager._run_git_command(
-                        "ls-files", "--cached", file_path
-                    )
-                    if not result.strip():
-                        # 文件既不在磁盘也不在索引中，跳过
-                        continue
-                except git.GitCommandError:
-                    continue
+                # 文件不在磁盘上 → 加入幽灵候选（稍后批量检查）
+                ghost_candidates.append(file_path)
 
-            filtered_files.append(file_path)
+        # 批量幽灵文件检查：1 次 ls-files --cached 替代 N 次
+        # 在索引中的 → 保留（合法 staged 变更）；不在的 → 过滤掉
+        if ghost_candidates:
+            try:
+                result = await self.git_manager._run_git_command(
+                    "ls-files", "--cached", "-z", *ghost_candidates
+                )
+                cached_files = set(result.strip().split("\x00")) if result.strip() else set()
+                for file_path in ghost_candidates:
+                    if file_path in cached_files:
+                        filtered_files.append(file_path)
+            except git.GitCommandError:
+                pass  # git 命令失败时跳过所有幽灵文件
 
         return filtered_files
 

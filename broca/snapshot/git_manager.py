@@ -50,6 +50,9 @@ class FileLock:
         self._path = Path(path)
         self._fd: Optional[int] = None
         self._count: int = 0
+        # Sticky 设计：一旦进入 fallback 模式，不再回退到 flock。
+        # 原因：NFS 等文件系统不支持 flock 是永久性限制，同一锁文件
+        # 始终在同一文件系统上，flock 不可用则永远不可用。
         self._fallback_mode: bool = False  # True 时使用 O_EXCL PID 文件锁
 
     @property
@@ -286,6 +289,11 @@ class GitManager:
         # 创建目录
         self.repo_path.mkdir(parents=True, exist_ok=True)
 
+        # 记录 workspace 路径（供 GC 使用）
+        workspace_file = self.repo_path / ".workspace"
+        if not workspace_file.exists():
+            workspace_file.write_text(str(self.workspace_path), encoding="utf-8")
+
         # 初始化 Git 仓库
         try:
             self.repo = git.Repo.init(self.repo_path)
@@ -345,6 +353,17 @@ class GitManager:
         """清理 Git 仓库"""
         if self.repo_path.exists():
             shutil.rmtree(self.repo_path)
+        # 从单例缓存中移除自身，防止已清理的实例被后续复用
+        with type(self)._class_lock:
+            normalized = str(self.workspace_path)
+            type(self)._instances.pop(normalized, None)
+
+    @classmethod
+    def reset(cls, workspace_path: str) -> None:
+        """显式清除指定 workspace 的 GitManager 单例。"""
+        normalized = str(Path(workspace_path).resolve())
+        with cls._class_lock:
+            cls._instances.pop(normalized, None)
 
     def get_repo(self) -> git.Repo:
         """获取 Git 仓库实例"""
@@ -472,13 +491,12 @@ class GitManager:
         env["GIT_DIR"] = str(self.repo_path / ".git")
         env["GIT_WORK_TREE"] = str(self.workspace_path)
 
+        # 使用 create_subprocess_exec 替代 create_subprocess_shell，
+        # 避免 shell 注入风险（文件名含 $、; 等特殊字符时安全）。
         # 注入 -c core.quotepath=false，确保非 ASCII（中文）文件名不被转义。
         # 兜底场景：仓库配置缺失或被外部修改时依然生效。
-        cmd_str = "git -c core.quotepath=false " + " ".join(args)
-
-        # 执行命令
-        process = await asyncio.create_subprocess_shell(
-            cmd_str,
+        process = await asyncio.create_subprocess_exec(
+            "git", "-c", "core.quotepath=false", *args,
             cwd=str(self.workspace_path),
             env=env,
             stdin=asyncio.subprocess.PIPE if input_data is not None else None,
@@ -490,7 +508,8 @@ class GitManager:
         stdout, stderr = await process.communicate(input=input_data)
 
         if process.returncode != 0:
-            raise git.GitCommandError(cmd_str, process.returncode, stderr.decode())
+            cmd_display = " ".join(["git", "-c", "core.quotepath=false"] + [str(a) for a in args])
+            raise git.GitCommandError(cmd_display, process.returncode, stderr.decode())
 
         return stdout.decode()
 
@@ -589,3 +608,145 @@ class GitManager:
             )
         except git.GitCommandError as e:
             logger.error(f"Failed to remove cached files: {e}")
+
+
+# ---------------------------------------------------------------------------
+# GC: 清理孤儿 snapshot 目录
+# ---------------------------------------------------------------------------
+
+
+def _default_delete(repo_dir: Path, workspace_path: str | None = None) -> None:
+    """使用 FileLock 保护的默认删除函数"""
+    lock = FileLock(str(repo_dir / ".snapshot.lock"))
+    lock.acquire(blocking=True)
+    try:
+        shutil.rmtree(repo_dir, ignore_errors=True)
+    finally:
+        lock.release()
+    # 清理 GitManager 单例缓存，防止已删除 workspace 的实例残留
+    if workspace_path:
+        GitManager.reset(workspace_path)
+
+
+def _resolve_valid_hashes(valid_workspace_hashes: set[str] | None) -> set[str]:
+    """
+    解析合法 workspace hash 集合。
+
+    优先使用调用方传入的值；为 None 时尝试从 DB 查询；
+    DB 不可用时返回空集合（仅通道 A 生效）。
+    """
+    if valid_workspace_hashes is not None:
+        return valid_workspace_hashes
+
+    try:
+        import asyncio
+
+        async def _query():
+            from broca.session.database import db_manager
+            from broca.session.models import Session
+            from sqlmodel import select
+
+            async with db_manager.get_session() as db_session:
+                stmt = select(Session.workspace).where(
+                    Session.workspace.isnot(None)
+                ).distinct()
+                result = await db_session.exec(stmt)
+                workspaces: list[str] = result.all()
+
+            return {
+                hashlib.sha256(str(Path(w).resolve()).encode()).hexdigest()[:16]
+                for w in workspaces
+            }
+
+        return asyncio.run(_query())
+    except Exception as e:
+        logger.warning(f"gc_snapshots: 无法查询 DB workspace 列表: {e}")
+        return set()
+
+
+def gc_snapshots(
+    snapshot_home: str | None = None,
+    *,
+    dry_run: bool = False,
+    delete_fn=None,
+    valid_workspace_hashes: set[str] | None = None,
+) -> list[dict]:
+    """
+    扫描 snapshot 目录，检测并（可选）删除孤儿 snapshot 目录。
+
+    双通道检测：
+    - 通道 A: 存在 .workspace 元数据文件 → 检查 workspace 路径是否存在
+    - 通道 B: 无 .workspace 文件 → 用目录名（hash）对比 DB 中的 workspace 集合
+
+    Args:
+        snapshot_home: snapshot 根目录，默认从配置读取
+        dry_run: True 时只收集不删除
+        delete_fn: 自定义删除函数 (repo_dir: Path) -> None，
+                   默认使用 FileLock + shutil.rmtree
+        valid_workspace_hashes: 合法 workspace hash 集合（通道 B 使用）。
+                   为 None 时自动从 DB 查询。
+
+    Returns:
+        孤儿列表，每项:
+        {"name": "abc123", "workspace": "/path/to/ws" | None, "reason": "workspace_deleted" | "no_session"}
+    """
+    home = Path(
+        snapshot_home
+        or __import__("broca.configs", fromlist=["get_configs"]).get_configs().snapshot_home
+        or os.path.expanduser("~/.broca/snapshots")
+    )
+    if not home.exists():
+        return []
+
+    if delete_fn is None:
+        delete_fn = _default_delete
+
+    valid_hashes = _resolve_valid_hashes(valid_workspace_hashes)
+
+    orphans: list[dict] = []
+    for repo_dir in sorted(home.iterdir()):
+        if not repo_dir.is_dir():
+            continue
+
+        # 通道 A: .workspace 元数据
+        ws_file = repo_dir / ".workspace"
+        if ws_file.exists():
+            try:
+                ws_path = Path(ws_file.read_text(encoding="utf-8").strip())
+            except OSError:
+                ws_path = None
+
+            if ws_path is None or not ws_path.exists():
+                orphans.append({
+                    "name": repo_dir.name,
+                    "workspace": str(ws_path) if ws_path else None,
+                    "reason": "workspace_deleted",
+                })
+                if not dry_run:
+                    _do_delete(repo_dir, delete_fn, orphans, str(ws_path) if ws_path else None)
+            continue
+
+        # 通道 B: hash 对比 DB
+        if repo_dir.name not in valid_hashes:
+            orphans.append({
+                "name": repo_dir.name,
+                "workspace": None,
+                "reason": "no_session",
+            })
+            if not dry_run:
+                _do_delete(repo_dir, delete_fn, orphans)
+
+    return orphans
+
+
+def _do_delete(repo_dir: Path, delete_fn, orphans: list[dict], workspace_path: str | None = None) -> None:
+    """执行删除，单项失败不阻塞后续"""
+    try:
+        if delete_fn is _default_delete:
+            delete_fn(repo_dir, workspace_path)
+        else:
+            delete_fn(repo_dir)
+        logger.info(f"Snapshot GC: removed {repo_dir}")
+    except Exception as e:
+        logger.warning(f"Snapshot GC: failed to remove {repo_dir}: {e}")
+        orphans[-1]["error"] = str(e)

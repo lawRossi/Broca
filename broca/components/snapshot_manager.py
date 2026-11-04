@@ -63,3 +63,56 @@ class SnapshotManager(ABC):
         """Return True if snapshot tracking is available (git exists,
         workspace is a repo, etc.)."""
         ...
+
+    # -- Diff / Restore (extended interface) ------------------------------
+    # These methods are NOT @abstractmethod — they provide safe default
+    # implementations so existing plugin subclasses remain instantiable.
+
+    async def calculate_diff(self, from_hash: str, to_hash: str) -> str:
+        """Get raw diff content between two snapshots.
+
+        Returns empty string if unavailable.
+        """
+        return ""
+
+    def get_diff_summary(self, diff_content: str) -> Dict[str, Any]:
+        """Parse diff content into a summary dict.
+
+        Returns an empty summary if unavailable.
+        """
+        return {
+            "total_files": 0,
+            "total_additions": 0,
+            "total_deletions": 0,
+            "files_added": [],
+            "files_deleted": [],
+            "files_modified": [],
+        }
+
+    async def restore(self, tree_hash: str) -> None:
+        """Restore workspace to the given snapshot state.
+
+        No-op if restore is not supported.
+        """
+        pass
+
+    async def restore_file(self, tree_hash: str, file_path: str) -> None:
+        """Restore a single file to the given snapshot state.
+
+        No-op if restore is not supported.
+        """
+        pass
+
+    async def restore_patches(self, patches: list) -> None:
+        """Reverse-apply a list of patches to revert file changes.
+
+        No-op if restore is not supported.
+        """
+        pass
+
+    async def get_untracked_files(self) -> set[str]:
+        """Return the set of untracked (but not ignored) files.
+
+        Returns empty set if unavailable.
+        """
+        return set()

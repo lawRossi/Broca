@@ -93,7 +93,7 @@ class TestChineseFilenamesEndToEnd:
         async def run():
             # initial commit
             await manager._run_git_command("add", "-A")
-            await manager._run_git_command("commit -m init --allow-empty")
+            await manager._run_git_command("commit", "-m", "init", "--allow-empty")
             base = (await manager._run_git_command("rev-parse", "HEAD")).strip()
 
             # create files with Chinese names and spaces

@@ -16,6 +16,7 @@ from broca.logging_config import get_logger
 from broca.loop_engine import ExecutionResult, ExecutionStatus
 from broca.session import Message, MessageRole, MessageType, SessionManager
 from broca.session.revert_service import SessionRevertService
+from broca.snapshot.manager import GitSnapshotManager
 
 logger = get_logger(__name__)
 
@@ -41,8 +42,11 @@ class Agent:
         self.name = config.name
         self.role = config.role
         self.status = self.STATUS_DISCONNECTED
+        _snap_mgr = GitSnapshotManager()
+        _snap_mgr.initialize(self.config.workspace)
         self.revert_service = SessionRevertService(
             self.session_manager,
+            _snap_mgr,
             self.config.workspace,
             enable_snapshot_tracking=getattr(
                 self.config, "enable_snapshot_tracking", True

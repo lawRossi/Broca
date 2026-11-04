@@ -4,6 +4,7 @@
 将工作空间恢复到指定的快照状态。
 """
 
+import asyncio
 import shutil
 from pathlib import Path
 from typing import Any
@@ -37,7 +38,7 @@ class SnapshotRestorer:
         Args:
             tree_hash: Git 树哈希
         """
-        self.git_manager.ensure_initialized()
+        await asyncio.to_thread(self.git_manager.ensure_initialized)
 
         # 在文件锁保护下原子执行
         self.git_manager.acquire_lock(blocking=True)
@@ -55,7 +56,10 @@ class SnapshotRestorer:
 
     async def revert_patches(self, patches: list[dict[str, Any]]) -> None:
         """
-        反向应用多个 patch
+        反向应用多个 patch（批量原子化）
+
+        按 tree_hash 分组，对每组执行单条 git checkout，减少 subprocess 调用。
+        整个操作在单次文件锁内完成（如果外部已持锁则复用）。
 
         Args:
             patches: patch 信息字典列表
@@ -63,6 +67,9 @@ class SnapshotRestorer:
         if not patches:
             return
 
+        await asyncio.to_thread(self.git_manager.ensure_initialized)
+
+        # 收集 (file_path, tree_hash) 对
         file_snapshot_mapping = {}
         for patch in patches:
             snapshot_hash = patch.get("snapshot_hash")
@@ -72,8 +79,55 @@ class SnapshotRestorer:
                     if file_path not in file_snapshot_mapping:
                         file_snapshot_mapping[file_path] = snapshot_hash
 
-        for file, snapshot_hash in file_snapshot_mapping.items():
-            await self.restore_file(snapshot_hash, file)
+        if not file_snapshot_mapping:
+            return
+
+        # 按 tree_hash 分组：{tree_hash: [file1, file2, ...]}
+        hash_to_files: dict[str, list[str]] = {}
+        for file_path, tree_hash in file_snapshot_mapping.items():
+            hash_to_files.setdefault(tree_hash, []).append(file_path)
+
+        # 整个操作在单次锁内完成（如果外部已持锁则复用）
+        already_locked = self.git_manager._lock.is_held
+        if not already_locked:
+            self.git_manager.acquire_lock(blocking=True)
+        try:
+            for tree_hash, files in hash_to_files.items():
+                try:
+                    await self.git_manager._run_git_command(
+                        "checkout", tree_hash, "--", *files
+                    )
+                except git.GitCommandError:
+                    # 批量 checkout 失败（可能部分文件不存在于该 tree），
+                    # 回退到逐文件处理
+                    for file in files:
+                        await self._restore_file_with_fallback(tree_hash, file)
+        finally:
+            if not already_locked:
+                self.git_manager.release_lock()
+
+    async def _restore_file_with_fallback(self, tree_hash: str, file_path: str) -> None:
+        """恢复单个文件，失败时 fallback 到 ls-tree 检查 + 删除"""
+        try:
+            await self.git_manager._run_git_command(
+                "checkout", tree_hash, "--", file_path
+            )
+        except git.GitCommandError:
+            # 判断文件是否存在于目标 tree 中
+            try:
+                result = await self.git_manager._run_git_command(
+                    "ls-tree", "-r", "--name-only", tree_hash, file_path
+                )
+                if result.strip() == "":
+                    # 文件不在目标 tree 中，如果磁盘上存在则删除
+                    full_path = self.workspace_path / file_path
+                    if full_path.exists():
+                        if full_path.is_file():
+                            full_path.unlink()
+                        elif full_path.is_dir():
+                            shutil.rmtree(full_path)
+            except git.GitCommandError:
+                pass
 
     async def restore_file(self, tree_hash: str, file_path: str) -> None:
         """
@@ -83,7 +137,7 @@ class SnapshotRestorer:
             tree_hash: Git 树哈希
             file_path: 文件路径（相对路径）
         """
-        self.git_manager.ensure_initialized()
+        await asyncio.to_thread(self.git_manager.ensure_initialized)
 
         try:
             await self.git_manager._run_git_command(

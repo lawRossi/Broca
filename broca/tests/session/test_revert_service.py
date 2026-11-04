@@ -29,23 +29,28 @@ def mock_session_manager():
 
 
 @pytest.fixture
-def revert_service(mock_session_manager):
-    """创建 SessionRevertService 实例"""
-    service = SessionRevertService(
-        session_manager=mock_session_manager,
-        workspace_path="/tmp/workspace",
-    )
-    # Mock 快照相关实例
-    service.snapshot_tracker = MagicMock()
-    service.snapshot_tracker.track = AsyncMock(return_value="hash_123")
-    service.patch_calculator = MagicMock()
-    service.patch_calculator.calculate_diff = AsyncMock(return_value="diff content")
-    service.patch_calculator.get_diff_summary = MagicMock(return_value={
+def mock_snapshot_manager():
+    """创建 mock SnapshotManager"""
+    sm = MagicMock()
+    sm.track = AsyncMock(return_value="hash_123")
+    sm.calculate_diff = AsyncMock(return_value="diff content")
+    sm.get_diff_summary = MagicMock(return_value={
         "total_files": 1, "files_modified": ["test.py"]
     })
-    service.snapshot_restorer = MagicMock()
-    service.snapshot_restorer.revert_patches = AsyncMock()
-    return service
+    sm.restore_patches = AsyncMock()
+    sm.restore = AsyncMock()
+    sm.get_untracked_files = AsyncMock(return_value=set())
+    return sm
+
+
+@pytest.fixture
+def revert_service(mock_session_manager, mock_snapshot_manager):
+    """创建 SessionRevertService 实例"""
+    return SessionRevertService(
+        session_manager=mock_session_manager,
+        snapshot_manager=mock_snapshot_manager,
+        workspace_path="/tmp/workspace",
+    )
 
 
 class TestRevertServiceInit:
@@ -166,7 +171,7 @@ class TestRedo:
         )
         # 无快照模式下 redo 仅标记消息，应成功
         assert result["success"] is True
-        # 不应调用 snapshot_restorer
+        # 无快照模式下 restore 不应被调用
         assert not revert_service.undo_stack  # 栈已被 pop
 
 
@@ -273,18 +278,15 @@ class TestNoSnapshotMode:
     """测试 enable_snapshot_tracking=False 时的 undo/redo 行为"""
 
     @pytest.fixture
-    def no_snapshot_service(self, mock_session_manager):
+    def no_snapshot_service(self, mock_session_manager, mock_snapshot_manager):
         """创建无快照跟踪的 RevertService"""
-        service = SessionRevertService(
+        mock_snapshot_manager.track = AsyncMock(return_value="")
+        return SessionRevertService(
             session_manager=mock_session_manager,
+            snapshot_manager=mock_snapshot_manager,
             workspace_path="/tmp/workspace",
             enable_snapshot_tracking=False,
         )
-        service.snapshot_tracker = MagicMock()
-        service.snapshot_tracker.track = AsyncMock(return_value="")
-        service.patch_calculator = MagicMock()
-        service.snapshot_restorer = MagicMock()
-        return service
 
     @pytest.mark.asyncio
     async def test_undo_only_marks_messages(self, no_snapshot_service, mock_session_manager):
@@ -310,8 +312,8 @@ class TestNoSnapshotMode:
 
         assert result["success"] is True
         assert result["patches_reverted"] == 0
-        # snapshot_restorer 不应被调用
-        no_snapshot_service.snapshot_restorer.revert_patches.assert_not_called()
+        # snapshot manager 的 restore_patches 不应被调用
+        no_snapshot_service._sm.restore_patches.assert_not_called()
         # 但消息标记应被调用
         mock_session_manager.batch_update_messages.assert_called()
 
@@ -357,8 +359,8 @@ class TestNoSnapshotMode:
         )
 
         assert result["success"] is True
-        # snapshot_restorer 不应被调用
-        no_snapshot_service.snapshot_restorer.restore.assert_not_called()
+        # snapshot manager 的 restore 不应被调用
+        no_snapshot_service._sm.restore.assert_not_called()
         assert no_snapshot_service.undo_stack == []
 
 

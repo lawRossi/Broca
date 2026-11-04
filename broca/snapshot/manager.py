@@ -1,7 +1,12 @@
 """GitSnapshotManager — default SnapshotManager implementation.
 
-Composes SnapshotTracker + PatchCalculator + GitManager into a single
-unified interface. Provides graceful degradation when git is unavailable.
+Composes SnapshotTracker + PatchCalculator + SnapshotRestorer + GitManager
+into a single unified interface implementing the SnapshotManager ABC:
+  - track / calculate_patch / acquire_lock / release_lock / is_tracked
+  - calculate_diff / get_diff_summary / restore / restore_file
+  - restore_patches / get_untracked_files
+
+Provides graceful degradation when git is unavailable.
 """
 
 from __future__ import annotations
@@ -13,6 +18,7 @@ from typing import Any, Dict
 from broca.components.snapshot_manager import SnapshotManager
 from broca.snapshot.git_manager import GitManager
 from broca.snapshot.patch import PatchCalculator
+from broca.snapshot.restore import SnapshotRestorer
 from broca.snapshot.track import SnapshotTracker
 
 logger = logging.getLogger(__name__)
@@ -31,8 +37,8 @@ class GitSnapshotManager(SnapshotManager):
     def __init__(self):
         self._tracker: SnapshotTracker | None = None
         self._patch_calculator: PatchCalculator | None = None
+        self._restorer: SnapshotRestorer | None = None
         self._git_manager: GitManager | None = None
-        self._workspace: str = ""
         self._available: bool = False
 
     def initialize(self, workspace: str) -> None:
@@ -40,7 +46,6 @@ class GitSnapshotManager(SnapshotManager):
 
         Checks git availability and sets up internal trackers.
         """
-        self._workspace = workspace
         if not self._is_git_available():
             logger.debug(
                 f"Git not available for workspace {workspace!r}, "
@@ -51,6 +56,7 @@ class GitSnapshotManager(SnapshotManager):
         try:
             self._tracker = SnapshotTracker(workspace)
             self._patch_calculator = PatchCalculator(workspace)
+            self._restorer = SnapshotRestorer(workspace)
             self._git_manager = GitManager(workspace)
             self._available = True
         except Exception as e:
@@ -115,7 +121,7 @@ class GitSnapshotManager(SnapshotManager):
         return self._available
 
     # ------------------------------------------------------------------
-    # Extended API (not in ABC, used directly by LoopEngine)
+    # Diff / Restore (ABC extended interface)
     # ------------------------------------------------------------------
 
     async def calculate_diff(self, from_hash: str, to_hash: str) -> str:
@@ -131,5 +137,52 @@ class GitSnapshotManager(SnapshotManager):
     def get_diff_summary(self, diff_content: str) -> Dict[str, Any]:
         """Parse diff content into a summary dict."""
         if not self._available or self._patch_calculator is None:
-            return {}
+            return {
+                "total_files": 0,
+                "total_additions": 0,
+                "total_deletions": 0,
+                "files_added": [],
+                "files_deleted": [],
+                "files_modified": [],
+            }
         return self._patch_calculator.get_diff_summary(diff_content)
+
+    async def restore(self, tree_hash: str) -> None:
+        """Restore workspace to the given snapshot state."""
+        if not self._available or self._restorer is None:
+            return
+        try:
+            await self._restorer.restore(tree_hash)
+        except Exception as e:
+            logger.warning(f"Snapshot restore failed: {e}")
+
+    async def restore_file(self, tree_hash: str, file_path: str) -> None:
+        """Restore a single file to the given snapshot state."""
+        if not self._available or self._restorer is None:
+            return
+        try:
+            await self._restorer.restore_file(tree_hash, file_path)
+        except Exception as e:
+            logger.warning(f"File restore failed: {e}")
+
+    async def restore_patches(self, patches: list) -> None:
+        """Reverse-apply patches to revert file changes."""
+        if not self._available or self._restorer is None:
+            return
+        try:
+            await self._restorer.revert_patches(patches)
+        except Exception as e:
+            logger.warning(f"Patch revert failed: {e}")
+
+    async def get_untracked_files(self) -> set[str]:
+        """Return the set of untracked (but not ignored) files."""
+        if not self._available or self._git_manager is None:
+            return set()
+        try:
+            result = await self._git_manager._run_git_command(
+                "ls-files", "--others", "--exclude-standard", "-z"
+            )
+            return set(result.strip().split("\0")) if result.strip() else set()
+        except Exception as e:
+            logger.warning(f"Failed to get untracked files: {e}")
+            return set()
