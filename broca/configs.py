@@ -43,6 +43,12 @@ class ExecutionConfig:
         self.runner_heartbeat_interval = 5  # Runner 上报心跳间隔（秒）
         self.runner_heartbeat_timeout = 45  # 心跳超时判定阈值（秒）
         self.runner_heartbeat_check_interval = 15  # Manager 心跳巡检间隔（秒）
+        # IPC 单线程多路复用（Task 4.2）：一个 ipc-poller 线程轮询所有连接。
+        # 灰度期的「每 session 一线程」回滚路径已下线（备份见 docs/legacy/）
+        # 心跳状态落库的最小间隔（秒）：时间维度聚合，避免每轮巡检都写库
+        self.runner_status_persist_interval = 60
+        # 每个 session 的 IPC 消息队列上限（背压，Task 4.4）
+        self.runner_ipc_queue_size = 1000
 
     @classmethod
     def from_config(cls, config):
