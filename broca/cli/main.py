@@ -9,6 +9,7 @@ Broca CLI - Command Line Interface Entry Point
   Broca service stop        停止生产服务
   Broca service restart     重启生产服务
   Broca service status      查看服务状态
+  Broca snapshot gc         清理孤儿 snapshot 目录
   Broca version             显示版本
 """
 
@@ -561,6 +562,47 @@ def cmd_create_user(args):
 
 
 # ======================================================================
+# Snapshot GC
+# ======================================================================
+
+
+def cmd_snapshot_gc(args):
+    """清理孤儿 snapshot 目录"""
+    from broca.snapshot.git_manager import gc_snapshots
+
+    dry_run = not args.force
+
+    print()
+    print("=" * 50)
+    print("  Snapshot GC" + (" (dry-run)" if dry_run else " (force)"))
+    print("=" * 50)
+    print()
+
+    orphans = gc_snapshots(
+        snapshot_home=args.home,
+        dry_run=dry_run,
+    )
+
+    if not orphans:
+        print("✅ 无孤儿 snapshot 目录")
+        print()
+        return
+
+    print(f"发现 {len(orphans)} 个孤儿 snapshot 目录：")
+    print()
+    for item in orphans:
+        ws = item.get("workspace") or "未知"
+        reason = "workspace 已删除" if item["reason"] == "workspace_deleted" else "无关联 session"
+        status = "已删除" if not dry_run and "error" not in item else ("失败: " + item["error"] if "error" in item else "待删除")
+        print(f"  {item['name']}  ({ws})  [{reason}]  → {status}")
+
+    if dry_run:
+        print()
+        print("提示: 使用 --force 实际删除")
+    print()
+
+
+# ======================================================================
 # Argument Parser
 # ======================================================================
 
@@ -581,6 +623,8 @@ examples:
   Broca service restart          Restart production services
   Broca service status           Show service status
   Broca create-user              Create an admin user for the Web backend
+  Broca snapshot gc              List orphan snapshot directories (dry-run)
+  Broca snapshot gc --force      Delete orphan snapshot directories
   Broca version                  Show version information
         """,
     )
@@ -783,6 +827,34 @@ examples:
         help="Force remove (for dirty worktrees)",
     )
 
+    # ---- snapshot command ----
+    snap_sub = sub.add_parser(
+        "snapshot",
+        help="Manage snapshot directories",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+examples:
+  Broca snapshot gc              List orphan snapshot directories
+  Broca snapshot gc --force      Delete orphan snapshot directories
+  Broca snapshot gc --home /path Use custom snapshot home
+""",
+    )
+    snap_sub.subcommands = snap_sub.add_subparsers(
+        dest="snapshot_command", title="snapshot commands",
+    )
+    gc_sub = snap_sub.subcommands.add_parser(
+        "gc",
+        help="Garbage collect orphan snapshot directories",
+    )
+    gc_sub.add_argument(
+        "--force", "-y", action="store_true",
+        help="Actually delete orphan directories (default: dry-run)",
+    )
+    gc_sub.add_argument(
+        "--home", default=None,
+        help="Snapshot home directory (default: from config)",
+    )
+
     return parser
 
 
@@ -909,6 +981,14 @@ def main():
                 print(f"⚠ Could not submit via Web API: {e}")
                 print()
                 print("Alternative: Start an agent session and use load_skill + execute-tasks")
+
+    # ---- snapshot commands ----
+    elif command == "snapshot":
+        snap_cmd = getattr(args, "snapshot_command", None)
+        if snap_cmd == "gc":
+            cmd_snapshot_gc(args)
+        else:
+            parser.parse_args(["snapshot", "--help"])
 
     # ---- worktree command ----
     elif command == "worktree":
