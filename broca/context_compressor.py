@@ -498,6 +498,7 @@ class SessionMemoryCompressor(ContextCompressor):
                 return False
 
             self.state.extraction_in_progress = True
+            original_content = None
             try:
                 original_content = self._read_session_memory_content()
                 await compressor_context.communicator.send_agent_system_message(
@@ -508,17 +509,19 @@ class SessionMemoryCompressor(ContextCompressor):
                     old_history, compressor_context
                 )
                 if not success:
+                    if original_content is not None:
+                        with open(
+                            self.snapshot_memory_path, "w", encoding="utf-8"
+                        ) as f:
+                            f.write(original_content)
+                return success
+            except Exception as e:
+                logger.error(f"Session memory extraction failed: {e}")
+                if original_content is not None:
                     with open(
                         self.snapshot_memory_path, "w", encoding="utf-8"
                     ) as f:
                         f.write(original_content)
-                return success
-            except Exception as e:
-                logger.error(f"Session memory extraction failed: {e}")
-                with open(
-                    self.snapshot_memory_path, "w", encoding="utf-8"
-                ) as f:
-                    f.write(original_content)
                 return False
             finally:
                 self.state.extraction_in_progress = False
