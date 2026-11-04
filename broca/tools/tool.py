@@ -1,5 +1,6 @@
 import asyncio
 import json
+import time
 import uuid
 from enum import Enum
 from pathlib import Path
@@ -9,6 +10,41 @@ from broca.errors import BrocaError
 from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
+
+# ─── Tool result cache cleanup ─────────────────────────────────────
+_tool_cache_cleanup_done = False
+TOOL_CACHE_MAX_AGE = 3600  # seconds; files older than this are removed at startup
+
+
+def cleanup_tool_result_cache():
+    """Remove tool result cache files older than TOOL_CACHE_MAX_AGE.
+
+    Called lazily on first cache write (guarded by module-level flag,
+    runs at most once per process lifetime).
+    """
+    global _tool_cache_cleanup_done
+    if _tool_cache_cleanup_done:
+        return
+    _tool_cache_cleanup_done = True
+
+    cache_dir = Tool.TOOL_RESULT_CACHE_DIR
+    if not cache_dir.exists():
+        return
+
+    now = time.time()
+    cleaned = 0
+    for f in cache_dir.iterdir():
+        if not f.is_file():
+            continue
+        try:
+            if now - f.stat().st_mtime > TOOL_CACHE_MAX_AGE:
+                f.unlink(missing_ok=True)
+                cleaned += 1
+        except OSError:
+            pass
+
+    if cleaned:
+        logger.info(f"Tool result cache cleanup: removed {cleaned} stale file(s)")
 
 
 class ToolStatus(str, Enum):
@@ -81,6 +117,7 @@ class Tool:
         if len(result.content) > self.max_content_length:
             content = result.content
             if self.name != "read_file":
+                cleanup_tool_result_cache()
                 self.TOOL_RESULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
                 cache_file = self.TOOL_RESULT_CACHE_DIR / (uuid.uuid4().hex + ".txt")
                 with open(cache_file, "w") as f:

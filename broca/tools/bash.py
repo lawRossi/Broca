@@ -78,12 +78,7 @@ class Bash(Tool):
         if not code:
             return None
 
-        # 后台命令跳过安全检查（与 _execute 行为一致）
-        background = args_dict.get("background", False)
-        has_shell_bg = self._detect_background_ampersand(code)
-        if background or has_shell_bg:
-            return None
-
+        # 所有命令（含后台）统一做安全检查
         is_safe, reason, snippet = self._validate_code(code)
         if not is_safe:
             return (

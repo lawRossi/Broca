@@ -10,6 +10,7 @@ import json
 import os
 import signal
 import sys
+import time
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -94,6 +95,7 @@ class LocalProcessManager(ProcessManagerABC):
             self._initialized = True
             self._processes: Dict[str, ProcessInfo] = {}
             self._cleanup_task: Optional[asyncio.Task] = None
+            self._cleanup_stale_disk_dirs()
             logger.info("ProcessManager initialized")
 
     # ─── 公共 API ────────────────────────────────────────────────
@@ -362,6 +364,42 @@ class LocalProcessManager(ProcessManagerABC):
         if self._cleanup_task is None or self._cleanup_task.done():
             self._cleanup_task = asyncio.create_task(
                 self._periodic_cleanup()
+            )
+
+    def _cleanup_stale_disk_dirs(self):
+        """扫描 OUTPUT_DIR，清理 mtime 超过 _MAX_PROCESS_AGE 的残留目录。
+
+        解决重启后内存 _processes 为空、磁盘旧目录永远不被清理的问题。
+        在 __init__ 时调用一次。
+        """
+        import shutil
+
+        if not self.OUTPUT_DIR.exists():
+            return
+
+        now = time.time()
+        max_age = self._MAX_PROCESS_AGE  # seconds
+
+        cleaned = 0
+        for entry in self.OUTPUT_DIR.iterdir():
+            if not entry.is_dir():
+                continue
+            try:
+                age = now - entry.stat().st_mtime
+                if age > max_age:
+                    # 跳过仍在内存中跟踪的进程（正在运行的）
+                    process_id = entry.name
+                    info = self._processes.get(process_id)
+                    if info and info.status == ProcessStatus.RUNNING:
+                        continue
+                    shutil.rmtree(entry, ignore_errors=True)
+                    cleaned += 1
+            except OSError:
+                continue
+
+        if cleaned:
+            logger.info(
+                f"Startup cleanup: removed {cleaned} stale process output dir(s)"
             )
 
     async def _periodic_cleanup(self):
