@@ -19,12 +19,16 @@ from broca.utils.shell_security import init_tree_sitter, validate_shell_command
 
 logger = get_logger(__name__)
 
+# 模块加载时初始化 tree-sitter（幂等，仅首次有开销）
+init_tree_sitter()
+
 
 class Bash(Tool):
+    _OUTPUT_TEMPLATE = "return code: {{output.returncode}}\n{% if output.stdout -%}\noutput:{{ output.stdout if output.stdout.strip() else 'execution succeeded'}}\n{% endif %}\n{%- if output.stderr -%}error: {{output.stderr}}{% endif %}"
+
     def __init__(self):
         super().__init__()
-        self.code_output_template = "return code: {{output.returncode}}\n{% if output.stdout -%}\noutput:{{ output.stdout if output.stdout.strip() else 'execution succeeded'}}\n{% endif %}\n{%- if output.stderr -%}error: {{output.stderr}}{% endif %}"
-        init_tree_sitter()
+        self._output_t = Template(self._OUTPUT_TEMPLATE)
 
     @property
     def name(self) -> str:
@@ -55,11 +59,6 @@ class Bash(Tool):
                     "description": "Run in background without timeout. Use for long-running commands like dev servers, file watchers, or any command that doesn't terminate. The output is redirected to files and can be tracked via process tool. When False (default), commands have a 120s timeout.",
                     "default": False,
                 },
-                # "notify": {
-                #     "type": "boolean",
-                #     "description": "When background=True, whether to send a notification when the process completes. Default: False (no notification). Use process tool to check status instead.",
-                #     "default": False,
-                # },
             }
         }
 
@@ -95,7 +94,6 @@ class Bash(Tool):
             )
 
         background = arguments.get("background", False)
-        notify = False
 
         # 检测命令是否包含 &（shell background operator）
         has_shell_bg = self._detect_background_ampersand(code)
@@ -103,7 +101,7 @@ class Bash(Tool):
         if background or has_shell_bg:
             if has_shell_bg:
                 code = self._strip_background_ampersand(code)
-            return await self._run_background(code, context, notify=notify)
+            return await self._run_background(code, context)
 
         return await self._run_code_async(code)
 
@@ -202,9 +200,16 @@ class Bash(Tool):
         检测规则：
         - 去掉真正的注释后，去除首尾空白，以 & 结尾（允许结尾有分号）
         - # 只有在「词首」且不在引号内时才算注释
+        - 排除 &&（逻辑 AND，非后台操作符）
         """
         stripped = self._strip_comments(code).strip()
-        return stripped.rstrip().rstrip(";").rstrip().endswith("&")
+        result = stripped.rstrip().rstrip(";").rstrip()
+        if result.endswith("&"):
+            # 排除末尾 &&（逻辑 AND 操作符，不是后台）
+            if len(result) >= 2 and result[-2] == "&":
+                return False
+            return True
+        return False
 
     def _strip_background_ampersand(self, code: str) -> str:
         """去除命令末尾的 background operator & 及尾随空白/分号，保留注释。"""
@@ -229,7 +234,7 @@ class Bash(Tool):
         return head
 
     async def _run_background(
-        self, code: str, context: ToolCallContext, notify: bool = False
+        self, code: str, context: ToolCallContext
     ) -> ToolResult:
         """Schedule code execution via the scheduler for background running."""
         try:
@@ -244,7 +249,6 @@ class Bash(Tool):
                 trigger_config={},
                 content=code,
                 agent_id=context.agent.agent_id,
-                notify=notify,
             )
             # 基于 job_id 预测输出路径
             stdout_path = ProcessManager.OUTPUT_DIR / job_id / "stdout.log"
@@ -314,10 +318,12 @@ class Bash(Tool):
                         await process.wait()
                     except Exception:
                         pass
-                    result_dict = {
-                        "returncode": -1,
-                        "stderr": f"Execution timed out after {timeout} seconds.",
-                    }
+                    # 保留超时前进程已输出的 stderr（从临时文件读取）
+                    actual_stderr = _read(err_path)
+                    timeout_msg = f"Execution timed out after {timeout} seconds."
+                    if actual_stderr:
+                        timeout_msg += f"\n{actual_stderr}"
+                    result_dict = {"returncode": -1, "stderr": timeout_msg}
                     status = ToolStatus.ERROR
 
             result_dict.setdefault("stdout", _read(out_path))
@@ -333,15 +339,20 @@ class Bash(Tool):
         finally:
             shutil.rmtree(tmpdir, ignore_errors=True)
 
-        output = Template(self.code_output_template).render(output=result_dict)
+        output = self._output_t.render(output=result_dict)
         return ToolResult(status=status, content=output)
 
     @staticmethod
     def _kill_process_tree(process) -> None:
-        """杀掉整个进程组，避免后台子进程变成孤儿。"""
+        """杀掉整个进程树，避免后台子进程变成孤儿。"""
         try:
             if sys.platform == "win32":
-                process.kill()
+                # taskkill /T 递归杀整个进程树
+                subprocess_run = __import__("subprocess").run
+                subprocess_run(
+                    ["taskkill", "/F", "/T", "/PID", str(process.pid)],
+                    capture_output=True,
+                )
             else:
                 os.killpg(os.getpgid(process.pid), signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
