@@ -1,33 +1,35 @@
 {
-    "database_dir": "~/.broca/data",
-    "log_file": "~/.broca/logs/agent.log",
-    "log_dir": "~/.broca/logs",
-    "log_level": "INFO",
-    "llm_config_file": "~/.broca/configs/llm_config.json",
-    "agents_config_dir": "~/.broca/configs/agents",
-    "snapshot_home": "~/.broca/snapshots",
-    "socket_server_url": "http://localhost:6666",
-    "api_server_url": "http://localhost:9001",
-    "execution": {
-        "step_max_errors": 3,
-        "llm_retry_delay": 5,
-        "tool_call_timeout": 120,
-        "assign_task_timeout": 1800,
-        "llm_timeout": 300,
-        "llm_first_chunk_timeout": 30,
-        "dead_loop_window": 3,
-        "message_queue_size": 3,
-        "permission_request_timeout": 90,
-        "agent_query_timeout": 300,
-        "runner_heartbeat_interval": 5,
-        "runner_heartbeat_timeout": 45,
-        "runner_heartbeat_check_interval": 15
-    },
-    "search": {
-        "tavily_api_key": "",
-        "anysearch_api_key": "",
-        "anysearch_api_base_url": "https://api.anysearch.com",
-        "default_search_provider": "tavily",
-        "default_fetch_provider": "anysearch"
-    }
+  "database_dir": "~/.broca/data",
+  "log_file": "~/.broca/logs/agent.log",
+  "log_dir": "~/.broca/logs",
+  "log_level": "INFO",
+  "llm_config_file": "~/.broca/configs/llm_config.json",
+  "agents_config_dir": "~/.broca/configs/agents",
+  "snapshot_home": "~/.broca/snapshots",
+  "socket_server_url": "http://localhost:6666",
+  "api_server_url": "http://localhost:9001",
+  "execution": {
+    "step_max_errors": 3,
+    "llm_retry_delay": 5,
+    "tool_call_timeout": 120,
+    "assign_task_timeout": 1800,
+    "llm_timeout": 300,
+    "llm_first_chunk_timeout": 30,
+    "dead_loop_window": 3,
+    "message_queue_size": 3,
+    "permission_request_timeout": 90,
+    "agent_query_timeout": 300,
+    "runner_heartbeat_interval": 5,
+    "runner_heartbeat_timeout": 45,
+    "runner_heartbeat_check_interval": 15,
+    "runner_status_persist_interval": 60,
+    "runner_ipc_queue_size": 1000
+  },
+  "search": {
+    "tavily_api_key": "",
+    "anysearch_api_key": "",
+    "anysearch_api_base_url": "https://api.anysearch.com",
+    "default_search_provider": "tavily",
+    "default_fetch_provider": "anysearch"
+  }
 }

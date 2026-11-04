@@ -344,15 +344,3 @@ class CrewOrchestratorRunner:
             logger.info(f"Crew '{self._crew_id}' aborted by user")
             return True
         return False
-
-    async def get_crew_status(self) -> Dict[str, Any]:
-        """获取编排状态"""
-        if not self._orchestrator:
-            return {"running": False, "crew_id": self._crew_id}
-
-        return {
-            "running": self._running,
-            "crew_id": self._crew_id,
-            "orchestrator_type": self._orchestrator.orchestrator_type.value,
-            "is_aborted": self._orchestrator.is_aborted,
-        }

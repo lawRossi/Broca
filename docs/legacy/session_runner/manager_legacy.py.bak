@@ -1,0 +1,75 @@
+"""旧版「每 session 一个轮询线程」实现（回滚路径）。
+
+Task 4.2 用 :class:`~broca.session_runner.poller.IPCPoller`（单线程多路复用）
+替代了「N 个 session = N 个 daemon 线程」的实现。这里保留旧实现作为灰度回滚
+路径，由配置 ``execution.runner_ipc_multiplexing`` 切换：
+
+- ``true``（默认）→ ``IPCPoller``
+- ``false`` → ``LegacyPollThreadMixin``（本文件）
+
+**单独成文件的理由**：这样 ``manager.py`` 里可以完全没有 ``threading.Thread``
+（AC 要求），而回滚路径依然可用；Phase 4 收尾时删除本文件即可。
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import threading
+from typing import Any
+
+from broca.session_runner.backpressure import DEFAULT_QUEUE_SIZE
+from broca.session_runner.ipc import IPCConnectionError
+
+logger = logging.getLogger(__name__)
+
+
+class LegacyPollThreadMixin:
+    """每个 session 一个 daemon 轮询线程的旧实现。"""
+
+    def _start_poll_thread(
+        self,
+        session_id: str,
+        ipc_server: Any,
+        loop: asyncio.AbstractEventLoop,
+        msg_queue: "asyncio.Queue",
+    ) -> threading.Thread:
+        """启动 IPC 轮询线程（唯一消费者），消息经 asyncio.Queue 送回事件循环。"""
+
+        def _thread_poll() -> None:
+            while session_id in self._registry:
+                try:
+                    msg = ipc_server.receive_message(5.0)
+                    if msg is not None:
+                        loop.call_soon_threadsafe(msg_queue.put_nowait, msg)
+                except IPCConnectionError as e:
+                    logger.warning(
+                        "IPC connection lost for session %s: %s", session_id, e
+                    )
+                    loop.call_soon_threadsafe(msg_queue.put_nowait, None)
+                    break
+                except Exception as e:  # noqa: BLE001
+                    logger.error("IPC listener thread error for %s: %s", session_id, e)
+                    loop.call_soon_threadsafe(msg_queue.put_nowait, None)
+                    break
+
+        thread = threading.Thread(
+            target=_thread_poll, name=f"ipc-poll-{session_id}", daemon=True
+        )
+        thread.start()
+        handle = self._registry.get(session_id)
+        if handle is not None:
+            handle.poll_thread = thread
+        return thread
+
+    def _legacy_register(self, session_id: str, ipc_server: Any) -> "asyncio.Queue":
+        """旧路径的注册：建队列 + 起线程，返回该 session 的消息队列。
+
+        队列同样必须带 ``maxsize``（Task 4.4）：回滚路径如果还是无界队列，
+        灰度回切就等于把 OOM 风险一起带回来。
+        """
+        loop = asyncio.get_running_loop()
+        maxsize = int(getattr(self, "_queue_size", DEFAULT_QUEUE_SIZE))
+        msg_queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
+        self._start_poll_thread(session_id, ipc_server, loop, msg_queue)
+        return msg_queue

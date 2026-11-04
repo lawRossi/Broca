@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from broca.session_runner.manager import HEARTBEAT_GRACE_MULTIPLIER, IPCSessionRunner
+from broca.session_runner.monitor import HeartbeatMonitor
 from broca.session_runner.models import (
     IPCMessage,
     IPCMessageType,
@@ -29,6 +30,7 @@ from broca.session_runner.models import (
     RunnerStatus,
 )
 from broca.session_runner.ipc import IPCConnectionError, IPCServer, create_ipc_message
+from broca.session_runner.process.registry import RunnerHandle
 
 SESSION_ID = "session_heartbeat_test"
 
@@ -61,34 +63,59 @@ def _make_runner_info(
     )
 
 
+def _feed(manager, session_id: str, messages) -> "asyncio.Queue":
+    """把消息塞进该 session 的 IPC 队列（模拟 IPCPoller 的投递）。"""
+    manager._poller.register(session_id, object())  # 连接对象只需非 None
+    queue = manager._poller.queue(session_id)
+    for msg in messages:
+        queue.put_nowait(msg)
+    return queue
+
+
+def _register(manager, info: RunnerProcessInfo, ipc=None) -> RunnerHandle:
+    """把 RunnerProcessInfo（+ 可选假 IPC）注册进 registry（替代旧的并行 dict）。"""
+    handle = RunnerHandle(info=info, ipc=ipc)
+    manager._registry.add(handle)
+    return handle
+
+
 @pytest.fixture
 def manager():
     """干净的 RunnerManager 单例（避免测试间串状态）"""
     mgr = IPCSessionRunner()
-    mgr._runners.clear()
-    mgr._ipc_servers.clear()
-    mgr._ipc_listener_threads.clear()
-    mgr._ipc_listener_tasks.clear()
-    mgr._pending_responses.clear()
-    mgr._agent_status_cache.clear()
-    mgr._db_state_cache.clear()
-    mgr._event_handlers.clear()
+    # Task 2.3 起全部运行时状态收在 RunnerRegistry，一个 clear() 即可隔离
+    mgr._registry.clear()
 
-    mgr._save_runner_to_db = AsyncMock()
-    mgr._mark_session_agents_disconnected = AsyncMock()
-    mgr._cleanup_ipc_resources = AsyncMock()
-    mgr._trigger_event = AsyncMock()
+    # Task 3.1：心跳巡检迁入 HeartbeatMonitor，DB/事件协作者改为 mock
+    repo = MagicMock()
+    repo.upsert = AsyncMock()
+    repo.upsert_many = AsyncMock()
+    repo.delete = AsyncMock()
+    repo.mark_agents_disconnected = AsyncMock(return_value=1)
+    mgr._repo = repo
+
+    events = MagicMock()
+    events.emit = AsyncMock()
+    events.emit_soon = MagicMock()
+    mgr._events = events
+
+    # monitor 持有的是构造时注入的协作者，需重新装配
+    mgr._monitor = HeartbeatMonitor(
+        policy=mgr._monitor.policy,
+        registry=mgr._registry,
+        repo=repo,
+        reaper=mgr._reaper,
+        events=events,
+    )
 
     yield mgr
 
-    for task in list(mgr._ipc_listener_tasks.values()):
-        task.cancel()
-    mgr._runners.clear()
-    mgr._ipc_servers.clear()
-    mgr._ipc_listener_tasks.clear()
-    mgr._pending_responses.clear()
-    mgr._db_state_cache.clear()
-    mgr._event_handlers.clear()
+    for handle in mgr._registry.all():
+        if handle.poll_task is not None and not handle.poll_task.done():
+            handle.poll_task.cancel()
+    for session_id in mgr._poller.registered():
+        mgr._poller.unregister(session_id)
+    mgr._registry.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -103,41 +130,40 @@ async def test_process_exit_converges_to_dead_and_cleans_up(manager):
     回归 bug：旧实现只把 status 改成 ERROR 且不移除条目，
     /runner/status 会永久返回 error（前端永久"进程异常"）。
     """
-    manager._runners[SESSION_ID] = _make_runner_info(
+    _register(manager, _make_runner_info(
         status=RunnerStatus.ALIVE,
         heartbeat_age=600.0,
         poll_returncode=-9,
-    )
+    ))
 
-    await manager._check_heartbeats(timeout=45.0)
+    await manager._monitor.check_once(45.0)
 
     # 内存条目必须被移除（否则就是僵尸状态）
-    assert SESSION_ID not in manager._runners
+    assert SESSION_ID not in manager._registry
     # 状态收敛为 dead 并落库
-    assert manager._save_runner_to_db.await_count == 1
-    persisted = manager._save_runner_to_db.await_args.args[0]
+    repo = manager._repo
+    repo.upsert.assert_awaited_once()
+    persisted = repo.upsert.await_args.args[0]
     assert persisted.status == RunnerStatus.DEAD
     assert "exited with code -9" in (persisted.error_message or "")
     # 通知 + agent 断连
-    assert manager._trigger_event.await_count == 1
-    assert manager._trigger_event.await_args.args[0] == "session_crashed"
-    manager._mark_session_agents_disconnected.assert_awaited_once_with(SESSION_ID)
-    # IPC 资源被清理
-    manager._cleanup_ipc_resources.assert_awaited_once_with(SESSION_ID)
+    manager._events.emit.assert_awaited_once()
+    assert manager._events.emit.await_args.args[0] == "session_crashed"
+    repo.mark_agents_disconnected.assert_awaited_once_with(SESSION_ID)
 
 
 @pytest.mark.asyncio
 async def test_process_exit_converges_even_if_status_is_error(manager):
     """已经处于 error 的僵尸条目也必须被收敛（旧实现会永久跳过）。"""
-    manager._runners[SESSION_ID] = _make_runner_info(
+    _register(manager, _make_runner_info(
         status=RunnerStatus.ERROR,
         heartbeat_age=999.0,
         poll_returncode=-9,
-    )
+    ))
 
-    await manager._check_heartbeats(timeout=45.0)
+    await manager._monitor.check_once(45.0)
 
-    assert SESSION_ID not in manager._runners
+    assert SESSION_ID not in manager._registry
 
 
 # ---------------------------------------------------------------------------
@@ -156,15 +182,15 @@ async def test_short_heartbeat_delay_is_not_marked_error(manager):
         heartbeat_age=50.0,  # > timeout(45) 但 < grace(135)
         poll_returncode=None,
     )
-    manager._runners[SESSION_ID] = info
+    _register(manager, info)
 
-    await manager._check_heartbeats(timeout=45.0)
+    await manager._monitor.check_once(45.0)
 
     assert info.status == RunnerStatus.ALIVE
     assert info.heartbeat_stale is True
     assert info.missed_heartbeats == 1
-    assert manager._trigger_event.await_count == 0
-    manager._mark_session_agents_disconnected.assert_not_awaited()
+    manager._events.emit.assert_not_awaited()
+    manager._repo.mark_agents_disconnected.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -176,15 +202,15 @@ async def test_heartbeat_lost_beyond_grace_marks_error_but_keeps_entry(manager):
         heartbeat_age=grace + 30.0,
         poll_returncode=None,
     )
-    manager._runners[SESSION_ID] = info
+    _register(manager, info)
 
-    await manager._check_heartbeats(timeout=45.0)
+    await manager._monitor.check_once(45.0)
 
     assert info.status == RunnerStatus.ERROR
     assert "Heartbeat lost" in (info.error_message or "")
-    assert SESSION_ID in manager._runners  # 进程还活着，保留继续巡检
+    assert SESSION_ID in manager._registry  # 进程还活着，保留继续巡检
     # 进程存活时不把 agent 标记为 disconnected，避免前端反复闪断
-    manager._mark_session_agents_disconnected.assert_not_awaited()
+    manager._repo.mark_agents_disconnected.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -195,8 +221,8 @@ async def test_heartbeat_recovery_restores_alive(manager):
         heartbeat_age=45.0 * HEARTBEAT_GRACE_MULTIPLIER + 30.0,
         poll_returncode=None,
     )
-    manager._runners[SESSION_ID] = info
-    await manager._check_heartbeats(timeout=45.0)
+    _register(manager, info)
+    await manager._monitor.check_once(45.0)
     assert info.status == RunnerStatus.ERROR
 
     heartbeat = create_ipc_message(
@@ -204,7 +230,7 @@ async def test_heartbeat_recovery_restores_alive(manager):
         SESSION_ID,
         payload={"status": "alive", "resource_usage": {"cpu_percent": 1.0}},
     )
-    manager._handle_runner_event(SESSION_ID, heartbeat)
+    await manager._handle_runner_event(SESSION_ID, heartbeat)
 
     assert info.status == RunnerStatus.ALIVE
     assert info.error_message is None
@@ -220,20 +246,21 @@ async def test_heartbeat_recovery_restores_alive(manager):
 @pytest.mark.asyncio
 async def test_persist_runner_state_writes_once_then_throttles(manager):
     """心跳状态必须落库，且在 HEARTBEAT_PERSIST_INTERVAL 内不重复写。"""
-    manager._runners[SESSION_ID] = _make_runner_info(status=RunnerStatus.ALIVE)
+    _register(manager, _make_runner_info(status=RunnerStatus.ALIVE))
 
-    await manager._persist_runner_state()
-    assert manager._save_runner_to_db.await_count == 1
-    assert manager._db_state_cache[SESSION_ID][0] == "alive"
+    await manager._monitor._persist_states()
+    # P1-5：批量落库（单事务），走 repo.upsert_many
+    assert manager._repo.upsert_many.await_count == 1
+    assert manager._registry.get(SESSION_ID).db_state_cache[0] == "alive"
 
     # 状态与心跳时间都没变 → 节流，不再写
-    await manager._persist_runner_state()
-    assert manager._save_runner_to_db.await_count == 1
+    await manager._monitor._persist_states()
+    assert manager._repo.upsert_many.await_count == 1
 
     # 状态变化 → 立即写
-    manager._runners[SESSION_ID].status = RunnerStatus.ERROR
-    await manager._persist_runner_state()
-    assert manager._save_runner_to_db.await_count == 2
+    manager._registry.get(SESSION_ID).info.status = RunnerStatus.ERROR
+    await manager._monitor._persist_states()
+    assert manager._repo.upsert_many.await_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -271,8 +298,10 @@ async def test_ipc_listener_survives_handler_exception(manager, monkeypatch):
         create_ipc_message(IPCMessageType.EVT_HEARTBEAT, SESSION_ID, payload={"status": "alive"}),
         create_ipc_message(IPCMessageType.EVT_HEARTBEAT, SESSION_ID, payload={"status": "alive"}),
     ]
-    manager._runners[SESSION_ID] = _make_runner_info(status=RunnerStatus.ALIVE)
-    manager._ipc_servers[SESSION_ID] = _FakeIPCServer(hb)
+    _register(
+        manager, _make_runner_info(status=RunnerStatus.ALIVE), ipc=_FakeIPCServer(hb)
+    )
+    _feed(manager, SESSION_ID, hb)
 
     handled = []
 
@@ -299,8 +328,13 @@ async def test_ipc_listener_survives_handler_exception(manager, monkeypatch):
 @pytest.mark.asyncio
 async def test_ipc_listener_exits_on_connection_lost(manager):
     """IPC 断开时监听循环应退出，把后续判定交给心跳巡检。"""
-    manager._runners[SESSION_ID] = _make_runner_info(status=RunnerStatus.ALIVE)
-    manager._ipc_servers[SESSION_ID] = _FakeIPCServer([IPCConnectionError("broken")])
+    _register(
+        manager,
+        _make_runner_info(status=RunnerStatus.ALIVE),
+        ipc=_FakeIPCServer([IPCConnectionError("broken")]),
+    )
+    # 连接断开 → poller 投递 None → 监听循环退出
+    _feed(manager, SESSION_ID, [None])
 
     await asyncio.wait_for(manager._ipc_listener_loop(SESSION_ID), timeout=3.0)
 
@@ -317,9 +351,8 @@ async def test_send_command_resolves_by_message_id_and_keeps_heartbeats(manager)
     回归 bug：旧实现直接 receive_message，会把并发的 EVT_HEARTBEAT
     当成命令响应返回，同时这次心跳被丢弃。
     """
-    manager._runners[SESSION_ID] = _make_runner_info(status=RunnerStatus.ALIVE)
     fake = _FakeIPCServer([])
-    manager._ipc_servers[SESSION_ID] = fake
+    _register(manager, _make_runner_info(status=RunnerStatus.ALIVE), ipc=fake)
 
     task = asyncio.create_task(
         manager.send_command(SESSION_ID, IPCMessageType.CMD_STATUS, {})
@@ -327,7 +360,7 @@ async def test_send_command_resolves_by_message_id_and_keeps_heartbeats(manager)
     await asyncio.sleep(0.05)
 
     # 心跳先到：不应唤醒命令等待者
-    manager._handle_runner_event(
+    await manager._handle_runner_event(
         SESSION_ID,
         create_ipc_message(
             IPCMessageType.EVT_HEARTBEAT, SESSION_ID, payload={"status": "alive"}
@@ -336,7 +369,7 @@ async def test_send_command_resolves_by_message_id_and_keeps_heartbeats(manager)
     assert not task.done()
 
     # 命令响应到达（回显请求 message_id）
-    manager._handle_runner_event(
+    await manager._handle_runner_event(
         SESSION_ID,
         IPCMessage(
             type=IPCMessageType.RESPONSE,
@@ -349,21 +382,22 @@ async def test_send_command_resolves_by_message_id_and_keeps_heartbeats(manager)
 
     result = await asyncio.wait_for(task, timeout=2.0)
     assert result == {"status": "alive"}
-    assert manager._pending_responses == {}
+    assert manager._registry.get(SESSION_ID).pending_responses == {}
 
 
 @pytest.mark.asyncio
 async def test_send_command_times_out_without_response(manager):
     """没有响应时按超时返回错误，且清理 pending future。"""
-    manager._runners[SESSION_ID] = _make_runner_info(status=RunnerStatus.ALIVE)
-    manager._ipc_servers[SESSION_ID] = _FakeIPCServer([])
+    _register(
+        manager, _make_runner_info(status=RunnerStatus.ALIVE), ipc=_FakeIPCServer([])
+    )
 
     result = await manager.send_command(
         SESSION_ID, IPCMessageType.CMD_STATUS, {}, timeout=0.2
     )
 
     assert result == {"error": "No response from runner"}
-    assert manager._pending_responses == {}
+    assert manager._registry.get(SESSION_ID).pending_responses == {}
 
 
 # ---------------------------------------------------------------------------
@@ -448,9 +482,15 @@ def test_default_heartbeat_settings_are_consistent():
 @pytest.mark.asyncio
 async def test_start_heartbeat_monitor_uses_config_thresholds(manager, monkeypatch):
     """监控循环的 interval/timeout 必须来自配置而不是硬编码默认值。"""
-    manager._heartbeat_interval = 5.0
-    manager._heartbeat_timeout = 21.0
-    manager._heartbeat_check_interval = 7.0
+    from broca.session_runner.monitor import HealthPolicy
+
+    manager._monitor = HeartbeatMonitor(
+        policy=HealthPolicy(interval=5.0, timeout=21.0, check_interval=7.0),
+        registry=manager._registry,
+        repo=manager._repo,
+        reaper=manager._reaper,
+        events=manager._events,
+    )
 
     captured: dict = {}
 
@@ -458,7 +498,7 @@ async def test_start_heartbeat_monitor_uses_config_thresholds(manager, monkeypat
         captured["interval"] = interval
         captured["timeout"] = timeout
 
-    monkeypatch.setattr(manager, "_heartbeat_monitor_loop", fake_loop)
+    monkeypatch.setattr(manager._monitor, "_loop", fake_loop)
 
     await manager.start_heartbeat_monitor()
     await asyncio.sleep(0)
@@ -470,16 +510,13 @@ async def test_start_heartbeat_monitor_uses_config_thresholds(manager, monkeypat
 @pytest.mark.asyncio
 async def test_explicit_args_override_config(manager, monkeypatch):
     """显式传参仍优先于配置（兼容旧调用）。"""
-    manager._heartbeat_timeout = 45.0
-    manager._heartbeat_check_interval = 15.0
-
     captured: dict = {}
 
     async def fake_loop(interval: float, timeout: float) -> None:
         captured["interval"] = interval
         captured["timeout"] = timeout
 
-    monkeypatch.setattr(manager, "_heartbeat_monitor_loop", fake_loop)
+    monkeypatch.setattr(manager._monitor, "_loop", fake_loop)
 
     await manager.start_heartbeat_monitor(interval=1.0, timeout=2.0)
     await asyncio.sleep(0)

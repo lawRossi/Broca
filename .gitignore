@@ -462,6 +462,9 @@ dev.db
 *.orig
 *.tmp
 
+# 例外：docs/legacy/ 下是「已下线实现」的留档备份，需要入库追溯
+!docs/legacy/**/*.bak
+
 # Archive files
 *.zip
 *.tar

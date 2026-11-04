@@ -1,6 +1,6 @@
 """
 Tests for runner startup cleanup (restore_active_sessions) and
-graceful process termination (_force_kill_process_by_pid).
+graceful process termination (RunnerReaper.terminate_by_pid).
 
 Covers the behavior change: after web service restart, orphaned
 runner processes (still alive but IPC-broken) are killed, marked dead,
@@ -12,6 +12,9 @@ import signal
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+from broca.session_runner.models import RunnerProcessInfo, RunnerStatus
+from broca.session_runner.process.reaper import RunnerReaper
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -93,6 +96,25 @@ def _get_manager():
 # ---------------------------------------------------------------------------
 
 
+def _make_info(session_id: str, pid: int | None, status: RunnerStatus = RunnerStatus.ALIVE):
+    """构造纯数据 RunnerProcessInfo（repo.list_active 的返回类型）。"""
+    return RunnerProcessInfo(
+        session_id=session_id,
+        process=None,
+        pid=pid,
+        status=status,
+    )
+
+
+def _mock_repo(infos: list, disconnected_count: int = 0) -> AsyncMock:
+    """用 AsyncMock 替换 RunnerRepository，返回给定的纯数据记录。"""
+    repo = AsyncMock()
+    repo.list_active = AsyncMock(return_value=infos)
+    repo.upsert = AsyncMock()
+    repo.mark_agents_disconnected = AsyncMock(return_value=disconnected_count)
+    return repo
+
+
 @pytest.mark.asyncio
 class TestRestoreActiveSessions:
     """restore_active_sessions: startup cleanup of orphaned runners."""
@@ -100,178 +122,159 @@ class TestRestoreActiveSessions:
     async def test_no_active_runners(self):
         """No alive/starting records → returns 0."""
         mgr = _get_manager()
+        repo = _mock_repo([])
+        mgr._repo = repo
 
-        mock_db_mgr, _ = _mock_db_with_data([], [])
-
-        with patch("broca.session.database.db_manager", mock_db_mgr):
-            count = await mgr.restore_active_sessions()
+        count = await mgr.restore_active_sessions()
 
         assert count == 0
+        repo.upsert.assert_not_awaited()
 
     async def test_runner_without_pid_marked_dead(self):
         """Runner with no PID → marked dead, agent reset."""
         mgr = _get_manager()
+        info = _make_info("sess-1", pid=None)
+        repo = _mock_repo([info], disconnected_count=1)
+        mgr._repo = repo
 
-        runner = _make_runner_record("sess-1", pid=None)
-        agent = _make_agent_record("sess-1", "agent-1", agent_status="running")
-        mock_db_mgr, mock_db_sess = _mock_db_with_data([runner], [agent])
-
-        with patch("broca.session.database.db_manager", mock_db_mgr):
-            count = await mgr.restore_active_sessions()
+        count = await mgr.restore_active_sessions()
 
         assert count == 1
-        assert runner.status == "dead"
-        assert "No PID" in runner.error_message
-        # Agent should be reset to disconnected
-        assert agent.agent_status == "disconnected"
+        assert info.status == RunnerStatus.DEAD
+        assert "No PID" in info.error_message
+        repo.upsert.assert_awaited_once_with(info)
+        repo.mark_agents_disconnected.assert_awaited_once_with("sess-1")
 
-    @patch("broca.session_runner.manager.os.kill")
-    async def test_alive_runner_killed_and_agents_reset(self, mock_kill):
+    async def test_alive_runner_killed_and_agents_reset(self):
         """Runner with alive PID → killed, marked dead, agents reset to disconnected."""
         mgr = _get_manager()
+        info = _make_info("sess-alive", pid=12345)
+        repo = _mock_repo([info], disconnected_count=1)
+        mgr._repo = repo
 
-        runner = _make_runner_record("sess-alive", pid=12345)
-        agent = _make_agent_record("sess-alive", "agent-main", agent_status="running")
-        mock_db_mgr, mock_db_sess = _mock_db_with_data([runner], [agent])
-
-        # os.kill call sequence:
-        # 1: liveness check os.kill(pid, 0) → alive
-        # 2: SIGTERM sent
-        # 3: polling → ProcessLookupError (process exited)
-        mock_kill.side_effect = [
-            None,                 # liveness check (signal=0): alive
-            None,                 # SIGTERM sent
-            ProcessLookupError,   # polling: process gone
-        ]
-
-        with patch("broca.session.database.db_manager", mock_db_mgr):
+        with (
+            patch.object(mgr._reaper, "is_alive", return_value=True),
+            patch.object(
+                mgr._reaper, "terminate_by_pid", AsyncMock(return_value=True)
+            ) as mock_kill,
+        ):
             count = await mgr.restore_active_sessions()
 
         assert count == 1
-        assert runner.status == "dead"
-        assert "Orphaned runner" in runner.error_message
-        assert "12345" in runner.error_message
-        # SIGTERM was sent (second call: liveness is first)
-        assert mock_kill.call_args_list[1].args == (12345, signal.SIGTERM)
-        # Agent status reset
-        assert agent.agent_status == "disconnected"
+        assert info.status == RunnerStatus.DEAD
+        assert "Orphaned runner" in info.error_message
+        assert "12345" in info.error_message
+        mock_kill.assert_awaited_once_with(12345, session_id="sess-alive")
+        repo.mark_agents_disconnected.assert_awaited_once_with("sess-alive")
 
     async def test_dead_process_marked_dead_agents_reset(self):
         """Runner with dead PID → no kill, marked dead, agents reset."""
         mgr = _get_manager()
+        info = _make_info("sess-dead", pid=99999)
+        repo = _mock_repo([info], disconnected_count=1)
+        mgr._repo = repo
 
-        runner = _make_runner_record("sess-dead", pid=99999)
-        agent = _make_agent_record("sess-dead", "agent-1", agent_status="running")
-        mock_db_mgr, mock_db_sess = _mock_db_with_data([runner], [agent])
-
-        with patch("broca.session.database.db_manager", mock_db_mgr), \
-             patch.object(mgr, "_find_runner_process_by_pid", AsyncMock(return_value=False)), \
-             patch.object(mgr, "_force_kill_process_by_pid", AsyncMock()) as mock_kill:
+        with (
+            patch.object(mgr._reaper, "is_alive", return_value=False),
+            patch.object(mgr._reaper, "terminate_by_pid", AsyncMock()) as mock_kill,
+        ):
             count = await mgr.restore_active_sessions()
 
         assert count == 1
-        assert runner.status == "dead"
-        assert "Process not found" in runner.error_message
-        # Kill should NOT be called for dead processes
+        assert info.status == RunnerStatus.DEAD
+        assert "Process not found" in info.error_message
         mock_kill.assert_not_called()
-        # Agent status reset
-        assert agent.agent_status == "disconnected"
+        repo.mark_agents_disconnected.assert_awaited_once_with("sess-dead")
 
     async def test_already_disconnected_agent_not_affected(self):
-        """Agents already in 'disconnected' state are not in the query result (filtered by WHERE)."""
+        """Agents already disconnected → repo 返回 0，不影响收敛结果。"""
         mgr = _get_manager()
+        info = _make_info("sess-ok", pid=123)
+        repo = _mock_repo([info], disconnected_count=0)
+        mgr._repo = repo
 
-        runner = _make_runner_record("sess-ok", pid=123)
-        # No agents returned (all already disconnected — filtered out by SQL)
-        mock_db_mgr, _ = _mock_db_with_data([runner], [])
-
-        with patch("broca.session.database.db_manager", mock_db_mgr), \
-             patch.object(mgr, "_find_runner_process_by_pid", AsyncMock(return_value=False)):
+        with patch.object(mgr._reaper, "is_alive", return_value=False):
             count = await mgr.restore_active_sessions()
 
         assert count == 1
-        assert runner.status == "dead"
+        assert info.status == RunnerStatus.DEAD
+        repo.mark_agents_disconnected.assert_awaited_once_with("sess-ok")
 
     async def test_mixed_runners_all_reset(self):
         """Multiple runners → all marked dead, all agents reset."""
         mgr = _get_manager()
-
-        records = [
-            _make_runner_record("sess-nopid", pid=None),
-            _make_runner_record("sess-alive", pid=111),
-            _make_runner_record("sess-gone", pid=222),
+        infos = [
+            _make_info("sess-nopid", pid=None),
+            _make_info("sess-alive", pid=111),
+            _make_info("sess-gone", pid=222),
         ]
-        agents = [
-            _make_agent_record("sess-nopid", "a1", "running"),
-            _make_agent_record("sess-alive", "a2", "running"),
-            _make_agent_record("sess-gone", "a3", "idle"),
-        ]
-        mock_db_mgr, _ = _mock_db_with_data(records, agents)
+        repo = _mock_repo(infos, disconnected_count=1)
+        mgr._repo = repo
 
-        with patch("broca.session.database.db_manager", mock_db_mgr), \
-             patch.object(mgr, "_find_runner_process_by_pid", side_effect=[False, True, False]), \
-             patch("broca.session_runner.manager.os.kill") as mock_kill:
-            # For sess-alive (pid=111): SIGTERM then process exits
-            mock_kill.side_effect = [None, ProcessLookupError]
+        with (
+            patch.object(mgr._reaper, "is_alive", side_effect=[False, True, False]),
+            patch.object(
+                mgr._reaper, "terminate_by_pid", AsyncMock(return_value=True)
+            ),
+        ):
             count = await mgr.restore_active_sessions()
 
         assert count == 3
-        assert all(r.status == "dead" for r in records)
-        # All agents reset to disconnected
-        assert all(a.agent_status == "disconnected" for a in agents)
+        assert all(i.status == RunnerStatus.DEAD for i in infos)
+        assert repo.mark_agents_disconnected.await_count == 3
 
-    @patch("broca.session_runner.manager.os.kill")
-    async def test_error_status_runner_also_killed(self, mock_kill):
+    async def test_error_status_runner_also_killed(self):
         """Runner with 'error' status (not just alive/starting) → also killed."""
         mgr = _get_manager()
+        info = _make_info("sess-err", pid=5555, status=RunnerStatus.ERROR)
+        repo = _mock_repo([info], disconnected_count=1)
+        mgr._repo = repo
 
-        runner = _make_runner_record("sess-err", pid=5555, status="error")
-        agent = _make_agent_record("sess-err", "agent-x", agent_status="running")
-        mock_db_mgr, _ = _mock_db_with_data([runner], [agent])
-
-        # Liveness check: alive → SIGTERM → exits
-        mock_kill.side_effect = [None, None, ProcessLookupError]
-
-        with patch("broca.session.database.db_manager", mock_db_mgr):
+        with (
+            patch.object(mgr._reaper, "is_alive", return_value=True),
+            patch.object(
+                mgr._reaper, "terminate_by_pid", AsyncMock(return_value=True)
+            ) as mock_kill,
+        ):
             count = await mgr.restore_active_sessions()
 
         assert count == 1
-        assert runner.status == "dead"
-        assert agent.agent_status == "disconnected"
+        assert info.status == RunnerStatus.DEAD
+        mock_kill.assert_awaited_once_with(5555, session_id="sess-err")
 
     async def test_exception_returns_zero(self):
         """Exception during restore → caught, returns 0."""
         mgr = _get_manager()
+        repo = AsyncMock()
+        repo.list_active = AsyncMock(side_effect=RuntimeError("DB error"))
+        mgr._repo = repo
 
-        with patch("broca.session.database.db_manager") as mock_db_mgr:
-            mock_db_mgr.get_session = MagicMock(side_effect=RuntimeError("DB error"))
-
-            count = await mgr.restore_active_sessions()
+        count = await mgr.restore_active_sessions()
 
         assert count == 0
 
 
 # ---------------------------------------------------------------------------
-# _force_kill_process_by_pid (graceful termination)
+# RunnerReaper.terminate_by_pid (graceful termination)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-class TestForceKillProcessByPid:
-    """_force_kill_process_by_pid: SIGTERM → 2s → SIGKILL."""
+class TestTerminateByPid:
+    """RunnerReaper.terminate_by_pid: SIGTERM → 2s → SIGKILL。"""
 
-    @patch("broca.session_runner.manager.os.kill")
+    @patch("broca.session_runner.process.reaper.os.kill")
     @patch("sys.platform", "darwin")
     async def test_process_exits_after_sigterm(self, mock_kill):
         """Process responds to SIGTERM → no SIGKILL needed."""
-        mgr = _get_manager()
+        reaper = RunnerReaper()
 
         mock_kill.side_effect = [
             None,                # SIGTERM sent
             ProcessLookupError,  # polling: process gone
         ]
 
-        result = await mgr._force_kill_process_by_pid(4242)
+        result = await reaper.terminate_by_pid(4242)
 
         assert result is True
         assert mock_kill.call_args_list[0].args == (4242, signal.SIGTERM)
@@ -281,43 +284,46 @@ class TestForceKillProcessByPid:
         ]
         assert len(sigkill_calls) == 0
 
-    @patch("broca.session_runner.manager.os.kill")
+    @patch("broca.session_runner.process.reaper.os.kill")
     @patch("sys.platform", "darwin")
     async def test_process_survives_sigterm_escalates_to_sigkill(self, mock_kill):
         """Process ignores SIGTERM → SIGKILL after 2s timeout."""
-        mgr = _get_manager()
+        reaper = RunnerReaper()
 
         # 1 (SIGTERM) + 20 (still alive polls) + 1 (SIGKILL)
         mock_kill.side_effect = [None] * 22
 
-        with patch("broca.session_runner.manager.asyncio.sleep", new=AsyncMock(return_value=None)):
-            result = await mgr._force_kill_process_by_pid(9999)
+        with patch(
+            "broca.session_runner.process.reaper.asyncio.sleep",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await reaper.terminate_by_pid(9999)
 
         assert result is True
         last_call = mock_kill.call_args_list[-1]
         assert last_call.args == (9999, signal.SIGKILL)
 
-    @patch("broca.session_runner.manager.os.kill")
+    @patch("broca.session_runner.process.reaper.os.kill")
     @patch("sys.platform", "darwin")
     async def test_process_already_dead_on_sigterm(self, mock_kill):
         """Process gone before we send SIGTERM → returns True immediately."""
-        mgr = _get_manager()
+        reaper = RunnerReaper()
 
         mock_kill.side_effect = ProcessLookupError("No such process")
 
-        result = await mgr._force_kill_process_by_pid(1)
+        result = await reaper.terminate_by_pid(1)
 
         assert result is True
         assert mock_kill.call_count == 1
 
-    @patch("broca.session_runner.manager.os.kill")
+    @patch("broca.session_runner.process.reaper.os.kill")
     @patch("sys.platform", "darwin")
     async def test_unexpected_exception_returns_false(self, mock_kill):
         """Unexpected error during kill → returns False."""
-        mgr = _get_manager()
+        reaper = RunnerReaper()
 
         mock_kill.side_effect = OSError("Permission denied")
 
-        result = await mgr._force_kill_process_by_pid(42)
+        result = await reaper.terminate_by_pid(42)
 
         assert result is False

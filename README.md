@@ -378,12 +378,19 @@ SocketIOServer 是一个多端通信服务器，支持：
 
 将每个会话隔离在独立子进程中运行，提供：
 
-- **RunnerManager**（Web 进程中的单例）：管理子进程生命周期
-  - 启动/停止/重启会话进程
-  - 心跳监控（默认 15s 检查，45s 超时）
-  - 数据库持久化与恢复（启东时恢复活跃会话）
+- **RunnerManager**（Web 进程中的单例，即 `IPCSessionRunner`）：管理子进程生命周期
+  - 启动/停止/重启会话进程（判活三因子：PID + `create_time` + cmdline 含模块标识与 session_id，防 PID 复用误杀）
+  - 心跳监控（默认 15s 检查，45s 超时，`stop_requested` 状态机区分优雅停止/崩溃）
+  - 数据库持久化与恢复（启动时恢复活跃会话）
   - 并发限制（默认最大 10 个并发）
   - 事件系统（session_started / session_stopped / session_crashed）
+
+- **分层架构**（父进程侧协作对象，替代原 God Class）：
+  - `RunnerRepository`：DB 读写层，跨 session 批量落库（N session 心跳 → 1 commit）
+  - `HeartbeatMonitor`：纯监控策略（存活判定 + 崩溃重启决策，不直接写库）
+  - `IPCPoller`：单线程多路复用收所有子进程 IPC 消息，N session 只加 1 条线程（O(1)）
+  - `MessageRouter`：实例级路由，把命令/响应/事件分发给对应 handler
+  - `backpressure`：IPC 队列背压，满时按策略丢弃并计数（`get_stats().dropped_events`）
 
 - **IPC 通信**: 基于 Unix Socket（Linux/macOS）或 Named Pipe（Windows）
   - 控制命令：execute、abort、shutdown、status、get_stats
@@ -1368,12 +1375,27 @@ Broca/
 │   │   ├── track.py                # 快照捕获
 │   │   ├── patch.py                # 变更计算
 │   │   └── restore.py              # 文件恢复
-│   ├── session_runner/             # 子进程 Runner
-│   │   ├── manager.py              # 进程管理器
-│   │   ├── runner.py               # 子进程入口
+│   ├── session_runner/             # 子进程 Runner（分层架构）
+│   │   ├── manager.py              # 父进程编排层（进程/事件/监控生命周期）
+│   │   ├── runner.py               # 子进程入口（SessionRunnerProcess）
 │   │   ├── orchestrator_runner.py  # 编排运行器（管理编排生命周期/进度推送）
-│   │   ├── ipc.py                  # 进程间通信
-│   │   └── models.py               # 数据结构
+│   │   ├── poller.py               # IPC 单线程多路复用 poller（父进程侧，O(1) 线程）
+│   │   ├── protocol.py             # 实例级 MessageRouter（命令/响应/事件分发）
+│   │   ├── events.py               # 类型化事件 + TaskSet（session_id → 命令任务）
+│   │   ├── repository.py           # RunnerRepository（DB 读写批量优化）
+│   │   ├── monitor.py              # HeartbeatMonitor（纯策略，不直接写库）
+│   │   ├── backpressure.py         # 队列背压（DroppedEvents 计数 + 丢弃策略）
+│   │   ├── ipc.py                  # 进程间通信（地址/编解码）
+│   │   ├── models.py               # 数据结构
+│   │   ├── process/                # 进程管理
+│   │   │   ├── launcher.py         # 子进程启动（start_new_session，防 Ctrl+C 串扰）
+│   │   │   ├── reaper.py           # 进程回收
+│   │   │   └── registry.py         # RunnerHandle / RunnerRegistry
+│   │   └── transport/              # IPC 传输层（Unix Socket / Named Pipe）
+│   │       ├── base.py             # 传输基类
+│   │       ├── server.py           # 父进程端 server
+│   │       ├── client.py           # 子进程端 client
+│   │       └── addresses.py        # 地址解析
 │   ├── tools/                      # 工具系统
 │   │   ├── tool.py                 # 工具基类
 │   │   ├── tool_manager.py         # 工具管理器

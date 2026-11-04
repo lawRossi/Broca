@@ -148,3 +148,30 @@ def run_async(coro):
         return loop.run_until_complete(coro)
     finally:
         loop.close()
+
+
+# ---------------------------------------------------------------------------
+# Session Runner IPC socket 清理
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _cleanup_runner_ipc_sockets():
+    """测试结束后清理 tempdir 下的 ``broca_runner_*.sock`` 残留。
+
+    IPC 测试会真实 bind AF_UNIX socket；用例失败/被中断时 ``close()`` 可能没跑到，
+    残留文件会让后续用例在 ``Listener`` 处抛 ``EADDRINUSE``（P0-4 的同款症状），
+    表现为难以定位的连锁失败。这里做统一兜底清理。
+    """
+    import glob
+    import os
+    import tempfile
+
+    yield
+
+    pattern = os.path.join(tempfile.gettempdir(), "broca_runner_*.sock")
+    for path in glob.glob(pattern):
+        try:
+            os.unlink(path)
+        except OSError:
+            pass

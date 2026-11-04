@@ -7,13 +7,23 @@ import asyncio
 
 from broca.session_runner import RunnerManager
 from broca.session_runner.manager import RunnerManagerError
-from broca.session_runner.models import RunnerStatus
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 from app.schemas.schemas import ApiResponse
 
 router = APIRouter()
+
+# 后台任务必须持引用：裸 asyncio.create_task() 的返回值没有强引用，
+# 任务可能在执行中被 GC 回收（P1-4 同类缺陷），且异常会静默丢失。
+_background_tasks: set[asyncio.Task] = set()
+
+
+def _spawn_background(coro) -> None:
+    """启动一个后台任务并持引用，结束后自动清理。"""
+    task = asyncio.create_task(coro)
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
 
 
 @router.get("/runners", response_model=ApiResponse)
@@ -45,7 +55,7 @@ async def get_runner_status(session_id: str) -> ApiResponse:
     """获取指定 Session 的 Runner 进程状态"""
     try:
         runner_manager = RunnerManager()
-        status = runner_manager.get_session_status(session_id)
+        status = runner_manager.get_status(session_id)
 
         if not status:
             return ApiResponse.success(
@@ -87,7 +97,7 @@ async def restart_runner(session_id: str) -> ApiResponse:
                     f"Failed to start runner for {session_id} in background: {e}"
                 )
 
-        asyncio.create_task(_start_bg())
+        _spawn_background(_start_bg())
 
         return ApiResponse.success(
             {
@@ -112,31 +122,12 @@ async def stop_runner(session_id: str) -> ApiResponse:
     """停止指定 Session 的 Runner 进程（非阻塞：发送 shutdown 后立即返回 stopping 状态）"""
     try:
         runner_manager = RunnerManager()
-        runner_info = runner_manager._runners.get(session_id)
 
-        if not runner_info:
-            # 没有活跃 runner，直接清理 DB/IPC 残留
-            await runner_manager.stop_session(session_id, timeout=2.0)
-            return ApiResponse.success(
-                {"session_id": session_id, "status": "stopped", "message": "No active runner"},
-                msg="No runner to stop",
-            )
-
-        # 快速路径：标记 + 发 shutdown，立即返回
-        runner_info.status = RunnerStatus.SHUTTING_DOWN
-        ipc_server = runner_manager._ipc_servers.get(session_id)
-        if ipc_server:
-            from broca.session_runner.models import IPCMessageType, IPCStatusCode
-            from broca.session_runner.ipc import create_ipc_message
-            try:
-                shutdown_msg = create_ipc_message(
-                    IPCMessageType.CMD_SHUTDOWN,
-                    session_id,
-                    payload={"reason": "user_request"},
-                )
-                ipc_server.send_message(shutdown_msg)
-            except Exception as e:
-                logger.warning(f"Failed to send shutdown via IPC: {e}")
+        # 只依赖 ABC 的 request_stop：内部完成标记 + 发 CMD_SHUTDOWN，
+        # 不再直接访问管理器的私有状态字典（抽象泄漏）
+        result = await runner_manager.request_stop(session_id)
+        if result.get("status") == "stopped":
+            return ApiResponse.success(result, msg="No runner to stop")
 
         # 后台完成：等进程退出 + 清理资源
         async def _stop_bg():
@@ -145,12 +136,9 @@ async def stop_runner(session_id: str) -> ApiResponse:
             except Exception as e:
                 logger.exception(f"Error stopping runner for {session_id} in background: {e}")
 
-        asyncio.create_task(_stop_bg())
+        _spawn_background(_stop_bg())
 
-        return ApiResponse.success(
-            {"session_id": session_id, "status": "stopping", "message": "Runner stopping"},
-            msg="Runner is stopping",
-        )
+        return ApiResponse.success(result, msg="Runner is stopping")
     except Exception as e:
         logger.exception(f"Error stopping runner for {session_id}")
         raise HTTPException(500, f"Internal server error: {e!s}") from e

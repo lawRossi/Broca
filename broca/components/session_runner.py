@@ -32,6 +32,14 @@ class SessionRunner(ABC):
         ...
 
     @abstractmethod
+    async def request_stop(self, session_id: str) -> dict:
+        """Request a graceful stop without waiting for the process to exit.
+
+        Returns a dict like ``{"session_id", "status", "message"}``.
+        """
+        ...
+
+    @abstractmethod
     async def send_command(
         self, session_id: str, msg_type: Any, payload: dict, **kwargs: Any
     ) -> Any:
@@ -39,8 +47,51 @@ class SessionRunner(ABC):
         ...
 
     @abstractmethod
+    async def restart_session(self, session_id: str) -> Any:
+        """Restart a session runner. Returns the new runner info."""
+        ...
+
+    @abstractmethod
+    def get_status(self, session_id: str) -> Optional[Dict[str, Any]]:
+        """Return the runner status dict for a session, or None if absent."""
+        ...
+
+    @abstractmethod
+    def list_sessions(self) -> list[Dict[str, Any]]:
+        """Return status dicts for all runners."""
+        ...
+
+    @abstractmethod
+    def get_stats(self) -> Dict[str, Any]:
+        """Return aggregate runner statistics."""
+        ...
+
+    @abstractmethod
     def on(
         self, event: str, handler: Callable[..., Any]
     ) -> None:
         """Register an event handler."""
+        ...
+
+    @abstractmethod
+    async def start_heartbeat_monitor(self) -> None:
+        """Start the background heartbeat/health monitor."""
+        ...
+
+    @abstractmethod
+    async def stop_heartbeat_monitor(self) -> None:
+        """Stop the background heartbeat/health monitor."""
+        ...
+
+    @abstractmethod
+    async def restore_active_sessions(self) -> int:
+        """Reclaim runner records left over from a previous process.
+
+        Returns the number of records inspected.
+        """
+        ...
+
+    @abstractmethod
+    async def shutdown_all(self) -> int:
+        """Stop every runner. Returns the number successfully stopped."""
         ...

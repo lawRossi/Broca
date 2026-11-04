@@ -4,9 +4,9 @@ Session Runner 数据结构定义
 定义 Runner 进程管理相关的数据结构和状态枚举。
 """
 
-import sys
+import json
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, Optional
 
@@ -30,12 +30,10 @@ class IPCMessageType(str, Enum):
     CMD_STATUS = "cmd_status"  # 查询状态
     CMD_SHUTDOWN = "cmd_shutdown"  # 优雅关闭
     CMD_GET_STATS = "cmd_get_stats"  # 获取统计信息
-    CMD_RESTART = "cmd_restart"  # 重启（由 Manager 处理）
 
     # Web → Runner 编排命令
     CMD_RUN_CREW = "cmd_run_crew"  # 运行编排
     CMD_ABORT_CREW = "cmd_abort_crew"  # 中止编排
-    CMD_CREW_STATUS = "cmd_crew_status"  # 查询编排状态
 
     # Runner → Web 事件通知
     EVT_READY = "evt_ready"  # 启动完成
@@ -101,6 +99,17 @@ class IPCMessage:
         )
 
 
+def decode_ipc_message(raw: Any) -> "IPCMessage":
+    """把 IPC 线上格式（JSON 字符串或 dict）还原成 :class:`IPCMessage`。
+
+    放在 models 层（无依赖）而不是 transport 层，是因为两处消费者都需要它：
+    - ``_BaseIPC._decode``（传统的单消费者 ``receive_message`` 路径）
+    - ``IPCPoller``（多路复用路径直接对底层 connection 调 ``recv()``）
+    """
+    data = json.loads(raw) if isinstance(raw, str) else raw
+    return IPCMessage.from_dict(data)
+
+
 @dataclass
 class RunnerProcessInfo:
     """Runner 进程信息"""
@@ -120,6 +129,32 @@ class RunnerProcessInfo:
     # 心跳健康度（由心跳监控循环维护，用于区分"进程已死"与"心跳短暂延迟"）
     heartbeat_stale: bool = False  # 最近一次巡检发现心跳已超过阈值
     missed_heartbeats: int = 0  # 连续心跳超时的巡检次数（收到心跳即清零）
+    # 优雅停止标记：用户主动 stop 时置 True，巡检据此分流到
+    # HeartbeatMonitor.converge_stopped（发 session_stopped）而非 session_crashed
+    stop_requested: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        """序列化为对外 API 字典（/runner/status、/runner/list 的载荷）。"""
+        from broca.utils.datetime_util import serialize_dt
+
+        uptime = 0.0
+        if self.started_at is not None:
+            uptime = (datetime.now(timezone.utc) - self.started_at).total_seconds()
+
+        return {
+            "session_id": self.session_id,
+            "pid": self.pid,
+            "status": self.status.value,
+            "started_at": serialize_dt(self.started_at),
+            "ipc_address": self.ipc_address,
+            "resource_usage": self.resource_usage,
+            "last_heartbeat": serialize_dt(self.last_heartbeat),
+            "restart_count": self.restart_count,
+            "error_message": self.error_message,
+            "heartbeat_stale": self.heartbeat_stale,
+            "missed_heartbeats": self.missed_heartbeats,
+            "uptime_seconds": uptime,
+        }
 
 
 @dataclass
@@ -145,20 +180,11 @@ class RunnerResourceUsage:
         }
 
 
-# IPC 地址生成工具
-
-
-def get_ipc_address(session_id: str) -> str:
-    """根据平台生成 IPC 地址"""
-    if sys.platform == "win32":
-        return rf"\\.\pipe\broca_runner_{session_id}"
-    else:
-        return f"/tmp/broca_runner_{session_id}.sock"
-
-
-def get_ipc_family() -> str:
-    """根据平台返回 IPC 协议族"""
-    if sys.platform == "win32":
-        return "AF_PIPE"
-    else:
-        return "AF_UNIX"
+# IPC 地址生成工具（实现已迁至 transport/addresses.py，此处保留一行转发，
+# 保证 `from broca.session_runner.models import get_ipc_address` 的既有引用不变）
+from broca.session_runner.transport.addresses import (  # noqa: E402,F401
+    AF_UNIX_PATH_BUDGET,
+    AF_UNIX_PATH_MAX,
+    get_ipc_address,
+    get_ipc_family,
+)
