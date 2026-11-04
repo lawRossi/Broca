@@ -123,6 +123,13 @@ class SessionCleanupService:
 
         删除 ~/.broca/logs/runners/{session_id}/ 目录
 
+        设计决策：per-session 日志目录的清理职责由本服务（SessionCleanupService）
+        负责，而非在 IPCSessionRunner.stop_session() 中直接 shutil.rmtree。
+        原因：stop_session() 仅负责进程停止与状态收敛；将文件 I/O 清理放在
+        cleanup 层可保持职责分离，并统一由上层 session 删除流程（如 API 路由
+        /sessions/<id> DELETE）触发。定期 GC 兜底由 RunnerManager._gc_task
+        负责，防止异常退出时残留目录。
+
         Args:
             session_id: session ID
         """

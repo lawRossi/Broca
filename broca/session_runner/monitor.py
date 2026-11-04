@@ -14,7 +14,6 @@ events），``check_once()`` 是可直接断言的纯入口，不需要启动后
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -24,8 +23,9 @@ from broca.session_runner.models import RunnerProcessInfo, RunnerStatus
 from broca.session_runner.process.reaper import RunnerReaper
 from broca.session_runner.process.registry import RunnerHandle, RunnerRegistry
 from broca.session_runner.repository import RunnerRepository
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 心跳宽限倍数：连续 N 次巡检都超时才升级为 ERROR，
 # 避免 runner 事件循环短暂卡顿（长工具调用、快照加锁等）被误判为异常

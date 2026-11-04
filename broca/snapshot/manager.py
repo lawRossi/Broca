@@ -11,7 +11,6 @@ Provides graceful degradation when git is unavailable.
 
 from __future__ import annotations
 
-import logging
 import shutil
 from typing import Any, Dict
 
@@ -20,8 +19,9 @@ from broca.snapshot.git_manager import GitManager
 from broca.snapshot.patch import PatchCalculator
 from broca.snapshot.restore import SnapshotRestorer
 from broca.snapshot.track import SnapshotTracker
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class GitSnapshotManager(SnapshotManager):

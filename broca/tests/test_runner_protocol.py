@@ -13,10 +13,21 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import logging
+from unittest.mock import patch
+
 from broca.session_runner.manager import IPCSessionRunner
 from broca.session_runner.models import IPCMessage, IPCMessageType
 from broca.session_runner.protocol import HANDLER_ATTR, MessageRouter, handles
 from broca.session_runner.runner import SessionRunnerProcess
+
+
+@pytest.fixture(autouse=True)
+def _stdlib_logger():
+    """确保 caplog 可捕获 protocol 模块的日志。"""
+    stdlib_logger = logging.getLogger("broca.session_runner.protocol")
+    with patch("broca.session_runner.protocol.logger", stdlib_logger):
+        yield stdlib_logger
 
 
 def _make_msg(msg_type: IPCMessageType, session_id: str = "s-1") -> MagicMock:

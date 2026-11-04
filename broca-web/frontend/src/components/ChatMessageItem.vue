@@ -191,8 +191,16 @@ const getContent = (message: Message) => {
     }
   }
 
+  // content 为数组（多模态 content parts 经 socket 广播）→ 提取 text 部分
+  if (Array.isArray(content)) {
+    return content
+      .filter((part: any) => part?.type === 'text')
+      .map((part: any) => part.text)
+      .join('')
+  }
+
   // 如果 content 不是字符串，直接返回
-  return content
+  return typeof content === 'string' ? content : String(content)
 }
 
 const isFileManagementTool = (message: Message) => {

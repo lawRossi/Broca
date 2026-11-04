@@ -118,6 +118,11 @@ class ErrorCode(str, Enum):
     PERMISSION_ERROR = ("PERMISSION_ERROR", "error", "权限异常", None)
     PERMISSION_DENIED = ("PERMISSION_DENIED", "error", "权限被拒绝", None)
 
+    # == Component ==
+    COMPONENT_ERROR = ("COMPONENT_ERROR", "error", "组件系统错误", None)
+    COMPONENT_NOT_FOUND = ("COMPONENT_NOT_FOUND", "error", "组件实现未找到", "请检查组件配置")
+    COMPONENT_SCOPE_ERROR = ("COMPONENT_SCOPE_ERROR", "error", "组件作用域错误", None)
+
     # == Unknown ==
     UNKNOWN_ERROR = ("UNKNOWN_ERROR", "error", "未知错误", None)
 
@@ -199,5 +204,8 @@ class ErrorInfo:
             details=details,
             cause_exc=cause,
             cause_msg=str(cause) if cause else None,
-            traceback_str=traceback.format_exc() if cause else None,
+            traceback_str=(
+                "".join(traceback.format_exception(type(cause), cause, cause.__traceback__))
+                if cause else None
+            ),
         )

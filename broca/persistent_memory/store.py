@@ -6,12 +6,12 @@ MemoryStore — 持久化记忆存储管理器
 
 from __future__ import annotations
 
-import logging
 from datetime import date
 from pathlib import Path
 from typing import Optional
 
 from broca.errors import BrocaError
+from broca.logging_config import get_logger
 from .types import (
     INDEX_LINE_RE,
     MemoryEntry,
@@ -21,7 +21,7 @@ from .types import (
     parse_memory_file,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ──────────────────────────────────────────────
 # 默认路径和约束

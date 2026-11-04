@@ -16,12 +16,12 @@
 from __future__ import annotations
 
 import inspect
-import logging
 from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 from broca.session_runner.models import IPCMessage, IPCMessageType
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 装饰器在函数上留下的标记属性名（值为 [(msg_type, side), ...]，支持叠加）
 HANDLER_ATTR = "__ipc_handler__"

@@ -125,6 +125,7 @@ class ParallelToolStrategy(ToolExecutionStrategy):
         # permission/question dialog from being dismissed by concurrent
         # tool results.
         serial_indices: set[int] = set()
+        pre_check_cache: dict[str, Optional[str]] = {}
         for index, tool_call in enumerate(tool_calls):
             tool_name = tool_call.function.name
             if tool_name not in tool_mapping:
@@ -138,10 +139,13 @@ class ParallelToolStrategy(ToolExecutionStrategy):
                 serial_indices.add(index)
             else:
                 pre_check_fn = getattr(tool, "pre_execute_check", None)
-                if pre_check_fn and pre_check_fn(
-                    tool_call.function.arguments, context
-                ):
-                    serial_indices.add(index)
+                if pre_check_fn:
+                    result = pre_check_fn(tool_call.function.arguments, context)
+                    pre_check_cache[tool_call.id] = result
+                    if result:
+                        serial_indices.add(index)
+        # Pass cached results to executor so it doesn't re-call pre_execute_check
+        context.pre_check_cache = pre_check_cache
         parallel_indices = [
             i for i in range(len(tool_calls)) if i not in serial_indices
         ]

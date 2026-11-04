@@ -10,13 +10,13 @@ modules can still access full Agent attributes (``agent.name``,
 
 from __future__ import annotations
 
-import logging
 from typing import TYPE_CHECKING, Any, Optional, Tuple
+from broca.logging_config import get_logger
 
 if TYPE_CHECKING:
     from broca.agent import Agent
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class AgentReferenceAdapter:
@@ -74,12 +74,24 @@ class AgentReferenceAdapter:
 
     # ── Passthrough for full Agent attribute access ───────────────────
 
+    _KNOWN_AGENT_ATTRS = frozenset({
+        "name", "config", "agent_id", "session_id", "turn_id",
+        "llm_client", "tool_mapping", "tools", "status",
+        "context", "communicator", "session_manager",
+    })
+
     def __getattr__(self, name: str) -> Any:
         """Fall through to the wrapped Agent for any attribute not
         explicitly proxied above.  This is critical for tool modules
         that access ``context.agent.name``, ``context.agent.config``,
         ``context.agent.llm_client.config``, etc.
         """
+        if name not in self._KNOWN_AGENT_ATTRS:
+            logger.debug(
+                "AgentReferenceAdapter.__getattr__('%s') — not in known set; "
+                "falling through to Agent. Consider adding to AgentReference protocol.",
+                name,
+            )
         agent = object.__getattribute__(self, "_agent")
         return getattr(agent, name)
 

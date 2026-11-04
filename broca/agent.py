@@ -42,16 +42,9 @@ class Agent:
         self.name = config.name
         self.role = config.role
         self.status = self.STATUS_DISCONNECTED
-        _snap_mgr = GitSnapshotManager()
-        _snap_mgr.initialize(self.config.workspace)
-        self.revert_service = SessionRevertService(
-            self.session_manager,
-            _snap_mgr,
-            self.config.workspace,
-            enable_snapshot_tracking=getattr(
-                self.config, "enable_snapshot_tracking", True
-            ),
-        )
+        # revert_service is initialized in create() (not __init__) to avoid
+        # Git operations during construction (Task 5.3).
+        self.revert_service: Optional[SessionRevertService] = None
 
         self.session_id: Optional[str] = session_manager.session_id
         self.turn_id: Optional[str] = None
@@ -107,6 +100,18 @@ class Agent:
 
         agent = cls(config, llm_client, session_manager, **kwargs)
         key = agent.agent_id
+
+        # Initialize snapshot/revert (moved from __init__ to avoid Git ops during construction)
+        _snap_mgr = GitSnapshotManager()
+        _snap_mgr.initialize(config.workspace)
+        agent.revert_service = SessionRevertService(
+            session_manager,
+            _snap_mgr,
+            config.workspace,
+            enable_snapshot_tracking=getattr(
+                config, "enable_snapshot_tracking", True
+            ),
+        )
 
         await agent.load_stats(session_manager)
 
@@ -561,8 +566,10 @@ class Agent:
 
     async def _handle_task(self, message: Message) -> None:
         """Handle task assignment from another agent"""
+        task_id: str = ""
+        assigner = None
         try:
-            task_id = message.data.get("task_id")
+            task_id = message.data.get("task_id", "")
             assigner = message.data.get("assigner")
             execution_result = await self.run(message, from_agent=True)
 
@@ -571,7 +578,10 @@ class Agent:
                 msg = self.context.get_latest_assistant_message()
                 result = f"Message from agent {self.name}: {msg}"
                 logger.info(f"send result to {assigner}")
-                await self.communicator.send_task_complete(task_id, result, assigner)
+                if assigner:
+                    await self.communicator.send_task_complete(task_id, result, assigner)
+                else:
+                    logger.warning(f"Task {task_id} completed but no assigner to notify")
             elif execution_result.status == ExecutionStatus.ABORTED:
                 result = f"The agent {self.agent_id} execution was aborted by user"
                 logger.warning(result)
@@ -581,15 +591,23 @@ class Agent:
             ):
                 result = f"The agent {self.agent_id} failed to finish the task: {execution_result.message or execution_result.error}"
                 logger.error(result)
+                if assigner:
+                    await self.communicator.send_task_error(
+                        task_id, result, receiver_id=assigner
+                    )
+                else:
+                    logger.warning(f"Task {task_id} failed but no assigner to notify")
+        except Exception as e:
+            logger.error(f"Error processing task: {e}")
+            if assigner:
+                result = f"The agent {self.agent_id} failed to finish the task: {e}"
                 await self.communicator.send_task_error(
                     task_id, result, receiver_id=assigner
                 )
-        except Exception as e:
-            logger.error(f"Error processing task: {e}")
-            result = f"The agent {self.agent_id} failed to finish the task: {e}"
-            await self.communicator.send_task_error(
-                task_id, result, receiver_id=assigner
-            )
+            else:
+                logger.error(
+                    f"Task {task_id or 'unknown'} failed and no assigner to notify"
+                )
 
     async def reset(self):
         """Reset agent state"""

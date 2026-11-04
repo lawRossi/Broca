@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import logging
 import os
 import select
 import socket
@@ -14,6 +13,7 @@ import threading
 from multiprocessing.connection import Listener
 from typing import Any
 
+from broca.logging_config import get_logger
 from broca.session_runner.transport.addresses import AF_UNIX_PATH_BUDGET
 from broca.session_runner.transport.base import (
     IPCConnectionError,
@@ -21,7 +21,7 @@ from broca.session_runner.transport.base import (
     _BaseIPC,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class IPCServer(_BaseIPC):

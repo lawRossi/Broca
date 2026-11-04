@@ -16,6 +16,14 @@ from broca.session_runner.models import IPCMessageType, IPCStatusCode
 from broca.session_runner.runner import SessionRunnerProcess
 
 
+@pytest.fixture(autouse=True)
+def _child_mode(monkeypatch):
+    """本文件测试 SessionRunnerProcess（生产环境为子进程），
+    统一设置 BROCA_RUNNER_CHILD=1 使 get_logger 返回 stdlib logger（caplog 可捕获）。
+    """
+    monkeypatch.setenv("BROCA_RUNNER_CHILD", "1")
+
+
 def _make_args(session_id: str = "session-process") -> argparse.Namespace:
     return argparse.Namespace(
         session_id=session_id,
@@ -142,6 +150,7 @@ async def test_abort_crew_reports_error_when_none_active():
 @pytest.mark.asyncio
 async def test_agent_task_exception_is_logged(caplog):
     """Agent 任务抛异常后必须被取回并记 ERROR（否则告警只在退出时冒出来）。"""
+    import logging
 
     async def _boom():
         raise RuntimeError("agent crashed")
@@ -150,8 +159,11 @@ async def test_agent_task_exception_is_logged(caplog):
     process.agent_tasks = [asyncio.create_task(_boom())]
     await asyncio.gather(*process.agent_tasks, return_exceptions=True)
 
-    with caplog.at_level("ERROR", logger="broca.session_runner.runner"):
-        process._log_agent_task_failures()
+    # 用 stdlib logger 替换模块级 logger，使 caplog 可捕获
+    stdlib_logger = logging.getLogger("broca.session_runner.runner")
+    with patch("broca.session_runner.runner.logger", stdlib_logger):
+        with caplog.at_level("ERROR", logger="broca.session_runner.runner"):
+            process._log_agent_task_failures()
 
     assert any("agent crashed" in record.getMessage() for record in caplog.records)
 
@@ -204,12 +216,13 @@ async def test_cmd_status_reports_agent_count():
 # ---------------------------------------------------------------------------
 
 
-def test_setup_logging_handles_bare_filename(tmp_path):
+def test_init_child_logging_handles_bare_filename(tmp_path):
     """log_file 只有文件名（dirname 为空）时不得抛 FileNotFoundError。"""
-    from broca.session_runner.runner import setup_logging
+    from broca.logging_config import _init_child_logging
 
-    with patch("broca.session_runner.runner.logging.basicConfig"):
-        setup_logging("runner.log")
-        setup_logging(str(tmp_path / "nested" / "runner.log"))
+    # 裸文件名（无目录部分）
+    _init_child_logging("runner.log", "INFO")
 
+    # 完整路径
+    _init_child_logging(str(tmp_path / "nested" / "runner.log"), "INFO")
     assert (tmp_path / "nested").is_dir()

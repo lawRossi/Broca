@@ -584,6 +584,7 @@ class SessionMemoryCompressor(ContextCompressor):
             agent_config["role"] = "session_memory_manager"
             agent_config["enable_context_compression"] = False
             agent_config["save_history"] = False
+            agent_config["interactive"] = False  # 子 agent 不向前端广播事件
 
             sub_agent = await agent_factory.create_agent(
                 agent_config=agent_config,
@@ -602,6 +603,7 @@ class SessionMemoryCompressor(ContextCompressor):
                 )
             sub_agent.config.provider = compressor_context.provider
             sub_agent.config.model = compressor_context.model
+            sub_agent.config.interactive = False  # 兼容已存在的旧 agent 实例
 
         if not sub_agent.running:
             task = asyncio.create_task(sub_agent.start())

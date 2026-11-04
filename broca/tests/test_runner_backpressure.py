@@ -202,11 +202,17 @@ def test_no_unbounded_asyncio_queue_in_source():
 def test_log_rotation_creates_backup(tmp_path):
     """跨天轮转必须产生带日期后缀的备份文件，且备份数受 backupCount 约束。"""
     import logging
+    from logging.handlers import TimedRotatingFileHandler
 
-    from broca.session_runner.runner import build_file_handler
+    from broca.logging_config import get_runner_log_backup_days
 
     log_file = tmp_path / "runner.log"
-    handler = build_file_handler(str(log_file))
+    handler = TimedRotatingFileHandler(
+        str(log_file),
+        when="midnight",
+        backupCount=get_runner_log_backup_days(),
+        encoding="utf-8",
+    )
     handler.setFormatter(logging.Formatter("%(message)s"))
 
     record_logger = logging.getLogger("broca.tests.log_rotation")

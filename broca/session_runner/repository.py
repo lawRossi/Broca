@@ -18,7 +18,6 @@
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any, Optional
@@ -26,8 +25,9 @@ from typing import Any, Optional
 from sqlmodel import select
 
 from broca.session_runner.models import RunnerProcessInfo, RunnerStatus
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # upsert 时需要覆盖的列（不含主键 runner_id / created_at / session_id）
 _UPDATABLE_COLUMNS = (

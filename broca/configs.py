@@ -11,6 +11,12 @@ import json
 import os
 from pathlib import Path
 
+def _get_logger():
+    """惰性获取 logger，避免 configs 被 logging_config lazy import 时死锁。"""
+    from broca.logging_config import get_logger
+
+    return get_logger(__name__)
+
 
 # llm_config.json 中的保留键：存放全局默认 provider / model。
 # 该键不是真实提供商，遍历时需跳过。
@@ -49,6 +55,10 @@ class ExecutionConfig:
         self.runner_status_persist_interval = 60
         # 每个 session 的 IPC 消息队列上限（背压，Task 4.4）
         self.runner_ipc_queue_size = 1000
+        # Per-session runner 日志目录 GC 保留天数
+        self.runner_log_gc_days = 30
+        # Per-session runner 日志目录 GC 轮询间隔（秒）
+        self.runner_log_gc_interval = 3600
 
     @classmethod
     def from_config(cls, config):
@@ -186,10 +196,7 @@ def _load_config_file(config_file: Path) -> BrocaConfig | None:
             config.config_source_path = str(config_file.resolve())
             return config
     except (json.JSONDecodeError, OSError) as e:
-        import logging
-        logging.getLogger(__name__).warning(
-            f"Failed to load config from {config_file}: {e}"
-        )
+        _get_logger().warning(f"Failed to load config from {config_file}: {e}")
     return None
 
 
@@ -240,10 +247,7 @@ def get_configs(config_path: str | Path | None = None, *, enforce_production: bo
 
     # 生产环境安全护栏: log_level=DEBUG 强制降为 INFO
     if enforce_production and config.log_level == "DEBUG":
-        import logging
-        logging.getLogger(__name__).warning(
-            "enforce_production: log_level=DEBUG 已强制降为 INFO"
-        )
+        _get_logger().warning("enforce_production: log_level=DEBUG 已强制降为 INFO")
         config.log_level = "INFO"
 
     return config

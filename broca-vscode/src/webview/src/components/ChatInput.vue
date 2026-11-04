@@ -603,6 +603,77 @@ async function handleFileChange(event: Event) {
   await uploadPendingFiles()
 }
 
+/** 处理粘贴事件 — 从剪贴板提取文件/图片 */
+function handlePaste(event: ClipboardEvent) {
+  const items = event.clipboardData?.items
+  if (!items) return
+
+  const files: File[] = []
+  let hasStringItem = false
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.kind === 'file') {
+      const file = item.getAsFile()
+      if (file) {
+        if (!file.name || file.name === 'image.png') {
+          const ext = file.type.split('/')[1] || 'png'
+          files.push(new File([file], `pasted-${Date.now()}.${ext}`, { type: file.type }))
+        } else {
+          files.push(file)
+        }
+      }
+    } else if (item.kind === 'string') {
+      hasStringItem = true
+    }
+  }
+
+  if (files.length === 0) return
+
+  if (!hasStringItem) {
+    event.preventDefault()
+  }
+
+  for (const file of files) {
+    pendingFiles.value.push({
+      file,
+      id: Math.random().toString(36).substr(2, 9),
+      status: 'pending',
+      progress: 0,
+    })
+  }
+
+  uploadPendingFiles()
+}
+
+/** 处理拖放 — 将文件拖入输入区域自动上传 */
+function handleDrop(event: DragEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+
+  if (!chatStore.runnerAlive) return
+
+  const droppedFiles = event.dataTransfer?.files
+  if (!droppedFiles || droppedFiles.length === 0) return
+
+  for (const file of Array.from(droppedFiles)) {
+    pendingFiles.value.push({
+      file,
+      id: Math.random().toString(36).substr(2, 9),
+      status: 'pending',
+      progress: 0,
+    })
+  }
+
+  uploadPendingFiles()
+}
+
+/** 阻止默认拖放行为，允许在输入区域放置文件 */
+function handleDragOver(event: DragEvent) {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
 function removePendingFile(id: string) {
   const idx = pendingFiles.value.findIndex((f) => f.id === id)
   if (idx !== -1) {
@@ -831,7 +902,7 @@ const targetAgentDisplay = computed(() => {
 </script>
 
 <template>
-  <div class="input-container">
+  <div class="input-container" @drop="handleDrop" @dragover="handleDragOver">
     <!-- 目标 Agent 提示 -->
     <div v-if="chatStore.runnerAlive" class="target-agent-hint">
       发送给: <span class="target-agent-name">@{{ targetAgentDisplay }}</span>
@@ -891,6 +962,7 @@ const targetAgentDisplay = computed(() => {
         rows="1"
         :disabled="!chatStore.runnerAlive"
         @keydown="handleKeydown"
+        @paste="handlePaste"
       ></textarea>
 
       <!-- /command 建议列表 -->

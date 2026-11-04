@@ -334,7 +334,7 @@ class DefaultLoopEngine(LoopEngine):
     async def _start_turn(self, user_message: dict, from_agent: bool) -> Optional[str]:
         """Create the turn row and remember ``turn_id`` (broadcast is a hook)."""
         await self._ensure_session()
-        turn_id = await self.session_manager.start_turn(self.agent_id)
+        turn_id = await self.session_manager.start_turn(self.agent_id, strict=True)
         if not turn_id:
             return None
         self.turn_id = turn_id
@@ -344,10 +344,15 @@ class DefaultLoopEngine(LoopEngine):
     async def _save_user_message(
         self, user_message: dict, message: Message, turn_id: str, from_agent: bool
     ) -> Optional[str]:
-        """Persist the user message; returns its ``message_id``."""
-        message.data["from_agent"] = from_agent
+        """Persist the user message; returns its ``message_id``.
+
+        Does NOT mutate ``message.data`` — constructs a new dict instead.
+        """
+        # Build a new data dict to avoid mutating the caller's message
+        message_data = dict(message.data) if message.data else {}
+        message_data["from_agent"] = from_agent
         if user_message.get("raw_input"):
-            message.data["raw_input"] = user_message["raw_input"]
+            message_data["raw_input"] = user_message["raw_input"]
         # Agent-sourced messages get a pre-generated id so turn setup can never
         # mistake them for a failed setup (regression fix 104c8c2).
         message_id = f"msg_{uuid.uuid4().hex[:16]}" if from_agent else message.message_id
@@ -357,8 +362,9 @@ class DefaultLoopEngine(LoopEngine):
             message_type=MessageType.USER_MESSAGE,
             turn_id=turn_id,
             agent_id=self.agent_id,
-            data=message.data,
+            data=message_data,
             message_id=message_id,
+            strict=True,
         )
         return message_id if saved else None
 
@@ -687,7 +693,10 @@ class DefaultLoopEngine(LoopEngine):
             # Outward-notification phase (always after the DB write).
             await self._dispatch("on_turn_finalized", turn_ctx)
             return saved
-        except Exception as e:
+        except asyncio.CancelledError as e:
+            logger.warning(f"_finalize_turn cancelled (loop may be shutting down): {e}")
+            return False
+        except (RuntimeError, Exception) as e:
             logger.error(f"Error in _finalize_turn: {e}")
             return False
 
@@ -750,8 +759,13 @@ class DefaultLoopEngine(LoopEngine):
             result = self._make_error_result(ExecutionStatus.ERROR, e)
 
         if turn_ctx is not None:
-            if not await self._finalize_turn(turn_ctx, result):
-                logger.warning("Turn end processing failed")
+            try:
+                if not await self._finalize_turn(turn_ctx, result):
+                    logger.warning("Turn end processing failed")
+            except Exception:
+                # Defensive: never propagate from _finalize_turn after
+                # a CancelledError or loop teardown.
+                pass
         else:
             # Setup failed → no turn_id. Legacy wrote a turn_end row with a
             # ``None`` turn_id; we deliberately skip that dirty write.
@@ -905,14 +919,6 @@ class DefaultLoopEngine(LoopEngine):
         ctx.turn_id = self.turn_id
         ctx.agent_id = self.agent_id
         return ctx
-
-    def _check_write_ops(self, tool_calls: List[Any]) -> bool:
-        """Deprecated: computation moved to ``SnapshotHook`` (review 4.2).
-
-        Kept as a no-op stub for backward compatibility with any external
-        callers.  The hook now computes the flag itself.
-        """
-        return False
 
     # ==================================================================
     # Error reporting

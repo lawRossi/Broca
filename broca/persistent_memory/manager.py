@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import copy
-import logging
 import time
 from pathlib import Path
 from typing import Optional
@@ -24,8 +23,9 @@ from broca.session import MessageProtocol
 from .prompts import build_extraction_prompt
 from .state import PersistentMemoryState
 from .store import MemoryStore
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 子 Agent 允许的工具白名单
 ALLOWED_TOOLS = [

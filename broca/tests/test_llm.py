@@ -108,13 +108,13 @@ class TestLLMClientInit:
                 client.parse_message("openai", "unknown-model", MagicMock())
             assert "未知 LLM 模型" in str(excinfo.value)
 
-    def test_token_counters_init(self, llm_config_file):
-        """测试 token 计数器初始化"""
+    def test_no_mutable_token_state(self, llm_config_file):
+        """LiteLLMClient 实例不应持有可变 token 计数器（已通过 stream usage 事件传递）"""
         from pathlib import Path
         with patch("broca.configs.resolve_llm_config_path", return_value=Path(llm_config_file)):
             client = LLMClient()
-            assert client.input_tokens_used == 0
-            assert client.output_tokens_used == 0
+            assert "input_tokens_used" not in vars(client)
+            assert "output_tokens_used" not in vars(client)
 
 
 class TestParseMessage:
@@ -169,6 +169,90 @@ class TestParseMessage:
 
         result = llm_client.parse_message("openai", "gpt-4o", msg)
         assert result == {}
+
+
+class TestParseMessageRawInput:
+    """回归测试: parse_message 必须始终为 USER_MESSAGE 设置 raw_input（纯文本）。
+
+    Bug: 之前 raw_input 仅在有非媒体文件附件时才被设置。
+    当用户只发送图片时 raw_input=None，广播 hook 将 LLM content parts
+    (list of dicts) 直接作为 data.content 发给前端，导致 [object Object]。
+    """
+
+    def test_raw_input_set_for_text_only(self, llm_client):
+        """纯文本消息 → raw_input = 文本本身"""
+        msg = MagicMock(spec=Message)
+        msg.message_type = MessageType.USER_MESSAGE
+        msg.data = {"content": "Hello, world!"}
+
+        result = llm_client.parse_message("openai", "gpt-4o", msg)
+        assert result["raw_input"] == "Hello, world!"
+        assert isinstance(result["raw_input"], str)
+
+    def test_raw_input_set_for_image_only(self, llm_client):
+        """图片消息（无文本）→ raw_input = 空字符串，content 是 list"""
+        msg = MagicMock(spec=Message)
+        msg.message_type = MessageType.USER_MESSAGE
+        msg.data = {
+            "content": "",
+            "files": [
+                {"name": "photo.png", "url": "http://cdn/x.png", "type": "image/png"},
+            ],
+        }
+
+        result = llm_client.parse_message("openai", "gpt-4o", msg)
+        # content 是多模态 list
+        assert isinstance(result["content"], list)
+        image_parts = [p for p in result["content"] if p.get("type") == "image_url"]
+        assert len(image_parts) == 1
+        # raw_input 必须是字符串（不能是 None 或 list）
+        assert result["raw_input"] is not None
+        assert isinstance(result["raw_input"], str)
+
+    def test_raw_input_set_for_text_and_image(self, llm_client):
+        """文本 + 图片 → raw_input = 原始文本（不含文件 section）"""
+        msg = MagicMock(spec=Message)
+        msg.message_type = MessageType.USER_MESSAGE
+        msg.data = {
+            "content": "Check this image",
+            "files": [
+                {"name": "a.png", "url": "http://cdn/a.png", "type": "image/png"},
+            ],
+        }
+
+        result = llm_client.parse_message("openai", "gpt-4o", msg)
+        assert result["raw_input"] == "Check this image"
+        assert isinstance(result["content"], list)  # multimodal
+
+    def test_raw_input_not_polluted_by_file_section(self, llm_client):
+        """有非媒体文件时，raw_input 不应包含 [附件文件] section"""
+        msg = MagicMock(spec=Message)
+        msg.message_type = MessageType.USER_MESSAGE
+        msg.data = {
+            "content": "read this pdf",
+            "files": [
+                {"name": "doc.pdf", "url": "http://cdn/doc.pdf", "type": "application/pdf"},
+            ],
+        }
+
+        result = llm_client.parse_message("openai", "gpt-4o", msg)
+        # raw_input 应保留原始文本，不应包含文件 section
+        assert result["raw_input"] == "read this pdf"
+        # content 中应包含文件 section
+        if isinstance(result["content"], str):
+            assert "[附件文件]" in result["content"]
+
+    def test_raw_input_for_existing_raw_input_passthrough(self, llm_client):
+        """message.data 已有 raw_input 时应透传（不覆盖）"""
+        msg = MagicMock(spec=Message)
+        msg.message_type = MessageType.USER_MESSAGE
+        msg.data = {
+            "content": "new text",
+            "raw_input": "original input",
+        }
+
+        result = llm_client.parse_message("openai", "gpt-4o", msg)
+        assert result["raw_input"] == "original input"
 
 
 class TestAggregateFunctions:

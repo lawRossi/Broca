@@ -134,12 +134,33 @@ class LifecycleBroadcastHook(LoopHook):
             logger.warning(f"Failed to broadcast turn start: {e}")
 
     async def _broadcast_user_message(self, ctx: TurnContext) -> None:
-        """Broadcast the persisted user message (skipped for agent-sourced turns)."""
+        """Broadcast the persisted user message (skipped for agent-sourced turns).
+
+        Uses ``raw_input`` (plain text) as the broadcast ``content`` so the
+        front-end always receives a string.  When ``parse_message`` builds
+        multimodal content (image/video) the ``content`` field is a **list**
+        of OpenAI-style parts — sending that to the UI renders as
+        ``[object Object]``.
+        """
         if not ctx.message_id or ctx.from_agent:
             return
         try:
+            # Prefer raw_input (always a plain-text string after the
+            # parse_message fix); fall back to extracting text parts when
+            # content is a multimodal list.
+            content = ctx.raw_input or ""
+            if not content:
+                raw = ctx.user_message.get("content", "")
+                if isinstance(raw, list):
+                    content = "".join(
+                        part.get("text", "")
+                        for part in raw
+                        if isinstance(part, dict) and part.get("type") == "text"
+                    )
+                else:
+                    content = raw
             message = MessageProtocol.create_user_message(
-                content=ctx.user_message.get("content", ""),
+                content=content,
                 sender_id=ctx.sender_id,
                 subscription=self._session_id,
                 turn_id=ctx.turn_id,

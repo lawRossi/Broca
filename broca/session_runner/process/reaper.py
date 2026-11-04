@@ -19,14 +19,14 @@ Windows 降级：``cmdline()`` 可能返回空 list 或抛 ``AccessDenied``，
 from __future__ import annotations
 
 import asyncio
-import logging
 import os
 import signal
 import subprocess
 import sys
 from typing import Any, Optional
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # create_time 容差：Popen 到 psutil 读取的窗口通常 < 100ms
 CREATE_TIME_TOLERANCE = 5.0

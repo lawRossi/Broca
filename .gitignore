@@ -435,6 +435,7 @@ dev.db
 *.sqlite3
 .local-data/
 .test-configs.json
+configs/llm_config.json
 
 # Docker
 .docker/

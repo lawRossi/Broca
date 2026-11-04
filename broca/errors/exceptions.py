@@ -86,3 +86,8 @@ class ValidationError(BrocaError):
 class BrocaPermissionError(BrocaError):
     """权限错误（避免与内置 PermissionError 冲突）"""
     default_error_code: ErrorCode = ErrorCode.PERMISSION_ERROR
+
+
+class ComponentError(BrocaError):
+    """组件系统基础错误"""
+    default_error_code: ErrorCode = ErrorCode.COMPONENT_ERROR

@@ -370,17 +370,84 @@ class TurnService(BaseService[Turn]):
         skip: int = 0,
         limit: int = 20,
         execution_id: Optional[str] = None,
+        include_internal_agents: bool = False,
     ) -> List[Turn]:
-        """获取会话的 turn 列表，支持按 execution_id 过滤"""
+        """获取会话的 turn 列表，支持按 execution_id 过滤。
+
+        Args:
+            include_internal_agents: 是否包含内部子 agent（session-memory、
+                persistent-memory、skill-evolution）的 turn。默认 False，
+                避免内部 turn 占据分页导致用户看不到主 agent 的 turn。
+        """
         filters = {"session_id": session_id, "reverted": False}
         if execution_id:
             filters["execution_id"] = execution_id
+
+        if not include_internal_agents:
+            # 排除内部子 agent 的 turn
+            exclude_ids = await self._get_subagent_ids(session_id)
+            if exclude_ids:
+                return await self._get_turns_excluding_agents(
+                    session_id, exclude_ids, order_by, skip, limit, execution_id
+                )
+
         return await self.get_batch(
             filters=filters,
             order_by=order_by,
             skip=skip,
             limit=limit,
         )
+
+    async def _get_subagent_ids(self, session_id: str) -> List[str]:
+        """获取会话中所有内部子 agent 的 ID"""
+        from broca.loop_engine.hooks.factory import SUBAGENT_ROLES
+
+        async with db_manager.get_session() as session:
+            rows = (
+                await session.execute(
+                    select(Agent.agent_id)
+                    .where(Agent.session_id == session_id)
+                    .where(Agent.role.in_(list(SUBAGENT_ROLES)))
+                )
+            ).scalars().all()
+            return list(rows)
+
+    async def _get_turns_excluding_agents(
+        self,
+        session_id: str,
+        exclude_agent_ids: List[str],
+        order_by: str,
+        skip: int,
+        limit: int,
+        execution_id: Optional[str],
+    ) -> List[Turn]:
+        """带 NOT IN 过滤的 turn 查询"""
+        from sqlalchemy import and_ as sa_and
+
+        async with db_manager.get_session() as session:
+            conditions = [
+                Turn.session_id == session_id,
+                Turn.reverted == False,  # noqa: E712
+                Turn.agent_id.notin_(exclude_agent_ids),
+            ]
+            if execution_id:
+                conditions.append(Turn.execution_id == execution_id)
+
+            statement = select(Turn).where(sa_and(*conditions))
+
+            parts = order_by.strip().split()
+            if parts:
+                column_name = parts[0]
+                if hasattr(Turn, column_name):
+                    column = getattr(Turn, column_name)
+                    if len(parts) >= 2 and parts[1].lower() == "desc":
+                        statement = statement.order_by(desc(column))
+                    else:
+                        statement = statement.order_by(column)
+
+            statement = statement.offset(skip).limit(limit)
+            result = await session.execute(statement)
+            return list(result.scalars().all())
 
     async def get_turn_time_range(
         self, turn_id: str
@@ -521,7 +588,15 @@ class TurnService(BaseService[Turn]):
                             try:
                                 parsed = json.loads(raw) if isinstance(raw, str) else raw
                                 if isinstance(parsed, dict):
-                                    stats["user_message"] = parsed.get("content", str(parsed))
+                                    content = parsed.get("content")
+                                    if isinstance(content, list):
+                                        # multimodal: extract text parts
+                                        content = "".join(
+                                            p.get("text", "")
+                                            for p in content
+                                            if isinstance(p, dict) and p.get("type") == "text"
+                                        )
+                                    stats["user_message"] = str(content) if content else str(parsed)
                                 else:
                                     stats["user_message"] = str(parsed)
                             except (json.JSONDecodeError, TypeError):
@@ -614,11 +689,36 @@ class TurnService(BaseService[Turn]):
             logger.warning(f"Error calculating file diff for {file_path}: {e}")
             return None
 
-    async def count_turns_by_session(self, session_id: str, execution_id: Optional[str] = None) -> int:
-        """统计会话的 turn 总数，支持按 execution_id 过滤"""
+    async def count_turns_by_session(
+        self, session_id: str, execution_id: Optional[str] = None,
+        include_internal_agents: bool = False,
+    ) -> int:
+        """统计会话的 turn 总数，支持按 execution_id 过滤。
+
+        默认排除内部子 agent 的 turn（与 get_turns_by_session 一致）。
+        """
         filters = {"session_id": session_id, "reverted": False}
         if execution_id:
             filters["execution_id"] = execution_id
+
+        if not include_internal_agents:
+            exclude_ids = await self._get_subagent_ids(session_id)
+            if exclude_ids:
+                from sqlalchemy import and_ as sa_and
+
+                async with db_manager.get_session() as session:
+                    conditions = [
+                        Turn.session_id == session_id,
+                        Turn.reverted == False,  # noqa: E712
+                        Turn.agent_id.notin_(exclude_ids),
+                    ]
+                    if execution_id:
+                        conditions.append(Turn.execution_id == execution_id)
+                    result = await session.execute(
+                        select(func.count(Turn.turn_id)).where(sa_and(*conditions))
+                    )
+                    return result.scalar() or 0
+
         return await self.count(filters)
 
 

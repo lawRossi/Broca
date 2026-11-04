@@ -22,18 +22,18 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 import threading
 from multiprocessing.connection import wait
 from typing import Any, Callable, Dict, Optional
 
+from broca.logging_config import get_logger
 from broca.session_runner.backpressure import (
     DEFAULT_QUEUE_SIZE,
     DroppedEvents,
     put_with_backpressure,
 )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 单次 wait 的超时：决定「新增连接」与「stop()」的最大感知延迟
 POLL_TIMEOUT = 0.5

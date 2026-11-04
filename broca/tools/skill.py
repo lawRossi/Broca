@@ -1,5 +1,8 @@
+from broca.logging_config import get_logger
 from broca.skill.skill_store import SkillStore, clean_skill_name
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+
+logger = get_logger(__name__)
 
 
 class LoadSkill(Tool):
@@ -325,6 +328,4 @@ class SkillManage(Tool):
 
             SkillManager().refresh_index()
         except Exception as e:
-            import logging
-
-            logging.getLogger(__name__).warning(f"Failed to refresh skill index: {e}")
+            logger.warning(f"Failed to refresh skill index: {e}")

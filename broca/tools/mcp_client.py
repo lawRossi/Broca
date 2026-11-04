@@ -6,15 +6,15 @@ Wraps the existing ``connect_mcp_servers()`` function and
 
 from __future__ import annotations
 
-import logging
 from contextlib import AsyncExitStack
 from typing import Any, Dict, List, Optional
 
 from broca.components.mcp_client import MCPClient
 from broca.tools.mcp import connect_mcp_servers
 from broca.tools.tool import Tool
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class StdMCPClient(MCPClient):

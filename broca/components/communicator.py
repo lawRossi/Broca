@@ -10,7 +10,7 @@ implementation to ensure backward compatibility.
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from typing import TYPE_CHECKING, Any, Callable, Optional
+from typing import TYPE_CHECKING, Any, Callable, Dict, Optional
 
 from broca.components.base import BaseComponent
 
@@ -95,9 +95,9 @@ class Communicator(BaseComponent, ABC):
     @abstractmethod
     async def send_tool_call(
         self,
-        tool_call_id: str,
-        tool_name: str,
-        arguments: str,
+        tool_call_id: Optional[str] = None,
+        tool_name: str = "",
+        arguments: Optional[str] = None,
         turn_id: Optional[str] = None,
         agent_id: Optional[str] = None,
         subscription: Optional[str] = None,
@@ -139,6 +139,189 @@ class Communicator(BaseComponent, ABC):
             Message ID.
         """
         ...
+
+    # ------------------------------------------------------------------
+    # High-frequency send methods (MUST be implemented)
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def send_agent_response(
+        self,
+        content: str,
+        subscription: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+    ) -> str:
+        """Send an agent response message."""
+        ...
+
+    @abstractmethod
+    async def send_turn_start(
+        self,
+        turn_id: str,
+        turn_description: str,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
+        """Broadcast turn start event."""
+        ...
+
+    @abstractmethod
+    async def send_turn_end(
+        self,
+        turn_id: str,
+        result: Optional[str] = None,
+        turn_description: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+        message_id: Optional[str] = None,
+        changed_files: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Broadcast turn end event."""
+        ...
+
+    @abstractmethod
+    async def send_task_complete(
+        self,
+        task_id: str,
+        result: str,
+        receiver_id: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> str:
+        """Send task completion notification."""
+        ...
+
+    @abstractmethod
+    async def send_task_error(
+        self,
+        task_id: str,
+        error_message: str,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> str:
+        """Send task error notification."""
+        ...
+
+    @abstractmethod
+    async def send_permission_request(
+        self,
+        message: str,
+        request_id: Optional[str] = None,
+        request_type: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
+        """Send a permission request to the user."""
+        ...
+
+    @abstractmethod
+    async def send_permission_response(
+        self,
+        granted: bool,
+        request_id: Optional[str] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
+        """Send a permission response."""
+        ...
+
+    @abstractmethod
+    async def send_command(
+        self,
+        command: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
+        """Send a command message."""
+        ...
+
+    # ------------------------------------------------------------------
+    # Event system (MUST be implemented)
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    def register_event_handler(self, event_name: str, func: Callable) -> None:
+        """Register an event handler callback."""
+        ...
+
+    # ------------------------------------------------------------------
+    # Subscription (MUST be implemented)
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def subscribe(self, subscription: str) -> str:
+        """Subscribe to a channel/topic."""
+        ...
+
+    @abstractmethod
+    async def unsubscribe(self, subscription: str) -> str:
+        """Unsubscribe from a channel/topic."""
+        ...
+
+    # ------------------------------------------------------------------
+    # Low-frequency methods (optional — default no-op)
+    # ------------------------------------------------------------------
+
+    @abstractmethod
+    async def send_command_result(
+        self,
+        command: str,
+        result: str,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+        callback: Optional[Callable] = None,
+    ) -> str:
+        """Send command execution result."""
+        ...
+
+    @abstractmethod
+    async def send_task_start(
+        self,
+        task_id: str,
+        task_description: str,
+        receiver_id: Optional[str] = None,
+        room: Optional[str] = None,
+        subscription: Optional[str] = None,
+    ) -> str:
+        """Broadcast task start event."""
+        ...
+
+    async def send_user_answer(
+        self,
+        question_id: str,
+        answer: str,
+        subscription: Optional[str] = None,
+    ) -> str:
+        """Send user's answer to a question."""
+        return ""
+
+    async def send_broadcast(
+        self,
+        content: str,
+        subscription: Optional[str] = None,
+    ) -> str:
+        """Broadcast a message to all subscribers."""
+        return ""
+
+    async def send_agent_system_message(
+        self,
+        content: str,
+        subscription: Optional[str] = None,
+    ) -> str:
+        """Send an agent system-level message."""
+        return ""
 
     # ------------------------------------------------------------------
     # Lifecycle

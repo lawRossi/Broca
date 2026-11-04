@@ -82,7 +82,7 @@ class SocketIOServer:
         """缓存待处理的消息（PERMISSION_REQUEST / AGENT_QUERY）
 
         消息缓存后，后续订阅该频道的客户端会收到此消息。
-        缓存条目有 TTL（600s），收到对应响应或过期后清理。
+        缓存条目 TTL 由 permission_request_ttl(默认90s) / agent_query_ttl(默认300s) 控制，收到对应响应或过期后清理。
 
         Args:
             subscription: 订阅频道名称（通常是 session_id）
@@ -212,8 +212,24 @@ class SocketIOServer:
                 client_id=client_id, client_type=client_type, user_id=user_id
             )
 
-            # 使用锁保护共享状态
+            # 使用锁保护共享状态；处理 client_id 冲突（新连接接管路由）
             async with self._lock:
+                old_sid = self.client_sids.get(client_id)
+                if old_sid and old_sid != sid:
+                    # 旧连接的映射需要清理
+                    old_info = self.clients.pop(old_sid, None)
+                    if old_info:
+                        for sub in old_info.subscriptions:
+                            if sub in self.subscriptions:
+                                self.subscriptions[sub].discard(client_id)
+                                if not self.subscriptions[sub]:
+                                    del self.subscriptions[sub]
+                    self.client_sids.pop(client_id, None)
+                    logger.info(
+                        f"Client {client_id} reconnected: old sid={old_sid} "
+                        f"replaced by new sid={sid}"
+                    )
+
                 self.clients[sid] = client_info
                 self.client_sids[client_id] = sid
 
@@ -387,6 +403,17 @@ class SocketIOServer:
         result = None
         if message.receiver_id:
             result = await self._send_to_client(message.receiver_id, message)
+            if result is False:
+                # 向发送方反馈 routing_failed
+                await self._send_error(
+                    sid,
+                    {
+                        "message": f"Unknown receiver_id: {message.receiver_id}",
+                        "code": "ROUTING_FAILED",
+                        "severity": "error",
+                    },
+                    message.sender_id,
+                )
         elif message.room:
             result = await self._send_to_room(message.room, message)  # type: ignore[assignment]
         elif message.subscription:

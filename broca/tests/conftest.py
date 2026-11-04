@@ -151,6 +151,31 @@ def run_async(coro):
 
 
 # ---------------------------------------------------------------------------
+# GitManager snapshot 仓库清理
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _cleanup_git_manager_instances():
+    """测试结束后清理 GitManager 单例及其 snapshot 仓库目录。
+
+    测试使用 tempfile.TemporaryDirectory() 作为 workspace，
+    GitManager.initialize() 会在 ~/.broca/snapshots/<hash>/ 创建仓库。
+    tempfile 只清理 workspace 目录本身，snapshot 仓库会残留。
+    此 fixture 在每个测试后统一清理，防止孤儿目录累积。
+    """
+    yield
+
+    from broca.snapshot.git_manager import GitManager
+
+    for _ws, gm in list(GitManager._instances.items()):
+        try:
+            gm.cleanup()
+        except Exception:
+            pass
+
+
+# ---------------------------------------------------------------------------
 # Session Runner IPC socket 清理
 # ---------------------------------------------------------------------------
 

@@ -8,7 +8,6 @@ Windows 命名管道并发写会交错破坏消息帧）。
 from __future__ import annotations
 
 import json
-import logging
 import threading
 import uuid
 from datetime import UTC, datetime
@@ -22,8 +21,9 @@ from broca.session_runner.models import (
     IPCStatusCode,
 )
 from broca.session_runner.transport.addresses import get_ipc_address, get_ipc_family
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class IPCConnectionError(CommunicationError):

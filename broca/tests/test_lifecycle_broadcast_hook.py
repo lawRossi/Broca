@@ -127,11 +127,81 @@ class TestTurnStart:
         assert communicator.send_message.await_count == 1
         message = communicator.send_message.await_args.args[0]
         assert message.message_type == MessageType.USER_MESSAGE
-        assert message.data["content"] == "hello"
+        # raw_input 存在时优先作为 content（纯文本，避免 list 类型 content 泄漏到前端）
+        assert message.data["content"] == "raw text"
         assert message.data["files"] == ["a.png"]
         assert message.data["raw_input"] == "raw text"
         assert message.message_id == "msg-1"
         assert message.turn_id == "turn-1"
+
+    @pytest.mark.asyncio
+    async def test_broadcast_content_is_string_when_multimodal(self):
+        """回归: 多模态 content (list of dicts) 不应直接广播给前端。
+
+        之前 parse_message 在有图片时返回 content=list，广播 hook 直接
+        传给 create_user_message()，前端收到 list 后渲染为 [object Object]。
+        修复后：应优先使用 raw_input（纯文本）作为广播 content。
+        """
+        communicator = make_communicator()
+        hook = LifecycleBroadcastHook(communicator, FakeConfig(), "sess-1")
+
+        # 模拟 parse_message 在有图片时的输出
+        multimodal_content = [
+            {"type": "image_url", "image_url": {"url": "http://cdn/a.png"}},
+            {"type": "text", "text": "Check this"},
+        ]
+        ctx = TurnContext(
+            turn_id="turn-1",
+            agent_id="agent-1",
+            session_id="sess-1",
+            user_message={"content": multimodal_content, "raw_input": "Check this"},
+            message_id="msg-1",
+            sender_id="user-1",
+            files=[{"name": "a.png", "url": "http://cdn/a.png", "type": "image/png"}],
+            from_agent=False,
+            raw_input="Check this",
+        )
+        ctx.data["turn_end_message_id"] = "msg_turn_end"
+        ctx.data["turn_end_message"] = "Turn completed"
+
+        await hook.on_turn_start(ctx)
+
+        message = communicator.send_message.await_args.args[0]
+        # content 必须是字符串，不能是 list
+        assert isinstance(message.data["content"], str), (
+            f"Broadcast content must be str, got {type(message.data['content'])}"
+        )
+        assert message.data["content"] == "Check this"
+
+    @pytest.mark.asyncio
+    async def test_broadcast_fallback_extracts_text_from_list_content(self):
+        """raw_input 为空时，应从 list content 中提取 text 部分。"""
+        communicator = make_communicator()
+        hook = LifecycleBroadcastHook(communicator, FakeConfig(), "sess-1")
+
+        multimodal_content = [
+            {"type": "image_url", "image_url": {"url": "http://cdn/a.png"}},
+            {"type": "text", "text": "Hello"},
+        ]
+        ctx = TurnContext(
+            turn_id="turn-1",
+            agent_id="agent-1",
+            session_id="sess-1",
+            user_message={"content": multimodal_content, "raw_input": ""},
+            message_id="msg-1",
+            sender_id="user-1",
+            files=[],
+            from_agent=False,
+            raw_input="",  # 空字符串 → falsy
+        )
+        ctx.data["turn_end_message_id"] = "msg_turn_end"
+        ctx.data["turn_end_message"] = "Turn completed"
+
+        await hook.on_turn_start(ctx)
+
+        message = communicator.send_message.await_args.args[0]
+        assert isinstance(message.data["content"], str)
+        assert message.data["content"] == "Hello"
 
     @pytest.mark.asyncio
     async def test_skips_user_message_broadcast_for_agent_turns(self):

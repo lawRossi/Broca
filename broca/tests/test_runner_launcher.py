@@ -238,3 +238,74 @@ def test_platform_popen_kwargs_selects_correct_branch():
         assert "creationflags" in kwargs
     else:
         assert kwargs == {"start_new_session": True}
+
+
+# ---------------------------------------------------------------------------
+# PYTHONSAFEPATH：防止 cwd 污染 sys.path（回归：main/legacy 代码混用）
+# ---------------------------------------------------------------------------
+
+
+def test_build_runner_env_includes_pythonsafepath():
+    """build_runner_env() 必须设置 PYTHONSAFEPATH=1。
+
+    回归场景：legacy runner 用 ``cwd=workspace`` 启动子进程，Python ``-m``
+    模式把 cwd 放进 ``sys.path[0]``。若 workspace 恰好是仓库根目录（含
+    main 分支的 ``broca/``），``import broca`` 就命中 main 代码而非
+    site-packages 的 legacy 代码 → IPC 协议不兼容 → TypeError。
+    """
+    env = build_runner_env()
+    assert env.get("PYTHONSAFEPATH") == "1", (
+        "build_runner_env() 未设置 PYTHONSAFEPATH=1，"
+        "runner 子进程可能被 cwd 中的同名包劫持"
+    )
+
+
+def test_runner_env_prevents_cwd_broca_shadowing(tmp_path):
+    """cwd 下存在同名 broca/ 目录时，runner 子进程仍应加载 PYTHONPATH 指定的包。
+
+    模拟线上事故：workspace（= cwd）是仓库根目录，目录里有 main 分支的
+    ``broca/``，而 venv site-packages 里是 legacy 代码。子进程必须加载
+    ``PYTHONPATH`` 指向的仓库根，绝不能被 cwd 的 ``broca/`` 抢先。
+    """
+    # 构造一个"陷阱"目录：包含一个标记用的假 broca 包
+    fake_ws = tmp_path / "fake_workspace"
+    fake_broca = fake_ws / "broca"
+    fake_broca.mkdir(parents=True)
+    (fake_broca / "__init__.py").write_text(
+        "SHADOWED = True  # if this is imported, cwd leaked into sys.path",
+        encoding="utf-8",
+    )
+
+    env = build_runner_env()
+
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "\n".join([
+                "import sys",
+                "assert sys.path[0] not in ('', '.'), "
+                "f'cwd leaked into sys.path[0]: {sys.path[0]!r}'",
+                "import broca",
+                "assert not hasattr(broca, 'SHADOWED'), "
+                "'import broca was shadowed by cwd'",
+                "import pathlib",
+                "p = pathlib.Path(broca.__file__).resolve()",
+                "print(p)",
+            ]),
+        ],
+        capture_output=True,
+        text=True,
+        cwd=str(fake_ws),
+        env=env,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        f"PYTHONSAFEPATH 未生效，cwd 中的 broca/ 劫持了 import\n"
+        f"stderr: {result.stderr}"
+    )
+    imported = pathlib.Path(result.stdout.strip()).resolve()
+    assert repo_root().resolve() in imported.parents, (
+        f"import broca 未解析到仓库根: {imported}"
+    )

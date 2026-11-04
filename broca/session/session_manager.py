@@ -157,6 +157,7 @@ class SQLSessionManager(SessionManagerABC):
         agent_id: str | None,
         message_id: str | None = None,
         data: Dict[str, Any] | None = None,
+        strict: bool = False,
     ) -> bool:
         """
         保存消息到数据库
@@ -169,9 +170,10 @@ class SQLSessionManager(SessionManagerABC):
             agent_id: 关联的agent ID
             message_id: 可选的消息ID
             data: 额外的数据字段
+            strict: 若为 True，持久化失败时抛出 SessionError 而非静默返回 False
 
         Returns:
-            保存的消息数据字典
+            True if saved, False otherwise
         """
 
         if not self.session_id:
@@ -206,6 +208,8 @@ class SQLSessionManager(SessionManagerABC):
             return message is not None
 
         except Exception as e:
+            if strict:
+                raise SessionError(f"持久化操作失败: {e}", cause=e) from e
             logger.error(f"Failed to save message: {e}")
             return False
 
@@ -245,6 +249,7 @@ class SQLSessionManager(SessionManagerABC):
         self,
         agent_id: str,
         description: str | None = None,
+        strict: bool = False,
     ) -> str | None:
         """
         开始新的对话轮次
@@ -252,6 +257,7 @@ class SQLSessionManager(SessionManagerABC):
         Args:
             agent_id: 关联的agent ID
             description: 可选的turn描述
+            strict: 若为 True，持久化失败时抛出 SessionError 而非静默返回 None
 
         Returns:
             新创建的turn ID
@@ -300,6 +306,8 @@ class SQLSessionManager(SessionManagerABC):
             return turn_id
 
         except Exception as e:
+            if strict:
+                raise SessionError(f"持久化操作失败: {e}", cause=e) from e
             logger.error(f"Failed to start turn: {e}")
             return None
 

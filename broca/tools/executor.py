@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import logging
 from typing import Any, Sequence
 
 from broca.components.communicator import Communicator
@@ -35,13 +34,11 @@ from broca.components.tool_executor import (
     ToolExecutor,
 )
 from broca.errors import BrocaError, ToolError
+from broca.logging_config import get_logger
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
-
-logger = logging.getLogger(__name__)
-
-# Read-only tool set — kept in sync with ToolManager.READONLY_TOOLS
-# (imported lazily to avoid circular imports at module level).
 from broca.tools.tool_manager import ToolManager
+
+logger = get_logger(__name__)
 
 _READONLY_TOOLS = ToolManager.READONLY_TOOLS
 
@@ -210,10 +207,16 @@ class DefaultToolExecutor(ToolExecutor):
 
         # ── #3.5: Content-aware pre-check (e.g. bash dangerous command) ──
         if tool is not None:
-            pre_check_fn = getattr(tool, "pre_execute_check", None)
-            pre_check_msg = (
-                pre_check_fn(arguments, context) if pre_check_fn else None
-            )
+            # Use cached result from parallel partitioning if available
+            pre_check_msg = None
+            if context.pre_check_cache:
+                pre_check_msg = context.pre_check_cache.get(tool_call_id)
+            if pre_check_msg is None:
+                # Cache miss (serial execution path has no partitioning phase)
+                pre_check_fn = getattr(tool, "pre_execute_check", None)
+                pre_check_msg = (
+                    pre_check_fn(arguments, context) if pre_check_fn else None
+                )
             if pre_check_msg:
                 granted = await self._permission_provider.request_permission(
                     pre_check_msg

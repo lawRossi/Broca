@@ -20,17 +20,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import os
 import signal
 import sys
 import threading
 import time
-from logging.handlers import TimedRotatingFileHandler
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
 # AgentFactory is now accessed via ComponentRegistry (broca.components)
 from broca.errors import BrocaError, ValidationError
+from broca.logging_config import get_logger, init_logging
 from broca.session_runner.backpressure import (
     DEFAULT_QUEUE_SIZE,
     DroppedEvents,
@@ -55,42 +54,7 @@ from broca.session_runner.protocol import MessageRouter, handles
 if TYPE_CHECKING:  # pragma: no cover - 仅用于类型检查
     from broca.components.agent_factory import AgentFactory
 
-logger = logging.getLogger(__name__)
-
-
-# runner 日志保留天数（配合 when="midnight"）
-LOG_BACKUP_DAYS = 7
-
-
-def build_file_handler(log_file: str) -> logging.Handler:
-    """构造 runner 日志 handler：按天轮转，保留 7 天。
-
-    历史问题（P1-7）：此前用 ``logging.FileHandler`` + 带日期后缀的文件名，
-    看似「每天一个文件」，但子进程是长驻的 —— 跨天后 handler 仍指向旧文件，
-    实际表现是「跨天不轮转」，且没有任何清理机制，日志无限膨胀。
-    改用 ``TimedRotatingFileHandler`` 后，父进程只需给固定文件名（``runner.log``），
-    轮转与保留完全由 handler 负责。
-    """
-    return TimedRotatingFileHandler(
-        log_file, when="midnight", backupCount=LOG_BACKUP_DAYS, encoding="utf-8"
-    )
-
-
-def setup_logging(log_file: Optional[str] = None, level: str = "INFO") -> None:
-    """配置日志（stderr + 可选的按天轮转文件）"""
-    handlers: list[logging.Handler] = [logging.StreamHandler(sys.stderr)]
-    if log_file:
-        # dirname 可能为空（只给了文件名）→ 跳过 makedirs
-        log_dir = os.path.dirname(log_file)
-        if log_dir:
-            os.makedirs(log_dir, exist_ok=True)
-        handlers.append(build_file_handler(log_file))
-
-    logging.basicConfig(
-        level=getattr(logging, level.upper(), logging.INFO),
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        handlers=handlers,
-    )
+logger = get_logger(__name__)
 
 
 def parse_args() -> argparse.Namespace:
@@ -760,13 +724,16 @@ def main() -> None:
     """Runner 进程入口"""
     args = parse_args()
 
+    # 兜底：手动 `python -m broca.session_runner.runner` 启动时环境变量可能缺失
+    os.environ.setdefault("BROCA_RUNNER_CHILD", "1")
+
     # 尽早初始化配置（必须在其他 broca 模块使用前）
     if args.config:
         from broca.configs import get_configs
 
         get_configs(config_path=args.config)
 
-    setup_logging(args.log_file, args.log_level)
+    init_logging(log_file=args.log_file, log_level=args.log_level)
 
     logger.info(
         "Session Runner starting - session_id=%s workspace=%s config=%s",

@@ -15,7 +15,19 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+import logging
+from unittest.mock import patch
+
 from broca.session_runner.events import TaskSet
+
+
+@pytest.fixture(autouse=True)
+def _stdlib_logger():
+    """确保 caplog 可捕获 events 模块的日志。"""
+    stdlib_logger = logging.getLogger("broca.session_runner.events")
+    with patch("broca.session_runner.events.logger", stdlib_logger):
+        yield stdlib_logger
+
 
 SESSION_ROOT = pathlib.Path(__file__).resolve().parents[1] / "session_runner"
 

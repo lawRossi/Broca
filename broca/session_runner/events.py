@@ -12,12 +12,12 @@ Phase 2 Task 2.5 只落地 ``TaskSet``（fire-and-forget 任务的唯一入口�
 from __future__ import annotations
 
 import asyncio
-import logging
 from typing import Any, Callable, Coroutine, Dict, List, Optional, Set
 
 from broca.session_runner.models import IPCMessageType
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class TaskSet:

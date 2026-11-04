@@ -32,11 +32,11 @@
 from __future__ import annotations
 
 import asyncio
-import logging
 from dataclasses import dataclass
 from typing import Any
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # 队列默认上限（可被 execution.runner_ipc_queue_size 覆盖）
 DEFAULT_QUEUE_SIZE = 1000

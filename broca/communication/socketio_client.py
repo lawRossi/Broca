@@ -8,7 +8,7 @@ Supports browser, command-line, VSCode plugin, and browser plugin clients.
 import asyncio
 import json
 from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from socketio import AsyncClient
 
@@ -18,6 +18,9 @@ from broca.session.models import Message, MessageProtocol, MessageRole, MessageT
 from broca.components.communicator import Communicator
 
 logger = get_logger(__name__)
+
+#: Default timeout (seconds) before an unacknowledged message callback is auto-cleanuped.
+MESSAGE_CALLBACK_TIMEOUT: float = 120.0
 
 
 @dataclass
@@ -41,14 +44,21 @@ class _MessageDispatcher:
     def __init__(self, trigger_event: Callable, get_connection_info: Callable):
         self._trigger = trigger_event
         self._get_info = get_connection_info
+        # NOTE: SUBSCRIBE/UNSUBSCRIBE are NOT in the table — they are handled
+        # by early-return branches in dispatch() with extra side effects.
         self._table: Dict[MessageType, str] = {
             MessageType.USER_MESSAGE: "user_message",
             MessageType.AGENT_RESPONSE: "agent_response",
+            MessageType.AGENT_ERROR: "agent_error",
+            MessageType.AGENT_SYSTEM_MESSAGE: "agent_system_message",
+            MessageType.SYSTEM_MESSAGE: "system_message",
             MessageType.TASK_START: "task_start",
             MessageType.TASK_COMPLETE: "task_complete",
             MessageType.TASK_ERROR: "task_error",
             MessageType.TURN_START: "turn_start",
             MessageType.TURN_END: "turn_end",
+            MessageType.STEP_START: "step_start",
+            MessageType.STEP_END: "step_end",
             MessageType.TOOL_CALL: "tool_call",
             MessageType.COMMAND: "command",
             MessageType.COMMAND_RESULT: "command_result",
@@ -57,9 +67,11 @@ class _MessageDispatcher:
             MessageType.AGENT_QUERY: "agent_query",
             MessageType.USER_ANSWER: "user_answer",
             MessageType.ERROR: "error",
-            MessageType.SUBSCRIBE: "subscribe",
-            MessageType.UNSUBSCRIBE: "unsubscribe",
             MessageType.BROADCAST: "broadcast",
+            MessageType.CONNECT: "connect",
+            MessageType.DISCONNECT: "disconnect",
+            MessageType.PING: "ping",
+            MessageType.PONG: "pong",
         }
 
     async def dispatch(self, message: Message) -> None:
@@ -148,8 +160,9 @@ class SocketIOClient(Communicator):
         # Message dispatcher
         self._dispatcher = _MessageDispatcher(self._trigger_event, self.get_connection_info)
 
-        # Message callbacks
-        self.message_callbacks: Dict[str, Callable] = {}
+        # Message callbacks: message_id -> (callback, registered_at_timestamp)
+        self.message_callbacks: Dict[str, Tuple[Callable, float]] = {}
+        self._callback_cleanup_task: Optional[asyncio.Task] = None
 
         # Connection event for waiting on connection
         self._connect_event = asyncio.Event()
@@ -173,22 +186,18 @@ class SocketIOClient(Communicator):
             # Signal that connection is complete
             self._connect_event.set()
 
-            # Send connection info
-            headers = {
-                "X-Client-Type": self.client_type,
-                "X-Client-ID": self.client_id,
-            }
-            if self.user_id:
-                headers["X-User-ID"] = self.user_id
-
             # Trigger connect event
             await self._trigger_event("connect")
 
-            # Send connection message
-            connect_msg = MessageProtocol.create_user_message(
-                content="Connected to server", sender_id=self.client_id
+            # Send connection message (role=SYSTEM: this is a protocol message, not user input)
+            from broca.session.models import Message, MessageRole
+
+            connect_msg = Message(
+                message_type=MessageType.CONNECT,
+                role=MessageRole.SYSTEM,
+                sender_id=self.client_id,
+                data={"content": "Connected to server"},
             )
-            connect_msg.message_type = MessageType.CONNECT
 
             await self.send_message(connect_msg)
 
@@ -220,7 +229,7 @@ class SocketIOClient(Communicator):
                 await self._dispatcher.dispatch(message)
                 await self._trigger_event("message", message)
                 if message.message_id in self.message_callbacks:
-                    callback = self.message_callbacks.pop(message.message_id)
+                    callback, _ = self.message_callbacks.pop(message.message_id)
                     await callback(message)
             except json.JSONDecodeError as e:
                 logger.error(f"Failed to parse message: {e}")
@@ -247,12 +256,14 @@ class SocketIOClient(Communicator):
 
         Args:
             timeout: Maximum time to wait for connection to be established
+
+        Returns:
+            True if connection established within timeout, False otherwise.
+            Never raises — all failure paths return False.
         """
         if self.connection_info.connected:
             logger.warning("Already connected to server")
             return True
-
-        self._should_reconnect = True
 
         # Clear the connect event before connecting
         self._connect_event.clear()
@@ -274,14 +285,16 @@ class SocketIOClient(Communicator):
             # Wait for the connect event to be triggered
             try:
                 await asyncio.wait_for(self._connect_event.wait(), timeout=timeout)
+                # Start background callback cleanup task
+                self._start_callback_cleanup()
                 return True
             except asyncio.TimeoutError:
                 logger.error(f"Connection timeout after {timeout}s")
-                await self.sio.disconnect()
-                raise CommunicationError(f"Connection timeout after {timeout}s")
+                try:
+                    await self.sio.disconnect()
+                except Exception:
+                    pass
                 return False
-
-            logger.debug(f"Connected to server at {self.server_url}")
 
         except Exception as e:
             logger.error(f"Failed to connect to server: {e}")
@@ -299,6 +312,18 @@ class SocketIOClient(Communicator):
                 await self._reconnect_task
             except asyncio.CancelledError:
                 pass
+
+        # Stop background callback cleanup task
+        if self._callback_cleanup_task:
+            self._callback_cleanup_task.cancel()
+            try:
+                await self._callback_cleanup_task
+            except asyncio.CancelledError:
+                pass
+            self._callback_cleanup_task = None
+
+        # Clear all pending callbacks
+        self.message_callbacks.clear()
 
         if self.connection_info.connected:
             await self.sio.disconnect()
@@ -323,6 +348,30 @@ class SocketIOClient(Communicator):
                 logger.error(f"Reconnection attempt {attempt} failed: {e}")
 
         logger.error("Max reconnection attempts reached")
+
+    def _start_callback_cleanup(self):
+        """Start background task that periodically removes expired callbacks."""
+        if self._callback_cleanup_task is None or self._callback_cleanup_task.done():
+            self._callback_cleanup_task = asyncio.create_task(
+                self._callback_cleanup_loop(), name="callback-cleanup"
+            )
+
+    async def _callback_cleanup_loop(self):
+        """Periodically scan and remove expired message callbacks."""
+        try:
+            while True:
+                await asyncio.sleep(30)
+                now = asyncio.get_event_loop().time()
+                expired = [
+                    mid
+                    for mid, (_, ts) in self.message_callbacks.items()
+                    if now - ts > MESSAGE_CALLBACK_TIMEOUT
+                ]
+                for mid in expired:
+                    self.message_callbacks.pop(mid, None)
+                    logger.debug(f"Cleaned up expired callback for message {mid}")
+        except asyncio.CancelledError:
+            pass
 
     async def send_message(
         self,
@@ -362,16 +411,18 @@ class SocketIOClient(Communicator):
 
         # Register callback if provided
         if callback:
-            self.message_callbacks[message.message_id] = callback
+            self.message_callbacks[message.message_id] = (callback, asyncio.get_event_loop().time())
 
         # Send message with retry logic
         max_retries = 2
+        last_error: Optional[Exception] = None
         for attempt in range(max_retries):
             try:
                 await self.sio.emit("message", MessageProtocol.to_dict(message))
                 logger.debug(f"Sent message: {message}")
                 return message.message_id
             except Exception as e:
+                last_error = e
                 if attempt < max_retries - 1:
                     logger.warning(
                         f"Failed to send message (attempt {attempt + 1}), retrying: {e}"
@@ -382,12 +433,10 @@ class SocketIOClient(Communicator):
                             await self.connect()
                         except Exception as reconnect_error:
                             logger.error(f"Reconnection failed: {reconnect_error}")
-                else:
-                    logger.error(
-                        f"Failed to send message after {max_retries} attempts: {e}"
-                    )
-                    raise
-        return ""
+        logger.error(f"Failed to send message after {max_retries} attempts: {last_error}")
+        raise CommunicationError(
+            f"Failed to send message after {max_retries} attempts: {last_error}"
+        ) from last_error
 
     async def send_user_message(
         self,
@@ -726,15 +775,17 @@ class SocketIOClient(Communicator):
         )
 
         if callback:
-            self.message_callbacks[message.message_id] = callback
+            self.message_callbacks[message.message_id] = (callback, asyncio.get_event_loop().time())
 
         try:
             await self.sio.emit("subscribe", {"subscription": subscription})
             logger.debug(f"Subscribed to {subscription}")
             return message.message_id
+        except CommunicationError:
+            raise
         except Exception as e:
             logger.error(f"Failed to subscribe: {e}")
-            raise
+            raise CommunicationError(f"Failed to subscribe: {e}") from e
 
     async def unsubscribe(
         self, subscription: str, callback: Optional[Callable] = None
@@ -757,15 +808,17 @@ class SocketIOClient(Communicator):
         )
 
         if callback:
-            self.message_callbacks[message.message_id] = callback
+            self.message_callbacks[message.message_id] = (callback, asyncio.get_event_loop().time())
 
         try:
             await self.sio.emit("unsubscribe", {"subscription": subscription})
             logger.debug(f"Unsubscribed from {subscription}")
             return message.message_id
+        except CommunicationError:
+            raise
         except Exception as e:
             logger.error(f"Failed to unsubscribe: {e}")
-            raise
+            raise CommunicationError(f"Failed to unsubscribe: {e}") from e
 
     async def broadcast(
         self,

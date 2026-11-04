@@ -6,9 +6,10 @@ Session Runner Manager
 """
 
 import asyncio
-import logging
 import os
+import shutil
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
@@ -54,8 +55,9 @@ from broca.session_runner.process.reaper import RunnerReaper
 from broca.session_runner.protocol import MessageRouter, handles
 from broca.session_runner.process.registry import RunnerHandle, RunnerRegistry
 from broca.session_runner.repository import RunnerRepository
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # Agent 状态跨 session 批量的聚合窗口（秒）。
 # 心跳每 5s 一次、10 个 session 分散到达；给一个短窗口把同一批心跳
@@ -131,6 +133,8 @@ class IPCSessionRunner(SessionRunnerABC):
             )
             # 日志目录
             self._log_dir = Path.home() / ".broca/logs/runners"
+            # Per-session runner 日志目录 GC
+            self._gc_task: Optional[asyncio.Task] = None
 
             logger.info(
                 "RunnerManager initialized (max_runners=%d, module=%s)",
@@ -159,6 +163,78 @@ class IPCSessionRunner(SessionRunnerABC):
         log_dir = os.path.join(self._log_dir, session_id)
         os.makedirs(log_dir, exist_ok=True)
         return os.path.join(log_dir, "runner.log")
+
+    # ==================== Per-session 日志目录 GC ====================
+
+    async def gc_runner_logs(self, max_age_days: Optional[int] = None) -> int:
+        """清理超过 max_age_days 未修改的 runner 日志目录。
+
+        通过 RunnerRegistry 获取活跃 session 集合，GC 时跳过这些 session 的目录。
+
+        Args:
+            max_age_days: 保留天数，None 时从 ExecutionConfig.runner_log_gc_days 读取。
+
+        Returns:
+            删除的目录数
+        """
+        if max_age_days is None:
+            try:
+                from broca.configs import get_configs
+                max_age_days = int(
+                    getattr(get_configs().execution, "runner_log_gc_days", 30)
+                )
+            except Exception:  # noqa: BLE001
+                max_age_days = 30
+
+        if not self._log_dir.exists():
+            return 0
+
+        active_sessions = set(self._registry.keys())
+        now = time.time()
+        max_age_seconds = max_age_days * 86400
+        removed = 0
+
+        for entry in self._log_dir.iterdir():
+            if not entry.is_dir():
+                continue
+            if entry.name in active_sessions:
+                continue
+            try:
+                mtime = entry.stat().st_mtime
+                if now - mtime > max_age_seconds:
+                    shutil.rmtree(entry, ignore_errors=True)
+                    removed += 1
+            except OSError:
+                continue
+
+        return removed
+
+    def start_gc_loop(self) -> None:
+        """启动 per-session 日志目录的定期 GC 后台任务。"""
+        if self._gc_task is not None and not self._gc_task.done():
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            logger.warning("start_gc_loop called outside event loop, skipping")
+            return
+        self._gc_task = asyncio.create_task(
+            self._runner_log_gc_loop(), name="runner-log-gc"
+        )
+
+    async def _runner_log_gc_loop(self) -> None:
+        """定期清理过期的 runner 日志目录。"""
+        from broca.logging_config import get_gc_interval
+
+        gc_interval = get_gc_interval()
+        while True:
+            await asyncio.sleep(gc_interval)
+            try:
+                removed = await self.gc_runner_logs()
+                if removed:
+                    logger.info("GC: removed %d stale runner log dirs", removed)
+            except Exception as e:
+                logger.warning("GC runner logs error: %s", e)
 
     # ==================== 进程生命周期管理 ====================
 
@@ -209,6 +285,9 @@ class IPCSessionRunner(SessionRunnerABC):
         Raises:
             RunnerManagerError: 启动失败
         """
+        # 确保 per-session 日志目录 GC 循环已启动（幂等：已有 task 时直接返回）
+        self.start_gc_loop()
+
         if kwargs:
             logger.debug(
                 "start_session ignores extra kwargs: %s", sorted(kwargs)
@@ -985,6 +1064,9 @@ class IPCSessionRunner(SessionRunnerABC):
         Returns:
             检查的总记录数
         """
+        # 确保 GC 循环已启动（restore 路径可能先于 start_session 被调用）
+        self.start_gc_loop()
+
         try:
             records = await self._repo.list_active()
         except Exception as e:
@@ -1068,6 +1150,13 @@ class IPCSessionRunner(SessionRunnerABC):
                 logger.error("Failed to stop runner %s: %s", session_id, e)
 
         await self.stop_heartbeat_monitor()
+        # 取消 GC 后台任务
+        if self._gc_task is not None:
+            self._gc_task.cancel()
+            try:
+                await self._gc_task
+            except (asyncio.CancelledError, Exception):
+                pass
         # stop() 内部 join 轮询线程（最长 2s），必须离开事件循环执行
         await asyncio.to_thread(self._poller.stop)
         # 关闭所有 fire-and-forget 任务，避免事件循环关闭时留下

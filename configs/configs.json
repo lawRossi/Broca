@@ -23,7 +23,9 @@
     "runner_heartbeat_timeout": 45,
     "runner_heartbeat_check_interval": 15,
     "runner_status_persist_interval": 60,
-    "runner_ipc_queue_size": 1000
+    "runner_ipc_queue_size": 1000,
+    "runner_log_gc_days": 30,
+    "runner_log_gc_interval": 3600
   },
   "search": {
     "tavily_api_key": "",

@@ -31,6 +31,28 @@ logger = get_logger(__name__)
 
 warnings.filterwarnings("ignore")
 
+# NOTE: 映射顺序有严格要求 — 子类必须排在父类前面，否则 isinstance() 会先匹配父类
+# 异常继承关系（litellm）：
+#   ContextWindowExceededError / ContentPolicyViolationError  →  BadRequestError (litellm)
+#   Timeout (litellm)  →  APITimeoutError  →  APIConnectionError
+#   InvalidRequestError → openai.BadRequestError（与 litellm.BadRequestError 无继承关系）
+_EXCEPTION_MAP: list[tuple[type, ErrorCode, str]] = [
+    # ── BadRequestError 子类（必须在 BadRequestError 之前）──
+    (ContextWindowExceededError, ErrorCode.LLM_CONTEXT_WINDOW_EXCEEDED, "对话超出上下文长度限制"),
+    (ContentPolicyViolationError, ErrorCode.LLM_ERROR, "LLM 内容安全策略拒绝"),
+    # ── APIConnectionError 子类（必须在 APIConnectionError 之前）──
+    (Timeout, ErrorCode.LLM_TIMEOUT, "LLM 请求超时"),
+    # ── 独立异常（无继承冲突）──
+    (AuthenticationError, ErrorCode.LLM_AUTH_ERROR, "API Key 认证失败"),
+    (BudgetExceededError, ErrorCode.LLM_QUOTA_EXCEEDED, "API 额度不足"),
+    (RateLimitError, ErrorCode.LLM_RATE_LIMIT, "请求频率过高，触发限流"),
+    (InternalServerError, ErrorCode.LLM_SERVICE_UNAVAILABLE, "LLM 服务暂不可用"),
+    (ServiceUnavailableError, ErrorCode.LLM_SERVICE_UNAVAILABLE, "LLM 服务暂不可用"),
+    (APIConnectionError, ErrorCode.LLM_SERVICE_UNAVAILABLE, "无法连接到 LLM 服务"),
+    # ── 父类（必须在所有子类之后）──
+    (BadRequestError, ErrorCode.LLM_ERROR, "LLM 请求错误"),
+]
+
 
 class LiteLLMClient(LLMClientABC):
     """Default LLM Client implementation using LiteLLM.
@@ -42,9 +64,6 @@ class LiteLLMClient(LLMClientABC):
 
     def __init__(self):
         """Initialize LLM Client"""
-        self.input_tokens_used = 0
-        self.output_tokens_used = 0
-
         # 配置路径从 configs.json 读取
         from broca.configs import resolve_llm_config_path
 
@@ -118,10 +137,12 @@ class LiteLLMClient(LLMClientABC):
                         file_info = f"文件类型：{file_type}\n文件链接：{file_url}"
                         file_info_parts.append(file_info)
                 if file_info_parts:
-                    if raw_input is None:
-                        raw_input = text_content
                     files_section = "\n\n[附件文件]:\n" + "\n".join(file_info_parts)
                     text_content = text_content + files_section
+            # 始终保留原始文本（不含文件 section），供前端展示 / 广播使用
+            raw_input = raw_input if raw_input is not None else (
+                message.data.get("content", "") if message.data else ""
+            )
         elif message.message_type == MessageType.TASK_START:
             text_content = str(message.data.get("task_description") or "")
         elif message.message_type == MessageType.TASK_COMPLETE:
@@ -186,120 +207,72 @@ class LiteLLMClient(LLMClientABC):
             async for chunk in response:
                 async for result in self._process_chunk(chunk):
                     yield result
-        except AuthenticationError as e:
-            raise LLMError(
-                message=f"API Key 认证失败 (provider: {provider}): {e}",
-                error_code=ErrorCode.LLM_AUTH_ERROR,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
-        except BudgetExceededError as e:
-            raise LLMError(
-                message=f"API 额度不足 (provider: {provider}): {e}",
-                error_code=ErrorCode.LLM_QUOTA_EXCEEDED,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
-        except RateLimitError as e:
-            raise LLMError(
-                message=f"请求频率过高，触发限流 (provider: {provider}): {e}",
-                error_code=ErrorCode.LLM_RATE_LIMIT,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
-        except ContextWindowExceededError as e:
-            raise LLMError(
-                message=f"对话超出上下文长度限制 (provider: {provider}, model: {model_name}): {e}",
-                error_code=ErrorCode.LLM_CONTEXT_WINDOW_EXCEEDED,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
-        except (InternalServerError, ServiceUnavailableError) as e:
-            raise LLMError(
-                message=f"LLM 服务暂不可用 (provider: {provider}): {e}",
-                error_code=ErrorCode.LLM_SERVICE_UNAVAILABLE,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
-        except Timeout as e:
-            raise LLMError(
-                message=f"LLM 请求超时 (provider: {provider}): {e}",
-                error_code=ErrorCode.LLM_TIMEOUT,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
         except InvalidRequestError as e:
-            # 模型不存在/不可用等请求参数错误
-            error_msg = str(e).lower()
-            if "model" in error_msg and (
-                "not found" in error_msg
-                or "not exist" in error_msg
-                or "not support" in error_msg
-                or "does not exist" in error_msg
-            ):
-                raise LLMError(
-                    message=f"模型不可用 (provider: {provider}, model: {model_name}): {e}",
-                    error_code=ErrorCode.LLM_INVALID_MODEL,
-                    details={"provider": provider, "model": model_name},
-                    cause=e,
-                )
-            raise LLMError(
-                message=f"LLM 请求参数错误 (provider: {provider}): {e}",
-                error_code=ErrorCode.LLM_ERROR,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
-        except APIConnectionError as e:
-            raise LLMError(
-                message=f"无法连接到 LLM 服务 (provider: {provider}): {e}",
-                error_code=ErrorCode.LLM_SERVICE_UNAVAILABLE,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
-        except ContentPolicyViolationError as e:
-            raise LLMError(
-                message=f"LLM 内容安全策略拒绝请求 (provider: {provider}): {e}",
-                error_code=ErrorCode.LLM_ERROR,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
-        except BadRequestError as e:
-            # 某些提供商（如 OpenAI）对无效 API Key 返回 400 BadRequest 而非 401
-            error_msg_lower = str(e).lower()
-            if (
-                "auth" in error_msg_lower
-                or "api key" in error_msg_lower
-                or "invalid" in error_msg_lower
-            ):
-                raise LLMError(
-                    message=f"API Key 认证失败 (provider: {provider}): {e}",
-                    error_code=ErrorCode.LLM_AUTH_ERROR,
-                    details={"provider": provider, "model": model_name},
-                    cause=e,
-                )
-            raise LLMError(
-                message=f"LLM 请求错误 (provider: {provider}): {e}",
-                error_code=ErrorCode.LLM_ERROR,
-                details={"provider": provider, "model": model_name},
-                cause=e,
-            )
+            # InvalidRequestError 继承自 openai.BadRequestError（非 litellm.BadRequestError），
+            # 不会被 except Exception 中的 BadRequestError isinstance 匹配，需独立处理
+            raise self._classify_request_error(e, provider, model_name, "LLM 请求参数错误") from e
         except Exception as e:
-            # 兜底：所有未归类异常统一包装为 LLMError，避免原始异常被 execute_step 的重试逻辑吞掉
+            for exc_type, code, prefix in _EXCEPTION_MAP:
+                if isinstance(e, exc_type):
+                    # BadRequestError 需要子分类（auth key 检测）
+                    if exc_type is BadRequestError:
+                        raise self._classify_request_error(e, provider, model_name, prefix) from e
+                    raise LLMError(
+                        message=f"{prefix} (provider: {provider}, model: {model_name}): {e}",
+                        error_code=code,
+                        details={"provider": provider, "model": model_name},
+                        cause=e,
+                    ) from e
+            # 兜底：所有未归类异常统一包装为 LLMError
             raise LLMError(
                 message=f"LLM 请求失败 (provider: {provider}, model: {model_name}): {e}",
                 error_code=ErrorCode.LLM_ERROR,
                 details={"provider": provider, "model": model_name},
                 cause=e,
+            ) from e
+
+    def _classify_request_error(
+        self, e: Exception, provider: str, model_name: str, prefix: str
+    ) -> LLMError:
+        """子分类 InvalidRequestError / BadRequestError 为更精确的 ErrorCode."""
+        error_msg = str(e).lower()
+        # InvalidRequestError: 模型不存在/不可用
+        if isinstance(e, InvalidRequestError) and "model" in error_msg and (
+            "not found" in error_msg
+            or "not exist" in error_msg
+            or "not support" in error_msg
+            or "does not exist" in error_msg
+        ):
+            return LLMError(
+                message=f"模型不可用 (provider: {provider}, model: {model_name}): {e}",
+                error_code=ErrorCode.LLM_INVALID_MODEL,
+                details={"provider": provider, "model": model_name},
+                cause=e,
             )
+        # BadRequestError: 某些提供商对无效 API Key 返回 400 而非 401
+        if isinstance(e, BadRequestError) and (
+            "auth" in error_msg
+            or "api key" in error_msg
+            or "invalid" in error_msg
+        ):
+            return LLMError(
+                message=f"API Key 认证失败 (provider: {provider}): {e}",
+                error_code=ErrorCode.LLM_AUTH_ERROR,
+                details={"provider": provider, "model": model_name},
+                cause=e,
+            )
+        # 通用 fallback
+        return LLMError(
+            message=f"{prefix} (provider: {provider}): {e}",
+            error_code=ErrorCode.LLM_ERROR,
+            details={"provider": provider, "model": model_name},
+            cause=e,
+        )
 
     async def _process_chunk(self, chunk) -> AsyncGenerator[dict, None]:
         if hasattr(chunk, "usage") and chunk.usage:
-            self.input_tokens_used = chunk.usage.prompt_tokens
-            self.output_tokens_used = chunk.usage.completion_tokens
             # Yield a usage event so strategies can read tokens from the
-            # stream itself instead of shared instance state (review 2.6:
-            # concurrent agents sharing a singleton LLMClient could otherwise
-            # read cross-contaminated values).
+            # stream itself instead of shared instance state.
             yield {
                 "type": "usage",
                 "data": {

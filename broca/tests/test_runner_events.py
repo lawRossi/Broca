@@ -14,6 +14,17 @@ import pytest
 from broca.session_runner.events import EventBus
 from broca.session_runner.models import IPCMessageType
 
+import logging
+from unittest.mock import patch
+
+
+@pytest.fixture(autouse=True)
+def _stdlib_logger():
+    """确保 caplog 可捕获 events 模块的日志。"""
+    stdlib_logger = logging.getLogger("broca.session_runner.events")
+    with patch("broca.session_runner.events.logger", stdlib_logger):
+        yield stdlib_logger
+
 
 def _make_msg(msg_type=IPCMessageType.EVT_CREW_PROGRESS, payload=None):
     msg = MagicMock()

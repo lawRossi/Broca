@@ -146,7 +146,7 @@ class Context:
         agent_id = self.agent_id
         # agent_id 为空时回退到旧 session 级路径，保证测试兼容
         if agent_id:
-            session_memeory_path = (
+            session_memory_path = (
                 Path(workspace)
                 / ".broca"
                 / (session_id or "")
@@ -154,11 +154,11 @@ class Context:
                 / "session-memory.md"
             )
         else:
-            session_memeory_path = (
+            session_memory_path = (
                 Path(workspace) / ".broca" / (session_id or "") / "session-memory.md"
             )
-        if session_memeory_path.exists():
-            return session_memeory_path.read_text(encoding="utf-8").strip()
+        if session_memory_path.exists():
+            return session_memory_path.read_text(encoding="utf-8").strip()
         return ""
 
     def _load_memory_index(self) -> str:

@@ -4,11 +4,11 @@ Shell 命令安全检测模块
 提供危险的 Shell 命令检测功能
 """
 
-import logging
 import re
 from typing import List, Tuple
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 # ===========================================================================
 # 危险命令正则模式（通用版）

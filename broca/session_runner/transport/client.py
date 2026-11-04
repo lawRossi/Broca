@@ -8,14 +8,14 @@
 
 from __future__ import annotations
 
-import logging
 import time
 
 from multiprocessing.connection import Client
 
 from broca.session_runner.transport.base import IPCConnectionError, _BaseIPC
+from broca.logging_config import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class IPCClient(_BaseIPC):

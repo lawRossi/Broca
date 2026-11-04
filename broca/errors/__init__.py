@@ -22,6 +22,7 @@ Broca 统一错误处理系统
 from broca.errors.exceptions import (
     BrocaError,
     BrocaPermissionError,
+    ComponentError,
     CommunicationError,
     LLMError,
     OrchestrationError,
@@ -44,6 +45,7 @@ __all__ = [
     "OrchestrationError",
     "ValidationError",
     "BrocaPermissionError",
+    "ComponentError",
     # Error types
     "ErrorCode",
     "ErrorInfo",

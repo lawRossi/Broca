@@ -748,6 +748,79 @@ const handleFileChange = async (event: Event) => {
   await uploadPendingFiles()
 }
 
+// 处理粘贴事件 — 从剪贴板提取文件/图片
+const handlePaste = (event: ClipboardEvent) => {
+  const items = event.clipboardData?.items
+  if (!items) return
+
+  const files: File[] = []
+  let hasStringItem = false
+
+  for (let i = 0; i < items.length; i++) {
+    const item = items[i]
+    if (item.kind === 'file') {
+      const file = item.getAsFile()
+      if (file) {
+        // 截图粘贴的文件名可能为空或 "image.png"，生成有意义的名称
+        if (!file.name || file.name === 'image.png') {
+          const ext = file.type.split('/')[1] || 'png'
+          files.push(new File([file], `pasted-${Date.now()}.${ext}`, { type: file.type }))
+        } else {
+          files.push(file)
+        }
+      }
+    } else if (item.kind === 'string') {
+      hasStringItem = true
+    }
+  }
+
+  if (files.length === 0) return
+
+  // 剪贴板只有文件（如截图）时，阻止默认行为，避免向 textarea 插入无效内容
+  if (!hasStringItem) {
+    event.preventDefault()
+  }
+
+  files.forEach((file) => {
+    pendingFiles.value.push({
+      file,
+      id: Math.random().toString(36).substr(2, 9),
+      status: 'pending',
+      progress: 0,
+    })
+  })
+
+  uploadPendingFiles()
+}
+
+// 处理拖放 — 将文件拖入输入区域自动上传
+const handleDrop = (event: DragEvent) => {
+  event.preventDefault()
+  event.stopPropagation()
+
+  if (!chatStore.runnerAlive) return
+
+  const droppedFiles = event.dataTransfer?.files
+  if (!droppedFiles || droppedFiles.length === 0) return
+
+  Array.from(droppedFiles).forEach((file) => {
+    pendingFiles.value.push({
+      file,
+      id: Math.random().toString(36).substr(2, 9),
+      status: 'pending',
+      progress: 0,
+    })
+  })
+
+  uploadPendingFiles()
+}
+
+// 阻止默认拖放行为，允许在输入区域放置文件
+const handleDragOver = (event: DragEvent) => {
+  event.preventDefault()
+  event.stopPropagation()
+}
+
 // 移除待上传文件
 const removePendingFile = (id: string) => {
   const index = pendingFiles.value.findIndex((f) => f.id === id)
@@ -953,7 +1026,7 @@ const handleSendMessage = async () => {
 </script>
 
 <template>
-  <div class="bg-white rounded-lg border shadow-sm p-1 sm:p-2 relative">
+  <div class="bg-white rounded-lg border shadow-sm p-1 sm:p-2 relative" @drop="handleDrop" @dragover="handleDragOver">
     <!-- 目标agent提示 -->
     <div class="mb-2 text-xs text-gray-500 flex items-center gap-1">
       <span>发送给:</span>
@@ -1031,6 +1104,7 @@ const handleSendMessage = async () => {
           :disabled="!chatStore.runnerAlive || isUploading"
           size="default"
           @keydown="handleKeyDown"
+          @paste="handlePaste"
         />
 
         <!-- /command 建议列表 -->

@@ -1,5 +1,6 @@
 import asyncio
 import json
+import os
 import time
 import uuid
 from enum import Enum
@@ -58,6 +59,7 @@ class ToolResult:
         status: ToolStatus,
         content: str,
         extra_context_messages: Optional[list[dict]] = None,
+        error_info=None,
     ):
         self.status = status
         self.content = content
@@ -68,10 +70,15 @@ class ToolResult:
         self.extra_context_messages: list[dict] = (
             extra_context_messages if extra_context_messages is not None else []
         )
+        # Structured error info (ErrorInfo) — set when a BrocaError is caught
+        self.error_info = error_info
 
     def to_dict(self) -> dict:
         # extra_context_messages is NOT part of tool result serialization
-        return {"status": self.status, "content": self.content}
+        d = {"status": self.status, "content": self.content}
+        if self.error_info:
+            d["error_info"] = self.error_info.to_dict()
+        return d
 
 
 class ToolCallContext:
@@ -83,10 +90,21 @@ class ToolCallContext:
         self.namespace: Optional[str] = None
         self.turn_id: Optional[str] = None
         self.agent_id: Optional[str] = None
+        # Runtime-only cache: pre_execute_check results from parallel partitioning.
+        # Keyed by tool_call_id. Does NOT participate in serialization.
+        self.pre_check_cache: Optional[dict] = None
 
 
 class Tool:
+    # Fallback cache dir when workspace is unavailable (relative to CWD).
+    # Prefer the absolute path derived from context.workspace.
     TOOL_RESULT_CACHE_DIR = Path(".broca/tool_result_cache")
+
+    def _get_cache_dir(self, workspace: Optional[str] = None) -> Path:
+        """Return the absolute cache directory path."""
+        if workspace:
+            return Path(workspace) / ".broca" / "tool_result_cache"
+        return Path(os.getcwd()) / ".broca" / "tool_result_cache"
 
     def __init__(self, max_content_length: int = 20000):
         self.max_content_length = max_content_length
@@ -113,19 +131,23 @@ class Tool:
             },
         }
 
-    def _post_process_result(self, result: ToolResult) -> ToolResult:
+    def _post_process_result(
+        self, result: ToolResult, workspace: Optional[str] = None
+    ) -> ToolResult:
         if len(result.content) > self.max_content_length:
             content = result.content
+            cache_file = None
             if self.name != "read_file":
+                cache_dir = self._get_cache_dir(workspace)
                 cleanup_tool_result_cache()
-                self.TOOL_RESULT_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-                cache_file = self.TOOL_RESULT_CACHE_DIR / (uuid.uuid4().hex + ".txt")
+                cache_dir.mkdir(parents=True, exist_ok=True)
+                cache_file = cache_dir / (uuid.uuid4().hex + ".txt")
                 with open(cache_file, "w") as f:
                     f.write(content)
             half_length = self.max_content_length // 2
             content = content[:half_length] + "..." + content[-half_length:]
             content += "\n**Notice**: The output is too long and has been truncated in the middle."
-            if self.name != "read_file":
+            if cache_file:
                 content += f" The full output is saved to {cache_file}."
 
             result.content = content
@@ -238,13 +260,15 @@ class Tool:
 
         try:
             result = await self._execute(args_dict, context)
-            return self._post_process_result(result)
+            return self._post_process_result(result, workspace=context.workspace)
         except asyncio.CancelledError:
             raise
         except BrocaError as e:
             logger.error(f"Tool {self.name} error: {e}")
             return ToolResult(
-                status=ToolStatus.ERROR, content=e.to_user_message()
+                status=ToolStatus.ERROR,
+                content=e.to_user_message(),
+                error_info=e.info,  # 保留结构化错误信息
             )
         except Exception as e:
             logger.error(f"Error executing tool {self.name}: {e}")
@@ -260,6 +284,11 @@ class Tool:
         Called by the executor BEFORE tool execution begins.  Override in
         subclasses that need to inspect the arguments and request user
         permission for dangerous operations.
+
+        **Contract**: This method MUST be idempotent and side-effect-free.
+        It may be called multiple times for the same arguments (e.g. once
+        during parallel partitioning and once during execution).
+        Implementations should cache results internally if expensive.
 
         Returns:
             A permission prompt message if user approval is required before

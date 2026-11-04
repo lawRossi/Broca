@@ -295,4 +295,116 @@ class TestResetSessionMemory:
         assert not snapshot.exists()
 
 
+# ---------------------------------------------------------------------------
+# Regression: sub-agent must be non-interactive (Bug: sub-agent events
+# polluted main-agent turn cards in concise mode)
+# ---------------------------------------------------------------------------
+
+
+class TestSubAgentInteractiveDisabled:
+    """Verify the session-memory sub-agent is created with interactive=False.
+
+    Regression for: sub-agent's tool_call/agent_response events leaked to the
+    frontend and appeared in the main agent's turn card.
+    """
+
+    @pytest.mark.asyncio
+    async def test_new_sub_agent_config_has_interactive_false(self, tmp_path):
+        """First-time creation sets interactive=False in agent_config."""
+        compressor = _init_compressor(tmp_path)
+        cc_ctx = _make_cc_ctx()
+
+        # Mock: no existing agent config → triggers creation path
+        cc_ctx.session_manager.get_agent_config = AsyncMock(return_value=None)
+
+        # Mock the agent factory to capture the config
+        mock_sub_agent = MagicMock()
+        mock_sub_agent.running = True
+        mock_sub_agent.config = MagicMock()
+        mock_sub_agent.context = MagicMock()
+        mock_sub_agent.run = AsyncMock()
+
+        from unittest.mock import patch
+
+        with patch(
+            "broca.components.ComponentRegistry.get_instance"
+        ) as mock_registry:
+            mock_agent_factory = MagicMock()
+            mock_agent_factory.create_agent = AsyncMock(return_value=mock_sub_agent)
+            mock_registry.return_value.get.return_value = mock_agent_factory
+
+            # Mock file I/O for _extract verification
+            snapshot_path = Path(compressor.snapshot_memory_path)
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.write_text("original")
+
+            # Make the sub-agent "modify" the file
+            async def fake_run(msg, **kwargs):
+                snapshot_path.write_text("updated content")
+                from broca.loop_engine import ExecutionResult, ExecutionStatus
+                return ExecutionResult(status=ExecutionStatus.COMPLETED)
+
+            mock_sub_agent.run = AsyncMock(side_effect=fake_run)
+
+            # Call _extract (the internal method that creates the sub-agent)
+            old_history = [{"role": "user", "content": "test"}]
+            result = await compressor._extract(old_history, cc_ctx)
+
+        # Verify create_agent was called with interactive=False
+        mock_agent_factory.create_agent.assert_called_once()
+        call_kwargs = mock_agent_factory.create_agent.call_args.kwargs
+        agent_config = call_kwargs["agent_config"]
+        assert agent_config["interactive"] is False
+        assert agent_config["role"] == "session_memory_manager"
+
+    @pytest.mark.asyncio
+    async def test_restored_sub_agent_gets_interactive_false(self, tmp_path):
+        """Existing (restored) sub-agent also gets interactive=False override."""
+        compressor = _init_compressor(tmp_path)
+        cc_ctx = _make_cc_ctx()
+
+        # Mock: existing agent config → triggers restore path
+        existing_config = {
+            "name": "session-memory-agent",
+            "role": "session_memory_manager",
+            "interactive": True,  # old config without the fix
+        }
+        cc_ctx.session_manager.get_agent_config = AsyncMock(
+            return_value=existing_config
+        )
+
+        # Mock the restored sub-agent
+        mock_sub_agent = MagicMock()
+        mock_sub_agent.running = True
+        mock_sub_agent.config = MagicMock()
+        mock_sub_agent.config.interactive = True  # old value
+        mock_sub_agent.context = MagicMock()
+
+        from unittest.mock import patch
+
+        with patch(
+            "broca.components.ComponentRegistry.get_instance"
+        ) as mock_registry:
+            mock_agent_factory = MagicMock()
+            mock_agent_factory.get_agent.return_value = mock_sub_agent
+            mock_registry.return_value.get.return_value = mock_agent_factory
+
+            snapshot_path = Path(compressor.snapshot_memory_path)
+            snapshot_path.parent.mkdir(parents=True, exist_ok=True)
+            snapshot_path.write_text("original")
+
+            async def fake_run(msg, **kwargs):
+                snapshot_path.write_text("updated")
+                from broca.loop_engine import ExecutionResult, ExecutionStatus
+                return ExecutionResult(status=ExecutionStatus.COMPLETED)
+
+            mock_sub_agent.run = AsyncMock(side_effect=fake_run)
+
+            old_history = [{"role": "user", "content": "test"}]
+            await compressor._extract(old_history, cc_ctx)
+
+        # The restored agent's config should be overridden to interactive=False
+        assert mock_sub_agent.config.interactive is False
+
+
 from pathlib import Path
