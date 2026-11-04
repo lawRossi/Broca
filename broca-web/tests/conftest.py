@@ -155,7 +155,7 @@ def mock_db_session() -> AsyncMock:
 def mock_runner_manager() -> MagicMock:
     """Create a mock RunnerManager."""
     manager = MagicMock()
-    manager.get_session_status = MagicMock(return_value={"status": "running", "pid": 12345})
+    manager.get_status = MagicMock(return_value={"status": "running", "pid": 12345})
     manager.get_stats = MagicMock(return_value={"total_runners": 1, "active_runners": 1})
     manager.start_session = AsyncMock()
     manager.stop_session = AsyncMock(return_value=True)

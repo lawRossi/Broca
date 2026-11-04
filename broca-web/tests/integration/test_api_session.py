@@ -25,7 +25,8 @@ class TestCreateSessionAPI:
         ):
             mock_factory = MagicMock()
             mock_agent_factory_cls.return_value = mock_factory
-            mock_factory.init_session_agents = AsyncMock(
+            # 实现已从 init_session_agents 演进为 create_session_records
+            mock_factory.create_session_records = AsyncMock(
                 return_value=([MagicMock()], "test-session-001")
             )
 
@@ -99,7 +100,7 @@ class TestListSessionsAPI:
             mock_get_session_service.return_value = mock_session_svc
 
             mock_runner_manager = MagicMock()
-            mock_runner_manager.get_session_status.return_value = {"status": "running"}
+            mock_runner_manager.get_status.return_value = {"status": "running"}
             mock_runner_manager_cls.return_value = mock_runner_manager
 
             response = await async_client.get(
@@ -125,7 +126,7 @@ class TestListSessionsAPI:
             mock_get_session_service.return_value = mock_session_svc
 
             mock_runner_manager = MagicMock()
-            mock_runner_manager.get_session_status.return_value = {"status": "running"}
+            mock_runner_manager.get_status.return_value = {"status": "running"}
             mock_runner_manager_cls.return_value = mock_runner_manager
 
             # Search with matching keyword
@@ -159,7 +160,7 @@ class TestGetSessionAPI:
             mock_get_session_service.return_value = mock_session_svc
 
             mock_runner_manager = MagicMock()
-            mock_runner_manager.get_session_status.return_value = {"status": "running"}
+            mock_runner_manager.get_status.return_value = {"status": "running"}
             mock_runner_manager_cls.return_value = mock_runner_manager
 
             response = await async_client.get(
@@ -236,6 +237,10 @@ class TestDeleteSessionAPI:
         with (
             patch("app.api.session.get_session_service") as mock_get_session_service,
             patch("app.api.session.RunnerManager") as mock_runner_manager_cls,
+            patch("broca.session.database.db_manager") as mock_db_manager,
+            patch(
+                "broca.session.cleanup_service.SessionCleanupService"
+            ) as mock_cleanup_cls,
         ):
             mock_session_svc = MagicMock()
             mock_session_svc.delete_batch = AsyncMock(return_value=2)
@@ -244,6 +249,20 @@ class TestDeleteSessionAPI:
             mock_runner_manager = MagicMock()
             mock_runner_manager.stop_session = AsyncMock(return_value=True)
             mock_runner_manager_cls.return_value = mock_runner_manager
+
+            # 批量查询 workspace 用的 DB 会话
+            mock_db_session = MagicMock()
+            mock_db_session.exec = AsyncMock(
+                return_value=MagicMock(all=MagicMock(return_value=[]))
+            )
+            mock_db_manager.get_session.return_value.__aenter__ = AsyncMock(
+                return_value=mock_db_session
+            )
+            mock_db_manager.get_session.return_value.__aexit__ = AsyncMock(
+                return_value=False
+            )
+
+            mock_cleanup_cls.return_value.cleanup_session = AsyncMock()
 
             response = await async_client.request(
                 "DELETE",
@@ -393,7 +412,7 @@ class TestSessionStatsAPI:
             mock_get_message_service.return_value = mock_msg_svc
 
             mock_runner_manager = MagicMock()
-            mock_runner_manager.get_session_status.return_value = {"status": "running"}
+            mock_runner_manager.get_status.return_value = {"status": "running"}
             mock_runner_manager_cls.return_value = mock_runner_manager
 
             response = await async_client.get(

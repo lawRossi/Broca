@@ -30,17 +30,17 @@ router = APIRouter()
 async def _start_runner_background(
     session_id: str,
     workspace: str,
-    provider: str | None = None,
-    model: str | None = None,
 ) -> None:
-    """后台启动 Runner 进程（失败仅记录日志，不影响会话记录）"""
+    """后台启动 Runner 进程（失败仅记录日志，不影响会话记录）
+
+    provider / model 不再传给 runner —— 它从 session 记录读取，
+    不再经 argv 传递（Task 1.2 起 argv 契约已固定）。
+    """
     try:
         runner_manager = RunnerManager()
         await runner_manager.start_session(
             session_id=session_id,
             workspace=workspace,
-            provider=provider,
-            model=model,
         )
         logger.info(f"Runner started for session {session_id}")
     except RunnerManagerError:
@@ -114,8 +114,6 @@ async def create_session(request: CreateSessionRequest) -> ApiResponse:
             _start_runner_background(
                 session_id=session_id,
                 workspace=workspace,
-                provider=request.provider,
-                model=request.model,
             )
         )
         start_runner_task.add_done_callback(lambda task: logger.info(f"Runner started for session {session_id}"))
@@ -175,7 +173,7 @@ async def get_sessions(skip: int = 0, limit: int = 20, keyword: str | None = Non
         session_list = []
         for session in sessions:
             session_dict = session.model_dump()
-            runner_status = runner_manager.get_session_status(session.session_id)
+            runner_status = runner_manager.get_status(session.session_id)
             session_dict["runner_status"] = runner_status["status"] if runner_status else "none"
             session_list.append(session_dict)
 
@@ -196,7 +194,7 @@ async def get_session(session_id: str) -> ApiResponse:
 
         session_dict = session.model_dump()
         runner_manager = RunnerManager()
-        runner_status = runner_manager.get_session_status(session_id)
+        runner_status = runner_manager.get_status(session_id)
         session_dict["runner_status"] = runner_status["status"] if runner_status else "none"
 
         return ApiResponse.success(session_dict, msg="Session retrieved successfully")
@@ -638,7 +636,7 @@ async def get_session_stats(session_id: str) -> ApiResponse:
 
         # 附加工 Runner 信息
         runner_manager = RunnerManager()
-        runner_status = runner_manager.get_session_status(session_id)
+        runner_status = runner_manager.get_status(session_id)
         if runner_status:
             stats["runner"] = runner_status
 

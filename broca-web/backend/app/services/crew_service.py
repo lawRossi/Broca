@@ -144,7 +144,7 @@ class CrewService:
                 )
 
         # 3. 检查 Runner 状态
-        runner_status = self._runner_manager.get_session_status(session_id)
+        runner_status = self._runner_manager.get_status(session_id)
         if not runner_status:
             raise RuntimeError(f"Session {session_id} has no active runner")
 

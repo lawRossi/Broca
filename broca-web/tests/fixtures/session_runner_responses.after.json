@@ -1,0 +1,90 @@
+{
+  "list": {
+    "body": {
+      "code": 200,
+      "data": {
+        "available_slots": 9,
+        "by_status": {
+          "alive": 1
+        },
+        "max_concurrent": 10,
+        "runners": [
+          {
+            "error_message": null,
+            "heartbeat_stale": false,
+            "ipc_address": "/tmp/broca_runner_snapshot.sock",
+            "last_heartbeat": "2026-01-01T00:01:00+00:00",
+            "missed_heartbeats": 0,
+            "pid": 4321,
+            "resource_usage": {
+              "cpu_percent": 1.5,
+              "memory_rss": 1024
+            },
+            "restart_count": 0,
+            "session_id": "snapshot-session-0001",
+            "started_at": "2026-01-01T00:00:00+00:00",
+            "status": "alive",
+            "uptime_seconds": 60.0
+          }
+        ],
+        "total_runners": 1
+      },
+      "msg": "Runners retrieved successfully"
+    },
+    "status_code": 200
+  },
+  "restart": {
+    "body": {
+      "code": 200,
+      "data": {
+        "message": "Runner starting",
+        "session_id": "snapshot-session-0001",
+        "status": "starting"
+      },
+      "msg": "Runner is starting"
+    },
+    "status_code": 200
+  },
+  "start": {
+    "body": {
+      "detail": "Not Found"
+    },
+    "status_code": 404
+  },
+  "status": {
+    "body": {
+      "code": 200,
+      "data": {
+        "error_message": null,
+        "heartbeat_stale": false,
+        "ipc_address": "/tmp/broca_runner_snapshot.sock",
+        "last_heartbeat": "2026-01-01T00:01:00+00:00",
+        "missed_heartbeats": 0,
+        "pid": 4321,
+        "resource_usage": {
+          "cpu_percent": 1.5,
+          "memory_rss": 1024
+        },
+        "restart_count": 0,
+        "session_id": "snapshot-session-0001",
+        "started_at": "2026-01-01T00:00:00+00:00",
+        "status": "alive",
+        "uptime_seconds": 60.0
+      },
+      "msg": "Runner status retrieved successfully"
+    },
+    "status_code": 200
+  },
+  "stop": {
+    "body": {
+      "code": 200,
+      "data": {
+        "message": "Runner stopping",
+        "session_id": "snapshot-session-0001",
+        "status": "stopping"
+      },
+      "msg": "Runner is stopping"
+    },
+    "status_code": 200
+  }
+}
