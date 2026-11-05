@@ -51,6 +51,8 @@ interface TurnSummary {
   errorSeverity: string | null
   /** 错误恢复建议 */
   recoveryHint: string | null
+  /** 用户发送的消息附件（图片/文件） */
+  userFiles: Array<{ name: string; url: string; path: string; size: number; type: string }> | null
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -1021,6 +1023,7 @@ export const useChatStore = defineStore('chat', () => {
         startedAt: t.started_at ? new Date(t.started_at).getTime() : Date.now(),
         createdAt: t.created_at || new Date().toISOString(),
         lastMessageId: t.last_message_id || null,
+        userFiles: t.user_files || null,
         changedFiles: t.changed_files
           ? {
               totalAdded: t.changed_files.total_added || 0,
@@ -1192,6 +1195,7 @@ export const useChatStore = defineStore('chat', () => {
       errorMessage: null,
       errorSeverity: null,
       recoveryHint: null,
+      userFiles: null,
     }
 
     turnSummaries.value.push(summary)
@@ -1276,6 +1280,10 @@ export const useChatStore = defineStore('chat', () => {
               }
             }
           }
+        }
+        // 提取用户附件（图片/文件）
+        if (message.data?.files) {
+          turn.userFiles = message.data.files
         }
         turn.lastMessageId = message.message_id
         break

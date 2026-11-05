@@ -252,6 +252,15 @@ export interface ExecutionConfig {
   agent_query_timeout?: number
   tool_execution_mode?: 'parallel' | 'serial'
   max_parallel_tools?: number
+  // Session Runner 运行时参数
+  max_concurrent_runners?: number
+  runner_heartbeat_interval?: number
+  runner_heartbeat_timeout?: number
+  runner_heartbeat_check_interval?: number
+  runner_status_persist_interval?: number
+  runner_ipc_queue_size?: number
+  runner_log_gc_days?: number
+  runner_log_gc_interval?: number
 }
 
 /** 工具权限配置 */

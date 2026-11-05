@@ -9,7 +9,7 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import TYPE_CHECKING, Any, Dict, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Protocol
 
 from broca.components.base import BaseComponent
 
@@ -62,6 +62,23 @@ class ExecutionResult:
         return f"ExecutionResult(status={self.status}, message={self.message})"
 
 
+class MessageSource(Protocol):
+    """Protocol for a source of user messages to be drained mid-step.
+
+    In non-blocking mode, the agent provides a ``MessageSource`` to the
+    engine.  After each step, the engine calls ``drain()`` to pick up any
+    new user messages that arrived while the agent was working.
+    """
+
+    async def drain(self) -> List[Any]:
+        """Non-blockingly return all pending USER_MESSAGEs.
+
+        Returns:
+            A list of ``Message`` instances.  Empty list if the queue is empty.
+        """
+        ...
+
+
 class LoopEngine(BaseComponent, ABC):
     """Execution engine interface.
 
@@ -81,16 +98,22 @@ class LoopEngine(BaseComponent, ABC):
         *,
         allowed_tools: Optional[list[str]] = None,
         namespace: Optional[str] = None,
+        message_source: Optional["MessageSource"] = None,
     ) -> ExecutionResult:
-        """Execute the agent loop with the given message.
+        """Execute the agent loop with the given message(s).
 
         Args:
-            message: The message to process (``Message`` instance or None).
+            message: The message(s) to process.  Can be a single ``Message``,
+                a list of ``Message`` instances, or ``None``.
             max_steps: Maximum number of execution steps.
             from_agent: Whether the message came from another agent.
             allowed_tools: Optional list of tool names that are allowed to be
                 called.  Tools not in this list are skipped with an error.
             namespace: Optional execution namespace (e.g. for sub-agents).
+            message_source: Optional source for mid-step user message injection
+                (non-blocking mode).  When provided, the engine drains it
+                after each step to pick up new user messages that arrived
+                during execution.
 
         Returns:
             ``ExecutionResult`` with status and any result/error info.

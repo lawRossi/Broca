@@ -726,6 +726,7 @@ async def get_session_turns(
                 "final_response": stats["final_response"],
                 "last_message_id": stats.get("last_message_id"),
                 "changed_files": stats.get("changed_files", {}),
+                "user_files": stats.get("user_files"),
             })
 
         turn_list.reverse()

@@ -91,6 +91,9 @@ export interface TurnSummaryData {
   status: string
   // 后端计算的统计数据
   user_message: string | null
+  /** 所有 user 消息（non-blocking 模式下一个 turn 可有多条） */
+  user_messages: string[]
+  user_files?: Array<{ name: string; url: string; path: string; size: number; type: string }> | null
   total_steps: number
   tool_call_stats: Array<{ tool_name: string; count: number }>
   current_file_path: string | null

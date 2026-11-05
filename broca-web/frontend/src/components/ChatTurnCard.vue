@@ -53,6 +53,10 @@ interface TurnSummary {
   errorSeverity: string | null
   /** 错误恢复建议 */
   recoveryHint: string | null
+  /** 用户发送的消息附件 */
+  userFiles: Array<{ name: string; url: string; path: string; size: number; type: string }> | null
+  /** 所有 user 消息（non-blocking 模式下一个 turn 可有多条） */
+  userMessages: string[]
 }
 
 const props = defineProps<{
@@ -64,6 +68,13 @@ const props = defineProps<{
 const showReasoning = ref(false)
 // 悬停显示操作按钮
 const showActions = ref(false)
+// Non-blocking: 显示所有 user 消息（堆叠）
+const displayUserMessages = computed(() => {
+  if (props.turn.userMessages?.length) return props.turn.userMessages
+  if (props.turn.userMessage) return [props.turn.userMessage]
+  return []
+})
+
 // 折叠状态：长回复（超过 25 行）
 const showFullResponse = ref(false)
 const MAX_RESPONSE_LINES = 25
@@ -349,17 +360,42 @@ const handleUndo = async () => {
       </div>
     </div>
 
-    <!-- 用户消息 -->
-    <div v-if="turn.userMessage" class="section-accent accent-user">
+    <!-- 用户消息（non-blocking: 可能有多条堆叠显示） -->
+    <div v-if="displayUserMessages.length > 0 || (turn.userFiles && turn.userFiles.length > 0)" class="section-accent accent-user">
       <div class="flex items-start gap-2 text-xs sm:text-sm text-gray-600">
         <span class="flex-shrink-0">👤</span>
         <div class="flex-1 min-w-0">
-          <div class="user-msg-text" :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }">
-            {{ turn.userMessage }}
+          <!-- 堆叠显示所有 user 消息 -->
+          <div v-for="(msg, idx) in displayUserMessages" :key="idx"
+               class="user-msg-row" :class="{ 'user-msg-row--not-first': idx > 0 }">
+            <div class="user-msg-text" :class="{ 'user-msg-collapsed': isLongUserMessage && idx === 0 && !showFullUserMessage }">
+              {{ msg }}
+            </div>
           </div>
           <button v-if="isLongUserMessage" class="expand-btn" @click="showFullUserMessage = !showFullUserMessage">
             {{ showFullUserMessage ? '收起 ▲' : '展开 ▼' }}
           </button>
+          <!-- 用户附件（累积所有消息的 files） -->
+          <div v-if="turn.userFiles && turn.userFiles.length > 0" class="flex flex-wrap gap-2 mt-1.5 items-center">
+            <template v-for="(file, idx) in turn.userFiles" :key="idx">
+              <!-- 图片：显示缩略图 -->
+              <img
+                v-if="file.type?.startsWith('image/')"
+                :src="file.url"
+                :alt="file.name"
+                class="user-file-thumb"
+                :title="file.name"
+              />
+              <!-- 非图片：chip -->
+              <div
+                v-else
+                class="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-50 border border-gray-200 rounded text-xs text-gray-600"
+              >
+                <span>📄</span>
+                <span class="truncate max-w-[120px]">{{ file.name }}</span>
+              </div>
+            </template>
+          </div>
         </div>
       </div>
     </div>
@@ -1075,6 +1111,30 @@ const handleUndo = async () => {
   height: 3em;
   background: linear-gradient(transparent, var(--card-bg, #ffffff));
   pointer-events: none;
+}
+
+/* ==================== 用户附件缩略图 ==================== */
+.user-file-thumb {
+  max-width: 160px;
+  max-height: 100px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  border: 1px solid var(--border-color, #e0e0e0);
+  background: var(--bg-tertiary, #f6f8fa);
+  cursor: pointer;
+}
+
+.user-file-thumb:hover {
+  opacity: 0.85;
+}
+
+/* ==================== 用户消息堆叠（non-blocking） ==================== */
+.user-msg-row--not-first {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--border-color, #e5e5e5);
 }
 
 /* ==================== 用户消息折叠 ==================== */

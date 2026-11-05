@@ -54,6 +54,10 @@ interface TurnSummary {
   errorSeverity: string | null
   /** 错误恢复建议 */
   recoveryHint: string | null
+  /** 用户发送的消息附件（图片/文件） */
+  userFiles: Array<{ name: string; url: string; path: string; size: number; type: string }> | null
+  /** 所有 user 消息（non-blocking 模式下一个 turn 可有多条） */
+  userMessages: string[]
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -487,6 +491,8 @@ export const useChatStore = defineStore('chat', () => {
   const _turnContentMsgId = new Map<string, string>()
   /** 记录每个 turn 已统计过的 tool_call_id，去重计数 */
   const _turnSeenToolCallIds = new Map<string, Set<string>>()
+  /** 记录每个 turn 已处理过的 user_message message_id，防止 mid-step 广播导致重复 */
+  const _turnSeenUserMessageIds = new Map<string, Set<string>>()
   const updateTurnSummaryOnStepEvent = (message: Message) => {
     const turnId = message.turn_id
     if (!turnId) return
@@ -512,22 +518,38 @@ export const useChatStore = defineStore('chat', () => {
     const turn = turnSummaries.value[idx]
 
     if (message.message_type === 'user_message') {
-      if (!turn.userMessage) {
-        // 优先使用 raw_input（与明细模式 ChatMessageItem 一致）
-        if (message.data?.raw_input !== undefined) {
-          turn.userMessage = String(message.data.raw_input)
-        } else {
-          // data.content 是 json.dumps({"content": "用户消息", ...})
-          const raw = message.data?.content
-          if (raw) {
-            try {
-              const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-              turn.userMessage = parsed?.content || String(parsed)
-            } catch {
-              turn.userMessage = String(raw)
-            }
+      // 去重：同一 message_id 不重复追加（mid-step 广播可能触发第二次）
+      const seenUserIds = _turnSeenUserMessageIds.get(turnId) || new Set()
+      if (seenUserIds.has(message.message_id)) {
+        return
+      }
+      seenUserIds.add(message.message_id)
+      _turnSeenUserMessageIds.set(turnId, seenUserIds)
+
+      // 提取消息文本（追加到 userMessages 数组）
+      let msgText: string | null = null
+      if (message.data?.raw_input !== undefined) {
+        msgText = String(message.data.raw_input)
+      } else {
+        const raw = message.data?.content
+        if (raw) {
+          try {
+            const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
+            msgText = parsed?.content || String(parsed)
+          } catch {
+            msgText = String(raw)
           }
         }
+      }
+      if (msgText !== null) {
+        if (!turn.userMessages) turn.userMessages = []
+        turn.userMessages.push(msgText)
+        turn.userMessage = turn.userMessages[0] // backward compat
+      }
+      // 提取用户附件（累积）
+      if (message.data?.files) {
+        if (!turn.userFiles) turn.userFiles = []
+        turn.userFiles.push(...message.data.files)
       }
       // 记录最后一条消息 ID（用于撤销定位）
       _turnLastResponseMsgId.set(turnId, message.message_id)
@@ -689,6 +711,7 @@ export const useChatStore = defineStore('chat', () => {
       errorMessage: null,
       errorSeverity: null,
       recoveryHint: null,
+      userFiles: null,
     }
 
     turnSummaries.value.push(newSummary)
@@ -733,6 +756,7 @@ export const useChatStore = defineStore('chat', () => {
     _turnLastResponseMsgId.delete(turnId)
     _turnContentMsgId.delete(turnId)
     _turnSeenToolCallIds.delete(turnId)
+    _turnSeenUserMessageIds.delete(turnId)
   }
 
   // 添加消息到列表，处理TOOL_CALL消息的合并
@@ -997,6 +1021,7 @@ export const useChatStore = defineStore('chat', () => {
       activeTurnIndex.value = -1
       _turnLastResponseMsgId.clear()
       _turnSeenToolCallIds.clear()
+      _turnSeenUserMessageIds.clear()
     } else {
       // 注意：不清空 turnSummaries！因为在调用 loadTurnHistory 之前，
       // socket 事件（handleTurnStart/handleTurnEnd）可能已通过 onMessage 向
@@ -1009,6 +1034,7 @@ export const useChatStore = defineStore('chat', () => {
       activeTurnIndex.value = -1
       _turnLastResponseMsgId.clear()
       _turnSeenToolCallIds.clear()
+      _turnSeenUserMessageIds.clear()
     }
 
     try {
@@ -1022,6 +1048,7 @@ export const useChatStore = defineStore('chat', () => {
           agentId: t.agent_id,
           agentName: t.agent_name || 'Unknown',
           userMessage: t.user_message,
+          userMessages: t.user_messages || (t.user_message ? [t.user_message] : []),
           // 使用 ended_at 判断活跃状态：ended_at 为 null 表示 turn 仍在进行中
           // 后端 status 字段只有 turn_end 时才会被设为 'completed'/'error'，
           // 未结束的 turn 该字段为 None（被后端映射为 'completed'），
@@ -1042,6 +1069,7 @@ export const useChatStore = defineStore('chat', () => {
           startedAt: parseISODate(t.started_at) ?? Date.now(),
           createdAt: t.created_at || '',
           lastMessageId: t.last_message_id || null,
+          userFiles: t.user_files || null,
           changedFiles: t.changed_files
             ? {
                 totalAdded: t.changed_files.total_added || 0,
@@ -1576,6 +1604,7 @@ export const useChatStore = defineStore('chat', () => {
     turnSummaries.value = []
     _turnLastResponseMsgId.clear()
     _turnSeenToolCallIds.clear()
+    _turnSeenUserMessageIds.clear()
     displayMode.value = 'concise'
   }
 

@@ -80,6 +80,27 @@ const EXECUTION_FIELDS: {
   { key: 'max_parallel_tools', label: '最大并行工具数', unit: '个', hint: '并行模式下同时执行的工具数量上限', min: 1, step: 1 },
 ]
 
+/**
+ * Session Runner 运行时参数（configs.json 的 execution 分组中的 runner_* 字段）
+ */
+const RUNNER_FIELDS: {
+  key: keyof NonNullable<GeneralConfig['execution']>
+  label: string
+  unit: string
+  hint: string
+  min: number
+  step: number
+}[] = [
+  { key: 'max_concurrent_runners', label: '最大并发 Runner 数', unit: '个', hint: '同时运行的 Session Runner 子进程数量上限', min: 1, step: 1 },
+  { key: 'runner_heartbeat_interval', label: '心跳上报间隔', unit: '秒', hint: 'Runner 子进程向 Manager 上报心跳的间隔', min: 1, step: 1 },
+  { key: 'runner_heartbeat_timeout', label: '心跳超时阈值', unit: '秒', hint: '超过此时间未收到心跳则判定 Runner 已崩溃（应 > 心跳间隔）', min: 2, step: 5 },
+  { key: 'runner_heartbeat_check_interval', label: '心跳巡检间隔', unit: '秒', hint: 'Manager 轮询检查所有 Runner 心跳状态的间隔', min: 1, step: 1 },
+  { key: 'runner_status_persist_interval', label: '状态落库间隔', unit: '秒', hint: '心跳状态写入数据库的最小时间间隔（避免频繁写库）', min: 1, step: 5 },
+  { key: 'runner_ipc_queue_size', label: 'IPC 队列上限', unit: '条', hint: '每个 Session 的 IPC 消息队列上限，队列满时按背压策略丢弃', min: 1, step: 100 },
+  { key: 'runner_log_gc_days', label: '日志保留天数', unit: '天', hint: 'Per-session Runner 日志目录的 GC 保留天数', min: 1, step: 1 },
+  { key: 'runner_log_gc_interval', label: '日志 GC 间隔', unit: '秒', hint: 'Runner 日志目录 GC 任务的轮询间隔', min: 60, step: 300 },
+]
+
 /** ASR 解码方式选项 */
 const DECODING_METHODS = [
   { value: 'modified_beam_search', label: 'Modified Beam Search（推荐，准确率更高）' },
@@ -220,7 +241,7 @@ const validateBeforeSave = (): string | null => {
   // execution 分组：数字型字段须为不小于 min 的数字
   const execution = config.value.execution
   if (execution) {
-    for (const field of EXECUTION_FIELDS) {
+    for (const field of [...EXECUTION_FIELDS, ...RUNNER_FIELDS]) {
       const value = execution[field.key]
       if (value !== undefined && value !== null && (Number.isNaN(Number(value)) || Number(value) < field.min)) {
         return `${field.label} 必须是不小于 ${field.min} 的数字`
@@ -448,6 +469,31 @@ defineExpose({ saveNow, reset })
                   <el-option label="Serial（串行）" value="serial" />
                 </el-select>
                 <p class="mt-1.5 text-xs text-gray-400">工具调用执行方式：parallel 为并行执行（默认），serial 为逐个串行执行</p>
+              </div>
+            </el-form-item>
+          </el-form>
+        </div>
+
+        <!-- Session Runner 配置（execution 分组中的 runner_* 字段） -->
+        <div class="mt-6 border-t border-gray-100 pt-5">
+          <h3 class="text-sm font-medium text-gray-700 mb-1">Session Runner</h3>
+          <p class="text-xs text-gray-400 mb-4">子进程心跳、IPC 背压、日志 GC 等运行参数（configs.json 的 execution 分组，修改后需重启后端生效）</p>
+          <el-form label-width="150px" label-position="left" @submit.prevent>
+            <el-form-item v-for="field in RUNNER_FIELDS" :key="field.key" :label="field.label">
+              <div class="w-full">
+                <div class="flex items-center gap-2">
+                  <el-input-number
+                    :model-value="executionValue(field.key)"
+                    :min="field.min"
+                    :step="field.step"
+                    controls-position="right"
+                    style="width: 180px"
+                    placeholder="留空使用默认"
+                    @update:model-value="(val: number | undefined) => setExecutionValue(field.key, val)"
+                  />
+                  <span class="text-xs text-gray-400 flex-shrink-0">{{ field.unit }}</span>
+                </div>
+                <p class="mt-1.5 text-xs text-gray-400">{{ field.hint }}</p>
               </div>
             </el-form-item>
           </el-form>

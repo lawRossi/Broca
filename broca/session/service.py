@@ -493,6 +493,7 @@ class TurnService(BaseService[Turn]):
         stats: Dict[str, Any] = {
             "is_reverted": True,
             "user_message": None,
+            "user_messages": [],
             "total_steps": 0,
             "tool_call_stats": [],
             "current_file_path": None,
@@ -500,6 +501,7 @@ class TurnService(BaseService[Turn]):
             "final_response": "",
             "last_message_id": None,
             "changed_files": {},
+            "user_files": [],
         }
 
         async with db_manager.get_session() as session:
@@ -578,29 +580,34 @@ class TurnService(BaseService[Turn]):
         # 5. Python 解析（仅对需要的消息）
         for m in content_messages:
             if m.message_type == MessageType.USER_MESSAGE:
-                if stats["user_message"] is None:
-                    raw_input = m.data.get("raw_input") if m.data else None
-                    if raw_input is not None:
-                        stats["user_message"] = str(raw_input)
-                    else:
-                        raw = m.data.get("content") if m.data else None
-                        if raw:
-                            try:
-                                parsed = json.loads(raw) if isinstance(raw, str) else raw
-                                if isinstance(parsed, dict):
-                                    content = parsed.get("content")
-                                    if isinstance(content, list):
-                                        # multimodal: extract text parts
-                                        content = "".join(
-                                            p.get("text", "")
-                                            for p in content
-                                            if isinstance(p, dict) and p.get("type") == "text"
-                                        )
-                                    stats["user_message"] = str(content) if content else str(parsed)
-                                else:
-                                    stats["user_message"] = str(parsed)
-                            except (json.JSONDecodeError, TypeError):
-                                stats["user_message"] = str(raw)
+                # Accumulate all user messages
+                raw_input = m.data.get("raw_input") if m.data else None
+                if raw_input is not None:
+                    stats["user_messages"].append(str(raw_input))
+                else:
+                    raw = m.data.get("content") if m.data else None
+                    if raw:
+                        try:
+                            parsed = json.loads(raw) if isinstance(raw, str) else raw
+                            if isinstance(parsed, dict):
+                                content = parsed.get("content")
+                                if isinstance(content, list):
+                                    # multimodal: extract text parts
+                                    content = "".join(
+                                        p.get("text", "")
+                                        for p in content
+                                        if isinstance(p, dict) and p.get("type") == "text"
+                                    )
+                                stats["user_messages"].append(str(content) if content else str(parsed))
+                            else:
+                                stats["user_messages"].append(str(parsed))
+                        except (json.JSONDecodeError, TypeError):
+                            stats["user_messages"].append(str(raw))
+
+                # 提取用户附件（图片/文件）— extend across all messages
+                files = m.data.get("files") if m.data else None
+                if files and isinstance(files, list) and len(files) > 0:
+                    stats["user_files"].extend(files)
 
             elif m.message_type == MessageType.TOOL_CALL:
                 tool_name = m.data.get("tool_name") if m.data else None
@@ -647,6 +654,9 @@ class TurnService(BaseService[Turn]):
                         else:
                             stats["final_response"] += str(content)
                         stats["_last_agent_msg_id"] = m.message_id
+
+        # Backward compatibility: user_message = first user message
+        stats["user_message"] = stats["user_messages"][0] if stats["user_messages"] else None
 
         return stats
 

@@ -51,6 +51,14 @@ KNOWN_EXECUTION_CONFIG_FIELDS = (
     "agent_query_timeout",
     "tool_execution_mode",
     "max_parallel_tools",
+    "max_concurrent_runners",
+    "runner_heartbeat_interval",
+    "runner_heartbeat_timeout",
+    "runner_heartbeat_check_interval",
+    "runner_status_persist_interval",
+    "runner_ipc_queue_size",
+    "runner_log_gc_days",
+    "runner_log_gc_interval",
 )
 # execution 分组中允许字符串类型的字段（其余字段必须为非负数字）
 _EXECUTION_STRING_FIELDS = frozenset({"tool_execution_mode"})

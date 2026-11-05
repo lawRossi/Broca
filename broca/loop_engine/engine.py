@@ -129,6 +129,9 @@ class DefaultLoopEngine(LoopEngine):
         self._on_chunk_handler: Optional[Any] = None
         self._on_error_handler: Optional[Any] = None
 
+        # Non-blocking mode: message source for mid-step user message injection
+        self._message_source: Optional[Any] = None
+
         # Legacy direct-construction path (unit-test fixtures rely on it)
         if agent_ref is not None:
             self._do_initialize(
@@ -263,15 +266,20 @@ class DefaultLoopEngine(LoopEngine):
         if self._chunk_flush_task and not self._chunk_flush_task.done():
             self._chunk_flush_task.cancel()
             self._chunk_flush_task = None
+        # Clear per-turn message source
+        self._message_source = None
 
     # ==================================================================
     # Turn setup
     # ==================================================================
 
     async def _setup_turn(
-        self, message: Message, from_agent: Optional[bool] = False
+        self, messages: List[Message], from_agent: Optional[bool] = False
     ) -> TurnContext:
-        """Parse the message, open a turn, persist the user message.
+        """Parse messages, open a turn, persist user messages.
+
+        The first message drives turn creation and ``TurnContext``; subsequent
+        messages are appended to context (parse failures are logged and skipped).
 
         Raises:
             SessionError: 带具体原因的会话初始化失败（session 未就绪、
@@ -280,10 +288,12 @@ class DefaultLoopEngine(LoopEngine):
         self.abort_event.clear()
         self._reset_turn_scoped_state()
         try:
+            # --- First message: original single-message path ---
+            first_msg = messages[0]
             user_message = self.llm_client.parse_message(
                 provider=self.config.provider,
                 model=self.config.model,
-                message=message,
+                message=first_msg,
             )
             if not user_message:
                 raise SessionError(
@@ -300,7 +310,7 @@ class DefaultLoopEngine(LoopEngine):
                 )
 
             message_id = await self._save_user_message(
-                user_message, message, turn_id, from_agent or False
+                user_message, first_msg, turn_id, from_agent or False
             )
             if message_id is None:
                 raise SessionError(
@@ -309,14 +319,36 @@ class DefaultLoopEngine(LoopEngine):
                 )
 
             await self.context.add_message(user_message, message_id)
-            data = getattr(message, "data", None) or {}
+
+            # --- Subsequent messages: best-effort (parse failure skips) ---
+            for msg in messages[1:]:
+                try:
+                    parsed = self.llm_client.parse_message(
+                        provider=self.config.provider,
+                        model=self.config.model,
+                        message=msg,
+                    )
+                    if not parsed:
+                        continue
+                    mid = await self._save_user_message(
+                        parsed, msg, turn_id, from_agent or False
+                    )
+                    if mid:
+                        await self.context.add_message(parsed, mid)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to process additional message "
+                        f"{getattr(msg, 'message_id', '?')}: {e}"
+                    )
+
+            data = getattr(first_msg, "data", None) or {}
             return TurnContext(
                 turn_id=turn_id,
                 agent_id=self.agent_id,
                 session_id=self.session_id,
                 user_message=user_message,
                 message_id=message_id,
-                sender_id=getattr(message, "sender_id", None) or "",
+                sender_id=getattr(first_msg, "sender_id", None) or "",
                 files=list(data.get("files") or []),
                 from_agent=bool(from_agent),
                 raw_input=user_message.get("raw_input") or "",
@@ -374,6 +406,58 @@ class DefaultLoopEngine(LoopEngine):
             if not self.session_manager.session_id:
                 await self.session_manager.create_session(workspace=workspace)
             self.session_id = self.session_manager.session_id
+
+    async def _inject_user_message(self, message: Message) -> None:
+        """Parse and persist a mid-step injected user message.
+
+        Called from ``_execute_round`` when a new user message arrives via
+        the message source during non-blocking execution.
+        """
+        user_message = self.llm_client.parse_message(
+            provider=self.config.provider,
+            model=self.config.model,
+            message=message,
+        )
+        if not user_message:
+            logger.warning(
+                f"Failed to parse injected message: "
+                f"{getattr(message, 'message_id', '?')}"
+            )
+            return
+        message_data = dict(message.data) if message.data else {}
+        message_data["from_agent"] = False
+        if user_message.get("raw_input"):
+            message_data["raw_input"] = user_message["raw_input"]
+        message_id = await self.session_manager.save_message(
+            role=MessageRole.USER,
+            content=json.dumps(user_message, ensure_ascii=False),
+            message_type=MessageType.USER_MESSAGE,
+            turn_id=self.turn_id,
+            agent_id=self.agent_id,
+            data=message_data,
+            message_id=message.message_id,
+        )
+        if message_id:
+            await self.context.add_message(user_message, message_id)
+
+            # Broadcast mid-step injected message to frontend
+            if getattr(self.config, "interactive", False):
+                try:
+                    broadcast_msg = Message(
+                        message_id=message.message_id,
+                        role=MessageRole.USER,
+                        content=json.dumps(user_message, ensure_ascii=False),
+                        message_type=MessageType.USER_MESSAGE,
+                        turn_id=self.turn_id,
+                        agent_id=self.agent_id,
+                        data={
+                            "content": message.data.get("content", ""),
+                            "raw_input": user_message.get("raw_input", ""),
+                        },
+                    )
+                    await self.communicator.send_message(broadcast_msg)
+                except Exception as e:
+                    logger.warning(f"Failed to broadcast injected message: {e}")
 
     # ==================================================================
     # Step / round execution
@@ -457,6 +541,17 @@ class DefaultLoopEngine(LoopEngine):
             try:
                 step_ctx = await self._execute_step(turn_ctx)
                 steps += 1
+
+                # ── Non-blocking: mid-step message injection (skipped after abort) ──
+                if self._message_source is not None and not self.abort_event.is_set():
+                    try:
+                        new_msgs = await self._message_source.drain()
+                        for msg in new_msgs:
+                            if msg.message_type == MessageType.USER_MESSAGE:
+                                await self._inject_user_message(msg)
+                    except Exception as e:
+                        logger.warning(f"Mid-step message drain failed: {e}")
+
                 if step_ctx.status in _TERMINAL_STATUSES:
                     return self._build_round_result(step_ctx.status, steps)
                 if max_steps is not None and steps >= max_steps:
@@ -713,27 +808,42 @@ class DefaultLoopEngine(LoopEngine):
 
     async def execute(
         self,
-        message: Optional[Message],
+        message: Optional[Any],
         max_steps: Optional[int] = None,
         from_agent: Optional[bool] = False,
         *,
         allowed_tools: Optional[List[str]] = None,
         namespace: Optional[str] = None,
+        message_source: Optional[Any] = None,
     ) -> ExecutionResult:
-        """Execute one turn: setup → hooks → round → finalize."""
-        if not message:
+        """Execute one turn: setup → hooks → round → finalize.
+
+        Args:
+            message: Single ``Message``, a list of ``Message`` instances, or
+                ``None``.
+            message_source: Optional source for mid-step user message injection
+                (non-blocking mode).
+        """
+        if message is None:
             return ExecutionResult(status=ExecutionStatus.SKIPPED)
+
+        # Normalize to list
+        if isinstance(message, list):
+            messages = message
+        else:
+            messages = [message]
 
         # Per-turn execution params (review 2.5: no longer set externally).
         self.allowed_tools = allowed_tools
         self.namespace = namespace
+        self._message_source = message_source
 
         await self._ensure_strategies()
 
         turn_ctx: Optional[TurnContext] = None
         result: Optional[ExecutionResult] = None
         try:
-            turn_ctx = await self._setup_turn(message, from_agent)
+            turn_ctx = await self._setup_turn(messages, from_agent)
             await self._dispatch("on_turn_start", turn_ctx)
             result = await self._execute_round(turn_ctx, max_steps)
         except ValidationError as e:

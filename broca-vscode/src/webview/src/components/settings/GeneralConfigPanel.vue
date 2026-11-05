@@ -44,6 +44,17 @@ const EXECUTION_FIELDS: { key: keyof ExecutionConfig; label: string; unit: strin
   { key: 'max_parallel_tools', label: 'Max Parallel Tools', unit: '个', min: 1, step: 1, hint: '并行模式下同时执行的工具数量上限' },
 ]
 
+const RUNNER_FIELDS: { key: keyof ExecutionConfig; label: string; unit: string; min: number; step: number; hint: string }[] = [
+  { key: 'max_concurrent_runners', label: 'Max Concurrent Runners', unit: '个', min: 1, step: 1, hint: '同时运行的 Session Runner 子进程数量上限' },
+  { key: 'runner_heartbeat_interval', label: 'Heartbeat Interval', unit: '秒', min: 1, step: 1, hint: 'Runner 子进程向 Manager 上报心跳的间隔' },
+  { key: 'runner_heartbeat_timeout', label: 'Heartbeat Timeout', unit: '秒', min: 2, step: 5, hint: '超过此时间未收到心跳则判定 Runner 已崩溃（应 > 心跳间隔）' },
+  { key: 'runner_heartbeat_check_interval', label: 'Heartbeat Check Interval', unit: '秒', min: 1, step: 1, hint: 'Manager 轮询检查所有 Runner 心跳状态的间隔' },
+  { key: 'runner_status_persist_interval', label: 'Status Persist Interval', unit: '秒', min: 1, step: 5, hint: '心跳状态写入数据库的最小时间间隔' },
+  { key: 'runner_ipc_queue_size', label: 'IPC Queue Size', unit: '条', min: 1, step: 100, hint: '每个 Session 的 IPC 消息队列上限，队列满时按背压策略丢弃' },
+  { key: 'runner_log_gc_days', label: 'Log GC Days', unit: '天', min: 1, step: 1, hint: 'Per-session Runner 日志目录的 GC 保留天数' },
+  { key: 'runner_log_gc_interval', label: 'Log GC Interval', unit: '秒', min: 60, step: 300, hint: 'Runner 日志目录 GC 任务的轮询间隔' },
+]
+
 // --- Load ---
 function load() {
   loading.value = true
@@ -152,7 +163,7 @@ watch(
 function validateBeforeSave(): string | null {
   const exec = config.value.execution
   if (exec) {
-    for (const f of EXECUTION_FIELDS) {
+    for (const f of [...EXECUTION_FIELDS, ...RUNNER_FIELDS]) {
       const v = exec[f.key]
       if (v !== undefined && v !== null && (isNaN(v as number) || (v as number) < f.min)) {
         return `execution.${f.key} 必须是不小于 ${f.min} 的数字`
@@ -439,6 +450,24 @@ function setStorageValue(key: keyof StorageConfig, value: string | undefined) {
             <option value="serial">Serial（串行）</option>
           </select>
           <p class="field-hint">工具调用执行方式：parallel 为并行执行（默认），serial 为逐个串行执行</p>
+        </div>
+      </section>
+
+      <!-- Session Runner -->
+      <section class="section">
+        <h2 class="section-title">Session Runner</h2>
+        <p class="field-hint" style="margin-bottom: 12px">子进程心跳、IPC 背压、日志 GC 等运行参数（修改后需重启后端生效）</p>
+        <div v-for="f in RUNNER_FIELDS" :key="f.key" class="field">
+          <label class="field-label">{{ f.label }} ({{ f.unit }})</label>
+          <input
+            type="number"
+            class="field-input"
+            :min="f.min"
+            :step="f.step"
+            :value="execValue(f.key) ?? ''"
+            @change="setExecField(f.key, ($event.target as HTMLInputElement).value)"
+          />
+          <p class="field-hint">{{ f.hint }}</p>
         </div>
       </section>
 

@@ -303,11 +303,28 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
     </div>
 
     <!-- ==================== 用户消息（对齐 web 版） ==================== -->
-    <div v-if="turn.userMessage" class="user-message-section section-accent accent-user">
+    <div v-if="turn.userMessage || (turn.userFiles && turn.userFiles.length > 0)" class="user-message-section section-accent accent-user">
       <div class="user-message-row">
         <span class="user-icon">👤</span>
-        <div class="user-message-text" :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }">
-          {{ turn.userMessage }}
+        <div class="user-message-content">
+          <div v-if="turn.userMessage" class="user-message-text" :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }">
+            {{ turn.userMessage }}
+          </div>
+          <!-- 用户附件 -->
+          <div v-if="turn.userFiles && turn.userFiles.length > 0" class="user-files">
+            <template v-for="(file, idx) in turn.userFiles" :key="idx">
+              <!-- 图片：显示缩略图 -->
+              <img
+                v-if="file.type?.startsWith('image/')"
+                :src="file.url"
+                :alt="file.name"
+                class="user-file-thumb"
+                :title="file.name"
+              />
+              <!-- 非图片：chip -->
+              <span v-else class="user-file-chip">📄 {{ file.name }}</span>
+            </template>
+          </div>
         </div>
       </div>
       <button v-if="isLongUserMessage" class="expand-btn" @click="showFullUserMessage = !showFullUserMessage">
@@ -587,9 +604,52 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   color: var(--vscode-editor-foreground, #333);
 }
 
+.user-message-content {
+  flex: 1;
+  min-width: 0;
+}
+
 .user-message-text {
   word-break: break-word;
   line-height: 1.4;
+}
+
+.user-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.user-file-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--vscode-badge-background, #444);
+  color: var(--vscode-badge-foreground, #fff);
+  border-radius: 3px;
+  font-size: 11px;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-file-thumb {
+  max-width: 160px;
+  max-height: 100px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+  border-radius: 4px;
+  border: 1px solid var(--vscode-widget-border, #e0e0e0);
+  background: var(--vscode-sideBar-background, #f3f3f3);
+  cursor: pointer;
+}
+
+.user-file-thumb:hover {
+  opacity: 0.85;
 }
 
 /* ==================== 执行摘要（对齐 web 版结构） ==================== */
