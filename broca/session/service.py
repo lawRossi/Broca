@@ -12,6 +12,7 @@ from typing import Any, Dict, Generic, List, Optional, Tuple, Type, TypeVar
 
 from sqlalchemy import String, cast, desc, func, or_, select, text
 from sqlalchemy import update as sql_update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import SQLModel, and_
 
@@ -753,8 +754,8 @@ class MessageService(BaseService[Message]):
         sequence_number: int = 1,
         data: Optional[Dict[str, Any]] = None,
         execution_id: Optional[str] = None,
-    ) -> Message:
-        """创建新消息"""
+    ) -> Optional[Message]:
+        """创建新消息（幂等：重复 message_id 返回已有记录而非抛异常）"""
         # 构建data字段
         message_data = data or {}
         if content:
@@ -775,7 +776,18 @@ class MessageService(BaseService[Message]):
         if execution_id:
             kwargs["execution_id"] = execution_id
 
-        return await self.create(**kwargs)
+        try:
+            return await self.create(**kwargs)
+        except IntegrityError as e:
+            if "message_id" in str(e) and "UNIQUE constraint" in str(e):
+                logger.debug(f"Duplicate message_id ignored: {message_id}")
+                # 返回已有的消息记录
+                async with db_manager.get_session() as session:
+                    result = await session.execute(
+                        select(Message).where(Message.message_id == message_id)
+                    )
+                    return result.scalar_one_or_none()
+            raise
 
     async def get_messages_by_session(
         self,

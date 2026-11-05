@@ -450,6 +450,9 @@ class DefaultLoopEngine(LoopEngine):
                         message_type=MessageType.USER_MESSAGE,
                         turn_id=self.turn_id,
                         agent_id=self.agent_id,
+                        # 设置 subscription 确保 server 走 _send_to_subscription 路由，
+                        # 而非 _broadcast（发给所有客户端包括 agent 自身 → 自回显循环）
+                        subscription=self.session_id,
                         data={
                             "content": message.data.get("content", ""),
                             "raw_input": user_message.get("raw_input", ""),

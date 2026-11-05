@@ -67,6 +67,10 @@ class Agent:
         self.context_compressor = None
         self.persistent_memory_manager = None
 
+        # 消息去重：防止 SocketIO 重连/retry 导致同一 message_id 重复入队
+        self._seen_message_ids: set[str] = set()
+        self._DEDUP_MAX_SIZE = 2000
+
     @classmethod
     async def create(
         cls,
@@ -377,7 +381,20 @@ class Agent:
         )
 
     async def _receive_message(self, message: Message):
-        """Receive message from communication channel"""
+        """Receive message from communication channel (with dedup)"""
+        # 去重：防止 SocketIO 重连/retry 导致同一 message_id 重复处理
+        if message.message_id in self._seen_message_ids:
+            logger.debug(
+                f"Agent {self.agent_id}: deduplicated message {message.message_id}"
+            )
+            return
+        self._seen_message_ids.add(message.message_id)
+        if len(self._seen_message_ids) > self._DEDUP_MAX_SIZE:
+            # 淘汰最早的消息 ID（set 无序，清除一半即可）
+            it = iter(self._seen_message_ids)
+            to_remove = set(list(it)[: self._DEDUP_MAX_SIZE // 2])
+            self._seen_message_ids -= to_remove
+
         logger.info(f"Received message {message.message_type}")
         await self.message_queue.put(message)
 
