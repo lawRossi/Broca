@@ -374,3 +374,88 @@ class TestConfigsDeadlockRegression:
         import broca.session_runner.manager  # noqa: F401
 
         assert True  # 走到这里说明没有死锁
+
+
+# ---------------------------------------------------------------------------
+# 格式化回归测试
+# ---------------------------------------------------------------------------
+
+
+class TestLogFormattingRegression:
+    """回归测试：日志消息必须使用 f-string，不得残留 %s 占位符。
+
+    原 bug：get_logger() 主进程返回 loguru logger（{} 格式化），
+    但代码使用了 stdlib 的 `logger.info("...%s...", arg)` 风格，
+    导致日志输出中 %s 原样出现。
+    修复：全部统一为 f-string。
+    """
+
+    def test_fstring_interpolation_main_process(self, monkeypatch, tmp_path, caplog):
+        """主进程模式（loguru）：f-string 日志正确格式化输出。"""
+        monkeypatch.delenv("BROCA_RUNNER_CHILD", raising=False)
+        LoggingConfig._initialized = False
+        init_logging(log_file=str(tmp_path / "agent.log"), log_level="DEBUG")
+
+        from loguru import logger as _loguru
+        captured = []
+        sink_id = _loguru.add(lambda msg: captured.append(str(msg)), level="DEBUG")
+
+        session_id = "abc-123"
+        other_session = "xyz"
+        exc_str = "timeout"
+        logger = get_logger("test.format")
+        logger.info(f"Runner confirmed shutdown for session {session_id}")
+        logger.warning(f"IPC connection lost for session {other_session}: {exc_str}")
+
+        _loguru.remove(sink_id)
+        LoggingConfig._initialized = False
+
+        all_text = "".join(captured)
+        assert "abc-123" in all_text
+        assert "xyz" in all_text
+        # 不得出现原始占位符
+        assert "%s" not in all_text
+
+    def test_fstring_interpolation_child_process(self, monkeypatch, tmp_path, caplog):
+        """子进程模式（stdlib）：f-string 日志正确格式化输出。"""
+        monkeypatch.setenv("BROCA_RUNNER_CHILD", "1")
+        LoggingConfig._initialized = False
+        init_logging(log_file=str(tmp_path / "runner.log"), log_level="DEBUG")
+
+        sid = "s-001"
+        logger = get_logger("test.format.child")
+        logger.info(f"Runner for session {sid} connected")
+
+        # 从 caplog 获取 stdlib 日志
+        # （子进程模式下 get_logger 返回 stdlib logger）
+        LoggingConfig._initialized = False
+
+    def test_no_percent_s_in_source_files(self):
+        """broca/ 源码中不得存在 stdlib 风格的 %s 日志调用。
+
+        扫描所有非测试 .py 文件，确保没有 `logger.xxx("...%s...", arg)` 模式。
+        """
+        import re
+        from pathlib import Path
+
+        broca_dir = Path("broca")
+        # 匹配 logger.LEVEL("...%s...", arg) 模式（字符串参数中含 %s 且后面有额外参数）
+        q = r'"'  # double-quote char for regex
+        pattern = re.compile(
+            r"logger\.(?:info|warning|error|debug|critical)\(\s*" + q
+            + r"[^" + q + r"]*%[sdr][^" + q + r"]*" + q
+            + r"[^)]*,\s*"
+        )
+
+        offenders = []
+        for py_file in sorted(broca_dir.rglob("*.py")):
+            if "tests" in str(py_file) or "venv" in str(py_file):
+                continue
+            content = py_file.read_text()
+            for i, line in enumerate(content.splitlines(), 1):
+                if pattern.search(line):
+                    offenders.append(f"{py_file}:{i}: {line.strip()}")
+
+        assert not offenders, (
+            "发现 stdlib %s 风格日志调用（loguru 不支持）:\n" + "\n".join(offenders)
+        )

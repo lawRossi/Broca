@@ -189,11 +189,11 @@ class SocketIOServer:
                         if not entries:
                             del self._pending_messages[sub]
                         if expired:
-                            logger.info("Cleaned %d expired pending msgs from %s", len(expired), sub)
+                            logger.info(f"Cleaned {len(expired)} expired pending msgs from {sub}")
             except asyncio.CancelledError:
                 break
             except Exception as e:
-                logger.error("Pending cleanup error: %s", e)
+                logger.error(f"Pending cleanup error: {e}")
 
     def _setup_event_handlers(self):
         """Setup Socket.io event handlers"""

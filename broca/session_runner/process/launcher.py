@@ -103,7 +103,7 @@ class RunnerLauncher:
         )
         env = build_runner_env()
 
-        logger.info("Starting runner for session %s: %r", session_id, argv)
+        logger.info(f"Starting runner for session {session_id}: {argv!r}")
 
         # stdout/stderr → DEVNULL:
         # - 避免子进程 stderr 污染 supervisor 的 backend.err.log

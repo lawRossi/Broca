@@ -78,4 +78,4 @@ class IPCClient(_BaseIPC):
         """关闭 IPC 连接（幂等）。"""
         self._connected = False
         super().close()
-        logger.info("IPC client closed for session %s", self.session_id)
+        logger.info(f"IPC client closed for session {self.session_id}")

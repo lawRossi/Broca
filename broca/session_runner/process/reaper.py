@@ -120,10 +120,10 @@ class RunnerReaper:
         joined = " ".join(cmdline)
         session_id = getattr(info, "session_id", "")
         if CMDLINE_MODULE_MARKER not in joined:
-            logger.debug("PID %s cmdline missing module marker — not our runner", pid)
+            logger.debug(f"PID {pid} cmdline missing module marker — not our runner")
             return False
         if session_id and session_id not in joined:
-            logger.debug("PID %s cmdline missing session_id — not our runner", pid)
+            logger.debug(f"PID {pid} cmdline missing session_id — not our runner")
             return False
 
         return True
@@ -169,7 +169,7 @@ class RunnerReaper:
             if process is not None:
                 try:
                     await asyncio.to_thread(process.wait, timeout)
-                    logger.info("Runner %s (pid=%s) exited gracefully", session_id, pid)
+                    logger.info(f"Runner {session_id} (pid={pid}) exited gracefully")
                     return True
                 except subprocess.TimeoutExpired:
                     pass
@@ -189,10 +189,10 @@ class RunnerReaper:
                             pid,
                         )
 
-            logger.info("Runner %s (pid=%s) force killed", session_id, pid)
+            logger.info(f"Runner {session_id} (pid={pid}) force killed")
             return True
         except Exception as e:
-            logger.error("Failed to terminate runner %s: %s", session_id, e)
+            logger.error(f"Failed to terminate runner {session_id}: {e}")
             return False
 
     async def terminate_by_pid(
@@ -212,7 +212,7 @@ class RunnerReaper:
             try:
                 os.kill(pid, signal.SIGTERM)
             except ProcessLookupError:
-                logger.debug("Process pid=%d already dead", pid)
+                logger.debug(f"Process pid={pid} already dead")
                 return True
 
             for _ in range(TERMINATE_POLL_ATTEMPTS):
@@ -220,20 +220,20 @@ class RunnerReaper:
                 try:
                     os.kill(pid, 0)
                 except ProcessLookupError:
-                    logger.info("Process pid=%d exited after SIGTERM", pid)
+                    logger.info(f"Process pid={pid} exited after SIGTERM")
                     return True
 
             try:
                 os.kill(pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            logger.info("Killed process by pid=%d (session=%s)", pid, label)
+            logger.info(f"Killed process by pid={pid} (session={label})")
             return True
         except ProcessLookupError:
-            logger.debug("Process pid=%d already dead", pid)
+            logger.debug(f"Process pid={pid} already dead")
             return True
         except Exception as e:
-            logger.warning("Failed to kill process pid=%d: %s", pid, e)
+            logger.warning(f"Failed to kill process pid={pid}: {e}")
             return False
 
     async def terminate_orphans(self, records: list) -> int:

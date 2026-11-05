@@ -134,7 +134,7 @@ class DefaultToolExecutor(ToolExecutor):
 
         # ── #1: Existence check ────────────────────────────────────
         if tool_name not in self._tool_mapping:
-            logger.error("Tool '%s' not found.", tool_name)
+            logger.error(f"Tool '{tool_name}' not found.")
             return ToolExecutionOutcome(
                 result=ToolResult(
                     status=ToolStatus.ERROR,
@@ -332,7 +332,7 @@ class DefaultToolExecutor(ToolExecutor):
             )
         except (ToolError, BrocaError) as e:
             # #7: map Broca errors to user-facing messages
-            logger.error("Tool execution failed: %s", e)
+            logger.error(f"Tool execution failed: {e}")
             return ToolResult(
                 status=ToolStatus.ERROR, content=e.to_user_message()
             )

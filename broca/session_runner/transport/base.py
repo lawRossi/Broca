@@ -102,7 +102,7 @@ class _BaseIPC:
         with self._send_lock:
             try:
                 connection.send(self._encode(msg))
-                logger.debug("IPC sent: %s (%s)", msg.type.value, self.session_id)
+                logger.debug(f"IPC sent: {msg.type.value} ({self.session_id})")
             except (BrokenPipeError, ConnectionError, EOFError) as e:
                 raise IPCConnectionError(
                     f"IPC send failed (connection broken): {e}"
@@ -125,7 +125,7 @@ class _BaseIPC:
             with self._recv_lock:
                 raw_data = connection.recv()
             msg = self._decode(raw_data)
-            logger.debug("IPC received: %s (%s)", msg.type.value, self.session_id)
+            logger.debug(f"IPC received: {msg.type.value} ({self.session_id})")
             return msg
         except (BrokenPipeError, ConnectionError, EOFError) as e:
             raise IPCConnectionError(

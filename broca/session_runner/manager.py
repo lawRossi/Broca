@@ -232,9 +232,9 @@ class IPCSessionRunner(SessionRunnerABC):
             try:
                 removed = await self.gc_runner_logs()
                 if removed:
-                    logger.info("GC: removed %d stale runner log dirs", removed)
+                    logger.info(f"GC: removed {removed} stale runner log dirs")
             except Exception as e:
-                logger.warning("GC runner logs error: %s", e)
+                logger.warning(f"GC runner logs error: {e}")
 
     # ==================== 进程生命周期管理 ====================
 
@@ -251,21 +251,21 @@ class IPCSessionRunner(SessionRunnerABC):
         try:
             await self._repo.upsert_many(runner_infos)
         except Exception as e:
-            logger.warning("Failed to save runners to DB: %s", e)
+            logger.warning(f"Failed to save runners to DB: {e}")
 
     async def _remove_runner_from_db(self, session_id: str) -> None:
         """从数据库删除 Runner 记录（委托 RunnerRepository）。"""
         try:
             await self._repo.delete(session_id)
         except Exception as e:
-            logger.warning("Failed to remove runner from DB: %s", e)
+            logger.warning(f"Failed to remove runner from DB: {e}")
 
     async def _get_runner_from_db(self, session_id: str) -> Optional[RunnerProcessInfo]:
         """从数据库获取 Runner 记录（委托 RunnerRepository）。"""
         try:
             return await self._repo.get(session_id)
         except Exception as e:
-            logger.warning("Failed to get runner from DB: %s", e)
+            logger.warning(f"Failed to get runner from DB: {e}")
             return None
 
     async def start_session(
@@ -305,7 +305,7 @@ class IPCSessionRunner(SessionRunnerABC):
         except RunnerManagerError:
             raise
         except Exception as e:
-            logger.error("Failed to start runner for session %s: %s", session_id, e)
+            logger.error(f"Failed to start runner for session {session_id}: {e}")
             await self._cleanup_runner(session_id)
             raise RunnerManagerError(f"Failed to start runner: {e}") from e
 
@@ -339,7 +339,7 @@ class IPCSessionRunner(SessionRunnerABC):
     ) -> RunnerHandle:
         """拉起子进程并注册 handle（info + ipc + 各缓存收在同一对象里）。"""
         log_file = self._get_runner_log_file(session_id)
-        logger.info("Runner log file: %s", log_file)
+        logger.info(f"Runner log file: {log_file}")
 
         process = self._launcher.spawn(
             session_id=session_id,
@@ -376,7 +376,7 @@ class IPCSessionRunner(SessionRunnerABC):
         try:
             loop = asyncio.get_event_loop()
             await loop.run_in_executor(None, ipc_server.accept, 15.0)
-            logger.info("Runner for session %s connected via IPC", session_id)
+            logger.info(f"Runner for session {session_id} connected via IPC")
             first_msg = await self._read_first_message(ipc_server)
             await self._apply_first_message(handle, first_msg)
         except IPCTimeoutError:
@@ -391,7 +391,7 @@ class IPCSessionRunner(SessionRunnerABC):
             msg = await loop.run_in_executor(None, ipc_server.receive_message, 5.0)
             if msg is not None:
                 return msg
-            logger.debug("Waiting for first message (attempt %d/6)...", attempt + 1)
+            logger.debug(f"Waiting for first message (attempt {attempt + 1}/6)...")
         return None
 
     async def _apply_first_message(
@@ -412,7 +412,7 @@ class IPCSessionRunner(SessionRunnerABC):
 
         if first_msg is not None and first_msg.type == IPCMessageType.EVT_ERROR:
             payload = first_msg.payload
-            logger.error("Session %s runner init failed: %s", session_id, payload)
+            logger.error(f"Session {session_id} runner init failed: {payload}")
             runner_info.status = RunnerStatus.ERROR
             runner_info.error_message = payload.get("message") or str(payload)
             runner_info.recovery_hint = payload.get("recovery_hint")
@@ -523,11 +523,11 @@ class IPCSessionRunner(SessionRunnerABC):
 
             # 4) 收敛为「已停止」（不是崩溃）
             await self._monitor.converge_stopped(session_id)
-            logger.info("Session %s runner stopped", session_id)
+            logger.info(f"Session {session_id} runner stopped")
             return True
 
         except Exception as e:
-            logger.error("Failed to stop runner for session %s: %s", session_id, e)
+            logger.error(f"Failed to stop runner for session {session_id}: {e}")
             # 异常时也确保进程被杀（防止僵尸）
             await self._reaper.terminate(handle)
             return False
@@ -556,7 +556,7 @@ class IPCSessionRunner(SessionRunnerABC):
             await self._reaper.terminate_by_pid(pid, session_id=session_id)
         await self._cleanup_ipc_resources(session_id)
         await self._remove_runner_from_db(session_id)
-        logger.info("Session %s stale runner cleaned up (pid=%d)", session_id, pid)
+        logger.info(f"Session {session_id} stale runner cleaned up (pid={pid})")
         return True
 
     async def _await_exit_or_kill(self, handle: RunnerHandle, timeout: float) -> None:
@@ -567,7 +567,7 @@ class IPCSessionRunner(SessionRunnerABC):
             return
         try:
             await asyncio.to_thread(process.wait, timeout)
-            logger.info("Runner %s process exited gracefully", runner_info.session_id)
+            logger.info(f"Runner {runner_info.session_id} process exited gracefully")
         except subprocess.TimeoutExpired:
             logger.warning(
                 "Runner %s did not exit in time, force killing",
@@ -608,7 +608,7 @@ class IPCSessionRunner(SessionRunnerABC):
                         payload={"reason": "user_request"},
                     )
                 )
-                logger.info("Sent shutdown command to session %s runner", session_id)
+                logger.info(f"Sent shutdown command to session {session_id} runner")
             except IPCConnectionError:
                 logger.warning(
                     "Failed to send shutdown via IPC for %s (connection may already be closed)",
@@ -625,7 +625,7 @@ class IPCSessionRunner(SessionRunnerABC):
         """强制终止 Runner 进程（通过 session_id 查找）。"""
         handle = self._registry.get(session_id)
         if handle is None:
-            logger.warning("_kill_runner: session %s not registered, skipping", session_id)
+            logger.warning(f"_kill_runner: session {session_id} not registered, skipping")
             return
         await self._reaper.terminate(handle)
 
@@ -756,7 +756,7 @@ class IPCSessionRunner(SessionRunnerABC):
         """
         handle = self._registry.get(session_id)
         if handle is None or handle.ipc is None:
-            logger.warning("No IPC server found for session %s", session_id)
+            logger.warning(f"No IPC server found for session {session_id}")
             return None
         ipc_server = handle.ipc
 
@@ -778,10 +778,10 @@ class IPCSessionRunner(SessionRunnerABC):
             )
             return {"error": "No response from runner"}
         except IPCConnectionError as e:
-            logger.error("IPC send command failed for session %s: %s", session_id, e)
+            logger.error(f"IPC send command failed for session {session_id}: {e}")
             return {"error": str(e)}
         except Exception as e:
-            logger.error("Failed to send command to session %s: %s", session_id, e)
+            logger.error(f"Failed to send command to session {session_id}: {e}")
             return {"error": str(e)}
         finally:
             handle.pending_responses.pop(msg.message_id, None)
@@ -887,7 +887,7 @@ class IPCSessionRunner(SessionRunnerABC):
         if handle is None:
             return
         handle.info.status = RunnerStatus.DEAD
-        logger.info("Runner confirmed shutdown for session %s", msg.session_id)
+        logger.info(f"Runner confirmed shutdown for session {msg.session_id}")
 
     @handles(IPCMessageType.EVT_STATUS_CHANGE, side="manager")
     async def _handle_evt_status_change(self, msg: IPCMessage) -> None:
@@ -916,11 +916,11 @@ class IPCSessionRunner(SessionRunnerABC):
 
     @handles(IPCMessageType.EVT_COMPLETED, side="manager")
     async def _handle_evt_completed(self, msg: IPCMessage) -> None:
-        logger.info("Runner reported completion for session %s", msg.session_id)
+        logger.info(f"Runner reported completion for session {msg.session_id}")
 
     @handles(IPCMessageType.EVT_LOG, side="manager")
     async def _handle_evt_log(self, msg: IPCMessage) -> None:
-        logger.info("[runner %s] %s", msg.session_id, msg.payload.get("message", ""))
+        logger.info(f"[runner {msg.session_id}] {msg.payload.get('message', '')}")
 
     @handles(IPCMessageType.EVT_CREW_START, side="manager")
     @handles(IPCMessageType.EVT_CREW_PROGRESS, side="manager")
@@ -990,7 +990,7 @@ class IPCSessionRunner(SessionRunnerABC):
         try:
             changed_count = await self._repo.set_agent_statuses(pending)
         except Exception as e:  # noqa: BLE001 - 写库失败不能拖垮心跳链路
-            logger.error("Failed to flush agent statuses: %s", e)
+            logger.error(f"Failed to flush agent statuses: {e}")
             # 回滚缓存，下一个心跳会重新入缓冲
             for session_id in pending:
                 handle = self._registry.get(session_id)
@@ -1017,7 +1017,7 @@ class IPCSessionRunner(SessionRunnerABC):
         """
         queue = self._poller.queue(session_id)
         if queue is None:
-            logger.warning("IPC queue not found for session %s", session_id)
+            logger.warning(f"IPC queue not found for session {session_id}")
             return
 
         while session_id in self._registry:
@@ -1070,7 +1070,7 @@ class IPCSessionRunner(SessionRunnerABC):
         try:
             records = await self._repo.list_active()
         except Exception as e:
-            logger.error("Failed to restore active sessions: %s", e)
+            logger.error(f"Failed to restore active sessions: {e}")
             return 0
 
         killed = 0
@@ -1087,7 +1087,7 @@ class IPCSessionRunner(SessionRunnerABC):
                         reset,
                     )
         except Exception as e:
-            logger.error("Failed to restore active sessions: %s", e)
+            logger.error(f"Failed to restore active sessions: {e}")
             return 0
 
         logger.info(
@@ -1101,7 +1101,7 @@ class IPCSessionRunner(SessionRunnerABC):
 
         if not info.pid:
             info.error_message = "No PID recorded, marked dead on startup"
-            logger.warning("Session %s runner has no PID, marked dead", info.session_id)
+            logger.warning(f"Session {info.session_id} runner has no PID, marked dead")
             return False
 
         if not self._reaper.is_alive(info):
@@ -1147,7 +1147,7 @@ class IPCSessionRunner(SessionRunnerABC):
                 if await self.stop_session(session_id):
                     stopped += 1
             except Exception as e:
-                logger.error("Failed to stop runner %s: %s", session_id, e)
+                logger.error(f"Failed to stop runner {session_id}: {e}")
 
         await self.stop_heartbeat_monitor()
         # 取消 GC 后台任务

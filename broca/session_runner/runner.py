@@ -154,7 +154,7 @@ class SessionRunnerProcess:
         历史上这三件事散落在 4 处（CMD_SHUTDOWN / 心跳发送失败 / IPC 断开 /
         信号处理），任一处漏掉就会留下卡死的循环。
         """
-        logger.info("Runner shutdown requested: %s", reason)
+        logger.info(f"Runner shutdown requested: {reason}")
         self.running = False
         if self.shutdown_event is not None:
             self.shutdown_event.set()
@@ -185,11 +185,11 @@ class SessionRunnerProcess:
             logger.info("Runner shutdown complete")
 
         except BrocaError as e:
-            logger.error("Runner BrocaError: %s", e, exc_info=True)
+            logger.error(f"Runner BrocaError: {e}", exc_info=True)
             self._send_error(e.to_dict())
             raise
         except Exception as e:
-            logger.error("Runner fatal error: %s", e, exc_info=True)
+            logger.error(f"Runner fatal error: {e}", exc_info=True)
             self._send_error({"error": str(e)})
             raise
 
@@ -199,7 +199,7 @@ class SessionRunnerProcess:
         from broca.components.agent_factory import AgentFactory as AgentFactoryABC
 
         # === 1. 初始化数据库连接（由 SessionManager / Service 内部管理） ===
-        logger.info("Initializing session: %s", self.args.session_id)
+        logger.info(f"Initializing session: {self.args.session_id}")
 
         # === 2. 创建 AgentFactory 并恢复 Agent ===
         self.agent_factory = ComponentRegistry.get_instance().get(AgentFactoryABC)
@@ -249,14 +249,14 @@ class SessionRunnerProcess:
         for idx, result in enumerate(connect_results):
             agent = self.agents[idx]
             if isinstance(result, Exception):
-                logger.error("Agent %s connect failed: %s", agent.agent_id, result)
+                logger.error(f"Agent {agent.agent_id} connect failed: {result}")
             else:
-                logger.info("Agent %s connected to SocketIO", agent.agent_id)
+                logger.info(f"Agent {agent.agent_id} connected to SocketIO")
 
         # === 5. 启动 Agent 消息循环 ===
         for agent in self.agents:
             self.agent_tasks.append(asyncio.create_task(agent.start()))
-            logger.info("Agent %s message loop started", agent.agent_id)
+            logger.info(f"Agent {agent.agent_id} message loop started")
 
     async def _shutdown(self) -> None:
         """停止 Agent、等待收尾、断开连接、发送 EVT_SHUTDOWN_COMPLETE。"""
@@ -295,7 +295,7 @@ class SessionRunnerProcess:
                 continue
             exc = task.exception()
             if exc is not None:
-                logger.error("Agent task failed: %s", exc, exc_info=exc)
+                logger.error(f"Agent task failed: {exc}", exc_info=exc)
 
     def _send_error(self, payload: Dict[str, Any]) -> None:
         try:
@@ -340,7 +340,7 @@ class SessionRunnerProcess:
                 self.mark_ipc_lost("heartbeat send failed")
                 break
             except Exception as e:  # noqa: BLE001 - 单次心跳失败不应终止循环
-                logger.error("Heartbeat error: %s", e)
+                logger.error(f"Heartbeat error: {e}")
 
             # 用 event 替代 sleep，shutdown 时立即唤醒
             if await self._wait_or_shutdown(interval):
@@ -383,11 +383,11 @@ class SessionRunnerProcess:
                     if msg:
                         loop.call_soon_threadsafe(_enqueue, msg)
                 except IPCConnectionError as e:
-                    logger.warning("IPC connection lost: %s", e)
+                    logger.warning(f"IPC connection lost: {e}")
                     loop.call_soon_threadsafe(_enqueue, None)
                     break
                 except Exception as e:  # noqa: BLE001
-                    logger.error("IPC listener thread error: %s", e)
+                    logger.error(f"IPC listener thread error: {e}")
                     loop.call_soon_threadsafe(_enqueue, None)
                     break
 
@@ -440,7 +440,7 @@ class SessionRunnerProcess:
 
     async def handle_ipc_command(self, msg: IPCMessage) -> None:
         """处理来自 Web 进程的 IPC 控制命令（路由表分发）。"""
-        logger.info("Received IPC command: %s", msg.type.value)
+        logger.info(f"Received IPC command: {msg.type.value}")
         await self.router.dispatch(msg, self)
 
     @handles(IPCMessageType.CMD_STATUS, side="runner")
@@ -488,9 +488,9 @@ class SessionRunnerProcess:
         for agent in self.agents:
             try:
                 await agent.abort()
-                logger.info("Agent %s aborted", agent.agent_id)
+                logger.info(f"Agent {agent.agent_id} aborted")
             except Exception as e:  # noqa: BLE001
-                logger.error("Failed to abort agent %s: %s", agent.agent_id, e)
+                logger.error(f"Failed to abort agent {agent.agent_id}: {e}")
 
         self.ipc.send_message(
             create_response_message(
@@ -595,7 +595,7 @@ class SessionRunnerProcess:
             )
 
         except Exception as e:  # noqa: BLE001 - 任何启动失败都要回响应
-            logger.error("Failed to start crew: %s", e)
+            logger.error(f"Failed to start crew: {e}")
             self.ipc.send_message(
                 create_response_message(
                     msg, status=IPCStatusCode.ERROR, payload={"error": str(e)}
@@ -615,7 +615,7 @@ class SessionRunnerProcess:
                 crew_config, agent_refs, execution_id=execution_id
             )
         except Exception as e:  # noqa: BLE001
-            logger.error("Crew background task failed: %s", e, exc_info=True)
+            logger.error(f"Crew background task failed: {e}", exc_info=True)
             try:
                 crew_runner._send_crew_event(
                     IPCMessageType.EVT_CREW_ERROR,
@@ -639,16 +639,16 @@ class SessionRunnerProcess:
             return
         exc = task.exception()
         if exc is not None:
-            logger.error("Crew background task crashed: %s", exc, exc_info=exc)
+            logger.error(f"Crew background task crashed: {exc}", exc_info=exc)
 
     @handles(IPCMessageType.CMD_ABORT_CREW, side="runner")
     async def _handle_cmd_abort_crew(self, msg: IPCMessage) -> None:
         """中止编排。"""
         crew_id = msg.payload.get("crew_id")
-        logger.info("Aborting crew: %s", crew_id)
+        logger.info(f"Aborting crew: {crew_id}")
 
         if self.crew_runner is None:
-            logger.warning("No active crew runner to abort (crew_id=%s)", crew_id)
+            logger.warning(f"No active crew runner to abort (crew_id={crew_id})")
             self.ipc.send_message(
                 create_response_message(
                     msg,
@@ -664,7 +664,7 @@ class SessionRunnerProcess:
         try:
             aborted = await self.crew_runner.abort_crew()
             if aborted:
-                logger.info("Crew '%s' aborted successfully", crew_id)
+                logger.info(f"Crew '{crew_id}' aborted successfully")
                 self.ipc.send_message(
                     create_response_message(
                         msg,
@@ -676,7 +676,7 @@ class SessionRunnerProcess:
                     )
                 )
             else:
-                logger.warning("No active orchestrator to abort for crew '%s'", crew_id)
+                logger.warning(f"No active orchestrator to abort for crew '{crew_id}'")
                 self.ipc.send_message(
                     create_response_message(
                         msg,
@@ -688,7 +688,7 @@ class SessionRunnerProcess:
                     )
                 )
         except Exception as e:  # noqa: BLE001
-            logger.error("Error aborting crew: %s", e)
+            logger.error(f"Error aborting crew: {e}")
             self.ipc.send_message(
                 create_response_message(
                     msg,
@@ -748,7 +748,7 @@ def main() -> None:
         ipc_client.connect()
         logger.info("IPC client connected")
     except IPCConnectionError as e:
-        logger.error("Failed to connect IPC: %s", e)
+        logger.error(f"Failed to connect IPC: {e}")
         sys.exit(1)
 
     runner = SessionRunnerProcess(args, ipc_client)
@@ -765,7 +765,7 @@ def main() -> None:
     except KeyboardInterrupt:
         logger.info("Runner interrupted by user")
     except Exception as e:
-        logger.error("Runner crashed: %s", e, exc_info=True)
+        logger.error(f"Runner crashed: {e}", exc_info=True)
         sys.exit(1)
     finally:
         ipc_client.close()

@@ -13,7 +13,7 @@
 使用规范：
   • 所有模块统一使用 ``from broca.logging_config import get_logger``
   • 禁止直接 ``logging.getLogger()`` 或 ``from loguru import logger``
-  • 日志调用支持 f-string 和 %s 两种格式（均兼容）
+  • 日志调用统一使用 f-string 格式（主进程为 loguru，不支持 stdlib 的 %s 惰性格式化）
   • 子进程（BROCA_RUNNER_CHILD=1）自动切换为 stdlib 后端
   • 手动启动 ``python -m broca.session_runner.runner`` 时，``main()`` 内通过
     ``os.environ.setdefault("BROCA_RUNNER_CHILD", "1")`` 兜底确保走 stdlib 模式

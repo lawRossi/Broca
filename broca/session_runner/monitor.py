@@ -58,7 +58,7 @@ class HealthPolicy:
                 getattr(cfg, "runner_heartbeat_check_interval", check_interval)
             )
         except Exception as exc:  # noqa: BLE001 - 配置缺失不应阻断启动
-            logger.debug("HealthPolicy.from_config fallback to defaults: %s", exc)
+            logger.debug(f"HealthPolicy.from_config fallback to defaults: {exc}")
         return cls(interval=interval, timeout=timeout, check_interval=check_interval)
 
     @property
@@ -167,7 +167,7 @@ class HeartbeatMonitor:
             await task
         except asyncio.CancelledError:
             pass
-        logger.info("Heartbeat monitor stopped (pid=%d)", os.getpid())
+        logger.info(f"Heartbeat monitor stopped (pid={os.getpid()})")
 
     async def _loop(self, interval: float, timeout: float) -> None:
         while True:
@@ -178,7 +178,7 @@ class HeartbeatMonitor:
             except asyncio.CancelledError:
                 break
             except Exception as exc:  # noqa: BLE001 - 巡检失败不能拖垮循环
-                logger.error("Heartbeat monitor error: %s", exc)
+                logger.error(f"Heartbeat monitor error: {exc}")
 
     # ------------------------------------------------------------------
     # 巡检（可直接单测的入口）
@@ -364,7 +364,7 @@ class HeartbeatMonitor:
         release_handle(handle)
         self._registry.pop(session_id)
         await self._delete_record(session_id)
-        logger.info("Runner for session %s converged to STOPPED", session_id)
+        logger.info(f"Runner for session {session_id} converged to STOPPED")
 
     async def converge_dead(self, session_id: str) -> None:
         """把已死亡的 Runner 收敛掉：置 DEAD、写库、通知前端、清理内存与 IPC。
@@ -391,7 +391,7 @@ class HeartbeatMonitor:
         handle.agent_status_cache = None
         release_handle(handle)
         self._registry.pop(session_id)
-        logger.warning("Runner for session %s converged to DEAD (%s)", session_id, reason)
+        logger.warning(f"Runner for session {session_id} converged to DEAD ({reason})")
 
     async def mark_agents_disconnected(self, session_id: str) -> None:
         """Runner 进程死亡时，把该 Session 下所有 Agent 标记为 disconnected。"""

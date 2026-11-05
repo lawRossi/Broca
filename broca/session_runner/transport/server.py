@@ -58,7 +58,7 @@ class IPCServer(_BaseIPC):
                 family=self.family,
                 backlog=1,
             )
-            logger.info("IPC server started for session %s", self.session_id)
+            logger.info(f"IPC server started for session {self.session_id}")
         except IPCConnectionError:
             raise
         except Exception as e:
@@ -98,7 +98,7 @@ class IPCServer(_BaseIPC):
             probe.close()
             try:
                 os.unlink(self.address)
-                logger.info("Removed stale IPC socket: %s", self.address)
+                logger.info(f"Removed stale IPC socket: {self.address}")
             except FileNotFoundError:
                 pass
             return
@@ -173,7 +173,7 @@ class IPCServer(_BaseIPC):
 
             self._connection = result.get("connection")
 
-        logger.info("IPC connection accepted for session %s", self.session_id)
+        logger.info(f"IPC connection accepted for session {self.session_id}")
         return True
 
     # ------------------------------------------------------------------
@@ -207,4 +207,4 @@ class IPCServer(_BaseIPC):
             except Exception:
                 pass
 
-        logger.info("IPC server closed for session %s", self.session_id)
+        logger.info(f"IPC server closed for session {self.session_id}")

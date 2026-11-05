@@ -337,7 +337,7 @@ class Agent:
         logger.info(f"Received message {message.message_type}")
         await self.message_queue.put(message)
 
-    async def _on_disconnected(self):
+    async def _on_disconnected(self, *args):
         """Handle Socket.io disconnect event — mark as disconnected.
 
         SocketIOClient 在检测到底层连接断开时触发 "disconnect" 事件。
@@ -355,7 +355,7 @@ class Agent:
         )
         await self._set_status(self.STATUS_DISCONNECTED)
 
-    async def _on_connected(self):
+    async def _on_connected(self, *args):
         """Handle Socket.io connect/reconnect event — restore status after reconnection.
 
         SocketIOClient 连接（含自动重连）成功后触发 "connect" 事件。
@@ -432,6 +432,55 @@ class Agent:
     def stop(self):
         self.running = False
 
+    def _drain_user_messages(self, first_msg: Message) -> list[Message]:
+        """初始批量取：first_msg + 队列中所有 USER_MESSAGE（非 USER 放回）。"""
+        messages = [first_msg]
+        pending = []
+        while True:
+            try:
+                msg = self.message_queue.get_nowait()
+                if msg.message_type == MessageType.USER_MESSAGE:
+                    messages.append(msg)
+                else:
+                    pending.append(msg)
+            except asyncio.QueueEmpty:
+                break
+        for msg in pending:
+            try:
+                self.message_queue.put_nowait(msg)
+            except asyncio.QueueFull:
+                logger.warning(f"Queue full after re-queue: {msg.message_type}")
+        return messages
+
+    def _make_message_source(self) -> Any:
+        """创建 message_source 对象，供 engine 在 step 间 drain 新用户消息。
+
+        闭包捕获 self.message_queue 的引用。当前 Agent 生命周期内
+        message_queue 不会被替换，因此闭包安全。
+        """
+        queue = self.message_queue
+
+        class _Drainer:
+            async def drain(self) -> list[Message]:
+                msgs, pending = [], []
+                while True:
+                    try:
+                        msg = queue.get_nowait()
+                        if msg.message_type == MessageType.USER_MESSAGE:
+                            msgs.append(msg)
+                        else:
+                            pending.append(msg)
+                    except asyncio.QueueEmpty:
+                        break
+                for p in pending:
+                    try:
+                        queue.put_nowait(p)
+                    except asyncio.QueueFull:
+                        pass
+                return msgs
+
+        return _Drainer()
+
     async def start(self):
         self.running = True
 
@@ -447,7 +496,11 @@ class Agent:
                 message = await asyncio.wait_for(self.message_queue.get(), timeout=1)
                 if message.message_type == MessageType.USER_MESSAGE:
                     if not await self._try_dispatch_inline_command(message):
-                        await self.run(message)
+                        if self.config.execution_config.execution_mode == "non_blocking":
+                            messages = self._drain_user_messages(message)
+                            await self.run(messages, message_source=self._make_message_source())
+                        else:
+                            await self.run(message)
                 elif message.message_type == MessageType.TASK_START:
                     await self._handle_task(message)
                 elif message.message_type in [
@@ -478,11 +531,12 @@ class Agent:
 
     async def run(
         self,
-        message: Message,
+        message: "Message | list[Message]",
         max_steps: Optional[int] = None,
         from_agent: Optional[bool] = False,
         allowed_tools: Optional[list[str]] = None,
         namespace: Optional[str] = None,
+        message_source: Optional[Any] = None,
     ) -> ExecutionResult:
         """
         Run agent in async mode (replaces command-line interaction)
@@ -491,7 +545,7 @@ class Agent:
         handling high-level execution control and cleanup.
 
         Args:
-            message: The message to process
+            message: The message(s) to process (single Message or list of Messages)
             max_steps: Maximum number of steps
             from_agent: Whether the message is from another agent (inter-agent task,
                         not a direct user message). Command interception is handled
@@ -499,6 +553,8 @@ class Agent:
             allowed_tools: Optional list of tool names that are allowed to be called.
                            If provided, any tool not in this list will be skipped
                            with a "this tool is currently not allowed" result.
+            message_source: Optional source for mid-step user message injection
+                           (non-blocking mode).
 
         Returns:
             ExecutionResult: Result of the execution with status and details
@@ -519,6 +575,7 @@ class Agent:
                     message, max_steps, from_agent,
                     allowed_tools=allowed_tools,
                     namespace=namespace,
+                    message_source=message_source,
                 )
             except Exception as e:
                 logger.error(f"Error in run: {e}")

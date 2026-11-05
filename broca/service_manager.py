@@ -889,7 +889,7 @@ def _win_save_state(state: dict[str, Any]) -> None:
     try:
         SERVICES_STATE.write_text(json.dumps(state, indent=2), encoding="utf-8")
     except Exception as e:
-        logger.warning("保存服务状态失败: %s", e)
+        logger.warning(f"保存服务状态失败: {e}")
 
 
 def _win_get_python() -> str:
@@ -1051,7 +1051,7 @@ def _win_prepare_nginx() -> tuple[bool, str, str | None]:
             nginx_exe = str(target_exe)
         except Exception as e:
             # 复制失败则直接使用原路径
-            logger.warning("复制 nginx.exe 失败，直接使用原路径: %s", e)
+            logger.warning(f"复制 nginx.exe 失败，直接使用原路径: {e}")
             nginx_exe = str(nginx_src)
 
     # 复制 mime.types（若不存在）
@@ -1583,7 +1583,7 @@ def start_services(wait: bool = True) -> dict[str, Any]:
         logger.info("Starting nginx frontend...")
         nginx_ok, nginx_msg = _enable_broca_site()
         if not nginx_ok:
-            logger.warning("nginx 启动失败: %s", nginx_msg)
+            logger.warning(f"nginx 启动失败: {nginx_msg}")
     else:
         nginx_ok, nginx_msg = True, "前端已跳过（未安装 nginx）"
 
@@ -1832,5 +1832,5 @@ def write_supervisor_config(
     SUPERVISOR_CONF.write_text(config_text)
     if not _is_windows():
         SUPERVISOR_CONF.chmod(0o600)  # 限制权限，防止路径/配置泄露（Unix 专用）
-    logger.info("Supervisor config written to %s", SUPERVISOR_CONF)
+    logger.info(f"Supervisor config written to {SUPERVISOR_CONF}")
     return str(SUPERVISOR_CONF)

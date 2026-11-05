@@ -91,7 +91,7 @@ class IPCPoller:
                 target=self._poll_loop, name=THREAD_NAME, daemon=True
             )
             self._thread.start()
-        logger.info("IPCPoller started (thread=%s)", THREAD_NAME)
+        logger.info(f"IPCPoller started (thread={THREAD_NAME})")
 
     def stop(self) -> None:
         """停止轮询线程（幂等）。"""
@@ -125,7 +125,7 @@ class IPCPoller:
         with self._lock:
             self._connections[session_id] = conn
             self._queues[session_id] = asyncio.Queue(maxsize=self._queue_size)
-        logger.debug("IPCPoller registered session %s", session_id)
+        logger.debug(f"IPCPoller registered session {session_id}")
 
     def unregister(self, session_id: str) -> None:
         """注销连接（幂等）。"""
@@ -159,7 +159,7 @@ class IPCPoller:
                 ready = wait(list(snapshot.values()), timeout=POLL_TIMEOUT)
             except (OSError, ValueError, TypeError) as exc:
                 # TypeError: 已关闭的连接 fileno() 为 None（release_handle 之后）
-                logger.debug("IPCPoller wait() failed: %s", exc)
+                logger.debug(f"IPCPoller wait() failed: {exc}")
                 threading.Event().wait(IDLE_SLEEP)
                 continue
 
@@ -182,7 +182,7 @@ class IPCPoller:
             snapshot = dict(self._connections)
         for session_id, conn in list(snapshot.items()):
             if getattr(conn, "closed", False):
-                logger.debug("IPCPoller pruning closed connection %s", session_id)
+                logger.debug(f"IPCPoller pruning closed connection {session_id}")
                 snapshot.pop(session_id, None)
                 self.unregister(session_id)
         return snapshot
@@ -192,14 +192,14 @@ class IPCPoller:
         try:
             raw = conn.recv()
         except (EOFError, OSError) as exc:
-            logger.warning("IPC connection lost for session %s: %s", session_id, exc)
+            logger.warning(f"IPC connection lost for session {session_id}: {exc}")
             # 顺序很关键：先投递 None 哨兵（此时队列还在），再注销。
             # 反过来写会让消费侧永远等不到「连接已断」的信号。
             self._deliver(session_id, None)
             self.unregister(session_id)
             return
         except Exception as exc:  # noqa: BLE001 - 单条消息失败不应杀线程
-            logger.error("IPCPoller recv failed for session %s: %s", session_id, exc)
+            logger.error(f"IPCPoller recv failed for session {session_id}: {exc}")
             return
 
         try:
@@ -219,12 +219,12 @@ class IPCPoller:
             queue = self._queues.get(session_id)
         if loop is None or queue is None:
             if not allow_missing:
-                logger.debug("IPCPoller dropping message for unknown session %s", session_id)
+                logger.debug(f"IPCPoller dropping message for unknown session {session_id}")
             return
         try:
             loop.call_soon_threadsafe(self._put_nowait, session_id, queue, msg)
         except RuntimeError:  # 事件循环已关闭
-            logger.debug("Event loop closed, dropping message for %s", session_id)
+            logger.debug(f"Event loop closed, dropping message for {session_id}")
 
     def _put_nowait(self, session_id: str, queue: "asyncio.Queue", msg: Any) -> None:
         """在事件循环线程内入队；队列满时按背压策略处理（Task 4.4）。
