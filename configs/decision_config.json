@@ -1,0 +1,40 @@
+{
+    "__default__": {
+        "provider": "kev",
+        "model": "kev-4b"
+    },
+    "kev": {
+        "base_url": "http://localhost:8009",
+        "api_key": "",
+        "models": {
+            "kev-4b": {
+                "model": "kev-latest",
+                "timeout": 30
+            },
+            "kev-0.8b": {
+                "model": "kev-latest",
+                "timeout": 15
+            }
+        }
+    },
+    "laya": {
+        "base_url": "http://localhost:9000",
+        "api_key": "",
+        "models": {
+            "laya-421m": {
+                "model": "laya",
+                "timeout": 15
+            }
+        }
+    },
+    "jev": {
+        "base_url": "https://api.typesafe.ai",
+        "api_key": "",
+        "models": {
+            "jev-latest": {
+                "model": "jev-latest",
+                "timeout": 30
+            }
+        }
+    }
+}

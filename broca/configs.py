@@ -44,6 +44,7 @@ class ExecutionConfig:
     permission_request_timeout: int = 90  # 权限请求等待超时（秒）
     agent_query_timeout: int = 300  # ask_user 用户问答等待超时（秒）
     tool_execution_mode: str = "parallel"  # 工具执行方式: "parallel" | "serial"
+    execution_mode: str = "non_blocking"  # 执行模式: "blocking" | "non_blocking"
     max_parallel_tools: int = 10  # 并行模式下最大同时执行的工具数
     max_concurrent_runners: int = 10  # 最大并发 session runner 数
     # Session Runner 心跳（子进程 → Web 进程）
@@ -133,6 +134,7 @@ _PATH_FIELDS = (
     "log_file",
     "log_dir",
     "llm_config_file",
+    "decision_config_file",
     "agents_config_dir",
     "snapshot_home",
     "components_config",
@@ -148,6 +150,7 @@ class BrocaConfig:
         self.log_file: str | None = None
         self.log_dir: str = os.path.expanduser("~/.broca/logs")
         self.llm_config_file: str | None = None
+        self.decision_config_file: str | None = None
         self.agents_config_dir: str = os.path.expanduser("~/.broca/configs/agents")
         self.snapshot_home: str = os.path.expanduser("~/.broca/snapshots")
         self.components_config: str = ""
@@ -218,12 +221,17 @@ def _load_config_file(config_file: Path) -> BrocaConfig | None:
 # editable 安装 / 源码运行时 → 项目源码目录；pip install 后 → site-packages
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# 默认发现链（按优先级排列）
-_DEFAULT_SEARCH_PATHS: tuple[Path, ...] = (
-    _PROJECT_ROOT / "configs" / "configs.json",
-    Path.home() / ".broca" / "configs" / "configs.json",
-    Path.home() / ".broca" / "configs.json",
-)
+def _default_search_paths() -> tuple[Path, ...]:
+    """默认发现链（按优先级排列）。
+
+    动态计算以支持测试中 patch HOME 后路径正确更新。
+    """
+    home = Path.home()
+    return (
+        _PROJECT_ROOT / "configs" / "configs.json",
+        home / ".broca" / "configs" / "configs.json",
+        home / ".broca" / "configs.json",
+    )
 
 
 def resolve_configs_path(
@@ -258,7 +266,7 @@ def resolve_configs_path(
             return path
 
     # --- 默认发现链 ---
-    for candidate in _DEFAULT_SEARCH_PATHS:
+    for candidate in _default_search_paths():
         if candidate.exists():
             return candidate
 
@@ -267,7 +275,7 @@ def resolve_configs_path(
 
 def _get_default_search_paths() -> tuple[Path, ...]:
     """暴露默认搜索链（测试 / 诊断用）。"""
-    return _DEFAULT_SEARCH_PATHS
+    return _default_search_paths()
 
 
 # ---------------------------------------------------------------------------

@@ -34,6 +34,12 @@ from broca.components.base import BaseComponent
 from broca.components.command_system import CommandSystem
 from broca.components.communicator import Communicator
 from broca.components.context_compressor import ContextCompressor
+from broca.components.decision_provider import (
+    DecisionProvider,
+    DecisionQuestion,
+    DecisionResult,
+    QuestionType,
+)
 from broca.components.errors import (
     ComponentError,
     ComponentNotFoundError,
@@ -78,6 +84,10 @@ __all__ = [
     "ToolExecutor",
     "ContextCompressor",
     "LLMClient",
+    "DecisionProvider",
+    "DecisionQuestion",
+    "DecisionResult",
+    "QuestionType",
     "PermissionProvider",
     "Communicator",
     "LoopEngine",

@@ -45,6 +45,7 @@
   - [9. 多智能体编排](#9-多智能体编排)
   - [10. Skill 系统](#10-skill-系统)
   - [11. 命令系统](#11-命令系统)
+  - [12. 决策组件](#12-决策组件)
 - [前端与客户端](#前端与客户端)
   - [TUI 终端界面](#tui-终端界面-1)
   - [Web 前端](#web-前端)
@@ -60,6 +61,7 @@
 Broca 是一个用 Python 构建的Agent系统，核心设计理念是 **模块化** 和 **可扩展**。它支持：
 
 - **多LLM供应商**：通过 litellm 统一接入多种 LLM 提供商
+- **决策组件**：基于 typesafe-sdk 的 System One 决策模型接入，支持 Kev/Laya/Jev 等快速分类、评分和判断（Choice/Noul/Score）
 - **实时通信**：基于 Socket.IO 实现浏览器/CLI/VS Code多端实时交互
 - **子进程隔离**：每个会话在独立子进程中运行，支持心跳监控
 - **快照与撤销**：基于Git的文件系统快照，实现操作级撤销/重做
@@ -229,6 +231,7 @@ class MySandboxExecutor(ToolExecutor):
 | ------------------------------------------------------------| ----------------------------|
 | Python　　　　　　　　　　　　　　　　　　　　　　　　　　 | 主语言　　　　　　　　　　 |
 | [litellm](https://github.com/BerriAI/litellm)　　　　　　　| 统一 LLM API 接入　　　　　|
+| [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) | 决策模型 SDK（System One API） |
 | [SQLModel](https://sqlmodel.tiangolo.com/)　　　　　　　　 | ORM + 数据建模　　　　　　 |
 | [aiosqlite](https://github.com/omnilib/aiosqlite)　　　　　| 异步 SQLite　　　　　　　　|
 | [python-socketio](https://python-socketio.readthedocs.io/) | 实时通信　　　　　　　　　 |
@@ -1212,6 +1215,84 @@ your-project/
 
 自定义命令不会覆盖内置命令，且支持所有标准元属性配置。
 
+### 12. 决策组件
+
+**核心文件**: `broca/components/decision_provider.py`, `broca/decision.py`
+
+决策组件提供快速结构化决策能力（System One），基于 [typesafe-sdk](https://github.com/typesafe-ai/typesafe-sdk-python) 接入所有兼容 `/v1/systemone` 协议的决策模型（Kev、Laya、TypeSafe Jev、OpenRouter 等）。
+
+#### 三种问题类型
+
+| 类型 | 说明 | 返回值 | 示例场景 |
+|------|------|--------|----------|
+| **Choice** | 从预定义选项中选一个 | 选中项 + 概率分布 + 置信度 | 路由到哪个团队/工具 |
+| **Noul** | 是/否判断（输出概率值） | 概率 (0~1) | 是否紧急/是否退款 |
+| **Score** | 在有序量表上定位 | 分数 + 概率分布 + 置信度 | 风险等级/情绪强度 |
+
+#### 使用方式
+
+```python
+from broca.decision import DecisionClient
+from broca.components.decision_provider import DecisionQuestion, QuestionType
+
+client = DecisionClient()
+await client.initialize()
+
+results = await client.decide(
+    state="用户请求: 我被重复扣费了，请退款",
+    questions=[
+        DecisionQuestion(name="is_refund", type=QuestionType.NOUL,
+                         instructions="Is this a refund request?"),
+        DecisionQuestion(name="team", type=QuestionType.CHOICE,
+                         instructions="Which team handles this?",
+                         criteria={"billing": "Payment issues", "tech": "Bugs"}),
+        DecisionQuestion(name="risk", type=QuestionType.SCORE,
+                         instructions="Risk level?",
+                         criteria=["low", "medium", "high", "critical"]),
+    ],
+)
+
+for r in results:
+    print(f"{r.question_name}: answer={r.answer}, confidence={r.confidence}, escalate={r.escalate}")
+```
+
+#### 配置
+
+通过 `configs/decision_config.json` 配置（格式同 `llm_config.json`），支持多 provider 同时接入：
+
+```json
+{
+  "__default__": {"provider": "kev", "model": "kev-4b"},
+  "kev": {
+    "base_url": "http://localhost:8009",
+    "api_key": "",
+    "models": {"kev-4b": {"model": "kev-latest", "timeout": 30}}
+  }
+}
+```
+
+#### 架构
+
+```
+Agent (策略/Hook)
+     │
+     ▼
+DecisionProvider (ABC, singleton scope)
+     │
+     ▼
+DecisionClient (typesafe-sdk AsyncTypeSafeClient)
+     │
+     ├── Kev (本地, base_url=localhost:8009)
+     ├── Laya (本地/云端)
+     ├── TypeSafe Jev (api.typesafe.ai)
+     └── OpenRouter / SiliconFlow (网关)
+```
+
+- **接口层**：`DecisionProvider` ABC 定义在 `broca/components/`，具体实现在 `broca/decision.py`
+- **ComponentRegistry 注册**：singleton scope，entry point `decision_provider`
+- **内置重试**：typesafe-sdk 自动处理连接错误和可重试 HTTP 状态码（指数退避）
+- **置信度门控**：`confidence < threshold` 时自动标记 `escalate=True`，供上层回退到 LLM
+
 ---
 
 ## 前端与客户端
@@ -1275,6 +1356,32 @@ your-project/
   }
 }
 ```
+
+### 决策模型配置
+
+`configs/decision_config.json` — 定义 System One 决策模型的提供商和模型（格式同 `llm_config.json`）：
+
+```json
+{
+  "__default__": {"provider": "kev", "model": "kev-4b"},
+  "kev": {
+    "base_url": "http://localhost:8009",
+    "api_key": "",
+    "models": {
+      "kev-4b": {"model": "kev-latest", "timeout": 30}
+    }
+  },
+  "jev": {
+    "base_url": "https://api.typesafe.ai",
+    "api_key": "tsf-xxx",
+    "models": {
+      "jev-latest": {"model": "jev-latest", "timeout": 30}
+    }
+  }
+}
+```
+
+`__default__` 指定默认使用的 provider 和 model。`base_url` 指向任何兼容 `/v1/systemone` 的服务（本地 Kev、TypeSafe 官方 API、OpenRouter 等）。
 
 ### Agent 配置
 
@@ -1454,6 +1561,7 @@ Broca/
 │   ├── context.py                  # 上下文管理
 │   ├── context_compressor.py       # 上下文压缩
 │   ├── llm.py                      # LLM 客户端（litellm 封装）
+│   ├── decision.py                 # 决策模型客户端（typesafe-sdk 封装）
 │   ├── logging_config.py           # 日志配置
 │   ├── scheduler.py                # 任务调度器
 │   ├── permission_manager.py       # 权限管理
@@ -1506,6 +1614,7 @@ Broca/
 ├── configs/                        # 配置文件
 │   ├── configs.json                # 全局配置
 │   ├── llm_config.json             # LLM 配置
+│   ├── decision_config.json        # 决策模型配置
 │   ├── tool_permission_config.json # 工具权限配置
 │   └── agents/                     # Agent 角色配置
 ├── data/                           # 数据目录（SQLite 数据库）

@@ -21,6 +21,7 @@ from broca.components.agent_factory import AgentFactory
 from broca.components.command_system import CommandSystem
 from broca.components.communicator import Communicator
 from broca.components.context_compressor import ContextCompressor
+from broca.components.decision_provider import DecisionProvider
 from broca.components.llm_client import LLMClient
 from broca.components.loop_engine import LoopEngine
 from broca.components.mcp_client import MCPClient
@@ -49,6 +50,7 @@ from broca.components.tool_manager import ToolManager
 # Mapping: interface → fully qualified "module:ClassName"
 _DEFAULT_IMPLS: dict[type, str] = {
     LLMClient: "broca.llm:LiteLLMClient",
+    DecisionProvider: "broca.decision:DecisionClient",
     PermissionProvider: "broca.permission_provider:DefaultPermissionProvider",
     Communicator: "broca.communication.socketio_client:SocketIOClient",
     LoopEngine: "broca.loop_engine:DefaultLoopEngine",
@@ -109,6 +111,7 @@ COMPONENT_SCOPES: dict[type, str] = {
     ToolExecutor: "per-agent",
     ContextCompressor: "per-agent",
     LLMClient: "singleton",
+    DecisionProvider: "singleton",
     PermissionProvider: "per-agent",
     Communicator: "per-agent",
     LoopEngine: "per-agent",
@@ -138,6 +141,7 @@ ENTRY_POINT_NAMES: dict[str, type] = {
     "tool_executor": ToolExecutor,
     "context_compressor": ContextCompressor,
     "llm_client": LLMClient,
+    "decision_provider": DecisionProvider,
     "permission_provider": PermissionProvider,
     "communicator": Communicator,
     "loop_engine": LoopEngine,
