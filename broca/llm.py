@@ -62,14 +62,29 @@ class LiteLLMClient(LLMClientABC):
     module.
     """
 
-    def __init__(self):
-        """Initialize LLM Client"""
-        # 配置路径从 configs.json 读取
-        from broca.configs import resolve_llm_config_path
+    def __init__(self, config: dict | None = None):
+        """Initialize LLM Client.
 
-        config_file = resolve_llm_config_path()
-        with open(config_file) as f:
-            self.config = json.load(f)
+        Args:
+            config: 可选的 LLM 配置 dict。未提供时从配置文件加载。
+                    测试中可传入 mock 配置避免读文件。
+        """
+        if config is not None:
+            self.config = config
+        else:
+            # 配置路径从 configs.json 读取
+            from broca.configs import resolve_llm_config_path
+
+            config_file = resolve_llm_config_path()
+            try:
+                with open(config_file) as f:
+                    self.config = json.load(f)
+            except (OSError, json.JSONDecodeError) as e:
+                logger.warning(
+                    f"Failed to load LLM config from {config_file}: {e}. "
+                    f"Using empty config."
+                )
+                self.config = {}
 
         # 全局配置（configs.json）中执行相关参数，用于 LLM 调用超时
         from broca.configs import get_configs

@@ -85,54 +85,36 @@ class ASRConfig:
 
 
 def _read_asr_from_configs_json() -> dict:
-    """从 configs.json 的 asr 分组读取配置（不存在时返回空 dict）。"""
-    from broca.configs import get_configs
+    """从 configs.json 的 asr 分组读取配置（不存在时返回空 dict）。
 
-    try:
-        configs = get_configs()
-        # get_configs 已解析了正确的 configs.json 路径
-        # 从该路径读取 asr 分组
-        config_path = None
-        if configs.database_dir:
-            # 通过已解析的 configs 对象找到源文件路径
-            pass
+    路径解析委托给 ``broca.configs.resolve_configs_path()``（统一入口）。
+    """
+    from broca.configs import resolve_configs_path
 
-        # 直接从 get_configs 的缓存实例获取源路径
-        # 这里简化处理：从 broca.configs 模块获取实际加载的文件路径
-        from broca import configs as broca_configs
-        if broca_configs._config_instance and broca_configs._config_instance.database_dir:
-            # 推断配置文件路径
-            pass
-    except Exception:
-        pass
-
-    # 回退：按标准路径搜索
-    candidates = [
-        str(Path.home() / ".broca" / "configs" / "configs.json"),
-        str(Path.home() / ".broca" / "configs.json"),
-    ]
-    # 如果有显式配置路径
+    # 1. 优先使用 Web 后端的显式配置路径（.env 的 BROCA_CONFIG）
+    explicit = None
     try:
         from app.core.config import settings
-        if settings.broca_config_path is not None:
-            candidates.insert(0, str(settings.broca_config_path))
+        explicit = settings.broca_config
     except Exception:
         pass
 
-    for path_str in candidates:
-        if not path_str:
-            continue
-        path = Path(path_str).expanduser()
-        if path.exists():
-            try:
-                with open(path, encoding="utf-8") as f:
-                    data = json.load(f)
-                asr = data.get("asr")
-                if isinstance(asr, dict):
-                    return asr
-            except (json.JSONDecodeError, OSError):
-                pass
-            break
+    # 2. 统一解析
+    config_path = resolve_configs_path(explicit, base_dir=None)
+    if config_path is None:
+        return {}
+
+    if not config_path.exists():
+        return {}
+
+    try:
+        with open(config_path, encoding="utf-8") as f:
+            data = json.load(f)
+        asr = data.get("asr")
+        if isinstance(asr, dict):
+            return asr
+    except (json.JSONDecodeError, OSError):
+        pass
     return {}
 
 

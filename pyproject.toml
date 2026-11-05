@@ -61,6 +61,8 @@ markers = [
     "integration: integration tests requiring real services",
 ]
 addopts = "-m 'not perf'"
+# 确保本地源码 broca/ 包优先于 PYTHONPATH 中可能存在的已安装副本
+pythonpath = ["."]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

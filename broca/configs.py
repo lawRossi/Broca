@@ -9,6 +9,8 @@
 
 import json
 import os
+import threading
+from dataclasses import dataclass, fields
 from pathlib import Path
 
 def _get_logger():
@@ -27,94 +29,102 @@ DEFAULT_LLM_PROVIDER = "deepseek"
 DEFAULT_LLM_MODEL = "deepseek-v4-flash"
 
 
+@dataclass
 class ExecutionConfig:
     """执行引擎相关配置（loop_engine / llm / agent）"""
 
-    def __init__(self):
-        self.step_max_errors = 3  # LLM 最大重试次数
-        self.llm_retry_delay = 5  # LLM 重试间隔（秒）
-        self.tool_call_timeout = 120  # 普通工具执行超时（秒）
-        self.assign_task_timeout = 1800  # assign_task 工具超时（秒）
-        self.llm_timeout = 300  # LLM 流式请求超时（秒，也用于外层 wait_for）
-        self.llm_first_chunk_timeout = 30  # LLM 首块超时（秒）
-        self.dead_loop_window = 3  # 最近 N 步工具调用相同判定死循环
-        self.message_queue_size = 3  # agent 消息队列大小
-        self.permission_request_timeout = 90  # 权限请求等待超时（秒）
-        self.agent_query_timeout = 300  # ask_user 用户问答等待超时（秒）
-        self.tool_execution_mode = "parallel"  # 工具执行方式: "parallel" | "serial"
-        self.max_parallel_tools = 10  # 并行模式下最大同时执行的工具数
-        self.max_concurrent_runners = 10  # 最大并发 session runner 数
-        # Session Runner 心跳（子进程 → Web 进程）
-        # 发送间隔 5s、判定超时 45s（≈9 个周期）、巡检间隔 15s
-        self.runner_heartbeat_interval = 5  # Runner 上报心跳间隔（秒）
-        self.runner_heartbeat_timeout = 45  # 心跳超时判定阈值（秒）
-        self.runner_heartbeat_check_interval = 15  # Manager 心跳巡检间隔（秒）
-        # IPC 单线程多路复用（Task 4.2）：一个 ipc-poller 线程轮询所有连接。
-        # 灰度期的「每 session 一线程」回滚路径已下线（备份见 docs/legacy/）
-        # 心跳状态落库的最小间隔（秒）：时间维度聚合，避免每轮巡检都写库
-        self.runner_status_persist_interval = 60
-        # 每个 session 的 IPC 消息队列上限（背压，Task 4.4）
-        self.runner_ipc_queue_size = 1000
-        # Per-session runner 日志目录 GC 保留天数
-        self.runner_log_gc_days = 30
-        # Per-session runner 日志目录 GC 轮询间隔（秒）
-        self.runner_log_gc_interval = 3600
+    step_max_errors: int = 3  # LLM 最大重试次数
+    llm_retry_delay: int = 5  # LLM 重试间隔（秒）
+    tool_call_timeout: int = 120  # 普通工具执行超时（秒）
+    assign_task_timeout: int = 1800  # assign_task 工具超时（秒）
+    llm_timeout: int = 300  # LLM 流式请求超时（秒，也用于外层 wait_for）
+    llm_first_chunk_timeout: int = 30  # LLM 首块超时（秒）
+    dead_loop_window: int = 3  # 最近 N 步工具调用相同判定死循环
+    message_queue_size: int = 3  # agent 消息队列大小
+    permission_request_timeout: int = 90  # 权限请求等待超时（秒）
+    agent_query_timeout: int = 300  # ask_user 用户问答等待超时（秒）
+    tool_execution_mode: str = "parallel"  # 工具执行方式: "parallel" | "serial"
+    max_parallel_tools: int = 10  # 并行模式下最大同时执行的工具数
+    max_concurrent_runners: int = 10  # 最大并发 session runner 数
+    # Session Runner 心跳（子进程 → Web 进程）
+    # 发送间隔 5s、判定超时 45s（≈9 个周期）、巡检间隔 15s
+    runner_heartbeat_interval: int = 5  # Runner 上报心跳间隔（秒）
+    runner_heartbeat_timeout: int = 45  # 心跳超时判定阈值（秒）
+    runner_heartbeat_check_interval: int = 15  # Manager 心跳巡检间隔（秒）
+    # IPC 单线程多路复用（Task 4.2）：一个 ipc-poller 线程轮询所有连接。
+    # 心跳状态落库的最小间隔（秒）：时间维度聚合，避免每轮巡检都写库
+    runner_status_persist_interval: int = 60
+    # 每个 session 的 IPC 消息队列上限（背压，Task 4.4）
+    runner_ipc_queue_size: int = 1000
+    # Per-session runner 日志目录 GC 保留天数
+    runner_log_gc_days: int = 30
+    # Per-session runner 日志目录 GC 轮询间隔（秒）
+    runner_log_gc_interval: int = 3600
 
     @classmethod
-    def from_config(cls, config):
-        exec_config = cls()
+    def from_config(cls, config: dict) -> "ExecutionConfig":
+        """从 dict 创建/更新实例，过滤未知字段（就地修改 config dict）。"""
+        instance = cls()
+        known = {f.name for f in fields(cls)}
         for key in list(config.keys()):
-            if key not in exec_config.__dict__:
+            if key not in known:
                 del config[key]
-        exec_config.__dict__.update(config)
-        return exec_config
+        for key, value in config.items():
+            setattr(instance, key, value)
+        return instance
 
 
+@dataclass
 class StorageConfig:
     """文件上传存储配置（configs.json 的 storage 分组）"""
 
-    def __init__(self):
-        self.backend = ""  # "cloudflare" | "supabase" | ""
-        # Cloudflare R2
-        self.cloudflare_account_id = ""
-        self.cloudflare_access_key_id = ""
-        self.cloudflare_secret_access_key = ""
-        self.cloudflare_bucket = "upload"
-        self.cloudflare_public_url = ""
-        # Supabase S3
-        self.supabase_url = ""
-        self.supabase_s3_access_key_id = ""
-        self.supabase_s3_secret_access_key = ""
-        self.supabase_bucket = "upload"
+    backend: str = ""  # "cloudflare" | "supabase" | ""
+    # Cloudflare R2
+    cloudflare_account_id: str = ""
+    cloudflare_access_key_id: str = ""
+    cloudflare_secret_access_key: str = ""
+    cloudflare_bucket: str = "upload"
+    cloudflare_public_url: str = ""
+    # Supabase S3
+    supabase_url: str = ""
+    supabase_s3_access_key_id: str = ""
+    supabase_s3_secret_access_key: str = ""
+    supabase_bucket: str = "upload"
 
     @classmethod
-    def from_config(cls, config):
-        storage_config = cls()
+    def from_config(cls, config: dict) -> "StorageConfig":
+        """从 dict 创建/更新实例，过滤未知字段（就地修改 config dict）。"""
+        instance = cls()
+        known = {f.name for f in fields(cls)}
         for key in list(config.keys()):
-            if key not in storage_config.__dict__:
+            if key not in known:
                 del config[key]
-        storage_config.__dict__.update(config)
-        return storage_config
+        for key, value in config.items():
+            setattr(instance, key, value)
+        return instance
 
 
+@dataclass
 class SearchConfig:
     """搜索 API 配置（configs.json 的 search 分组）"""
 
-    def __init__(self):
-        self.tavily_api_key = ""
-        self.anysearch_api_key = ""
-        self.anysearch_api_base_url = "https://api.anysearch.com"
-        self.default_search_provider = "tavily"   # "tavily" | "anysearch"
-        self.default_fetch_provider = "anysearch"  # "anysearch" | "playwright"
+    tavily_api_key: str = ""
+    anysearch_api_key: str = ""
+    anysearch_api_base_url: str = "https://api.anysearch.com"
+    default_search_provider: str = "tavily"   # "tavily" | "anysearch"
+    default_fetch_provider: str = "anysearch"  # "anysearch" | "playwright"
 
     @classmethod
-    def from_config(cls, config):
-        search_config = cls()
+    def from_config(cls, config: dict) -> "SearchConfig":
+        """从 dict 创建/更新实例，过滤未知字段（就地修改 config dict）。"""
+        instance = cls()
+        known = {f.name for f in fields(cls)}
         for key in list(config.keys()):
-            if key not in search_config.__dict__:
+            if key not in known:
                 del config[key]
-        search_config.__dict__.update(config)
-        return search_config
+        for key, value in config.items():
+            setattr(instance, key, value)
+        return instance
 
 
 # 需要 expanduser 的路径字段
@@ -200,19 +210,85 @@ def _load_config_file(config_file: Path) -> BrocaConfig | None:
     return None
 
 
+# ---------------------------------------------------------------------------
+# 统一路径解析（所有模块共用此函数，不再各自实现回退链）
+# ---------------------------------------------------------------------------
+
+# 项目根目录（broca/configs.py 的上一级的上一级 = 项目根）
+# editable 安装 / 源码运行时 → 项目源码目录；pip install 后 → site-packages
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+# 默认发现链（按优先级排列）
+_DEFAULT_SEARCH_PATHS: tuple[Path, ...] = (
+    _PROJECT_ROOT / "configs" / "configs.json",
+    Path.home() / ".broca" / "configs" / "configs.json",
+    Path.home() / ".broca" / "configs.json",
+)
+
+
+def resolve_configs_path(
+    explicit_path: str | Path | None = None,
+    base_dir: str | Path | None = None,
+) -> Path | None:
+    """统一的 configs.json 路径解析入口。
+
+    所有需要定位 configs.json 的模块（broca 核心 / Web 后端 / TUI）
+    都应调用此函数，而非各自硬编码回退链。
+
+    Args:
+        explicit_path: 显式指定的路径（来自 BROCA_CONFIG / 参数）。
+                       相对路径以 base_dir 为基准解析；绝对路径 / ~ 路径直接 expanduser。
+                       为 None / 空字符串时走默认发现链。
+        base_dir: 相对路径的锚定目录。未提供时相对路径直接 expanduser
+                  （退化为基于 CWD，不推荐）。
+
+    Returns:
+        解析后的绝对 Path。显式路径不存在时仍返回（调用方可自行 .exists() 检查）；
+        默认发现链找不到任何文件时返回 None。
+    """
+    # --- 显式路径 ---
+    if explicit_path is not None:
+        raw = str(explicit_path).strip()
+        if not raw:
+            explicit_path = None  # 空字符串视为未提供
+        else:
+            path = Path(raw).expanduser()
+            if not path.is_absolute() and base_dir is not None:
+                path = (Path(base_dir).expanduser() / path).resolve()
+            return path
+
+    # --- 默认发现链 ---
+    for candidate in _DEFAULT_SEARCH_PATHS:
+        if candidate.exists():
+            return candidate
+
+    return None
+
+
+def _get_default_search_paths() -> tuple[Path, ...]:
+    """暴露默认搜索链（测试 / 诊断用）。"""
+    return _DEFAULT_SEARCH_PATHS
+
+
+# ---------------------------------------------------------------------------
 # 模块级单例缓存
+# ---------------------------------------------------------------------------
 _config_instance: BrocaConfig | None = None
+_config_lock = threading.Lock()
 
 
 def get_configs(config_path: str | Path | None = None, *, enforce_production: bool = False) -> BrocaConfig:
     """
     读取配置（纯文件驱动，不读取环境变量）。
 
+    路径解析委托给 ``resolve_configs_path()``。
+
     优先级:
       1. config_path 参数（显式指定）
       2. 项目 configs/configs.json
-      3. ~/.broca/configs.json
-      4. 代码默认值
+      3. ~/.broca/configs/configs.json
+      4. ~/.broca/configs.json
+      5. 代码默认值
 
     Args:
         config_path: 显式指定配置文件路径。为 None 时走默认发现逻辑。
@@ -220,27 +296,36 @@ def get_configs(config_path: str | Path | None = None, *, enforce_production: bo
     """
     global _config_instance
 
-    # 如果传了显式路径，加载并更新缓存
-    if config_path is not None:
-        config = _load_config_file(Path(config_path).expanduser())
-        if config is not None:
-            _config_instance = config
+    resolved = resolve_configs_path(config_path) if config_path is not None else None
+
+    if resolved is not None:
+        # 显式路径：加载并更新缓存（加锁防止并发初始化）
+        with _config_lock:
+            config = _load_config_file(resolved)
+            if config is not None:
+                _config_instance = config
     else:
-        # 使用缓存（避免重复 IO）
-        if _config_instance is not None:
-            config = _config_instance
-        else:
-            project_config = Path(__file__).parent.parent / "configs" / "configs.json"
-            user_config = Path.home() / ".broca" / "configs.json"
+        # 快速路径：缓存已存在且无需 enforce_production 变换
+        if not enforce_production and _config_instance is not None:
+            return _config_instance
+        with _config_lock:
+            # double-check after acquiring lock
+            if not enforce_production and _config_instance is not None:
+                config = _config_instance
+            elif _config_instance is not None:
+                config = _config_instance
+            else:
+                # 通过统一函数发现默认路径
+                default_path = resolve_configs_path()
+                if default_path is not None:
+                    config = _load_config_file(default_path)
+                else:
+                    config = None
 
-            config = _load_config_file(project_config)
-            if config is None:
-                config = _load_config_file(user_config)
+                if config is None:
+                    config = BrocaConfig()
 
-            if config is None:
-                config = BrocaConfig()
-
-            _config_instance = config
+                _config_instance = config
 
     if config is None:
         config = BrocaConfig()

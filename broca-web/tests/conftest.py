@@ -34,13 +34,30 @@ os.environ["BROCA_SOCKETIO_ENABLED"] = "false"
 # Patch broca package imports at module level
 # ---------------------------------------------------------------------------
 
+# 为 get_configs 提供一个真实的 BrocaConfig 实例（而非 MagicMock），
+# 避免测试中访问 .execution / .log_level 等属性时返回 MagicMock 导致
+# 类型错误（如 int(MagicMock) 崩溃）。
+from broca.configs import BrocaConfig as _BrocaConfig
+
+_test_broca_config = _BrocaConfig()
+_test_broca_config.log_level = "WARNING"
+_test_broca_config.database_dir = "/tmp/broca_test"
+_test_broca_config.log_dir = "/tmp/broca_test/logs"
+_test_broca_config.snapshot_home = "/tmp/broca_test/snapshots"
+_test_broca_config.llm_config_file = ""
+_test_broca_config.agents_config_dir = ""
+_test_broca_config.socket_server_url = "http://localhost:16666"
+_test_broca_config.api_server_url = "http://localhost:19001"
+
+
 _broca_patches = [
     patch("broca.logging_config.init_logging", return_value=None),
     patch("broca.agent_manager.AgentFactory"),
     patch("broca.session_runner.RunnerManager"),
     patch("broca.session_runner.RunnerManager.get_instance", return_value=AsyncMock()),
     patch("broca.communication.socketio_server.SocketIOServer"),
-    patch("broca.configs.get_configs"),
+    patch("broca.configs.get_configs", return_value=_test_broca_config),
+    patch("broca.configs.resolve_llm_config_path", return_value=Path("/dev/null")),
     patch("broca.commands.loader.load_all_commands"),
     patch("broca.commands.registry.CommandRegistry"),
     patch("broca.scheduler.Scheduler", return_value=AsyncMock()),

@@ -90,15 +90,18 @@ VALID_STORAGE_BACKENDS = {"cloudflare", "supabase"}
 
 
 def _resolve_general_config_path() -> Path:
-    """解析 general 配置路径（从 .env 的 BROCA_CONFIG 或默认发现规则）：
+    """解析 general 配置路径（从 .env 的 BROCA_CONFIG 或默认发现规则）。
 
-    1. settings.broca_config（来自 .env 文件）
-    2. 项目 configs/configs.json
-    3. ~/.broca/configs/configs.json
-    4. ~/.broca/configs.json
+    委托给 ``broca.configs.resolve_configs_path()``（统一入口）。
+
+    优先级:
+      1. settings.broca_config_path（来自 .env 的 BROCA_CONFIG）
+      2. 默认发现链（项目 configs/ → ~/.broca/configs/ → ~/.broca/）
 
     写回目标 = 解析出的路径（不存在时也用它作为创建路径）。
     """
+    from broca.configs import resolve_configs_path
+
     # 1. 从 settings 读取（.env 文件中的 BROCA_CONFIG）
     try:
         from app.core.config import settings
@@ -107,20 +110,14 @@ def _resolve_general_config_path() -> Path:
     except Exception:
         pass
 
-    # parents[4]: app/api/config.py → api → app → backend → broca-web → 项目根
-    project_config = Path(__file__).resolve().parents[4] / "configs" / "configs.json"
-    if project_config.exists():
-        return project_config
+    # 2. 走统一发现链
+    resolved = resolve_configs_path()
+    if resolved is not None:
+        return resolved
 
-    user_configs_new = Path.home() / ".broca" / "configs" / "configs.json"
-    if user_configs_new.exists():
-        return user_configs_new
-
-    user_config_legacy = Path.home() / ".broca" / "configs.json"
-    if user_config_legacy.exists():
-        return user_config_legacy
-
-    return project_config
+    # 3. 终极兜底：项目根路径（用于文件创建）
+    #    parents[4]: app/api/config.py → api → app → backend → broca-web → 项目根
+    return Path(__file__).resolve().parents[4] / "configs" / "configs.json"
 
 
 GENERAL_CONFIG_PATH = _resolve_general_config_path()

@@ -23,15 +23,12 @@ DEV_CONFIG_FILENAME = "configs.dev.json"
 def resolve_broca_config_path(raw: str | None) -> Path | None:
     """把 BROCA_CONFIG 解析成绝对路径。
 
-    相对路径以 backend 目录为基准（而非进程 CWD）。dev.sh / start.sh / pytest
-    的启动目录各不相同，用 CWD 解析会导致同一份 .env 指向不同配置文件。
+    委托给 ``broca.configs.resolve_configs_path()``（统一入口）。
+    相对路径以 backend 目录为基准（而非进程 CWD）。
     """
-    if not raw or not raw.strip():
-        return None
-    path = Path(raw.strip()).expanduser()
-    if not path.is_absolute():
-        path = (BACKEND_DIR / path).resolve()
-    return path
+    from broca.configs import resolve_configs_path
+
+    return resolve_configs_path(raw, base_dir=BACKEND_DIR)
 
 
 class Settings(BaseSettings):

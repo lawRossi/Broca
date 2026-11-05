@@ -19,6 +19,19 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _reset_broca_config_cache():
+    """每个测试前重置 BrocaConfig 单例缓存，防止测试间配置泄漏。
+
+    确保 get_configs() 不会返回上一个测试（或模块导入时）缓存的配置实例。
+    """
+    from broca.configs import reset_configs_cache
+
+    reset_configs_cache()
+    yield
+    reset_configs_cache()
+
+
 @pytest.fixture
 def test_workspace(tmp_path):
     """Temporary directory as workspace root."""
@@ -182,20 +195,46 @@ def _cleanup_git_manager_instances():
 
 @pytest.fixture(scope="session", autouse=True)
 def _cleanup_runner_ipc_sockets():
-    """测试结束后清理 tempdir 下的 ``broca_runner_*.sock`` 残留。
+    """测试结束后清理本测试进程创建的 ``broca_runner_*.sock`` 残留。
 
     IPC 测试会真实 bind AF_UNIX socket；用例失败/被中断时 ``close()`` 可能没跑到，
     残留文件会让后续用例在 ``Listener`` 处抛 ``EADDRINUSE``（P0-4 的同款症状），
-    表现为难以定位的连锁失败。这里做统一兜底清理。
+    表现为难以定位的连锁失败。
+
+    ⚠️ 只清理本进程创建的文件（通过 PID 标记），避免误删生产服务正在使用的
+    IPC socket 导致 ``broca service`` 崩溃。
     """
-    import glob
     import os
     import tempfile
 
+    # 本测试进程的 PID 作为标记前缀
+    _my_pid = os.getpid()
+    _tracked: list[str] = []
+
+    # Monkey-patch tempfile.gettempdir 不可行（全局影响），改为记录测试创建的 socket
+    # 通过 monkeypatch 在 IPCServer 创建时记录
+    import broca.session_runner.transport.addresses as _addr_mod
+    _orig_get_ipc_address = _addr_mod.get_ipc_address
+
+    def _tracking_get_ipc_address(session_id: str) -> str:
+        addr = _orig_get_ipc_address(session_id)
+        if addr and addr.startswith(tempfile.gettempdir()):
+            _tracked.append(addr)
+        return addr
+
+    _addr_mod.get_ipc_address = _tracking_get_ipc_address
+    # transport/base.py 在构造时调用 get_ipc_address，需要同步 patch
+    import broca.session_runner.transport.base as _transport_base
+    _transport_base.get_ipc_address = _tracking_get_ipc_address
+
     yield
 
-    pattern = os.path.join(tempfile.gettempdir(), "broca_runner_*.sock")
-    for path in glob.glob(pattern):
+    # 恢复
+    _addr_mod.get_ipc_address = _orig_get_ipc_address
+    _transport_base.get_ipc_address = _orig_get_ipc_address
+
+    # 只删除本测试进程跟踪到的 socket 文件
+    for path in _tracked:
         try:
             os.unlink(path)
         except OSError:
