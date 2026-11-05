@@ -836,7 +836,6 @@ class DefaultLoopEngine(LoopEngine):
         # Per-turn execution params (review 2.5: no longer set externally).
         self.allowed_tools = allowed_tools
         self.namespace = namespace
-        self._message_source = message_source
 
         await self._ensure_strategies()
 
@@ -844,6 +843,8 @@ class DefaultLoopEngine(LoopEngine):
         result: Optional[ExecutionResult] = None
         try:
             turn_ctx = await self._setup_turn(messages, from_agent)
+            # Set AFTER _setup_turn because _reset_turn_scoped_state() wipes it.
+            self._message_source = message_source
             await self._dispatch("on_turn_start", turn_ctx)
             result = await self._execute_round(turn_ctx, max_steps)
         except ValidationError as e:

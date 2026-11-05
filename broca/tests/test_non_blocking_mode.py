@@ -377,3 +377,59 @@ class TestDrainEmptyQueue:
 
         assert len(results) == 1
         assert results[0].message_id == "F"
+
+
+# ============================================================================
+# TC-9: execute() end-to-end — message_source survives _setup_turn reset
+# ============================================================================
+
+
+class TestExecuteEndToEnd:
+    """TC-9: Regression: _message_source must survive _reset_turn_scoped_state()
+    which is called inside _setup_turn(). This test calls engine.execute()
+    (the real production path) instead of bypassing it via _execute_round().
+    """
+
+    @pytest.mark.asyncio
+    async def test_execute_preserves_message_source(
+        self, engine, mock_session_manager, mock_context, mock_communicator
+    ):
+        """Verify message_source.drain() is actually called during execute()."""
+        # Step 1 → RUNNING (tool call), Step 2 → COMPLETED
+        step1 = MagicMock(spec=StepContext)
+        step1.status = ExecutionStatus.RUNNING
+        step2 = MagicMock(spec=StepContext)
+        step2.status = ExecutionStatus.COMPLETED
+        engine._execute_step = AsyncMock(side_effect=[step1, step2])
+
+        # message_source that returns one message then empty
+        injected_msg = _make_user_message("injected during execute", "exec_inj_1")
+        msg_source = MagicMock()
+        msg_source.drain = AsyncMock(side_effect=[[injected_msg], []])
+
+        msg = _make_user_message("start turn", "start_1")
+        result = await engine.execute(msg, message_source=msg_source)
+
+        # The critical assertion: drain WAS called (meaning _message_source
+        # survived _setup_turn → _reset_turn_scoped_state)
+        assert msg_source.drain.call_count == 2, (
+            f"Expected 2 drain calls (after each step), got {msg_source.drain.call_count}. "
+            "message_source was likely wiped by _reset_turn_scoped_state()."
+        )
+        # Turn completed successfully
+        assert result.status == ExecutionStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_execute_blocking_mode_no_drain(
+        self, engine, mock_session_manager, mock_context
+    ):
+        """message_source=None → drain is never called (blocking compat)."""
+        step1 = MagicMock(spec=StepContext)
+        step1.status = ExecutionStatus.COMPLETED
+        engine._execute_step = AsyncMock(return_value=step1)
+
+        msg = _make_user_message("single", "blk_1")
+        result = await engine.execute(msg)  # no message_source
+
+        assert result.status == ExecutionStatus.COMPLETED
+        assert engine._message_source is None

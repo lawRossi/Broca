@@ -580,6 +580,9 @@ class TurnService(BaseService[Turn]):
         # 5. Python 解析（仅对需要的消息）
         for m in content_messages:
             if m.message_type == MessageType.USER_MESSAGE:
+                # Skip tool-injected internal messages (e.g., read_image)
+                if m.data and m.data.get("tool_injected"):
+                    continue
                 # Accumulate all user messages
                 raw_input = m.data.get("raw_input") if m.data else None
                 if raw_input is not None:

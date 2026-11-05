@@ -8,6 +8,7 @@ import { ElMessageBox } from 'element-plus'
 import FilePreview from './FilePreview.vue'
 import { diffLines } from 'diff'
 import { renderMarkdown } from '@/utils/markdown'
+import { getFileProxyUrl } from '@/utils/upload'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -445,10 +446,11 @@ const getFormattedJson = (data: any): string => {
 
 // 打开文件预览
 const openFilePreview = (file: { url?: string; path?: string; name?: string; type?: string }) => {
-  // 优先使用 url（Supabase Storage），否则使用 path（本地文件）
-  if (file.url) {
+  // 优先使用后端代理（解决浏览器无法直连云端存储的问题）
+  const proxyUrl = getFileProxyUrl(file)
+  if (proxyUrl) {
     previewFilePath.value = '' // 清空 path
-    previewFileUrl.value = file.url
+    previewFileUrl.value = proxyUrl
   } else if (file.path) {
     previewFileUrl.value = '' // 清空 url
     previewFilePath.value = file.path

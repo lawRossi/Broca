@@ -214,3 +214,16 @@ export async function isStorageConfigured(): Promise<boolean> {
   const cfg = await getStorageConfig()
   return cfg !== null
 }
+
+/**
+ * 获取文件的代理访问 URL。
+ * 优先使用后端代理端点（避免浏览器直接访问外部存储失败），
+ * 无 path 时回退到 file.url（直连云端）。
+ */
+export function getFileProxyUrl(file: { url?: string; path?: string }): string {
+  const apiBase = (import.meta.env.VITE_API_BASE_URL as string) || '/api'
+  if (file.path) {
+    return `${apiBase}/files/storage?key=${encodeURIComponent(file.path)}`
+  }
+  return file.url || ''
+}
