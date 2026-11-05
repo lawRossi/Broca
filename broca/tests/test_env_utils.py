@@ -402,6 +402,38 @@ class TestFindWorkspaceVenvExtra:
         assert result == tmp_path / "virtualenv"
 
 
+class TestFilterBrocaServicePaths:
+    """~/.broca/ 前缀路径从还原的 PYTHONPATH 中过滤。"""
+
+    def test_filters_broca_web_backend(self, monkeypatch, tmp_path):
+        """supervisor PYTHONPATH=~/.broca/web/backend → 用户命令不含该路径。"""
+        home = os.path.expanduser("~")
+        service_path = os.path.join(home, ".broca", "web", "backend")
+        monkeypatch.setenv("_BROCA_ORIG_PYTHONPATH", service_path)
+
+        env = build_user_env(str(tmp_path))
+        assert "PYTHONPATH" not in env, (
+            f"~/.broca/ service path should be filtered, got: {env.get('PYTHONPATH')}"
+        )
+
+    def test_preserves_user_paths(self, monkeypatch, tmp_path):
+        """混合路径：~/.broca/ 被过滤，用户自定义路径保留。"""
+        home = os.path.expanduser("~")
+        service_path = os.path.join(home, ".broca", "web", "backend")
+        user_path = "/my/custom/lib"
+        monkeypatch.setenv("_BROCA_ORIG_PYTHONPATH", service_path + os.pathsep + user_path)
+
+        env = build_user_env(str(tmp_path))
+        assert env.get("PYTHONPATH") == user_path
+
+    def test_all_user_paths_preserved(self, monkeypatch, tmp_path):
+        """无 ~/.broca/ 路径 → PYTHONPATH 完整保留。"""
+        monkeypatch.setenv("_BROCA_ORIG_PYTHONPATH", "/a/lib:/b/lib")
+
+        env = build_user_env(str(tmp_path))
+        assert env.get("PYTHONPATH") == "/a/lib:/b/lib"
+
+
 class TestBuildUserEnvExtra:
     """m3 + M1: 补充 build_user_env 的 Windows 分支 + 异常兜底。"""
 

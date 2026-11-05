@@ -127,12 +127,28 @@ def find_workspace_venv(workspace: str) -> Optional[Path]:
     return None
 
 
+def _filter_broca_service_paths(pythonpath: str) -> str:
+    """从 PYTHONPATH 中移除 ``~/.broca/`` 前缀的服务内部路径。
+
+    supervisor（web backend / CLI）的 PYTHONPATH 常指向 ``~/.broca/web/backend``
+    等服务内部目录，这些路径对用户命令无意义且可能意外导入服务模块。
+    用户自定义的其他路径正常保留。
+    """
+    home = os.path.expanduser("~")
+    broca_prefixes = (
+        os.path.join(home, ".broca") + os.path.sep,
+    )
+    entries = [p for p in pythonpath.split(os.pathsep) if p]
+    filtered = [p for p in entries if not any(p.startswith(pf) for pf in broca_prefixes)]
+    return os.pathsep.join(filtered) if filtered else ""
+
+
 def _strip_and_restore(env: dict[str, str]) -> dict[str, str]:
     """剥离 runner 内部变量，从 ``_BROCA_ORIG_*`` 恢复 supervisor 原始值。
 
     操作顺序：
     1. 剥离 4 个 runner 内部标记变量
-    2. 恢复 PYTHONPATH（从 ``_BROCA_ORIG_PYTHONPATH``）
+    2. 恢复 PYTHONPATH（从 ``_BROCA_ORIG_PYTHONPATH``，过滤 ``~/.broca/`` 路径）
     3. 恢复 VIRTUAL_ENV / VIRTUAL_ENV_PROMPT（从 ``_BROCA_ORIG_*``）
     4. pop 掉所有 ``_BROCA_ORIG_*`` 前缀变量
     """
@@ -140,10 +156,14 @@ def _strip_and_restore(env: dict[str, str]) -> dict[str, str]:
     for var in _RUNNER_INTERNAL_VARS:
         env.pop(var, None)
 
-    # -- 2. 恢复 PYTHONPATH --
+    # -- 2. 恢复 PYTHONPATH（过滤 ~/.broca/ 服务内部路径） --
     orig_pythonpath = env.get("_BROCA_ORIG_PYTHONPATH")
     if orig_pythonpath is not None:
-        env["PYTHONPATH"] = orig_pythonpath
+        filtered = _filter_broca_service_paths(orig_pythonpath)
+        if filtered:
+            env["PYTHONPATH"] = filtered
+        else:
+            env.pop("PYTHONPATH", None)
     else:
         env.pop("PYTHONPATH", None)
 
