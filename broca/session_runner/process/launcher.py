@@ -6,6 +6,18 @@ argv 契约（唯一来源，``broca/tests/test_runner_launcher.py`` 长期守�
 
 必须与 ``broca.session_runner.runner.parse_args`` 逐项一致。
 
+``_BROCA_ORIG_*`` 环境变量契约
+------------------------------
+``build_runner_env()`` 在修改 supervisor 环境变量之前保存原始值，供
+``broca.utils.env.build_user_env()`` 在用户命令执行前恢复::
+
+    _BROCA_ORIG_PYTHONPATH          ← 原始 PYTHONPATH（仅当原值非空时写入）
+    _BROCA_ORIG_VIRTUAL_ENV         ← 原始 VIRTUAL_ENV（仅当原值存在时写入）
+    _BROCA_ORIG_VIRTUAL_ENV_PROMPT  ← 原始 VIRTUAL_ENV_PROMPT（仅当原值存在时写入）
+
+runner 进程的 ``os.environ`` 保留这些变量（不 pop），
+``build_user_env()`` 在构造用户命令 env 时消费并 pop 掉。
+
 设计要点：
 - **argv 列表** 而非 shell 字符串：workspace 含空格时不会参数错位，
   也不存在命令注入面；
@@ -55,13 +67,31 @@ def build_runner_argv(
 
 
 def build_runner_env() -> dict[str, str]:
-    """构造子进程环境变量（仓库根置于 ``PYTHONPATH`` 首位）。"""
+    """构造子进程环境变量（仓库根置于 ``PYTHONPATH`` 首位）。
+
+    修改环境变量前，将 supervisor 进程原始值保存为 ``_BROCA_ORIG_*``，
+    供 ``broca.utils.env.build_user_env()`` 在用户命令执行前恢复。
+    """
     env = os.environ.copy()
     root = str(repo_root())
-    existing = env.get("PYTHONPATH", "")
+
+    # ── 保存 PYTHONPATH 原始值（仅在非空时保存，避免空值泄漏） ──
+    orig_pythonpath = env.get("PYTHONPATH", "")
+    if orig_pythonpath:
+        env["_BROCA_ORIG_PYTHONPATH"] = orig_pythonpath
+    existing = orig_pythonpath
     env["PYTHONPATH"] = root + (os.pathsep + existing if existing else "")
+
     # 使用 sys.executable 启动后无需污染 VIRTUAL_ENV
+    # 先保存原始值，供 build_user_env() 恢复到用户命令环境
+    orig_ve = env.get("VIRTUAL_ENV")
+    if orig_ve:
+        env["_BROCA_ORIG_VIRTUAL_ENV"] = orig_ve
     env.pop("VIRTUAL_ENV", None)
+
+    orig_vep = env.get("VIRTUAL_ENV_PROMPT")
+    if orig_vep:
+        env["_BROCA_ORIG_VIRTUAL_ENV_PROMPT"] = orig_vep
     env.pop("VIRTUAL_ENV_PROMPT", None)
     # 标识 runner 子进程：logging_config.get_logger() 据此自动切换为
     # stdlib 后端（而非 loguru），确保 per-session 日志文件隔离。

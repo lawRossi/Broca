@@ -480,32 +480,28 @@ class DefaultAgentFactory(AgentFactoryABC):
 
         Returns list of (directory_name, version_string).
         """
+        from broca.utils.env import VENV_CANDIDATES, validate_venv_dir
+
         venv_dirs: list[tuple[str, str]] = []
         ws_path = Path(workspace) if workspace else None
         if not ws_path or not ws_path.is_dir():
             return venv_dirs
 
-        for candidate in ("venv", ".venv", "env", ".env", "virtualenv"):
+        platform = "nt" if sys.platform == "win32" else "posix"
+
+        for candidate in VENV_CANDIDATES:
             venv_path = ws_path / candidate
-            if not venv_path.is_dir():
+            if not venv_path.is_dir() or not validate_venv_dir(venv_path, platform):
                 continue
 
-            # Linux/macOS: bin/python or bin/python3
-            bin_dir = venv_path / "bin"
-            bin_python = bin_dir / "python"
-            bin_python3 = bin_dir / "python3"
-            # Windows: Scripts/python.exe
-            scripts_dir = venv_path / "Scripts"
-            scripts_python = scripts_dir / "python.exe"
-
-            if bin_python.exists():
-                venv_py = str(bin_python)
-            elif bin_python3.exists():
-                venv_py = str(bin_python3)
-            elif scripts_python.exists():
-                venv_py = str(scripts_python)
+            # 定位 venv python 可执行文件（按平台分派）
+            if platform == "nt":
+                venv_py = str(venv_path / "Scripts" / "python.exe")
             else:
-                continue
+                if (venv_path / "bin" / "python").exists():
+                    venv_py = str(venv_path / "bin" / "python")
+                else:
+                    venv_py = str(venv_path / "bin" / "python3")
 
             ver = DefaultAgentFactory._get_python_version(venv_py)
             venv_dirs.append((candidate, ver))

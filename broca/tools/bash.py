@@ -15,6 +15,7 @@ from broca.process_manager import ProcessManager
 from broca.scheduler import Scheduler
 from broca.session.models import JobType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
+from broca.utils.env import build_user_env
 from broca.utils.shell_security import init_tree_sitter, validate_shell_command
 
 logger = get_logger(__name__)
@@ -38,7 +39,8 @@ class Bash(Tool):
     def description(self) -> str:
         return (
             "Use this tool to execute code using shell. "
-            "**Note**: 1. Your default python path points to a special standalone python environment. "
+            "**Note**: 1. Prefer the workspace's virtual environment (`.venv`) when available; "
+            "otherwise falls back to the service environment. "
             "When running python-related code, use the correct python environment.\n"
             "2. Only run shell code supported by the current platform.\n"
             "3. For long-running commands (dev servers, watchers, etc.), "
@@ -103,7 +105,7 @@ class Bash(Tool):
                 code = self._strip_background_ampersand(code)
             return await self._run_background(code, context)
 
-        return await self._run_code_async(code)
+        return await self._run_code_async(code, workspace=context.workspace)
 
     def _validate_code(self, code: str) -> tuple[bool, str, str]:
         """Validate code using shared security module.
@@ -269,7 +271,9 @@ class Bash(Tool):
                 content=f"Failed to schedule background execution: {e}",
             )
 
-    async def _run_code_async(self, code: str, timeout: int = 120) -> ToolResult:
+    async def _run_code_async(
+        self, code: str, timeout: int = 120, workspace: str | None = None
+    ) -> ToolResult:
         """异步执行代码。
 
         不使用 PIPE + communicate()：后台子进程会一直占着管道写端，
@@ -278,6 +282,7 @@ class Bash(Tool):
         改为把 stdout/stderr 重定向到临时文件，只 wait() shell 进程本身；
         并用独立进程组，超时可把整棵进程树一起杀掉，避免孤儿进程。
         """
+        env = build_user_env(workspace)
         status: ToolStatus = ToolStatus.SUCCESS
         result_dict: dict = {}
         tmpdir = tempfile.mkdtemp(prefix="broca_bash_")
@@ -304,6 +309,7 @@ class Bash(Tool):
                     stdin=asyncio.subprocess.DEVNULL,
                     stdout=out_f,
                     stderr=err_f,
+                    env=env,
                     **kwargs,
                 )
 

@@ -20,6 +20,7 @@ from typing import Dict, List, Optional
 
 from broca.components.process_manager import ProcessManager as ProcessManagerABC
 from broca.logging_config import get_logger
+from broca.utils.env import build_user_env
 
 logger = get_logger(__name__)
 
@@ -145,11 +146,16 @@ class LocalProcessManager(ProcessManagerABC):
             f"Starting process: {process_id}, command: {command[:100]}..."
         )
 
+        # 构建干净环境：剥离 runner 内部变量 + 恢复 supervisor 原始值 + workspace venv 适配
+        # cwd 是工作目录；Scheduler 调用时 cwd=None → build_user_env 回退到 os.getcwd()
+        env = build_user_env(cwd)
+
         try:
             process = await asyncio.create_subprocess_shell(
                 wrapped_command,
                 shell=True,
                 cwd=cwd,
+                env=env,
                 preexec_fn=_preexec,
                 # 不设置 stdout/stderr 管道 — 输出直接写入文件
             )

@@ -309,3 +309,46 @@ def test_runner_env_prevents_cwd_broca_shadowing(tmp_path):
     assert repo_root().resolve() in imported.parents, (
         f"import broca 未解析到仓库根: {imported}"
     )
+
+
+# ---------------------------------------------------------------------------
+# _BROCA_ORIG_*: supervisor 原始环境变量保存
+# ---------------------------------------------------------------------------
+
+
+def test_broca_orig_pythonpath_saved(monkeypatch):
+    """supervisor 有 PYTHONPATH 时，_BROCA_ORIG_PYTHONPATH 正确保存。"""
+    monkeypatch.setenv("PYTHONPATH", "/custom/path")
+    env = build_runner_env()
+    assert env["_BROCA_ORIG_PYTHONPATH"] == "/custom/path"
+
+
+def test_broca_orig_pythonpath_absent_when_unset(monkeypatch):
+    """supervisor 无 PYTHONPATH 时，不设 _BROCA_ORIG_PYTHONPATH。"""
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    env = build_runner_env()
+    assert "_BROCA_ORIG_PYTHONPATH" not in env
+
+
+def test_broca_orig_virtual_env_saved(monkeypatch):
+    """supervisor 有 VIRTUAL_ENV 时，_BROCA_ORIG_VIRTUAL_ENV 正确保存。"""
+    monkeypatch.setenv("VIRTUAL_ENV", "/some/venv")
+    env = build_runner_env()
+    assert env["_BROCA_ORIG_VIRTUAL_ENV"] == "/some/venv"
+    # VIRTUAL_ENV 本身被 pop
+    assert "VIRTUAL_ENV" not in env
+
+
+def test_broca_orig_virtual_env_absent(monkeypatch):
+    """supervisor 无 VIRTUAL_ENV 时，不设 _BROCA_ORIG_VIRTUAL_ENV。"""
+    monkeypatch.delenv("VIRTUAL_ENV", raising=False)
+    env = build_runner_env()
+    assert "_BROCA_ORIG_VIRTUAL_ENV" not in env
+
+
+def test_broca_orig_virtual_env_prompt_saved(monkeypatch):
+    """supervisor 有 VIRTUAL_ENV_PROMPT 时，正确保存。"""
+    monkeypatch.setenv("VIRTUAL_ENV_PROMPT", "myenv")
+    env = build_runner_env()
+    assert env["_BROCA_ORIG_VIRTUAL_ENV_PROMPT"] == "myenv"
+    assert "VIRTUAL_ENV_PROMPT" not in env
