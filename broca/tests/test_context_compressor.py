@@ -283,7 +283,7 @@ class TestKeepPivot:
 
 class TestResetSessionMemory:
     def test_reset_session_memory(self, tmp_path):
-        """reset_session_memory clears state and deletes files."""
+        """reset_session_memory clears state and deletes files, then re-creates template."""
         compressor = _init_compressor(tmp_path)
         # Simulate existing files
         snapshot = Path(compressor.snapshot_memory_path)
@@ -292,7 +292,26 @@ class TestResetSessionMemory:
 
         compressor.reset_session_memory()
 
-        assert not snapshot.exists()
+        # File should be re-created as template after deletion
+        assert snapshot.exists()
+        content = snapshot.read_text(encoding="utf-8")
+        assert "# Session Title" in content  # default template marker
+
+    def test_read_after_external_deletion(self, tmp_path):
+        """Regression: _read_session_memory_content must not raise FileNotFoundError
+        when the file was deleted externally (e.g. by old buggy reset or cleanup)."""
+        compressor = _init_compressor(tmp_path)
+        snapshot = Path(compressor.snapshot_memory_path)
+        snapshot.parent.mkdir(parents=True, exist_ok=True)
+        snapshot.write_text("original")
+
+        # Simulate external deletion (what the old buggy reset_session_memory did)
+        snapshot.unlink()
+
+        # Should re-create instead of raising
+        content = compressor._read_session_memory_content()
+        assert "# Session Title" in content
+        assert Path(compressor.snapshot_memory_path).exists()
 
 
 # ---------------------------------------------------------------------------

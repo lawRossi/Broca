@@ -68,8 +68,6 @@ class _MessageDispatcher:
             MessageType.USER_ANSWER: "user_answer",
             MessageType.ERROR: "error",
             MessageType.BROADCAST: "broadcast",
-            MessageType.CONNECT: "connect",
-            MessageType.DISCONNECT: "disconnect",
             MessageType.PING: "ping",
             MessageType.PONG: "pong",
         }

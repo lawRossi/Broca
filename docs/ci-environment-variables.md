@@ -1,6 +1,20 @@
 # CI / 生产环境必需环境变量
 
-CI 和容器化部署通过环境变量注入所有配置，**不依赖任何 .env 文件或 configs.json 文件**。
+> ⚠️ **重要：运行时已不再读取环境变量（纯文件驱动）。**
+> `broca/configs.py` 与 `broca-web/backend/app/core/config.py` 都只从
+> `configs.json` / `.env` 文件取配置，`os.environ` 会被静默忽略。
+> 容器里注入 `BROCA_DATABASE_DIR` / `SQLITE_DATABASE_PATH` 等变量**不会生效**，
+> 唯一例外是 `broca/alembic/env.py` 在**迁移**时把 `BROCA_DATABASE_DIR`
+> 当兜底（优先级低于 `-x db_url=`）。
+> 因此容器化部署请把配置落到文件：
+> - `BROCA_CONFIG` → 一个真实的 `configs.json`（`database_dir` 决定 sessions.db 位置）
+> - 后端 `.env` → `SQLITE_DATABASE_PATH` 决定 backend.db 位置
+> - 迁移时显式传 `-x db_url=sqlite:///<目标库>`，否则会出现
+>   「表建在一个库、运行时读写另一个库」。
+
+CI 和容器化部署的推荐做法：把配置**写成文件**（`.env` + `configs.json`），
+再用 `alembic -x db_url=...` 显式迁移。下表保留作历史参考，其中
+`BROCA_ENV` / `BROCA_LLM_CONFIG` / `BROCA_DATABASE_DIR` 已不再被运行时读取。
 
 ## 必需变量
 

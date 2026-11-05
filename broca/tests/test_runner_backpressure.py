@@ -229,7 +229,10 @@ def test_log_rotation_creates_backup(tmp_path):
         record_logger.info("after rollover")
         handler.flush()
 
-        backups = sorted(p.name for p in tmp_path.iterdir() if p.name != "runner.log")
+        backups = sorted(
+            p.name for p in tmp_path.iterdir()
+            if p.is_file() and p.name.startswith("runner.log.")
+        )
         assert backups, "doRollover 必须生成备份文件"
         # 后缀是 %Y-%m-%d（when="midnight"）
         datetime.strptime(backups[0].split("runner.log.")[1], "%Y-%m-%d")

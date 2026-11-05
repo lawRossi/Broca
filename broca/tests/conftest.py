@@ -8,7 +8,10 @@ when running tests under ``broca/tests/``.
 from __future__ import annotations
 
 import asyncio
+import os
+import shutil
 from collections.abc import AsyncGenerator
+from pathlib import Path
 from typing import Any, Optional
 from unittest.mock import AsyncMock
 
@@ -17,6 +20,36 @@ import pytest
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
+
+
+@pytest.fixture(autouse=True)
+def _isolate_home(tmp_path, monkeypatch):
+    """将 HOME 重定向到临时目录，防止测试访问/锁定生产 ~/.broca/ 资源。
+
+    这是防止测试破坏生产服务的关键隔离层：
+    - `get_configs()` 解析 `~/.broca/configs.json` 或项目 `configs/` 时，
+      路径中的 `~` 会 expanduser 到临时目录
+    - `SessionManager` / `Database` 创建的 SQLite 文件落在临时目录
+    - GitManager snapshot、runner 日志等也全部隔离
+
+    需要测试真实 HOME 行为的用例（如 test_configs 路径断言）不受影响，
+    因为断言两侧（config 值 & expanduser）都使用同一个 patched HOME。
+
+    注意：test_alembic_db_url.py 的 subprocess 测试自己管理 HOME 环境变量，
+    本 fixture 的 monkeypatch 不影响子进程的 env（子进程用独立的 env dict）。
+    """
+    fake_home = tmp_path / "fake_home"
+    (fake_home / ".broca" / "data").mkdir(parents=True, exist_ok=True)
+    (fake_home / ".broca" / "logs").mkdir(parents=True, exist_ok=True)
+    (fake_home / ".broca" / "configs").mkdir(parents=True, exist_ok=True)
+
+    # 最小 llm_config.json：防止代码路径（如 _get_llm_config）因文件缺失而崩溃
+    (fake_home / ".broca" / "configs" / "llm_config.json").write_text(
+        '{"__default__": {"provider": "openai", "model": "gpt-4o"}}'
+    )
+
+    monkeypatch.setenv("HOME", str(fake_home))
+    yield str(fake_home)
 
 
 @pytest.fixture(autouse=True)

@@ -345,9 +345,6 @@ Write-Host "  ──────────────────────
 Write-Host "  configs.json   → $BrocaConfigDir\configs.json"
 Write-Host "  llm_config.json → $BrocaConfigDir\llm_config.json"
 Write-Host ""
-Write-Host "  首次安装会自动创建用户配置副本，之后你可安全地编辑它们。"
-Write-Host "  单个 LLM Key 也可通过环境变量覆盖:"
-Write-Host '    $env:BROCA_API_KEY_{PROVIDER} = "your-key"'
 Write-Host "  ────────────────────────────────────────────"
 Write-Host ""
 

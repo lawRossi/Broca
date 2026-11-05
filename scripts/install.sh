@@ -486,25 +486,14 @@ echo "  ────────────────────────
 echo "  configs.json   → $BROCA_HOME/configs/configs.json"
 echo "  llm_config.json → $BROCA_HOME/configs/llm_config.json"
 echo ""
-echo "  首次安装会自动创建用户配置副本，之后你可安全地编辑它们。"
-echo "  单个 LLM Key 也可通过环境变量覆盖:"
-echo "    export BROCA_API_KEY_{PROVIDER}=\"your-key\""
 echo "  ────────────────────────────────────────────"
 echo ""
 
 cd "$PROJECT_ROOT"
 
 # ---- 解析迁移目标库（必须与运行时读写的库完全一致）----
-# 注意：不能用环境变量传目标库。`broca/configs.py` 与
-# `broca-web/backend/app/core/config.py` 都是纯文件驱动（不读 os.environ），
-# 环境变量在运行时会被静默忽略，于是迁移会写到另一个库：
-#   - 历史 bug 1: BROCA_DATABASE_DIR 对 broca alembic 无效
-#   - 历史 bug 2: SQLITE_DATABASE_PATH 对后端 alembic 无效，迁移实际写进
-#                 broca-web/backend/dev.db（仓库开发 .env 的值）
-# 所以这里从"运行时的唯一配置源"反解路径，再用 `-x db_url=` 显式传给 alembic。
-#   1. sessions.db ← ~/.broca/configs/configs.json 的 database_dir
-#   2. backend.db  ← 与 scripts/gen_backend_env.py 写入 .env 的
-#                    SQLITE_DATABASE_PATH 保持同一公式（$BROCA_HOME/data/backend.db）
+# 配置是纯文件驱动（不读 os.environ），必须从 configs.json 反解 database_dir
+# 再显式传给 alembic，否则迁移会写到运行时不会读的库。
 BROCA_DB_DIR=$("$BROCA_PYTHON" - "$BROCA_HOME/configs/configs.json" <<'PYEOF'
 import json
 import sys

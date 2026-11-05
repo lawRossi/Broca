@@ -228,6 +228,8 @@ class SessionMemoryCompressor(ContextCompressor):
                     logger.info(f"Deleted session memory file: {path}")
             except OSError as e:
                 logger.error(f"Failed to delete {path}: {e}")
+        # Re-create template so the file is always present for subsequent reads
+        self._ensure_template_exists()
 
     # ------------------------------------------------------------------
     # Non-abstract convenience method
@@ -527,6 +529,9 @@ class SessionMemoryCompressor(ContextCompressor):
                 self.state.extraction_in_progress = False
 
     def _read_session_memory_content(self) -> str:
+        # Defensive: re-create if deleted (e.g. by reset_session_memory)
+        if not Path(self.snapshot_memory_path).exists():
+            self._ensure_template_exists()
         return Path(self.snapshot_memory_path).read_text(encoding="utf-8").strip()
 
     def _frozen_session_memory(self):

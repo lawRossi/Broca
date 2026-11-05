@@ -80,15 +80,13 @@ class TestCleanupRunnerLogs:
     """测试 cleanup_runner_logs"""
 
     @pytest.mark.asyncio
-    async def test_removes_log_dir(self, tmp_path, monkeypatch):
+    async def test_removes_log_dir(self, tmp_path, _isolate_home):
         """正常场景：删除 ~/.broca/logs/runners/{session_id}/ 目录"""
-        # 模拟 home 目录
-        fake_home = tmp_path / "fake_home"
+        # _isolate_home fixture 已 patch HOME → fake_home
+        fake_home = Path(_isolate_home)
         log_dir = fake_home / ".broca" / "logs" / "runners" / "test-session-001"
         log_dir.mkdir(parents=True)
         (log_dir / "20260101.log").write_text("log content")
-
-        monkeypatch.setattr(Path, "home", lambda: fake_home)
 
         from broca.session.cleanup_service import SessionCleanupService
         svc = SessionCleanupService()
@@ -97,12 +95,8 @@ class TestCleanupRunnerLogs:
         assert not log_dir.exists()
 
     @pytest.mark.asyncio
-    async def test_no_error_when_log_dir_not_exists(self, tmp_path, monkeypatch):
+    async def test_no_error_when_log_dir_not_exists(self, _isolate_home):
         """日志目录不存在时不抛异常"""
-        fake_home = tmp_path / "fake_home"
-        fake_home.mkdir()
-        monkeypatch.setattr(Path, "home", lambda: fake_home)
-
         from broca.session.cleanup_service import SessionCleanupService
         svc = SessionCleanupService()
         await svc.cleanup_runner_logs("nonexistent-session")

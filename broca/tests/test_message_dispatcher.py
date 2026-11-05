@@ -21,12 +21,20 @@ class TestDispatcherTableCompleteness:
             get_connection_info=lambda: None,
         )
 
-        # SUBSCRIBE/UNSUBSCRIBE are handled by early-return branches, not the table
-        early_branch_types = {MessageType.SUBSCRIBE, MessageType.UNSUBSCRIBE}
+        # SUBSCRIBE/UNSUBSCRIBE are handled by early-return branches, not the table.
+        # CONNECT/DISCONNECT are lifecycle events handled natively by socket.io
+        # (not dispatched as message events) — excluding them prevents the
+        # "takes 1 positional argument but 2 were given" bug.
+        non_table_types = {
+            MessageType.SUBSCRIBE,
+            MessageType.UNSUBSCRIBE,
+            MessageType.CONNECT,
+            MessageType.DISCONNECT,
+        }
 
         missing = []
         for mt in MessageType:
-            if mt in early_branch_types:
+            if mt in non_table_types:
                 continue
             event_name = dispatcher._table.get(mt)
             if event_name is None:

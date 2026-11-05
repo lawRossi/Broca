@@ -720,6 +720,45 @@ class TestGeneralConfigAPI:
         assert saved["execution"]["agent_query_timeout"] == 300
 
     @pytest.mark.asyncio
+    async def test_put_general_config_runner_execution_fields_persisted(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """Regression: runner_* and max_concurrent_runners fields must be persisted,
+        not rejected as unknown execution config fields."""
+        config_file = tmp_path / "configs.json"
+        config_file.write_text(json.dumps(self.VALID_CONFIG), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        payload = {
+            "execution": {
+                "max_concurrent_runners": 5,
+                "runner_heartbeat_interval": 10,
+                "runner_heartbeat_timeout": 60,
+                "runner_heartbeat_check_interval": 20,
+                "runner_status_persist_interval": 120,
+                "runner_ipc_queue_size": 2000,
+                "runner_log_gc_days": 14,
+                "runner_log_gc_interval": 7200,
+            }
+        }
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": payload},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved["execution"]["max_concurrent_runners"] == 5
+        assert saved["execution"]["runner_heartbeat_interval"] == 10
+        assert saved["execution"]["runner_heartbeat_timeout"] == 60
+        assert saved["execution"]["runner_heartbeat_check_interval"] == 20
+        assert saved["execution"]["runner_status_persist_interval"] == 120
+        assert saved["execution"]["runner_ipc_queue_size"] == 2000
+        assert saved["execution"]["runner_log_gc_days"] == 14
+        assert saved["execution"]["runner_log_gc_interval"] == 7200
+
+    @pytest.mark.asyncio
     async def test_put_general_config_unknown_asr_field_rejected(
         self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
     ):
