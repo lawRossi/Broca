@@ -203,11 +203,21 @@ export const useChatStore = defineStore('chat', () => {
 
   const startRunnerPolling = () => {
     stopRunnerPolling()
-    runnerPollTimer = setInterval(fetchRunnerStatus, 10000)
+    const poll = () => {
+      runnerPollTimer = null
+      fetchRunnerStatus().then(() => {
+        // 自适应间隔：starting/none 时 1.5s，alive/其他 10s
+        const status = runnerInfo.value?.status
+        const delay = (status === 'starting' || status === 'none') ? 1500 : 10000
+        runnerPollTimer = setTimeout(poll, delay) as unknown as ReturnType<typeof setInterval>
+      })
+    }
+    runnerPollTimer = setTimeout(poll, 500) as unknown as ReturnType<typeof setInterval>
   }
 
   const stopRunnerPolling = () => {
     if (runnerPollTimer) {
+      clearTimeout(runnerPollTimer)
       clearInterval(runnerPollTimer)
       runnerPollTimer = null
     }

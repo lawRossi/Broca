@@ -316,6 +316,9 @@ class Agent:
         MCP servers are loaded and connected by ToolManager.init() (called at
         a higher level, e.g., AgentFactory). This method only fetches the
         appropriate MCP tools for this agent based on its ``mcp_servers`` config.
+
+        If MCP connection is still pending (deferred), a background task will
+        refresh ``tool_mapping`` in-place once MCP tools become available.
         """
         from broca.components import ComponentRegistry, ToolManager
 
@@ -331,6 +334,47 @@ class Agent:
         tools = tool_manager.get_tools(tool_names=tool_names)
         self.tools = [tool.format() for tool in tools]
         self.tool_mapping = {tool.name: tool for tool in tools}
+
+        # If MCP connection is deferred, schedule a background refresh so
+        # MCP tools are added to tool_mapping once the connection completes.
+        if self.config.mcp_servers and tool_manager._mcp_connect_task is not None:
+            asyncio.create_task(
+                self._refresh_mcp_tools(tool_manager),
+                name=f"mcp-refresh-{self.agent_id}",
+            )
+
+    async def _refresh_mcp_tools(self, tool_manager) -> None:
+        """Wait for deferred MCP connection and merge MCP tools into tool_mapping.
+
+        Updates ``self.tool_mapping`` in-place (``dict.update``) so that
+        downstream consumers (ToolExecutor, LoopEngine) see the new tools
+        without re-initialization.
+        """
+        try:
+            await tool_manager.wait_mcp_ready()
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "Agent %s: MCP refresh failed: %s", self.agent_id, e
+            )
+            return
+
+        if not self.config.mcp_servers:
+            return
+
+        mcp_tools = tool_manager.get_mcp_tools(self.config.mcp_servers)
+        if not mcp_tools:
+            return
+
+        for tool in mcp_tools:
+            if tool.name not in self.tool_mapping:
+                self.tool_mapping[tool.name] = tool
+
+        # Refresh formatted tools list
+        self.tools = [tool.format() for tool in self.tool_mapping.values()]
+        logger.info(
+            "Agent %s: %d MCP tools added after deferred connect",
+            self.agent_id, len(mcp_tools),
+        )
 
     async def _receive_message(self, message: Message):
         """Receive message from communication channel"""

@@ -1,3 +1,4 @@
+import asyncio
 import importlib
 import inspect
 import json
@@ -58,6 +59,7 @@ class AutoDiscoverToolManager(ToolManagerABC):
         self._mcp_config: dict = {}
         self._mcp_connected: bool = False
         self._mcp_servers_tools: dict[str, list[Tool]] = {}
+        self._mcp_connect_task: Optional["asyncio.Task"] = None
         self._initialized = False
         self._scan_builtin_tools()
 
@@ -234,7 +236,11 @@ class AutoDiscoverToolManager(ToolManagerABC):
         Performs the following (all idempotent):
         1. Load custom tools from ``{workspace}/.broca/tools.py``
         2. Load MCP configuration from config files
-        3. Connect all configured MCP servers
+        3. Connect all configured MCP servers (deferred: non-blocking)
+
+        MCP connection is deferred to a background task so that the Agent
+        can become READY without waiting for slow MCP server handshakes.
+        Tools become available once the background task completes.
 
         Safe to call multiple times — subsequent calls are no-ops.
         """
@@ -243,7 +249,22 @@ class AutoDiscoverToolManager(ToolManagerABC):
         self._initialized = True
         self.load_custom_tools(workspace)
         self._load_mcp_config(workspace)
-        await self._connect_mcp()
+        # Defer MCP connection to background — don't block agent startup.
+        if self._mcp_config:
+            self._mcp_connect_task = asyncio.create_task(
+                self._connect_mcp(),
+                name=f"mcp-connect-{id(self)}",
+            )
+
+    async def wait_mcp_ready(self) -> None:
+        """Await pending MCP connection (no-op if already connected or no MCP)."""
+        if self._mcp_connect_task is not None:
+            try:
+                await self._mcp_connect_task
+            except Exception as e:  # noqa: BLE001
+                logger.warning("MCP background connection failed: {}", e)
+            finally:
+                self._mcp_connect_task = None
 
     def get_mcp_tools(
         self, server_names: Optional[list[str]] = None

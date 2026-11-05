@@ -13,7 +13,7 @@ export class ChatWebViewManager {
   private crewPanels = new Map<string, vscode.WebviewPanel>()
   private socketClients = new Map<string, SocketClient>()
   private socketUnsubs = new Map<string, () => Promise<void>>()
-  private runnerPollTimers = new Map<string, NodeJS.Timeout>()
+  private runnerPollTimers = new Map<string, { clear: () => void }>()
   private sessionExecutionIds = new Map<string, string>()
   private apiClient: ApiClient
   private createSessionPanel: vscode.WebviewPanel | null = null
@@ -1885,24 +1885,32 @@ export class ChatWebViewManager {
       console.log('[ChatWebView] Initial runner poll failed:', e.message)
     }
 
-    // Poll every 10 seconds
-    const timer = setInterval(async () => {
+    // Adaptive polling: 1.5s while starting/none, 10s when alive/other
+    let stopped = false
+    const poll = async () => {
+      if (stopped) return
       try {
         const status = await this.apiClient.getRunnerStatus(sessionId)
         if (status) {
           this.postToPanel(panel, { type: 'runnerStatus', payload: status } as ExtensionToWebView)
+          const delay = (status.status === 'starting' || status.status === 'none') ? 1500 : 10000
+          setTimeout(poll, delay)
+        } else {
+          setTimeout(poll, 5000)
         }
       } catch (e: any) {
         console.log('[ChatWebView] Runner poll failed:', e.message)
+        setTimeout(poll, 5000)
       }
-    }, 10000)
-    this.runnerPollTimers.set(sessionId, timer)
+    }
+    const initialTimer = setTimeout(poll, 500)
+    this.runnerPollTimers.set(sessionId, { clear: () => { stopped = true; clearTimeout(initialTimer) } })
   }
 
   private stopRunnerPolling(sessionId: string) {
-    const timer = this.runnerPollTimers.get(sessionId)
-    if (timer) {
-      clearInterval(timer)
+    const entry = this.runnerPollTimers.get(sessionId)
+    if (entry) {
+      entry.clear()
       this.runnerPollTimers.delete(sessionId)
     }
   }
