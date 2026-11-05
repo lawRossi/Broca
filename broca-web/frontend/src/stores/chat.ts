@@ -1256,6 +1256,11 @@ export const useChatStore = defineStore('chat', () => {
       console.log('Disconnected from server')
     }
     const unsubMessage = socketStore.onMessage('chat', (m: Message) => {
+      // Socket.IO 重连时的临时 CLIENT_NOT_FOUND 错误，静默跳过
+      if (m.message_type === 'error' && m.data?.error_code === 'CLIENT_NOT_FOUND') {
+        console.debug('[socket] CLIENT_NOT_FOUND suppressed (transient reconnection)')
+        return
+      }
       // 编排会话跳过撤销/重做处理
       if (isAgentOrchestration.value) {
         addMessage(m)
