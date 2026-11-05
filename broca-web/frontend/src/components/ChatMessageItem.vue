@@ -18,6 +18,7 @@ const socketStore = useSocketStore()
 const showFilePreview = ref(false)
 const previewFilePath = ref<string>('')
 const previewFileUrl = ref<string>('')
+const previewFileInfo = ref<{ name: string; path: string; size?: number; type?: string; url?: string } | undefined>(undefined)
 
 // 显示/隐藏撤销按钮
 const showActions = ref(false)
@@ -446,6 +447,9 @@ const getFormattedJson = (data: any): string => {
 
 // 打开文件预览
 const openFilePreview = (file: { url?: string; path?: string; name?: string; type?: string }) => {
+  // 传递 fileInfo 让 FilePreview 正确检测文件类型（name + type）
+  previewFileInfo.value = file.name ? { name: file.name, path: file.path || '', type: file.type, url: file.url } : undefined
+
   // 优先使用后端代理（解决浏览器无法直连云端存储的问题）
   const proxyUrl = getFileProxyUrl(file)
   if (proxyUrl) {
@@ -858,6 +862,7 @@ const handleUndoToHere = async () => {
     v-model:visible="showFilePreview"
     :file-path="previewFilePath"
     :file-url="previewFileUrl"
+    :file-info="previewFileInfo"
     @close="showFilePreview = false"
   />
 </template>
