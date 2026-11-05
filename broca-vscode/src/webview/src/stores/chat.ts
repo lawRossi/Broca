@@ -420,6 +420,12 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function handleIncomingMessage(message: Message) {
+    // Socket.IO 重连时的临时 CLIENT_NOT_FOUND 错误，静默跳过
+    if (message.message_type === 'error' && message.data?.error_code === 'CLIENT_NOT_FOUND') {
+      console.debug('[ChatStore] CLIENT_NOT_FOUND suppressed (transient reconnection)')
+      return
+    }
+
     // Debug: log agent_response content
     if (message.message_type === 'agent_response') {
       console.log('[ChatStore] agent_response received:', {
