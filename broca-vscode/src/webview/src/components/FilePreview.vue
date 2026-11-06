@@ -29,6 +29,8 @@ watch(
   }
 )
 
+const IMAGE_EXTS = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp']
+
 async function loadContent() {
   loading.value = true
   error.value = ''
@@ -37,7 +39,9 @@ async function loadContent() {
     if (props.fileUrl) {
       fileName.value = props.fileUrl.split('/').pop() || 'file'
 
-      // 图片/视频/音频：不需要 fetch，模板直接用 <img>/<video> 渲染
+      // 图片：跳过 fetch，模板直接用 <img src> 渲染
+      const ext = getFileExtension(props.fileUrl)
+      isImage.value = IMAGE_EXTS.includes(ext)
       if (isImage.value) {
         return
       }
@@ -72,16 +76,6 @@ function getFileExtension(name: string): string {
 }
 
 const isImage = ref(false)
-watch(
-  () => props.fileUrl,
-  (url) => {
-    if (url) {
-      const ext = getFileExtension(url)
-      isImage.value = ['jpg', 'jpeg', 'png', 'gif', 'bmp', 'svg', 'webp'].includes(ext)
-    }
-  },
-  { immediate: true }
-)
 </script>
 
 <template>
