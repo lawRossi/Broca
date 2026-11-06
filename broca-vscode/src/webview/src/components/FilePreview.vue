@@ -35,12 +35,18 @@ async function loadContent() {
 
   try {
     if (props.fileUrl) {
-      // Fetch from URL
+      fileName.value = props.fileUrl.split('/').pop() || 'file'
+
+      // 图片/视频/音频：不需要 fetch，模板直接用 <img>/<video> 渲染
+      if (isImage.value) {
+        return
+      }
+
+      // 文本文件：fetch 内容
       const response = await fetch(props.fileUrl)
       if (!response.ok) throw new Error(`Failed to fetch: ${response.statusText}`)
       const text = await response.text()
       content.value = text
-      fileName.value = props.fileUrl.split('/').pop() || 'file'
     } else if (props.filePath) {
       // Try to open via postMessage to extension host
       content.value = 'Loading file from workspace...'
