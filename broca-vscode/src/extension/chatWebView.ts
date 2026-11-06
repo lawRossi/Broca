@@ -82,7 +82,7 @@ export class ChatWebViewManager {
   // 记录每个 session 的"离开开始时间"（离开期间保留最早时间戳，回到页面时检查并清除）
   private webviewAwayTimestamps = new Map<string, number>()
 
-  async openChat(sessionId: string, executionId?: string) {
+  async openChat(sessionId: string, executionId?: string, viewColumn?: vscode.ViewColumn) {
     try {
       // Check if panel already exists and is not disposed
       const existingPanel = this.panels.get(sessionId)
@@ -101,8 +101,9 @@ export class ChatWebViewManager {
       const title = sessionInfo?.description || sessionId
       const category = sessionInfo?.category || 'normal'
 
-      // Create new WebView panel
-      const panel = vscode.window.createWebviewPanel('broca.chat', `Broca: ${title}`, vscode.ViewColumn.One, {
+      // Create new WebView panel (use provided column or default to One)
+      const targetColumn = viewColumn ?? vscode.ViewColumn.One
+      const panel = vscode.window.createWebviewPanel('broca.chat', `Broca: ${title}`, targetColumn, {
         enableScripts: true,
         retainContextWhenHidden: true,
         localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'dist', 'webview')],
@@ -1552,10 +1553,12 @@ export class ChatWebViewManager {
 
   private async handleRefreshChat(sessionId: string, panel: vscode.WebviewPanel) {
     console.log('[ChatWebView] Refreshing chat session:', sessionId)
+    // Remember the current view column so the new panel opens in the same spot
+    const viewColumn = panel.viewColumn ?? vscode.ViewColumn.One
     // Close current panel — onDidDispose cleans up socket + poll timers
     panel.dispose()
-    // Open a brand new chat panel from scratch
-    await this.openChat(sessionId)
+    // Open a brand new chat panel in the same column to avoid jumping to other tabs
+    await this.openChat(sessionId, undefined, viewColumn)
   }
 
   private async handleFetchTasks(

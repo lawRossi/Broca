@@ -58,7 +58,7 @@ class Bash(Tool):
                 },
                 "background": {
                     "type": "boolean",
-                    "description": "Run in background without timeout. Use for long-running commands like dev servers, file watchers, or any command that doesn't terminate. The output is redirected to files and can be tracked via process tool. When False (default), commands have a 120s timeout.",
+                    "description": "Run in background without timeout. Use for long-running commands like dev servers, file watchers, or any command that doesn't terminate. The output is redirected to files and can be tracked via process tool. When False (default), commands have a 115s timeout.",
                     "default": False,
                 },
             }
@@ -272,7 +272,7 @@ class Bash(Tool):
             )
 
     async def _run_code_async(
-        self, code: str, timeout: int = 120, workspace: str | None = None
+        self, code: str, timeout: int = 115, workspace: str | None = None
     ) -> ToolResult:
         """异步执行代码。
 
