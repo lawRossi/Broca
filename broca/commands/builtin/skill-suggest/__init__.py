@@ -89,7 +89,7 @@ class SkillSuggestCommand(LocalCommand):
             )
 
         # 确定要分析的 Skill 名称
-        store = SkillStore()
+        store = SkillStore(workspace=ctx.workspace)
         if skill_name:
             # 验证 Skill 是否存在
             meta = store.get(skill_name)

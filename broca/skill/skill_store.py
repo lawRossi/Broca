@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 
 # ─── 默认路径 ─────────────────────────────────────────
 
-DEFAULT_SKILLS_DIR = Path.home() / ".broca" / "skills"
+GLOBAL_SKILLS_DIR = Path.home() / ".broca" / "skills"
 STORE_FILENAME = ".skill_store.json"
 ARCHIVE_DIR_NAME = ".archive"
 
@@ -40,8 +40,30 @@ class SkillStore:
     使用 fcntl.flock 保证并发安全。
     """
 
-    def __init__(self, skills_dir: str | Path | None = None):
-        self.skills_dir = Path(skills_dir or DEFAULT_SKILLS_DIR).resolve()
+    def __init__(
+        self,
+        skills_dir: str | Path | None = None,
+        workspace: str | Path | None = None,
+    ):
+        """初始化 SkillStore。
+
+        路径解析优先级:
+        1. skills_dir 显式指定
+        2. workspace 给定 → {workspace}/.agents/skills/
+        3. 回退到 ~/.broca/skills/
+        """
+        if skills_dir is not None:
+            self.skills_dir = Path(skills_dir).resolve()
+        elif workspace is not None:
+            self.skills_dir = (Path(workspace) / ".agents" / "skills").resolve()
+        else:
+            self.skills_dir = GLOBAL_SKILLS_DIR.resolve()
+
+        # 全局目录作为只读 secondary source（不参与写操作）
+        self.secondary_dir = GLOBAL_SKILLS_DIR.resolve()
+        if self.secondary_dir == self.skills_dir:
+            self.secondary_dir = None
+
         self.archive_dir = self.skills_dir / ARCHIVE_DIR_NAME
         self.store_path = self.skills_dir / STORE_FILENAME
 
@@ -249,7 +271,12 @@ class SkillStore:
         return name in self.read()
 
     def list_all_skills(self) -> list[dict]:
-        """列出所有 Skill 的摘要信息（合并目录扫描 + store 数据）。"""
+        """列出所有 Skill 的摘要信息（合并目录扫描 + store 数据）。
+
+        扫描范围:
+        - 主目录 (workspace/.agents/skills/ 或 ~/.broca/skills/)
+        - 全局目录 (~/.broca/skills/)，如果主目录不是全局目录
+        """
         # 扫描 skills 目录
         found: dict[str, dict] = {}
 
@@ -257,6 +284,10 @@ class SkillStore:
         self._scan_dir(self.skills_dir, "active", found)
         # archived: .archive/ 下所有含 SKILL.md 的目录
         self._scan_dir(self.archive_dir, "archived", found)
+
+        # 扫描全局 secondary 目录（只读）
+        if self.secondary_dir is not None:
+            self._scan_dir(self.secondary_dir, "active", found, source="global")
 
         # 合并 store 元数据
         store = self.read()
@@ -266,7 +297,7 @@ class SkillStore:
 
         return list(found.values())
 
-    def _scan_dir(self, base_dir: Path, default_state: str, result: dict):
+    def _scan_dir(self, base_dir: Path, default_state: str, result: dict, source: str = "local"):
         """扫描目录下的 Skill 目录。"""
         if not base_dir.exists():
             return
@@ -280,10 +311,14 @@ class SkillStore:
                 continue
             # 简单解析 frontmatter 获取 name
             name = self._parse_skill_name(skill_file) or entry.name
+            # 不覆盖已有条目（主目录优先）
+            if name in result:
+                continue
             result[name] = {
                 "name": name,
                 "path": str(entry),
                 "state": default_state,
+                "source_dir": source,
             }
 
     def _parse_skill_name(self, skill_file: Path) -> Optional[str]:

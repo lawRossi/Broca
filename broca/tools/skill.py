@@ -53,7 +53,10 @@ class SkillManage(Tool):
 
     def __init__(self):
         super().__init__(max_content_length=20000)
-        self.store = SkillStore()
+
+    def _get_store(self, context: ToolCallContext) -> SkillStore:
+        """根据 workspace 创建 SkillStore 实例。"""
+        return SkillStore(workspace=context.workspace)
 
     @property
     def name(self) -> str:
@@ -149,7 +152,8 @@ class SkillManage(Tool):
                 content=f"Invalid skill name '{name}' after cleaning.",
             )
 
-        skill_dir = self.store.skills_dir / slug
+        store = self._get_store(context)
+        skill_dir = store.skills_dir / slug
         if skill_dir.exists():
             return ToolResult(
                 status=ToolStatus.ERROR,
@@ -160,7 +164,7 @@ class SkillManage(Tool):
         (skill_dir / "SKILL.md").write_text(content, encoding="utf-8")
 
         # 注册 store
-        self.store.ensure(slug, created_by="agent")
+        store.ensure(slug, created_by="agent")
 
         # 刷新 SkillManager 索引
         self._refresh_index()
@@ -201,7 +205,8 @@ class SkillManage(Tool):
                 content="'content' is required for patch action.",
             )
 
-        skill_dir = self.store.skills_dir / name
+        store = self._get_store(context)
+        skill_dir = store.skills_dir / name
         skill_file = skill_dir / "SKILL.md"
 
         if not skill_file.exists():
@@ -210,7 +215,7 @@ class SkillManage(Tool):
                 content=f"Skill '{name}' not found at {skill_dir}.",
             )
 
-        if not self.store.is_registered(name):
+        if not store.is_registered(name):
             return ToolResult(
                 status=ToolStatus.ERROR,
                 content=f"Skill '{name}' is not in store (may be builtin). Cannot patch.",
@@ -229,7 +234,8 @@ class SkillManage(Tool):
         name = args["name"]
         absorbed = args.get("absorbed_into", "")
 
-        ok, msg = self.store.archive_skill(name)
+        store = self._get_store(context)
+        ok, msg = store.archive_skill(name)
         if not ok:
             return ToolResult(status=ToolStatus.ERROR, content=msg)
 
@@ -243,8 +249,9 @@ class SkillManage(Tool):
 
     async def _handle_list(self, args: dict, context: ToolCallContext) -> ToolResult:
         """列出所有 Skill 及其状态。"""
-        skills_info = self.store.list_all_skills()
-        store_data = self.store.read()
+        store = self._get_store(context)
+        skills_info = store.list_all_skills()
+        store_data = store.read()
 
         if not skills_info:
             return ToolResult(status=ToolStatus.SUCCESS, content="No skills found.")
@@ -254,23 +261,25 @@ class SkillManage(Tool):
             name = s["name"]
             state = s.get("state", "unknown")
             meta = store_data.get(name, {})
-            source = meta.get("created_by", "unknown")
+            created_by = meta.get("created_by", "unknown")
+            source_dir = s.get("source_dir", "local")
             uses = meta.get("use_count", 0)
-            lines.append(f"  - {name}  (state={state}, source={source}, uses={uses})")
+            tag = f"source={created_by}" if created_by != "unknown" else f"dir={source_dir}"
+            lines.append(f"  - {name}  (state={state}, {tag}, uses={uses})")
 
         return ToolResult(status=ToolStatus.SUCCESS, content="\n".join(lines))
 
     async def _handle_write_file(
         self, args: dict, context: ToolCallContext
     ) -> ToolResult:
-        return self._handle_subfile("write", args)
+        return self._handle_subfile("write", args, context)
 
     async def _handle_remove_file(
         self, args: dict, context: ToolCallContext
     ) -> ToolResult:
-        return self._handle_subfile("remove", args)
+        return self._handle_subfile("remove", args, context)
 
-    def _handle_subfile(self, action: str, args: dict) -> ToolResult:
+    def _handle_subfile(self, action: str, args: dict, context: ToolCallContext) -> ToolResult:
         name = args["name"]
         file_path = args.get("file_path", "")
 
@@ -280,7 +289,8 @@ class SkillManage(Tool):
                 content="'file_path' is required.",
             )
 
-        skill_dir = self.store.skills_dir / name
+        store = self._get_store(context)
+        skill_dir = store.skills_dir / name
         if not skill_dir.exists():
             return ToolResult(
                 status=ToolStatus.ERROR,

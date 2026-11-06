@@ -125,22 +125,17 @@ class TestSkillManagePathTraversal:
     """Verify _handle_subfile rejects path traversal attempts."""
 
     def _setup_skill_dir(self, tmp_path: Path, skill_name: str) -> Path:
-        """Create a skill directory and return its path."""
-        skill_dir = tmp_path / skill_name
-        skill_dir.mkdir(parents=True)
+        """Create a skill directory under {workspace}/.agents/skills/ and return its path."""
+        skill_dir = tmp_path / ".agents" / "skills" / skill_name
+        skill_dir.mkdir(parents=True, exist_ok=True)
         (skill_dir / "SKILL.md").write_text("# Test Skill", encoding="utf-8")
         return skill_dir
 
-    def _make_store_with_dir(self, skills_dir: Path, skill_name: str):
-        """Create a mock SkillStore pointing to the given directory."""
-        from broca.tools.skill import SkillManage
-
-        tool = SkillManage()
-        # Override the store's skills_dir
-        tool.store.skills_dir = skills_dir
-        # Mock is_registered to return True
-        tool.store.is_registered = MagicMock(return_value=True)
-        return tool
+    def _make_context(self, tmp_path: Path) -> MagicMock:
+        """Create a mock ToolCallContext with workspace set to tmp_path."""
+        context = MagicMock()
+        context.workspace = str(tmp_path)
+        return context
 
     @pytest.mark.asyncio
     async def test_reject_other_skill(self, tmp_path):
@@ -148,18 +143,14 @@ class TestSkillManagePathTraversal:
         from broca.tools.skill import SkillManage
         from broca.tools.tool import ToolStatus
 
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
         # Create the target skill
-        skill_dir = self._setup_skill_dir(skills_dir, "my-skill")
+        self._setup_skill_dir(tmp_path, "my-skill")
         # Create a sibling directory to simulate escape target
-        other_dir = skills_dir / "other-skill"
-        other_dir.mkdir()
+        other_dir = tmp_path / ".agents" / "skills" / "other-skill"
+        other_dir.mkdir(parents=True, exist_ok=True)
 
-        tool = self._make_store_with_dir(skills_dir, "my-skill")
-        tool.store.skills_dir = skills_dir
-
-        context = MagicMock()
+        tool = SkillManage()
+        context = self._make_context(tmp_path)
         result = await tool._execute(
             {
                 "action": "write_file",
@@ -178,17 +169,13 @@ class TestSkillManagePathTraversal:
         from broca.tools.skill import SkillManage
         from broca.tools.tool import ToolStatus
 
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        skill_dir = self._setup_skill_dir(skills_dir, "my-skill")
+        self._setup_skill_dir(tmp_path, "my-skill")
         # Create a similar-named sibling
-        evil_dir = skills_dir / "my-skill-evil"
-        evil_dir.mkdir()
+        evil_dir = tmp_path / ".agents" / "skills" / "my-skill-evil"
+        evil_dir.mkdir(parents=True, exist_ok=True)
 
-        tool = self._make_store_with_dir(skills_dir, "my-skill")
-        tool.store.skills_dir = skills_dir
-
-        context = MagicMock()
+        tool = SkillManage()
+        context = self._make_context(tmp_path)
         result = await tool._execute(
             {
                 "action": "write_file",
@@ -207,16 +194,12 @@ class TestSkillManagePathTraversal:
         from broca.tools.skill import SkillManage
         from broca.tools.tool import ToolStatus
 
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        skill_dir = self._setup_skill_dir(skills_dir, "my-skill")
+        skill_dir = self._setup_skill_dir(tmp_path, "my-skill")
         # Create the subdirectory
-        (skill_dir / "references").mkdir()
+        (skill_dir / "references").mkdir(parents=True, exist_ok=True)
 
-        tool = self._make_store_with_dir(skills_dir, "my-skill")
-        tool.store.skills_dir = skills_dir
-
-        context = MagicMock()
+        tool = SkillManage()
+        context = self._make_context(tmp_path)
         result = await tool._execute(
             {
                 "action": "write_file",
@@ -238,14 +221,10 @@ class TestSkillManagePathTraversal:
         from broca.tools.skill import SkillManage
         from broca.tools.tool import ToolStatus
 
-        skills_dir = tmp_path / "skills"
-        skills_dir.mkdir()
-        self._setup_skill_dir(skills_dir, "my-skill")
+        self._setup_skill_dir(tmp_path, "my-skill")
 
-        tool = self._make_store_with_dir(skills_dir, "my-skill")
-        tool.store.skills_dir = skills_dir
-
-        context = MagicMock()
+        tool = SkillManage()
+        context = self._make_context(tmp_path)
         result = await tool._execute(
             {
                 "action": "write_file",

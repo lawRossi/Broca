@@ -10,7 +10,10 @@ class SkillCommand(LocalCommand):
 
     def __init__(self):
         super().__init__()
-        self.store = SkillStore()
+
+    def _get_store(self, ctx: CommandContext) -> SkillStore:
+        """根据 workspace 创建 SkillStore 实例。"""
+        return SkillStore(workspace=ctx.workspace)
 
     async def execute(self, args: str, ctx: CommandContext) -> CommandResult:
         parts = args.strip().split(None, 1)
@@ -59,9 +62,10 @@ class SkillCommand(LocalCommand):
     async def _handle_list(self, rest: str, ctx: CommandContext) -> CommandResult:
         filter_state = rest.strip().lower() if rest else None
 
+        store = self._get_store(ctx)
         # 从 store 获取数据
-        store_data = self.store.read()
-        skills_info = self.store.list_all_skills()
+        store_data = store.read()
+        skills_info = store.list_all_skills()
 
         # 过滤
         if filter_state:
@@ -93,9 +97,10 @@ class SkillCommand(LocalCommand):
             return CommandResult(type="error", value="Usage: `/skill view <name>`")
 
         name = rest.strip()
+        store = self._get_store(ctx)
         # 查找 Skill 目录
-        skills_dir = self.store.skills_dir
-        archive_dir = self.store.archive_dir
+        skills_dir = store.skills_dir
+        archive_dir = store.archive_dir
 
         skill_path = None
         for base in [skills_dir, archive_dir]:
@@ -118,7 +123,7 @@ class SkillCommand(LocalCommand):
         content = skill_file.read_text(encoding="utf-8")
 
         # 获取元数据
-        meta = self.store.get(name) or {}
+        meta = store.get(name) or {}
         meta_lines = [
             "## Skill Metadata",
             f"  State: {meta.get('state', 'unknown')}",
@@ -132,8 +137,8 @@ class SkillCommand(LocalCommand):
         ]
 
         # 记录查看
-        if name in self.store.read():
-            self.store.record_view(name)
+        if name in store.read():
+            store.record_view(name)
 
         return CommandResult(type="text", value="\n".join(meta_lines) + content)
 
@@ -142,7 +147,8 @@ class SkillCommand(LocalCommand):
             return CommandResult(type="error", value="Usage: `/skill archive <name>`")
 
         name = rest.strip()
-        ok, msg = self.store.archive_skill(name)
+        store = self._get_store(ctx)
+        ok, msg = store.archive_skill(name)
         if ok:
             # 刷新 SkillManager 索引
             self._refresh_skill_index()
@@ -155,7 +161,8 @@ class SkillCommand(LocalCommand):
             return CommandResult(type="error", value="Usage: `/skill restore <name>`")
 
         name = rest.strip()
-        ok, msg = self.store.restore_skill(name)
+        store = self._get_store(ctx)
+        ok, msg = store.restore_skill(name)
         if ok:
             self._refresh_skill_index()
             return CommandResult(type="text", value=f"✅ {msg}")
