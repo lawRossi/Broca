@@ -1,10 +1,8 @@
-import mimetypes
 import os
 import stat
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import StreamingResponse
 from loguru import logger
 from pydantic import BaseModel
 
@@ -415,67 +413,4 @@ async def get_home_directory() -> ApiResponse:
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 
-@router.get("/files/storage")
-async def proxy_storage_file(key: str) -> StreamingResponse:
-    """代理云端存储文件（通过 S3 API 下载后转发给浏览器）。
 
-    解决浏览器无法直接访问 Cloudflare R2 / Supabase Storage 的问题。
-    前端使用此端点代替直接 fetch 云端 public URL。
-
-    Args:
-        key: S3 对象 key（如 "uploads/20260101/photo.png"）
-
-    """
-    from broca.configs import get_configs
-
-    storage = get_configs().storage
-    if not storage.backend or storage.backend not in ("cloudflare", "supabase"):
-        raise HTTPException(status_code=400, detail="Storage backend not configured")
-
-    # Determine bucket and create S3 client
-    import boto3
-    from botocore.client import Config as BotocoreConfig
-
-    if storage.backend == "cloudflare":
-        if not storage.cloudflare_account_id or not storage.cloudflare_access_key_id:
-            raise HTTPException(status_code=400, detail="Cloudflare R2 credentials not configured")
-        endpoint = f"https://{storage.cloudflare_account_id}.r2.cloudflarestorage.com"
-        access_key_id = storage.cloudflare_access_key_id
-        secret_key = storage.cloudflare_secret_access_key
-        bucket = storage.cloudflare_bucket or "upload"
-    elif storage.backend == "supabase":
-        if not storage.supabase_url or not storage.supabase_s3_access_key_id:
-            raise HTTPException(status_code=400, detail="Supabase S3 credentials not configured")
-        endpoint = f"{storage.supabase_url}/storage/v1/s3"
-        access_key_id = storage.supabase_s3_access_key_id
-        secret_key = storage.supabase_s3_secret_access_key
-        bucket = storage.supabase_bucket or "upload"
-    else:
-        raise HTTPException(status_code=400, detail=f"Unsupported storage backend: {storage.backend}")
-
-    s3_client = boto3.client(
-        "s3",
-        endpoint_url=endpoint,
-        region_name="auto",
-        aws_access_key_id=access_key_id,
-        aws_secret_access_key=secret_key,
-        config=BotocoreConfig(s3={"addressing_style": "path"}),
-    )
-
-    try:
-        # Download the object
-        obj = s3_client.get_object(Bucket=bucket, Key=key)
-        body = obj["Body"]  # StreamingBody
-        content_type = obj.get("ContentType") or mimetypes.guess_type(key) or ["application/octet-stream"]
-        if isinstance(content_type, tuple):
-            content_type = content_type[0]
-        content_length = obj.get("ContentLength")
-
-        return StreamingResponse(
-            iter(lambda: body.read(65536), b""),
-            media_type=content_type,
-            headers={"Content-Length": str(content_length)} if content_length else {},
-        )
-    except Exception as e:
-        logger.warning(f"Failed to fetch storage object key={key}: {e}")
-        raise HTTPException(status_code=404, detail=f"File not found in storage: {key}") from e

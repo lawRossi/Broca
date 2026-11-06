@@ -8,7 +8,6 @@ import { ElMessageBox } from 'element-plus'
 import FilePreview from './FilePreview.vue'
 import { diffLines } from 'diff'
 import { renderMarkdown } from '@/utils/markdown'
-import { getFileProxyUrl } from '@/utils/upload'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -450,13 +449,11 @@ const openFilePreview = (file: { url?: string; path?: string; name?: string; typ
   // 传递 fileInfo 让 FilePreview 正确检测文件类型（name + type）
   previewFileInfo.value = file.name ? { name: file.name, path: file.path || '', type: file.type, url: file.url } : undefined
 
-  // 优先使用后端代理（解决浏览器无法直连云端存储的问题）
-  const proxyUrl = getFileProxyUrl(file)
-  if (proxyUrl) {
-    previewFilePath.value = '' // 清空 path
-    previewFileUrl.value = proxyUrl
+  if (file.url) {
+    previewFilePath.value = ''
+    previewFileUrl.value = file.url
   } else if (file.path) {
-    previewFileUrl.value = '' // 清空 url
+    previewFileUrl.value = ''
     previewFilePath.value = file.path
   }
   showFilePreview.value = true

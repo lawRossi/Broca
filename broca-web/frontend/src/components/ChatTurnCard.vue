@@ -3,7 +3,6 @@ import { ref, computed } from 'vue'
 import { ElMessageBox } from 'element-plus'
 import { useChatStore, useSocketStore } from '@/stores'
 import { renderMarkdown } from '@/utils/markdown'
-import { getFileProxyUrl } from '@/utils/upload'
 
 const chatStore = useChatStore()
 const socketStore = useSocketStore()
@@ -382,7 +381,7 @@ const handleUndo = async () => {
               <!-- 图片：显示缩略图 -->
               <img
                 v-if="file.type?.startsWith('image/')"
-                :src="getFileProxyUrl(file)"
+                :src="file.url"
                 :alt="file.name"
                 class="user-file-thumb"
                 :title="file.name"
