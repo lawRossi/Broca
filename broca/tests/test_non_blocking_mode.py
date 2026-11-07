@@ -161,8 +161,10 @@ class TestMidStepInjection:
 
         result = await engine._execute_round(turn_ctx, max_steps=5)
 
-        # drain called after step 1 (returned [new_msg]) and after step 2 (returned [])
-        assert msg_source.drain.call_count == 2
+        # drain called only after step 1 (non-terminal) — the injected message is
+        # picked up for the next step. Step 2 is terminal, so no drain happens there
+        # (see TC-3 / TC-10: pending messages are left for the next turn).
+        assert msg_source.drain.call_count == 1
         # The injected message was persisted
         # (save_message called at least once for the injected message)
         assert mock_session_manager.save_message.call_count >= 1
@@ -176,10 +178,17 @@ class TestMidStepInjection:
 
 
 class TestCompletedWithMidStep:
-    """TC-3: COMPLETED → turn ends normally even if mid-step messages injected"""
+    """TC-3: COMPLETED → turn ends WITHOUT absorbing pending messages.
+
+    A message that is still pending when a terminal step finishes must be LEFT
+    in the queue so the next turn answers it. Draining it into the dying turn
+    would persist it under the wrong turn, never answer it (the LLM already said
+    "done"), and — having been drained from the queue — never reprocess it
+    (silently swallowed). This is the regression this test guards.
+    """
 
     @pytest.mark.asyncio
-    async def test_completed_with_injection(self, engine, mock_session_manager, mock_context):
+    async def test_completed_does_not_absorb_pending(self, engine, mock_session_manager, mock_context):
         # Step 1 → COMPLETED immediately
         step1 = MagicMock(spec=StepContext)
         step1.status = ExecutionStatus.COMPLETED
@@ -200,11 +209,11 @@ class TestCompletedWithMidStep:
 
         # Turn completed (COMPLETED is terminal)
         assert result.status == ExecutionStatus.COMPLETED
-        # Mid-step drain was still executed (message injected before COMPLETED check)
-        assert msg_source.drain.call_count == 1
-        # Injected message was persisted (save_message called) and added to context
-        assert mock_session_manager.save_message.call_count >= 1
-        assert mock_context.add_message.call_count >= 1
+        # Terminal step must NOT drain — pending message stays for the next turn
+        assert msg_source.drain.call_count == 0
+        # Nothing injected into the dying turn (no persist / no context add)
+        assert mock_session_manager.save_message.call_count == 0
+        assert mock_context.add_message.call_count == 0
 
 
 # ============================================================================
@@ -412,8 +421,12 @@ class TestExecuteEndToEnd:
 
         # The critical assertion: drain WAS called (meaning _message_source
         # survived _setup_turn → _reset_turn_scoped_state)
-        assert msg_source.drain.call_count == 2, (
-            f"Expected 2 drain calls (after each step), got {msg_source.drain.call_count}. "
+        # The critical assertion: drain WAS called for the non-terminal step
+        # (meaning _message_source survived _setup_turn →
+        # _reset_turn_scoped_state). Step 2 is terminal, so no drain there.
+        assert msg_source.drain.call_count == 1, (
+            f"Expected 1 drain call (after the non-terminal step), got "
+            f"{msg_source.drain.call_count}. "
             "message_source was likely wiped by _reset_turn_scoped_state()."
         )
         # Turn completed successfully
@@ -433,3 +446,91 @@ class TestExecuteEndToEnd:
 
         assert result.status == ExecutionStatus.COMPLETED
         assert engine._message_source is None
+
+
+# ============================================================================
+# TC-10: terminal step must NOT swallow a message sent mid-execution
+#        (real queue + real drainer — models "user sends during long bash /
+#         final answer, message arrives while the turn is completing")
+# ============================================================================
+
+
+class TestTerminalStepLeavesMessagesQueued:
+    """TC-10: A user message that arrives while the turn is completing must be
+    left in the queue so the next turn answers it — not silently swallowed.
+
+    This models the reported bug: with a long bash step, a message sent mid-turn
+    sometimes reached the queue during the FINAL (COMPLETED) step. The engine used
+    to drain it into the dying turn (persisted + added to context) but never answer
+    it, and because it was drained from the queue it was never reprocessed either.
+    """
+
+    @pytest.mark.asyncio
+    async def test_message_during_terminal_step_stays_queued(
+        self, engine, mock_session_manager, mock_context
+    ):
+        # Real message queue + the real _Drainer used in production.
+        agent = Agent.__new__(Agent)
+        agent.message_queue = asyncio.Queue(maxsize=10)
+
+        # A message arrives while the (final) step is running.
+        pending = _make_user_message("sent during final answer", "final_1")
+        agent.message_queue.put_nowait(pending)
+
+        # Wire the real drainer into the engine.
+        engine._message_source = agent._make_message_source()
+
+        # The single step is terminal (LLM said "done", no tool calls).
+        step1 = MagicMock(spec=StepContext)
+        step1.status = ExecutionStatus.COMPLETED
+        engine._execute_step = AsyncMock(return_value=step1)
+
+        turn_ctx = MagicMock(spec=TurnContext)
+        turn_ctx.turn_id = "turn-1"
+        turn_ctx.agent_id = "test-agent"
+        turn_ctx.session_id = "test-session"
+
+        result = await engine._execute_round(turn_ctx, max_steps=5)
+
+        # Turn ended normally...
+        assert result.status == ExecutionStatus.COMPLETED
+        # ...and the message is STILL in the queue, ready for the next turn.
+        assert agent.message_queue.qsize() == 1
+        remaining = agent.message_queue.get_nowait()
+        assert remaining.message_id == "final_1"
+        # It was NOT persisted / injected into the dying turn.
+        assert mock_session_manager.save_message.call_count == 0
+        assert mock_context.add_message.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_message_during_nonterminal_step_is_injected(
+        self, engine, mock_session_manager, mock_context
+    ):
+        """Control: a message arriving during a NON-terminal step (e.g. bash) IS
+        drained and injected so the next step's LLM call sees it."""
+        agent = Agent.__new__(Agent)
+        agent.message_queue = asyncio.Queue(maxsize=10)
+
+        during_bash = _make_user_message("sent during bash", "bash_1")
+        agent.message_queue.put_nowait(during_bash)
+        engine._message_source = agent._make_message_source()
+
+        step1 = MagicMock(spec=StepContext)
+        step1.status = ExecutionStatus.RUNNING  # bash step — more steps to come
+        step2 = MagicMock(spec=StepContext)
+        step2.status = ExecutionStatus.COMPLETED
+        engine._execute_step = AsyncMock(side_effect=[step1, step2])
+
+        turn_ctx = MagicMock(spec=TurnContext)
+        turn_ctx.turn_id = "turn-1"
+        turn_ctx.agent_id = "test-agent"
+        turn_ctx.session_id = "test-session"
+
+        result = await engine._execute_round(turn_ctx, max_steps=5)
+
+        assert result.status == ExecutionStatus.COMPLETED
+        # Drained from the queue after the non-terminal step...
+        assert agent.message_queue.qsize() == 0
+        # ...and injected so the next step's LLM sees it.
+        assert mock_session_manager.save_message.call_count == 1
+        assert mock_context.add_message.call_count == 1

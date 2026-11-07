@@ -420,10 +420,22 @@ class DefaultLoopEngine(LoopEngine):
         )
         if not user_message:
             logger.warning(
-                f"Failed to parse injected message: "
-                f"{getattr(message, 'message_id', '?')}"
+                f"parse_message returned empty for injected message "
+                f"{getattr(message, 'message_id', '?')}, using fallback"
             )
-            return
+            # Fallback: construct a simple text message from raw content
+            raw = (message.data or {}).get("raw_input") or (message.data or {}).get("content") or ""
+            if not raw:
+                logger.warning(
+                    f"Injected message {getattr(message, 'message_id', '?')} "
+                    f"has no content; dropping"
+                )
+                return
+            user_message = {
+                "role": "user",
+                "content": [{"type": "text", "text": str(raw)}],
+                "raw_input": str(raw),
+            }
         message_data = dict(message.data) if message.data else {}
         message_data["from_agent"] = False
         if user_message.get("raw_input"):
@@ -545,20 +557,37 @@ class DefaultLoopEngine(LoopEngine):
                 step_ctx = await self._execute_step(turn_ctx)
                 steps += 1
 
-                # ── Non-blocking: mid-step message injection (skipped after abort) ──
+                # A terminal status ends the turn NOW — do NOT drain/inject pending
+                # user messages into a dying turn. The LLM already signalled "done",
+                # so anything injected here would be persisted under this turn but
+                # never answered; worse, having been drained from the queue it would
+                # also never be reprocessed as a new turn (silently swallowed).
+                # Leaving them queued lets ``start()`` handle them as a fresh turn.
+                # (design: "COMPLETED 时队列有消息 → turn 结束，消息留到下一 turn；
+                #  LLM 'done' 信号保持权威性")
+                if step_ctx.status in _TERMINAL_STATUSES:
+                    return self._build_round_result(step_ctx.status, steps)
+                if max_steps is not None and steps >= max_steps:
+                    return self._build_round_result(ExecutionStatus.LIMIT_EXCEEDED, steps)
+
+                # ── Non-blocking: mid-step message injection ──
+                # Only reached when another step will actually run, so injected
+                # messages are guaranteed to be seen by the next LLM call. Skipped
+                # after abort (a dying turn must not absorb messages either).
                 if self._message_source is not None and not self.abort_event.is_set():
                     try:
                         new_msgs = await self._message_source.drain()
+                        if new_msgs:
+                            logger.info(
+                                f"Mid-step drain: got {len(new_msgs)} message(s) "
+                                f"after step {steps}: "
+                                f"{[m.message_type for m in new_msgs]}"
+                            )
                         for msg in new_msgs:
                             if msg.message_type == MessageType.USER_MESSAGE:
                                 await self._inject_user_message(msg)
                     except Exception as e:
                         logger.warning(f"Mid-step message drain failed: {e}")
-
-                if step_ctx.status in _TERMINAL_STATUSES:
-                    return self._build_round_result(step_ctx.status, steps)
-                if max_steps is not None and steps >= max_steps:
-                    return self._build_round_result(ExecutionStatus.LIMIT_EXCEEDED, steps)
             except BrocaError as e:
                 # Report the concrete error dict so codes survive (LLM_RATE_LIMIT).
                 if getattr(self.config, "interactive", False):
