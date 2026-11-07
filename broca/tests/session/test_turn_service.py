@@ -292,3 +292,162 @@ class TestGetBatchInQuery:
         )
         assert len(messages) == 1
         assert messages[0].message_id == "msg_start_0"
+
+
+class TestSubAgentTurnExclusion:
+    """回归测试：role="sub-agent"（如 explorer）的 turn 加载但不占分页配额。
+
+    背景：前端默认 limit=5，若后端返回的 5 个 turn 全是 explorer 的，
+    前端过滤 explorer 后用户看到空列表。
+    修复：后端 limit 仅约束主 agent turn 的分页，sub-agent turn 额外
+    加载附加在结果中（不计数），前端始终能拿到主 agent turn。
+    """
+
+    @pytest_asyncio.fixture
+    async def subagent_session(self, services):
+        """创建含 main agent(7 turns) + explorer(5 turns) 的测试 session。
+
+        7 个 main turn 确保 limit=5 时会截断（验证配额只计 main turn）。
+        """
+        from broca.session.service import get_agent_service, get_agent_config_service
+
+        session_svc = services["session"]
+        turn_svc = services["turn"]
+        agent_svc = get_agent_service()
+        config_svc = get_agent_config_service()
+
+        session = await session_svc.create(
+            session_id="test_subagent_exclusion_session",
+            title="Sub-agent exclusion test",
+        )
+        session_id = session.session_id
+
+        # 创建 AgentConfig（Agent 的 FK 依赖）
+        config = await config_svc.create(
+            config_id="test_subagent_config",
+            session_id=session_id,
+            name="test_config",
+            config_content='{"role": "agent"}',
+        )
+
+        # main agent
+        main_agent = await agent_svc.create_agent(
+            agent_id="test_subagent_main_agent",
+            config_id=config.config_id,
+            session_id=session_id,
+            name="main",
+            role="agent",
+        )
+        # explorer sub-agent (role="sub-agent")
+        explorer_agent = await agent_svc.create_agent(
+            agent_id="test_subagent_explorer_agent",
+            config_id=config.config_id,
+            session_id=session_id,
+            name="explorer",
+            role="sub-agent",
+        )
+
+        now = datetime.utcnow()
+        # main agent: 7 个 turn（seq 1-7，seq 5-7 最新，模拟 limit=5 截断）
+        main_turn_ids = []
+        for i in range(7):
+            tid = f"test_subagent_main_turn_{i}"
+            main_turn_ids.append(tid)
+            await turn_svc.create(
+                turn_id=tid,
+                session_id=session_id,
+                agent_id=main_agent.agent_id,
+                turn_description=f"main turn {i}",
+                sequence_number=1 + i,
+                created_at=now - timedelta(minutes=30 - i),
+            )
+        # explorer: 5 个 turn（seq 8-12，最新，模拟 explorer 占满场景）
+        for i in range(5):
+            await turn_svc.create(
+                turn_id=f"test_subagent_explorer_turn_{i}",
+                session_id=session_id,
+                agent_id=explorer_agent.agent_id,
+                turn_description=f"explorer turn {i}",
+                sequence_number=8 + i,
+                created_at=now - timedelta(minutes=2 - i),
+            )
+
+        yield {
+            "session_id": session_id,
+            "main_agent_id": main_agent.agent_id,
+            "explorer_agent_id": explorer_agent.agent_id,
+            "main_turn_ids": main_turn_ids,
+            "config_id": config.config_id,
+        }
+
+        # cleanup
+        for tid in main_turn_ids:
+            await turn_svc.delete(tid)
+        for i in range(5):
+            await turn_svc.delete(f"test_subagent_explorer_turn_{i}")
+        await agent_svc.delete("test_subagent_main_agent")
+        await agent_svc.delete("test_subagent_explorer_agent")
+        await config_svc.delete("test_subagent_config")
+        await session_svc.delete(session_id)
+
+    @pytest.mark.asyncio
+    async def test_limit_applies_only_to_main_turns(self, services, subagent_session):
+        """limit=5 只约束 main turn（7个中取5个），explorer turn 额外加载"""
+        turn_svc = services["turn"]
+        session_id = subagent_session["session_id"]
+        main_agent_id = subagent_session["main_agent_id"]
+        explorer_agent_id = subagent_session["explorer_agent_id"]
+
+        turns = await turn_svc.get_turns_by_session(session_id, limit=5)
+
+        # 分类：main turns 和 explorer turns
+        main_in_result = [t for t in turns if t.agent_id == main_agent_id]
+        explorer_in_result = [t for t in turns if t.agent_id == explorer_agent_id]
+
+        # limit=5 → 恰好 5 个 main turn（7个中的最近5个）
+        assert len(main_in_result) == 5, (
+            f"Expected 5 main turns (limit applies to main only), got {len(main_in_result)}"
+        )
+        # explorer turns 全部加载（不占配额）
+        assert len(explorer_in_result) == 5, (
+            f"Expected 5 explorer turns (loaded without counting), got {len(explorer_in_result)}"
+        )
+        # 总计 10
+        assert len(turns) == 10, f"Expected 10 total turns, got {len(turns)}"
+
+    @pytest.mark.asyncio
+    async def test_explorer_turns_loaded_by_default(self, services, subagent_session):
+        """默认模式（include_internal_agents=False）下 explorer turn 仍被加载返回"""
+        turn_svc = services["turn"]
+        session_id = subagent_session["session_id"]
+        explorer_agent_id = subagent_session["explorer_agent_id"]
+
+        turns = await turn_svc.get_turns_by_session(session_id, limit=5)
+        explorer_turns = [t for t in turns if t.agent_id == explorer_agent_id]
+        assert len(explorer_turns) == 5, "Explorer turns should be loaded even in default mode"
+
+    @pytest.mark.asyncio
+    async def test_include_all_returns_everything(self, services, subagent_session):
+        """include_internal_agents=True 时，所有 turn 统一分页返回"""
+        turn_svc = services["turn"]
+        session_id = subagent_session["session_id"]
+
+        # 总共 12 个 turn（7 main + 5 explorer），limit=12 全取
+        turns = await turn_svc.get_turns_by_session(session_id, limit=12, include_internal_agents=True)
+        assert len(turns) == 12, f"Expected 12 turns, got {len(turns)}"
+
+    @pytest.mark.asyncio
+    async def test_count_excludes_subagent(self, services, subagent_session):
+        """count_turns_by_session 默认排除 sub-agent turn（不计数）"""
+        turn_svc = services["turn"]
+        session_id = subagent_session["session_id"]
+
+        # 默认：只计 main agent 的 7 个 turn
+        count = await turn_svc.count_turns_by_session(session_id)
+        assert count == 7, f"Expected count=7, got {count}"
+
+        # include_internal_agents=True：计全部 12 个
+        count_all = await turn_svc.count_turns_by_session(
+            session_id, include_internal_agents=True
+        )
+        assert count_all == 12, f"Expected count=12, got {count_all}"

@@ -377,38 +377,68 @@ class TurnService(BaseService[Turn]):
 
         Args:
             include_internal_agents: 是否包含内部子 agent（session-memory、
-                persistent-memory、skill-evolution）的 turn。默认 False，
-                避免内部 turn 占据分页导致用户看不到主 agent 的 turn。
+                persistent-memory、skill-evolution、sub-agent）的 turn。
+                默认 False 时，sub-agent turn **加载但不占配额**：
+                limit 仅约束主 agent turn，sub-agent turn 额外附加在结果中。
         """
-        filters = {"session_id": session_id, "reverted": False}
-        if execution_id:
-            filters["execution_id"] = execution_id
+        if include_internal_agents:
+            filters = {"session_id": session_id, "reverted": False}
+            if execution_id:
+                filters["execution_id"] = execution_id
+            return await self.get_batch(
+                filters=filters,
+                order_by=order_by,
+                skip=skip,
+                limit=limit,
+            )
 
-        if not include_internal_agents:
-            # 排除内部子 agent 的 turn
-            exclude_ids = await self._get_subagent_ids(session_id)
-            if exclude_ids:
-                return await self._get_turns_excluding_agents(
-                    session_id, exclude_ids, order_by, skip, limit, execution_id
-                )
+        # 默认模式：主 agent turn 占 limit 配额，sub-agent turn 加载但不计数
+        exclude_ids = await self._get_subagent_ids(session_id)
 
-        return await self.get_batch(
-            filters=filters,
-            order_by=order_by,
-            skip=skip,
-            limit=limit,
+        if not exclude_ids:
+            # 无 sub-agent，直接查
+            filters = {"session_id": session_id, "reverted": False}
+            if execution_id:
+                filters["execution_id"] = execution_id
+            return await self.get_batch(
+                filters=filters,
+                order_by=order_by,
+                skip=skip,
+                limit=limit,
+            )
+
+        # 1) 主 agent turns（占用 limit 配额）
+        main_turns = await self._get_turns_excluding_agents(
+            session_id, exclude_ids, order_by, skip, limit, execution_id
         )
+        # 2) sub-agent turns（加载但不占配额）
+        subagent_turns = await self._get_subagent_turns(
+            session_id, exclude_ids, order_by, execution_id
+        )
+        # 3) 合并并按 order_by 排序
+        all_turns = main_turns + subagent_turns
+        self._sort_turns(all_turns, order_by)
+        return all_turns
 
     async def _get_subagent_ids(self, session_id: str) -> List[str]:
-        """获取会话中所有内部子 agent 的 ID"""
+        """获取会话中所有内部子 agent 的 ID。
+
+        排除范围包括：
+        - SUBAGENT_ROLES 中的角色（session_memory_manager, skill_evolution,
+          persistent_memory_manager）
+        - role="sub-agent" 的 agent（如 explorer），避免其 turn 占据分页配额
+          导致前端无主 agent turn 可显示。
+        """
         from broca.loop_engine.hooks.factory import SUBAGENT_ROLES
+
+        exclude_roles = set(SUBAGENT_ROLES) | {"sub-agent"}
 
         async with db_manager.get_session() as session:
             rows = (
                 await session.execute(
                     select(Agent.agent_id)
                     .where(Agent.session_id == session_id)
-                    .where(Agent.role.in_(list(SUBAGENT_ROLES)))
+                    .where(Agent.role.in_(exclude_roles))
                 )
             ).scalars().all()
             return list(rows)
@@ -449,6 +479,55 @@ class TurnService(BaseService[Turn]):
             statement = statement.offset(skip).limit(limit)
             result = await session.execute(statement)
             return list(result.scalars().all())
+
+    async def _get_subagent_turns(
+        self,
+        session_id: str,
+        subagent_ids: List[str],
+        order_by: str,
+        execution_id: Optional[str],
+    ) -> List[Turn]:
+        """获取 sub-agent 的 turn（加载但不占 limit 配额）。
+
+        使用 IN 过滤只取 sub-agent 的 turn，不做分页限制。
+        """
+        from sqlalchemy import and_ as sa_and
+
+        async with db_manager.get_session() as session:
+            conditions = [
+                Turn.session_id == session_id,
+                Turn.reverted == False,  # noqa: E712
+                Turn.agent_id.in_(subagent_ids),
+            ]
+            if execution_id:
+                conditions.append(Turn.execution_id == execution_id)
+
+            statement = select(Turn).where(sa_and(*conditions))
+
+            parts = order_by.strip().split()
+            if parts:
+                column_name = parts[0]
+                if hasattr(Turn, column_name):
+                    column = getattr(Turn, column_name)
+                    if len(parts) >= 2 and parts[1].lower() == "desc":
+                        statement = statement.order_by(desc(column))
+                    else:
+                        statement = statement.order_by(column)
+
+            result = await session.execute(statement)
+            return list(result.scalars().all())
+
+    @staticmethod
+    def _sort_turns(turns: List[Turn], order_by: str) -> None:
+        """在内存中按 order_by 字符串排序（原地修改 list）"""
+        parts = order_by.strip().split()
+        if not parts:
+            return
+        column_name = parts[0]
+        if not hasattr(Turn, column_name):
+            return
+        reverse = len(parts) >= 2 and parts[1].lower() == "desc"
+        turns.sort(key=lambda t: getattr(t, column_name), reverse=reverse)
 
     async def get_turn_time_range(
         self, turn_id: str
