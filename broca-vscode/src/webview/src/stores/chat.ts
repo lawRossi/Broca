@@ -646,8 +646,10 @@ export const useChatStore = defineStore('chat', () => {
     const filtered = (payload.messages || []).filter((m) => processMessage(m) !== null)
 
     if (payload.skip === 0) {
-      // Initial load - replace all messages
-      messages.value = filtered
+      // Initial load - API 数据为 base，保留 IPC 往返期间到达的 live 消息（去重）
+      const apiIds = new Set(filtered.map((m) => m.message_id))
+      const liveExtras = messages.value.filter((m) => !apiIds.has(m.message_id))
+      messages.value = liveExtras.length > 0 ? [...filtered, ...liveExtras] : filtered
     } else {
       // Load more - prepend to existing messages
       const newMessages = [...filtered, ...messages.value]
@@ -1010,6 +1012,7 @@ export const useChatStore = defineStore('chat', () => {
         agentId: t.agent_id || '',
         agentName: t.agent_name || t.agent_id || '',
         userMessage: t.user_message || null,
+        userMessages: t.user_messages || (t.user_message ? [t.user_message] : []),
         status: t.status === 'error' ? 'error' : t.status === 'active' ? 'active' : 'completed',
         currentTool: t.current_tool || null,
         currentFilePath: t.current_file_path || null,
@@ -1069,6 +1072,11 @@ export const useChatStore = defineStore('chat', () => {
           apiTurn.currentFilePath = socketTurn.currentFilePath || apiTurn.currentFilePath
           apiTurn.currentTodoList =
             socketTurn.currentTodoList.length > 0 ? socketTurn.currentTodoList : apiTurn.currentTodoList
+          // userMessages: socket 版本可能包含 mid-step 注入的消息（尚未入库）
+          if (socketTurn.userMessages?.length > (apiTurn.userMessages?.length || 0)) {
+            apiTurn.userMessages = socketTurn.userMessages
+            apiTurn.userMessage = socketTurn.userMessage || apiTurn.userMessage
+          }
           apiTurn.isActive = true
           // 保留 socket 端的 startedAt（客户端时钟，更精确），避免 API 时钟偏差
           if (socketTurn.startedAt) {
@@ -1202,6 +1210,7 @@ export const useChatStore = defineStore('chat', () => {
       errorSeverity: null,
       recoveryHint: null,
       userFiles: null,
+      userMessages: [],
     }
 
     turnSummaries.value.push(summary)

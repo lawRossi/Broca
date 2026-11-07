@@ -722,6 +722,7 @@ export const useChatStore = defineStore('chat', () => {
       errorSeverity: null,
       recoveryHint: null,
       userFiles: null,
+      userMessages: [],
     }
 
     turnSummaries.value.push(newSummary)
@@ -985,9 +986,12 @@ export const useChatStore = defineStore('chat', () => {
             })
           })
         } else {
-          messages.value = historyMessages
+          // Merge: API 数据为 base，保留 await 期间到达的 live 消息（去重）
+          const apiIds = new Set(historyMessages.map((m) => m.message_id))
+          const liveExtras = messages.value.filter((m) => !apiIds.has(m.message_id))
+          messages.value = liveExtras.length > 0 ? [...historyMessages, ...liveExtras] : historyMessages
           messageStates.value.clear()
-          historyMessages.forEach((msg) => {
+          messages.value.forEach((msg) => {
             messageStates.value.set(msg.message_id, {
               showParameters: false,
               showResult: false,
@@ -1131,6 +1135,11 @@ export const useChatStore = defineStore('chat', () => {
           apiTurn.currentFilePath = socketTurn.currentFilePath || apiTurn.currentFilePath
           apiTurn.currentTodoList =
             socketTurn.currentTodoList.length > 0 ? socketTurn.currentTodoList : apiTurn.currentTodoList
+          // userMessages: socket 版本可能包含 mid-step 注入的消息（尚未入库）
+          if (socketTurn.userMessages?.length > (apiTurn.userMessages?.length || 0)) {
+            apiTurn.userMessages = socketTurn.userMessages
+            apiTurn.userMessage = socketTurn.userMessage || apiTurn.userMessage
+          }
           apiTurn.isActive = true
         }
         turnSummaries.value = Array.from(dedupMap.values())

@@ -719,6 +719,7 @@ async def get_session_turns(
                 # 统计数据
                 "is_reverted": stats.get("is_reverted", False),
                 "user_message": stats["user_message"],
+                "user_messages": stats["user_messages"],
                 "total_steps": stats["total_steps"],
                 "tool_call_stats": stats["tool_call_stats"],
                 "current_file_path": stats["current_file_path"],
