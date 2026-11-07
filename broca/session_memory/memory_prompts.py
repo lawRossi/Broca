@@ -57,9 +57,8 @@ Critical Rules:
 3. Skip sections with no substantial new insights
 4. Write DETAILED, INFO-DENSE content with specific file paths, function names, error messages, etc.
 5. Keep each section under ~2000 tokens - condense older info if needed
-6. Total file under ~12000 tokens
-7. Always update "Current State" to reflect the most recent work
-8. You ONLY have access to write_file tool, and can ONLY write to {memory_path}
+6. Always update "Current State" to reflect the most recent work
+7. You ONLY have access to write_file tool, and can ONLY write to {memory_path}
 
-REMEMBER: now writing session notes is your ONLY task. You must write to the **file** and STOP!
+REMEMBER: writing session notes is your ONLY task. You must use `write_file` once and then stop with "session notes extraceted".
 """
