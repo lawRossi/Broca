@@ -29,6 +29,19 @@ def _get_test_id(interface_cls):
     return interface_cls.__name__
 
 
+#: Interfaces whose default implementation is a *different* class.
+#:
+#: Self-mapped interfaces (``impl is iface``, e.g. ``Orchestrator``) are excluded
+#: from the issubclass / abstract-method / signature checks: with ``impl is iface``
+#: those assertions are trivially true, so parametrizing over them only produced
+#: permanently-skipped tests. ``test_registry_resolve`` / ``test_scope_valid``
+#: still cover every key.
+SUBCLASS_CHECKED = [
+    iface for iface, impl in DEFAULT_IMPLEMENTATIONS.items() if impl is not iface
+]
+SUBCLASS_CHECKED_IDS = [_get_test_id(i) for i in SUBCLASS_CHECKED]
+
+
 def _get_abstractmethod_params(abc_cls: type) -> dict[str, set[str]]:
     """For each abstract method, get the set of parameter names (excluding **kwargs and properties)."""
     result = {}
@@ -77,29 +90,24 @@ class TestComponentCompatibility:
 
     @pytest.mark.parametrize(
         "interface_cls",
-        list(DEFAULT_IMPLEMENTATIONS.keys()),
-        ids=[_get_test_id(i) for i in DEFAULT_IMPLEMENTATIONS.keys()],
+        SUBCLASS_CHECKED,
+        ids=SUBCLASS_CHECKED_IDS,
     )
     def test_issubclass(self, interface_cls):
         """Default impl must be a subclass of the interface ABC."""
         impl_cls = DEFAULT_IMPLEMENTATIONS[interface_cls]
-        # Self-mapping (interface is its own default, e.g. Orchestrator ABC)
-        if impl_cls is interface_cls:
-            pytest.skip("Self-mapped interface (ABC is its own default)")
         assert issubclass(impl_cls, interface_cls), (
             f"{impl_cls.__name__} is not a subclass of {interface_cls.__name__}"
         )
 
     @pytest.mark.parametrize(
         "interface_cls",
-        list(DEFAULT_IMPLEMENTATIONS.keys()),
-        ids=[_get_test_id(i) for i in DEFAULT_IMPLEMENTATIONS.keys()],
+        SUBCLASS_CHECKED,
+        ids=SUBCLASS_CHECKED_IDS,
     )
     def test_no_abstract_methods(self, interface_cls):
         """Default impl must have no unimplemented abstract methods."""
         impl_cls = DEFAULT_IMPLEMENTATIONS[interface_cls]
-        if impl_cls is interface_cls:
-            pytest.skip("Self-mapped interface (ABC is its own default)")
         abstract = impl_cls.__abstractmethods__
         assert abstract == frozenset(), (
             f"{impl_cls.__name__} has unimplemented abstract methods: {abstract}"
@@ -107,8 +115,8 @@ class TestComponentCompatibility:
 
     @pytest.mark.parametrize(
         "interface_cls",
-        list(DEFAULT_IMPLEMENTATIONS.keys()),
-        ids=[_get_test_id(i) for i in DEFAULT_IMPLEMENTATIONS.keys()],
+        SUBCLASS_CHECKED,
+        ids=SUBCLASS_CHECKED_IDS,
     )
     def test_signature_compatibility(self, interface_cls):
         """ABC abstract method params must be subset of impl method params.
@@ -117,8 +125,6 @@ class TestComponentCompatibility:
         all params that the ABC declares.
         """
         impl_cls = DEFAULT_IMPLEMENTATIONS[interface_cls]
-        if impl_cls is interface_cls:
-            pytest.skip("Self-mapped interface (ABC is its own default)")
 
         abc_params = _get_abstractmethod_params(interface_cls)
 

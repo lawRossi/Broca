@@ -206,6 +206,31 @@ class TestToHashNoneFix:
 class TestUndoLock:
     """Verify undo()/redo() hold the lock for the entire operation."""
 
+    @staticmethod
+    def _fake_db_manager(partial_turn_ids: list[str] | None = None):
+        """Stand-in for ``revert_service.db_manager``.
+
+        ``_mark_messages_as_reverted_sql`` runs a raw SQL query through
+        ``db_manager.get_session()`` to find partially-reverted turns.  Without
+        this stub the test hits the real (process-wide) SQLite DB, whose
+        ``message`` table only exists if some *other* test directory's conftest
+        created it — i.e. the test used to pass or fail depending on which
+        files pytest happened to collect (see ``broca/tests/session/conftest.py``).
+        """
+        result = MagicMock()
+        result.scalars.return_value.all.return_value = list(partial_turn_ids or [])
+
+        session = MagicMock()
+        session.execute = AsyncMock(return_value=result)
+
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+
+        db = MagicMock()
+        db.get_session = MagicMock(return_value=ctx)
+        return db
+
     @pytest.mark.asyncio
     async def test_undo_holds_lock_for_entire_operation(self):
         """acquire_lock should be called before track, release_lock after all operations."""
@@ -257,6 +282,7 @@ class TestUndoLock:
         mock_session_mgr.batch_update_turns = AsyncMock()
 
         with patch("broca.session.revert_service.get_message_service", return_value=mock_msg_svc), \
+             patch("broca.session.revert_service.db_manager", self._fake_db_manager()), \
              patch("asyncio.to_thread", new=AsyncMock(side_effect=lambda func, *a, **kw: func(*a, **kw))):
             await service.undo(
                 session_id="s1", agent_id="a1", target_message_id="msg_1", level="step"
@@ -271,6 +297,52 @@ class TestUndoLock:
         # Verify the snapshot operations were performed
         assert mock_sm.track.called
         assert mock_sm.restore_patches.called
+        # 完全撤销的轮次应被标记（SQL 分支确实走通了 stub）
+        assert mock_session_mgr.batch_update_turns.called
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "partial_turns, expect_marked",
+        [
+            ([], True),          # 该 turn 所有消息都被撤销 → 标记 turn
+            (["t1"], False),     # 该 turn 还有未撤销消息 → 不标记
+        ],
+    )
+    async def test_partial_turn_is_not_marked_reverted(
+        self, partial_turns, expect_marked
+    ):
+        """``_mark_messages_as_reverted_sql`` 只在整轮消息都被撤销时标记 turn。
+
+        使用 stub 的 ``db_manager``，避免依赖真实 SQLite schema。
+        """
+        from broca.session.revert_service import SessionRevertService
+
+        mock_session_mgr = MagicMock()
+        mock_session_mgr.batch_update_messages = AsyncMock()
+        mock_session_mgr.batch_update_turns = AsyncMock()
+
+        service = SessionRevertService(
+            session_manager=mock_session_mgr,
+            snapshot_manager=MagicMock(),
+            workspace_path="/tmp/test_ws",
+        )
+
+        mock_msg_svc = MagicMock()
+        mock_msg_svc.get_message_ids_from_pivot = AsyncMock(
+            return_value={"message_ids": {"msg_2"}, "turn_ids": {"t1"}}
+        )
+
+        with patch(
+            "broca.session.revert_service.get_message_service",
+            return_value=mock_msg_svc,
+        ), patch(
+            "broca.session.revert_service.db_manager",
+            self._fake_db_manager(partial_turns),
+        ):
+            await service._mark_messages_as_reverted_sql("a1", "msg_pivot")
+
+        assert mock_session_mgr.batch_update_messages.called
+        assert mock_session_mgr.batch_update_turns.called is expect_marked
 
     @pytest.mark.asyncio
     async def test_redo_holds_lock(self):
