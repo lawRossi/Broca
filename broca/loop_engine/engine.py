@@ -24,6 +24,7 @@ Lifecycle (see ``broca.components.loop_hook``)::
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import uuid
 from typing import Any, Dict, List, Optional
@@ -124,6 +125,10 @@ class DefaultLoopEngine(LoopEngine):
         self._chunk_buffer: list[dict] = []
         self._chunk_buffer_len: int = 0
         self._chunk_flush_task: Optional[asyncio.Task] = None
+        # Serialises ``_do_flush`` so that a "flush now" (e.g. right before tool
+        # execution) can never race with an in-flight delayed flush — otherwise
+        # an agent_response could be emitted *after* the permission request.
+        self._flush_lock: Optional[asyncio.Lock] = None
         self._CHUNK_FLUSH_CHARS: int = 128
         self._CHUNK_FLUSH_INTERVAL: float = 0.1
         self._CHUNK_BUFFER_MAX: int = 1000
@@ -523,6 +528,9 @@ class DefaultLoopEngine(LoopEngine):
                 logger.error("Failed to save agent response")
                 step_ctx.status = ExecutionStatus.ERROR
             elif step_ctx.tool_calls:
+                # 进入工具执行前把残余的流式 chunk 刷干净：
+                # 工具执行可能立刻触发权限/提问请求，必须保证它在 agent_response 之后到达。
+                await self._flush_now()
                 results = await self._tool_strategy.execute(
                     step_ctx.tool_calls,
                     self._build_tool_context(),
@@ -947,48 +955,71 @@ class DefaultLoopEngine(LoopEngine):
         if self._chunk_flush_task is None or self._chunk_flush_task.done():
             self._chunk_flush_task = asyncio.create_task(self._flush_chunks())
 
-    def _flush_now(self) -> None:
-        """立即 flush（长度达到阈值时调用）"""
-        if self._chunk_flush_task and not self._chunk_flush_task.done():
-            self._chunk_flush_task.cancel()
-        self._chunk_flush_task = None
-        asyncio.ensure_future(self._do_flush())
-
     async def _flush_chunks(self) -> None:
         """等待 FLUSH_INTERVAL 后合并发送 buffer 中的 chunks（时间兜底路径）"""
         from broca.loop_engine.chunk_flush import delayed_flush
 
-        await delayed_flush(self._CHUNK_FLUSH_INTERVAL)
+        try:
+            await delayed_flush(self._CHUNK_FLUSH_INTERVAL)
+        except asyncio.CancelledError:
+            # 定时器在等待期间被 ``_flush_now`` 取消 → 由调用方负责 flush
+            return
+        # 定时器职责到此结束；后续 flush 由 ``_flush_lock`` 串行化，
+        # 此时不再把本任务记为待取消的定时器，避免 flush 中途被 cancel 丢 chunk。
+        self._chunk_flush_task = None
+        await self._do_flush()
+
+    async def _flush_now(self) -> None:
+        """立即 flush（长度达到阈值 / 进入工具执行前调用）。
+
+        取消尚未触发的延迟 flush 定时器并**同步等待** flush 完成，保证线序
+        可预测。进入工具执行前必须调用，否则 0.1s 的延迟 flush 可能在
+        ``permission_request`` / ``agent_query`` 之后才到达前端，导致前端把
+        刚弹出的授权/提问弹窗误关掉（表现为"有时看不到弹窗"）。
+        期望线序：``agent_response`` → ``tool_call`` → ``permission_request``。
+        """
+        task = self._chunk_flush_task
+        self._chunk_flush_task = None
+        if task is not None and not task.done():
+            task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
         await self._do_flush()
 
     async def _do_flush(self) -> None:
-        """实际执行 flush：取出 buffer → merge → emit"""
-        if not self._chunk_buffer:
-            self._chunk_flush_task = None
-            return
-        chunks = self._chunk_buffer[:]
-        self._chunk_buffer.clear()
-        self._chunk_buffer_len = 0
-        self._chunk_flush_task = None
+        """实际执行 flush：取出 buffer → merge → emit
 
-        merged = self._merge_consecutive_chunks(chunks)
-        for chunk in merged:
-            try:
-                kind = chunk.get("type")
-                if kind in ("content", "reasoning_content"):
-                    await self.communicator.send_agent_response(
-                        content=chunk.get("data", "") if kind == "content" else "",
-                        reasoning_content=(
-                            chunk.get("data", "") if kind == "reasoning_content" else ""
-                        ),
-                        index=chunk.get("index", 0),
-                        turn_id=self.turn_id,
-                        agent_id=self.agent_id,
-                        message_id=chunk.get("message_id", ""),
-                        subscription=self.session_id,
-                    )
-            except Exception as e:
-                logger.warning(f"Failed to broadcast merged LLM chunk: {e}")
+        全程持有 ``_flush_lock``，保证并发调用（定时器 flush 与
+        ``_flush_now``）不会交错发送，从而维持 ``agent_response`` →
+        ``tool_call`` → ``permission_request`` 的线序。
+        """
+        if self._flush_lock is None:
+            self._flush_lock = asyncio.Lock()
+        async with self._flush_lock:
+            if not self._chunk_buffer:
+                return
+            chunks = self._chunk_buffer[:]
+            self._chunk_buffer.clear()
+            self._chunk_buffer_len = 0
+
+            merged = self._merge_consecutive_chunks(chunks)
+            for chunk in merged:
+                try:
+                    kind = chunk.get("type")
+                    if kind in ("content", "reasoning_content"):
+                        await self.communicator.send_agent_response(
+                            content=chunk.get("data", "") if kind == "content" else "",
+                            reasoning_content=(
+                                chunk.get("data", "") if kind == "reasoning_content" else ""
+                            ),
+                            index=chunk.get("index", 0),
+                            turn_id=self.turn_id,
+                            agent_id=self.agent_id,
+                            message_id=chunk.get("message_id", ""),
+                            subscription=self.session_id,
+                        )
+                except Exception as e:
+                    logger.warning(f"Failed to broadcast merged LLM chunk: {e}")
 
     @staticmethod
     def _merge_consecutive_chunks(chunks: list) -> list:
@@ -1020,6 +1051,10 @@ class DefaultLoopEngine(LoopEngine):
 
                 # tool_call 绕过 buffer，立即发送
                 if kind == "tool_call":
+                    # 先把缓冲中的 content/reasoning 刷出去，保证
+                    # agent_response → tool_call → permission_request 的顺序，
+                    # 否则延迟 flush 的 agent_response 会晚于权限请求到达并关掉弹窗。
+                    await self._flush_now()
                     tool_call = event.get("data")
                     name = getattr(getattr(tool_call, "function", None), "name", None)
                     if name:
@@ -1035,12 +1070,12 @@ class DefaultLoopEngine(LoopEngine):
 
                 # buffer 安全阀
                 if len(self._chunk_buffer) > self._CHUNK_BUFFER_MAX:
-                    self._flush_now()
+                    await self._flush_now()
 
                 self._chunk_buffer.append(event)
                 self._chunk_buffer_len += len(event.get("data", "") or "")
                 if self._chunk_buffer_len >= self._CHUNK_FLUSH_CHARS:
-                    self._flush_now()
+                    await self._flush_now()
                 else:
                     self._schedule_chunk_flush()
             except Exception as e:

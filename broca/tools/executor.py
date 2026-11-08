@@ -132,6 +132,14 @@ class DefaultToolExecutor(ToolExecutor):
         # ── #4: Broadcast (FIRST — before any validation) ──────────
         await self._broadcast_start(tool_name, arguments, tool_call_id, context)
 
+        # Keep the permission provider's ``turn_id`` in sync with this tool call
+        # so the permission request message carries ``turn_id``. The frontend
+        # uses it to scope the permission dialog to the correct turn (and thus
+        # never dismisses it because of unrelated messages).
+        set_turn_id = getattr(self._permission_provider, "set_turn_id", None)
+        if callable(set_turn_id):
+            set_turn_id(context.turn_id)
+
         # ── #1: Existence check ────────────────────────────────────
         if tool_name not in self._tool_mapping:
             logger.error(f"Tool '{tool_name}' not found.")

@@ -12,6 +12,8 @@ const isToolPermission = computed(() => chatStore.permissionDialog.requestType =
     :title="isToolPermission ? '工具权限请求' : '权限请求'"
     :width="chatStore.isMobile ? '92%' : '480px'"
     :close-on-click-modal="false"
+    :close-on-press-escape="false"
+    :show-close="false"
   >
     <div class="flex items-start gap-3 py-2">
       <div class="text-2xl leading-none mt-0.5">

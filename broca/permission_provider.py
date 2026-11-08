@@ -186,6 +186,7 @@ class DefaultPermissionProvider(PermissionProvider):
                 request_id=request_id,
                 request_type=request_type,
                 subscription=self._session_id,
+                turn_id=self.turn_id,
             )
 
             await self._log_permission_request(message, request_id, request_type)

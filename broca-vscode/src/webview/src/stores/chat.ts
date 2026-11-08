@@ -252,6 +252,8 @@ export const useChatStore = defineStore('chat', () => {
     senderId: '' as string | undefined,
     message: '',
     requestType: 'general' as string,
+    /** 发起该请求的 turn，用于精确关闭（避免被无关消息误关） */
+    turnId: '' as string | undefined,
   })
 
   // Agent query dialog state
@@ -261,6 +263,8 @@ export const useChatStore = defineStore('chat', () => {
     senderId: '' as string | undefined,
     question: '',
     options: [] as Array<{ name: string; description: string }>,
+    /** 发起该提问的 turn，用于精确关闭（避免被无关消息误关） */
+    turnId: '' as string | undefined,
   })
 
   // Undo/Redo state
@@ -419,6 +423,29 @@ export const useChatStore = defineStore('chat', () => {
     postMessage({ type: 'ready' })
   }
 
+  /**
+   * 仅当某个 turn 真正结束时，才关闭属于该 turn 的权限/提问弹窗。
+   *
+   * 之前是在收到任意 agent_response / tool_call 时就关闭弹窗，导致：
+   * - 流式 chunk 的延迟 flush 在权限请求之后到达 → 弹窗被误关；
+   * - 并行工具 / 多 Agent 的其他消息 → 弹窗被误关；
+   * - ask_user 弹窗被误关时还可能自动回一个空答案。
+   * 现在改为按 turnId 精确关闭，绝不误伤其他 turn 的弹窗。
+   */
+  function closeDialogsForTurn(turnId?: string) {
+    if (!turnId) return
+    if (permissionDialog.value.visible && permissionDialog.value.turnId === turnId) {
+      permissionDialog.value.visible = false
+      permissionDialog.value.requestId = undefined
+      permissionDialog.value.turnId = undefined
+    }
+    if (agentQueryDialog.value.visible && agentQueryDialog.value.turnId === turnId) {
+      agentQueryDialog.value.visible = false
+      agentQueryDialog.value.requestId = undefined
+      agentQueryDialog.value.turnId = undefined
+    }
+  }
+
   function handleIncomingMessage(message: Message) {
     // Socket.IO 重连时的临时 CLIENT_NOT_FOUND 错误，静默跳过
     if (message.message_type === 'error' && message.data?.error_code === 'CLIENT_NOT_FOUND') {
@@ -445,6 +472,7 @@ export const useChatStore = defineStore('chat', () => {
         senderId: message.sender_id,
         message: message.data?.message || 'Permission required',
         requestType: message.data?.request_type || 'general',
+        turnId: message.turn_id,
       }
       return
     }
@@ -457,6 +485,7 @@ export const useChatStore = defineStore('chat', () => {
         senderId: message.sender_id,
         question: message.data?.question || message.data?.content || '',
         options: message.data?.options || [],
+        turnId: message.turn_id,
       }
       return
     }
@@ -475,6 +504,8 @@ export const useChatStore = defineStore('chat', () => {
       updateAgentStatus(targetAgentId, 'idle')
       // 简洁模式：标记 turn 完成
       handleTurnEndMessage(message)
+      // turn 已结束，属于该 turn 的权限/提问弹窗不可能再被应答，关闭它们
+      closeDialogsForTurn(message.turn_id || message.data?.turn_id)
       return // turn_end 不需要显示在消息列表中
     }
 
@@ -488,9 +519,11 @@ export const useChatStore = defineStore('chat', () => {
     if (message.message_type === 'agent_response' || message.message_type === 'tool_call') {
       const targetAgentId = message.sender_id || message.agent_id || defaultAgentId.value
       updateAgentStatus(targetAgentId, 'running')
-      // 收到 agent 任务进展时自动关闭对话框（对齐 Web/TUI 行为）
-      permissionDialog.value.visible = false
-      agentQueryDialog.value.visible = false
+      // 注意：这里**不能**无条件关闭权限/提问弹窗。
+      // agent_response 可能因为流式 chunk 的延迟 flush、并行工具、或多 Agent
+      // 并发而在权限/提问请求之后到达；无条件关闭会让用户根本看不到弹窗
+      // （ask_user 还会因此被自动回一个空答案）。
+      // 弹窗生命周期改由 turnId 精确管理，见 closeDialogsForTurn。
     }
 
     // 始终更新 turn 摘要（无论当前 displayMode），确保切换模式时数据已就绪
@@ -833,6 +866,8 @@ export const useChatStore = defineStore('chat', () => {
       },
     })
     permissionDialog.value.visible = false
+    permissionDialog.value.requestId = undefined
+    permissionDialog.value.turnId = undefined
   }
 
   function respondAgentQuery(answer: string) {
@@ -845,6 +880,8 @@ export const useChatStore = defineStore('chat', () => {
       },
     })
     agentQueryDialog.value.visible = false
+    agentQueryDialog.value.requestId = undefined
+    agentQueryDialog.value.turnId = undefined
   }
 
   function sendRedo() {

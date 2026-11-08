@@ -607,6 +607,7 @@ class SocketIOClient(Communicator):
         room: Optional[str] = None,
         subscription: Optional[str] = None,
         callback: Optional[Callable] = None,
+        turn_id: Optional[str] = None,
     ) -> str:
         """Send permission request"""
         msg = MessageProtocol.create_permission_request(
@@ -617,6 +618,7 @@ class SocketIOClient(Communicator):
             receiver_id=receiver_id,
             room=room,
             subscription=subscription,
+            turn_id=turn_id,
         )
         return await self.send_message(msg, callback)
 

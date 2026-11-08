@@ -78,15 +78,19 @@ class SocketIOServer:
         self._setup_event_handlers()
         logger.info(f"Socket.io server initialized on {host}:{port}")
 
-    async def _cache_pending_message(self, subscription: str, message: Message):
-        """缓存待处理的消息（PERMISSION_REQUEST / AGENT_QUERY）
+    @staticmethod
+    def _is_pending_candidate(message: Message) -> bool:
+        """True for message types that must survive until a client subscribes."""
+        return message.message_type in (
+            MessageType.PERMISSION_REQUEST,
+            MessageType.AGENT_QUERY,
+        )
 
-        消息缓存后，后续订阅该频道的客户端会收到此消息。
-        缓存条目 TTL 由 permission_request_ttl(默认90s) / agent_query_ttl(默认300s) 控制，收到对应响应或过期后清理。
+    def _cache_pending_message_locked(self, subscription: str, message: Message):
+        """缓存待处理消息（调用方必须已持有 ``self._lock``）。
 
-        Args:
-            subscription: 订阅频道名称（通常是 session_id）
-            message: 待缓存的消息
+        与 ``_handle_subscription`` 的"加订阅 + 快照 pending"在同一把锁内，
+        避免"请求刚到达时客户端正在订阅"的竞态：否则请求会被缓存但永远不投递。
         """
         request_id = (message.data or {}).get("request_id")
         if not request_id:
@@ -99,17 +103,52 @@ class SocketIOServer:
             ttl = self._permission_request_ttl
         expire_at = time.time() + ttl
 
+        entry = {
+            "message": message,
+            "expire_at": expire_at,
+            "request_id": request_id,
+        }
+        self._pending_messages.setdefault(subscription, {})[msg_key] = entry
+        self._request_to_subscription[request_id] = (subscription, msg_key)
+        logger.info(
+            f"Cached {message.message_type} [{request_id}] for {subscription}"
+        )
+
+    async def _cache_pending_message(self, subscription: str, message: Message):
+        """缓存待处理的消息（PERMISSION_REQUEST / AGENT_QUERY）
+
+        消息缓存后，后续订阅该频道的客户端会收到此消息。
+        缓存条目 TTL 由 permission_request_ttl(默认90s) / agent_query_ttl(默认300s) 控制，收到对应响应或过期后清理。
+
+        Args:
+            subscription: 订阅频道名称（通常是 session_id）
+            message: 待缓存的消息
+        """
         async with self._lock:
-            entry = {
-                "message": message,
-                "expire_at": expire_at,
-                "request_id": request_id,
-            }
-            self._pending_messages.setdefault(subscription, {})[msg_key] = entry
-            self._request_to_subscription[request_id] = (subscription, msg_key)
-            logger.info(
-                f"Cached {message.message_type} [{request_id}] for {subscription}"
-            )
+            self._cache_pending_message_locked(subscription, message)
+
+    def _snapshot_pending_locked(self, subscription: str) -> list[Message]:
+        """返回该频道所有未过期缓存消息的快照（调用方必须已持有 ``self._lock``）。"""
+        entries = self._pending_messages.get(subscription, {})
+        now = time.time()
+        return [
+            entry["message"]
+            for entry in entries.values()
+            if now <= entry["expire_at"]
+        ]
+
+    async def _emit_pending_messages(self, messages: list[Message], sid: str) -> int:
+        """把一批待处理消息投递给指定客户端，返回成功数量。"""
+        delivered = 0
+        for message in messages:
+            try:
+                await self.sio.emit(
+                    "message", MessageProtocol.to_dict(message), room=sid
+                )
+                delivered += 1
+            except Exception as e:
+                logger.error(f"Failed to deliver pending message: {e}")
+        return delivered
 
     async def _deliver_pending_messages(self, subscription: str, sid: str):
         """投递指定频道的所有未过期缓存消息给指定客户端
@@ -122,27 +161,10 @@ class SocketIOServer:
             sid: 目标客户端的 Socket.IO session ID
         """
         async with self._lock:
-            entries = self._pending_messages.get(subscription, {})
-            if not entries:
-                return
-
-            now = time.time()
-            delivered = 0
-            for msg_key, entry in list(entries.items()):
-                if now > entry["expire_at"]:
-                    continue
-                try:
-                    await self.sio.emit(
-                        "message",
-                        MessageProtocol.to_dict(entry["message"]),
-                        room=sid,
-                    )
-                    delivered += 1
-                except Exception as e:
-                    logger.error(
-                        f"Failed to deliver pending message {msg_key}: {e}"
-                    )
-
+            messages = self._snapshot_pending_locked(subscription)
+        if not messages:
+            return
+        delivered = await self._emit_pending_messages(messages, sid)
         if delivered > 0:
             logger.info(
                 f"Delivered {delivered} pending messages for subscription "
@@ -328,18 +350,28 @@ class SocketIOServer:
             client_info = self.clients[sid]
             client_id = client_info.client_id
 
+            # 关键：订阅状态变更与"待处理消息快照"必须在同一把锁内完成，
+            # 与 _send_to_subscription 的"检查订阅者 + 写缓存"互斥。
+            # 否则会出现：请求到达时客户端恰好正在订阅 → 请求被缓存但无人投递，
+            # 前端永远看不到权限/提问弹窗。
+            async with self._lock:
+                if subscribe:
+                    client_info.subscriptions.add(subscription)
+                    self.subscriptions.setdefault(subscription, set()).add(client_id)
+                    pending_messages = self._snapshot_pending_locked(subscription)
+                else:
+                    client_info.subscriptions.discard(subscription)
+                    if subscription in self.subscriptions:
+                        self.subscriptions[subscription].discard(client_id)
+                        if not self.subscriptions[subscription]:
+                            del self.subscriptions[subscription]
+                    pending_messages = []
+
             if subscribe:
-                client_info.subscriptions.add(subscription)
-                self.subscriptions.setdefault(subscription, set()).add(client_id)
                 content = f"Subscribed to {subscription}"
                 msg_type = MessageType.SUBSCRIBE
                 logger.debug(f"Client {client_id} subscribed to {subscription}")
             else:
-                client_info.subscriptions.discard(subscription)
-                if subscription in self.subscriptions:
-                    self.subscriptions[subscription].discard(client_id)
-                    if not self.subscriptions[subscription]:
-                        del self.subscriptions[subscription]
                 content = f"Unsubscribed from {subscription}"
                 msg_type = MessageType.UNSUBSCRIBE
                 logger.debug(f"Client {client_id} unsubscribed from {subscription}")
@@ -355,8 +387,13 @@ class SocketIOServer:
             await self.sio.emit("message", MessageProtocol.to_dict(ack_msg), room=sid)
 
             # 订阅成功后，投递该频道的所有未过期缓存消息
-            if subscribe:
-                await self._deliver_pending_messages(subscription, sid)
+            if subscribe and pending_messages:
+                delivered = await self._emit_pending_messages(pending_messages, sid)
+                if delivered > 0:
+                    logger.info(
+                        f"Delivered {delivered} pending messages for subscription "
+                        f"{subscription}"
+                    )
 
         except Exception as e:
             error_code = f"{'SUBSCRIBE' if subscribe else 'UNSUBSCRIBE'}_ERROR"
@@ -487,27 +524,33 @@ class SocketIOServer:
     ) -> Dict[str, int]:
         """Send message to subscription
 
+        The "collect subscribers" step and the "cache pending message" step are
+        performed **atomically** under ``self._lock`` so that a concurrent
+        ``_handle_subscription`` can never miss a request that arrives exactly
+        while a client is subscribing (which would leave the request cached
+        forever and the user would never see the permission/ask dialog).
+
         Returns:
             Dict with 'total', 'sent', 'failed' counts
         """
-        if subscription not in self.subscriptions:
-            logger.debug(f"Subscription {subscription} not found")
-            # 无订阅者时仍需缓存，供后续订阅的客户端接收
-            await self._maybe_cache_pending_message(subscription, message)
-            return {"total": 0, "sent": 0, "failed": 0}
+        should_cache = self._is_pending_candidate(message)
 
-        # 收集所有有效的 SID
-        sids = []
         async with self._lock:
-            for client_id in self.subscriptions[subscription]:
-                if client_id in self.client_sids:
-                    sids.append(self.client_sids[client_id])
+            client_ids = list(self.subscriptions.get(subscription, ()))
+            sids = [
+                self.client_sids[cid]
+                for cid in client_ids
+                if cid in self.client_sids
+            ]
+            # 无论是否有在线订阅者都缓存，供后续（或重连的）客户端接收
+            if should_cache:
+                self._cache_pending_message_locked(subscription, message)
 
         total_clients = len(sids)
         if not sids:
-            logger.debug(f"Subscription {subscription} has no connected clients")
-            # 无在线客户端时仍需缓存，供后续订阅的客户端接收
-            await self._maybe_cache_pending_message(subscription, message)
+            logger.debug(
+                f"Subscription {subscription} has no connected clients"
+            )
             return {"total": 0, "sent": 0, "failed": 0}
 
         try:
@@ -519,19 +562,16 @@ class SocketIOServer:
             logger.debug(
                 f"Sent message to subscription {subscription} ({total_clients} clients)"
             )
-            # 发送后同时缓存，供后续订阅的客户端接收
-            await self._maybe_cache_pending_message(subscription, message)
             return {"total": total_clients, "sent": total_clients, "failed": 0}
         except Exception as e:
             logger.error(f"Failed to send message to subscription {subscription}: {e}")
-            # 发送失败时也缓存，供后续订阅的客户端接收
-            await self._maybe_cache_pending_message(subscription, message)
             return {"total": total_clients, "sent": 0, "failed": total_clients}
 
     async def _maybe_cache_pending_message(self, subscription: str, message: Message):
         """如果是 PERMISSION_REQUEST 或 AGENT_QUERY，则缓存消息
 
-        抽取为辅助方法，避免在 _send_to_subscription 的多个返回点重复判断逻辑。
+        保留为兼容辅助方法；``_send_to_subscription`` 现在在锁内直接缓存，
+        不再走这里（避免锁重入/竞态）。
         """
         if message.message_type in (
             MessageType.PERMISSION_REQUEST,

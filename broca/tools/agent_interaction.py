@@ -230,6 +230,7 @@ class AskUser(Tool):
                 options=options,
                 request_id=request_id,
                 subscription=session_id,
+                turn_id=context.turn_id,
             )
 
             await self._log_question(
@@ -285,6 +286,7 @@ class AskUser(Tool):
         options: list,
         request_id: str,
         subscription: Optional[str],
+        turn_id: Optional[str] = None,
     ):
         message_data = {
             "question": question,
@@ -297,6 +299,7 @@ class AskUser(Tool):
             sender_id=agent.agent_id,
             subscription=subscription,
             content=question,
+            turn_id=turn_id if turn_id is not None else getattr(agent, "turn_id", None),
             data=message_data,
         )
         await agent.communicator.send_message(message)

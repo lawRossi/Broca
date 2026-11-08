@@ -237,6 +237,8 @@ export const useChatStore = defineStore('chat', () => {
     senderId: '' as string | undefined,
     message: '',
     requestType: 'general' as string,
+    /** 发起该请求的 turn，用于精确关闭（避免被无关消息误关） */
+    turnId: '' as string | undefined,
   })
 
   const agentQueryDialog = reactive({
@@ -245,6 +247,8 @@ export const useChatStore = defineStore('chat', () => {
     senderId: '' as string | undefined,
     question: '',
     options: [] as Array<{ name: string; description: string }>,
+    /** 发起该提问的 turn，用于精确关闭（避免被无关消息误关） */
+    turnId: '' as string | undefined,
   })
 
   const messages = ref<Message[]>([])
@@ -1241,6 +1245,29 @@ export const useChatStore = defineStore('chat', () => {
   // 保存断开前的 agent 状态，用于重连时恢复（避免 running → disconnected → idle 的闪烁）
   let _preDisconnectStatuses = new Map<string, string>()
 
+  /**
+   * 仅当某个 turn 真正结束时，才关闭属于该 turn 的权限/提问弹窗。
+   *
+   * 之前是在收到任意 agent_response / tool_call 时就关闭弹窗，导致：
+   * - 流式 chunk 的 0.1s 延迟 flush 在权限请求之后到达 → 弹窗被误关；
+   * - 并行工具 / 多 Agent 的其他消息 → 弹窗被误关；
+   * - AgentQueryDialog 的 @close 会因此自动回一个空答案。
+   * 现在改为按 turnId 精确关闭，绝不误伤其他 turn 的弹窗。
+   */
+  const closeDialogsForTurn = (turnId?: string) => {
+    if (!turnId) return
+    if (permissionDialog.visible && permissionDialog.turnId === turnId) {
+      permissionDialog.visible = false
+      permissionDialog.requestId = undefined
+      permissionDialog.turnId = undefined
+    }
+    if (agentQueryDialog.visible && agentQueryDialog.turnId === turnId) {
+      agentQueryDialog.visible = false
+      agentQueryDialog.requestId = undefined
+      agentQueryDialog.turnId = undefined
+    }
+  }
+
   const doConnect = async () => {
     socketStore.onConnect = () => {
       if (_preDisconnectStatuses.size > 0) {
@@ -1287,6 +1314,7 @@ export const useChatStore = defineStore('chat', () => {
           handleTurnStart(m)
         } else if (m.message_type === 'turn_end') {
           handleTurnEnd(m)
+          closeDialogsForTurn(m.turn_id || m.data?.turn_id)
         } else if (
           m.message_type === 'tool_call' ||
           m.message_type === 'agent_response' ||
@@ -1361,6 +1389,8 @@ export const useChatStore = defineStore('chat', () => {
         const targetAgentId = m.sender_id || agentStore.currentAgentId
         agentStore.updateAgentStatus(targetAgentId, 'idle')
         handleTurnEnd(m)
+        // turn 已结束，属于该 turn 的权限/提问弹窗不可能再被应答，关闭它们
+        closeDialogsForTurn(m.turn_id || m.data?.turn_id)
       }
 
       // tool_call、agent_response、user_message、error 同时更新 TurnSummary
@@ -1380,16 +1410,16 @@ export const useChatStore = defineStore('chat', () => {
     const unsubAgentResponse = socketStore.onAgentResponse('chat', (m: Message) => {
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
-      // 收到 agent_response 时隐藏对话框
-      permissionDialog.visible = false
-      agentQueryDialog.visible = false
+      // 注意：这里**不能**无条件关闭权限/提问弹窗。
+      // agent_response 可能因为流式 chunk 的延迟 flush、并行工具、或多 Agent
+      // 并发而在权限/提问请求之后到达；无条件关闭会让用户根本看不到弹窗
+      // （ask_user 还会因此被 AgentQueryDialog 的 @close 自动回一个空答案）。
+      // 弹窗的生命周期改由 requestId/turnId 精确管理，见 closeDialogsForTurn。
     })
     const unsubToolCall = socketStore.onToolCall('chat', (m: Message) => {
       const targetAgentId = m.sender_id || agentStore.currentAgentId
       agentStore.updateAgentStatus(targetAgentId, 'running')
-      // 收到 tool_call 时隐藏对话框
-      permissionDialog.visible = false
-      agentQueryDialog.visible = false
+      // 同上：tool_call 不再关闭弹窗（并行工具/其他 Agent 的 tool_call 会误伤）
     })
     const unsubPermission = socketStore.onPermissionRequest('chat', (m: Message) => {
       permissionDialog.visible = true
@@ -1397,6 +1427,7 @@ export const useChatStore = defineStore('chat', () => {
       permissionDialog.senderId = m.sender_id
       permissionDialog.message = m.data?.message || 'Permission required'
       permissionDialog.requestType = m.data?.request_type || 'general'
+      permissionDialog.turnId = m.turn_id
     })
     const unsubAgentQuery = socketStore.onAgentQuery('chat', (m: Message) => {
       agentQueryDialog.visible = true
@@ -1404,6 +1435,7 @@ export const useChatStore = defineStore('chat', () => {
       agentQueryDialog.senderId = m.sender_id
       agentQueryDialog.question = m.data?.question || m.data?.content || ''
       agentQueryDialog.options = m.data?.options || []
+      agentQueryDialog.turnId = m.turn_id
     })
 
     // 保存注销函数以便 cleanup 时清理
@@ -1529,6 +1561,8 @@ export const useChatStore = defineStore('chat', () => {
       subscription: sessionId.value ? String(sessionId.value) : undefined,
     })
     permissionDialog.visible = false
+    permissionDialog.requestId = undefined
+    permissionDialog.turnId = undefined
   }
 
   const respondUserAnswer = async (answer: string) => {
@@ -1538,6 +1572,8 @@ export const useChatStore = defineStore('chat', () => {
       receiverId: agentQueryDialog.senderId || '',
     })
     agentQueryDialog.visible = false
+    agentQueryDialog.requestId = undefined
+    agentQueryDialog.turnId = undefined
   }
 
   // 清理当前session的状态

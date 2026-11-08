@@ -36,12 +36,13 @@ const selectOption = (optionName: string) => {
     title="Agent 提问"
     :width="chatStore.isMobile ? '90%' : '520px'"
     :close-on-click-modal="false"
+    :close-on-press-escape="false"
+    :show-close="false"
     :modal="false"
     :modal-append-to-body="false"
     draggable
     align-center
     class="agent-query-dialog"
-    @close="submitAnswer('')"
   >
     <div class="flex items-start gap-3" :class="{ 'gap-2': chatStore.isMobile }">
       <div class="text-3xl" :class="{ 'text-2xl': chatStore.isMobile }">❓</div>
