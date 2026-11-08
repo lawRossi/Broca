@@ -43,6 +43,9 @@ from broca.loop_engine.strategies.factory import (
     create_llm_strategy,
     create_tool_strategy,
 )
+from broca.loop_engine.tool_injected_messages import (
+    append_tool_injected_messages,
+)
 from broca.session import (
     Message,
     MessageProtocol,
@@ -659,6 +662,14 @@ class DefaultLoopEngine(LoopEngine):
           instead of being silently truncated by ``zip()``;
         * abort placeholders (tool calls that were **never executed**) are
           skipped — legacy's serial path wrote no rows for them either.
+
+        Tool-injected context messages (``ToolResult.extra_context_messages``,
+        e.g. the image message produced by ``read_image``) are appended **only
+        after every tool result of this step** (see
+        ``tool_injected_messages.append_tool_injected_messages``). Injecting them inline would place
+        a ``user`` message between the assistant ``tool_calls`` message and its
+        ``tool`` results whenever the injecting tool is not the last call in the
+        batch — an invalid tool-call sequence that makes the next LLM call fail.
         """
         if len(results) < len(tool_calls):
             logger.error(
@@ -670,14 +681,25 @@ class DefaultLoopEngine(LoopEngine):
                 for _ in range(len(tool_calls) - len(results))
             ]
 
+        processed: List[ToolResult] = []
         for tool_call, result in zip(tool_calls, results):
             if self._is_abort_placeholder(result):
                 logger.info(
                     f"Skipping persistence for never-executed tool call {tool_call.id}"
                 )
                 continue
-            if not await self.process_tool_call_result(tool_call, result):
+            if not await self.process_tool_call_result(
+                tool_call, result, inject_extras=False
+            ):
                 raise ToolResultProcessingError("Tool call result processing failed")
+            processed.append(result)
+
+        # Phase 2: tool-injected context messages, AFTER the whole tool-result
+        # block. A ``user`` message sandwiched between the assistant
+        # ``tool_calls`` message and its ``tool`` results is an invalid
+        # sequence for every provider and makes the next LLM call fail.
+        for result in processed:
+            await append_tool_injected_messages(self, result)
 
     def _is_abort_placeholder(self, result: ToolResult) -> bool:
         """True for the placeholder a strategy returns for a skipped call (M3)."""
@@ -688,11 +710,21 @@ class DefaultLoopEngine(LoopEngine):
         )
 
     async def process_tool_call_result(
-        self, tool_call: Any, tool_result: ToolResult
+        self,
+        tool_call: Any,
+        tool_result: ToolResult,
+        *,
+        inject_extras: bool = True,
     ) -> bool:
         """Broadcast + persist one tool result and append it to the context.
 
         Kept as a public engine method: ``test_image_tool.py`` calls it directly.
+
+        ``inject_extras`` controls whether ``tool_result.extra_context_messages``
+        are appended right away. The batched path
+        (``_process_tool_results``) passes ``False`` and flushes them after all
+        tool results, because a tool-injected ``user`` message must never split
+        the assistant ``tool_calls`` message from its ``tool`` results.
         """
         message_id = generate_message_id()
         if self.config.interactive:
@@ -725,21 +757,8 @@ class DefaultLoopEngine(LoopEngine):
         )
 
         # Extra context messages (e.g. images injected by tools).
-        for extra in tool_result.extra_context_messages or []:
-            extra_id = f"msg_{uuid.uuid4().hex[:16]}"
-            data = dict(extra.get("data", {}))
-            data["tool_injected"] = True
-            # Tool-injected messages are internal context, never user-visible.
-            await self.session_manager.save_message(
-                role=extra.get("role", "user"),
-                content=json.dumps(extra["llm_message"], ensure_ascii=False),
-                message_type=MessageType.USER_MESSAGE,
-                turn_id=self.turn_id,
-                agent_id=self.agent_id,
-                data=data,
-                message_id=extra_id,
-            )
-            await self.context.add_message(extra["llm_message"], extra_id)
+        if inject_extras:
+            await append_tool_injected_messages(self, tool_result)
         return True
 
     async def _persist_step_start(self, step_ctx: StepContext) -> bool:

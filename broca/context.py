@@ -234,6 +234,11 @@ class Context:
         self._init_history()
 
         messages = await self.session_manager.get_messages(agent_id)
+
+        # First materialize (dict, db_id) pairs, then repair the tool-call
+        # ordering, then append — repairing in place keeps ``_history`` and
+        # ``_message_db_ids`` aligned (undo/redo relies on that).
+        pairs: list[tuple[dict, Optional[str]]] = []
         for message in messages:
             if message.message_type in [
                 MessageType.USER_MESSAGE,
@@ -252,16 +257,83 @@ class Context:
                 else:
                     message_content = json.loads(content)
 
-                if message_content["role"] != "user":
-                    await self.add_message(
-                        Message.parse_obj(message_content),
-                        db_message_id=message.message_id,
-                    )
+                pairs.append((message_content, message.message_id))
+
+        for message_content, db_id in self._normalize_tool_call_blocks(pairs):
+            if message_content["role"] != "user":
+                await self.add_message(
+                    Message.parse_obj(message_content), db_message_id=db_id
+                )
+            else:
+                await self.add_message(message_content, db_message_id=db_id)
+
+    @staticmethod
+    def _normalize_tool_call_blocks(
+        pairs: list[tuple[dict, Optional[str]]],
+    ) -> list[tuple[dict, Optional[str]]]:
+        """Move messages that split a tool-result block to the end of the block.
+
+        Provider protocol requires every ``tool`` result to directly follow the
+        assistant message carrying its ``tool_calls``. Tool-injected ``user``
+        messages (``read_image``) used to be persisted inline, which produced::
+
+            assistant(tool_calls=[read_image, read_file])
+            tool(read_image)
+            user(image)          <-- splits the block
+            tool(read_file)
+
+        The engine no longer writes that order, but histories already persisted
+        that way must still be loadable — otherwise those sessions can never
+        talk to the LLM again. Reordering here is lossless: the injected message
+        keeps its position relative to everything outside the block.
+        """
+        out: list[tuple[dict, Optional[str]]] = []
+        index = 0
+        total = len(pairs)
+
+        while index < total:
+            content, db_id = pairs[index]
+            out.append((content, db_id))
+
+            tool_calls = (
+                content.get("tool_calls")
+                if content.get("role") == "assistant"
+                else None
+            )
+            if not isinstance(tool_calls, list) or not tool_calls:
+                index += 1
+                continue
+
+            pending = {
+                tc.get("id")
+                for tc in tool_calls
+                if isinstance(tc, dict) and tc.get("id")
+            }
+            if not pending:
+                index += 1
+                continue
+
+            deferred: list[tuple[dict, Optional[str]]] = []
+            cursor = index + 1
+            while cursor < total and pending:
+                nxt_content, nxt_db_id = pairs[cursor]
+                if nxt_content.get("role") == "tool":
+                    if nxt_content.get("tool_call_id") not in pending:
+                        break  # belongs to another batch — stop scanning
+                    out.append((nxt_content, nxt_db_id))
+                    pending.discard(nxt_content.get("tool_call_id"))
+                    if not pending:
+                        # Block complete → the deferred messages go right after it.
+                        out.extend(deferred)
+                        deferred = []
                 else:
-                    await self.add_message(
-                        message_content,
-                        db_message_id=message.message_id,
-                    )
+                    deferred.append((nxt_content, nxt_db_id))
+                cursor += 1
+
+            out.extend(deferred)
+            index = cursor
+
+        return out
 
     def format_tool_call_result(self, message) -> dict:
         message_content = json.loads(message.data.get("content"))
