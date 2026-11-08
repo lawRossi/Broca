@@ -10,7 +10,7 @@ _A short and distinctive 5-10 word descriptive title for the session._
 
 # Current State
 _What is actively being worked on right now? Pending tasks not yet completed._
-Note: record unfinished TODO and running background jobs if any.
+
 {current state}
 
 # Task Specification
@@ -40,6 +40,10 @@ _Specific outputs requested by the user._
 # Worklog
 _Step by step actions taken. Very terse summary for each step_
 {worklog}
+
+# Information to Restore
+_Unfinished TODO list id, running background jobs, skills applied that should be reloaded after context compression._
+{information}
 """
 
 

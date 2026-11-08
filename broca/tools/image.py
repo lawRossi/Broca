@@ -252,7 +252,7 @@ class ReadImage(Tool):
             "role": "user",
             "content": [
                 image_url_part,
-                {"type": "text", "text": f"Image Readed"},
+                {"type": "text", "text": f"Image Loaded."},
             ],
         }
 

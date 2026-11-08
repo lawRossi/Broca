@@ -37,6 +37,7 @@ assistant: A helpful agent that can aid you with general tasks.
 
 ## Tool Usage Guide
 
+- use glob and grep for efficient file exploration.
 - when using cron, you MUST distinguish between one-time and recycled execution , and notice that only trigger type 'date' is for one-time execution
 - perform parallel tool calls at the same time, such as independent file edits or reading.
 
