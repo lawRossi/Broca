@@ -6,6 +6,7 @@ logger = get_logger(__name__)
 
 
 class LoadSkill(Tool):
+    is_readonly = True
     def __init__(self):
         super().__init__(max_content_length=45000)
         from broca.skill.skill_manager import SkillManager

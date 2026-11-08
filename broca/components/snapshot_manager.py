@@ -44,10 +44,21 @@ class SnapshotManager(ABC):
     # -- Locking ----------------------------------------------------------
 
     @abstractmethod
-    def acquire_lock(self) -> None:
-        """Acquire the snapshot lock (blocking).
+    def acquire_lock(self, blocking: bool = True) -> bool:
+        """Acquire the snapshot lock.
 
-        Ensures only one agent at a time is capturing snapshots.
+        Args:
+            blocking: when ``True`` (default, legacy behaviour) wait until the
+                lock is available; when ``False`` return immediately with
+                ``False`` if another writer holds it.
+
+        Returns:
+            ``True`` if the lock is now held, ``False`` if a non-blocking
+            acquire found it busy.
+
+        Callers on an asyncio event loop MUST NOT call this with
+        ``blocking=True`` directly — the underlying ``flock`` would freeze the
+        whole loop (heartbeats, streaming, tool timeouts).
         """
         ...
 

@@ -30,6 +30,7 @@ class AskUserToolManager:
 
 
 class AssignTask(Tool):
+    is_readonly = True
     def __init__(self):
         super().__init__(max_content_length=30000)
 
@@ -164,6 +165,7 @@ class AssignTask(Tool):
 
 
 class AskUser(Tool):
+    is_readonly = True
     @property
     def name(self):
         return "ask_user"

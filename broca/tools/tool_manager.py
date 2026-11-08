@@ -23,12 +23,20 @@ class AutoDiscoverToolManager(ToolManagerABC):
     ``ComponentRegistry.get(ToolManager, scope_key=agent_id)``.
     """
 
+    #: Names of read-only builtin tools.
+    #:
+    #: Kept for backward compatibility and as a **fallback for tools that are
+    #: not registered in a tool mapping** (e.g. custom/MCP tools inspected by
+    #: name only). The authoritative source of truth is ``Tool.is_readonly``
+    #: — see ``DefaultToolExecutor.is_readonly_tool``. This set MUST stay in
+    #: sync with it (enforced by ``test_readonly_tools_consistency``).
     READONLY_TOOLS: frozenset = frozenset({
         "read_file",
         "glob",
         "grep",
         "list_dir",
         "tree_dir",
+        "file_mtime",
         "web_fetch",
         "web_search",
         "ask_user",
@@ -41,6 +49,7 @@ class AutoDiscoverToolManager(ToolManagerABC):
         "list_blackboard",
         "blackboard_changes",
         "read_image",
+        "load_skill",
     })
 
     MODIFY_TOOLS = frozenset({"edit_file", "write_file"})

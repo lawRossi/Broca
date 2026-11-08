@@ -18,6 +18,8 @@ degrades to a complete no-op.
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 from typing import TYPE_CHECKING, Any, Optional
 
 from broca.components.loop_hook import LoopHook, StepContext, TurnContext
@@ -27,6 +29,10 @@ if TYPE_CHECKING:
     from broca.components.snapshot_manager import SnapshotManager
 
 logger = get_logger(__name__)
+
+#: Upper bound (seconds) for acquiring the snapshot lock off the event loop.
+#: Keeps a wedged/legacy manager from stalling a step indefinitely.
+DEFAULT_LOCK_TIMEOUT = 5.0
 
 
 class SnapshotHook(LoopHook):
@@ -52,6 +58,7 @@ class SnapshotHook(LoopHook):
         self._turn_last_hash: Optional[str] = None
         self._step_start_hash: Optional[str] = None
         self._lock_held = False
+        self._lock_timeout = DEFAULT_LOCK_TIMEOUT
 
     # ------------------------------------------------------------------
     # Gating
@@ -98,7 +105,11 @@ class SnapshotHook(LoopHook):
         if not ctx.has_write_ops:
             return
         try:
-            self._acquire_lock()
+            if not await self._acquire_lock():
+                # Another process is snapshotting this workspace right now.
+                # Degrade gracefully: skip the snapshot for this step instead
+                # of stalling the event loop on a blocking ``flock``.
+                return
             snapshot_hash = await self._snapshot_manager.track(self._workspace)
             self._step_start_hash = snapshot_hash
             ctx.step_start_snapshot = snapshot_hash
@@ -139,12 +150,79 @@ class SnapshotHook(LoopHook):
     # Lock handling
     # ------------------------------------------------------------------
 
-    def _acquire_lock(self) -> None:
-        """Hold the file lock until step end so concurrent writers can't skew diffs."""
+    async def _acquire_lock(self) -> bool:
+        """Acquire the snapshot lock **without blocking the event loop**.
+
+        ``SnapshotManager.acquire_lock`` is a synchronous ``flock``. Calling it
+        inline freezes the runner's event loop (heartbeats, streamed output and
+        tool timeouts all live on that loop) whenever another session/sub-agent
+        process holds ``.snapshot.lock`` for the same workspace.
+
+        So: try a **non-blocking** acquire inside a worker thread. If the lock
+        is busy we skip snapshot capture for this step — losing one undo point
+        is far cheaper than a frozen session.
+
+        Returns:
+            ``True`` when the lock is held by this hook, ``False`` otherwise.
+        """
+        if self._snapshot_manager is None:
+            return False
+        future = asyncio.ensure_future(
+            asyncio.to_thread(self._try_acquire_nonblocking)
+        )
+        try:
+            acquired = await asyncio.wait_for(
+                asyncio.shield(future), timeout=self._lock_timeout
+            )
+        except asyncio.TimeoutError:
+            # The worker thread keeps running: make sure a late acquire is
+            # released instead of leaking the cross-process lock forever.
+            future.add_done_callback(self._release_late_acquire)
+            logger.warning(
+                "Snapshot lock acquisition timed out after %.1fs, skipping "
+                "snapshot for this step",
+                self._lock_timeout,
+            )
+            return False
+        except Exception as e:
+            logger.warning(f"Failed to acquire snapshot lock: {e}")
+            return False
+        if not acquired:
+            logger.info(
+                "Snapshot lock busy (another writer is snapshotting this "
+                "workspace), skipping snapshot for this step"
+            )
+            return False
+        self._lock_held = True
+        return True
+
+    def _release_late_acquire(self, future: "asyncio.Future[bool]") -> None:
+        """Release a lock that was acquired after ``_acquire_lock`` gave up."""
         if self._snapshot_manager is None:
             return
-        self._snapshot_manager.acquire_lock()
-        self._lock_held = True
+        try:
+            if future.result():
+                self._snapshot_manager.release_lock()
+                logger.warning(
+                    "Snapshot lock acquired after timeout — released it to "
+                    "avoid leaking the lock"
+                )
+        except Exception as e:  # cancelled / raised in the worker thread
+            logger.debug(f"Late snapshot lock acquire failed: {e}")
+
+    def _try_acquire_nonblocking(self) -> bool:
+        """Worker-thread half of :meth:`_acquire_lock` (never blocks the loop)."""
+        acquire = self._snapshot_manager.acquire_lock
+        try:
+            params = inspect.signature(acquire).parameters
+        except (TypeError, ValueError):  # builtins / C callables
+            params = {}
+        if "blocking" in params:
+            return acquire(blocking=False) is not False
+        # Legacy manager without the ``blocking`` kwarg: nothing we can do but
+        # call it (still off the event loop) — bounded by ``_lock_timeout``.
+        acquire()
+        return True
 
     def _release_lock(self) -> None:
         if self._lock_held and self._snapshot_manager is not None:

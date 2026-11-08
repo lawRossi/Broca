@@ -80,6 +80,7 @@ def _strip_namespace(namespace: str, internal_key: str) -> str:
 
 class ReadBlackboard(Tool):
     """读取黑板工具"""
+    is_readonly = True
 
     @property
     def name(self) -> str:
@@ -283,6 +284,7 @@ class WriteBlackboard(Tool):
 
 class ListBlackboard(Tool):
     """列出黑板键工具（按命名空间过滤）"""
+    is_readonly = True
 
     @property
     def name(self) -> str:
@@ -378,6 +380,7 @@ class ListBlackboard(Tool):
 
 class BlackboardChanges(Tool):
     """黑板变更查询工具（按命名空间过滤）"""
+    is_readonly = True
 
     @property
     def name(self) -> str:

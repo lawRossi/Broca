@@ -16,6 +16,7 @@ logger = get_logger(__name__)
 
 class ProcessTool(Tool):
     """进程管理工具，支持查询、列举和停止后台进程"""
+    is_readonly = True
 
     def __init__(self):
         super().__init__()

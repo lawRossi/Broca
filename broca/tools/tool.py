@@ -96,6 +96,17 @@ class ToolCallContext:
 
 
 class Tool:
+    #: True when the tool never mutates the workspace.
+    #:
+    #: This is the *source of truth* for the snapshot hook: a step whose tool
+    #: calls are all read-only skips snapshot capture entirely. Defaults to
+    #: ``False`` (conservative — an unknown tool is treated as a writer), so
+    #: read-only tools MUST opt in by setting ``is_readonly = True``.
+    #:
+    #: Note: forgetting to opt in only costs an extra snapshot; opting in by
+    #: mistake would lose undo coverage, so keep the default.
+    is_readonly: bool = False
+
     # Fallback cache dir when workspace is unavailable (relative to CWD).
     # Prefer the absolute path derived from context.workspace.
     TOOL_RESULT_CACHE_DIR = Path(".broca/tool_result_cache")

@@ -242,7 +242,18 @@ class DefaultToolExecutor(ToolExecutor):
         return self._permission_provider.get_permission(tool_name)
 
     def is_readonly_tool(self, tool_name: str) -> bool:
-        """Check if a tool is read-only (from ``ToolManager.READONLY_TOOLS``)."""
+        """Check if a tool is read-only.
+
+        Resolution order:
+        1. the registered ``Tool.is_readonly`` attribute (source of truth);
+        2. ``ToolManager.READONLY_TOOLS`` name set (fallback for tools that
+           are not in the mapping — e.g. not yet registered / custom tools).
+        """
+        tool = self._tool_mapping.get(tool_name)
+        if tool is not None:
+            flag = getattr(tool, "is_readonly", None)
+            if isinstance(flag, bool):
+                return flag
         return tool_name in _READONLY_TOOLS
 
     # ------------------------------------------------------------------

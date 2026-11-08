@@ -6,6 +6,7 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class TodoManagement(Tool):
+    is_readonly = True
     def __init__(self, data_file=".broca/todos.json"):
         super().__init__()
         self.data_file = data_file

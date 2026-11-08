@@ -50,6 +50,10 @@ class FileLock:
         self._path = Path(path)
         self._fd: Optional[int] = None
         self._count: int = 0
+        # flock 是进程级、但 acquire/release 现在可能来自不同线程
+        # （``asyncio.to_thread`` 里做非阻塞 acquire，事件循环线程里 release），
+        # 因此 fd/count 的记账必须加锁。
+        self._bookkeeping_lock = threading.Lock()
         # Sticky 设计：一旦进入 fallback 模式，不再回退到 flock。
         # 原因：NFS 等文件系统不支持 flock 是永久性限制，同一锁文件
         # 始终在同一文件系统上，flock 不可用则永远不可用。
@@ -60,22 +64,26 @@ class FileLock:
         return self._fd is not None
 
     def acquire(self, blocking: bool = True) -> bool:
-        """获取文件锁（支持重入）"""
-        if self._fd is not None:
-            self._count += 1
-            return True
+        """获取文件锁（支持重入，线程安全）
+
+        记账（``_fd`` / ``_count``）由 ``_bookkeeping_lock`` 保护；真正可能
+        阻塞的 OS 级加锁（flock / PID 文件轮询）在锁外执行，避免某个线程
+        阻塞等待时把同进程其它线程（例如事件循环里的 release）也堵死。
+        """
+        with self._bookkeeping_lock:
+            if self._fd is not None:
+                self._count += 1
+                return True
+            fallback = self._fallback_mode
 
         self._path.parent.mkdir(parents=True, exist_ok=True)
 
-        if self._fallback_mode:
+        if fallback:
             return self._fallback_acquire(blocking)
 
         fd = os.open(str(self._path), os.O_RDWR | os.O_CREAT)
         try:
             self._platform_acquire(fd, blocking)
-            self._fd = fd
-            self._count = 1
-            return True
         except OSError as e:
             os.close(fd)
             # 如果是因为文件系统不支持 flock，切换到 fallback 模式
@@ -84,29 +92,46 @@ class FileLock:
                     f"flock() 不被当前文件系统支持 (errno={e.errno}), "
                     f"切换到 PID 文件锁 fallback 模式"
                 )
-                self._fallback_mode = True
+                with self._bookkeeping_lock:
+                    self._fallback_mode = True
                 return self._fallback_acquire(blocking)
             return False
 
+        with self._bookkeeping_lock:
+            # 同进程内理论上不会有第二个赢家（不同 fd 的 flock 互斥），
+            # 但防御性处理：已有持有者则把本次 fd 作为重入计数。
+            if self._fd is not None:
+                self._count += 1
+                try:
+                    self._platform_release(fd)
+                except OSError:
+                    pass
+                os.close(fd)
+                return True
+            self._fd = fd
+            self._count = 1
+            return True
+
     def release(self) -> None:
-        """释放文件锁（支持重入）"""
-        if self._fd is None:
-            return
-        self._count -= 1
-        if self._count > 0:
-            return
+        """释放文件锁（支持重入，线程安全）"""
+        with self._bookkeeping_lock:
+            if self._fd is None:
+                return
+            self._count -= 1
+            if self._count > 0:
+                return
 
-        if self._fallback_mode:
-            self._fallback_release()
-        else:
-            try:
-                self._platform_release(self._fd)
-            except OSError:
-                pass
+            if self._fallback_mode:
+                self._fallback_release()
+            else:
+                try:
+                    self._platform_release(self._fd)
+                except OSError:
+                    pass
 
-        os.close(self._fd)
-        self._fd = None
-        self._count = 0
+            os.close(self._fd)
+            self._fd = None
+            self._count = 0
 
     # ---- Fallback：基于 O_EXCL 的 PID 文件锁 ----
 
@@ -122,9 +147,10 @@ class FileLock:
             try:
                 fd = os.open(str(lock_path), os.O_CREAT | os.O_EXCL | os.O_RDWR)
                 os.write(fd, f"{os.getpid()}\n".encode())
-                self._fd = fd
-                self._fallback_mode = True
-                self._count = 1
+                with self._bookkeeping_lock:
+                    self._fd = fd
+                    self._fallback_mode = True
+                    self._count = 1
                 return True
             except OSError as e:
                 if e.errno != errno.EEXIST:

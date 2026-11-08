@@ -6,6 +6,7 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 
 class TaskManagement(Tool):
+    is_readonly = True
     def __init__(self):
         super().__init__()
         self.task_manager = TaskManager()

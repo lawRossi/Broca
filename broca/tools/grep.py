@@ -7,6 +7,7 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 class GrepTool(Tool):
     """Tool to search file contents using regular expressions."""
+    is_readonly = True
 
     def __init__(self, limit=100, max_line_length=2000):
         super().__init__()

@@ -20,6 +20,7 @@ logger = get_logger(__name__)
 
 class CronTool(Tool):
     """定时任务工具，支持定时提醒和定时执行命令（使用持久化调度器）"""
+    is_readonly = True
 
     def __init__(self):
         super().__init__()

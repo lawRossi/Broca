@@ -70,6 +70,7 @@ def _default_fetch_provider() -> str:
 # ==================================================================
 
 class WebFetch(Tool):
+    is_readonly = True
     def __init__(self):
         super().__init__()
         self.browser = None
@@ -304,6 +305,7 @@ class WebSearch(Tool):
       - Tavily:    ``TAVILY_API_KEY``
       - AnySearch: ``ANYSEARCH_API_KEY`` (optional, anonymous works)
     """
+    is_readonly = True
 
     def __init__(self, api_key: str | None = None):
         super().__init__()

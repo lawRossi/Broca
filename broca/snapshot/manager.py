@@ -98,14 +98,25 @@ class GitSnapshotManager(SnapshotManager):
             logger.warning(f"Patch calculation failed: {e}")
             return {}
 
-    def acquire_lock(self) -> None:
-        """Acquire the git lock for exclusive snapshot access."""
+    def acquire_lock(self, blocking: bool = True) -> bool:
+        """Acquire the git lock for exclusive snapshot access.
+
+        Args:
+            blocking: ``True`` waits for the lock (legacy behaviour, blocks the
+                calling thread); ``False`` returns ``False`` immediately when
+                another writer holds it.
+
+        Returns:
+            ``True`` when the lock is held, ``False`` when a non-blocking
+            acquire found it busy or the manager is unavailable.
+        """
         if not self._available or self._git_manager is None:
-            return
+            return False
         try:
-            self._git_manager.acquire_lock(blocking=True)
+            return bool(self._git_manager.acquire_lock(blocking=blocking))
         except Exception as e:
             logger.warning(f"Failed to acquire snapshot lock: {e}")
+            return False
 
     def release_lock(self) -> None:
         """Release the git lock."""

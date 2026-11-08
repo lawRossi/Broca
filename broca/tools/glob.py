@@ -8,6 +8,7 @@ from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 class GlobTool(Tool):
     """Tool to find files using glob patterns."""
+    is_readonly = True
 
     def __init__(self, limit=100):
         super().__init__()

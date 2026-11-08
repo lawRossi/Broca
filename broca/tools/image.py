@@ -49,6 +49,7 @@ def _generate_storage_path(original_name: str) -> str:
 
 class ReadImage(Tool):
     """Read a local image file and upload it to cloud storage so the LLM can see it."""
+    is_readonly = True
 
     @property
     def name(self) -> str:

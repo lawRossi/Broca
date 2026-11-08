@@ -182,6 +182,7 @@ def _find_old_text(content: str, old_text: str, replace_all: bool) -> Optional[s
 
 class ReadFile(Tool):
     """Tool to read file contents."""
+    is_readonly = True
 
     def __init__(self):
         super().__init__(max_content_length=30000)
@@ -466,6 +467,7 @@ class EditFile(Tool):
 
 class ListDir(Tool):
     """Tool to list directory contents."""
+    is_readonly = True
 
     @property
     def name(self) -> str:
@@ -569,6 +571,7 @@ IGNORE_PATTERNS = [
 
 class TreeDir(Tool):
     """Tool to display directory tree structure."""
+    is_readonly = True
 
     @property
     def name(self) -> str:
@@ -764,6 +767,7 @@ class TreeDir(Tool):
 
 class FileMtime(Tool):
     """Tool to view last modification times of specified files."""
+    is_readonly = True
 
     @property
     def name(self) -> str:
