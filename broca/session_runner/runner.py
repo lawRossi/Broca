@@ -327,11 +327,6 @@ class SessionRunnerProcess:
                         "resource_usage": collect_resource_usage(),
                         "status": RunnerStatus.ALIVE.value,
                         "agent_count": len(self.agents),
-                        "agent_statuses": {
-                            a.agent_id: a.status
-                            for a in self.agents
-                            if hasattr(a, "status")
-                        },
                     },
                 )
                 self.ipc.send_message(heartbeat_msg)

@@ -360,7 +360,6 @@ class HeartbeatMonitor:
         await self._persist_one(handle, "stopped")
         await self._events.emit("session_stopped", runner_info)
 
-        handle.agent_status_cache = None
         release_handle(handle)
         self._registry.pop(session_id)
         await self._delete_record(session_id)
@@ -388,7 +387,6 @@ class HeartbeatMonitor:
 
         # 内存条目必须移除，否则 /runner/status 会一直返回这条僵尸记录。
         # DB 记录保留为 dead，便于排查历史失败原因。
-        handle.agent_status_cache = None
         release_handle(handle)
         self._registry.pop(session_id)
         logger.warning(f"Runner for session {session_id} converged to DEAD ({reason})")
@@ -403,11 +401,6 @@ class HeartbeatMonitor:
                     count,
                     session_id,
                 )
-            # 清除状态缓存，确保后续心跳恢复时能重新同步真实状态
-            # （否则缓存与心跳 payload 相同会跳过写入，DB 永远停留在 disconnected）
-            handle = self._registry.get(session_id)
-            if handle is not None:
-                handle.agent_status_cache = None
         except Exception as exc:  # noqa: BLE001 - 清理失败不应中断收敛
             logger.error(
                 "Failed to mark agents disconnected for session %s: %s",

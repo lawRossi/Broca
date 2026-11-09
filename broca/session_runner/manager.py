@@ -59,11 +59,6 @@ from broca.logging_config import get_logger
 
 logger = get_logger(__name__)
 
-# Agent 状态跨 session 批量的聚合窗口（秒）。
-# 心跳每 5s 一次、10 个 session 分散到达；给一个短窗口把同一批心跳
-# 合并成一次 commit（N session → 1 次），窗口过大会让 DB 状态陈旧。
-AGENT_STATUS_FLUSH_DELAY = 0.2
-
 
 class RunnerManagerError(SessionError):
     """Runner Manager 异常"""
@@ -117,10 +112,6 @@ class IPCSessionRunner(SessionRunnerABC):
             self._poller = IPCPoller(
                 queue_size=self._queue_size, decode=decode_ipc_message
             )
-            # Agent 状态跨 session 批量写缓冲（Task 4.3）：
-            # {session_id: {agent_id: status}}，由 flush task 合并成一次 commit
-            self._pending_agent_status: Dict[str, Dict[str, str]] = {}
-            self._agent_flush_task: Optional[asyncio.Task] = None
             # 实例级路由表（无模块级单例）：EVT_* / RESPONSE → _handle_*
             self._router = MessageRouter.from_class(type(self), "manager")
             # 心跳巡检（策略 + 巡检循环 + 状态落库 + 收敛）
@@ -637,7 +628,6 @@ class IPCSessionRunner(SessionRunnerABC):
             return
         handle.info.status = RunnerStatus.DEAD
         # 清理缓存，避免 session 重启后残留旧数据影响变更检测
-        handle.agent_status_cache = None
         handle.db_state_cache = None
         # 取消监听任务 + 关闭 IPC（close() 负责 unlink socket）
         release_handle(handle)
@@ -854,13 +844,12 @@ class IPCSessionRunner(SessionRunnerABC):
             except ValueError:
                 pass
 
-        # 把心跳上报的 agent 状态同步到 DB（仅变化时写入）。
-        # 心跳每 5s 上报一次各 agent 的实时状态，作为 DB 中 agent_status 的
-        # 权威来源：短暂断线重连、心跳超时误判等场景下可自动自愈，
-        # 避免前端轮询读到过期的 disconnected 状态。
-        agent_statuses = msg.payload.get("agent_statuses")
-        if isinstance(agent_statuses, dict) and agent_statuses:
-            self._schedule_agent_status_sync(handle, agent_statuses)
+        # 注意：心跳只负责 runner/进程存活，**不写 agent_status**。
+        # agent_status 由 Agent 生命周期（Agent._set_status）在每次状态迁移时
+        # 直接、立即写入 DB，是唯一权威来源。心跳若再写一遍会引入「第二写入方」
+        # ——心跳快照经聚合窗口延迟落库，可能用滞后的 idle 覆盖生命周期刚写入的
+        # running；阻塞型长工具期间心跳又无法及时纠正，DB 会长时间停留在 idle，
+        # 前端轮询便读到过期的「空闲」。
         # DB 持久化由心跳监控循环的 HeartbeatMonitor._persist_states() 统一处理
 
     @handles(IPCMessageType.EVT_ERROR, side="manager")
@@ -946,64 +935,6 @@ class IPCSessionRunner(SessionRunnerABC):
     async def stop_heartbeat_monitor(self) -> None:
         """停止心跳监控（委托 HeartbeatMonitor）。"""
         await self._monitor.stop()
-
-    def _schedule_agent_status_sync(
-        self, handle: RunnerHandle, agent_statuses: Dict[str, str]
-    ) -> None:
-        """把一次心跳上报的 agent 状态加入待写缓冲（不直接写库）。
-
-        Task 4.3 的跨 session 批量：心跳每 5s 一次、10 个 session 分散到达。
-        若每个 session 各自写库，就是每秒 2 次 commit，写放大与 session 数
-        线性相关。这里改为「入缓冲 + 单次 flush」：
-
-        - 变更检测：与上次同步值相同则直接返回（零成本）
-        - 缓存乐观更新：先记下已提交的期望值，flush 失败再回滚以便重试
-        - 在途去重：flush task 未完成时不重复 spawn
-        """
-        session_id = handle.info.session_id
-        if handle.agent_status_cache == agent_statuses:
-            return
-
-        # 乐观更新：失败时由 _flush_agent_statuses 回滚为 None
-        handle.agent_status_cache = dict(agent_statuses)
-        self._pending_agent_status[session_id] = dict(agent_statuses)
-        self._ensure_agent_flush_scheduled()
-
-    def _ensure_agent_flush_scheduled(self) -> None:
-        """确保只有一个在途 flush task（幂等）。"""
-        task = self._agent_flush_task
-        if task is not None and not task.done():
-            return
-        self._agent_flush_task = self._tasks.spawn(
-            self._flush_agent_statuses(), name="flush-agent-status"
-        )
-
-    async def _flush_agent_statuses(self) -> None:
-        """聚合窗口结束后一次性写入所有待同步的 session（单次 commit）。"""
-        await asyncio.sleep(AGENT_STATUS_FLUSH_DELAY)
-
-        pending = self._pending_agent_status
-        self._pending_agent_status = {}
-        if not pending:
-            return
-
-        try:
-            changed_count = await self._repo.set_agent_statuses(pending)
-        except Exception as e:  # noqa: BLE001 - 写库失败不能拖垮心跳链路
-            logger.error(f"Failed to flush agent statuses: {e}")
-            # 回滚缓存，下一个心跳会重新入缓冲
-            for session_id in pending:
-                handle = self._registry.get(session_id)
-                if handle is not None:
-                    handle.agent_status_cache = None
-            return
-
-        if changed_count:
-            logger.debug(
-                "Synced %d agent statuses across %d session(s)",
-                changed_count,
-                len(pending),
-            )
 
     async def _ipc_listener_loop(self, session_id: str) -> None:
         """消费该 session 的 IPC 消息队列，逐条交给 router 分发。

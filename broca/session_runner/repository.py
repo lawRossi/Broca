@@ -5,15 +5,15 @@
 
 - ``upsert`` / ``upsert_many``   —— 替代「先 SELECT 再 UPDATE」的两次往返
 - ``delete`` / ``get`` / ``list_active``
-- ``set_agent_status`` / ``set_agent_statuses`` / ``mark_agents_disconnected``
+- ``mark_agents_disconnected``
 
 ``upsert_many`` 在**单个 DB session 内**批量写入并只 ``commit()`` 一次，
 把 N 个 runner 的 2N 次往返降为 1 次（P1-5 的「单事务批量」部分；
 时间维度聚合由 ``HeartbeatMonitor`` / manager 侧的 flush 窗口负责，两者不重叠）。
 
-``set_agent_statuses`` 是跨 session 的批量版本：一次
-``SELECT ... WHERE session_id IN (...)`` + 一次 ``commit()``，
-把 N 个 session 的 N 次往返降为 1 次（Task 4.3）。
+注意：Agent 的 ``agent_status`` 由 Agent 生命周期（``Agent._set_status``）直接
+写入 DB，是唯一权威来源；Runner 心跳只负责进程存活，**不**同步 agent 状态，
+因此本模块不再提供 ``set_agent_status*``。
 """
 
 from __future__ import annotations
@@ -219,79 +219,6 @@ class RunnerRepository:
     # ------------------------------------------------------------------
     # Agent 状态
     # ------------------------------------------------------------------
-
-    async def set_agent_status(
-        self, session_id: str, statuses: dict[str, str]
-    ) -> int:
-        """按 ``{agent_id: status}`` 同步该 session 下的 Agent 状态。
-
-        Returns:
-            实际发生变化的行数
-        """
-        from broca.session.models import Agent
-
-        async with self.db.get_session() as session:
-            agents = (
-                await session.exec(
-                    select(Agent).where(Agent.session_id == session_id)
-                )
-            ).all()
-
-            changed = []
-            for agent in agents:
-                new_status = statuses.get(agent.agent_id)
-                if new_status and new_status != agent.agent_status:
-                    agent.agent_status = new_status
-                    changed.append(agent)
-
-            if changed:
-                session.add_all(changed)
-                await session.commit()
-
-            return len(changed)
-
-    async def set_agent_statuses(
-        self, statuses_by_session: dict[str, dict[str, str]]
-    ) -> int:
-        """跨 session 批量同步 Agent 状态（单次 SELECT + 单次 commit）。
-
-        历史问题（P1-5）：心跳每 5s 一次，每个 session 一次
-        ``SELECT + commit``；10 个 session 就是每秒 2 次 commit，
-        写放大与 session 数线性相关。
-
-        Args:
-            statuses_by_session: ``{session_id: {agent_id: status}}``
-
-        Returns:
-            实际发生变化的行数
-        """
-        from broca.session.models import Agent
-
-        wanted = {sid: dict(m) for sid, m in statuses_by_session.items() if m}
-        if not wanted:
-            return 0
-
-        async with self.db.get_session() as session:
-            agents = (
-                await session.exec(
-                    select(Agent).where(
-                        Agent.session_id.in_(list(wanted))  # type: ignore[attr-defined]
-                    )
-                )
-            ).all()
-
-            changed = []
-            for agent in agents:
-                new_status = wanted.get(agent.session_id, {}).get(agent.agent_id)
-                if new_status and new_status != agent.agent_status:
-                    agent.agent_status = new_status
-                    changed.append(agent)
-
-            if changed:
-                session.add_all(changed)
-                await session.commit()
-
-            return len(changed)
 
     async def mark_agents_disconnected(self, session_id: str) -> int:
         """把该 session 下所有 Agent 标记为 disconnected。

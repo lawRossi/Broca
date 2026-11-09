@@ -11,8 +11,6 @@ import ast
 import asyncio
 import gc
 import pathlib
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 
 import logging
@@ -113,58 +111,6 @@ async def test_aclose_cancels_pending_and_is_idempotent():
             tasks.spawn(coro)
     finally:
         coro.close()
-
-
-# ---------------------------------------------------------------------------
-# agent 状态同步节流
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_agent_status_sync_is_coalesced():
-    """连续 10 次心跳（间隔 1ms）→ 实际 DB 写 ≤ 2 次。
-
-    Task 4.3 把「每个 session 一个在途 sync task」改成「manager 级单缓冲 +
-    单个在途 flush task」：10 次心跳只触发 1 次 ``set_agent_statuses``
-    （跨 session 批量），因此这里断言的是 manager 级去重。
-    """
-    from broca.session_runner.manager import IPCSessionRunner
-    from broca.session_runner.models import RunnerProcessInfo, RunnerStatus
-    from broca.session_runner.process.registry import RunnerHandle
-
-    IPCSessionRunner._instance = None
-    mgr = IPCSessionRunner()
-    mgr._registry.clear()
-
-    info = RunnerProcessInfo(
-        session_id="session-taskset",
-        process=None,
-        pid=1234,
-        status=RunnerStatus.ALIVE,
-    )
-    handle = RunnerHandle(info=info)
-    mgr._registry.add(handle)
-
-    repo = MagicMock()
-    repo.set_agent_statuses = AsyncMock(return_value=1)
-    mgr._repo = repo
-
-    for i in range(10):
-        # 每次心跳的 status 都不同，确保不会被「无变化」短路掉
-        mgr._schedule_agent_status_sync(handle, {"agent-1": f"running-{i}"})
-        await asyncio.sleep(0.001)
-
-    # 等在途 flush task 收尾
-    if mgr._agent_flush_task is not None:
-        await asyncio.wait([mgr._agent_flush_task], timeout=2.0)
-    await mgr._tasks.aclose()
-
-    assert repo.set_agent_statuses.await_count <= 2
-    # 最后一次 flush 必须带上该 session 的最新状态
-    if repo.set_agent_statuses.await_count:
-        last_payload = repo.set_agent_statuses.await_args.args[0]
-        assert last_payload["session-taskset"] == {"agent-1": "running-9"}
-    mgr._registry.clear()
 
 
 # ---------------------------------------------------------------------------

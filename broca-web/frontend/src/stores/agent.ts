@@ -40,7 +40,10 @@ export const useAgentStore = defineStore('agent', () => {
     sessionId.value = id
   }
 
-  const fetchAgents = async (sessionId?: string) => {
+  const fetchAgents = async (
+    sessionId?: string,
+    options?: { preserveRunning?: boolean }
+  ) => {
     loading.value = true
     error.value = ''
 
@@ -54,13 +57,35 @@ export const useAgentStore = defineStore('agent', () => {
       // 切换 session 前，保存当前 session 的筛选状态
       _persistVisibility()
 
+      // 保存旧的 agent 列表，供周期性刷新时合并状态使用。
+      // 注意：必须在 agents.value 被整体替换前捕获。
+      const previousAgents = agents.value
+
       const sessionAgents = await sessionApi.getSessionAgents(sessionId)
 
-      agents.value = sessionAgents.map((agent) => ({
-        ...agent,
-        status: agent.status,
-        type: agent.type || 'assistant',
-      }))
+      agents.value = sessionAgents.map((agent) => {
+        // 周期性刷新（如 AgentSidebar 的 10s 轮询）读到的是 DB 中的
+        // agent_status，而 DB 状态由 Runner 心跳每 5s 才同步一次，且心跳
+        // 快照可能比 Runner 的直接写入更旧。长工具执行期间没有任何 socket
+        // 事件，若此时用滞后的 DB 状态覆盖前端由 turn_start / tool_call 事件
+        // 设置好的 running，就会出现「turn 执行中却显示空闲」的假象。
+        //
+        // 因此周期性刷新时不允许把 running 降级为 idle：running → idle 的
+        // 权威信号只能来自 turn_end socket 事件。首次加载（无此选项）仍以
+        // DB 状态为准。
+        let status = agent.status
+        if (options?.preserveRunning && status === 'idle') {
+          const prev = previousAgents.find((a) => a.agent_id === agent.agent_id)
+          if (prev?.status === 'running') {
+            status = 'running'
+          }
+        }
+        return {
+          ...agent,
+          status,
+          type: agent.type || 'assistant',
+        }
+      })
 
       // 更新当前 session key
       _currentSessionKey = sessionId

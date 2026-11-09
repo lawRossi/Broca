@@ -3,7 +3,7 @@
 此前 ``IPCSessionRunner`` 用 7 个并行 dict 维护同一批 session 的状态::
 
     _runners / _ipc_servers / _ipc_listener_threads / _ipc_listener_tasks
-    / _agent_status_cache / _db_state_cache / _pending_responses
+    / _db_state_cache / _pending_responses
 
 它们必须同步增删，任何一处漏改都会产生「有 runner 没 ipc」「有 cache 没 runner」
 之类的幽灵状态。这里收成一个 ``RunnerRegistry: dict[str, RunnerHandle]``：
@@ -39,7 +39,6 @@ class RunnerHandle:
     ipc: Any = None  # IPCChannel（IPCServer）
     poll_thread: Optional[threading.Thread] = None
     poll_task: Optional[asyncio.Task] = None
-    agent_status_cache: Optional[dict] = None
     db_state_cache: Optional[tuple] = None
     pending_responses: dict = field(default_factory=dict)
 

@@ -185,31 +185,6 @@ async def test_list_active_excludes_dead(db):
 
 
 @pytest.mark.asyncio
-async def test_set_agent_status_returns_changed_count(db):
-    """set_agent_status 只更新发生变化的行，并返回变化行数。"""
-    from broca.session.models import Agent
-
-    sid = "sess-sync"
-    async with db.get_session() as session:
-        session.add(
-            Agent(
-                agent_id="a1",
-                config_id="cfg-1",
-                session_id=sid,
-                name="a1",
-                role="assistant",
-                agent_status="idle",
-            )
-        )
-        await session.commit()
-
-    repo = RunnerRepository(db=db)
-    assert await repo.set_agent_status(sid, {"a1": "running"}) == 1
-    # 状态未变化 → 0
-    assert await repo.set_agent_status(sid, {"a1": "running"}) == 0
-
-
-@pytest.mark.asyncio
 async def test_runner_row_id_is_collision_resistant():
     """前 16 字符相同的两个 session_id 不能撞主键（旧实现 session_id[:16] 会）。"""
     a = "abcdefghijklmnop" + "A" * 20

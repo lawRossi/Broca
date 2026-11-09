@@ -198,7 +198,10 @@ const refreshAgents = async () => {
   if (!chatStore.sessionId) return
   loading.value = true
   try {
-    await agentStore.fetchAgents(chatStore.sessionId)
+    // preserveRunning: 周期性刷新读的是 DB 中滞后的 agent_status（心跳每 5s
+    // 才同步一次），长工具执行期间没有 socket 事件纠正，若直接覆盖会把
+    // running 误降级为 idle。详见 agent store 中 fetchAgents 的说明。
+    await agentStore.fetchAgents(chatStore.sessionId, { preserveRunning: true })
     lastRefreshTime.value = new Date()
   } finally {
     loading.value = false

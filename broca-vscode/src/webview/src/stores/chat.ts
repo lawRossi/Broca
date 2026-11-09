@@ -2,6 +2,7 @@ import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { postMessage, onMessage, getInitialData, getVSCodeAPI } from '../api/vscode'
 import type { Message, RunnerInfo } from '../types'
+import { mergeAgentStatuses, type AgentStatus } from '../utils/agentStatus'
 
 // ========== 简洁模式类型定义 ==========
 interface ToolCallStat {
@@ -153,7 +154,6 @@ export const useChatStore = defineStore('chat', () => {
 
   // ==================== Agent 运行时状态追踪 ====================
   // 根据 turn_start / turn_end / agent_response / tool_call 消息更新
-  type AgentStatus = 'idle' | 'running' | 'connecting' | 'disconnected'
   const agentStatuses = ref<Record<string, AgentStatus>>({})
 
   function updateAgentStatus(agentId: string | undefined, status: AgentStatus) {
@@ -364,12 +364,13 @@ export const useChatStore = defineStore('chat', () => {
               .filter((a) => !HIDDEN_NAMES.has(a.name || '') && !HIDDEN_ROLES.has(a.role || ''))
               .map((a) => a.agent_id)
           }
-          // Initialize agent statuses to 'idle' for all known agents
-          const initialStatuses: Record<string, AgentStatus> = {}
-          for (const agent of agentList) {
-            initialStatuses[agent.agent_id] = agent.status === 'running' ? 'running' : 'idle'
-          }
-          agentStatuses.value = initialStatuses
+          // 合并 Agent 运行时状态。周期性刷新（AgentSidebar 每 10s 的
+          // fetchAgents）读到的是 DB 中滞后的 agent_status（Runner 心跳每 5s
+          // 才同步一次）。长工具执行期间没有 socket 事件纠正，若用 DB 的 idle
+          // 覆盖由 turn_start / tool_call 设置好的 running，就会出现「turn
+          // 执行中却显示空闲」。running → idle 的权威信号只能来自 turn_end 事件，
+          // 因此不允许把 running 降级为 idle（详见 utils/agentStatus）。
+          agentStatuses.value = mergeAgentStatuses(agentList, agentStatuses.value)
           // Build agent name map (for backward compatibility)
           const names: Record<string, string> = {}
           for (const agent of agentList) {

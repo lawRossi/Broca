@@ -101,75 +101,8 @@ def _info(session_id: str, *, status: RunnerStatus = RunnerStatus.ALIVE) -> Runn
     )
 
 
-async def _seed_agents(db, session_id: str, count: int = 2, status: str = "idle") -> None:
-    from broca.session.models import Agent
-
-    async with db.get_session() as session:
-        session.add_all(
-            [
-                Agent(
-                    agent_id=f"{session_id}-a{i}",
-                    config_id="cfg-1",
-                    session_id=session_id,
-                    name=f"a{i}",
-                    role="assistant",
-                    agent_status=status,
-                )
-                for i in range(count)
-            ]
-        )
-        await session.commit()
-
-
 # ---------------------------------------------------------------------------
-# 1. 跨 session 批量：N 个 session 只 commit 一次
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_n_sessions_produce_single_commit(db):
-    """10 个 session 的 Agent 状态同步一轮 → 恰好 1 次 commit。"""
-    sessions = [f"sess-batch-{i}" for i in range(10)]
-    for sid in sessions:
-        await _seed_agents(db, sid, count=2)
-
-    repo = RunnerRepository(db=db)
-    payload = {sid: {f"{sid}-a{i}": "running" for i in range(2)} for sid in sessions}
-
-    db.commits = 0
-    changed = await repo.set_agent_statuses(payload)
-
-    assert changed == 20
-    assert db.commits == 1, (
-        f"10 个 session 的状态同步必须合并为 1 次 commit，实际 {db.commits} 次"
-    )
-
-    # 状态确实落库了
-    from sqlmodel import select
-
-    from broca.session.models import Agent
-
-    async with db.get_session() as session:
-        agents = (await session.exec(select(Agent))).all()
-    assert {a.agent_status for a in agents} == {"running"}
-
-
-@pytest.mark.asyncio
-async def test_unchanged_statuses_produce_no_commit(db):
-    """状态完全没变时不得产生任何 commit（否则节流形同虚设）。"""
-    sid = "sess-noop"
-    await _seed_agents(db, sid, count=2, status="running")
-
-    repo = RunnerRepository(db=db)
-    db.commits = 0
-    changed = await repo.set_agent_statuses({sid: {f"{sid}-a{i}": "running" for i in range(2)}})
-
-    assert changed == 0
-    assert db.commits == 0
-
-
-# ---------------------------------------------------------------------------
-# 2. 时间维度聚合：persist_interval 内重复状态不再写库
+# 1. 时间维度聚合：persist_interval 内重复状态不再写库
 # ---------------------------------------------------------------------------
 
 
@@ -239,44 +172,7 @@ async def test_interval_expiry_triggers_rewrite():
 
 
 # ---------------------------------------------------------------------------
-# 3. manager 侧：10 个 session 的心跳只触发 1 次 flush
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_manager_flushes_ten_sessions_in_one_call():
-    """10 个 session 的心跳在同一窗口内到达 → 1 次 set_agent_statuses。"""
-    from broca.session_runner.manager import IPCSessionRunner
-
-    IPCSessionRunner._instance = None
-    mgr = IPCSessionRunner()
-    mgr._registry.clear()
-    mgr._pending_agent_status.clear()
-
-    repo = MagicMock()
-    repo.set_agent_statuses = AsyncMock(return_value=10)
-    mgr._repo = repo
-
-    for i in range(10):
-        sid = f"sess-flush-{i}"
-        handle = RunnerHandle(info=_info(sid))
-        mgr._registry.add(handle)
-        mgr._schedule_agent_status_sync(handle, {"a1": "running"})
-
-    if mgr._agent_flush_task is not None:
-        import asyncio
-
-        await asyncio.wait([mgr._agent_flush_task], timeout=3.0)
-
-    assert repo.set_agent_statuses.await_count == 1
-    payload = repo.set_agent_statuses.await_args.args[0]
-    assert len(payload) == 10, "10 个 session 必须一次性提交"
-    await mgr._tasks.aclose()
-    mgr._registry.clear()
-
-
-# ---------------------------------------------------------------------------
-# 4. 配置项守卫
+# 2. 配置项守卫
 # ---------------------------------------------------------------------------
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -337,7 +233,7 @@ def test_configs_json_has_no_stale_runner_fields():
 
 
 # ---------------------------------------------------------------------------
-# 5. 与 Task 2.2 的分工：upsert_many 仍是单事务
+# 3. 与 Task 2.2 的分工：upsert_many 仍是单事务
 # ---------------------------------------------------------------------------
 
 
