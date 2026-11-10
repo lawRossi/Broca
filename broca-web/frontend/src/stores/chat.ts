@@ -620,7 +620,11 @@ export const useChatStore = defineStore('chat', () => {
       // 收到 tool_call → 思考阶段已结束（进入工具执行），清空 reasoningContent，
       // 避免下次思考阶段把上一次的推理内容先展示出来。
       turn.reasoningContent = ''
-      turn.status = 'calling_tool'
+      // 已结束的 turn（收到过 turn_end）不再被迟到的实时消息降级回「进行中」，
+      // 否则卡片会卡在「进行中」再也变不回「已完成」。
+      if (turn.isActive) {
+        turn.status = 'calling_tool'
+      }
       // 记录最后一条消息 ID（用于撤销定位）
       _turnLastResponseMsgId.set(turnId, message.message_id)
     } else if (message.message_type === 'agent_response') {
@@ -678,14 +682,21 @@ export const useChatStore = defineStore('chat', () => {
           _turnContentMsgId.set(turnId, message.message_id)
         }
       }
-      turn.status = 'thinking'
+      // 已结束的 turn 不再被降级回「进行中」（内容仍照常追加）。
+      if (turn.isActive) {
+        turn.status = 'thinking'
+      }
     } else if (message.message_type === 'error' || message.message_type === 'agent_error') {
-      // 错误消息：记录错误内容、严重级别和恢复建议
-      turn.status = 'error'
+      // 错误消息**不参与卡片状态机**：
+      // 1) 简洁模式下错误消息由 ChatMessageList 独立渲染
+      //    （standaloneErrorMessages），错误内容本身已经可见；
+      // 2) `error` 不是终态 —— RetryLLMStrategy 在可重试失败（限流/超时/空响应/
+      //    普通异常）时同样会广播 error 通知（"正在重试..."），重试成功后该 turn
+      //    会继续跑。卡片终态只由 turn_end 决定。
+      // 因此这里只记录错误信息，不改 status、不改 isActive。
       turn.errorMessage = message.data?.content || message.data?.message || 'Unknown error'
       turn.errorSeverity = message.data?.severity || null
       turn.recoveryHint = message.data?.recovery_hint || null
-      turn.isActive = false
     }
   }
 

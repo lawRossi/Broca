@@ -542,6 +542,10 @@ class DefaultLoopEngine(LoopEngine):
                 await self._process_tool_results(step_ctx.tool_calls, results)
             else:
                 step_ctx.status = ExecutionStatus.COMPLETED
+                # 无工具调用时同样要把残余流式 chunk 刷干净：否则它们只能等
+                # 0.1s 延迟任务，而 turn_end 常常先于它发出（卡片状态被打回
+                # 「进行中」）。`_finalize_turn` 里还有一层兜底 flush。
+                await self._flush_now()
         finally:
             # ``on_step_end`` must always run — SnapshotHook releases its lock there.
             await self._dispatch("on_step_end", step_ctx)
@@ -827,6 +831,18 @@ class DefaultLoopEngine(LoopEngine):
         """
         try:
             logger.info(f"turn ended with result: {result}")
+
+            # 先把残余的流式 chunk 刷出去，**必须早于** turn_end 广播。
+            #
+            # 没有工具调用的 step 走的是 `_execute_step` 的 else 分支，那里不会
+            # 调 `_flush_now()`，末尾不足 `_CHUNK_FLUSH_CHARS` 的 chunk 只由
+            # `_schedule_chunk_flush()` 的 0.1s 延迟任务兜底。而无写操作的 turn
+            # 在 `on_turn_end` 里几乎没有耗时（diff 直接返回 None），
+            # `save_turn_end` 也只有两次本地 SQLite 写入，整个 finalize 常常
+            # 快过 100ms → turn_end 抢在延迟 flush 之前发出，尾 chunk 随后到达
+            # 前端并把卡片状态从「已完成」改回「进行中」（且不会再被纠正）。
+            # 详见 broca/tests/test_turn_end_ordering.py。
+            await self._flush_now()
 
             turn_ctx.result = result
             turn_ctx.data["turn_end_message"] = self._get_turn_end_message(result)

@@ -3,6 +3,7 @@ import { ref, computed, watch } from 'vue'
 import { postMessage, onMessage, getInitialData, getVSCodeAPI } from '../api/vscode'
 import type { Message, RunnerInfo } from '../types'
 import { mergeAgentStatuses, type AgentStatus } from '../utils/agentStatus'
+import { canUpdateTurnRunningStatus } from '../utils/turnStatus'
 
 // ========== 简洁模式类型定义 ==========
 interface ToolCallStat {
@@ -287,7 +288,9 @@ export const useChatStore = defineStore('chat', () => {
   // ==================== 简洁模式计算属性 ====================
   const filteredTurnSummaries = computed(() => {
     const visibleIds = visibleAgentIds.value
-    let base = turnSummaries.value.filter((t) => !(t.isActive && t.status === 'error'))
+    // 注意：这里不能过滤「活跃 + error」的 turn。error 只是过程性状态（LLM 重试
+    // 期间会广播 error 通知），过滤掉会让重试中的卡片直接从列表里消失。
+    let base = turnSummaries.value
     // 应用 Agent 可见性过滤（与 filteredMessages 一致）
     if (visibleIds.length > 0) {
       base = base.filter((t) => visibleIds.includes(t.agentId))
@@ -1345,8 +1348,12 @@ export const useChatStore = defineStore('chat', () => {
         const toolName = message.data?.tool_name
         if (!toolName) break
 
-        // 更新状态（与 web 版一致）
-        turn.status = 'calling_tool'
+        // 更新状态（与 web 版一致）。已结束的 turn 不再被降级回「进行中」：
+        // turn_end 之后仍可能有迟到的流式 chunk（后端延迟 flush），
+        // 若这里无条件改状态，卡片会卡在「进行中」再也变不回「已完成」。
+        if (canUpdateTurnRunningStatus(turn)) {
+          turn.status = 'calling_tool'
+        }
 
         // 收到 tool_call → 思考阶段已结束（进入工具执行），清空 reasoningContent，
         // 避免下次思考阶段把上一次的推理内容先展示出来。
@@ -1405,8 +1412,13 @@ export const useChatStore = defineStore('chat', () => {
       }
 
       case 'agent_response': {
-        // 更新状态（与 web 版一致）
-        turn.status = 'thinking'
+        // 更新状态（与 web 版一致）。已结束的 turn 不再被降级回「进行中」：
+        // turn_end 之后仍可能有迟到的流式 chunk（后端残余 chunk 的延迟 flush），
+        // 若这里无条件改状态，卡片会卡在「进行中」再也变不回「已完成」。
+        // 内容仍然照常追加（见下方 finalResponse 累加逻辑）。
+        if (canUpdateTurnRunningStatus(turn)) {
+          turn.status = 'thinking'
+        }
 
         // 累加最终回复（与 web 版一致处理 streaming chunks）：
         // 同一 message_id 的 streaming chunk 连续拼接，
@@ -1471,12 +1483,17 @@ export const useChatStore = defineStore('chat', () => {
 
       case 'error':
       case 'agent_error':
-        // 错误消息：记录错误内容、严重级别和恢复建议
-        turn.status = 'error'
+        // 错误消息**不参与卡片状态机**：
+        // 1) 简洁模式下错误消息由 ChatMessageList 独立渲染
+        //    （standaloneErrorMessages），错误内容本身已经可见，卡片不必再变成「中断」；
+        // 2) `error` 也不是终态 —— RetryLLMStrategy 在可重试失败（限流/超时/空响应/
+        //    普通异常）时同样会广播 error 通知（"正在重试..."），重试成功后该 turn
+        //    会继续跑。卡片终态只由 turn_end 决定（completed → 已完成；
+        //    aborted / error → 中断）。
+        // 因此这里只记录错误信息（供排查/未来展示），不改 status、不改 isActive。
         turn.errorMessage = message.data?.content || message.data?.message || 'Unknown error'
         turn.errorSeverity = message.data?.severity || null
         turn.recoveryHint = message.data?.recovery_hint || null
-        turn.isActive = false
         // 注意：不更新 lastMessageId。error 通知（如 _send_turn_error_notification）
         // 不持久化到数据库，其 message_id 在后端找不到，用它做 undo 会报
         // "No pivot message found"。turn_end 的 message_id 才是可靠的撤销锚点。
