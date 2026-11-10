@@ -471,6 +471,24 @@ defineExpose({ saveNow, reset })
                 <p class="mt-1.5 text-xs text-gray-400">工具调用执行方式：parallel 为并行执行（默认），serial 为逐个串行执行</p>
               </div>
             </el-form-item>
+            <el-form-item label="执行模式">
+              <div class="w-full">
+                <el-select
+                  :model-value="(config.execution as any)?.execution_mode ?? 'non_blocking'"
+                  style="width: 180px"
+                  @update:model-value="(val: string) => {
+                    const exec = { ...(config.execution || {}) }
+                    if (val) exec.execution_mode = val as any
+                    else delete exec.execution_mode
+                    config.value = { ...config.value, execution: exec }
+                  }"
+                >
+                  <el-option label="Non-blocking（非阻塞，默认）" value="non_blocking" />
+                  <el-option label="Blocking（阻塞）" value="blocking" />
+                </el-select>
+                <p class="mt-1.5 text-xs text-gray-400">Agent 执行模式：non_blocking 为非阻塞执行（默认），blocking 为阻塞执行（修改后需重启后端生效）</p>
+              </div>
+            </el-form-item>
           </el-form>
         </div>
 

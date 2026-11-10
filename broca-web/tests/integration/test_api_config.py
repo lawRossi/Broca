@@ -759,6 +759,145 @@ class TestGeneralConfigAPI:
         assert saved["execution"]["runner_log_gc_interval"] == 7200
 
     @pytest.mark.asyncio
+    async def test_put_general_config_execution_mode_persisted(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """Regression: execution_mode 必须被识别并持久化。
+
+        Bug（VSCode 设置页基础配置保存失败）：
+        `Unknown execution config field(s): ['execution_mode']` —— configs.json 里
+        已有 execution.execution_mode，但后端执行字段白名单没同步，导致保存 400。
+        """
+        config_file = tmp_path / "configs.json"
+        config_file.write_text(json.dumps(self.VALID_CONFIG), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        payload = {"execution": {"execution_mode": "non_blocking"}}
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": payload},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200, response.json()
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved["execution"]["execution_mode"] == "non_blocking"
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_execution_mode_roundtrip_blocking(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """execution_mode=blocking 同样可保存（枚举值均可持久化）。"""
+        config_file = tmp_path / "configs.json"
+        config_file.write_text(json.dumps(self.VALID_CONFIG), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        payload = {"execution": {"execution_mode": "blocking", "tool_execution_mode": "serial"}}
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": payload},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200, response.json()
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        assert saved["execution"]["execution_mode"] == "blocking"
+        assert saved["execution"]["tool_execution_mode"] == "serial"
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_execution_mode_invalid_value_rejected(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """非枚举取值的 execution_mode / tool_execution_mode 必须 400 且不改写文件。
+
+        取值写错会让运行时静默走错分支（execution_mode 决定阻塞/非阻塞执行），
+        不能像未知字段那样被放行。
+        """
+        config_file = tmp_path / "configs.json"
+        original = json.dumps(self.VALID_CONFIG)
+        config_file.write_text(original, encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        for bad_payload in (
+            {"execution": {"execution_mode": "fast"}},
+            {"execution": {"execution_mode": ""}},
+            {"execution": {"execution_mode": True}},
+            {"execution": {"tool_execution_mode": "batch"}},
+        ):
+            response = await async_client.put(
+                "/api/config/general",
+                json={"config": {**self.VALID_CONFIG, **bad_payload}},
+                headers=auth_headers,
+            )
+            assert response.status_code == 400, f"{bad_payload!r} should be rejected"
+            assert config_file.read_text(encoding="utf-8") == original
+
+    @pytest.mark.asyncio
+    async def test_put_general_config_path_fields_persisted(
+        self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
+    ):
+        """Regression: log_dir / agents_config_dir / snapshot_home 等路径字段必须被保留。
+
+        GET 会把整个 configs.json 原样返回，前端保存时整份回传 ——
+        白名单缺字段时保存会 400（`Unknown general config field(s)`），
+        或（若放行却不过滤）写回时被悄悄丢掉。
+        """
+        config_file = tmp_path / "configs.json"
+        config_file.write_text(json.dumps(self.VALID_CONFIG), encoding="utf-8")
+        monkeypatch.setattr("app.api.config.GENERAL_CONFIG_PATH", config_file)
+
+        payload = {
+            "log_dir": "/tmp/broca/logs",
+            "decision_config_file": "/tmp/broca/configs/decision.json",
+            "agents_config_dir": "/tmp/broca/configs/agents",
+            "snapshot_home": "/tmp/broca/snapshots",
+            "components_config": "/tmp/broca/configs/components.json",
+        }
+        response = await async_client.put(
+            "/api/config/general",
+            json={"config": payload},
+            headers=auth_headers,
+        )
+
+        assert response.status_code == 200, response.json()
+        saved = json.loads(config_file.read_text(encoding="utf-8"))
+        for key, value in payload.items():
+            assert saved[key] == value, f"{key} 应被写回"
+
+    def test_general_config_whitelist_covers_broca_config_fields(self):
+        """守卫：后端 general/execution 白名单必须覆盖 BrocaConfig/ExecutionConfig 全部字段。
+
+        防止「broca/configs.py 新增配置项、broca-web 白名单没同步」再次导致
+        设置页整份 configs.json 回传时 400（本次即 execution_mode 缺失）。
+        与 broca/tests/test_runner_db_batching.py 中「configs.json ↔ ExecutionConfig」
+        的守卫组合起来，形成 configs.json ⊆ ExecutionConfig ⊆ 后端白名单 的闭环。
+        """
+        from dataclasses import fields as dataclass_fields
+
+        from broca.configs import BrocaConfig, ExecutionConfig
+
+        from app.api.config import KNOWN_EXECUTION_CONFIG_FIELDS, KNOWN_GENERAL_CONFIG_FIELDS
+
+        # 顶层：BrocaConfig 中从 configs.json 读入的字符串字段
+        # （config_source_path 由运行时推导、不落盘，故排除）
+        cfg = BrocaConfig()
+        top_fields = {
+            key for key, value in cfg.__dict__.items() if isinstance(value, (str, type(None)))
+        } - {"config_source_path"}
+        missing_general = top_fields - set(KNOWN_GENERAL_CONFIG_FIELDS)
+        assert not missing_general, (
+            f"BrocaConfig 字段未加入后端 general 白名单：{sorted(missing_general)}"
+        )
+
+        # 子分组对象同样必须在 general 白名单里（按分组校验/写回）
+        assert {"execution", "storage", "search"} <= set(KNOWN_GENERAL_CONFIG_FIELDS)
+
+        missing_exec = {f.name for f in dataclass_fields(ExecutionConfig)} - set(
+            KNOWN_EXECUTION_CONFIG_FIELDS
+        )
+        assert not missing_exec, f"ExecutionConfig 字段未加入后端 execution 白名单：{sorted(missing_exec)}"
+
+    @pytest.mark.asyncio
     async def test_put_general_config_unknown_asr_field_rejected(
         self, async_client: AsyncClient, auth_headers: dict, tmp_path, monkeypatch
     ):

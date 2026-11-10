@@ -281,6 +281,13 @@ function setToolExecutionMode(value: string) {
   config.value = { ...config.value, execution: exec }
 }
 
+function setExecutionMode(value: string) {
+  const current = config.value.execution
+  const exec: ExecutionConfig = current ? { ...current } : {}
+  exec.execution_mode = value as 'blocking' | 'non_blocking'
+  config.value = { ...config.value, execution: exec }
+}
+
 function setAsrField(key: keyof ASRConfig, raw: string) {
   const current = config.value.asr
   const asr: ASRConfig = current ? { ...current } : {}
@@ -450,6 +457,20 @@ function setStorageValue(key: keyof StorageConfig, value: string | undefined) {
             <option value="serial">Serial（串行）</option>
           </select>
           <p class="field-hint">工具调用执行方式：parallel 为并行执行（默认），serial 为逐个串行执行</p>
+        </div>
+        <div class="field">
+          <label class="field-label">Execution Mode</label>
+          <select
+            class="field-select"
+            :value="(config.execution?.execution_mode as string) ?? 'non_blocking'"
+            @change="setExecutionMode(($event.target as HTMLSelectElement).value)"
+          >
+            <option value="non_blocking">Non-blocking（非阻塞，默认）</option>
+            <option value="blocking">Blocking（阻塞）</option>
+          </select>
+          <p class="field-hint">
+            Agent 执行模式：non_blocking 为非阻塞执行（默认），blocking 为阻塞执行（修改后需重启后端生效）
+          </p>
         </div>
       </section>
 

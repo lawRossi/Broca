@@ -494,13 +494,18 @@ class Agent:
         self.running = False
 
     def _drain_user_messages(self, first_msg: Message) -> list[Message]:
-        """初始批量取：first_msg + 队列中所有 USER_MESSAGE（非 USER 放回）。"""
+        """初始批量取：first_msg + 队列中所有 USER_MESSAGE / TASK_COMPLETE / TASK_ERROR（其余放回）。"""
+        _drain_types = {
+            MessageType.USER_MESSAGE,
+            MessageType.TASK_COMPLETE,
+            MessageType.TASK_ERROR,
+        }
         messages = [first_msg]
         pending = []
         while True:
             try:
                 msg = self.message_queue.get_nowait()
-                if msg.message_type == MessageType.USER_MESSAGE:
+                if msg.message_type in _drain_types:
                     messages.append(msg)
                 else:
                     pending.append(msg)
@@ -521,13 +526,19 @@ class Agent:
         """
         queue = self.message_queue
 
+        _drain_types = {
+            MessageType.USER_MESSAGE,
+            MessageType.TASK_COMPLETE,
+            MessageType.TASK_ERROR,
+        }
+
         class _Drainer:
             async def drain(self) -> list[Message]:
                 msgs, pending = [], []
                 while True:
                     try:
                         msg = queue.get_nowait()
-                        if msg.message_type == MessageType.USER_MESSAGE:
+                        if msg.message_type in _drain_types:
                             msgs.append(msg)
                         else:
                             pending.append(msg)

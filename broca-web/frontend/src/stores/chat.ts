@@ -458,7 +458,7 @@ export const useChatStore = defineStore('chat', () => {
       return null
     }
 
-    if (message.message_type === 'user_message' && message.data?.from_agent) {
+    if (message.message_type === 'user_message' && message.data?.from_agent && !message.data?.task_id) {
       return null
     }
 

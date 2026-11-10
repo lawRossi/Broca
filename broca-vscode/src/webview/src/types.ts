@@ -186,6 +186,7 @@ export interface ExecutionConfig {
   permission_request_timeout?: number
   agent_query_timeout?: number
   tool_execution_mode?: 'parallel' | 'serial'
+  execution_mode?: 'blocking' | 'non_blocking'
   max_parallel_tools?: number
   // Session Runner 运行时参数
   max_concurrent_runners?: number

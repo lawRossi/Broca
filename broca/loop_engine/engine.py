@@ -390,12 +390,17 @@ class DefaultLoopEngine(LoopEngine):
         """
         # Build a new data dict to avoid mutating the caller's message
         message_data = dict(message.data) if message.data else {}
-        message_data["from_agent"] = from_agent
+        # Per-message from_agent: turn-level flag OR cross-agent task types
+        _cross_agent_types = (MessageType.TASK_COMPLETE, MessageType.TASK_ERROR)
+        message_data["from_agent"] = from_agent or message.message_type in _cross_agent_types
         if user_message.get("raw_input"):
             message_data["raw_input"] = user_message["raw_input"]
-        # Agent-sourced messages get a pre-generated id so turn setup can never
-        # mistake them for a failed setup (regression fix 104c8c2).
-        message_id = f"msg_{uuid.uuid4().hex[:16]}" if from_agent else message.message_id
+        # Agent-sourced messages and cross-agent task messages get a
+        # pre-generated id to avoid PK collision with the sender's record.
+        if from_agent or message.message_type in _cross_agent_types:
+            message_id = f"msg_{uuid.uuid4().hex[:16]}"
+        else:
+            message_id = message.message_id
         saved = await self.session_manager.save_message(
             role=MessageRole.USER,
             content=json.dumps(user_message, ensure_ascii=False),
@@ -445,9 +450,18 @@ class DefaultLoopEngine(LoopEngine):
                 "raw_input": str(raw),
             }
         message_data = dict(message.data) if message.data else {}
-        message_data["from_agent"] = False
+        _cross_agent_types = (MessageType.TASK_COMPLETE, MessageType.TASK_ERROR)
+        message_data["from_agent"] = message.message_type in _cross_agent_types
         if user_message.get("raw_input"):
             message_data["raw_input"] = user_message["raw_input"]
+        # Cross-agent task messages may share a PK with the sender's record;
+        # generate a fresh id to avoid collision.
+        _cross_agent_types = (MessageType.TASK_COMPLETE, MessageType.TASK_ERROR)
+        new_message_id = (
+            f"msg_{uuid.uuid4().hex[:16]}"
+            if message.message_type in _cross_agent_types
+            else message.message_id
+        )
         message_id = await self.session_manager.save_message(
             role=MessageRole.USER,
             content=json.dumps(user_message, ensure_ascii=False),
@@ -455,7 +469,7 @@ class DefaultLoopEngine(LoopEngine):
             turn_id=self.turn_id,
             agent_id=self.agent_id,
             data=message_data,
-            message_id=message.message_id,
+            message_id=new_message_id,
         )
         if message_id:
             await self.context.add_message(user_message, message_id)
@@ -464,7 +478,7 @@ class DefaultLoopEngine(LoopEngine):
             if getattr(self.config, "interactive", False):
                 try:
                     broadcast_msg = Message(
-                        message_id=message.message_id,
+                        message_id=new_message_id,
                         role=MessageRole.USER,
                         content=json.dumps(user_message, ensure_ascii=False),
                         message_type=MessageType.USER_MESSAGE,

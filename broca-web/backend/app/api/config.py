@@ -25,11 +25,20 @@ LLM_CONFIG_PATH = Path(_configs.llm_config_file) if _configs.llm_config_file els
 # ---------- general（configs.json）与 tool-permission（工具权限）配置 ----------
 
 # 已知的 general 配置字段（保存时仅写回这些字段，未知字段丢弃；保持该顺序写回）
+# 顶层字段必须覆盖 BrocaConfig 中所有「从 configs.json 读取」的字段
+# （config_source_path 除外，它由运行时推导、不落盘）——
+# 否则 GET 读回整个文件后再 PUT 会 400，且写回时会丢字段。
+# 新增配置项时请同步：broca/configs.py + 本白名单 + 下方守卫测试。
 KNOWN_GENERAL_CONFIG_FIELDS = (
     "database_dir",
     "log_file",
+    "log_dir",
     "log_level",
     "llm_config_file",
+    "decision_config_file",
+    "agents_config_dir",
+    "snapshot_home",
+    "components_config",
     "socket_server_url",
     "api_server_url",
     "execution",
@@ -50,6 +59,7 @@ KNOWN_EXECUTION_CONFIG_FIELDS = (
     "permission_request_timeout",
     "agent_query_timeout",
     "tool_execution_mode",
+    "execution_mode",
     "max_parallel_tools",
     "max_concurrent_runners",
     "runner_heartbeat_interval",
@@ -61,7 +71,15 @@ KNOWN_EXECUTION_CONFIG_FIELDS = (
     "runner_log_gc_interval",
 )
 # execution 分组中允许字符串类型的字段（其余字段必须为非负数字）
-_EXECUTION_STRING_FIELDS = frozenset({"tool_execution_mode"})
+_EXECUTION_STRING_FIELDS = frozenset({"tool_execution_mode", "execution_mode"})
+# execution 分组中的枚举字段：字符串字段里必须进一步取值合法的
+# （取值写错会让运行时静默走错分支，例如 execution_mode 影响阻塞/非阻塞执行）
+VALID_TOOL_EXECUTION_MODES = {"parallel", "serial"}
+VALID_EXECUTION_MODES = {"blocking", "non_blocking"}
+_EXECUTION_ENUM_FIELDS = {
+    "tool_execution_mode": VALID_TOOL_EXECUTION_MODES,
+    "execution_mode": VALID_EXECUTION_MODES,
+}
 # asr 分组下的已知字段（ASR 语音识别相关）
 KNOWN_ASR_CONFIG_FIELDS = (
     "model_name",
@@ -281,7 +299,10 @@ def _write_llm_config(config: dict[str, Any]) -> None:
 
 
 def _validate_execution_config(config: Any) -> None:
-    """校验 execution 分组：必须 object；字段若存在必须为数字且非负。
+    """校验 execution 分组：必须 object；字段类型与取值必须合法。
+
+    数值字段必须为非负数；字符串字段必须为枚举合法值
+    （如 execution_mode / tool_execution_mode）。
 
     未知字段直接报错（而非静默丢弃）：避免前端字段定义与后端白名单漂移时，
     接口仍返回“保存成功”却把数据悄悄丢掉。
@@ -303,6 +324,12 @@ def _validate_execution_config(config: Any) -> None:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Execution config field '{key}' must be a string",
+                )
+            allowed = _EXECUTION_ENUM_FIELDS.get(key)
+            if allowed is not None and value not in allowed:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Execution config field '{key}' must be one of {sorted(allowed)}, got '{value}'",
                 )
         elif isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0:
             raise HTTPException(

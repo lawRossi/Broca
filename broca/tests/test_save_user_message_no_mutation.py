@@ -110,3 +110,65 @@ async def test_empty_data_handled():
     assert call_kwargs["data"]["raw_input"] == "text"
     # Original message.data unchanged
     assert message.data == {}
+
+
+@pytest.mark.asyncio
+async def test_task_complete_from_agent_false_still_marks_from_agent():
+    """TASK_COMPLETE with from_agent=False still gets from_agent=True in saved data
+    and a new message_id (cross-agent PK collision guard)."""
+    engine = _make_engine()
+    message = Message(
+        message_type=MessageType.TASK_COMPLETE,
+        role=MessageRole.AGENT,
+        data={"task_id": "t-1", "result": "done"},
+    )
+    message.message_id = "msg_sender_original"
+
+    user_msg = {"role": "user", "content": "done", "raw_input": "done"}
+    result = await engine._save_user_message(user_msg, message, "turn-1", from_agent=False)
+
+    call_kwargs = engine.session_manager.save_message.call_args[1]
+    # from_agent should be True (cross-agent task type)
+    assert call_kwargs["data"]["from_agent"] is True
+    # New message_id generated to avoid PK collision
+    assert call_kwargs["message_id"] != "msg_sender_original"
+    assert call_kwargs["message_id"].startswith("msg_")
+    assert result == call_kwargs["message_id"]
+
+
+@pytest.mark.asyncio
+async def test_task_error_from_agent_false_still_marks_from_agent():
+    """TASK_ERROR with from_agent=False still gets from_agent=True in saved data
+    and a new message_id."""
+    engine = _make_engine()
+    message = Message(
+        message_type=MessageType.TASK_ERROR,
+        role=MessageRole.AGENT,
+        data={"task_id": "t-2", "error_code": "E1"},
+    )
+    message.message_id = "msg_sender_original"
+
+    user_msg = {"role": "user", "content": "E1", "raw_input": "E1"}
+    result = await engine._save_user_message(user_msg, message, "turn-1", from_agent=False)
+
+    call_kwargs = engine.session_manager.save_message.call_args[1]
+    assert call_kwargs["data"]["from_agent"] is True
+    assert call_kwargs["message_id"] != "msg_sender_original"
+    assert call_kwargs["message_id"].startswith("msg_")
+    assert result == call_kwargs["message_id"]
+
+
+@pytest.mark.asyncio
+async def test_user_message_from_agent_false_keeps_original_id():
+    """USER_MESSAGE with from_agent=False keeps original message_id and from_agent=False."""
+    engine = _make_engine()
+    message = _make_message(data={"content": "hi"})
+    message.message_id = "msg_user_abc"
+
+    user_msg = {"role": "user", "content": "hi", "raw_input": "hi"}
+    result = await engine._save_user_message(user_msg, message, "turn-1", from_agent=False)
+
+    call_kwargs = engine.session_manager.save_message.call_args[1]
+    assert call_kwargs["data"]["from_agent"] is False
+    assert call_kwargs["message_id"] == "msg_user_abc"
+    assert result == "msg_user_abc"

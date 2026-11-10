@@ -4,6 +4,7 @@ import { postMessage, onMessage, getInitialData, getVSCodeAPI } from '../api/vsc
 import type { Message, RunnerInfo } from '../types'
 import { mergeAgentStatuses, type AgentStatus } from '../utils/agentStatus'
 import { canUpdateTurnRunningStatus } from '../utils/turnStatus'
+import { applyHistoryReload } from '../utils/historyMerge'
 
 // ========== 简洁模式类型定义 ==========
 interface ToolCallStat {
@@ -406,6 +407,9 @@ export const useChatStore = defineStore('chat', () => {
 
         case 'error':
           console.error('Extension error:', data.payload.message)
+          // 历史加载失败时复位 loading，避免 LoadingOverlay 卡死
+          loading.value = false
+          loadingMore.value = false
           showError(data.payload.message || '操作失败', data.payload.severity || 'error')
           break
 
@@ -564,6 +568,7 @@ export const useChatStore = defineStore('chat', () => {
       if (message.data?.command === 'undo') {
         showRedoButton.value = true
         redoReceiverId.value = message.sender_id
+        // 整页重载：被撤销的消息服务端不再返回，必须从列表移除，否则页面不会变化
         loadHistory(0, 50)
         // 简洁模式：重新加载 turn 历史（reset=true 清空旧数据，因为底层数据已改变）
         if (sessionId.value) loadTurnHistory(sessionId.value, false, executionId.value, true)
@@ -683,10 +688,13 @@ export const useChatStore = defineStore('chat', () => {
     const filtered = (payload.messages || []).filter((m) => processMessage(m) !== null)
 
     if (payload.skip === 0) {
-      // Initial load - API 数据为 base，保留 IPC 往返期间到达的 live 消息（去重）
-      const apiIds = new Set(filtered.map((m) => m.message_id))
-      const liveExtras = messages.value.filter((m) => !apiIds.has(m.message_id))
-      messages.value = liveExtras.length > 0 ? [...filtered, ...liveExtras] : filtered
+      // 整页重载：服务端数据为唯一权威 base（loadHistory 已先清空列表），
+      // 只保留请求往返期间新到的 live 消息。这样被撤销的消息（服务端不再返回）
+      // 不会残留，撤销成功后列表能正确刷新。
+      messages.value = applyHistoryReload({
+        apiMessages: filtered,
+        liveMessages: messages.value,
+      })
     } else {
       // Load more - prepend to existing messages
       const newMessages = [...filtered, ...messages.value]
@@ -838,6 +846,11 @@ export const useChatStore = defineStore('chat', () => {
   function loadHistory(skip: number = 0, limit: number = 50) {
     if (skip === 0) {
       loading.value = true
+      // 整页重载（本函数 skip=0 只用于 undo/redo/clear_history 后的刷新）：
+      // 必须清空列表再拉取，服务端数据才是唯一权威 base。否则被撤销的消息
+      // （服务端已过滤 reverted）会残留在列表里，看起来像「撤销没刷新」。
+      // 清空期间由 LoadingOverlay（:visible="loading"）遮住，不会有空列表闪烁。
+      messages.value = []
     } else {
       loadingMore.value = true
     }

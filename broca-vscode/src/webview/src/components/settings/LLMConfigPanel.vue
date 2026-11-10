@@ -1,8 +1,9 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { postMessage, onMessage } from '../../api/vscode'
-import type { LLMConfig, LLMModelConfig, LLMDefaultConfig, LLMWireConfig } from '../../types'
+import type { LLMConfig, LLMModelConfig, LLMDefaultConfig } from '../../types'
 import { LLM_DEFAULT_KEY } from '../../types'
+import { buildLLMWireConfig, isLLMConfigDirty, llmBaselineJson } from '../../utils/llmWireConfig'
 
 import './settings.css'
 
@@ -14,15 +15,9 @@ const config = ref<LLMConfig>({})
 const llmDefault = ref<LLMDefaultConfig>({ provider: '', model: '' })
 const initialJson = ref('{}')
 const activeProviders = ref<string[]>([])
-// 组装完整配置（提供商 + 可选 __default__）；__default__ 仅含 provider/model 两个字符串，
-// 可安全 JSON 序列化参与脏检测
-const buildFullConfig = (): LLMWireConfig => {
-  const full: LLMWireConfig = { ...config.value }
-  if (llmDefault.value.provider) full[LLM_DEFAULT_KEY] = { ...llmDefault.value }
-  return full
-}
-// 脏检测需同时覆盖提供商配置与默认 provider/model
-const dirty = computed(() => JSON.stringify(buildFullConfig()) !== initialJson.value)
+// 脏检测与保存基线必须走同一序列化口径（wire 格式，含 __default__），
+// 否则设置了全局默认 provider/model 时保存成功后仍永远显示「有未保存修改」
+const dirty = computed(() => isLLMConfigDirty(config.value, llmDefault.value, initialJson.value))
 const providerCount = computed(() => Object.keys(config.value).length)
 const modelCount = computed(() =>
   Object.values(config.value).reduce((sum, p) => sum + Object.keys(p.models || {}).length, 0)
@@ -37,6 +32,17 @@ let autoSaveTimer: ReturnType<typeof setTimeout> | null = null
 let loadTimeout: ReturnType<typeof setTimeout> | null = null
 let saveTimeout: ReturnType<typeof setTimeout> | null = null
 let mutatedDuringSave = false
+// 本次在途保存请求的 wire 快照（成功后作为新基线；null = 无在途保存）
+let pendingBaselineJson: string | null = null
+// 保存请求结束（成功/失败）：清掉在途快照，并把「保存期间产生的新编辑」重新排队自动保存
+function finishSave(baseline: string | null) {
+  pendingBaselineJson = null
+  if (baseline !== null) initialJson.value = baseline
+  if (mutatedDuringSave) {
+    mutatedDuringSave = false
+    scheduleAutoSave()
+  }
+}
 
 // 默认 provider/model 下拉的选项来源
 const providerIds = computed(() => Object.keys(config.value))
@@ -129,7 +135,7 @@ onMounted(() => {
             const first = Object.keys(config.value[llmDefault.value.provider]?.models || {})[0]
             if (first) llmDefault.value.model = first
           }
-          initialJson.value = JSON.stringify(buildFullConfig())
+          initialJson.value = llmBaselineJson(config.value, llmDefault.value)
           const ids = Object.keys(config.value)
           activeProviders.value = ids.length > 0 ? [ids[0]] : []
         }
@@ -146,7 +152,8 @@ onMounted(() => {
         }
         saveFailed.value = false
         autoSaveBlocked.value = false
-        initialJson.value = JSON.stringify(config.value)
+        // 基线 = 发起保存时的 wire 快照（含 __default__，且不含保存期间的新编辑）
+        finishSave(pendingBaselineJson ?? llmBaselineJson(config.value, llmDefault.value))
         lastSavedAt.value = new Date()
         showToast('LLM 配置已保存', 'success', 2000)
         break
@@ -162,6 +169,8 @@ onMounted(() => {
         loading.value = false
         saving.value = false
         saveFailed.value = true
+        // 保存失败：不改基线（保持脏），但要处理保存期间的新编辑
+        finishSave(null)
         if (initialJson.value === '{}') {
           loadError.value = data.payload?.message || '加载失败'
         }
@@ -659,13 +668,17 @@ function persistConfig() {
   }, 10000)
   try {
     // 深度序列化为纯 JSON（含 __default__ 默认配置），避免 payload 内含 Vue 响应式 Proxy 导致 postMessage 序列化抛错
-    const payload = JSON.parse(JSON.stringify(buildFullConfig()))
+    const wire = buildLLMWireConfig(config.value, llmDefault.value)
+    // 记录「发起保存时」的快照：保存成功后以它为新基线，保存期间的新编辑仍保持脏
+    pendingBaselineJson = JSON.stringify(wire)
+    const payload = JSON.parse(JSON.stringify(wire))
     postMessage({ type: 'saveLLMConfig', payload })
   } catch (e: any) {
     if (saveTimeout) {
       clearTimeout(saveTimeout)
       saveTimeout = null
     }
+    pendingBaselineJson = null
     saving.value = false
     saveFailed.value = true
     const msg = typeof e?.message === 'string' ? e.message : String(e)
