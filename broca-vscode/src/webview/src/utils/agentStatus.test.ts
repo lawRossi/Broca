@@ -56,3 +56,33 @@ test('多 agent：仅对处于 running 的 agent 保留 running', () => {
   assert.equal(result.a1, 'running')
   assert.equal(result.a2, 'idle')
 })
+
+// ── 回归：子 Agent 不应被 preserveRunning 锁死在 running ──
+//
+// Bug：子 Agent（session_memory_manager / persistent_memory_manager）
+// 不发送 turn_end socket 事件，若被 preserveRunning 锁在 running，
+// 将永远不会降级为 idle，导致前端持续显示"运行中"。
+
+test('周期性刷新：session_memory 子 Agent 的 running 可被 DB idle 正确降级', () => {
+  const result = mergeAgentStatuses(
+    [{ agent_id: 'sess#session-memory-agent', status: 'idle', role: 'session_memory_manager' }],
+    { 'sess#session-memory-agent': 'running' }
+  )
+  assert.equal(result['sess#session-memory-agent'], 'idle')
+})
+
+test('周期性刷新：persistent_memory 子 Agent 的 running 可被 DB idle 正确降级', () => {
+  const result = mergeAgentStatuses(
+    [{ agent_id: 'sess#persistent-memory-agent', status: 'idle', role: 'persistent_memory_manager' }],
+    { 'sess#persistent-memory-agent': 'running' }
+  )
+  assert.equal(result['sess#persistent-memory-agent'], 'idle')
+})
+
+test('周期性刷新：主 Agent 仍受 preserveRunning 保护（不受子 Agent 修复影响）', () => {
+  const result = mergeAgentStatuses(
+    [{ agent_id: 'a1', status: 'idle', role: 'main_agent' }],
+    { a1: 'running' }
+  )
+  assert.equal(result.a1, 'running')
+})

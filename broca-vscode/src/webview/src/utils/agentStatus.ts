@@ -19,7 +19,12 @@ export interface AgentStatusInput {
   agent_id: string
   /** 来自后端 DB 的原始状态字符串 */
   status?: string
+  /** Agent 角色，用于识别子 Agent */
+  role?: string
 }
+
+/** 子 Agent 角色集合——不发送 turn_end，不需要 preserveRunning 保护 */
+const SUBAGENT_ROLES = new Set(['session_memory_manager', 'persistent_memory_manager'])
 
 /**
  * 把后端返回的 agent 列表合并为新的运行时状态表。
@@ -36,8 +41,13 @@ export function mergeAgentStatuses(
   for (const agent of agentList) {
     const dbStatus: AgentStatus = agent.status === 'running' ? 'running' : 'idle'
     const prev = prevStatuses[agent.agent_id]
-    result[agent.agent_id] =
-      prev === 'running' && dbStatus === 'idle' ? 'running' : dbStatus
+    // 子 Agent 不发送 turn_end socket 事件，若被 preserveRunning 锁在
+    // running 将永远无法降级。它们生命周期只有几秒，无需防心跳滞后保护。
+    if (prev === 'running' && dbStatus === 'idle' && !SUBAGENT_ROLES.has(agent.role || '')) {
+      result[agent.agent_id] = 'running'
+    } else {
+      result[agent.agent_id] = dbStatus
+    }
   }
   return result
 }

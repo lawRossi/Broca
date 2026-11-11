@@ -127,4 +127,78 @@ describe('agent store: status merge on periodic refresh', () => {
 
     expect(store.agents[0].status).toBe('idle')
   })
+
+  // ── 回归：子 Agent 不应被 preserveRunning 锁死在 running ──
+  //
+  // Bug：子 Agent（session_memory_manager / persistent_memory_manager）
+  // 不发送 turn_end socket 事件，若被 preserveRunning 锁在 running，
+  // 将永远不会降级为 idle，导致前端持续显示"运行中"。
+  //
+  // Fix：preserveRunning 逻辑排除子 Agent（role in SUBAGENT_ROLES）。
+
+  it('周期性刷新：子 Agent 的 running 可被 DB idle 正确降级', async () => {
+    // 初始加载：子 Agent 正在运行
+    const subAgent = makeAgent({
+      agent_id: 'sess-1#session-memory-agent',
+      name: 'session-memory-agent',
+      role: 'session_memory_manager',
+      status: 'running',
+    })
+    mockedGetSessionAgents.mockResolvedValue([subAgent])
+    const store = useAgentStore()
+    await store.fetchAgents('sess-1')
+    expect(store.agents[0].status).toBe('running')
+
+    // 子 Agent 完成，DB 更新为 idle，下次轮询读到 idle
+    const subAgentIdle = makeAgent({
+      agent_id: 'sess-1#session-memory-agent',
+      name: 'session-memory-agent',
+      role: 'session_memory_manager',
+      status: 'idle',
+    })
+    mockedGetSessionAgents.mockResolvedValue([subAgentIdle])
+    await store.fetchAgents('sess-1', { preserveRunning: true })
+
+    // 子 Agent 应正确降级为 idle（不被 preserveRunning 阻止）
+    expect(store.agents[0].status).toBe('idle')
+  })
+
+  it('周期性刷新：persistent_memory 子 Agent 同样可降级', async () => {
+    const subAgent = makeAgent({
+      agent_id: 'sess-1#persistent-memory-agent',
+      name: 'persistent-memory-agent',
+      role: 'persistent_memory_manager',
+      status: 'running',
+    })
+    mockedGetSessionAgents.mockResolvedValue([subAgent])
+    const store = useAgentStore()
+    await store.fetchAgents('sess-1')
+
+    mockedGetSessionAgents.mockResolvedValue([
+      makeAgent({
+        agent_id: 'sess-1#persistent-memory-agent',
+        name: 'persistent-memory-agent',
+        role: 'persistent_memory_manager',
+        status: 'idle',
+      }),
+    ])
+    await store.fetchAgents('sess-1', { preserveRunning: true })
+
+    expect(store.agents[0].status).toBe('idle')
+  })
+
+  it('周期性刷新：主 Agent 仍受 preserveRunning 保护（不受子 Agent 修复影响）', async () => {
+    mockedGetSessionAgents.mockResolvedValue([makeAgent({ status: 'idle' })])
+    const store = useAgentStore()
+    await store.fetchAgents('sess-1')
+
+    // 主 Agent 收到 turn_start → running
+    store.updateAgentStatus('agent-1', 'running')
+
+    // DB 滞后仍为 idle → preserveRunning 保护
+    mockedGetSessionAgents.mockResolvedValue([makeAgent({ status: 'idle' })])
+    await store.fetchAgents('sess-1', { preserveRunning: true })
+
+    expect(store.agents[0].status).toBe('running')
+  })
 })

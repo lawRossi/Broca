@@ -74,7 +74,11 @@ export const useAgentStore = defineStore('agent', () => {
         // 权威信号只能来自 turn_end socket 事件。首次加载（无此选项）仍以
         // DB 状态为准。
         let status = agent.status
-        if (options?.preserveRunning && status === 'idle') {
+        // 子 Agent（session_memory_manager / persistent_memory_manager）不发送
+        // turn_end socket 事件，若被 preserveRunning 锁在 running，将永远不会
+        // 降级为 idle。它们生命周期只有几秒，不需要防心跳滞后的保护。
+        const SUBAGENT_ROLES = new Set(['session_memory_manager', 'persistent_memory_manager'])
+        if (options?.preserveRunning && status === 'idle' && !SUBAGENT_ROLES.has(agent.role || '')) {
           const prev = previousAgents.find((a) => a.agent_id === agent.agent_id)
           if (prev?.status === 'running') {
             status = 'running'
