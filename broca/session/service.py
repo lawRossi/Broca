@@ -776,7 +776,7 @@ class TurnService(BaseService[Turn]):
         # 计算指定文件的 diff
         try:
             return await calculator.calculate_diff(
-                first_hash, last_hash, file_path=file_path
+                first_hash, last_hash, file_paths=[file_path]
             )
         except Exception as e:
             logger.warning(f"Error calculating file diff for {file_path}: {e}")

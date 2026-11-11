@@ -92,7 +92,7 @@ class FakeSnapshotManager:
     async def calculate_patch(self, start, end):
         return {"files": [{"path": "a.py"}], "summary": {}}
 
-    async def calculate_diff(self, start, end):
+    async def calculate_diff(self, start, end, file_paths=None):
         return "diff --git a/a.py b/a.py"
 
     def get_diff_summary(self, diff):

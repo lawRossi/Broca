@@ -79,8 +79,15 @@ class SnapshotManager(ABC):
     # These methods are NOT @abstractmethod — they provide safe default
     # implementations so existing plugin subclasses remain instantiable.
 
-    async def calculate_diff(self, from_hash: str, to_hash: str) -> str:
+    async def calculate_diff(
+        self, from_hash: str, to_hash: str, file_paths: list[str] | None = None
+    ) -> str:
         """Get raw diff content between two snapshots.
+
+        Args:
+            from_hash: Start snapshot tree hash.
+            to_hash: End snapshot tree hash.
+            file_paths: Optional list of file paths to filter the diff.
 
         Returns empty string if unavailable.
         """

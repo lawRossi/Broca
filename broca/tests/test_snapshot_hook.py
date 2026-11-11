@@ -244,6 +244,118 @@ class TestTurnDiff:
 
         assert turn_ctx.data["changed_files"] is None
 
+    @pytest.mark.asyncio
+    async def test_turn_diff_filters_by_step_modified_files(self):
+        """calculate_diff must receive the accumulated file list from all steps."""
+        manager = make_manager(patch={"files": ["a.py", "b.py"]})
+        hook = SnapshotHook(manager, "/tmp/ws", FakeConfig())
+        turn_ctx = make_turn_ctx(ExecutionResult(ExecutionStatus.COMPLETED))
+        step_ctx = make_step_ctx()
+
+        await hook.on_turn_start(turn_ctx)
+        await hook.on_step_start(step_ctx)
+        await hook.on_step_end(step_ctx)
+
+        # Files from step patch are accumulated
+        assert hook._turn_modified_files == {"a.py", "b.py"}
+
+        await hook.on_turn_end(turn_ctx)
+
+        # calculate_diff was called with the sorted file list
+        diff_call = manager.calculate_diff.await_args
+        assert diff_call.kwargs["file_paths"] == ["a.py", "b.py"]
+
+    @pytest.mark.asyncio
+    async def test_turn_diff_accumulates_across_steps(self):
+        """Files from multiple steps are merged into one filter set."""
+        manager = MagicMock()
+        manager.acquire_lock = MagicMock()
+        manager.release_lock = MagicMock()
+        manager.track = AsyncMock(side_effect=["h1", "h2", "h3", "h4", "h5", "h6"])
+        # step1: a.py, step2: c.py
+        manager.calculate_patch = AsyncMock(
+            side_effect=[
+                {"files": ["a.py"]},
+                {"files": ["c.py"]},
+            ]
+        )
+        manager.calculate_diff = AsyncMock(return_value="diff")
+        manager.get_diff_summary = MagicMock(
+            return_value={
+                "total_files": 2,
+                "files_added": [],
+                "files_deleted": [],
+                "files_modified": ["a.py", "c.py"],
+            }
+        )
+        hook = SnapshotHook(manager, "/tmp/ws", FakeConfig())
+        turn_ctx = make_turn_ctx(ExecutionResult(ExecutionStatus.COMPLETED))
+
+        await hook.on_turn_start(turn_ctx)
+        # step 1
+        s1 = make_step_ctx()
+        await hook.on_step_start(s1)
+        await hook.on_step_end(s1)
+        # step 2
+        s2 = make_step_ctx()
+        await hook.on_step_start(s2)
+        await hook.on_step_end(s2)
+
+        assert hook._turn_modified_files == {"a.py", "c.py"}
+
+        await hook.on_turn_end(turn_ctx)
+        diff_call = manager.calculate_diff.await_args
+        assert diff_call.kwargs["file_paths"] == ["a.py", "c.py"]
+
+    @pytest.mark.asyncio
+    async def test_turn_diff_no_filter_when_no_files_tracked(self):
+        """When no step modified any file, calculate_diff gets file_paths=None."""
+        manager = make_manager(patch={"files": {}})
+        hook = SnapshotHook(manager, "/tmp/ws", FakeConfig())
+        turn_ctx = make_turn_ctx(ExecutionResult(ExecutionStatus.COMPLETED))
+
+        await hook.on_turn_start(turn_ctx)
+        # A write-ops step that produces an empty patch
+        step_ctx = make_step_ctx()
+        await hook.on_step_start(step_ctx)
+        await hook.on_step_end(step_ctx)
+
+        assert hook._turn_modified_files == set()
+        await hook.on_turn_end(turn_ctx)
+
+        # Empty _turn_modified_files → file_paths=None (no filter)
+        if manager.calculate_diff.await_count > 0:
+            diff_call = manager.calculate_diff.await_args
+            assert diff_call.kwargs["file_paths"] is None
+
+    @pytest.mark.asyncio
+    async def test_turn_modified_files_handles_dict_shape(self):
+        """Patch with dict-shaped files (e.g. {'a.py': {}}) is handled."""
+        manager = make_manager(patch={"files": {"x.py": {}, "y.py": {}}})
+        hook = SnapshotHook(manager, "/tmp/ws", FakeConfig())
+        turn_ctx = make_turn_ctx(ExecutionResult(ExecutionStatus.COMPLETED))
+        step_ctx = make_step_ctx()
+
+        await hook.on_turn_start(turn_ctx)
+        await hook.on_step_start(step_ctx)
+        await hook.on_step_end(step_ctx)
+
+        assert hook._turn_modified_files == {"x.py", "y.py"}
+
+    @pytest.mark.asyncio
+    async def test_turn_modified_files_cleared_on_reset(self):
+        manager = make_manager()
+        hook = SnapshotHook(manager, "/tmp/ws", FakeConfig())
+
+        await hook.on_turn_start(make_turn_ctx(ExecutionResult(ExecutionStatus.COMPLETED)))
+        step_ctx = make_step_ctx()
+        await hook.on_step_start(step_ctx)
+        await hook.on_step_end(step_ctx)
+        assert len(hook._turn_modified_files) > 0
+
+        hook.reset()
+        assert hook._turn_modified_files == set()
+
 
 class TestReset:
     @pytest.mark.asyncio

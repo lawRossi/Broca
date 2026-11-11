@@ -155,7 +155,7 @@ class PatchCalculator:
         self,
         from_hash: str,
         to_hash: str,
-        file_path: Optional[str] = None,
+        file_paths: Optional[list[str]] = None,
     ) -> str:
         """
         计算两个快照之间的差异（unified diff 格式）
@@ -163,7 +163,7 @@ class PatchCalculator:
         Args:
             from_hash: 起始快照的 Git 树哈希
             to_hash: 结束快照的 Git 树哈希，如果为 None 则使用当前暂存区
-            file_path: 可选的过滤路径，只返回指定文件的 diff
+            file_paths: 可选的文件路径列表，只返回这些文件的 diff
 
         Returns:
             unified diff 格式的差异
@@ -173,8 +173,8 @@ class PatchCalculator:
         try:
             # 比较两个树对象
             cmd = ["diff-tree", "--no-commit-id", "-r", "-p", "-U3", from_hash, to_hash]
-            if file_path:
-                cmd.extend(["--", file_path])
+            if file_paths:
+                cmd.extend(["--", *file_paths])
             return await self.git_manager._run_git_command(*cmd)
         except git.GitCommandError as e:
             raise e

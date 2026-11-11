@@ -135,12 +135,20 @@ class GitSnapshotManager(SnapshotManager):
     # Diff / Restore (ABC extended interface)
     # ------------------------------------------------------------------
 
-    async def calculate_diff(self, from_hash: str, to_hash: str) -> str:
-        """Get raw diff content between two snapshots."""
+    async def calculate_diff(
+        self, from_hash: str, to_hash: str, file_paths: list[str] | None = None
+    ) -> str:
+        """Get raw diff content between two snapshots.
+
+        Args:
+            file_paths: Optional list of file paths to filter the diff.
+        """
         if not self._available or self._patch_calculator is None:
             return ""
         try:
-            return await self._patch_calculator.calculate_diff(from_hash, to_hash)
+            return await self._patch_calculator.calculate_diff(
+                from_hash, to_hash, file_paths=file_paths
+            )
         except Exception as e:
             logger.warning(f"Diff calculation failed: {e}")
             return ""

@@ -57,6 +57,7 @@ class SnapshotHook(LoopHook):
         self._turn_first_hash: Optional[str] = None
         self._turn_last_hash: Optional[str] = None
         self._step_start_hash: Optional[str] = None
+        self._turn_modified_files: set[str] = set()
         self._lock_held = False
         self._lock_timeout = DEFAULT_LOCK_TIMEOUT
 
@@ -128,6 +129,8 @@ class SnapshotHook(LoopHook):
             end_hash, patch = await self._compute_step_end_patch()
             ctx.step_end_snapshot = end_hash
             ctx.step_patch = patch
+            # Accumulate files modified by this session for turn-level diff.
+            self._accumulate_modified_files(patch.get("files"))
         except Exception as e:
             logger.error(f"Error capturing step end snapshot: {e}")
         finally:
@@ -293,7 +296,11 @@ class SnapshotHook(LoopHook):
 
         try:
             diff_content = await self._snapshot_manager.calculate_diff(
-                self._turn_first_hash, self._turn_last_hash
+                self._turn_first_hash,
+                self._turn_last_hash,
+                file_paths=sorted(self._turn_modified_files)
+                if self._turn_modified_files
+                else None,
             )
             diff_summary = self._snapshot_manager.get_diff_summary(diff_content)
             if diff_summary.get("total_files", 0) == 0:
@@ -312,6 +319,25 @@ class SnapshotHook(LoopHook):
             logger.warning(f"Error calculating turn-level diff: {e}")
             return None
 
+    def _accumulate_modified_files(self, files: Any) -> None:
+        """Extract file paths from a patch's ``files`` field.
+
+        Handles the three shapes seen in production and tests:
+        - ``list[str]``          (real PatchCalculator)
+        - ``list[dict]``          (some test mocks: ``[{"path": "a.py"}]``)
+        - ``dict``               (some test mocks: ``{"a.py": {…}}``)
+        """
+        if files is None:
+            return
+        if isinstance(files, list):
+            for f in files:
+                if isinstance(f, str):
+                    self._turn_modified_files.add(f)
+                elif isinstance(f, dict) and "path" in f:
+                    self._turn_modified_files.add(f["path"])
+        elif isinstance(files, dict):
+            self._turn_modified_files.update(files.keys())
+
     def _check_write_ops(self, tool_calls: list) -> bool:
         """True when the step contains at least one non-read-only tool call."""
         if not tool_calls or self._tool_executor is None:
@@ -326,3 +352,4 @@ class SnapshotHook(LoopHook):
         self._turn_first_hash = None
         self._turn_last_hash = None
         self._step_start_hash = None
+        self._turn_modified_files.clear()
