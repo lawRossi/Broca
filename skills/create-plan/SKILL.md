@@ -24,7 +24,7 @@ Take the user's input, conduct deep analysis and reasoning, and produce a **comp
 - **Well-referenced**: The plan must cite relevant materials (requirements docs, API docs, reference code, design mockups, etc.) so the executor can quickly establish context.
 - **Thorough and Comprehensive**: All important aspects and details must be addressed.
 - **User-approved**: Unclear requirements, important details, and key decisions must all be clearly communicated with the user using 'ask_user'. Ask only one question at a time to avoid information overload.
-- **Proportionate to Complexity**: Simple tasks MUST NOT be over-engineered. If a task is straightforward, use a **single phase** with a few tasks. Multiple phases are only needed for complex, multi-step projects. 
+- **Proportionate to Complexity**: The plan's scope and structure must match the task's complexity — never over-engineer. See the Simplicity Rule in Step 2 for concrete limits.
 
 ## Steps
 
@@ -44,17 +44,23 @@ Take the user's input, conduct deep analysis and reasoning, and produce a **comp
 
 Organize the plan into a clear hierarchy. **Every element must be verifiable.**
 
+**⚠️ Simplicity Rule** (determine structure before defining details): The plan's structure must be proportional to the task's complexity. **Default to the simplest structure that adequately covers the work.**
+
+- **Simple tasks** (bug fixes, small features, single-module changes): Use **exactly one phase** with 2-5 focused tasks. Do NOT split into multiple phases just to follow the template.
+- **Moderate tasks** (multi-module features, moderate refactoring): Use at most **3 phases**, each with at most **5 tasks**.
+- **Complex tasks** (new systems, large-scale refactoring, multi-service coordination): May exceed 3 phases or 5 tasks per phase, but **must justify** why simpler structure is insufficient.
+
+In all cases: **prefer fewer phases with slightly larger tasks over many small phases.** A single phase with 4 well-defined tasks is almost always better than 3 phases of 1-2 tasks each.
+
 #### Phase
 Each phase is a major milestone, ordered logically. Each phase must have explicit **phase-level acceptance criteria** — what counts as "done" for this phase.
-
-**⚠️ Simplicity Rule**: For simple tasks, use **exactly one phase**. Do not split into multiple phases just to follow the template. A single-phase plan with 2-5 focused tasks is perfect for straightforward work. Multiple phases only when the work truly spans multiple distinct milestones (e.g., "Setup" → "Core Feature" → "Testing & Polish").
 
 #### Task
 Each phase contains concrete tasks. Every task must include:
 - **Goal**: What the task aims to achieve
 - **Steps**: Specific, executable step descriptions
 - **Expected output**: What concrete artifacts result (files, APIs, passing tests, etc.)
-- **Acceptance Criteria (AC)**: **Must** list 2~5 specific, measurable criteria. Good ACs answer "How do I know this task is done and done right?"
+- **Acceptance Criteria (AC)**: **Must** list 2-5 specific, measurable criteria. Good ACs answer "How do I know this task is done and done right?"
   - ✅ Good: "After successful registration, the user receives an email with a verification link. Clicking the link sets the account status to 'verified'."
   - ❌ Bad: "User registration works correctly."
 
