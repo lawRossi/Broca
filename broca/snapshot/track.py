@@ -271,8 +271,33 @@ class SnapshotTracker:
                 logger.info("临时文件为空，跳过稀疏添加")
                 return False
         except git.GitCommandError as e:
-            logger.error(f"稀疏添加失败: {e}")
-            return False
+            logger.warning(f"批量稀疏添加失败，尝试逐文件添加: {e}")
+            return await self._stage_files_individual(file_paths)
         finally:
             # 清理临时文件
             os.unlink(temp_file)
+
+    async def _stage_files_individual(self, file_paths: List[str]) -> bool:
+        """逐文件添加（批量添加失败时的兜底策略）"""
+        ok, fail = 0, 0
+        failed: list[str] = []
+        for fp in file_paths:
+            if not fp:
+                continue
+            try:
+                await self.git_manager._run_git_command(
+                    "add", "--all", "--", fp
+                )
+                ok += 1
+            except git.GitCommandError as e:
+                fail += 1
+                failed.append(fp)
+                logger.debug(f"跳过无法添加的文件: {fp}: {e}")
+        if ok:
+            logger.info(
+                f"逐文件添加: 成功 {ok}/{ok + fail}"
+                + (f", 跳过 {fail} 个: {failed[:5]}..." if fail else "")
+            )
+            return True
+        logger.error(f"所有文件均添加失败 ({fail} 个)")
+        return False

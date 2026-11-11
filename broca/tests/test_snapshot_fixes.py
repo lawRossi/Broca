@@ -623,3 +623,145 @@ class TestGitManagerLifecycle:
         assert normalized not in GitManager._instances, (
             "After reset(), instance should be removed from _instances"
         )
+
+
+# ============================================================
+# TestSymlinkResilience (Task 1.2)
+# ============================================================
+
+
+class TestSymlinkResilience:
+    """Verify _stage_files falls back to per-file add when batch add fails.
+
+    The batch ``git add --all --pathspec-from-file`` command fails with
+    exit 128 when any pathspec is "beyond a symbolic link". The fallback
+    (``_stage_files_individual``) retries each file independently so that
+    only the problematic files are skipped, not the entire snapshot.
+    """
+
+    @pytest.mark.asyncio
+    async def test_stage_files_batch_fallback_to_individual(self, workspace, tracker):
+        """Batch add fails → individual add is called → returns True if any succeed."""
+        import git as git_module
+
+        batch_calls = []
+        individual_calls = []
+
+        async def mock_run_git(*args, **kwargs):
+            # Detect whether this is a batch add or an individual add
+            if "--pathspec-from-file" in " ".join(str(a) for a in args):
+                batch_calls.append(args)
+                # Simulate symlink error
+                raise git_module.GitCommandError(
+                    "git add", 128,
+                    b"fatal: pathspec 'weights/x.onnx' is beyond a symbolic link"
+                )
+            elif "--" in args and args[0] == "add":
+                individual_calls.append(args)
+                return ""
+            return ""
+
+        gm = tracker.git_manager
+        gm.ensure_initialized()
+        with patch.object(gm, "_run_git_command", side_effect=mock_run_git):
+            result = await tracker._stage_files(["a.txt", "b.txt"])
+
+        assert result is True, "Should return True when at least one file succeeds"
+        assert len(batch_calls) == 1, "Batch add should have been attempted once"
+        assert len(individual_calls) == 2, (
+            f"Individual add should be called for both files, got {len(individual_calls)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_stage_files_all_individual_fail(self, workspace, tracker):
+        """All individual adds fail → returns False."""
+        import git as git_module
+
+        async def mock_run_git(*args, **kwargs):
+            raise git_module.GitCommandError(
+                "git add", 128, b"fatal: pathspec is beyond a symbolic link"
+            )
+
+        gm = tracker.git_manager
+        gm.ensure_initialized()
+        with patch.object(gm, "_run_git_command", side_effect=mock_run_git):
+            result = await tracker._stage_files(["a.txt", "b.txt"])
+
+        assert result is False, "Should return False when all files fail"
+
+    @pytest.mark.asyncio
+    async def test_stage_files_batch_success_no_fallback(self, workspace, tracker):
+        """Batch add succeeds → individual add is never called (zero overhead)."""
+        individual_calls = []
+
+        async def mock_run_git(*args, **kwargs):
+            if "--" in args and args[0] == "add":
+                individual_calls.append(args)
+            return ""
+
+        gm = tracker.git_manager
+        gm.ensure_initialized()
+        with patch.object(gm, "_run_git_command", side_effect=mock_run_git):
+            result = await tracker._stage_files(["a.txt", "b.txt"])
+
+        assert result is True, "Batch add should succeed"
+        assert len(individual_calls) == 0, (
+            "Individual add should NOT be called when batch succeeds"
+        )
+
+    @pytest.mark.asyncio
+    async def test_track_with_symlink_dir_real(self, workspace, tracker):
+        """Integration: workspace has a symlink dir + normal file → track() succeeds."""
+        import git as git_module
+
+        # Set up: target dir outside workspace with a file
+        target_dir = Path(workspace).parent / "symlink_target_test"
+        target_dir.mkdir(parents=True, exist_ok=True)
+        (target_dir / "data.txt").write_text("inside symlink target\n")
+
+        # Create symlink inside workspace
+        link_name = "weights"
+        link_path = Path(workspace, link_name)
+        if link_path.exists() or link_path.is_symlink():
+            link_path.unlink()
+        link_path.symlink_to(target_dir)
+
+        # Create a normal file
+        normal_file = Path(workspace, "normal.txt")
+        normal_file.write_text("normal content\n")
+
+        # Initialize the git manager (which creates the snapshot repo)
+        gm = tracker.git_manager
+        gm.ensure_initialized()
+
+        # First commit: add the symlink + normal file to establish a baseline
+        await gm._run_git_command("add", "--", "normal.txt")
+        await gm._run_git_command("commit", "-m", "baseline")
+
+        # Now modify the normal file
+        normal_file.write_text("modified content\n")
+
+        # Track should succeed even though symlink paths may cause git add errors
+        tree_hash = await tracker.track()
+        assert tree_hash, "track() should return a valid tree hash"
+
+        # Cleanup
+        if link_path.is_symlink():
+            link_path.unlink()
+        if target_dir.exists():
+            import shutil
+            shutil.rmtree(target_dir, ignore_errors=True)
+
+    @pytest.mark.asyncio
+    async def test_track_normal_workspace_unaffected(self, workspace, tracker):
+        """No symlinks → normal track() works as before."""
+        Path(workspace, "file1.txt").write_text("content 1\n")
+        Path(workspace, "file2.txt").write_text("content 2\n")
+
+        hash1 = await tracker.track()
+        assert hash1, "track() should return a non-empty hash"
+
+        # Modify and track again
+        Path(workspace, "file1.txt").write_text("modified 1\n")
+        hash2 = await tracker.track()
+        assert hash2 != hash1, "hash should change after modification"
