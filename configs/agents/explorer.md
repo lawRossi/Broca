@@ -1,6 +1,7 @@
 ---
 name: explorer
 role: sub-agent
+enable_snapshot_tracking: false
 tools: bash,edit_file,glob,grep,list_dir,read_file,tree_dir
 ---
 

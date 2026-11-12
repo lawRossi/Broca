@@ -30,9 +30,13 @@ if TYPE_CHECKING:
 
 logger = get_logger(__name__)
 
-#: Upper bound (seconds) for acquiring the snapshot lock off the event loop.
-#: Keeps a wedged/legacy manager from stalling a step indefinitely.
-DEFAULT_LOCK_TIMEOUT = 5.0
+#: Upper bound (seconds) for *waiting* on the snapshot lock off the event loop.
+#: The lock is held for the whole step by the owning process, so a contended
+#: step may have to wait for another process's step to finish.  This is only a
+#: last-resort guard against a wedged holder (a live process stuck mid-git);
+#: normal contention resolves in milliseconds.  Override via
+#: ``config.snapshot_lock_timeout``.
+DEFAULT_LOCK_TIMEOUT = 30.0
 
 
 class SnapshotHook(LoopHook):
@@ -59,7 +63,9 @@ class SnapshotHook(LoopHook):
         self._step_start_hash: Optional[str] = None
         self._turn_modified_files: set[str] = set()
         self._lock_held = False
-        self._lock_timeout = DEFAULT_LOCK_TIMEOUT
+        self._lock_timeout = float(
+            getattr(config, "snapshot_lock_timeout", DEFAULT_LOCK_TIMEOUT)
+        )
 
     # ------------------------------------------------------------------
     # Gating
@@ -107,9 +113,9 @@ class SnapshotHook(LoopHook):
             return
         try:
             if not await self._acquire_lock():
-                # Another process is snapshotting this workspace right now.
-                # Degrade gracefully: skip the snapshot for this step instead
-                # of stalling the event loop on a blocking ``flock``.
+                # The bounded wait timed out (a wedged holder). Degrade as a
+                # last resort: skip the snapshot for this step instead of
+                # stalling the turn indefinitely.
                 return
             snapshot_hash = await self._snapshot_manager.track(self._workspace)
             self._step_start_hash = snapshot_hash
@@ -161,29 +167,33 @@ class SnapshotHook(LoopHook):
         tool timeouts all live on that loop) whenever another session/sub-agent
         process holds ``.snapshot.lock`` for the same workspace.
 
-        So: try a **non-blocking** acquire inside a worker thread. If the lock
-        is busy we skip snapshot capture for this step — losing one undo point
-        is far cheaper than a frozen session.
+        So: perform a **blocking** acquire inside a worker thread.  When the
+        lock is busy we *wait* for it (the event loop stays free) instead of
+        skipping the snapshot — dropping an undo point every time two processes
+        snapshot the same workspace was the wrong trade-off.  The wait is
+        bounded by ``_lock_timeout`` purely as a guard against a wedged holder;
+        real contention (another process finishing its step) resolves quickly.
 
         Returns:
-            ``True`` when the lock is held by this hook, ``False`` otherwise.
+            ``True`` when the lock is held by this hook, ``False`` only when the
+            bounded wait timed out (last-resort degradation).
         """
         if self._snapshot_manager is None:
             return False
         future = asyncio.ensure_future(
-            asyncio.to_thread(self._try_acquire_nonblocking)
+            asyncio.to_thread(self._try_acquire_blocking)
         )
         try:
             acquired = await asyncio.wait_for(
                 asyncio.shield(future), timeout=self._lock_timeout
             )
         except asyncio.TimeoutError:
-            # The worker thread keeps running: make sure a late acquire is
-            # released instead of leaking the cross-process lock forever.
+            # The worker thread keeps blocking on the lock: make sure a late
+            # acquire is released instead of leaking the cross-process lock.
             future.add_done_callback(self._release_late_acquire)
             logger.warning(
-                "Snapshot lock acquisition timed out after %.1fs, skipping "
-                "snapshot for this step",
+                "Snapshot lock still busy after %.1fs (another writer is "
+                "snapshotting this workspace), skipping snapshot for this step",
                 self._lock_timeout,
             )
             return False
@@ -191,10 +201,6 @@ class SnapshotHook(LoopHook):
             logger.warning(f"Failed to acquire snapshot lock: {e}")
             return False
         if not acquired:
-            logger.info(
-                "Snapshot lock busy (another writer is snapshotting this "
-                "workspace), skipping snapshot for this step"
-            )
             return False
         self._lock_held = True
         return True
@@ -213,17 +219,21 @@ class SnapshotHook(LoopHook):
         except Exception as e:  # cancelled / raised in the worker thread
             logger.debug(f"Late snapshot lock acquire failed: {e}")
 
-    def _try_acquire_nonblocking(self) -> bool:
-        """Worker-thread half of :meth:`_acquire_lock` (never blocks the loop)."""
+    def _try_acquire_blocking(self) -> bool:
+        """Worker-thread half of :meth:`_acquire_lock` (blocks the *thread* only).
+
+        Blocks the calling worker thread until the cross-process lock is
+        available, so the event loop is never frozen while we wait.
+        """
         acquire = self._snapshot_manager.acquire_lock
         try:
             params = inspect.signature(acquire).parameters
         except (TypeError, ValueError):  # builtins / C callables
             params = {}
         if "blocking" in params:
-            return acquire(blocking=False) is not False
-        # Legacy manager without the ``blocking`` kwarg: nothing we can do but
-        # call it (still off the event loop) — bounded by ``_lock_timeout``.
+            return acquire(blocking=True) is not False
+        # Legacy manager without the ``blocking`` kwarg: default behaviour is
+        # blocking, so just call it (still off the event loop).
         acquire()
         return True
 

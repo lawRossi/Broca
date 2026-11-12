@@ -13,8 +13,10 @@ These tests pin the fixes:
 1. read-only tools are classified by ``Tool.is_readonly`` (source of truth),
    with ``ToolManager.READONLY_TOOLS`` kept as a name-based fallback;
 2. a ``load_skill``-only step no longer triggers snapshot capture;
-3. a busy snapshot lock degrades to "skip this snapshot" instead of blocking;
-4. the lock acquisition runs off the event loop (never freezes it).
+3. a busy snapshot lock makes the step *wait* (off the event loop) and still
+   captures the snapshot — it is no longer silently skipped;
+4. the lock acquisition runs off the event loop (never freezes it); a bounded
+   timeout is the only last-resort degradation against a wedged holder.
 """
 
 from __future__ import annotations
@@ -215,7 +217,7 @@ class TestLoadSkillStepSkipsSnapshot:
         await hook.on_step_end(ctx)
 
         assert ctx.has_write_ops is True
-        assert manager.acquire_calls == [False]  # non-blocking acquire
+        assert manager.acquire_calls == [True]  # blocking (waiting) acquire
         assert manager.track_calls >= 1
         assert manager.release_calls == 1
 
@@ -225,7 +227,8 @@ class TestLoadSkillStepSkipsSnapshot:
 
 class TestSnapshotLockNonBlocking:
     @pytest.mark.asyncio
-    async def test_busy_lock_skips_snapshot_instead_of_blocking(self):
+    async def test_acquire_failure_skips_snapshot(self):
+        """A manager that reports failure (lock unavailable) degrades to skip."""
         manager = FakeSnapshotManager(acquire_result=False)
         hook = SnapshotHook(
             manager, "/tmp/ws", FakeConfig(), tool_executor=FakeToolExecutor(set())
@@ -237,10 +240,31 @@ class TestSnapshotLockNonBlocking:
         elapsed = time.monotonic() - started
 
         assert elapsed < 1.0
-        assert manager.acquire_calls == [False]
+        assert manager.acquire_calls == [True]
         assert manager.track_calls == 0  # degraded: no snapshot this step
         assert hook._lock_held is False
         assert ctx.step_start_snapshot == ""
+
+    @pytest.mark.asyncio
+    async def test_contended_lock_waits_and_still_snapshots(self):
+        """A busy lock must NOT be skipped: the hook waits and snapshots anyway.
+
+        ``acquire_delay`` models another process finishing its step and
+        releasing the lock: the blocking acquire returns ``True`` afterwards.
+        The snapshot must be captured (no silent undo-point loss).
+        """
+        manager = FakeSnapshotManager(acquire_result=True, acquire_delay=0.2)
+        hook = SnapshotHook(
+            manager, "/tmp/ws", FakeConfig(), tool_executor=FakeToolExecutor(set())
+        )
+
+        ctx = make_step_ctx(["edit_file"])
+        await hook.on_step_start(ctx)
+
+        assert manager.acquire_calls == [True]
+        assert manager.track_calls == 1  # snapshot captured, not skipped
+        assert hook._lock_held is True
+        assert ctx.step_start_snapshot != ""
 
     @pytest.mark.asyncio
     async def test_no_lock_release_when_acquire_failed(self):

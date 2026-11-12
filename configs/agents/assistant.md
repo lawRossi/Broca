@@ -1,6 +1,7 @@
 ---
 role: sub-agent
 name: assistant
+enable_snapshot_tracking: false
 tools: ask_user,bash,cron,edit_file,glob,grep,list_dir,load_skill,read_file,task_management,todo_management,tree_dir,web_fetch,web_search,write_file
 skills: all
 ---
