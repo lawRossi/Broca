@@ -75,6 +75,7 @@ const configForm = ref<any>({
   save_history: true,
   enable_context_compression: false,
   enable_snapshot_tracking: true,
+  bash_security_check: true,
   tool_execution_mode: '',
   max_parallel_tools: null as number | null,
   skill_loading_mode: 'eager',
@@ -123,6 +124,7 @@ function resetConfigForm() {
     save_history: true,
     enable_context_compression: false,
     enable_snapshot_tracking: true,
+    bash_security_check: true,
     tool_execution_mode: '',
     max_parallel_tools: null as number | null,
     skill_loading_mode: 'eager',
@@ -312,6 +314,7 @@ function initConfigEdit() {
     save_history: config.save_history ?? true,
     enable_context_compression: config.enable_context_compression ?? false,
     enable_snapshot_tracking: config.enable_snapshot_tracking ?? true,
+    bash_security_check: config.bash_security_check ?? true,
     tool_execution_mode: config.tool_execution_mode ?? '',
     max_parallel_tools: config.max_parallel_tools ?? null,
     skill_loading_mode: config.skill_loading_mode ?? 'eager',
@@ -367,6 +370,7 @@ function buildConfigContent(): Record<string, any> {
     save_history: form.save_history,
     enable_context_compression: form.enable_context_compression,
     enable_snapshot_tracking: form.enable_snapshot_tracking,
+    bash_security_check: form.bash_security_check,
     tool_execution_mode: form.tool_execution_mode || undefined,
     max_parallel_tools: form.max_parallel_tools || undefined,
     skill_loading_mode: form.skill_loading_mode,
@@ -863,6 +867,10 @@ const isOpen = computed(() => chatStore.showLeftSidebar)
                   <label class="switch-item">
                     <span>快照跟踪（undo 恢复文件）</span>
                     <input type="checkbox" v-model="configForm.enable_snapshot_tracking" />
+                  </label>
+                  <label class="switch-item">
+                    <span>Bash 安全代码检查</span>
+                    <input type="checkbox" v-model="configForm.bash_security_check" />
                   </label>
                   <label class="switch-item">
                     <span>工具执行方式</span>

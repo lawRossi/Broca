@@ -79,6 +79,10 @@ class Bash(Tool):
         if not code:
             return None
 
+        # 安全检查可按 agent 配置关闭（默认开启）
+        if not self._is_security_check_enabled(context):
+            return None
+
         # 所有命令（含后台）统一做安全检查
         is_safe, reason, snippet = self._validate_code(code)
         if not is_safe:
@@ -106,6 +110,18 @@ class Bash(Tool):
             return await self._run_background(code, context)
 
         return await self._run_code_async(code, workspace=context.workspace)
+
+    @staticmethod
+    def _is_security_check_enabled(context: ToolCallContext) -> bool:
+        """Return whether bash security checking is enabled for this agent.
+
+        Reads ``context.agent.config.bash_security_check`` and defaults to
+        ``True`` when the agent/config is unavailable, so the safe behavior
+        (perform the check) is preserved for any legacy or custom agents.
+        """
+        agent = getattr(context, "agent", None)
+        config = getattr(agent, "config", None) if agent is not None else None
+        return bool(getattr(config, "bash_security_check", True))
 
     def _validate_code(self, code: str) -> tuple[bool, str, str]:
         """Validate code using shared security module.

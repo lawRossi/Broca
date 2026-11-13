@@ -59,6 +59,7 @@ const configForm = ref<any>({
   save_history: true,
   enable_context_compression: false,
   enable_snapshot_tracking: true,
+  bash_security_check: true,
   tool_execution_mode: '',
   max_parallel_tools: null as number | null,
   skill_loading_mode: 'eager',
@@ -284,6 +285,7 @@ const initConfigEdit = async () => {
     save_history: config.save_history ?? true,
     enable_context_compression: config.enable_context_compression ?? false,
     enable_snapshot_tracking: config.enable_snapshot_tracking ?? true,
+    bash_security_check: config.bash_security_check ?? true,
     tool_execution_mode: config.tool_execution_mode ?? '',
     max_parallel_tools: config.max_parallel_tools ?? null,
     skill_loading_mode: config.skill_loading_mode ?? 'eager',
@@ -343,6 +345,7 @@ const buildConfigContent = (): Record<string, any> => {
     save_history: form.save_history,
     enable_context_compression: form.enable_context_compression,
     enable_snapshot_tracking: form.enable_snapshot_tracking,
+    bash_security_check: form.bash_security_check,
     tool_execution_mode: form.tool_execution_mode || undefined,
     max_parallel_tools: form.max_parallel_tools || undefined,
     skill_loading_mode: form.skill_loading_mode,
@@ -421,6 +424,7 @@ const closeConfigDialog = () => {
     save_history: true,
     enable_context_compression: false,
     enable_snapshot_tracking: true,
+    bash_security_check: true,
     tool_execution_mode: '',
     max_parallel_tools: null as number | null,
     workspace: '',
@@ -830,6 +834,10 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <span class="text-xs text-gray-600">快照跟踪（undo 恢复文件）</span>
             <el-switch v-model="configForm.enable_snapshot_tracking" size="small" />
+          </div>
+          <div class="flex items-center justify-between">
+            <span class="text-xs text-gray-600">Bash 安全代码检查</span>
+            <el-switch v-model="configForm.bash_security_check" size="small" />
           </div>
           <div class="flex items-center justify-between">
             <span class="text-xs text-gray-600">工具执行方式</span>
