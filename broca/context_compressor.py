@@ -647,8 +647,8 @@ class SessionMemoryCompressor(ContextCompressor):
         agent_factory = ComponentRegistry.get_instance().get(AgentFactoryABC)
         session_manager = compressor_context.session_manager
         agent_id = session_manager.session_id + self.AGENT_ID_POSTFIX
-        agent_config = await session_manager.get_agent_config(agent_id)
-        if agent_config is None:
+        existing = await session_manager.get_agent_config(agent_id)
+        if existing is None:
             agent_config = self._config.to_dict()
             agent_config["name"] = "session-memory-agent"
             agent_config["role"] = "session_memory_manager"
@@ -662,18 +662,19 @@ class SessionMemoryCompressor(ContextCompressor):
                 agent_id=agent_id,
             )
         else:
-            agent_config["provider"] = compressor_context.provider
-            agent_config["model"] = compressor_context.model
             sub_agent = agent_factory.get_agent(  # type: ignore[assignment]
-                session_manager.session_id, agent_config["name"]
+                session_manager.session_id, existing["name"]
             )
             if sub_agent is None:
                 sub_agent = await agent_factory.restore_agent(
                     agent_id, session_manager
                 )
-            sub_agent.config.provider = compressor_context.provider
-            sub_agent.config.model = compressor_context.model
             sub_agent.config.interactive = False  # 兼容已存在的旧 agent 实例
+
+        # 子 agent 始终跟随主 agent 当前的 LLM 选择（可能在 agent sidebar 改过）。
+        # 实例被 AgentFactory 缓存跨轮复用，所以每次执行都要重新对齐。
+        sub_agent.config.provider = compressor_context.provider
+        sub_agent.config.model = compressor_context.model
 
         if not sub_agent.running:
             task = asyncio.create_task(sub_agent.start())

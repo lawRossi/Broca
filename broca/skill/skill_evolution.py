@@ -65,6 +65,10 @@ async def run_skill_sub_agent(
             if sub_agent is None:
                 sub_agent = await agent_factory.restore_agent(agent_id, session_manager)
 
+        # 子 agent 始终跟随主 agent 当前的 LLM 选择（可能在 agent sidebar 改过）
+        sub_agent.config.provider = agent.config.provider
+        sub_agent.config.model = agent.config.model
+
         # 确保子 Agent 在运行
         if not sub_agent.running:
             task = asyncio.create_task(sub_agent.start())

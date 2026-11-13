@@ -51,8 +51,7 @@ class RetryLLMStrategy(LLMStrategy):
 
     def __init__(self) -> None:
         self._llm_client: Optional["LLMClient"] = None
-        self._provider: str = ""
-        self._model: str = ""
+        self._config: Any = None
         self._max_errors: int = 3
         self._retry_delay: float = 5
         self._timeout: float = 300
@@ -66,12 +65,27 @@ class RetryLLMStrategy(LLMStrategy):
         for these three, so ``execution_config`` wins in practice).
         """
         self._llm_client = llm_client
-        self._provider = getattr(config, "provider", "")
-        self._model = getattr(config, "model", "")
+        self._config = config
         exec_cfg = getattr(config, "execution_config", None)
         self._max_errors = _resolve(config, exec_cfg, "step_max_errors", 3)
         self._retry_delay = _resolve(config, exec_cfg, "llm_retry_delay", 5)
         self._timeout = _resolve(config, exec_cfg, "llm_timeout", 300)
+
+    @property
+    def _provider(self) -> str:
+        """Read the target from the config on every call.
+
+        Deliberately *not* snapshotted in ``initialize()``: agents are cached
+        and reused across turns, so a config change (agent sidebar) or a sub
+        agent that must follow the main agent's LLM choice only has to update
+        ``AgentConfig.provider`` / ``.model``.
+        """
+        return getattr(self._config, "provider", "")
+
+    @property
+    def _model(self) -> str:
+        """See :attr:`_provider`."""
+        return getattr(self._config, "model", "")
 
     def reset(self) -> None:
         """Reset the consecutive rate-limit counter."""
@@ -80,6 +94,7 @@ class RetryLLMStrategy(LLMStrategy):
     # ------------------------------------------------------------------
     # Public entry point
     # ------------------------------------------------------------------
+
     async def call(
         self,
         history: list,
