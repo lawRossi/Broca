@@ -532,6 +532,10 @@ export const useChatStore = defineStore('chat', () => {
     const turn = turnSummaries.value[idx]
 
     if (message.message_type === 'user_message') {
+      // 简洁模式：工具注入的内部消息（如 read_image 注入的 image message）不参与
+      // TurnCard 聚合。这类消息 data.tool_injected=true，仅供 LLM context，
+      // 明细模式可展示，但简洁模式摘要里应隐藏。
+      if (message.data?.tool_injected) return
       // 去重：同一 message_id 不重复追加（mid-step 广播可能触发第二次）
       const seenUserIds = _turnSeenUserMessageIds.get(turnId) || new Set()
       if (seenUserIds.has(message.message_id)) {

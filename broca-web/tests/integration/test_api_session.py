@@ -11,6 +11,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import AsyncClient
 
+from broca.session.models import Message, MessageRole, MessageType
+
 
 class TestCreateSessionAPI:
     """Test POST /api/session/sessions."""
@@ -326,6 +328,49 @@ class TestSessionMessagesAPI:
             assert response.status_code == 200
 
     @pytest.mark.asyncio
+    async def test_get_messages_includes_tool_injected(
+        self, async_client: AsyncClient, auth_headers: dict, sample_session
+    ):
+        """Regression: tool-injected internal messages must NOT be filtered out."""
+        injected = Message(
+            message_id="m-injected",
+            message_type=MessageType.USER_MESSAGE,
+            role=MessageRole.USER,
+            session_id="test-session-001",
+            data={"content": "image", "tool_injected": True},
+        )
+        normal = Message(
+            message_id="m-normal",
+            message_type=MessageType.USER_MESSAGE,
+            role=MessageRole.USER,
+            session_id="test-session-001",
+            data={"content": "hi"},
+        )
+        with (
+            patch("app.api.session.get_session_service") as mock_get_session_service,
+            patch("app.api.session.get_message_service") as mock_get_message_service,
+        ):
+            mock_session_svc = MagicMock()
+            mock_session_svc.get = AsyncMock(return_value=sample_session)
+            mock_get_session_service.return_value = mock_session_svc
+
+            mock_msg_svc = MagicMock()
+            mock_msg_svc.count = AsyncMock(return_value=2)
+            mock_msg_svc.get_messages_by_session = AsyncMock(return_value=[normal, injected])
+            mock_get_message_service.return_value = mock_msg_svc
+
+            response = await async_client.get(
+                "/api/session/test-session-001/messages",
+                headers=auth_headers,
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            ids = {m["message_id"] for m in data["data"]["messages"]}
+            assert ids == {"m-injected", "m-normal"}
+            assert data["data"]["total"] == 2
+
+    @pytest.mark.asyncio
     async def test_get_messages_not_found(self, async_client: AsyncClient, auth_headers: dict):
         """Non-existent session should return 404."""
         with patch("app.api.session.get_session_service") as mock_get_session_service:
@@ -364,6 +409,48 @@ class TestSessionSearchAPI:
             )
 
             assert response.status_code == 200
+
+    @pytest.mark.asyncio
+    async def test_search_includes_tool_injected(
+        self, async_client: AsyncClient, auth_headers: dict, sample_session
+    ):
+        """Regression: search must NOT filter out tool-injected internal messages."""
+        injected = Message(
+            message_id="m-injected",
+            message_type=MessageType.USER_MESSAGE,
+            role=MessageRole.USER,
+            session_id="test-session-001",
+            data={"content": "image", "tool_injected": True},
+        )
+        normal = Message(
+            message_id="m-normal",
+            message_type=MessageType.USER_MESSAGE,
+            role=MessageRole.USER,
+            session_id="test-session-001",
+            data={"content": "hello"},
+        )
+        with (
+            patch("app.api.session.get_session_service") as mock_get_session_service,
+            patch("app.api.session.get_message_service") as mock_get_message_service,
+        ):
+            mock_session_svc = MagicMock()
+            mock_session_svc.get = AsyncMock(return_value=sample_session)
+            mock_get_session_service.return_value = mock_session_svc
+
+            mock_msg_svc = MagicMock()
+            mock_msg_svc.search_messages = AsyncMock(return_value=([normal, injected], 2))
+            mock_get_message_service.return_value = mock_msg_svc
+
+            response = await async_client.get(
+                "/api/session/test-session-001/messages/search?keyword=hello",
+                headers=auth_headers,
+            )
+
+            assert response.status_code == 200
+            data = response.json()
+            ids = {m["message_id"] for m in data["data"]["messages"]}
+            assert ids == {"m-injected", "m-normal"}
+            assert data["data"]["total"] == 2
 
     @pytest.mark.asyncio
     async def test_search_filters(self, async_client: AsyncClient, auth_headers: dict, sample_session):

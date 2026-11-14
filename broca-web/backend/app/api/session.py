@@ -274,10 +274,6 @@ async def get_session_messages(
             )
             messages.reverse()
 
-        # 过滤掉工具注入的内部消息（如 read_image 注入的 image message），
-        # 这些消息仅用于 LLM context，不对前端展示
-        messages = [m for m in messages if not (m.data and m.data.get("tool_injected"))]
-
         return ApiResponse.success({"messages": messages, "total": total, "skip": skip, "limit": limit})
     except HTTPException:
         raise
@@ -329,9 +325,6 @@ async def search_session_messages(
             skip=skip,
             limit=limit,
         )
-
-        # 过滤工具注入的内部消息
-        messages = [m for m in messages if not (m.data and m.data.get("tool_injected"))]
 
         return ApiResponse.success({
             "messages": messages,

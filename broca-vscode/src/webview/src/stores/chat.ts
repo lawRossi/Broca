@@ -1333,6 +1333,9 @@ export const useChatStore = defineStore('chat', () => {
 
     switch (message.message_type) {
       case 'user_message':
+        // 简洁模式：工具注入的内部消息（如 read_image 注入的 image message）
+        // 不参与 TurnCard 聚合（data.tool_injected=true，仅供 LLM context）。
+        if (message.data?.tool_injected) break
         if (!turn.userMessage) {
           // 优先使用 raw_input（与明细模式 ChatMessageItem 一致）
           if (message.data?.raw_input !== undefined) {
