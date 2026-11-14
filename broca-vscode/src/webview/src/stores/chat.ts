@@ -414,9 +414,12 @@ export const useChatStore = defineStore('chat', () => {
           break
 
         case 'refreshSession':
-          // 离开超过5分钟后回到页面，自动刷新（复用现有刷新按钮的重刷新逻辑）
-          console.log('[ChatStore] refreshSession triggered')
-          postMessage({ type: 'refreshChat' })
+          // 离开超过 1 分钟后回到页面，自动刷新历史。
+          // 这里做原地软刷新（只重载历史），不重建 panel：
+          // panel 在隐藏期间仍存活（retainContextWhenHidden），socket 连接还在，
+          // 重建 panel 会把未发送的输入草稿（chatStore.inputText）一起清掉。
+          console.log('[ChatStore] refreshSession triggered, soft reload history')
+          loadHistory(0, 50)
           break
       }
     })

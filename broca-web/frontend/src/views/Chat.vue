@@ -4,6 +4,7 @@ import { useRoute } from 'vue-router'
 import { Connection } from '@element-plus/icons-vue'
 import { useChatStore } from '@/stores'
 import { sessionApi, type Session } from '@/api/session'
+import { createLeaveTracker } from '@/utils/pageRefresh'
 import ChatHeader from '@/components/ChatHeader.vue'
 import AgentSidebar from '@/components/AgentSidebar.vue'
 import ChatMessageList from '@/components/ChatMessageList.vue'
@@ -79,31 +80,33 @@ watch(executionId, (newExecId, oldExecId) => {
   }
 })
 
-// 离开页面检测：用户离开页面超过超时时间（1分钟），回来时自动刷新
-const LEAVE_TIMEOUT_MS = 60 * 1000 // 1 分钟
+// 离开页面检测：用户离开页面超过超时时间（1分钟），回来时软刷新会话数据
+const leaveTracker = createLeaveTracker()
 
-let _leaveTimestamp = 0
-// 记录页面加载时间，兜底后台打开标签页的场景
-const _pageLoadTimestamp = Date.now()
-
-function checkAndReload() {
-  const lastHidden = Math.max(_leaveTimestamp, _pageLoadTimestamp)
-  const elapsed = Date.now() - lastHidden
-  if (elapsed >= LEAVE_TIMEOUT_MS) {
-    location.reload()
+function refreshIfNeeded() {
+  if (!leaveTracker.onVisible()) return
+  // 软刷新：原地重载历史，保留未发送的输入草稿（chatStore.input）和滚动位置，
+  // 避免 location.reload() 把草稿一起清掉（与 VS Code 端行为对齐）
+  const sid = chatStore.sessionId
+  if (sid) {
+    chatStore.loadHistory(sid, false, chatStore.executionId)
+    chatStore.loadTurnHistory(sid, false, chatStore.executionId, true)
   }
-  _leaveTimestamp = 0
 }
 
 function onVisibilityChange() {
   if (document.hidden) {
-    _leaveTimestamp = Date.now()
+    leaveTracker.onHidden()
   } else {
-    checkAndReload()
+    refreshIfNeeded()
   }
 }
 
 onMounted(() => {
+  // 重置离开/加载时间戳，避免 SPA 路由复用模块时残留上次的值，
+  // 导致 pageshow(bfcache) 用旧的加载时间误判为「离开超过 1 分钟」而刷新
+  leaveTracker.reset()
+
   chatStore.init()
   chatStore.autoConnectAndSubscribe(executionId.value)
   loadSessionInfo()
@@ -114,13 +117,13 @@ onMounted(() => {
   window.addEventListener('pageshow', onPageShow)
   // 如果页面加载时就已经在后台，立即记录时间
   if (document.hidden) {
-    _leaveTimestamp = Date.now()
+    leaveTracker.onHidden()
   }
 })
 
 function onPageShow() {
   if (document.visibilityState === 'visible') {
-    checkAndReload()
+    refreshIfNeeded()
   }
 }
 
