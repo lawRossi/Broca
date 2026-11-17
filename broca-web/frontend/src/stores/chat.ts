@@ -55,7 +55,16 @@ interface TurnSummary {
   /** 错误恢复建议 */
   recoveryHint: string | null
   /** 用户发送的消息附件（图片/文件） */
-  userFiles: Array<{ name: string; url: string; path: string; size: number; type: string }> | null
+  userFiles: Array<{
+    name: string
+    url: string
+    path: string
+    size: number
+    type: string
+    storage_key?: string
+    local_path?: string
+    sha256?: string
+  }> | null
   /** 所有 user 消息（non-blocking 模式下一个 turn 可有多条） */
   userMessages: string[]
 }
@@ -1482,6 +1491,9 @@ export const useChatStore = defineStore('chat', () => {
       path: string
       size: number
       type: string
+      storage_key?: string
+      local_path?: string
+      sha256?: string
       upload_time: string
     }>
   ) => {

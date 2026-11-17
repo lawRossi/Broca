@@ -208,25 +208,96 @@ class TestFileValidation:
 
 class TestStorageValidation:
     @pytest.mark.asyncio
-    async def test_no_storage_configured(self, tool, context, dummy_image):
+    async def test_no_storage_configured_uses_local_ref(
+        self, tool, context, mock_agent, dummy_image
+    ):
+        """No cloud storage → local ref (no error, no S3 call)."""
+        ctx = ToolCallContext()
+        ctx.workspace = context.workspace
+        ctx.agent = mock_agent
+
         mock_cfg = MagicMock()
         mock_cfg.storage = MagicMock()
         mock_cfg.storage.backend = ""
         with patch("broca.tools.image.get_configs", return_value=mock_cfg):
-            result = await tool._execute({"file_path": dummy_image}, context)
-        assert result.status == ToolStatus.ERROR
-        assert "云端存储未配置" in result.content
-        assert result.extra_context_messages == []
+            result = await tool._execute({"file_path": dummy_image}, ctx)
+        assert result.status == ToolStatus.SUCCESS
+        assert result.extra_context_messages
+        from broca.media.ref import decode_media_ref
+
+        url = result.extra_context_messages[0]["llm_message"]["content"][0][
+            "image_url"
+        ]["url"]
+        meta = decode_media_ref(url)
+        assert meta is not None and meta["kind"] == "local"
+        assert os.path.exists(meta["path"])
 
     @pytest.mark.asyncio
-    async def test_invalid_backend(self, tool, context, dummy_image):
+    async def test_invalid_backend_uses_local_ref(
+        self, tool, context, mock_agent, dummy_image
+    ):
+        """Unknown backend ("s3") is treated as no-cloud → local ref."""
+        ctx = ToolCallContext()
+        ctx.workspace = context.workspace
+        ctx.agent = mock_agent
+
         mock_cfg = MagicMock()
         mock_cfg.storage = MagicMock()
         mock_cfg.storage.backend = "s3"  # not cloudflare/supabase
         with patch("broca.tools.image.get_configs", return_value=mock_cfg):
-            result = await tool._execute({"file_path": dummy_image}, context)
-        assert result.status == ToolStatus.ERROR
-        assert "云端存储未配置" in result.content
+            result = await tool._execute({"file_path": dummy_image}, ctx)
+        assert result.status == ToolStatus.SUCCESS
+        from broca.media.ref import decode_media_ref
+
+        url = result.extra_context_messages[0]["llm_message"]["content"][0][
+            "image_url"
+        ]["url"]
+        assert decode_media_ref(url)["kind"] == "local"
+
+
+class TestLocalRef:
+    """Local-ref behavior: no cloud storage, ref kind=local, sha256 correct."""
+
+    @pytest.mark.asyncio
+    async def test_local_ref_fields(self, tool, context, mock_agent, tmp_path):
+        import hashlib
+
+        img = tmp_path / "local.png"
+        content = b"\x89PNG\r\n\x1a\n" + b"\x01\x02\x03" * 50
+        img.write_bytes(content)
+        expected_sha = hashlib.sha256(content).hexdigest()
+
+        ctx = ToolCallContext()
+        ctx.workspace = str(tmp_path)
+        ctx.agent = mock_agent
+
+        mock_cfg = MagicMock()
+        mock_cfg.storage = MagicMock()
+        mock_cfg.storage.backend = ""
+
+        with patch("broca.tools.image.get_configs", return_value=mock_cfg):
+            result = await tool._execute({"file_path": str(img)}, ctx)
+
+        assert result.status == ToolStatus.SUCCESS
+        extra = result.extra_context_messages[0]
+        from broca.media.ref import decode_media_ref
+
+        url = extra["llm_message"]["content"][0]["image_url"]["url"]
+        assert url.startswith("ref://")
+        meta = decode_media_ref(url)
+        assert meta["kind"] == "local"
+        assert meta["sha256"] == expected_sha
+        assert meta["size"] == len(content)
+        assert meta["path"] == str(img.resolve())
+
+        # data.files carries display url + local_path + sha256 + size
+        f = extra["data"]["files"][0]
+        assert f["url"].startswith("/files/raw?path=")
+        assert f["local_path"] == str(img.resolve())
+        assert f["sha256"] == expected_sha
+        assert f["size"] == len(content)
+        assert "storage_key" not in f
+
 
 
 # ── S3 upload ─────────────────────────────────────────────────
@@ -277,9 +348,19 @@ class TestS3Upload:
         assert isinstance(content, list)
         assert content[0]["type"] == "image_url"
         assert "url" in content[0]["image_url"]
+        # ref is cloud kind with storage key
+        from broca.media.ref import decode_media_ref
+
+        meta = decode_media_ref(content[0]["image_url"]["url"])
+        assert meta["kind"] == "cloud"
+        assert meta["key"].startswith("uploads/")
+        assert meta["url"].startswith("https://")
         # DB data
         assert extra["data"]["files"][0]["name"] == "test.png"
         assert "https://" in extra["data"]["files"][0]["url"]
+        assert extra["data"]["files"][0]["storage_key"].startswith("uploads/")
+        assert "sha256" in extra["data"]["files"][0]
+        assert "size" in extra["data"]["files"][0]
 
     @pytest.mark.asyncio
     async def test_upload_success_supabase(
@@ -603,27 +684,26 @@ class TestParseMessageCompatibility:
             data=data,
         )
 
-        # Use the LLM client's parse_message
+        # Use the LLM client's parse_message (real instance so helper methods work)
         from broca.llm import LLMClient
 
-        # Create a minimal LLM config with image support
-        llm_client = MagicMock(spec=LLMClient)
-        llm_client.config = {
-            "openai": {
-                "base_url": "https://api.openai.com/v1",
-                "api_key": "sk-test",
-                "models": {
-                    "gpt-4o": {
-                        "model": "gpt-4o",
-                        "meta": {"modality": {"text": "", "image": {}}},
-                    }
-                },
+        llm_client = LLMClient(
+            config={
+                "openai": {
+                    "base_url": "https://api.openai.com/v1",
+                    "api_key": "sk-test",
+                    "models": {
+                        "gpt-4o": {
+                            "model": "gpt-4o",
+                            "meta": {"modality": {"text": "", "image": {}}},
+                        }
+                    },
+                }
             }
-        }
+        )
 
-        # parse_message is an instance method; call it with proper self
-        result = LLMClient.parse_message(
-            llm_client, provider="openai", model="gpt-4o", message=msg
+        result = llm_client.parse_message(
+            provider="openai", model="gpt-4o", message=msg
         )
 
         assert result["role"] == "user"

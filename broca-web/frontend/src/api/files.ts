@@ -67,7 +67,28 @@ export interface FileCompleteResponse {
   truncated?: boolean
 }
 
+export interface UploadResponse {
+  name: string
+  url: string
+  path: string
+  local_path: string
+  size: number
+  type: string
+  sha256: string
+}
+
 export const filesApi = {
+  /**
+   * 上传文件到后端本地落盘（无云存储时使用）
+   * 返回本地展示 URL（/files/raw?path=...）与本地路径，供 local ref 物化
+   */
+  async uploadFile(formData: FormData): Promise<UploadResponse> {
+    return request.post('/files/upload', formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 120000,
+    })
+  },
+
   /**
    * 获取文件列表
    */

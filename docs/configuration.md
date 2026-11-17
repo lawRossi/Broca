@@ -44,6 +44,7 @@ Broca 采用**纯文件配置**模型（不读取系统环境变量），配置�
 | `log_dir` | `~/.broca/logs` | 日志目录 |
 | `log_level` | `"INFO"` | 日志级别（production 下 DEBUG 强制降为 INFO） |
 | `llm_config_file` | `~/.broca/configs/llm_config.json` | LLM 配置文件路径 |
+| `decision_config_file` | — | 决策配置文件路径（可选） |
 | `agents_config_dir` | `~/.broca/configs/agents` | Agent 角色配置目录 |
 | `snapshot_home` | `~/.broca/snapshots` | 快照 Git 仓库目录 |
 | `components_config` | `""` | 组件覆盖配置路径 |
@@ -65,6 +66,7 @@ Broca 采用**纯文件配置**模型（不读取系统环境变量），配置�
 | `permission_request_timeout` | `90` | 权限请求等待超时（秒） |
 | `agent_query_timeout` | `300` | ask_user 等待超时（秒） |
 | `tool_execution_mode` | `"parallel"` | 工具执行模式 |
+| `execution_mode` | `"non_blocking"` | 执行模式：`non_blocking`（非阻塞）/ `blocking`（阻塞） |
 | `max_parallel_tools` | `10` | 并行模式最大并发数 |
 | `max_concurrent_runners` | `10` | 最大并发 session runner |
 | `runner_heartbeat_interval` | `5` | Runner 上报心跳间隔（秒） |
@@ -127,6 +129,62 @@ Broca 采用**纯文件配置**模型（不读取系统环境变量），配置�
 | `{provider}.base_url` | API 地址 |
 | `{provider}.api_key` | API Key（直接在此配置，无环境变量覆盖） |
 | `{provider}.models.{name}` | 模型配置（temperature, max_tokens 等） |
+| `{provider}.models.{name}.meta.modality` | 支持的模态（`text`/`image`/`video`/`audio`）；**只放 wire 允许键**（如 `image.detail`），不得放业务配置 |
+| `{provider}.models.{name}.meta.media_limits.max_inline_mb` | base64 内联阈值（MB，默认 4）。超过则先压缩，压不下去报错 |
+| `{provider}.files_api` | （可选）**provider 级**供应商原生文件上传策略；配置后该 provider 优先走 files_api，否则走 base64 |
+
+#### 媒体物化策略（ref → wire）
+
+消息历史/DB 中图片以轻量 `ref://` 保存（含 `sha256/mime/size` 与展示 URL），发请求前才物化为 wire 表示。单张媒体 part 的决策顺序：
+
+1. 该 model 的 `meta.modality` 不支持对应模态 → 降级为**文本链接**。
+2. 该 provider 配置了 `files_api`（**provider 级**，同一 provider 共享同一上传端点/认证/配额）→ **files_api 模式**：`size <= files_api.max_size_mb` 上传并以 file_id 引用；否则先压缩，仍超 → 报错。
+3. 未配置（或 `type` 未知/构造失败 → 安全兜底）→ **base64 模式**：`size <= media_limits.max_inline_mb` 内联 base64；否则先压缩，仍超 → 报错。
+4. **无 url 兜底**：任何失败都抛明确错误提醒用户，绝不静默回退为公网 url。
+
+> ⚠️ `media_limits` 必须放在 model 的 `meta` 下（**不得放进 `meta.modality.image`**——否则会被 `parse_message` 的 `image_part.update(modality["image"])` 混入发往 LLM 的 `image_url` part，造成非法参数/供应商报错）。`files_api` 则放在 **provider 级**（与 `base_url`/`api_key` 平级）。
+
+#### `{provider}.files_api` 字段
+
+| 字段 | 说明 | 默认 |
+|------|------|------|
+| `type` | 策略类型：`deepseek`（已实现）；`gemini`/`anthropic`/`openai` 预留 | 无（未配置即走 base64） |
+| `purpose` | 上传用途（DeepSeek `user_data`） | `user_data` |
+| `expires_seconds` | 文件保留秒数（3600–2592000）；file_id 缓存 TTL 取 `min(3天, 本值)` | 不设置=不过期 |
+| `max_size_mb` | files_api 单文件阈值（MB） | 按 provider，DeepSeek 64 |
+
+示例（`files_api` 位于 provider 级，与 `base_url`/`api_key` 平级）：
+
+```json
+"deepseek": {
+    "base_url": "https://api.deepseek.com/v1",
+    "api_key": "...",
+    "files_api": {
+        "type": "deepseek",
+        "purpose": "user_data",
+        "expires_seconds": 86400,
+        "max_size_mb": 64
+    },
+    "models": {
+        "deepseek-v4-flash": {
+            "model": "openai/deepseek-v4-flash",
+            "meta": {
+                "modality": {"text": "", "image": {}},
+                "media_limits": {"max_inline_mb": 4}
+            }
+        }
+    }
+}
+```
+
+#### Provider 差异表
+
+| Provider | 上传端点 / 认证 | 引用块形态 | 单文件上限 | 备注 |
+|----------|----------------|-----------|-----------|------|
+| **DeepSeek** | `POST {base_url}/files` multipart（`purpose=user_data`） | 双 key：`{"type":"file","file":{"file_id":...},"file_id":...}` | 64 MiB | 模型用 `openai/` 前缀经 openai provider 下发；`file` 喂 litellm、顶层 `file_id` 喂 DeepSeek（已冒烟验证） |
+| Gemini | File API 上传，返回 `uri` | `file_data`（含 `file_uri`） | ~2 GB | 预留 |
+| Anthropic | `POST /v1/files` + `anthropic-beta` 头 | `{"type":"image","source":{"type":"file",...}}` | 500 MB | 预留 |
+| OpenAI | `POST /v1/files` | chat 图**不支持** file_id（仅 Assistants） | —— | 预留，chat 场景仍走 base64 |
 
 ---
 

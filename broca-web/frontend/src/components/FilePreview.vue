@@ -64,7 +64,7 @@ const fileName = computed(() => {
     return props.filePath.split('/').pop() || ''
   }
   if (props.fileUrl) {
-    const url = new URL(props.fileUrl)
+    const url = new URL(props.fileUrl, window.location.origin)
     return url.pathname.split('/').pop() || ''
   }
   return ''

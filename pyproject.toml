@@ -14,17 +14,15 @@ description = "A lightweight agent framework"
 authors = [
     {name = "Rossi",email = "1142595193@qq.com"}
 ]
-requires-python = ">=3.12,<4.0"
+requires-python = ">=3.12,<3.16"
 dependencies = [
-    "litellm (>=1.81.1,<2.0.0)",
+    "litellm (>=1.109.1,<2.0.0)",
     "typesafe-sdk (>=0.7.0,<0.8.0)",
     "loguru (>=0.7.3,<0.8.0)",
     "jinja2 (>=3.1.6,<4.0.0)",
     "python-socketio[asyncio] (>=5.16.0,<6.0.0)",
     "aiohttp (>=3.11.0,<4.0.0)",
     "uvicorn (>=0.40.0,<0.41.0)",
-    "tree-sitter (>=0.25.2,<0.26.0)",
-    "tree-sitter-bash (>=0.25.1,<0.26.0)",
     "rich (>=14.3.2,<15.0.0)",
     "asyncio-throttle (>=1.0.2,<2.0.0)",
     "textual (>=7.5.0,<8.0.0)",
@@ -44,7 +42,9 @@ dependencies = [
     "gitpython (>=3.1.49,<4.0.0)",
     "fastmcp (>=3.3.1,<4.0.0)",
     "supervisor (>=4.2.5,<5.0.0)",
-    "boto3 (>=1.35.0,<2.0.0)"
+    "boto3 (>=1.35.0,<2.0.0)",
+    "pillow (>=10.0.0,<13.0.0)",
+    "httpx (>=0.27.0,<1.0.0)"
 ]
 
 

@@ -219,6 +219,18 @@ function removeProvider(providerId: string) {
   showToast(`已删除提供商 "${providerId}"`, 'success', 2000)
 }
 
+function toggleFilesApi(providerId: string) {
+  const provider = config.value[providerId]
+  if (!provider) return
+  if (provider.files_api) {
+    delete provider.files_api
+    showToast('已移除 Files API 配置', 'success', 2000)
+  } else {
+    provider.files_api = { type: 'deepseek' }
+    showToast('已添加 Files API 配置，请完善参数', 'success', 2000)
+  }
+}
+
 // ==================== Model management ====================
 function openModelDialog(providerId: string) {
   modelDialogProvider.value = providerId
@@ -894,6 +906,44 @@ function reset() {
                 {{ showApiKey[providerId] ? '隐藏' : '显示' }}
               </button>
             </div>
+          </div>
+
+          <!-- Files API 配置（provider 级，可选） -->
+          <div class="field" style="margin-top: 12px">
+            <div style="display: flex; align-items: center; justify-content: space-between">
+              <label class="field-label" style="margin-bottom: 0">
+                Files API（大文件上传）
+                <span v-if="provider.files_api" style="font-size: 11px; color: var(--text-secondary); margin-left: 6px">{{ provider.files_api.type }}</span>
+              </label>
+              <button
+                class="action-button action-button--secondary"
+                style="padding: 4px 10px; font-size: 12px"
+                @click="toggleFilesApi(providerId as string)"
+              >
+                {{ provider.files_api ? '移除' : '配置' }}
+              </button>
+            </div>
+            <div v-if="provider.files_api" style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px">
+              <div>
+                <label class="field-label">Type（策略类型）</label>
+                <input v-model="provider.files_api!.type" class="field-input" placeholder="如 deepseek" />
+              </div>
+              <div>
+                <label class="field-label">Purpose（上传用途）</label>
+                <input v-model="provider.files_api!.purpose" class="field-input" placeholder="如 user_data" />
+              </div>
+              <div>
+                <label class="field-label">Max Size (MB)</label>
+                <input type="number" v-model.number="provider.files_api!.max_size_mb" class="field-input" min="1" placeholder="默认 64" />
+              </div>
+              <div>
+                <label class="field-label">Expires (秒)</label>
+                <input type="number" v-model.number="provider.files_api!.expires_seconds" class="field-input" min="3600" max="2592000" placeholder="默认不过期" />
+              </div>
+            </div>
+            <p v-if="provider.files_api" style="font-size: 11px; color: var(--text-secondary); margin-top: 6px">
+              配置后，超过阈值的文件将通过该供应商 Files API 上传而非 base64 内联。
+            </p>
           </div>
 
           <!-- Model list header -->

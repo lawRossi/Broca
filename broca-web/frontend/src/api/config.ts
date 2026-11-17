@@ -30,11 +30,25 @@ export interface LLMModelConfig {
   [key: string]: unknown
 }
 
+/** Files API 上传配置（provider 级，用于大文件通过供应商 Files API 上传而非 base64 内联） */
+export interface FilesApiConfig {
+  /** 策略类型（如 "deepseek"），决定使用哪个 Files API 实现 */
+  type: string
+  /** 上传用途（如 "user_data"），可选 */
+  purpose?: string
+  /** 单文件大小上限（MB），可选，默认 64 */
+  max_size_mb?: number
+  /** 文件过期时间（秒），可选 */
+  expires_seconds?: number
+}
+
 /** 单个提供商配置 */
 export interface LLMProviderConfig {
   base_url: string
   api_key: string
   models: Record<string, LLMModelConfig>
+  /** 可选：Files API 上传配置（未配置时大文件走 base64 内联） */
+  files_api?: FilesApiConfig
   [key: string]: unknown
 }
 

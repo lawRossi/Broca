@@ -103,6 +103,8 @@ class RetryLLMStrategy(LLMStrategy):
         on_chunk: Optional[OnChunk] = None,
         on_error: Optional[OnError] = None,
         should_abort: Optional[ShouldAbort] = None,
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> LLMCallResult:
         """Call the LLM with retries; see class docstring for the policy."""
         errors = 0
@@ -115,7 +117,10 @@ class RetryLLMStrategy(LLMStrategy):
 
             try:
                 result = await asyncio.wait_for(
-                    self._stream_once(history, tools, on_chunk, should_abort),
+                    self._stream_once(
+                        history, tools, on_chunk, should_abort,
+                        agent_id=agent_id, session_id=session_id,
+                    ),
                     timeout=self._timeout,
                 )
                 if result.aborted:
@@ -250,6 +255,9 @@ class RetryLLMStrategy(LLMStrategy):
         tools: list[dict],
         on_chunk: Optional[OnChunk],
         should_abort: Optional[ShouldAbort],
+        *,
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> LLMCallResult:
         """One streaming attempt: aggregate chunks and emit ``on_chunk`` events."""
         content_chunks: list[Any] = []
@@ -264,7 +272,12 @@ class RetryLLMStrategy(LLMStrategy):
         usage: dict = {"input_tokens": 0, "output_tokens": 0}
 
         async for chunk in self._llm_client.get_stream_response(
-            self._provider, self._model, history, tools
+            self._provider,
+            self._model,
+            history,
+            tools,
+            agent_id=agent_id,
+            session_id=session_id,
         ):
             if should_abort is not None and should_abort():
                 return LLMCallResult(

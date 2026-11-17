@@ -1,12 +1,23 @@
 """
 Read Image Tool
 
-Reads a local image file, uploads it to cloud S3 storage (Cloudflare R2 or
-Supabase), and injects an image_url message into the LLM context so the
-model can "see" the image.
+Reads a local image file and injects an image_url message into the LLM
+context so the model can "see" the image.
+
+The injected ``image_url`` uses a lightweight ``ref://`` reference (see
+``broca.media.ref``) instead of embedding bytes or a fragile public URL:
+
+- If cloud storage (Cloudflare R2 / Supabase) is configured, the file is
+  uploaded and the ref is ``kind="cloud"`` (with a public display URL).
+- Otherwise no upload happens and the ref is ``kind="local"`` (display URL
+  points at the backend ``/files/raw`` endpoint).
+
+The actual wire representation (base64 / files_api file_id) is produced later,
+only right before the request is sent to the LLM.
 """
 
 import asyncio
+import hashlib
 import mimetypes
 import uuid
 from datetime import datetime
@@ -15,6 +26,7 @@ from urllib.parse import quote
 
 from broca.configs import get_configs
 from broca.logging_config import get_logger
+from broca.media.ref import encode_media_ref
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 logger = get_logger(__name__)
@@ -47,6 +59,21 @@ def _generate_storage_path(original_name: str) -> str:
     return f"uploads/{date_str}/{safe_filename}"
 
 
+def _sha256_file(path: Path, chunk_size: int = 1024 * 1024) -> str:
+    """Compute the SHA-256 hex digest of a file by reading it in chunks."""
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(chunk_size), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _local_preview_url(abs_path: Path) -> str:
+    """Build a backend ``/files/raw`` URL for a local file (frontend display)."""
+    return f"/files/raw?path={quote(str(abs_path), safe='')}"
+
+
+
 class ReadImage(Tool):
     """Read a local image file and upload it to cloud storage so the LLM can see it."""
     is_readonly = True
@@ -58,9 +85,8 @@ class ReadImage(Tool):
     @property
     def description(self) -> str:
         return (
-            "Reads a local image file (PNG, JPG, JPEG, GIF, WebP, BMP, SVG), "
-            "uploads it to cloud storage, and injects the image into the "
-            "conversation so the LLM can see it. "
+            "Reads a local image file (PNG, JPG, JPEG, GIF, WebP, BMP, SVG) "
+            "and injects the image into the conversation so the LLM can see it. "
             "Use this when you need to visually inspect a local image file."
         )
 
@@ -113,48 +139,21 @@ class ReadImage(Tool):
             return False
 
     def _create_s3_client(self, storage) -> "boto3.client":
-        """Create a boto3 S3 client based on StorageConfig."""
-        import boto3
-        from boto3.s3.transfer import TransferConfig
+        """Create a boto3 S3 client based on StorageConfig (delegates to media.storage)."""
+        from broca.media.storage import build_s3_client
 
-        if storage.backend == "cloudflare":
-            endpoint = f"https://{storage.cloudflare_account_id}.r2.cloudflarestorage.com"
-            access_key_id = storage.cloudflare_access_key_id
-            secret_key = storage.cloudflare_secret_access_key
-        elif storage.backend == "supabase":
-            endpoint = f"{storage.supabase_url}/storage/v1/s3"
-            access_key_id = storage.supabase_s3_access_key_id
-            secret_key = storage.supabase_s3_secret_access_key
-        else:
-            raise ValueError(f"Unsupported storage backend: {storage.backend}")
-
-        from botocore.client import Config as BotocoreConfig
-
-        return boto3.client(
-            "s3",
-            endpoint_url=endpoint,
-            region_name="auto",
-            aws_access_key_id=access_key_id,
-            aws_secret_access_key=secret_key,
-            config=BotocoreConfig(s3={"addressing_style": "path"}),
-        )
+        return build_s3_client(storage)
 
     def _get_public_url_base(self, storage) -> str:
-        """Get the public URL base for uploaded files."""
-        if storage.backend == "cloudflare":
-            return storage.cloudflare_public_url or (
-                f"https://{storage.cloudflare_bucket}.{storage.cloudflare_account_id}.r2.dev"
-            )
-        elif storage.backend == "supabase":
-            return f"{storage.supabase_url}/storage/v1/object/public/{storage.supabase_bucket}"
-        raise ValueError(f"Unsupported storage backend: {storage.backend}")
+        """Get the public URL base for uploaded files (delegates to media.storage)."""
+        from broca.media.storage import get_public_url_base
+
+        return get_public_url_base(storage)
 
     def _get_bucket(self, storage) -> str:
-        if storage.backend == "cloudflare":
-            return storage.cloudflare_bucket or "upload"
-        elif storage.backend == "supabase":
-            return storage.supabase_bucket or "upload"
-        raise ValueError(f"Unsupported storage backend: {storage.backend}")
+        from broca.media.storage import get_bucket
+
+        return get_bucket(storage)
 
     # ------------------------------------------------------------------
     # main execution
@@ -180,59 +179,88 @@ class ReadImage(Tool):
                 f"支持的格式: {', '.join(sorted(SUPPORTED_IMAGE_EXTENSIONS))}",
             )
 
-        # 2. Validate storage config
-        storage = get_configs().storage
-        if not storage.backend or storage.backend not in ("cloudflare", "supabase"):
-            return ToolResult(
-                status=ToolStatus.ERROR,
-                content="云端存储未配置。请在设置中配置 Cloudflare R2 或 Supabase 存储。",
-            )
-
-        # 3. MIME type
+        # 2. MIME type
         mime_type, _ = mimetypes.guess_type(str(file_path))
         if not mime_type:
             mime_type = "image/png"  # fallback
 
-        # 4-6. S3 upload (wrapped in to_thread to avoid blocking the event loop)
-        storage_path = _generate_storage_path(file_path.name)
-        bucket = self._get_bucket(storage)
-
-        def _sync_upload():
-            s3_client = self._create_s3_client(storage)
-            s3_client.upload_file(
-                str(file_path),
-                bucket,
-                storage_path,
-                ExtraArgs={"ContentType": mime_type},
-            )
-
+        # 3. Compute file metadata (sha256 + size) for the ref / data.files
+        abs_path = file_path.resolve()
         try:
-            await asyncio.to_thread(_sync_upload)
-        except Exception as e:
-            logger.error(f"Image upload failed: {e}")
+            size = abs_path.stat().st_size
+            sha256 = await asyncio.to_thread(_sha256_file, abs_path)
+        except OSError as e:
+            logger.error(f"Failed to read image file metadata: {e}")
             return ToolResult(
                 status=ToolStatus.ERROR,
-                content=f"图片上传失败: {e}",
+                content=f"读取图片文件失败: {e}",
             )
 
-        # 7. Public URL
-        public_url_base = self._get_public_url_base(storage)
-        public_url = f"{public_url_base}/{storage_path}"
+        # 4. Branch: cloud storage configured → upload & build cloud ref;
+        #    otherwise → no upload, build local ref (no cloud storage required).
+        storage = get_configs().storage
+        use_cloud = bool(
+            storage.backend and storage.backend in ("cloudflare", "supabase")
+        )
+
+        if use_cloud:
+            storage_path = _generate_storage_path(file_path.name)
+            bucket = self._get_bucket(storage)
+
+            def _sync_upload():
+                s3_client = self._create_s3_client(storage)
+                s3_client.upload_file(
+                    str(file_path),
+                    bucket,
+                    storage_path,
+                    ExtraArgs={"ContentType": mime_type},
+                )
+
+            try:
+                await asyncio.to_thread(_sync_upload)
+            except Exception as e:
+                logger.error(f"Image upload failed: {e}")
+                return ToolResult(
+                    status=ToolStatus.ERROR,
+                    content=f"图片上传失败: {e}",
+                )
+
+            public_url_base = self._get_public_url_base(storage)
+            display_url = f"{public_url_base}/{storage_path}"
+            ref_meta = {
+                "kind": "cloud",
+                "key": storage_path,
+                "url": display_url,
+                "sha256": sha256,
+                "mime": mime_type,
+                "size": size,
+            }
+        else:
+            # Local ref: no S3 upload. Display url points at backend /files/raw.
+            display_url = _local_preview_url(abs_path)
+            ref_meta = {
+                "kind": "local",
+                "path": str(abs_path),
+                "url": display_url,
+                "sha256": sha256,
+                "mime": mime_type,
+                "size": size,
+            }
 
         # Check if model supports image input
         supports_image = self._check_modality(context)
 
         if not supports_image:
-            # Model does not support image: return the URL as text only
+            # Model does not support image: return the display URL as text only
             return ToolResult(
                 status=ToolStatus.SUCCESS,
-                content=f"图片已上传（当前模型不支持图片输入）: {public_url}",
+                content=f"图片已读取（当前模型不支持图片输入）: {display_url}",
             )
 
-        # Build LLM message (multimodal user message with image_url)
+        # Build LLM message (multimodal user message with a ref placeholder)
         image_url_part = {
             "type": "image_url",
-            "image_url": {"url": public_url},
+            "image_url": {"url": encode_media_ref(ref_meta)},
         }
         # Merge modality config (e.g. detail level) if present
         try:
@@ -256,15 +284,21 @@ class ReadImage(Tool):
             ],
         }
 
+        file_data = {
+            "name": file_path.name,
+            "url": display_url,
+            "type": mime_type,
+            "sha256": sha256,
+            "size": size,
+        }
+        if ref_meta["kind"] == "cloud":
+            file_data["storage_key"] = ref_meta["key"]
+        else:
+            file_data["local_path"] = ref_meta["path"]
+
         db_data = {
             "content": "Image Readed",
-            "files": [
-                {
-                    "name": file_path.name,
-                    "url": public_url,
-                    "type": mime_type,
-                }
-            ],
+            "files": [file_data],
         }
 
         return ToolResult(

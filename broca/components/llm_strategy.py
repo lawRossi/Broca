@@ -64,6 +64,8 @@ class LLMStrategy(BaseComponent, ABC):
         on_chunk: Optional[Callable[[dict], Awaitable[None]]] = None,
         on_error: Optional[Callable[[str, str, str], Awaitable[None]]] = None,
         should_abort: Optional[Callable[[], bool]] = None,
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> LLMCallResult:
         """Call the LLM and return the aggregated result.
 
@@ -74,6 +76,9 @@ class LLMStrategy(BaseComponent, ABC):
             on_error: Error notification callback ``(message, code, severity)``.
             should_abort: Abort predicate; checked before each retry iteration
                 and before each chunk is processed.
+            agent_id: Optional agent identity, threaded to the LLM client so
+                media materialization can pick the per-agent cache directory.
+            session_id: Optional session identity (see ``agent_id``).
 
         Returns:
             ``LLMCallResult`` describing the outcome.

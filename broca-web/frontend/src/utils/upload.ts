@@ -10,7 +10,9 @@
  */
 
 import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3'
+import { sha256 as jsSha256 } from 'js-sha256'
 import configApi, { type StorageConfig } from '@/api/config'
+import { filesApi } from '@/api/files'
 
 // ==================== 类型定义 ====================
 
@@ -22,6 +24,12 @@ export interface UploadResult {
   path: string
   size: number
   type: string
+  /** S3 直传时的存储 key（云存储通道） */
+  storage_key?: string
+  /** 后端本地落盘时的绝对路径（无云存储通道） */
+  local_path?: string
+  /** 文件内容的 SHA-256（hex），用于构造 media ref */
+  sha256?: string
 }
 
 interface S3Config {
@@ -162,24 +170,69 @@ export function generateStoragePath(originalName: string): string {
   return `uploads/${year}${month}${day}/${safeFilename}`
 }
 
-// ==================== 统一 S3 上传 ====================
+// ==================== SHA-256 计算 ====================
+
+/** 将 ArrayBuffer 转为小写 hex 字符串 */
+function toHex(buffer: ArrayBuffer): string {
+  const bytes = new Uint8Array(buffer)
+  let hex = ''
+  for (let i = 0; i < bytes.length; i++) {
+    hex += bytes[i].toString(16).padStart(2, '0')
+  }
+  return hex
+}
 
 /**
- * 上传单个文件（统一 S3 API，兼容 Supabase 和 Cloudflare R2）
+ * 计算 ArrayBuffer 的 SHA-256（hex）。
+ * 优先使用 Web Crypto（crypto.subtle，仅 secure context：https / localhost 可用）；
+ * 非 secure context（http 非 localhost）或不可用时回退到纯 JS 实现 js-sha256，
+ * 保证 sha256 始终可得，避免 media ref 无法构造。
+ */
+export async function computeSha256FromBuffer(buffer: ArrayBuffer): Promise<string> {
+  if (typeof crypto !== 'undefined' && crypto.subtle && typeof crypto.subtle.digest === 'function') {
+    try {
+      const digest = await crypto.subtle.digest('SHA-256', buffer)
+      return toHex(digest)
+    } catch {
+      // 非 secure context 等情况下 crypto.subtle 会抛错，回退到纯 JS 实现
+    }
+  }
+  return jsSha256(new Uint8Array(buffer))
+}
+
+/** 计算 File 的 SHA-256（hex） */
+export async function computeSha256(file: File): Promise<string> {
+  return computeSha256FromBuffer(await file.arrayBuffer())
+}
+
+// ==================== 统一上传（双通道） ====================
+
+/**
+ * 上传单个文件。
+ * - 配置了云存储 → S3 直传（浏览器直连，url 为公网地址，返回 storage_key）
+ * - 未配置云存储 → POST /files/upload 后端本地落盘（返回 local_path）
+ * 两种通道均返回 sha256，供后续构造 media ref 使用。
  * @param file 要上传的文件
- * @param customPath 自定义存储路径（可选，默认自动生成）
+ * @param customPath 自定义存储路径（可选，仅云存储通道使用，默认自动生成）
  * @returns 上传结果
  */
 export async function uploadFile(file: File, customPath?: string): Promise<UploadResult> {
   const cfg = await getStorageConfig()
-  if (!cfg) throw new Error('存储未配置，请在设置页「基础配置」中配置文件上传存储')
+  if (cfg) {
+    return uploadToS3(file, cfg, customPath)
+  }
+  return uploadToBackend(file)
+}
 
+/** S3 直传通道 */
+async function uploadToS3(file: File, cfg: S3Config, customPath?: string): Promise<UploadResult> {
   const client = getClient(cfg)
   const path = customPath || generateStoragePath(file.name)
 
   // 将 File 转为 Uint8Array，避免 S3 SDK 对 Blob 误调用 getReader()
   const arrayBuffer = await file.arrayBuffer()
   const body = new Uint8Array(arrayBuffer)
+  const sha256 = await computeSha256FromBuffer(arrayBuffer)
 
   const command = new PutObjectCommand({
     Bucket: cfg.bucket,
@@ -196,6 +249,26 @@ export async function uploadFile(file: File, customPath?: string): Promise<Uploa
     path,
     size: file.size,
     type: file.type,
+    storage_key: path,
+    sha256,
+  }
+}
+
+/** 后端本地落盘通道（无云存储） */
+async function uploadToBackend(file: File): Promise<UploadResult> {
+  const formData = new FormData()
+  formData.append('file', file, file.name)
+
+  const data = await filesApi.uploadFile(formData)
+
+  return {
+    name: data.name,
+    url: data.url,
+    path: data.path,
+    size: data.size,
+    type: data.type,
+    local_path: data.local_path,
+    sha256: data.sha256,
   }
 }
 

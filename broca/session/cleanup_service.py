@@ -78,6 +78,17 @@ class SessionCleanupService:
                 f"Failed to cleanup orphaned jobs for session {session_id}: {e}"
             )
 
+        # 3b. 清理媒体物化缓存目录 <broca_home>/media_cache/<session_id>/
+        try:
+            from broca.media.cache import clear_session_cache
+
+            clear_session_cache(session_id)
+            logger.info(f"Cleared media cache for session {session_id}")
+        except Exception as e:
+            logger.warning(
+                f"Failed to cleanup media cache for session {session_id}: {e}"
+            )
+
         # 4. 如果是 workspace 下最后一个 session，清理 git 快照
         try:
             await self.cleanup_snapshots_if_last_session(workspace)

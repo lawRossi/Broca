@@ -38,7 +38,8 @@ class FakeLLMStrategy:
     def reset(self):
         self.reset_count += 1
 
-    async def call(self, history, tools, *, on_chunk=None, on_error=None, should_abort=None):
+    async def call(self, history, tools, *, on_chunk=None, on_error=None, should_abort=None,
+                   agent_id=None, session_id=None):
         self.calls.append(
             {
                 "history": history,

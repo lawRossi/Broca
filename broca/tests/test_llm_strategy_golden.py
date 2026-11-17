@@ -41,7 +41,8 @@ class _FakeStreamingClient(LiteLLMClient):
         self._chunks = chunks
 
     async def get_stream_response(  # type: ignore[override]
-        self, provider, model, messages, tools=None, first_chunk_timeout=None, timeout=None
+        self, provider, model, messages, tools=None, first_chunk_timeout=None,
+        timeout=None, agent_id=None, session_id=None,
     ):
         for chunk in self._chunks:
             yield chunk

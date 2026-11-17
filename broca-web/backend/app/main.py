@@ -52,6 +52,10 @@ WHITE_LIST = {
 }
 WHITE_LIST_PREFIXES = {
     "/api/commands",
+    # Local media serving for display (<img src> cannot send a Bearer token).
+    # Safe: the endpoint enforces a root-directory whitelist + mime whitelist
+    # + 50MB cap + path-traversal rejection on its own.
+    "/api/files/raw",
 }
 security = HTTPBearer(auto_error=False)
 

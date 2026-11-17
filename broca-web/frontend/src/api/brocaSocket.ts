@@ -188,6 +188,9 @@ export class BrocaSocketClient {
       path: string
       size: number
       type: string
+      storage_key?: string
+      local_path?: string
+      sha256?: string
       upload_time: string
     }>
   }): Promise<void> {

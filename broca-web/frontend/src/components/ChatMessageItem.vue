@@ -8,6 +8,7 @@ import { ElMessageBox } from 'element-plus'
 import FilePreview from './FilePreview.vue'
 import { diffLines } from 'diff'
 import { renderMarkdown } from '@/utils/markdown'
+import { resolveMediaUrl } from '@/utils/media'
 
 const chatStore = useChatStore()
 const agentStore = useAgentStore()
@@ -451,7 +452,7 @@ const openFilePreview = (file: { url?: string; path?: string; name?: string; typ
 
   if (file.url) {
     previewFilePath.value = ''
-    previewFileUrl.value = file.url
+    previewFileUrl.value = resolveMediaUrl(file.url)
   } else if (file.path) {
     previewFileUrl.value = ''
     previewFilePath.value = file.path

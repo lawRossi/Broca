@@ -16,6 +16,12 @@
     "deepseek": {
         "base_url": "https://api.deepseek.com/v1",
         "api_key": "",
+        "files_api": {
+            "type": "deepseek",
+            "purpose": "user_data",
+            "expires_seconds": 86400,
+            "max_size_mb": 64
+        },
         "models": {
             "deepseek-v4-flash-thinking": {
                 "model": "openai/deepseek-v4-flash",
@@ -35,8 +41,9 @@
                 "max_tokens": 15000,
                 "extra_body": {"thinking": {"type": "disabled"}},
                 "meta": {
-                    "modality": {"text": ""},
-                    "context_window": 1000000
+                    "modality": {"text": "", "image": {}},
+                    "context_window": 1000000,
+                    "media_limits": {"max_inline_mb": 4}
                 }
             }
         }
@@ -53,7 +60,8 @@
                 "allowed_openai_params": ["reasoning_effort"],
                 "meta": {
                     "modality": {"text": "", "image": {}},
-                    "context_window": 256000
+                    "context_window": 256000,
+                    "media_limits": {"max_inline_mb": 4}
                 }
             }
         }

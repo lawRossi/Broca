@@ -56,7 +56,8 @@ class ScriptedClient(LiteLLMClient):
         self.attempts = 0
 
     async def get_stream_response(  # type: ignore[override]
-        self, provider, model, messages, tools=None, first_chunk_timeout=None, timeout=None
+        self, provider, model, messages, tools=None, first_chunk_timeout=None,
+        timeout=None, agent_id=None, session_id=None,
     ):
         self.attempts += 1
         attempt = self._script.pop(0) if self._script else [{"type": "content", "data": "ok"}]

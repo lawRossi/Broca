@@ -4,7 +4,7 @@ import { onBeforeRouteLeave } from 'vue-router'
 import { ElMessage, ElMessageBox } from 'element-plus'
 import { Plus, Refresh, Setting, Delete, Loading } from '@element-plus/icons-vue'
 import configApi from '@/api/config'
-import type { LLMConfig, LLMModelConfig, LLMDefaultConfig, LLMWireConfig } from '@/api/config'
+import type { LLMConfig, LLMModelConfig, LLMDefaultConfig, LLMWireConfig, LLMProviderConfig } from '@/api/config'
 import { LLM_DEFAULT_KEY } from '@/api/config'
 import GeneralConfigPanel from './settings/GeneralConfigPanel.vue'
 import ToolPermissionPanel from './settings/ToolPermissionPanel.vue'
@@ -171,6 +171,17 @@ const removeProvider = async (providerId: string) => {
     llmDefault.value = { provider: '', model: '' }
   }
   ElMessage.success(`已删除提供商 "${providerId}"（保存后生效）`)
+}
+
+/** 启用/移除提供商的 Files API 配置 */
+const toggleFilesApi = (provider: LLMProviderConfig) => {
+  if (provider.files_api) {
+    delete provider.files_api
+    ElMessage.success('已移除 Files API 配置（保存后生效）')
+  } else {
+    provider.files_api = { type: 'deepseek' }
+    ElMessage.success('已添加 Files API 配置，请完善参数后保存')
+  }
 }
 
 // ==================== 模型管理 ====================
@@ -979,6 +990,59 @@ const handleBeforeUnload = (e: BeforeUnloadEvent) => {
                     <label class="block text-xs text-gray-600 mb-1">API Key</label>
                     <el-input v-model="provider.api_key" show-password placeholder="sk-..." />
                   </div>
+                </div>
+
+                <!-- Files API 配置（provider 级） -->
+                <div class="mb-4">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2">
+                      <span class="text-sm font-medium text-gray-700">Files API（大文件上传）</span>
+                      <el-tag v-if="provider.files_api" size="small" type="success" effect="plain">
+                        {{ provider.files_api.type }}
+                      </el-tag>
+                    </div>
+                    <el-button size="small" type="primary" plain @click="toggleFilesApi(provider)">
+                      {{ provider.files_api ? '移除 Files API' : '配置 Files API' }}
+                    </el-button>
+                  </div>
+                  <div v-if="provider.files_api" class="mt-3 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+                    <div>
+                      <label class="block text-xs text-gray-600 mb-1">Type（策略类型）</label>
+                      <el-input v-model="provider.files_api.type" placeholder="如 deepseek" size="small" />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-600 mb-1">Purpose（上传用途）</label>
+                      <el-input v-model="provider.files_api.purpose" placeholder="如 user_data" size="small" />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-600 mb-1">Max Size (MB)</label>
+                      <el-input-number
+                        v-model="provider.files_api.max_size_mb"
+                        size="small"
+                        :min="1"
+                        :step="8"
+                        controls-position="right"
+                        placeholder="默认 64"
+                        style="width: 100%"
+                      />
+                    </div>
+                    <div>
+                      <label class="block text-xs text-gray-600 mb-1">Expires (秒，可选)</label>
+                      <el-input-number
+                        v-model="provider.files_api.expires_seconds"
+                        size="small"
+                        :min="3600"
+                        :max="2592000"
+                        :step="3600"
+                        controls-position="right"
+                        placeholder="默认不过期"
+                        style="width: 100%"
+                      />
+                    </div>
+                  </div>
+                  <p v-if="provider.files_api" class="text-xs text-gray-400 mt-2">
+                    配置后，超过阈值的文件将通过该供应商 Files API 上传而非 base64 内联。
+                  </p>
                 </div>
 
                 <!-- 模型列表 -->

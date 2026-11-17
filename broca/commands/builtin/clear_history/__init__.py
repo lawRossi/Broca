@@ -120,6 +120,16 @@ class ClearHistoryCommand(LocalCommand):
                 rebuilt_agents.append(agent.agent_id)
 
             # ================================================================
+            # 4b. Clear the entire session's media cache (all agents)
+            # ================================================================
+            try:
+                from broca.media.cache import MediaCache
+
+                await MediaCache(session_id, None).clear_session(session_id)
+            except Exception as e:
+                logger.warning(f"Failed to clear media cache for clear_history: {e}")
+
+            # ================================================================
             # 5. Report result
             # ================================================================
             try:

@@ -152,6 +152,8 @@ class MockLLMClient:
         tools: Optional[list] = None,
         first_chunk_timeout: Optional[float] = None,
         timeout: Optional[float] = None,
+        agent_id: Optional[str] = None,
+        session_id: Optional[str] = None,
     ) -> AsyncGenerator[dict, None]:
         self.call_count += 1
         for chunk in self.stream_chunks:

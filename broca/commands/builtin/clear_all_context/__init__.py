@@ -108,6 +108,16 @@ class ClearAllContextCommand(LocalCommand):
                 )
 
             # ================================================================
+            # 3b. Clear the entire session's media cache (all agents)
+            # ================================================================
+            try:
+                from broca.media.cache import MediaCache
+
+                await MediaCache(session_id, None).clear_session(session_id)
+            except Exception as e:
+                logger.warning(f"Failed to clear media cache for clear_all_context: {e}")
+
+            # ================================================================
             # 4. Send frontend notification with clear agent identification
             # ================================================================
             try:

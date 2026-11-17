@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useChatStore, useAgentStore, useSocketStore } from '@/stores'
-import { uploadFile, isStorageConfigured } from '@/utils/upload'
+import { uploadFile } from '@/utils/upload'
 import { commandsApi, type CommandInfo } from '@/api/commands'
 import { filesApi, type FileCompleteItem } from '@/api/files'
 import { sessionApi } from '@/api/session'
@@ -28,6 +28,9 @@ const pendingFiles = ref<
       path: string
       size: number
       type: string
+      storage_key?: string
+      local_path?: string
+      sha256?: string
     }
   }>
 >([])
@@ -844,22 +847,11 @@ const uploadSingleFile = async (
   path: string
   size: number
   type: string
+  storage_key?: string
+  local_path?: string
+  sha256?: string
 } | null> => {
   const { file, id } = fileRecord
-
-  // 检查存储是否已配置
-  if (!(await isStorageConfigured())) {
-    console.error('[Upload] No storage backend configured. Please configure in Settings > Basic Config.')
-    const index = pendingFiles.value.findIndex((f) => f.id === id)
-    if (index !== -1) {
-      const record = pendingFiles.value[index]
-      if (record) {
-        record.status = 'error'
-        record.error = '存储未配置，请在设置页「基础配置」中配置'
-      }
-    }
-    return null
-  }
 
   // 更新状态为上传中
   const index = pendingFiles.value.findIndex((f) => f.id === id)
@@ -872,7 +864,7 @@ const uploadSingleFile = async (
   fileRecordRef.progress = 30
 
   try {
-    // 使用统一的 uploadFile 上传（不再依赖 userId，路径为 uploads/日期/文件名）
+    // 统一 uploadFile：配置了云存储走 S3 直传，否则走后端本地落盘
     const result = await uploadFile(file)
     fileRecordRef.progress = 80
 
@@ -1008,6 +1000,9 @@ const handleSendMessage = async () => {
         path: data.path,
         size: data.size,
         type: data.type,
+        storage_key: data.storage_key,
+        local_path: data.local_path,
+        sha256: data.sha256,
         upload_time: new Date().toISOString(),
       }
     })

@@ -63,7 +63,8 @@ class _StreamingLLMStrategy:
     def __init__(self, pieces: list[str]) -> None:
         self._pieces = pieces
 
-    async def call(self, *, history, tools, on_chunk, on_error, should_abort):
+    async def call(self, *, history, tools, on_chunk, on_error, should_abort,
+                   agent_id=None, session_id=None):
         for piece in self._pieces:
             await on_chunk(
                 {

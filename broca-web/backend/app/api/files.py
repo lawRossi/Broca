@@ -1,8 +1,14 @@
+import hashlib
+import mimetypes
 import os
+import shutil
 import stat
+from datetime import datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from loguru import logger
 from pydantic import BaseModel
 
@@ -319,6 +325,104 @@ class FileEditRequest(BaseModel):
     content: str
 
 
+# ── /files/raw: serve local binary files for local media refs ──────────────
+# Max size for a raw binary response (50 MB).
+_RAW_MAX_SIZE = 50 * 1024 * 1024
+# Only these top-level MIME categories may be served raw.
+_RAW_ALLOWED_MIME_PREFIXES = ("image/", "video/", "audio/")
+
+
+def _raw_static_allowed_roots() -> list[Path]:
+    """Static whitelisted root directories for ``/files/raw``.
+
+    Includes ``<broca_home>/uploads`` (user uploads) and ``<broca_home>``
+    (session attachments). Workspaces are added dynamically in
+    :func:`_raw_allowed_roots`.
+    """
+    broca_home = Path.home() / ".broca"
+    return [broca_home / "uploads", broca_home]
+
+
+async def _raw_allowed_roots() -> list[Path]:
+    """Whitelisted root directories (static + registered session workspaces)."""
+    roots = _raw_static_allowed_roots()
+    try:
+        from sqlmodel import select
+
+        from broca.session.database import db_manager
+        from broca.session.models import Session
+
+        async with db_manager.get_session() as db_session:
+            result = await db_session.exec(select(Session.workspace))
+            for (workspace,) in result.all():
+                if workspace:
+                    roots.append(Path(workspace).expanduser())
+    except Exception as e:  # best-effort: never fail the request on DB issues
+        logger.warning(f"/files/raw: could not load session workspaces: {e}")
+
+    resolved: list[Path] = []
+    for r in roots:
+        try:
+            resolved.append(r.resolve())
+        except (OSError, RuntimeError):
+            continue
+    return resolved
+
+
+@router.get("/files/raw")
+async def raw_file(path: str):
+    """Serve a local binary file (image/video/audio) for display.
+
+    Used by ``local`` media refs so the frontend can render an image whose
+    bytes live on the backend host. Security:
+    - The resolved path MUST be inside one of the whitelisted roots
+      (``is_relative_to``), otherwise 403. This blocks path traversal and
+      arbitrary file reads.
+    - Only image/video/audio MIME types are served.
+    - Directories and missing files are rejected (400/404).
+    - Files larger than 50 MB are rejected (413).
+
+    Note: ``<img src>`` uses a same-origin relative URL, so the frontend must
+    be served from the same origin as the backend (or via the dev proxy).
+    """
+    try:
+        target = Path(path).expanduser()
+        try:
+            resolved = target.resolve()
+        except (OSError, RuntimeError) as e:
+            raise HTTPException(status_code=400, detail=f"Invalid path: {path}") from e
+
+        # Root whitelist check (blocks traversal / arbitrary reads)
+        roots = await _raw_allowed_roots()
+        if not any(resolved == r or resolved.is_relative_to(r) for r in roots):
+            raise HTTPException(status_code=403, detail="Path not allowed")
+
+        if not resolved.exists():
+            raise HTTPException(status_code=404, detail=f"File not found: {path}")
+        if resolved.is_dir():
+            raise HTTPException(status_code=400, detail=f"Cannot serve directory: {path}")
+
+        mime, _ = mimetypes.guess_type(str(resolved))
+        if not mime or not mime.startswith(_RAW_ALLOWED_MIME_PREFIXES):
+            raise HTTPException(
+                status_code=403, detail=f"File type not allowed: {mime or 'unknown'}"
+            )
+
+        size = resolved.stat().st_size
+        if size > _RAW_MAX_SIZE:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File too large ({size} bytes > {_RAW_MAX_SIZE} bytes)",
+            )
+
+        return FileResponse(str(resolved), media_type=mime)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error serving raw file {path}")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
 @router.put("/files/edit", response_model=ApiResponse)
 async def edit_file(path: str, request: FileEditRequest) -> ApiResponse:
     """编辑文件内容
@@ -410,6 +514,148 @@ async def get_home_directory() -> ApiResponse:
         return ApiResponse.success({"home_dir": home_dir}, msg="Home directory retrieved successfully")
     except Exception as e:
         logger.exception("Error getting home directory")
+        raise HTTPException(status_code=500, detail="Internal server error") from e
+
+
+# ── /files/upload: local-disk upload for media refs (no cloud storage) ──────
+# Max accepted upload size (50 MB), aligned with /files/raw serving limit.
+_UPLOAD_MAX_SIZE = 50 * 1024 * 1024
+# Chunk size used when streaming the upload to disk (1 MB).
+_UPLOAD_CHUNK_SIZE = 1024 * 1024
+# Uploaded files are retained for at most 2 days (date-dir based GC).
+_UPLOAD_RETENTION_DAYS = 2
+# Allowed file extensions (images / audio / video / text / common documents).
+_UPLOAD_ALLOWED_EXTENSIONS = {
+    # images
+    ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp", ".svg",
+    ".tiff", ".tif", ".heic", ".heif", ".ico", ".avif",
+    # video
+    ".mp4", ".webm", ".mov", ".avi", ".mkv", ".m4v", ".flv",
+    # audio
+    ".mp3", ".wav", ".ogg", ".flac", ".m4a", ".aac", ".wma", ".opus",
+    # text
+    ".txt", ".md", ".markdown", ".csv", ".json", ".xml",
+    ".yaml", ".yml", ".log", ".ini", ".toml",
+    # documents
+    ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx",
+    ".odt", ".ods", ".odp", ".rtf", ".epub",
+}
+
+
+def _uploads_root() -> Path:
+    """Root directory for user uploads (``<broca_home>/uploads``).
+
+    Module-level so tests can monkeypatch it to a temp dir.
+    """
+    return Path.home() / ".broca" / "uploads"
+
+
+def _cleanup_old_uploads(root: Path, retention_days: int = _UPLOAD_RETENTION_DAYS) -> None:
+    """Delete ``YYYYMMDD`` date directories older than ``retention_days``.
+
+    Uploads are organised as ``<root>/YYYYMMDD/<file>``. Any date directory
+    strictly older than the cutoff (``now - retention_days``) is removed.
+    Non-date entries and files are left untouched. Best-effort: never raises.
+    """
+    if not root.exists():
+        return
+    cutoff_str = (datetime.now() - timedelta(days=retention_days)).strftime("%Y%m%d")
+    for entry in root.iterdir():
+        try:
+            if not entry.is_dir():
+                continue
+            name = entry.name
+            # Only touch well-formed date dirs, and only those older than cutoff.
+            if len(name) == 8 and name.isdigit() and name < cutoff_str:
+                shutil.rmtree(entry, ignore_errors=True)
+                logger.info(f"/files/upload: cleaned expired upload dir {entry}")
+        except OSError as e:  # best-effort cleanup
+            logger.warning(f"/files/upload: failed to clean {entry}: {e}")
+
+
+@router.post("/files/upload", response_model=ApiResponse)
+async def upload_file(file: UploadFile = File(...)) -> ApiResponse:
+    """Store an uploaded file on local disk (used when cloud storage is off).
+
+    Saves to ``<broca_home>/uploads/YYYYMMDD/<encodedName>_<uuid6>.<ext>``
+    (naming reused from ``broca.tools.image`` so it matches the read_image
+    tool). Returns the metadata the frontend needs to build a ``local`` media
+    ref and a display URL served by ``GET /files/raw``.
+
+    Security:
+    - Extension must be in the whitelist.
+    - Size capped at 50 MB (413 when exceeded).
+    - Filename is URL-encoded (no path separators), so no traversal.
+    - Expired date dirs (older than 2 days) are cleaned opportunistically.
+    """
+    original_name = file.filename or "upload"
+    ext = Path(original_name).suffix.lower()
+    if ext not in _UPLOAD_ALLOWED_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"File type not allowed: {ext or 'unknown'}")
+
+    try:
+        root = _uploads_root()
+        # Opportunistic GC of expired date dirs (never blocks the upload).
+        try:
+            _cleanup_old_uploads(root)
+        except Exception as e:  # cleanup must not break uploads
+            logger.warning(f"/files/upload: cleanup failed: {e}")
+
+        date_str = datetime.now().strftime("%Y%m%d")
+        date_dir = root / date_str
+        date_dir.mkdir(parents=True, exist_ok=True)
+
+        # Reuse image.py naming rule (encode name, keep ASCII-safe, uuid6 suffix).
+        from broca.tools.image import _generate_unique_filename
+
+        dest = date_dir / _generate_unique_filename(original_name)
+
+        digest = hashlib.sha256()
+        size = 0
+        try:
+            with open(dest, "wb") as out:
+                while True:
+                    chunk = await file.read(_UPLOAD_CHUNK_SIZE)
+                    if not chunk:
+                        break
+                    size += len(chunk)
+                    if size > _UPLOAD_MAX_SIZE:
+                        raise HTTPException(
+                            status_code=413,
+                            detail=f"File too large (>{_UPLOAD_MAX_SIZE} bytes)",
+                        )
+                    digest.update(chunk)
+                    out.write(chunk)
+        except HTTPException:
+            dest.unlink(missing_ok=True)
+            raise
+        except Exception:
+            dest.unlink(missing_ok=True)
+            raise
+        finally:
+            await file.close()
+
+        mime, _ = mimetypes.guess_type(str(dest))
+        if not mime:
+            mime = file.content_type or "application/octet-stream"
+
+        abs_path = str(dest.resolve())
+        url = f"/files/raw?path={quote(abs_path)}"
+        data = {
+            "name": original_name,
+            "url": url,
+            "path": abs_path,
+            "local_path": abs_path,
+            "size": size,
+            "type": mime,
+            "sha256": digest.hexdigest(),
+        }
+        return ApiResponse.success(data)
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception(f"Error uploading file {original_name}")
         raise HTTPException(status_code=500, detail="Internal server error") from e
 
 

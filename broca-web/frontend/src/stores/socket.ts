@@ -254,6 +254,9 @@ export const useSocketStore = defineStore('socket', () => {
       path: string
       size: number
       type: string
+      storage_key?: string
+      local_path?: string
+      sha256?: string
       upload_time: string
     }>
   }) => {

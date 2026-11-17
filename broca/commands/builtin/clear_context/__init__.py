@@ -75,6 +75,18 @@ class ClearContextCommand(LocalCommand):
             )
 
             # ================================================================
+            # 3b. Clear this agent's media materialization cache
+            # ================================================================
+            try:
+                from broca.media.cache import MediaCache
+
+                await MediaCache(
+                    getattr(agent, "session_id", None), agent.agent_id
+                ).clear()
+            except Exception as e:
+                logger.warning(f"Failed to clear media cache for clear_context: {e}")
+
+            # ================================================================
             # 4. Send frontend notification with clear agent identification
             # ================================================================
             try:

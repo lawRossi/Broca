@@ -516,6 +516,8 @@ class DefaultLoopEngine(LoopEngine):
             on_chunk=self._on_chunk_handler,
             on_error=self._on_error_handler,
             should_abort=lambda: self.abort_event.is_set(),
+            agent_id=self.agent_id,
+            session_id=self.session_id,
         )
         if llm.aborted or self.abort_event.is_set():
             logger.info("Agent execution aborted during LLM call")

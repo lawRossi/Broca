@@ -25,6 +25,11 @@ from broca.components.llm_client import LLMClient as LLMClientABC
 from broca.configs import LLM_DEFAULT_KEY
 from broca.errors import ErrorCode, LLMError, ValidationError
 from broca.logging_config import get_logger
+from broca.media.ref import encode_media_ref
+from broca.media.materializer import MediaMaterializer
+from broca.media.files_api import make_files_api_factory
+from broca.media.cache import MediaCache
+from broca.media.errors import MediaFileTooLargeError, MediaMaterializeError
 from broca.session.models import Message, MessageType
 
 logger = get_logger(__name__)
@@ -91,6 +96,66 @@ class LiteLLMClient(LLMClientABC):
 
         self.execution_config = get_configs().execution
 
+        # 请求时媒体物化器：把 ref:// 物化为 base64 / files_api file 块。
+        # LiteLLMClient 为 singleton，缓存按调用时 (session_id, agent_id) 选择目录。
+        try:
+            storage = get_configs().storage
+        except Exception:  # pragma: no cover - 容错
+            storage = None
+        self._materializer = MediaMaterializer(
+            config=self.config,
+            storage=storage,
+            files_api_factory=make_files_api_factory(self.config),
+            cache_factory=lambda s, a: MediaCache(s, a),
+        )
+
+    @staticmethod
+    def _resolve_file_ref_url(file: dict, file_url: str) -> str:
+        """Build a ``ref://`` placeholder for an uploaded file part, or fall back
+        to the original ``file_url`` for backward compatibility.
+
+        Kind is decided by explicit fields (no implicit heuristics):
+        1. non-empty ``storage_key`` → cloud (key=storage_key)
+        2. non-empty ``local_path`` → local (path=local_path)
+        3. absolute ``path`` → local (path=path)
+        4. relative ``path`` + url present → cloud (key=path)  [legacy shape]
+        5. otherwise → keep original ``file_url`` (no ref)
+        """
+        sha256 = file.get("sha256") or ""
+        mime = file.get("type") or ""
+        size = file.get("size") or 0
+
+        storage_key = file.get("storage_key")
+        local_path = file.get("local_path")
+        path = file.get("path")
+
+        meta: dict | None = None
+        if storage_key:
+            meta = {"kind": "cloud", "key": storage_key}
+        elif local_path:
+            meta = {"kind": "local", "path": local_path}
+        elif isinstance(path, str) and path and os.path.isabs(path):
+            meta = {"kind": "local", "path": path}
+        elif isinstance(path, str) and path and file_url:
+            # Legacy shape: {"path": "uploads/..", "url": "https://r2.."}
+            meta = {"kind": "cloud", "key": path}
+
+        if meta is None:
+            return file_url
+
+        meta.update(
+            {
+                "url": file_url,
+                "sha256": sha256,
+                "mime": mime,
+                "size": size,
+            }
+        )
+        try:
+            return encode_media_ref(meta)
+        except ValueError:
+            return file_url
+
     def parse_message(self, provider: str, model: str, message: Message) -> dict:
         """
         将内部 Message 对象解析为 LLM 需要的消息格式
@@ -133,16 +198,18 @@ class LiteLLMClient(LLMClientABC):
                     file_url = file.get("url", "")
                     file_type = file.get("type", "")
                     if file_type.startswith("image") and "image" in modality:
+                        part_url = self._resolve_file_ref_url(file, file_url)
                         image_part = {
                             "type": "image_url",
-                            "image_url": {"url": file_url},
+                            "image_url": {"url": part_url},
                         }
                         image_part.update(modality["image"])
                         image_content.append(image_part)
                     elif file_type.startswith("video") and "video" in modality:
+                        part_url = self._resolve_file_ref_url(file, file_url)
                         video_part = {
                             "type": "video_url",
-                            "video_url": {"url": file_url},
+                            "video_url": {"url": part_url},
                         }
                         video_part.update(modality["video"])
                         video_content.append(video_part)
@@ -190,6 +257,8 @@ class LiteLLMClient(LLMClientABC):
         tools=None,
         first_chunk_timeout=None,
         timeout=None,
+        agent_id=None,
+        session_id=None,
     ) -> AsyncGenerator[dict, None]:
         if provider not in self.config:
             raise ValidationError(
@@ -201,6 +270,25 @@ class LiteLLMClient(LLMClientABC):
                 f"未知 LLM 模型: {model} (提供商: {provider})",
                 error_code=ErrorCode.VALIDATION_CONFIG_ERROR,
             )
+
+        # 请求前物化 ref（只影响含 ref 的 part，不修改 context._history）。
+        try:
+            messages = await self._materializer.materialize_messages(
+                messages,
+                provider,
+                model,
+                session_id=session_id,
+                agent_id=agent_id,
+            )
+        except (MediaFileTooLargeError, MediaMaterializeError) as e:
+            # 超限 / 取字节失败 → 转成用户可见的 LLMError（不静默 url 回退）
+            raise LLMError(
+                message=e.message,
+                error_code=ErrorCode.LLM_ERROR,
+                details=getattr(e.info, "details", None),
+                cause=e,
+            ) from e
+
         args = copy.deepcopy(self.config[provider]["models"][model])
         del args["meta"]
 
