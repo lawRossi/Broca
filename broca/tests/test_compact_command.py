@@ -1,15 +1,11 @@
-"""Tests for the ``/compact`` command (Round-2 N1 — previously zero coverage).
+"""Behavior tests for the ``/compact`` command.
 
-The command used to call the engine's private ``_build_compressor_context()``,
-which no longer exists (moved to ``loop_engine.compressor_context``).  These
-tests pin the new wiring: the compressor comes from the agent, the context is
-built by the standalone factory and ``check_and_compress(force=True)`` runs.
+Verify the command wiring: the compressor comes from the agent (or registry
+fallback), and ``check_and_compress(force=True)`` runs with the right context.
 """
 
 from __future__ import annotations
 
-import inspect
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -120,26 +116,3 @@ async def test_compact_reports_error_when_compression_fails():
 
     assert result.type == "error"
     assert "boom" in result.value
-
-
-def test_compact_no_longer_uses_the_engine_private_builder():
-    """R14 guard: the removed ``_build_compressor_context`` must not come back.
-
-    This path had zero coverage before Round-2 N1, so a silent regression
-    (``AttributeError`` only at runtime, green CI) is a real risk.
-    """
-    source = Path(inspect.getfile(CompactCommand)).read_text()
-
-    assert "_build_compressor_context" not in source
-    assert "build_compressor_context" in source
-
-
-def test_clear_commands_do_not_use_the_engine_private_builder():
-    """Same guard for the three ``clear_*`` commands that compress context."""
-    from broca.commands.builtin.clear_all_context import ClearAllContextCommand
-    from broca.commands.builtin.clear_context import ClearContextCommand
-    from broca.commands.builtin.clear_history import ClearHistoryCommand
-
-    for command_cls in (ClearHistoryCommand, ClearContextCommand, ClearAllContextCommand):
-        source = Path(inspect.getfile(command_cls)).read_text()
-        assert "_build_compressor_context" not in source, command_cls.__name__

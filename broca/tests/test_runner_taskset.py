@@ -131,8 +131,10 @@ def _assigned_targets(node: ast.AST) -> bool:
 def test_no_untracked_create_task():
     """`asyncio.create_task(` 的结果必须被持有引用（赋值/append），否则失败。"""
     offenders: list[str] = []
+    scanned = 0
 
     for path in sorted(SESSION_ROOT.rglob("*.py")):
+        scanned += 1
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         # 记录每个节点的父节点，便于判断是否被赋值
         for parent in ast.walk(tree):
@@ -160,6 +162,7 @@ def test_no_untracked_create_task():
                     continue
                 offenders.append(f"{path.name}:{node.lineno} in {func.name}()")
 
+    assert scanned > 0, f"未扫描到任何 session_runner .py 文件，测试失效: {SESSION_ROOT}"
     assert not offenders, "存在未被持有的后台任务（异常会静默丢失）:\n" + "\n".join(
         offenders
     )

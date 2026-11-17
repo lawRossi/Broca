@@ -187,10 +187,13 @@ def test_no_unbounded_asyncio_queue_in_source():
     """
     root = pathlib.Path(__file__).resolve().parents[1] / "session_runner"
     offenders = []
+    scanned = 0
     for path in root.rglob("*.py"):
+        scanned += 1
         text = path.read_text(encoding="utf-8")
         if "asyncio.Queue()" in text:
             offenders.append(str(path.relative_to(root)))
+    assert scanned > 0, f"未扫描到任何 session_runner .py 文件，测试失效: {root}"
     assert offenders == [], f"发现无界队列：{offenders}"
 
 

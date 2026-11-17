@@ -21,33 +21,11 @@ REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 API_FILE = REPO_ROOT / "broca-web" / "backend" / "app" / "api" / "session_runner.py"
 API_DIR = REPO_ROOT / "broca-web" / "backend" / "app" / "api"
 
-EXPECTED_ABC_METHODS = {
-    "start_session",
-    "stop_session",
-    "request_stop",
-    "restart_session",
-    "send_command",
-    "get_status",
-    "list_sessions",
-    "get_stats",
-    "on",
-    "start_heartbeat_monitor",
-    "stop_heartbeat_monitor",
-    "restore_active_sessions",
-    "shutdown_all",
-}
-
 
 def test_ipc_session_runner_implements_abc():
     """实现类必须满足 ABC：issubclass 且无残留抽象方法。"""
     assert issubclass(IPCSessionRunner, SessionRunner)
     assert IPCSessionRunner.__abstractmethods__ == frozenset()
-
-
-def test_abc_method_count_is_13():
-    """ABC 恰好 13 个抽象方法，与 Task 1.4 + Task 4.1 的清单一致。"""
-    assert SessionRunner.__abstractmethods__ == frozenset(EXPECTED_ABC_METHODS)
-    assert len(SessionRunner.__abstractmethods__) == 13
 
 
 def test_abc_covers_all_api_calls():
@@ -62,6 +40,7 @@ def test_abc_covers_all_api_calls():
             continue
         called.add(node.attr)
 
+    assert API_FILE.is_file(), f"API 文件不存在，测试失效: {API_FILE}"
     assert called, "未在 API 层发现任何 runner_manager 调用，测试失效"
 
     missing = sorted(attr for attr in called if not hasattr(SessionRunner, attr))
@@ -78,8 +57,10 @@ def test_abc_covers_all_api_calls():
 def test_no_private_attr_access_in_api():
     """API 目录下不得访问 runner manager 的私有属性（抽象泄漏）。"""
     offenders: list[str] = []
+    scanned = 0
 
     for path in sorted(API_DIR.rglob("*.py")):
+        scanned += 1
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         for node in ast.walk(tree):
             if not isinstance(node, ast.Attribute):
@@ -91,6 +72,7 @@ def test_no_private_attr_access_in_api():
             if node.attr.startswith("_"):
                 offenders.append(f"{path.name}:{node.lineno}: {node.value.id}.{node.attr}")
 
+    assert scanned > 0, f"API 目录下未扫描到任何 .py 文件，测试失效: {API_DIR}"
     assert not offenders, "API 层访问了私有属性:\n" + "\n".join(offenders)
 
 

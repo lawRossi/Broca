@@ -217,8 +217,10 @@ def test_ast_no_blocking_calls_in_async():
     """`broca/session_runner/` 下所有 async def 内不得有白名单外的阻塞调用。"""
     root = pathlib.Path(__file__).resolve().parents[1] / "session_runner"
     findings: list[str] = []
+    scanned = 0
 
     for path in sorted(root.rglob("*.py")):
+        scanned += 1
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
         file_findings: list[str] = []
         for node in ast.walk(tree):
@@ -226,4 +228,5 @@ def test_ast_no_blocking_calls_in_async():
                 _scan_node(node, False, file_findings, node.name)
         findings.extend(f"{path.name}:{item}" for item in file_findings)
 
+    assert scanned > 0, f"未扫描到任何 session_runner .py 文件，测试失效: {root}"
     assert not findings, "async def 内发现同步阻塞调用:\n" + "\n".join(findings)

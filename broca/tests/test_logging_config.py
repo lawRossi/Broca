@@ -448,14 +448,17 @@ class TestLogFormattingRegression:
         )
 
         offenders = []
+        scanned = 0
         for py_file in sorted(broca_dir.rglob("*.py")):
             if "tests" in str(py_file) or "venv" in str(py_file):
                 continue
+            scanned += 1
             content = py_file.read_text()
             for i, line in enumerate(content.splitlines(), 1):
                 if pattern.search(line):
                     offenders.append(f"{py_file}:{i}: {line.strip()}")
 
+        assert scanned > 0, f"未扫描到任何 broca .py 文件（CWD 可能不对），测试失效: {broca_dir}"
         assert not offenders, (
             "发现 stdlib %s 风格日志调用（loguru 不支持）:\n" + "\n".join(offenders)
         )

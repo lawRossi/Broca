@@ -96,8 +96,10 @@ def test_all_session_runner_modules_importable() -> None:
 
 def test_module_annotations_evaluable() -> None:
     """访问每个模块的 ``__annotations__`` 不得抛 NameError。"""
+    files = _module_files()
+    assert files, "no session_runner modules found — path resolution is broken"
     failures: list[str] = []
-    for path in _module_files():
+    for path in files:
         name = _module_name(path)
         module = importlib.import_module(name)
         try:
@@ -114,8 +116,10 @@ def test_module_level_annotations_are_all_bound() -> None:
     这是本机唯一能确定性复现 3.12/3.13「注解立即求值」语义的手段，
     不依赖解释器版本、不需要 import 成功。
     """
+    files = _module_files()
+    assert files, "no session_runner modules found — path resolution is broken"
     violations: list[str] = []
-    for path in _module_files():
+    for path in files:
         tree = ast.parse(path.read_text(encoding="utf-8"))
         bound = _bound_names(tree)
         for annotation in _annotations_to_check(tree):

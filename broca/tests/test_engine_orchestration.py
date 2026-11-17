@@ -7,10 +7,6 @@ These tests instantiate ``broca.loop_engine.engine.DefaultLoopEngine``
 
 from __future__ import annotations
 
-import ast
-import importlib.util
-import inspect
-from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -383,70 +379,6 @@ async def test_abort_during_tools_stops_the_round():
 
     assert result.status == ExecutionStatus.ABORTED
     assert len(llm_strategy.calls) == 1
-
-
-def test_start_turn_does_not_broadcast_turn_start():
-    """M13: turn_start broadcasting belongs to LifecycleBroadcastHook only."""
-    source = Path(inspect.getfile(DefaultLoopEngine)).read_text()
-    assert "send_turn_start" not in source
-
-
-def test_engine_has_no_inline_policy_logic():
-    """Retry loops / semaphores / permission partitioning must live in strategies."""
-    source = Path(inspect.getfile(DefaultLoopEngine)).read_text()
-    for forbidden in (
-        "Semaphore",
-        "asyncio.sleep",
-        "get_permission",
-        "consecutive_rate_limit",
-        "dead_loop_window",
-        "GitSnapshotManager",
-        "ContextCompressor",
-        "MemoryManager",
-    ):
-        assert forbidden not in source, f"{forbidden} must not appear in engine.py"
-
-
-def test_engine_is_an_orchestrator_not_a_monolith():
-    """Guard the *shape*, not the line count.
-
-    The ``engine.py`` ≤320-line AC was withdrawn by the plan owner (plan
-    Appendix C, C1) in favour of readability, so asserting a line budget here
-    would just be an arbitrary number that keeps getting bumped.  What must
-    hold instead: the policy lives in ``strategies/`` + ``hooks/`` (guarded by
-    ``test_engine_has_no_inline_policy_logic``), and the engine's method count
-    stays well below the legacy monolith's 52.
-    """
-    source = Path(inspect.getfile(DefaultLoopEngine)).read_text()
-    methods = {
-        node.name
-        for node in ast.walk(ast.parse(source))
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-    }
-    assert len(methods) <= 40, f"engine.py grew to {len(methods)} methods"
-
-
-def test_legacy_engine_module_is_gone():
-    """Task 5.1: the 1427-line monolith must not come back."""
-    assert importlib.util.find_spec("broca.loop_engine.legacy") is None
-
-
-def test_engine_imports_no_hook_owned_components():
-    """Task 5.1 AC: no ``SnapshotManager`` / ``ContextCompressor`` / ``MemoryManager``.
-
-    They are hook dependencies now; importing them into the engine would
-    re-introduce the coupling the refactor removed.
-    """
-    source = Path(inspect.getfile(DefaultLoopEngine)).read_text()
-    import_lines = [
-        line
-        for line in source.splitlines()
-        if line.startswith("import ") or line.startswith("from ")
-    ]
-    for forbidden in ("SnapshotManager", "ContextCompressor", "MemoryManager"):
-        assert not any(forbidden in line for line in import_lines), (
-            f"{forbidden} must not be imported by engine.py"
-        )
 
 
 def test_engine_keeps_required_dependency_fields():

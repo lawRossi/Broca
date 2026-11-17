@@ -17,6 +17,12 @@ from unittest.mock import AsyncMock
 
 import pytest
 
+# litellm 在 import 时会联网拉取 model cost map，失败后重试 3 次约 20s。
+# 测试不使用真实计价数据，强制走内置本地表：全量测试因此从 ~160s 降到 ~80s。
+# 用 setdefault 允许 CI/开发者显式覆盖；子进程（如 alembic subprocess 测试）通过
+# os.environ.copy() 继承此变量，同样受益。
+os.environ.setdefault("LITELLM_LOCAL_MODEL_COST_MAP", "True")
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
