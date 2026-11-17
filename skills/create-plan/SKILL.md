@@ -1,6 +1,6 @@
 ---
 name: create-plan
-version: "1.0.0"
+version: "1.1.0"
 description: "Generate a detailed, verifiable plan document based on user input. Always use this skill when you're asked to perform complex task, such as developing a system from scratch, creating significant features, system refactoring, etc."
 ---
 
@@ -25,6 +25,7 @@ Take the user's input, conduct deep analysis and reasoning, and produce a **comp
 - **Thorough and Comprehensive**: All important aspects and details must be addressed.
 - **User-approved**: Unclear requirements, important details, and key decisions must all be clearly communicated with the user using 'ask_user'. Ask only one question at a time to avoid information overload.
 - **Proportionate to Complexity**: The plan's scope and structure must match the task's complexity — never over-engineer. See the Simplicity Rule in Step 2 for concrete limits.
+- **Cohesive & Decoupled**: Phase and task boundaries must follow the principle of **high cohesion, low coupling**. Each unit (phase or task) should be internally focused on **one concern** while having **minimal dependencies** on other units. The design goal is to maximize the number of tasks that can be **executed in parallel** and **independently assigned** to different agents/developers.
 
 ## Steps
 
@@ -52,20 +53,49 @@ Organize the plan into a clear hierarchy. **Every element must be verifiable.**
 
 In all cases: **prefer fewer phases with slightly larger tasks over many small phases.** A single phase with 4 well-defined tasks is almost always better than 3 phases of 1-2 tasks each.
 
-#### Phase
-Each phase is a major milestone, ordered logically. Each phase must have explicit **phase-level acceptance criteria** — what counts as "done" for this phase.
+---
 
-#### Task
-Each phase contains concrete tasks. Every task must include:
+#### Phase Division: High Cohesion (高内聚)
+
+Each phase is a major milestone, ordered logically. When deciding **where to draw phase boundaries**, apply the cohesion principle:
+
+- **One concern per phase**: A phase should represent a single, self-contained capability or milestone (e.g., "Data layer complete", "API layer complete", "UI complete"). If a phase feels like it's doing two unrelated things, split it.
+- **Phase goal must be independently verifiable**: At the end of a phase, the system should be in a **coherent, testable state** — not a half-finished jumble.
+- **Minimize cross-phase coupling**: Between phases, define a **clear contract** (data schema, API interface, shared type definitions). Later phases should depend on the *contract* of earlier phases, not on internal implementation details.
+  - ✅ Good: "Phase 2 consumes the REST API endpoints defined in Phase 1"
+  - ❌ Bad: "Phase 2 needs to modify the internal helper functions created in Phase 1"
+
+Each phase must have explicit **phase-level acceptance criteria** — what counts as "done" for this phase.
+
+#### Task Division: Low Coupling + Parallelism (低耦合 + 可并行)
+
+Each phase contains concrete tasks. When dividing tasks within a phase, optimize for **independent executability**:
+
+- **Self-contained tasks**: Each task should be completable without needing the *internal details* of sibling tasks. If Task A needs an output artifact from Task B (e.g., B produces a schema that A consumes), that's a **dependency** — minimize such edges.
+- **Prefer wide over deep**: Within a phase, aim for **more tasks with fewer dependencies** (wide graph) rather than **fewer tasks with long sequential chains** (deep graph). More parallelism = faster overall completion.
+- **Identify the critical path**: Some tasks inherently must be sequential (e.g., schema design → migration → model layer). Design the plan so the critical path is as **short as possible**, and everything not on it branches out in parallel.
+- **Parallelism annotation**: For each phase, explicitly mark which tasks can run in parallel (no mutual dependencies) and which must be sequential. This directly feeds into `create-tasks` dependency setup and `execute-tasks` scheduling.
+
+Every task must include:
 - **Goal**: What the task aims to achieve
 - **Steps**: Specific, executable step descriptions
 - **Expected output**: What concrete artifacts result (files, APIs, passing tests, etc.)
+- **Dependencies**: Which other tasks (by task ID) must be completed before this one. Use `无` or `[]` for tasks with no dependencies (can start immediately / run in parallel).
 - **Acceptance Criteria (AC)**: **Must** list 2-5 specific, measurable criteria. Good ACs answer "How do I know this task is done and done right?"
   - ✅ Good: "After successful registration, the user receives an email with a verification link. Clicking the link sets the account status to 'verified'."
   - ❌ Bad: "User registration works correctly."
 
-#### Dependencies
-Clearly specify task dependencies and execution order (which tasks can run in parallel, which must be sequential).
+#### Coupling & Cohesion Checklist
+
+Before finalizing the plan structure, verify each item:
+
+| Check | Question |
+|-------|----------|
+| **Cohesion** | Can I name each phase with a single, clear noun (e.g., "Data Model", "API Endpoints", "Frontend Pages")? If a phase name needs "and" (e.g., "Data and API"), it's probably doing too much. |
+| **Coupling (within phase)** | If I remove one task from a phase, do the remaining tasks still make sense independently? (i.e., tasks are not tightly interwoven) |
+| **Coupling (across phases)** | Does Phase N depend on Phase N-1 through a **well-defined interface** (API, schema, type) rather than internal implementation? |
+| **Parallelism** | In each phase with 3+ tasks, can at least 2 tasks run concurrently? If all tasks are strictly sequential, consider whether the phase boundary should be redrawn. |
+| **Independence** | Could a single executor pick up any task from the phase and complete it using only: that task's steps + the phase's shared contract + the referenced materials? (No need to read sibling tasks' internals) |
 
 ### 3. Write the Plan Document
 
@@ -104,8 +134,20 @@ Write the complete plan to a Markdown file under `plans/`.
 - [ ] {标准2}
 - [ ] ...
 
+**并行执行图**：
+{用简图标注哪些任务可并行、哪些是顺序依赖。示例：}
+
+```
+Task 1.1 ──┐
+            ├─→ Task 1.3 ──→ Task 1.4
+Task 1.2 ──┘
+```
+
+> Task 1.1 和 1.2 无互相依赖，可并行执行。Task 1.3 依赖 1.1 和 1.2 的产出。
+
 #### Task 1.1: {任务名称}
 - **目标**：{任务目标}
+- **依赖**：无
 - **步骤**：
   1. {步骤1}
   2. {步骤2}
@@ -118,6 +160,20 @@ Write the complete plan to a Markdown file under `plans/`.
 
 #### Task 1.2: {任务名称}
 - **目标**：{任务目标}
+- **依赖**：无
+- **步骤**：
+  1. {步骤1}
+  2. {步骤2}
+  3. ...
+- **预期产出**：{产出描述}
+- **验收标准**：
+  - [ ] {具体可衡量的验收标准1}
+  - [ ] {具体可衡量的验收标准2}
+  - [ ] ...
+
+#### Task 1.3: {任务名称}
+- **目标**：{任务目标}
+- **依赖**：Task 1.1, Task 1.2
 - **步骤**：
   1. {步骤1}
   2. {步骤2}
@@ -146,9 +202,10 @@ Write the complete plan to a Markdown file under `plans/`.
 
 After generating the plan document, summarize for the user:
 1. **Plan overview**: Briefly state how many phases and tasks the plan contains
-2. **Key decisions**: List the key decisions made in the plan
-3. **AC highlight**: Emphasize that every phase and task has explicit acceptance criteria
-4. **Materials check**: Ask the user to verify the referenced materials are accurate and complete
-5. **Next step**: Ask if they want to execute the plan or make adjustments. Inform the user that **execute-plan** command can be used for execution
+2. **Parallelism**: Highlight which phases have parallelizable tasks and describe the critical path
+3. **Key decisions**: List the key decisions made in the plan
+4. **AC highlight**: Emphasize that every phase and task has explicit acceptance criteria
+5. **Materials check**: Ask the user to verify the referenced materials are accurate and complete
+6. **Next step**: Ask if they want to execute the plan or make adjustments. Inform the user that **execute-plan** command can be used for execution
 
 **Never start executing any plan steps without explicit user confirmation.**

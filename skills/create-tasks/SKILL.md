@@ -114,6 +114,7 @@ Before creating any tasks, assess the plan's quality and flag issues:
 - **Feasibility**: Is the plan technically feasible? If not, stop and explain why.
 - **Completeness**: Are any important phases or tasks missing? If so, report to the user.
 - **Clarity**: Are there ambiguities or unclear decisions that need user confirmation? **Must use `ask_user` to clarify before proceeding.**
+- **Dependency consistency**: If the plan includes a `并行执行图` (parallelism diagram), cross-check it against each task's `依赖` field. If the diagram shows two tasks as parallel but a task's `依赖` field declares a dependency between them, flag the inconsistency and ask the user which is authoritative.
 
 > ⚠️ If any issue is found that could lead to incorrect task creation, resolve it with the user first. Do not create tasks from a flawed plan.
 
@@ -181,6 +182,12 @@ Create **one** parent task for the current phase only. Do not create other phase
 
 For each Task item inside the **current phase only**, create a child task:
 
+**Dependencies**: Read each task's **`依赖`** field from the plan document:
+- `依赖: 无` or `依赖: []` → set `"dependencies": []` (task can run in parallel with others)
+- `依赖: Task 1.1, Task 1.2` → set `"dependencies": ["TASK_ID_1.1", "TASK_ID_1.2"]` (using the actual task IDs created earlier in this step)
+
+> If a task has no explicit `依赖` field (plan predates v1.1), infer dependencies from the `并行执行图` or mark as `[]` and flag for the user.
+
 ```json
 {
     "action": "create",
@@ -189,7 +196,7 @@ For each Task item inside the **current phase only**, create a child task:
     "priority": "high",
     "parent_id": "PHASE_TASK_ID",
     "dependencies": ["TASK_DEPENDENCY_IDS"],
-    "details": "## Steps\n{steps from plan}\n\n## Expected Output\n{expected output from plan}\n\n## Plan Reference\n- Plan: plans/{plan-name}.md\n- Phase: {Phase Name}\n- Related Materials: {related materials from plan}",
+    "details": "## Steps\n{steps from plan}\n\n## Expected Output\n{expected output from plan}\n\n## Dependencies\n{task's 依赖 field from plan}\n\n## Plan Reference\n- Plan: plans/{plan-name}.md\n- Phase: {Phase Name}\n- Related Materials: {related materials from plan}",
     "acceptance_criteria": [
         "{Task AC #1 from plan}",
         "{Task AC #2 from plan}",
@@ -210,6 +217,7 @@ Cross-reference the returned children against this phase's task list in the plan
 - Every Task for this phase → has a child task? ✅
 - Acceptance criteria for each task → preserved? ✅
 - Dependencies within this phase → set correctly? ✅
+- **Parallelism match**: If the plan has a `并行执行图`, verify that tasks marked as parallel in the diagram have empty `dependencies` arrays, and tasks shown as sequential have the correct dependency IDs. If mismatch found, correct before proceeding.
 
 **Do not proceed to create the next phase's tasks.** The user (or `execute-plan` orchestration) will call this skill again when the current phase is finished.
 

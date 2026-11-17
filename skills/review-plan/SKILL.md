@@ -1,12 +1,12 @@
 ---
 name: review-plan
-version: "1.0.0"
-description: "Reviews a plan document for completeness, clarity, feasibility, AC quality, risk identification, and overall soundness before execution. Use this skill after create-plan and before executing tasks."
+version: "1.1.0"
+description: "Reviews a plan document for completeness, clarity, feasibility, AC quality, cohesion & coupling, risk identification, and overall soundness before execution. Use this skill after create-plan and before executing tasks."
 ---
 
 # Review Plan
 
-This skill reviews a plan document (created by `create-plan`) **before execution begins** — ensuring the plan is complete, clear, feasible, and well-structured before any implementation work starts.
+This skill reviews a plan document (created by `create-plan`) **before execution begins** — ensuring the plan is complete, clear, feasible, well-structured, and optimized for parallel execution before any implementation work starts.
 
 ## ⚠️ Core Constraint
 
@@ -31,11 +31,11 @@ Each plan is evaluated across 8 quality dimensions:
 
 | # | Dimension | Core Question |
 |:-:|-----------|---------------|
-| 1 | 📋 **Completeness** | Does the plan cover all required sections? Any missing tasks, phases, or materials? |
+| 1 | 📋 **Completeness** | Does the plan cover all required sections, including per-task dependencies and parallelism annotations? |
 | 2 | 🔍 **Clarity** | Are tasks, steps, and expectations unambiguous? Could an executor correctly interpret everything? |
 | 3 | 🎯 **AC Quality** | Are acceptance criteria specific, measurable, verifiable, and complete? |
 | 4 | 🏗️ **Feasibility** | Is the plan technically feasible given the constraints, timeline, and environment? |
-| 5 | 🔗 **Structure & Dependencies** | Are phases and tasks logically ordered? Are dependencies correctly identified? |
+| 5 | 🔗 **Cohesion & Coupling** | Are phases cohesive (one concern each), tasks self-contained, cross-phase dependencies contract-based, and the dependency graph optimized for parallelism? |
 | 6 | ⚠️ **Risk Identification** | Are risks properly identified with mitigation strategies? |
 | 7 | ⚖️ **Proportionality** | Is the level of detail appropriate for the complexity? (Not over-engineered for simple tasks, not too vague for complex ones) |
 | 8 | ✅ **Internal Consistency** | Do task ACs align with phase ACs? Do phases build logically? Is the approach consistent throughout? |
@@ -65,10 +65,14 @@ Read the plan document at the given path. Extract all structural elements:
 ## 总体方案           → overall approach
 ## 执行计划           → phases and tasks
   ### Phase N: {Name} → phase goal + phase acceptance criteria
-    #### Task N.M: {Name} → task goal, steps, expected output, acceptance criteria
+    **并行执行图**    → parallelism diagram (which tasks are parallel vs sequential)
+    #### Task N.M: {Name}
+      目标, 依赖, 步骤, 预期产出, 验收标准
 ## 风险与应对         → risk table
 ## 未解决的问题       → open questions
 ```
+
+> Note: For **simple single-phase plans**, the `并行执行图` section is optional (not required when a phase has ≤2 tasks). For plans with 3+ tasks per phase, it should be present.
 
 ### Step 2: Evaluate Each Dimension
 
@@ -86,6 +90,8 @@ Check that all required sections exist:
 | Task-level ACs | Each task has 2~5 specific acceptance criteria? |
 | Task Steps | Each task has concrete, executable steps? |
 | Task Expected Output | Each task describes what artifacts result? |
+| **Task Dependencies** | Each task declares its **依赖** (which tasks it depends on, or "无")? |
+| **Parallelism Annotation** | Each phase with 3+ tasks has a **并行执行图** showing which tasks can run concurrently? |
 | 风险与应对 (Risk & Mitigation) | Risk table present? |
 | 未解决的问题 (Open Questions) | Section present (ideally empty)? |
 
@@ -95,6 +101,8 @@ Check that all required sections exist:
 - Tasks without ACs or steps
 - ACs that are too vague (e.g., "Works correctly")
 - Missing referenced materials for complex tasks
+- Tasks missing the **依赖** field
+- Phases with 3+ tasks missing the **并行执行图**
 
 #### Dimension 2: 🔍 Clarity
 
@@ -103,12 +111,14 @@ Evaluate whether each element is unambiguous:
 **Phase-level:**
 - Is the phase goal clear and well-scoped?
 - Is it clear what "done" means for this phase?
+- Can the phase be named with a single noun (not "X and Y")?
 
 **Task-level (check every task):**
 - Are the steps actionable? Could someone follow them without guessing?
 - Are technical terms explained or commonly understood?
 - Are there any ambiguous phrases like "appropriate," "properly," "as needed" without definition?
 - Are file paths, function names, and API endpoints specific rather than generic?
+- Is the **dependency** declaration unambiguous (exact task IDs, not "the previous task")?
 
 **Overall:**
 - Would two different executors produce the same result from this plan?
@@ -157,22 +167,48 @@ Assess whether the plan is realistic:
 - Does the plan assume access to tools/services that may not be available? (e.g., specific API keys, paid services)
 - Are there external dependencies that need coordination?
 
-#### Dimension 5: 🔗 Structure & Dependencies
+#### Dimension 5: 🔗 Cohesion & Coupling
 
-Evaluate the plan's logical flow:
+This is the most structural dimension — evaluate the plan's decomposition quality for **parallel execution and independent task allocation**.
 
-**Phase ordering:**
-- Do phases build on each other logically? (e.g., "Setup" before "Implementation," "Backend" before "Frontend")
-- Could any phase be started before the previous one is fully complete?
+##### 5a. Phase Cohesion (高内聚)
 
-**Task ordering within phases:**
-- Are dependencies between tasks correctly identified?
-- Could any tasks run in parallel? If yes, is this noted?
-- Are there any circular dependencies?
+| Check | Question | Flag if... |
+|-------|----------|-----------|
+| Single concern | Can each phase be named with one clear noun? | Phase name contains "and" (e.g., "Data Layer and API") — it's doing two things |
+| Verifiable boundary | After phase completion, is the system in a coherent, testable state? | Phase ACs can't be verified without internal state of the next phase |
+| Logical ordering | Do phases form a natural progression? | Phase N makes no sense without Phase N+1 (inverted dependency) |
 
-**Dependency correctness:**
-- Does Task N.2 actually depend on Task N.1, or could they be parallel?
-- Are cross-phase dependencies identified?
+##### 5b. Cross-Phase Coupling (跨阶段低耦合)
+
+| Check | Question | Flag if... |
+|-------|----------|-----------|
+| Contract-based | Does Phase N depend on Phase N-1 through a **well-defined interface** (API endpoint, data schema, shared type)? | Phase N's steps reference internal functions/files created in Phase N-1 without them being part of a formal contract |
+| No implementation leakage | Would changes in Phase N-1's internals break Phase N? | Phase N's ACs depend on specific implementation details rather than behavior |
+
+##### 5c. Task-Level Coupling (任务间低耦合)
+
+| Check | Question | Flag if... |
+|-------|----------|-----------|
+| Self-contained | Could a task be executed without reading sibling tasks' internal details? | Task A's steps say "use the helper created in Task B" instead of a well-defined interface |
+| Justified dependencies | Is every declared dependency truly necessary? | Task X depends on Task Y but only uses Y's output at the very end — could be parallel |
+| Independence | Could any task be assigned to a different executor using only: its own steps + phase contract + referenced materials? | Task needs "context from Task X" that isn't captured in a shared artifact |
+
+##### 5d. Parallelism Design (并行优化)
+
+| Check | Question | Flag if... |
+|-------|----------|-----------|
+| Wide over deep | Does the phase's dependency graph have a reasonable width (parallelism) vs. depth (sequential chain)? | A phase with 5 tasks is a pure chain 1→2→3→4→5 with no parallelism (justify or redraw) |
+| Critical path | Is the critical path (longest sequential chain) short relative to total task count? | Critical path covers >70% of all tasks (e.g., 4 of 5) |
+| Parallelism annotation | Does the 并行执行图 correctly reflect the declared dependencies? | Diagram shows parallel but dependencies say sequential (or vice versa) |
+| Dependency correctness | Are declared dependencies actually needed? | Task 1.3 lists "依赖: Task 1.1" but 1.1's output isn't actually used in 1.3's steps |
+| Missing parallelism | Could any two "sequential" tasks actually run in parallel? | Tasks touch different files/modules but are listed sequentially without justification |
+
+**Common coupling/cohesion issues:**
+- ❌ Phase "Database and API" → ✅ Split into Phase "Data Model" and Phase "API Layer" (contract: DB schema)
+- ❌ Task 2.1 depends on Task 2.0 "to use its internal utility function" → ✅ Expose a shared interface in the phase contract; both tasks depend on the interface, not on each other
+- ❌ 4-task phase is a pure chain: T1→T2→T3→T4 → ✅ Redesign: T1 and T2 parallel → T3 (needs both) → T4
+- ❌ Task declares dependency on sibling but its steps never reference the sibling's output → ✅ Remove the dependency, enable parallelism
 
 #### Dimension 6: ⚠️ Risk Identification
 
@@ -183,6 +219,7 @@ Review the risk section (if present) or note its absence:
 - Are mitigation strategies concrete and actionable?
 - Are high-impact risks addressed in the task breakdown?
 - Are there obvious risks missing?
+- Are **parallelism risks** identified? (e.g., two parallel tasks writing to the same file, or contention on shared resources)
 
 **If risk table is missing:**
 - For complex projects, note this as a concern
@@ -196,16 +233,19 @@ Assess whether the plan's detail matches the task's complexity:
 - Single phase with 1-5 tasks is appropriate ✅
 - Multiple phases with many tasks → over-engineered ❌
 - ACs can be straightforward ✅
+- Parallelism annotation optional (≤2 tasks per phase) ✅
 
 **Complex tasks (e.g., build a new system, major refactor):**
 - Multiple phases expected ✅
 - Detailed ACs needed for each task ✅
 - Risk section should be thorough ✅
+- Parallelism diagrams required (3+ tasks per phase) ✅
 - Single phase with vague tasks → insufficient ❌
 
 **Flag if:**
 - A 5-minute fix has a 3-phase plan with 15 tasks (over-engineered)
 - A 2-week project has a single phase with 2 vague tasks (under-developed)
+- A complex plan has all-sequential tasks with no parallelism annotation (missed optimization)
 
 #### Dimension 8: ✅ Internal Consistency
 
@@ -220,6 +260,10 @@ Check for alignment across the plan:
 - Is the technical approach consistent across all phases? (e.g., not using different DB technologies in different phases without explanation)
 - Are naming conventions consistent?
 - Are there contradictions between tasks?
+
+**Parallelism consistency:**
+- Do the dependency declarations on individual tasks match the 并行执行图?
+- If Task A declares "依赖: 无" but the diagram shows it depends on Task B → inconsistency
 
 **Material consistency:**
 - Do the referenced materials actually support the plan's approach?
@@ -268,7 +312,7 @@ Write the review report to `reports/review/{plan-name}-review.md`.
 | 2 | 🔍 Clarity | ⭐/5 | {summary} |
 | 3 | 🎯 AC Quality | ⭐/5 | {summary} |
 | 4 | 🏗️ Feasibility | ⭐/5 | {summary} |
-| 5 | 🔗 Structure & Dependencies | ⭐/5 | {summary} |
+| 5 | 🔗 Cohesion & Coupling | ⭐/5 | {summary} |
 | 6 | ⚠️ Risk Identification | ⭐/5 | {summary} |
 | 7 | ⚖️ Proportionality | ⭐/5 | {summary} |
 | 8 | ✅ Internal Consistency | ⭐/5 | {summary} |
@@ -313,13 +357,29 @@ Good ACs identified:
 |:-:|:--------:|----------|-------|------------|
 | 1 | {Critical/Major/Minor} | {Phase/Task} | {issue} | {fix} |
 
-### 5. 🔗 Structure & Dependencies — {score}
+### 5. 🔗 Cohesion & Coupling — {score}
 
 **Summary**: {brief summary}
 
-| # | Severity | Location | Issue | Suggestion |
-|:-:|:--------:|----------|-------|------------|
-| 1 | {Critical/Major/Minor} | {Phase/Task} | {issue} | {fix} |
+#### 5a. Phase Cohesion
+| # | Severity | Phase | Issue | Suggestion |
+|:-:|:--------:|-------|-------|------------|
+| 1 | {severity} | Phase {N} | {e.g., "Phase name 'Data and API' suggests two concerns"} | {fix} |
+
+#### 5b. Cross-Phase Coupling
+| # | Severity | Between Phases | Issue | Suggestion |
+|:-:|:--------:|----------------|-------|------------|
+| 1 | {severity} | Phase {N} → Phase {N+1} | {e.g., "Phase 2 references internal helper from Phase 1"} | {fix} |
+
+#### 5c. Task-Level Coupling
+| # | Severity | Task(s) | Issue | Suggestion |
+|:-:|:--------:|---------|-------|------------|
+| 1 | {severity} | Task {N.M} | {e.g., "Depends on Task {N.K} but never uses its output"} | {fix} |
+
+#### 5d. Parallelism Design
+| # | Severity | Phase | Issue | Suggestion |
+|:-:|:--------:|-------|-------|------------|
+| 1 | {severity} | Phase {N} | {e.g., "4 tasks are fully sequential; Tasks 1 and 2 touch different modules and could be parallel"} | {fix} |
 
 ### 6. ⚠️ Risk Identification — {score}
 
@@ -397,25 +457,26 @@ Present the results clearly:
 1. **Verdict**: State the overall verdict (Pass / Conditional Pass / Needs Revision)
 2. **Key strengths**: What the plan does well
 3. **Key issues**: Critical issues that must be addressed (if any)
-4. **Recommendation**: Clear next steps
-5. **Report location**: Point to the full report file
+4. **Parallelism insight**: Brief note on the plan's parallelism potential (e.g., "Phase 2 has 4 tasks, 2 can run in parallel — good design") or concern ("All tasks are sequential — consider redesign")
+5. **Recommendation**: Clear next steps
+6. **Report location**: Point to the full report file
 
 Example report:
 
 > ## Plan Review Complete
 >
-> **Verdict**: ❌ Needs Revision (Overall: ⭐⭐)
+> **Verdict**: ⚠️ Conditional Pass (Overall: ⭐⭐⭐⭐)
 >
 > **Key Strengths**:
-> - Good phase structure with logical progression
-> - Risk section is well-thought-out
+> - Good phase structure with clear contracts between phases
+> - Phase 1 tasks 1.1 and 1.2 are correctly identified as parallelizable
+> - Risk section covers the main integration risks
 >
-> **Key Issues** (3 critical):
-> 1. Task 1.1 AC: "User registration works" — too vague, not testable
-> 2. Task 1.3 references a deprecated API (`v1/users`) — should be `v2/users`
-> 3. Missing phase-level AC for Phase 2
+> **Key Issues** (2 major):
+> 1. Task 2.3 declares dependency on Task 2.1 but never uses its output — remove to enable parallelism
+> 2. Phase 2 is entirely sequential (4 tasks in a chain) — Tasks 2.1 and 2.2 touch different modules and could be parallel
 >
-> **Recommendation**: Fix the 3 critical issues and run review-plan again before proceeding.
+> **Recommendation**: Fix the 2 major issues (update dependencies + redraw parallelism diagram for Phase 2).
 >
 > Full report: `reports/review/{plan-name}-review.md`
 
@@ -432,8 +493,10 @@ If the plan file doesn't exist at the specified path:
 ### Case: Plan has only one phase with a few tasks
 
 This is expected for simple tasks. The review should be proportionate:
-- Skip deep analysis of cross-phase dependencies (not applicable)
+- Skip cross-phase coupling checks (not applicable — only one phase)
+- Skip parallelism diagram check if phase has ≤2 tasks (annotation is optional)
 - Focus on AC quality, clarity, and completeness
+- Score Cohesion & Coupling on **task-level checks only** (self-contained, justified dependencies)
 - Score Proportionality highly if the simplicity is appropriate
 
 ### Case: Plan uses a different language (e.g., English instead of Chinese)
@@ -444,9 +507,15 @@ The review should still follow the same 8 dimensions regardless of language. Rea
 
 This is fine for simple plans. However, for complex plans with multiple phases, flag it as a minor issue in the Completeness dimension.
 
+### Case: Plan is missing parallelism diagrams
+
+- For simple plans (≤2 tasks per phase): **not an issue** — parallelism annotation is optional
+- For complex plans (3+ tasks per phase): flag as a **Major** issue in Completeness (missing 并行执行图) or **Minor** if the dependencies are clear from the task declarations alone
+- If the plan was generated before the v1.1 update, note: "Plan predates the parallelism annotation requirement. Recommend re-running create-plan for full v1.1 compliance, or manually add dependency annotations."
+
 ### Case: User asks to review only specific phases
 
-If the user specifies a phase range (e.g., "review Phase 1 and 2 only"), limit the review to those phases. For dimension scores that require the full picture (e.g., Structure & Dependencies), note "Partial review — only Phase X evaluated."
+If the user specifies a phase range (e.g., "review Phase 1 and 2 only"), limit the review to those phases. For dimension scores that require the full picture (e.g., Cohesion & Coupling cross-phase checks), note "Partial review — only Phase X evaluated."
 
 ## Anti-Patterns
 
@@ -459,3 +528,5 @@ If the user specifies a phase range (e.g., "review Phase 1 and 2 only"), limit t
 | Score based on gut feeling | Score based on specific, documented issues |
 | Ignore good aspects of the plan | Highlight strengths too — balanced feedback is more actionable |
 | Be overly verbose in the summary report | Keep the user-facing summary concise; details go in the report file |
+| Only check if dependencies exist | Also check if declared dependencies are **justified** — a wrong dependency kills parallelism |
+| Ignore the parallelism design | Evaluate whether the dependency graph is optimized for wide parallelism, not just correct |

@@ -44,16 +44,18 @@ user                         → tests + review report
 
 ## Core Methodology
 
-**Work in continuous delivery cycles: one phase at a time.**
+**Work in continuous delivery cycles: one phase at a time, with parallel task execution within a phase.**
 
 ```mermaid
 flowchart LR
-    A["📌 Plan Anchor<br/>Re-read Phase ACs"] --> B["⚡ Task-by-Task<br/>(anchor each task's ACs)"]
+    A["📌 Phase Anchor<br/>Re-read plan + 并行执行图"] --> B["⚡ Task Execution<br/>(parallel where deps allow)"]
     B --> C["✅ Self-Check<br/>against ACs"]
     C --> D["📋 Phase Report<br/>+ Review"]
     D -->|"✅ Pass"| A
     D -->|"❌ Issues"| B
 ```
+
+**Parallelism principle**: Within a phase, tasks whose dependencies are all satisfied can execute **concurrently** (assigned to different agents). This leverages the low-coupling design from `create-plan` to minimize total phase duration.
 
 ## Execution Workflow
 
@@ -76,10 +78,12 @@ Each Phase follows a 5-step cycle:
 At the start of each phase, **re-read the plan document** for this phase:
 
 - The **phase goal** and **phase acceptance criteria**
-- Every Task's: **goal**, **steps**, **expected output**, **acceptance criteria**
+- The **并行执行图** (parallelism diagram) — understand which tasks are designed to run concurrently
+- Every Task's: **goal**, **dependencies (依赖)**, **steps**, **expected output**, **acceptance criteria**
 - Confirm no tasks are missed or misremembered
+- Identify the **ready set**: tasks with no dependencies or all deps already completed → these can start immediately (potentially in parallel)
 
-> Why re-read? Context may have been compressed. Re-reading ensures your execution stays anchored in the latest, most complete plan content.
+> Why re-read? Context may have been compressed. Re-reading ensures your execution stays anchored in the latest, most complete plan content, including the parallelism structure.
 
 ---
 
@@ -100,14 +104,18 @@ Tasks created by `create-tasks` follow the naming convention `{PlanName} / Phase
 
 #### Select Next Task
 
-Choose the next task based on:
+Choose the next task(s) based on:
 
 | Criteria         | Rule                                                                      |
 | ------------------| ---------------------------------------------------------------------------|
 | **Status**       | Must be `pending` (or `blocked` if unblocking)                            |
 | **Dependencies** | All dependency task IDs must have status `completed`                      |
 | **Priority**     | Higher priority first (high > medium > low)                               |
-| **Plan order**   | Follow Phase/Task number order (Phase 1 → Task 1.1 → 1.2 → Phase 2 → ...) |
+| **Plan order**   | Tiebreaker only: when multiple tasks are equally ready, prefer lower task number first |
+
+**Parallel execution**: After evaluating all pending tasks, identify the set of **ready tasks** (status `pending` + all deps `completed`). If multiple tasks are ready simultaneously, they **can be assigned to different agents in parallel** to leverage the plan's parallelism design. Use `assign_task` with `execution_type: "background"` to start multiple tasks concurrently.
+
+> Check the plan's `并行执行图` (if present) to understand the intended parallelism structure. Tasks shown side-by-side in the diagram are designed to run concurrently.
 
 #### Task Anchor
 - Re-read the task's goal, steps, expected output, and **acceptance criteria**
@@ -288,16 +296,18 @@ The task's `files` array will contain `["plans/{plan-name}.md"]` — use this to
 The task's `details` field will contain:
 - **Steps**: Concrete steps to follow
 - **Expected Output**: What success looks like
+- **Dependencies**: The task's declared dependencies (from plan's `依赖` field)
 - **Plan Reference**: Path back to the plan document
 
 ## Anti-Patterns
 
 | Don't                                 | Do Instead                                                         |
 | ---------------------------------------| --------------------------------------------------------------------|
-| Skip reading the plan document        | Always re-read the relevant plan section for context               |
+| Skip reading the plan document        | Always re-read the relevant plan section (including 并行执行图) for context |
 | Skip acceptance criteria verification | Verify EVERY acceptance criterion before marking complete          |
 | Ignore dependencies                   | Check all dependencies are completed before starting               |
 | Repeat failed approaches              | Log failures, try different methods, use 3-Strike Protocol         |
-| Work on tasks out of plan order       | Follow Phase/Task numbering from the plan                          |
+| Serialize all tasks even when parallelism is possible | Check the ready set; execute independent tasks in parallel to save time |
+| Execute a task before its dependencies are met | Respect the dependency graph — only start tasks whose deps are all `completed` |
 | Skip progress tracking                | Update status → in_progress → completed with report                |
 | Write verbose task-level reports      | Keep task reports concise; put details in the phase report instead |
