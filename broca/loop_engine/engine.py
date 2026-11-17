@@ -66,6 +66,11 @@ _TERMINAL_STATUSES = (
     ExecutionStatus.DEAD_LOOP,
 )
 
+# Message types that may be injected between steps.  AGENT_NOTIFY includes
+# delegate receipts (``data.kind == "delegate_receipt"``); parse_message()
+# turns them into user-role messages so the next LLM step can see them.
+_MID_TURN_INJECTABLE_TYPES = (MessageType.USER_MESSAGE, MessageType.AGENT_NOTIFY)
+
 _MISSING_RESULT_CONTENT = "Tool execution failed (missing result)"
 
 _TURN_END_MESSAGES = {
@@ -615,7 +620,7 @@ class DefaultLoopEngine(LoopEngine):
                                 f"{[m.message_type for m in new_msgs]}"
                             )
                         for msg in new_msgs:
-                            if msg.message_type == MessageType.USER_MESSAGE:
+                            if msg.message_type in _MID_TURN_INJECTABLE_TYPES:
                                 await self._inject_user_message(msg)
                     except Exception as e:
                         logger.warning(f"Mid-step message drain failed: {e}")

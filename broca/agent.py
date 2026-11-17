@@ -782,6 +782,22 @@ class Agent:
             # Clear undo stack (new operation invalidates undo history)
             self.revert_service.undo_stack.clear()
 
+            # Agent 发起的 turn（request/delegate/notify handler、编排直调、
+            # 子 Agent）不会经过 start() 的 USER_MESSAGE 分支，因此没有
+            # message_source；non_blocking 下统一在这里补 drainer，让这些
+            # turn 也能在 step 之间注入新消息（如 delegate 回执）。
+            # 调用方显式传入的 message_source 优先。
+            if (
+                message_source is None
+                and getattr(
+                    getattr(self.config, "execution_config", None),
+                    "execution_mode",
+                    None,
+                )
+                == "non_blocking"
+            ):
+                message_source = self._make_message_source()
+
             try:
                 return await self.execution_engine.execute(
                     message, max_steps, from_agent,

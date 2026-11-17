@@ -3,7 +3,7 @@
 Covers ``DefaultAgentMessenger`` (request / notify / delegate / reply /
 handle_request_response), the ``Communicate`` tool, and the ``Agent`` handler
 methods (``_handle_incoming_request`` / ``_handle_incoming_delegate`` /
-``run`` chain entry / mid-turn drain).
+``run`` chain entry / mid-turn drain / agent 发起的 turn 自动带 drainer).
 
 Scope note (user constraint "可选增强不用做"): ``CommunicationBudget`` and
 optional notify/delegate chain detection are **not** implemented — there are
@@ -15,6 +15,7 @@ forced cycle detection) are fully covered.
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -714,9 +715,11 @@ class _FakeRevertService:
 class _FakeEngine:
     def __init__(self):
         self.executed = None
+        self.execute_kwargs = None
 
     async def execute(self, message, max_steps, from_agent, **kwargs):
         self.executed = message
+        self.execute_kwargs = kwargs
         return ExecutionResult(status=ExecutionStatus.COMPLETED, message="ok")
 
 
@@ -726,14 +729,19 @@ class FakeRunAgent:
     STATUS_RUNNING = "running"
     STATUS_IDLE = "idle"
 
-    def __init__(self, messenger, agent_id="A"):
+    def __init__(self, messenger, agent_id="A", execution_mode="non_blocking"):
         self.agent_id = agent_id
         self.messenger = messenger
         self._run_lock = asyncio.Lock()
         self._abort_task = None
         self.revert_service = _FakeRevertService()
         self.execution_engine = _FakeEngine()
-        self.config = type("C", (), {"save_history": True})()
+        self.message_queue = asyncio.Queue()
+        self._make_message_source = lambda: Agent._make_message_source(self)
+        execution_config = type("EC", (), {"execution_mode": execution_mode})()
+        self.config = type(
+            "C", (), {"save_history": True, "execution_config": execution_config}
+        )()
         self._status = None
 
     async def _set_status(self, status):
@@ -757,6 +765,49 @@ class TestRunChainEntry:
         msg = MessageProtocol.create_user_message("hi")
         await Agent.run(fake, msg, call_chain=CallChain(agent_ids=["A"]))
         assert m._call_chain.agent_ids == ["A", "B"]
+
+    @pytest.mark.asyncio
+    async def test_agent_initiated_turn_auto_attaches_message_source(self):
+        """request/delegate/notify 触发的 turn 也要能在 step 之间注入回执。"""
+        m = await make_messenger(agent_id="A", name="A")
+        fake = FakeRunAgent(m, agent_id="A")
+        receipt = Message(
+            message_type=MessageType.AGENT_NOTIFY,
+            role="agent",
+            data={
+                "source_agent": "B",
+                "kind": "delegate_receipt",
+                "task_id": "t-1",
+                "content": "done",
+            },
+        )
+        fake.message_queue.put_nowait(receipt)
+
+        msg = MessageProtocol.create_user_message("hi")
+        await Agent.run(fake, msg, from_agent=True)
+
+        source = fake.execution_engine.execute_kwargs["message_source"]
+        assert source is not None
+        assert await source.drain() == [receipt]
+
+    @pytest.mark.asyncio
+    async def test_blocking_mode_keeps_no_message_source(self):
+        m = await make_messenger(agent_id="A", name="A")
+        fake = FakeRunAgent(m, agent_id="A", execution_mode="blocking")
+        msg = MessageProtocol.create_user_message("hi")
+        await Agent.run(fake, msg)
+
+        assert fake.execution_engine.execute_kwargs["message_source"] is None
+
+    @pytest.mark.asyncio
+    async def test_explicit_message_source_is_not_overridden(self):
+        m = await make_messenger(agent_id="A", name="A")
+        fake = FakeRunAgent(m, agent_id="A")
+        explicit = MagicMock()
+        msg = MessageProtocol.create_user_message("hi")
+        await Agent.run(fake, msg, message_source=explicit)
+
+        assert fake.execution_engine.execute_kwargs["message_source"] is explicit
 
 
 class TestMidTurnDrain:

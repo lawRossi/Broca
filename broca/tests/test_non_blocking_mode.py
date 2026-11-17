@@ -9,6 +9,7 @@ Covers:
 - TC-6: max_steps limit
 - TC-7: _drain_user_messages selective drain
 - TC-8: _drain_user_messages empty queue
+- Regression: AGENT_NOTIFY (delegate receipt) 中途注入 / 终态 step 留到下一轮
 """
 
 import asyncio
@@ -170,6 +171,90 @@ class TestMidStepInjection:
         assert mock_session_manager.save_message.call_count >= 1
         # Turn completed
         assert result.status == ExecutionStatus.COMPLETED
+
+
+# ============================================================================
+# Regression: AGENT_NOTIFY (delegate receipt) mid-step injection
+# ============================================================================
+
+
+class TestMidStepNotifyInjection:
+    """回执是 AGENT_NOTIFY；drain 出来后必须注入当前 turn，不能被丢弃。"""
+
+    @staticmethod
+    def _receipt() -> Message:
+        return Message(
+            message_type=MessageType.AGENT_NOTIFY,
+            role="agent",
+            data={
+                "source_agent": "worker",
+                "kind": "delegate_receipt",
+                "task_id": "t-1",
+                "content": "done",
+            },
+        )
+
+    @pytest.mark.asyncio
+    async def test_delegate_receipt_injected_in_same_turn(
+        self, engine, mock_llm_client, mock_session_manager, mock_context
+    ):
+        step1 = MagicMock(spec=StepContext)
+        step1.status = ExecutionStatus.RUNNING
+        step2 = MagicMock(spec=StepContext)
+        step2.status = ExecutionStatus.COMPLETED
+        engine._execute_step = AsyncMock(side_effect=[step1, step2])
+
+        receipt = self._receipt()
+        msg_source = MagicMock()
+        msg_source.drain = AsyncMock(side_effect=[[receipt], []])
+        engine._message_source = msg_source
+
+        turn_ctx = MagicMock(spec=TurnContext)
+        turn_ctx.turn_id = "turn-1"
+        turn_ctx.agent_id = "test-agent"
+        turn_ctx.session_id = "test-session"
+
+        result = await engine._execute_round(turn_ctx, max_steps=5)
+
+        assert msg_source.drain.call_count == 1
+        # 回执走 parse_message 的 AGENT_NOTIFY 分支后进入 context
+        assert any(
+            call.kwargs.get("message") is receipt
+            for call in mock_llm_client.parse_message.call_args_list
+        )
+        assert mock_context.add_message.call_count >= 1
+        # 持久化时保留 kind/task_id，且标记为来自其他 agent
+        receipt_saves = [
+            call.kwargs
+            for call in mock_session_manager.save_message.call_args_list
+            if (call.kwargs.get("data") or {}).get("kind") == "delegate_receipt"
+        ]
+        assert len(receipt_saves) == 1
+        assert receipt_saves[0]["data"]["from_agent"] is True
+        assert receipt_saves[0]["data"]["task_id"] == "t-1"
+        assert result.status == ExecutionStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_terminal_step_leaves_receipt_queued(self, engine, mock_context):
+        """终态 step 到达时不 drain：回执留给下一轮（设计如此）。"""
+        step1 = MagicMock(spec=StepContext)
+        step1.status = ExecutionStatus.COMPLETED
+        engine._execute_step = AsyncMock(return_value=step1)
+
+        msg_source = MagicMock()
+        msg_source.drain = AsyncMock(return_value=[self._receipt()])
+        engine._message_source = msg_source
+
+        turn_ctx = MagicMock(spec=TurnContext)
+        turn_ctx.turn_id = "turn-1"
+        turn_ctx.agent_id = "test-agent"
+        turn_ctx.session_id = "test-session"
+
+        result = await engine._execute_round(turn_ctx, max_steps=5)
+
+        assert result.status == ExecutionStatus.COMPLETED
+        assert msg_source.drain.call_count == 0
+        assert mock_context.add_message.call_count == 0
 
 
 # ============================================================================
