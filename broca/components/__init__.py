@@ -30,6 +30,7 @@ Registry:
 """
 
 from broca.components.agent_factory import AgentFactory
+from broca.components.agent_messenger import AgentMessenger
 from broca.components.base import BaseComponent
 from broca.components.command_system import CommandSystem
 from broca.components.communicator import Communicator
@@ -92,6 +93,7 @@ __all__ = [
     "Communicator",
     "LoopEngine",
     "AgentFactory",
+    "AgentMessenger",
     # Strategy + hook layer (Phase 1 of loop-engine hooks refactor)
     "LLMStrategy",
     "LLMCallResult",

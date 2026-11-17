@@ -40,7 +40,7 @@ class AutoDiscoverToolManager(ToolManagerABC):
         "web_fetch",
         "web_search",
         "ask_user",
-        "assign_task",
+        "communicate",
         "task_management",
         "todo_management",
         "cron",

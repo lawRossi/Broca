@@ -81,7 +81,7 @@ def _init_executor(
     communicator: Any = None,
     interactive: bool = False,
     tool_call_timeout: float = 120,
-    assign_task_timeout: float = 1800,
+    communicate_timeout: float = 1800,
 ) -> None:
     """Directly set internal attributes to bypass ``initialize()``."""
     executor._tool_mapping = tools or {}
@@ -89,7 +89,7 @@ def _init_executor(
     executor._communicator = communicator
     executor._interactive = interactive
     executor._tool_call_timeout = tool_call_timeout
-    executor._assign_task_timeout = assign_task_timeout
+    executor._communicate_timeout = communicate_timeout
     executor._initialized = True
 
 
@@ -132,7 +132,7 @@ def _setup_executor(
     permission: str = "allow",
     interactive: bool = False,
     tool_call_timeout: float = 120,
-    assign_task_timeout: float = 1800,
+    communicate_timeout: float = 1800,
 ) -> tuple[DefaultToolExecutor, _MockPermissionProvider, Any]:
     """Create an initialized executor + permission provider + communicator."""
     executor = DefaultToolExecutor()
@@ -150,7 +150,7 @@ def _setup_executor(
         communicator=comm,
         interactive=interactive,
         tool_call_timeout=tool_call_timeout,
-        assign_task_timeout=assign_task_timeout,
+        communicate_timeout=communicate_timeout,
     )
     return executor, pp, comm
 
@@ -402,17 +402,17 @@ class TestTimeoutSkip:
 
 class TestDedicatedTimeout:
     @pytest.mark.asyncio
-    async def test_assign_task_gets_longer_timeout(self):
-        """Verify _get_timeout returns the assign_task-specific timeout."""
+    async def test_communicate_gets_longer_timeout(self):
+        """Verify _get_timeout returns the communicate-specific timeout."""
         executor = DefaultToolExecutor()
         _init_executor(
             executor,
             tools={},
             permission_provider=_MockPermissionProvider(),
             tool_call_timeout=10,
-            assign_task_timeout=300,
+            communicate_timeout=300,
         )
-        assert executor._get_timeout("assign_task") == 300
+        assert executor._get_timeout("communicate") == 300
         assert executor._get_timeout("bash") == 10
 
 
@@ -570,7 +570,7 @@ class TestDelegationAndInit:
         config.interactive = True
         exec_cfg = MagicMock()
         exec_cfg.tool_call_timeout = 30
-        exec_cfg.assign_task_timeout = 600
+        exec_cfg.communicate_timeout = 600
         config.execution_config = exec_cfg
 
         await executor.initialize(
@@ -581,4 +581,4 @@ class TestDelegationAndInit:
         )
         assert executor._interactive is True
         assert executor._tool_call_timeout == 30
-        assert executor._assign_task_timeout == 600
+        assert executor._communicate_timeout == 600

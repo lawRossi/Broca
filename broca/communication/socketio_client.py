@@ -52,9 +52,10 @@ class _MessageDispatcher:
             MessageType.AGENT_ERROR: "agent_error",
             MessageType.AGENT_SYSTEM_MESSAGE: "agent_system_message",
             MessageType.SYSTEM_MESSAGE: "system_message",
-            MessageType.TASK_START: "task_start",
-            MessageType.TASK_COMPLETE: "task_complete",
-            MessageType.TASK_ERROR: "task_error",
+            MessageType.AGENT_REQUEST: "agent_request",
+            MessageType.AGENT_REQUEST_RESPONSE: "agent_request_response",
+            MessageType.AGENT_NOTIFY: "agent_notify",
+            MessageType.AGENT_DELEGATE: "agent_delegate",
             MessageType.TURN_START: "turn_start",
             MessageType.TURN_END: "turn_end",
             MessageType.STEP_START: "step_start",
@@ -137,6 +138,7 @@ class SocketIOClient(Communicator):
         self.client_type = client_type
         self.client_id = client_id or f"{client_type}_{id(self)}"
         self.user_id = user_id
+        self._session_id: Optional[str] = None
         self.auto_reconnect = auto_reconnect
         self.reconnect_delay = reconnect_delay
         self.max_reconnect_attempts = max_reconnect_attempts
@@ -161,6 +163,10 @@ class SocketIOClient(Communicator):
         # Message callbacks: message_id -> (callback, registered_at_timestamp)
         self.message_callbacks: Dict[str, Tuple[Callable, float]] = {}
         self._callback_cleanup_task: Optional[asyncio.Task] = None
+
+        # ACK timeout for send() (agent-to-agent transport confirmation, <=2s).
+        # Independent of send_message()'s callback machinery and request_timeout.
+        self._ack_timeout: float = 2.0
 
         # Connection event for waiting on connection
         self._connect_event = asyncio.Event()
@@ -436,6 +442,75 @@ class SocketIOClient(Communicator):
             f"Failed to send message after {max_retries} attempts: {last_error}"
         ) from last_error
 
+    # -- Agent-to-agent communication (AgentMessenger transport) --------------
+    #: Map AgentCommunication ``mode`` → MessageType for ``send()``.
+    _SEND_TYPE_BY_MODE: Dict[str, MessageType] = {
+        "request": MessageType.AGENT_REQUEST,
+        "request_reply": MessageType.AGENT_REQUEST_RESPONSE,
+        "notify": MessageType.AGENT_NOTIFY,
+        "delegate": MessageType.AGENT_DELEGATE,
+    }
+
+    async def send(self, content: str, data: dict, receiver_id: str) -> dict:
+        """Send an agent-to-agent message; return the routing ACK dict.
+
+        ``message_type`` is decided by ``data["mode"]``.  This is separate from
+        ``send_message()`` (which returns a ``str`` message id and uses
+        ``message_callbacks``); the ACK uses a dedicated emit-callback + Future.
+        """
+        mode = (data or {}).get("mode")
+        message_type = self._SEND_TYPE_BY_MODE.get(mode)
+        if message_type is None:
+            return {"status": "routing_failed", "reason": f"unknown_mode:{mode}"}
+        # ``Message`` has no ``content`` field — content travels in ``data``.
+        # Ensure the payload actually carries it (receivers read data["content"]).
+        if data is not None and "content" not in data:
+            data["content"] = content
+        message = Message(
+            message_type=message_type,
+            role=MessageRole.AGENT,
+            sender_id=self.client_id,
+            receiver_id=receiver_id,
+            subscription=self._session_id,
+            data=data,
+        )
+        return await self._send_message_with_ack(message)
+
+    async def _send_message_with_ack(self, message: Message) -> dict:
+        """Emit with a socketio callback and await the server handler's return
+        value as the transport ACK.
+
+        Uses an independent ``ack_fn`` + Future — never touches
+        ``self.message_callbacks`` (which ``send_message()`` uses for per-message
+        response callbacks).  Times out after ``self._ack_timeout`` seconds and
+        reports ``routing_failed``.
+        """
+        if not self.connection_info.connected:
+            return {"status": "routing_failed", "reason": "not_connected"}
+
+        loop = asyncio.get_running_loop()
+        ack_future: asyncio.Future = loop.create_future()
+
+        def ack_fn(result):
+            if not ack_future.done():
+                ack_future.set_result(result)
+
+        try:
+            await self.sio.emit(
+                "message", MessageProtocol.to_dict(message), callback=ack_fn
+            )
+        except Exception as e:  # pragma: no cover - transport failure
+            logger.warning(f"send() emit failed: {e}")
+            return {"status": "routing_failed", "reason": f"emit_error:{e}"}
+
+        try:
+            result = await asyncio.wait_for(ack_future, timeout=self._ack_timeout)
+        except asyncio.TimeoutError:
+            return {"status": "routing_failed", "reason": "ack_timeout"}
+        if not isinstance(result, dict):
+            return {"status": "routing_failed", "reason": "invalid_ack"}
+        return result
+
     async def send_user_message(
         self,
         content: str,
@@ -683,70 +758,6 @@ class SocketIOClient(Communicator):
         )
         return await self.send_message(msg, callback)
 
-    async def send_task_start(
-        self,
-        task_id: str,
-        task_description: str,
-        receiver_id: Optional[str] = None,
-        room: Optional[str] = None,
-        subscription: Optional[str] = None,
-    ) -> str:
-        """Send task start message"""
-        message = MessageProtocol.create_task_start(
-            task_id=task_id,
-            task_description=task_description,
-            sender_id=self.client_id,
-            receiver_id=receiver_id,
-            room=room,
-            subscription=subscription,
-        )
-
-        return await self.send_message(message)
-
-    async def send_task_complete(
-        self,
-        task_id: str,
-        result: Optional[str] = None,
-        receiver_id: Optional[str] = None,
-        room: Optional[str] = None,
-        subscription: Optional[str] = None,
-    ) -> str:
-        """Send task complete message"""
-        data = {"task_id": task_id}
-        if result:
-            data["result"] = result
-
-        message = Message(
-            message_type=MessageType.TASK_COMPLETE,
-            role=MessageRole.AGENT,
-            sender_id=self.client_id,
-            receiver_id=receiver_id,
-            room=room,
-            subscription=subscription,
-            data=data,
-        )
-        return await self.send_message(message)
-
-    async def send_task_error(
-        self,
-        task_id: str,
-        error_message: str,
-        receiver_id: Optional[str] = None,
-        room: Optional[str] = None,
-        subscription: Optional[str] = None,
-    ) -> str:
-        """Send task error message"""
-        message = MessageProtocol.create_task_error(
-            task_id=task_id,
-            error_message=error_message,
-            sender_id=self.client_id,
-            receiver_id=receiver_id,
-            room=room,
-            subscription=subscription,
-        )
-
-        return await self.send_message(message)
-
     async def send_agent_system_message(self, content: str, subscription: str) -> str:
         """Send system message"""
         message = MessageProtocol.create_agent_system_message(
@@ -871,17 +882,9 @@ class SocketIOClient(Communicator):
         """Decorator to register agent response handler"""
         return self.on("agent_response")(func)
 
-    def on_task_start(self, func: Callable):
-        """Decorator to register task start handler"""
-        return self.on("task_start")(func)
-
     def on_task_progress(self, func: Callable):
         """Decorator to register task progress handler"""
         return self.on("task_progress")(func)
-
-    def on_task_complete(self, func: Callable):
-        """Decorator to register task complete handler"""
-        return self.on("task_complete")(func)
 
     def on_turn_start(self, func: Callable):
         """Decorator to register turn start handler"""

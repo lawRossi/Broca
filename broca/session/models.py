@@ -74,10 +74,12 @@ class MessageType(str, Enum):
     # 工具执行（合并tool_call和tool_result）
     TOOL_CALL = "tool_call"
 
-    # 任务管理
-    TASK_START = "task_start"
-    TASK_COMPLETE = "task_complete"
-    TASK_ERROR = "task_error"
+    # Agent 间通信（AgentMessenger）
+    AGENT_REQUEST = "agent_request"  # source → target: 同步请求（要求回复，发送方阻塞等待）
+    AGENT_REQUEST_RESPONSE = "agent_request_response"  # target → source: request 回复（request_id 配对，直接事件唤醒 Event）
+    AGENT_NOTIFY = "agent_notify"  # 普通通知 / delegate 回执（靠 data.kind + task_id 区分，mid-turn 注入）
+    AGENT_DELEGATE = "agent_delegate"  # source → target: 委派任务（携带 task_id，要求回执，发送方不等回执但等 ACK）
+    # 无 AGENT_DELEGATE_RESPONSE：delegate 回执复用 AGENT_NOTIFY
 
     # 轮次管理
     TURN_START = "turn_start"
@@ -714,47 +716,6 @@ class MessageProtocol:
             role=MessageRole.SYSTEM,
             data={"content": content},
             subscription=subscription,
-            **kwargs,
-        )
-
-    @staticmethod
-    def create_task_start(task_id: str, task_description: str, **kwargs) -> Message:
-        """创建任务开始消息"""
-        return Message(
-            message_type=MessageType.TASK_START,
-            role=MessageRole.AGENT,
-            data={
-                "task_id": task_id,
-                "task_description": task_description,
-                "assigner": kwargs.get("sender_id"),
-            },
-            **kwargs,
-        )
-
-    @staticmethod
-    def create_task_complete(
-        task_id: str, result: Optional[str] = None, **kwargs
-    ) -> Message:
-        """创建任务完成消息"""
-        data = {"task_id": task_id}
-        if result:
-            data["result"] = result
-        return Message(
-            message_type=MessageType.TASK_COMPLETE,
-            role=MessageRole.AGENT,
-            data=data,
-            **kwargs,
-        )
-
-    @staticmethod
-    def create_task_error(
-        task_id: str, error_message: str, error_code: str | None = None, **kwargs
-    ) -> Message:
-        """创建任务错误消息"""
-        return Message(
-            message_type=MessageType.TASK_ERROR,
-            role=MessageRole.AGENT,
-            data={"task_id": task_id, "error_code": error_code},
             **kwargs,
         )
 

@@ -64,3 +64,14 @@ class AgentFactory(BaseComponent, ABC):
             List of restored ``Agent`` instances.
         """
         ...
+
+    @abstractmethod
+    def get_agent(self, session_id: str, agent_name: str) -> "Agent | None":
+        """Look up an already-created agent instance by name in a session.
+
+        This is a **synchronous** method (matching
+        ``DefaultAgentFactory.get_agent``) and only resolves agents in the
+        local, same-process, same-session registry.  Cross-process name→id
+        resolution is out of scope for this iteration.
+        """
+        ...

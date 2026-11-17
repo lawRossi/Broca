@@ -74,6 +74,25 @@ class Communicator(BaseComponent, ABC):
         ...
 
     @abstractmethod
+    async def send(self, content: str, data: dict, receiver_id: str) -> dict:
+        """Send an agent-to-agent communication message; return the routing ACK.
+
+        Return value is the routing-result dict::
+
+            {"status": "routed"} or
+            {"status": "routing_failed", "reason": "unknown_receiver", ...}
+
+        All messages (request / reply / notify / delegate / receipt) go through
+        this single method; the message_type is decided by ``data["mode"]``.
+
+        NOTE: This is a distinct method from ``send_message()`` which returns a
+        ``str`` (message_id).  ``send_message()`` is unchanged and keeps its own
+        response-``callback`` (``message_callbacks``) semantics; the ACK here uses
+        a separate emit-callback + Future and never touches ``message_callbacks``.
+        """
+        ...
+
+    @abstractmethod
     async def send_user_message(
         self,
         content: str,
@@ -184,29 +203,6 @@ class Communicator(BaseComponent, ABC):
         ...
 
     @abstractmethod
-    async def send_task_complete(
-        self,
-        task_id: str,
-        result: str,
-        receiver_id: Optional[str] = None,
-        subscription: Optional[str] = None,
-    ) -> str:
-        """Send task completion notification."""
-        ...
-
-    @abstractmethod
-    async def send_task_error(
-        self,
-        task_id: str,
-        error_message: str,
-        receiver_id: Optional[str] = None,
-        room: Optional[str] = None,
-        subscription: Optional[str] = None,
-    ) -> str:
-        """Send task error notification."""
-        ...
-
-    @abstractmethod
     async def send_permission_request(
         self,
         message: str,
@@ -285,18 +281,6 @@ class Communicator(BaseComponent, ABC):
         callback: Optional[Callable] = None,
     ) -> str:
         """Send command execution result."""
-        ...
-
-    @abstractmethod
-    async def send_task_start(
-        self,
-        task_id: str,
-        task_description: str,
-        receiver_id: Optional[str] = None,
-        room: Optional[str] = None,
-        subscription: Optional[str] = None,
-    ) -> str:
-        """Broadcast task start event."""
         ...
 
     async def send_user_answer(

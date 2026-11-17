@@ -14,7 +14,15 @@ from broca.context import Context
 from broca.llm import LLMClient
 from broca.logging_config import get_logger
 from broca.loop_engine import ExecutionResult, ExecutionStatus
-from broca.session import Message, MessageRole, MessageType, SessionManager
+from broca.agent_messenger.call_chain import CallChain
+from broca.agent_messenger.message_models import AgentCommunication
+from broca.session import (
+    Message,
+    MessageProtocol,
+    MessageRole,
+    MessageType,
+    SessionManager,
+)
 from broca.session.revert_service import SessionRevertService
 from broca.snapshot.manager import GitSnapshotManager
 
@@ -66,6 +74,7 @@ class Agent:
         # 半初始化安全：create() 中途失败后 disconnect() 不会抛 AttributeError
         self.context_compressor = None
         self.persistent_memory_manager = None
+        self.messenger = None
 
         # 消息去重：防止 SocketIO 重连/retry 导致同一 message_id 重复入队
         self._seen_message_ids: set[str] = set()
@@ -86,6 +95,8 @@ class Agent:
         """
         from broca.agent_reference import AgentReferenceAdapter
         from broca.components import (
+            AgentFactory,
+            AgentMessenger,
             CommandSystem,
             Communicator,
             ComponentRegistry,
@@ -96,6 +107,7 @@ class Agent:
             ToolExecutor,
             ToolManager,
         )
+        from broca.task_manager import TaskManager
 
         registry = ComponentRegistry.get_instance()
         registry.register_defaults()
@@ -133,9 +145,6 @@ class Agent:
 
         # Register Agent-level event handlers on the communicator
         agent.communicator.register_event_handler("user_message", agent._receive_message)
-        agent.communicator.register_event_handler("task_start", agent._receive_message)
-        agent.communicator.register_event_handler("task_complete", agent._receive_message)
-        agent.communicator.register_event_handler("task_error", agent._receive_message)
         agent.communicator.register_event_handler("command", agent._on_command)
         agent.communicator.register_event_handler(
             "permission_response", agent._on_permission_response
@@ -146,6 +155,32 @@ class Agent:
 
         agent.communicator.register_event_handler(
             "user_answer", AskUserToolManager.handle_user_answer
+        )
+
+        # ── 2b. AgentMessenger (agent-to-agent communication) ───────────
+        agent.messenger = registry.get(AgentMessenger, scope_key=key)
+        agent_factory = registry.get(AgentFactory)
+        await agent.messenger.initialize(
+            agent_id=key,
+            name=config.name,
+            session_id=session_manager.session_id,
+            communicator=agent.communicator,
+            agent_factory=agent_factory,
+            task_manager=TaskManager(),
+            config=config,
+        )
+        # request 回复走专用 handler，绕过 message_queue（类 ask_user 的 user_answer）
+        agent.communicator.register_event_handler(
+            "agent_request", agent._receive_message
+        )
+        agent.communicator.register_event_handler(
+            "agent_request_response", agent.messenger.handle_request_response
+        )
+        agent.communicator.register_event_handler(
+            "agent_notify", agent._receive_message
+        )
+        agent.communicator.register_event_handler(
+            "agent_delegate", agent._receive_message
         )
 
         await agent.permission_provider.initialize(
@@ -398,6 +433,98 @@ class Agent:
         logger.info(f"Received message {message.message_type}")
         await self.message_queue.put(message)
 
+    async def _handle_incoming_request(self, comm: AgentCommunication):
+        """Handle an incoming ``AGENT_REQUEST``: process autonomously and *guarantee*
+        a ``reply()`` is sent back (try/finally, three paths: normal / abort / error).
+        """
+        call_chain = CallChain.from_dict(comm.call_chain)
+        reply_text, status = "", "success"
+        try:
+            msg = MessageProtocol.create_user_message(
+                content=f"[Request from {comm.source_agent}]: {comm.content}"
+            )
+            result = await self.run(msg, from_agent=True, call_chain=call_chain)
+            if result.status == ExecutionStatus.ABORTED:
+                reply_text, status = "aborted by user", "aborted"
+            elif result.status in (
+                ExecutionStatus.ERROR,
+                ExecutionStatus.DEAD_LOOP,
+            ):
+                reply_text, status = (
+                    f"failed: {result.message or result.error}",
+                    "error",
+                )
+            else:
+                reply_text = (
+                    self.context.get_latest_assistant_message()
+                    or result.message
+                    or ""
+                )
+        except Exception as e:  # noqa: BLE001
+            reply_text, status = f"failed: {e}", "error"
+        finally:
+            try:
+                await self.messenger.reply(
+                    comm.request_id, comm.source_agent, reply_text, status
+                )
+            except Exception as e:  # noqa: BLE001
+                logger.error(
+                    f"Failed to send request reply {comm.request_id}: {e}"
+                )
+
+    async def _handle_incoming_delegate(self, comm: AgentCommunication):
+        """Handle an incoming ``AGENT_DELEGATE`` (task assignment).
+
+        Validates ``task_id`` and *guarantees* a receipt via
+        ``notify(kind="delegate_receipt")`` (try/finally, single receipt on every
+        path: normal / not-found / error).
+        """
+        call_chain = CallChain.from_dict(comm.call_chain)
+        task_id = comm.task_id
+        receipt = "done"
+        try:
+            task = (
+                await self.messenger._task_manager.get_task(task_id)
+                if self.messenger._task_manager is not None
+                else None
+            )
+            if task is None:
+                receipt = "Task not found"
+                return  # finally still sends one receipt
+            msg = MessageProtocol.create_user_message(
+                content=(
+                    f"[Delegate task {task_id} from {comm.source_agent}]: "
+                    f"{comm.content}"
+                )
+            )
+            msg.data["task_id"] = task_id
+            result = await self.run(msg, from_agent=True, call_chain=call_chain)
+            if result.status == ExecutionStatus.ABORTED:
+                receipt = "aborted by user"
+            elif result.status in (
+                ExecutionStatus.ERROR,
+                ExecutionStatus.DEAD_LOOP,
+            ):
+                receipt = "fail to finish the task"
+            else:
+                receipt = self.context.get_latest_assistant_message()
+        except Exception as e:  # noqa: BLE001
+            receipt = f"Failed: {e}"
+        finally:
+            # Single best-effort receipt; if the delegator is offline the
+            # routing_failed is logged, not re-raised.
+            try:
+                await self.messenger.notify(
+                    comm.source_agent,
+                    f"[Delegate {task_id}] {receipt}",
+                    task_id=task_id,
+                    kind="delegate_receipt",
+                )
+            except Exception as notify_err:  # noqa: BLE001
+                logger.warning(
+                    f"Delegate receipt undeliverable for {task_id}: {notify_err}"
+                )
+
     async def _on_disconnected(self, *args):
         """Handle Socket.io disconnect event — mark as disconnected.
 
@@ -494,11 +621,10 @@ class Agent:
         self.running = False
 
     def _drain_user_messages(self, first_msg: Message) -> list[Message]:
-        """初始批量取：first_msg + 队列中所有 USER_MESSAGE / TASK_COMPLETE / TASK_ERROR（其余放回）。"""
+        """初始批量取：first_msg + 队列中所有 USER_MESSAGE（其余放回）。"""
         _drain_types = {
             MessageType.USER_MESSAGE,
-            MessageType.TASK_COMPLETE,
-            MessageType.TASK_ERROR,
+            MessageType.AGENT_NOTIFY,  # mid-turn 注入 + 空闲 turn
         }
         messages = [first_msg]
         pending = []
@@ -528,8 +654,7 @@ class Agent:
 
         _drain_types = {
             MessageType.USER_MESSAGE,
-            MessageType.TASK_COMPLETE,
-            MessageType.TASK_ERROR,
+            MessageType.AGENT_NOTIFY,  # mid-turn 注入 + 空闲 turn
         }
 
         class _Drainer:
@@ -573,12 +698,17 @@ class Agent:
                             await self.run(messages, message_source=self._make_message_source())
                         else:
                             await self.run(message)
-                elif message.message_type == MessageType.TASK_START:
-                    await self._handle_task(message)
-                elif message.message_type in [
-                    MessageType.TASK_COMPLETE,
-                    MessageType.TASK_ERROR,
-                ]:
+                elif message.message_type == MessageType.AGENT_REQUEST:
+                    await self._handle_incoming_request(
+                        AgentCommunication.from_message_data(message.data)
+                    )
+                elif message.message_type == MessageType.AGENT_DELEGATE:
+                    await self._handle_incoming_delegate(
+                        AgentCommunication.from_message_data(message.data)
+                    )
+                elif message.message_type == MessageType.AGENT_NOTIFY:
+                    # Idle-time notify / delegate receipt (busy-time ones are
+                    # drained mid-turn by engine's message_source).
                     await self.run(message, from_agent=True)
             except asyncio.TimeoutError:
                 continue
@@ -609,6 +739,7 @@ class Agent:
         allowed_tools: Optional[list[str]] = None,
         namespace: Optional[str] = None,
         message_source: Optional[Any] = None,
+        call_chain: Optional[CallChain] = None,
     ) -> ExecutionResult:
         """
         Run agent in async mode (replaces command-line interaction)
@@ -635,6 +766,15 @@ class Agent:
         # Prevent concurrent execution of the run() method from multiple call paths
         # (e.g., start() message loop vs. direct run() calls)
         async with self._run_lock:
+            if self.messenger:
+                self.messenger.reset_budget()
+                # Unconditionally add own agent_id to the chain: even for a top-level
+                # turn (call_chain=None) the originator's id must enter the chain, else
+                # A→B→A first-hop cycle detection fails and deadlock falls back to the
+                # 300s timeout (review r3 Feasibility #1 / Consistency #1).
+                self.messenger.set_call_chain(
+                    (call_chain or CallChain()).add(self.agent_id)
+                )
             # Store the current execution task for potential cancellation
             self._abort_task = asyncio.current_task()
             await self._set_status(self.STATUS_RUNNING)
@@ -692,51 +832,6 @@ class Agent:
             status=ExecutionStatus.COMPLETED,
             message=result.value,
         )
-
-    async def _handle_task(self, message: Message) -> None:
-        """Handle task assignment from another agent"""
-        task_id: str = ""
-        assigner = None
-        try:
-            task_id = message.data.get("task_id", "")
-            assigner = message.data.get("assigner")
-            execution_result = await self.run(message, from_agent=True)
-
-            # Check execution status
-            if execution_result.status == ExecutionStatus.COMPLETED:
-                msg = self.context.get_latest_assistant_message()
-                result = f"Message from agent {self.name}: {msg}"
-                logger.info(f"send result to {assigner}")
-                if assigner:
-                    await self.communicator.send_task_complete(task_id, result, assigner)
-                else:
-                    logger.warning(f"Task {task_id} completed but no assigner to notify")
-            elif execution_result.status == ExecutionStatus.ABORTED:
-                result = f"The agent {self.agent_id} execution was aborted by user"
-                logger.warning(result)
-            elif execution_result.status in (
-                ExecutionStatus.ERROR,
-                ExecutionStatus.DEAD_LOOP,
-            ):
-                result = f"The agent {self.agent_id} failed to finish the task: {execution_result.message or execution_result.error}"
-                logger.error(result)
-                if assigner:
-                    await self.communicator.send_task_error(
-                        task_id, result, receiver_id=assigner
-                    )
-                else:
-                    logger.warning(f"Task {task_id} failed but no assigner to notify")
-        except Exception as e:
-            logger.error(f"Error processing task: {e}")
-            if assigner:
-                result = f"The agent {self.agent_id} failed to finish the task: {e}"
-                await self.communicator.send_task_error(
-                    task_id, result, receiver_id=assigner
-                )
-            else:
-                logger.error(
-                    f"Task {task_id or 'unknown'} failed and no assigner to notify"
-                )
 
     async def reset(self):
         """Reset agent state"""

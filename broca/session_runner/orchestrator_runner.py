@@ -38,6 +38,11 @@ class CrewOrchestratorRunner:
 
     在 Runner 进程中管理编排的执行生命周期。
     编排器直接调用 Agent，使用 IPC 推送进度。
+
+    注：编排中的任务分配如需改为 agent 间通信，**必须**使用
+    ``AgentMessenger.delegate()``（携带 task_id、强制回执、发送方不等回执但等
+    ACK）。禁止用 ``request()`` 替代——request 是阻塞的，会改变编排时序。
+    本文件当前无旧任务消息调用，迁移为 no-op。
     """
 
     def __init__(

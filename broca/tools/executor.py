@@ -7,7 +7,7 @@ Implements the 8 responsibilities identified in Task 2.1:
   #3  Permission decision (forbidden / ask / allow)
   #4  Tool-call broadcast (``send_tool_call``)
   #5  Timeout skip rules (``ask_user``, ``bash --background``)
-  #6  Dedicated timeout (``assign_task``)
+  #6  Dedicated timeout (``communicate``)
   #7  Exception mapping (``ToolError``/``BrocaError`` → user message;
       ``TimeoutError`` → timeout text; ``CancelledError`` → re-raised)
   #8  Session decision (``allow``/``forbid`` → ``set_session_override``)
@@ -67,7 +67,7 @@ class DefaultToolExecutor(ToolExecutor):
         self._communicator: Communicator | None = None
         self._interactive: bool = False
         self._tool_call_timeout: float = 120
-        self._assign_task_timeout: float = 1800
+        self._communicate_timeout: float = 1800
         self._initialized = False
 
     # ------------------------------------------------------------------
@@ -100,8 +100,8 @@ class DefaultToolExecutor(ToolExecutor):
         self._tool_call_timeout = float(
             getattr(exec_cfg, "tool_call_timeout", 120) or 120
         )
-        self._assign_task_timeout = float(
-            getattr(exec_cfg, "assign_task_timeout", 1800) or 1800
+        self._communicate_timeout = float(
+            getattr(exec_cfg, "communicate_timeout", 1800) or 1800
         )
         self._initialized = True
 
@@ -305,11 +305,11 @@ class DefaultToolExecutor(ToolExecutor):
     def _get_timeout(self, tool_name: str) -> float:
         """#6 — return the appropriate timeout for a tool.
 
-        ``assign_task`` gets its own (longer) timeout; everything else
+        ``communicate`` gets its own (longer) timeout; everything else
         uses the default ``tool_call_timeout``.
         """
-        if tool_name == "assign_task":
-            return self._assign_task_timeout
+        if tool_name == "communicate":
+            return self._communicate_timeout
         return self._tool_call_timeout
 
     def _should_skip_timeout(self, tool_name: str, arguments: str) -> bool:

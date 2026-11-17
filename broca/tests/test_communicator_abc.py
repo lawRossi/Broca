@@ -29,10 +29,9 @@ class TestCommunicatorABC:
             # Core lifecycle
             "connect", "disconnect", "is_connected", "initialize",
             # Core message
-            "send_message", "send_user_message", "send_tool_call",
+            "send_message", "send", "send_user_message", "send_tool_call",
             # High-frequency
             "send_agent_response", "send_turn_start", "send_turn_end",
-            "send_task_complete", "send_task_error", "send_task_start",
             "send_permission_request", "send_permission_response",
             # Command
             "send_command", "send_command_result",

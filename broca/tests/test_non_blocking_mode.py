@@ -349,12 +349,17 @@ class TestDrainUserMessages:
         user_a = _make_user_message("A", "A")
         user_b = _make_user_message("B", "B")
         user_c = _make_user_message("C", "C")
-        task_start = MessageProtocol.create_task_start("x", task_description="do it")
-        task_start.message_id = "T"
+        # A non-drainable agent message (AGENT_REQUEST is not drained mid-turn).
+        other = Message(
+            message_type=MessageType.AGENT_REQUEST,
+            role="agent",
+            data={"mode": "request", "content": "x"},
+        )
+        other.message_id = "T"
 
         # Simulate: first_msg (user_a) was already dequeued by queue.get()
-        # Queue now contains: user_b, task_start, user_c
-        for m in [user_b, task_start, user_c]:
+        # Queue now contains: user_b, other, user_c
+        for m in [user_b, other, user_c]:
             agent.message_queue.put_nowait(m)
 
         results = agent._drain_user_messages(user_a)
@@ -362,7 +367,7 @@ class TestDrainUserMessages:
         # All USER_MESSAGEs returned (including first_msg)
         result_ids = {m.message_id for m in results}
         assert result_ids == {"A", "B", "C"}
-        # Non-USER message (task_start) re-queued
+        # Non-USER message (other) re-queued
         assert agent.message_queue.qsize() == 1
         remaining = agent.message_queue.get_nowait()
         assert remaining.message_id == "T"

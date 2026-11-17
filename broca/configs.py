@@ -36,7 +36,7 @@ class ExecutionConfig:
     step_max_errors: int = 3  # LLM 最大重试次数
     llm_retry_delay: int = 5  # LLM 重试间隔（秒）
     tool_call_timeout: int = 120  # 普通工具执行超时（秒）
-    assign_task_timeout: int = 1800  # assign_task 工具超时（秒）
+    communicate_timeout: int = 1800  # communicate 工具超时（秒，request 模式可能长时间阻塞）
     llm_timeout: int = 300  # LLM 流式请求超时（秒，也用于外层 wait_for）
     llm_first_chunk_timeout: int = 30  # LLM 首块超时（秒）
     dead_loop_window: int = 3  # 最近 N 步工具调用相同判定死循环

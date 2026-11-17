@@ -130,36 +130,6 @@ class TestParseMessage:
         assert result["role"] == "user"
         assert result["content"] == "Hello, world!"
 
-    def test_parse_task_start(self, llm_client):
-        """测试解析任务开始消息"""
-        msg = MagicMock(spec=Message)
-        msg.message_type = MessageType.TASK_START
-        msg.data = {"task_description": "Do something"}
-
-        result = llm_client.parse_message("openai", "gpt-4o", msg)
-        assert result["role"] == "user"
-        assert result["content"] == "Do something"
-
-    def test_parse_task_complete(self, llm_client):
-        """测试解析任务完成消息"""
-        msg = MagicMock(spec=Message)
-        msg.message_type = MessageType.TASK_COMPLETE
-        msg.data = {"result": "Task completed successfully"}
-
-        result = llm_client.parse_message("openai", "gpt-4o", msg)
-        assert result["role"] == "user"
-        assert result["content"] == "Task completed successfully"
-
-    def test_parse_task_error(self, llm_client):
-        """测试解析任务错误消息"""
-        msg = MagicMock(spec=Message)
-        msg.message_type = MessageType.TASK_ERROR
-        msg.data = {"error_message": "Something went wrong"}
-
-        result = llm_client.parse_message("openai", "gpt-4o", msg)
-        assert result["role"] == "user"
-        assert result["content"] == "Something went wrong"
-
     def test_parse_unknown_type(self, llm_client):
         """测试未知消息类型（无匹配分支时返回空字典）"""
         msg = MagicMock(spec=Message)

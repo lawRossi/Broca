@@ -113,14 +113,14 @@ async def test_empty_data_handled():
 
 
 @pytest.mark.asyncio
-async def test_task_complete_from_agent_false_still_marks_from_agent():
-    """TASK_COMPLETE with from_agent=False still gets from_agent=True in saved data
+async def test_agent_notify_from_agent_false_still_marks_from_agent():
+    """AGENT_NOTIFY with from_agent=False still gets from_agent=True in saved data
     and a new message_id (cross-agent PK collision guard)."""
     engine = _make_engine()
     message = Message(
-        message_type=MessageType.TASK_COMPLETE,
+        message_type=MessageType.AGENT_NOTIFY,
         role=MessageRole.AGENT,
-        data={"task_id": "t-1", "result": "done"},
+        data={"task_id": "t-1", "content": "done", "kind": "notify"},
     )
     message.message_id = "msg_sender_original"
 
@@ -128,7 +128,7 @@ async def test_task_complete_from_agent_false_still_marks_from_agent():
     result = await engine._save_user_message(user_msg, message, "turn-1", from_agent=False)
 
     call_kwargs = engine.session_manager.save_message.call_args[1]
-    # from_agent should be True (cross-agent task type)
+    # from_agent should be True (cross-agent notify type)
     assert call_kwargs["data"]["from_agent"] is True
     # New message_id generated to avoid PK collision
     assert call_kwargs["message_id"] != "msg_sender_original"
@@ -137,18 +137,18 @@ async def test_task_complete_from_agent_false_still_marks_from_agent():
 
 
 @pytest.mark.asyncio
-async def test_task_error_from_agent_false_still_marks_from_agent():
-    """TASK_ERROR with from_agent=False still gets from_agent=True in saved data
-    and a new message_id."""
+async def test_delegate_receipt_notify_from_agent_false_still_marks_from_agent():
+    """AGENT_NOTIFY (delegate_receipt) with from_agent=False still gets
+    from_agent=True in saved data and a new message_id."""
     engine = _make_engine()
     message = Message(
-        message_type=MessageType.TASK_ERROR,
+        message_type=MessageType.AGENT_NOTIFY,
         role=MessageRole.AGENT,
-        data={"task_id": "t-2", "error_code": "E1"},
+        data={"task_id": "t-2", "content": "receipt", "kind": "delegate_receipt"},
     )
     message.message_id = "msg_sender_original"
 
-    user_msg = {"role": "user", "content": "E1", "raw_input": "E1"}
+    user_msg = {"role": "user", "content": "receipt", "raw_input": "receipt"}
     result = await engine._save_user_message(user_msg, message, "turn-1", from_agent=False)
 
     call_kwargs = engine.session_manager.save_message.call_args[1]

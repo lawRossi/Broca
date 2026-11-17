@@ -391,7 +391,7 @@ class DefaultLoopEngine(LoopEngine):
         # Build a new data dict to avoid mutating the caller's message
         message_data = dict(message.data) if message.data else {}
         # Per-message from_agent: turn-level flag OR cross-agent task types
-        _cross_agent_types = (MessageType.TASK_COMPLETE, MessageType.TASK_ERROR)
+        _cross_agent_types = (MessageType.AGENT_NOTIFY,)
         message_data["from_agent"] = from_agent or message.message_type in _cross_agent_types
         if user_message.get("raw_input"):
             message_data["raw_input"] = user_message["raw_input"]
@@ -450,13 +450,13 @@ class DefaultLoopEngine(LoopEngine):
                 "raw_input": str(raw),
             }
         message_data = dict(message.data) if message.data else {}
-        _cross_agent_types = (MessageType.TASK_COMPLETE, MessageType.TASK_ERROR)
+        _cross_agent_types = (MessageType.AGENT_NOTIFY,)
         message_data["from_agent"] = message.message_type in _cross_agent_types
         if user_message.get("raw_input"):
             message_data["raw_input"] = user_message["raw_input"]
         # Cross-agent task messages may share a PK with the sender's record;
         # generate a fresh id to avoid collision.
-        _cross_agent_types = (MessageType.TASK_COMPLETE, MessageType.TASK_ERROR)
+        _cross_agent_types = (MessageType.AGENT_NOTIFY,)
         new_message_id = (
             f"msg_{uuid.uuid4().hex[:16]}"
             if message.message_type in _cross_agent_types

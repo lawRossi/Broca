@@ -308,13 +308,14 @@ class SocketIOServer:
                     await self._send_error(
                         sid, {"message": error_msg, "code": "VALIDATION_ERROR", "severity": "error"}, message.sender_id
                     )
-                    return
+                    return {"status": "routing_failed", "reason": "missing_type"}
 
-                await self._process_message(sid, message)
+                return await self._process_message(sid, message)
             except json.JSONDecodeError as e:
                 await self._send_error(
                     sid, {"message": f"Failed to parse message: {e}", "code": "PARSE_ERROR", "severity": "error"}
                 )
+                return {"status": "routing_failed", "reason": "parse_error"}
             except Exception as e:
                 import traceback
 
@@ -322,6 +323,7 @@ class SocketIOServer:
                 await self._send_error(
                     sid, {"message": f"Error processing message: {e}", "code": "PROCESS_ERROR", "severity": "error"}
                 )
+                return {"status": "routing_failed", "reason": "process_error"}
 
         @self.sio.event
         async def subscribe(sid, data):
@@ -427,21 +429,22 @@ class SocketIOServer:
             "message", MessageProtocol.to_dict(error_response), room=sid
         )
 
-    async def _process_message(self, sid: str, message: Message):
-        """Process incoming message"""
+    async def _process_message(self, sid: str, message: Message) -> dict:
+        """Process incoming message; return the routing ACK dict."""
         client_info = self.clients.get(sid)
         if not client_info:
             logger.warning(f"Received message from unknown SID: {sid}")
-            return
+            return {"status": "routing_failed", "reason": "unknown_sid"}
 
         logger.debug(f"Processing message from {client_info.client_id}: {message}")
 
         # Route message based on target
         result = None
+        route_status: dict = {"status": "routed"}
         if message.receiver_id:
             result = await self._send_to_client(message.receiver_id, message)
             if result is False:
-                # 向发送方反馈 routing_failed
+                # 向发送方反馈 routing_failed（UI 可见错误消息，与 ACK 返回值并存）
                 await self._send_error(
                     sid,
                     {
@@ -451,6 +454,10 @@ class SocketIOServer:
                     },
                     message.sender_id,
                 )
+                route_status = {
+                    "status": "routing_failed",
+                    "reason": "unknown_receiver",
+                }
         elif message.room:
             result = await self._send_to_room(message.room, message)  # type: ignore[assignment]
         elif message.subscription:
@@ -483,6 +490,7 @@ class SocketIOServer:
             message.message_type if message.message_type is not None else "message"
         )
         await self._trigger_event(event_name, client_info, message)
+        return route_status
 
     async def _send_to_client(self, client_id: str, message: Message) -> bool:
         """Send message to specific client

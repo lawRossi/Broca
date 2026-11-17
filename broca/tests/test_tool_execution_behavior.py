@@ -84,7 +84,7 @@ def _make_executor(
     interactive: bool = True,
     permission: str = "allow",
     tool_call_timeout: float | None = None,
-    assign_task_timeout: float | None = None,
+    communicate_timeout: float | None = None,
     permission_provider=None,
 ) -> DefaultToolExecutor:
     """Create a ``DefaultToolExecutor`` wired with mocks."""
@@ -96,8 +96,8 @@ def _make_executor(
     config.execution_config = ExecutionConfig()
     if tool_call_timeout is not None:
         config.execution_config.tool_call_timeout = tool_call_timeout
-    if assign_task_timeout is not None:
-        config.execution_config.assign_task_timeout = assign_task_timeout
+    if communicate_timeout is not None:
+        config.execution_config.communicate_timeout = communicate_timeout
 
     # Build communicator mock
     communicator = MagicMock()
@@ -183,30 +183,30 @@ class TestTimeoutSkipRules:
 
 
 # ════════════════════════════════════════════════════════════════════
-# #6  Dedicated timeout for assign_task
+# #6  Dedicated timeout for communicate
 # ════════════════════════════════════════════════════════════════════
 
 
 class TestDedicatedTimeout:
-    """#6: ``assign_task`` uses its own (longer) timeout instead of
+    """#6: ``communicate`` uses its own (longer) timeout instead of
     the default ``tool_call_timeout``."""
 
     @pytest.mark.asyncio
-    async def test_assign_task_uses_dedicated_timeout(self):
+    async def test_communicate_uses_dedicated_timeout(self):
         """#6 — a tool that takes 0.2 s would time out under the
         default ``tool_call_timeout=0.1`` but completes under
-        ``assign_task_timeout=0.5``."""
+        ``communicate_timeout=0.5``."""
         executor, pp, comm, config = _make_executor(
             tool_call_timeout=0.1,
-            assign_task_timeout=0.5,
+            communicate_timeout=0.5,
         )
         tool = _SlowTool(delay=0.2)
         await _init_executor(
             executor, pp, comm, config,
-            tool_mapping={"assign_task": tool},
+            tool_mapping={"communicate": tool},
         )
         outcome = await executor.execute_tool(
-            "assign_task", "{}", "call-1", _ctx(), tool,
+            "communicate", "{}", "call-1", _ctx(), tool,
         )
         assert outcome.result.status == ToolStatus.SUCCESS
         assert outcome.result.content == "slow done"

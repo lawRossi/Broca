@@ -3,7 +3,8 @@ import uuid
 from typing import Dict, Optional
 
 from broca.logging_config import get_logger
-from broca.session import Message, MessageProtocol, MessageRole, MessageType
+from broca.agent_messenger.messenger import AgentCommunicationError
+from broca.session import Message, MessageRole, MessageType
 from broca.tools.tool import Tool, ToolCallContext, ToolResult, ToolStatus
 
 logger = get_logger(__name__)
@@ -27,141 +28,6 @@ class AskUserToolManager:
     async def clear_request(cls, request_id: str):
         async with cls._lock:
             cls._pending_requests.pop(request_id, None)
-
-
-class AssignTask(Tool):
-    is_readonly = True
-    def __init__(self):
-        super().__init__(max_content_length=30000)
-
-    @property
-    def name(self):
-        return "assign_task"
-
-    @property
-    def description(self):
-        return (
-            "Use this tool to assign a task to an agent. "
-            "For background execution, task_id is required and must reference an existing task. "
-            "No completion notification is sent for background tasks — the assigner should "
-            "monitor task status via task_management."
-        )
-
-    @property
-    def parameters(self):
-        return {
-            "type": "object",
-            "properties": {
-                "agent": {
-                    "type": "string",
-                    "description": "the agent to assign the task to",
-                },
-                "task_id": {
-                    "type": "string",
-                    "description": (
-                        "the id of the task (required for background execution, "
-                        "must be a pre-created task)"
-                    ),
-                },
-                "task": {
-                    "type": "string",
-                    "description": "a self-explanatory description of the task",
-                },
-                "execution_type": {
-                    "type": "string",
-                    "description": "the execution type of the task",
-                    "default": "blocking",
-                    "enum": ["blocking", "background"],
-                },
-            },
-            "required": ["agent", "task"],
-        }
-
-    async def _execute(self, arguments, context: ToolCallContext) -> ToolResult:
-        from broca.agent_manager import AgentFactory
-        from broca.components import ComponentRegistry
-        from broca.components.agent_factory import AgentFactory as AgentFactoryABC
-        from broca.loop_engine import ExecutionStatus
-        from broca.task_manager import TaskManager
-
-        agent = context.agent
-        factory = ComponentRegistry.get_instance().get(AgentFactoryABC)
-        agent_name = arguments["agent"]
-        target_agent = factory.get_agent(agent.session_id, agent_name)
-        if target_agent is None:
-            return ToolResult(
-                status=ToolStatus.ERROR, content=f"Agent {agent_name} not found"
-            )
-
-        agent_id = target_agent.agent_id
-        task_id = arguments.get("task_id")
-        task = arguments["task"]
-        execution_type = arguments.get("execution_type", "blocking")
-
-        if execution_type == "blocking":
-            trigger_message = MessageProtocol.create_user_message(content=task)
-            execution_result = await target_agent.run(trigger_message, from_agent=True)
-            message = target_agent.context.get_latest_assistant_message()
-            content = "Task completed."
-            if message:
-                content = "Message from agent: " + message
-            if execution_result.status == ExecutionStatus.COMPLETED:
-                return ToolResult(status=ToolStatus.SUCCESS, content=content)
-            elif execution_result.status == ExecutionStatus.ABORTED:
-                return ToolResult(
-                    status=ToolStatus.ERROR,
-                    content=f"The agent {target_agent.agent_id} execution was aborted by user",
-                )
-            else:
-                return ToolResult(
-                    status=ToolStatus.ERROR,
-                    content=f"The agent {target_agent.agent_id} failed to finish the task: {execution_result.error}",
-                )
-        else:
-            # Background mode: task_id is required and must reference an existing task
-            if not task_id:
-                return ToolResult(
-                    status=ToolStatus.ERROR,
-                    content=(
-                        "task_id is required for background execution. "
-                        "Create the task first via task_management (action='create')."
-                    ),
-                )
-
-            # Validate task exists
-            task_manager = TaskManager()
-            existing_task = await task_manager.get_task(task_id)
-            if existing_task is None:
-                return ToolResult(
-                    status=ToolStatus.ERROR,
-                    content=f"Task {task_id} does not exist. Create it first via task_management.",
-                )
-
-            # Append reminder for executor to update task report
-            task_with_reminder = (
-                f"{task}\n\n"
-                f"[IMPORTANT] You are executing task '{task_id}' in background mode. "
-                f"When you complete the work, you MUST update the task report via "
-                f"task_management (action='update', task_id='{task_id}', "
-                f"report=<your summary of what was done>)."
-            )
-
-            # Dispatch to target agent in background
-            await agent.communicator.send_task_start(
-                task_id, task_with_reminder, receiver_id=agent_id
-            )
-            logger.info(
-                f"Task {task_id} assigned to agent {agent_name} (background). "
-                f"Assigner should monitor status via task_management."
-            )
-            return ToolResult(
-                status=ToolStatus.SUCCESS,
-                content=(
-                    f"Task {task_id} has been assigned to agent '{agent_name}' in background. "
-                    f"No completion notification will be sent. "
-                    f"Monitor progress via task_management (action='get', task_id='{task_id}')."
-                ),
-            )
 
 
 class AskUser(Tool):
@@ -345,3 +211,107 @@ class AskUser(Tool):
                 )
             except Exception as e:
                 logger.error(f"Failed to save answer: {e}")
+
+
+class Communicate(Tool):
+    """Send a message to another agent (request / notify / delegate)."""
+
+    is_readonly = True
+
+    @property
+    def name(self):
+        return "communicate"
+
+    @property
+    def description(self):
+        return (
+            "Send a message to another agent. "
+            "mode='request': ask target to do something and BLOCK until it replies "
+            "so you can continue immediately with the answer. "
+            "mode='notify': inform target, no reply, returns immediately once delivered. "
+            "mode='delegate': assign a pre-existing task (task_id required) to target。"
+        )
+
+    @property
+    def parameters(self):
+        return {
+            "type": "object",
+            "properties": {
+                "target": {"type": "string", "description": "name of the target agent"},
+                "mode": {
+                    "type": "string",
+                    "enum": ["request", "notify", "delegate"],
+                },
+                "message": {
+                    "type": "string",
+                    "description": "the message/task/question content",
+                },
+                "task_id": {
+                    "type": "string",
+                    "description": (
+                        "REQUIRED when mode='delegate'; must be a pre-created task. "
+                        "Ignored otherwise."
+                    ),
+                },
+            },
+            "required": ["target", "mode", "message"],
+        }
+
+    async def _execute(self, arguments, context: ToolCallContext) -> ToolResult:
+        agent = context.agent
+        messenger = agent.messenger
+        if messenger is None:
+            return ToolResult(
+                status=ToolStatus.ERROR, content="AgentMessenger not initialized"
+            )
+
+        target = arguments["target"]
+        mode = arguments["mode"]
+        message = arguments["message"]
+        task_id = arguments.get("task_id")
+
+        try:
+            if mode == "request":
+                # Blocks until reply; map reply status to ToolResult so error/aborted
+                # replies are not mistaken for SUCCESS.
+                reply, reply_status = await messenger.request(target, message)
+                tool_status = (
+                    ToolStatus.SUCCESS
+                    if reply_status == "success"
+                    else ToolStatus.ERROR
+                )
+                status_tag = (
+                    "" if reply_status == "success" else f" [status={reply_status}]"
+                )
+                return ToolResult(
+                    status=tool_status,
+                    content=f"[Reply from '{target}' {status_tag}]: {reply}",
+                )
+            elif mode == "notify":
+                # notify waits for ACK internally; routing_failed raises → ERROR below.
+                await messenger.notify(target, message)
+                return ToolResult(
+                    status=ToolStatus.SUCCESS,
+                    content=f"Notification delivered to '{target}'.",
+                )
+            elif mode == "delegate":
+                # delegate waits for ACK; routing_failed raises → ERROR (never a
+                # false SUCCESS that leaves the task silently dangling).
+                await messenger.delegate(target, task_id, message)
+                return ToolResult(
+                    status=ToolStatus.SUCCESS,
+                    content=(
+                        f"Task '{task_id}' delegated to '{target}' . "
+                        f"Target will send a receipt asynchronously; monitor via "
+                        f"task_management (action='get', task_id='{task_id}')."
+                    ),
+                )
+            else:
+                return ToolResult(
+                    status=ToolStatus.ERROR, content=f"Unknown mode: {mode}"
+                )
+        except AgentCommunicationError as e:
+            return ToolResult(
+                status=ToolStatus.ERROR,
+                content=str(e) + (f" (reason: {e.reason})" if e.reason else ""),
+            )

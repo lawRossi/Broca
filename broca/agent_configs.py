@@ -1,5 +1,5 @@
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, fields
 
 from broca.configs import ExecutionConfig, get_llm_defaults
 
@@ -31,7 +31,46 @@ class ContextCompactConfig:
 DEFAULT_COMPACT_CONFIG = ContextCompactConfig()
 
 
+@dataclass
+class CommunicationPolicy:
+    """Agent 间通信策略配置。
+
+    核心机制（ACL / task 存在性校验 / 回复保障 / request 超时+环检测）始终生效。
+    （可选增强——每 turn 通信预算、notify/delegate 可选环检测——按用户要求本期不实现，
+    故此处不含 enable_* 开关与预算参数。）
+    """
+
+    # --- 核心：ACL（始终生效） ---
+    allowed_targets: list[str] | None = None  # None = 不限制
+    allowed_modes: list[str] | None = None  # None = 所有模式
+    # --- 核心：request 超时（始终生效，对齐 agent_query_timeout） ---
+    request_timeout: float = 300.0
+    max_chain_depth: int = 3  # request 环检测用
+
+
+def _parse_communication_policy(data: dict) -> CommunicationPolicy:
+    """Build a CommunicationPolicy from a dict, ignoring unknown keys."""
+    allowed = {f.name for f in fields(CommunicationPolicy)}
+    return CommunicationPolicy(**{k: v for k, v in data.items() if k in allowed})
+
+
 class AgentConfig:
+    """Per-agent configuration.
+
+    Notable field: ``communication_policy`` (a
+    :class:`~broca.agent_configs.CommunicationPolicy`) configures agent-to-agent
+    communication:
+
+    - ``allowed_targets`` / ``allowed_modes`` — static ACL (core, always on).
+    - ``request_timeout`` — how long a ``request`` blocks for a reply before
+      raising ``AgentCommunicationError(reason="request_timeout")`` (core).
+    - ``max_chain_depth`` — request forced cycle detection depth guard
+      (core, always on; deadlock prevention).
+
+    Optional enhancements (per-turn budget, notify/delegate optional chain
+    detection) are intentionally not implemented in this iteration.
+    """
+
     def __init__(self):
         self.config_name = None
         self.name = None
@@ -57,6 +96,7 @@ class AgentConfig:
         self.tool_execution_mode: str | None = None  # 工具执行方式（None=使用全局配置）
         self.max_parallel_tools: int | None = None  # 最大并行工具数（None=使用全局配置）
         self.compact_config = DEFAULT_COMPACT_CONFIG
+        self.communication_policy = CommunicationPolicy()
         self.execution_config = ExecutionConfig()
 
     @classmethod
@@ -77,6 +117,13 @@ class AgentConfig:
                     agent_config.compact_config = ContextCompactConfig(**config[key])
                 elif isinstance(config[key], ContextCompactConfig):
                     agent_config.compact_config = config[key]
+            elif key == "communication_policy":
+                if isinstance(config[key], dict):
+                    agent_config.communication_policy = _parse_communication_policy(
+                        config[key]
+                    )
+                elif isinstance(config[key], CommunicationPolicy):
+                    agent_config.communication_policy = config[key]
             else:
                 setattr(agent_config, key, config[key])
 
@@ -86,6 +133,7 @@ class AgentConfig:
         data = self.to_dict()
         data["persistent_memory_config"] = asdict(self.persistent_memory_config)
         data["compact_config"] = asdict(self.compact_config)
+        data["communication_policy"] = asdict(self.communication_policy)
         return json.dumps(data, ensure_ascii=False, indent=4)
 
     def to_dict(self) -> dict:

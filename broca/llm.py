@@ -158,12 +158,16 @@ class LiteLLMClient(LLMClientABC):
             raw_input = raw_input if raw_input is not None else (
                 message.data.get("content", "") if message.data else ""
             )
-        elif message.message_type == MessageType.TASK_START:
-            text_content = str(message.data.get("task_description") or "")
-        elif message.message_type == MessageType.TASK_COMPLETE:
-            text_content = str(message.data.get("result") or "")
-        elif message.message_type == MessageType.TASK_ERROR:
-            text_content = str(message.data.get("error_message") or "")
+        elif message.message_type == MessageType.AGENT_NOTIFY:
+            data = message.data or {}
+            source = data.get("source_agent") or "agent"
+            if data.get("kind") == "delegate_receipt" and data.get("task_id"):
+                text_content = (
+                    f"[Delegate {data.get('task_id')} from {source}]: "
+                    f"{data.get('content', '')}"
+                )
+            else:
+                text_content = f"[Notify from {source}]: {data.get('content', '')}"
         else:
             return {}
         if image_content:

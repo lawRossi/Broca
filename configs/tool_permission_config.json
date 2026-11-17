@@ -16,7 +16,7 @@
     "web_fetch": "allow",
     "web_search": "allow",
     "ask_user": "allow",
-    "assign_task": "allow",
+    "communicate": "allow",
     "bash": "allow",
     "task_management": "allow",
     "todo_management": "allow",

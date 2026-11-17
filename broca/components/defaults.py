@@ -5,8 +5,8 @@ This module is the **single source of truth** for:
 - What scope each component has (singleton / per-agent / per-session / transient).
 - How entry point names map to interface types.
 
-**Phase 1** populates only the 7 core components.  The remaining 16
-components are added incrementally in Phase 5 / Phase 6.
+**All components** are registered here and resolved incrementally as they are
+implemented (21 existing + ``AgentMessenger`` = 22).
 
 > **Invariants** (tested in ``test_components_registry.py``):
 > - ``COMPONENT_SCOPES`` entries must match the plan's "组件作用域与
@@ -18,6 +18,7 @@ components are added incrementally in Phase 5 / Phase 6.
 from __future__ import annotations
 
 from broca.components.agent_factory import AgentFactory
+from broca.components.agent_messenger import AgentMessenger
 from broca.components.command_system import CommandSystem
 from broca.components.communicator import Communicator
 from broca.components.context_compressor import ContextCompressor
@@ -42,7 +43,7 @@ from broca.components.tool_manager import ToolManager
 # ---------------------------------------------------------------------------
 # Default implementation mapping
 # ---------------------------------------------------------------------------
-# Phase 1: 7 core components.
+# Component implementations (22 total).
 # The values are **lazy-import strings** to avoid circular imports at module
 # load time.  The actual classes are resolved by ``ComponentRegistry.resolve()``
 # only when needed.
@@ -70,6 +71,7 @@ _DEFAULT_IMPLS: dict[type, str] = {
     TaskManager: "broca.task_manager:DBTaskManager",
     SchedulerABC: "broca.scheduler:Scheduler",
     RevertServiceABC: "broca.session.revert_service:SessionRevertService",
+    AgentMessenger: "broca.agent_messenger.messenger:DefaultAgentMessenger",
 }
 
 
@@ -105,7 +107,7 @@ DEFAULT_IMPLEMENTATIONS: dict[type, type] = _build_default_implementations()
 # Component scope mapping
 # ---------------------------------------------------------------------------
 # Must match the plan's "组件作用域与生命周期契约" table exactly.
-# Phase 1: 7 core components.  Phase 5 will add the remaining 16.
+# Component implementations (22 total).
 
 COMPONENT_SCOPES: dict[type, str] = {
     ToolExecutor: "per-agent",
@@ -129,6 +131,7 @@ COMPONENT_SCOPES: dict[type, str] = {
     TaskManager: "per-session",
     SchedulerABC: "singleton",
     RevertServiceABC: "per-agent",
+    AgentMessenger: "per-agent",
 }
 
 # ---------------------------------------------------------------------------
@@ -159,4 +162,5 @@ ENTRY_POINT_NAMES: dict[str, type] = {
     "task_manager": TaskManager,
     "scheduler": SchedulerABC,
     "revert_service": RevertServiceABC,
+    "agent_messenger": AgentMessenger,
 }
