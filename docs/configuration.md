@@ -188,6 +188,154 @@ Broca 采用**纯文件配置**模型（不读取系统环境变量），配置�
 
 ---
 
+## 媒体配置
+
+媒体相关配置分散在 LLM 配置的 provider 与模型两层（完整机制见 [媒体物化策略](#媒体物化策略ref--wire)）：
+
+| 层级 | 字段 | 说明 |
+|------|------|------|
+| provider | `files_api.type` | Files API 实现类型，当前仅 `"deepseek"`；缺省/未知则回退 base64 |
+| provider | `files_api.purpose` | 上传用途，默认 `"user_data"` |
+| provider | `files_api.expires_seconds` | 文件有效期，钳制到 3600–2592000 秒；不填则不发送 |
+| provider | `files_api.max_size_mb` | 上传大小上限，默认 64 MB |
+| model | `meta.modality.image` / `video` | 声明支持对应模态，否则引用降级为文本链接 |
+| model | `meta.media_limits.max_inline_mb` | base64 内联上限，默认 4 MB |
+
+物化缓存位于 `~/.broca/media_cache/{session_id}/{agent_id}/`，TTL 3 天，无需额外配置；可通过 `broca.media.cache.clear_session_cache()` 主动清理。
+
+## 决策模型配置
+
+`configs/decision_config.json` — 定义 System One 决策模型的提供商和模型（格式同 `llm_config.json`）：
+
+```json
+{
+  "__default__": {"provider": "kev", "model": "kev-4b"},
+  "kev": {
+    "base_url": "http://localhost:8009",
+    "api_key": "",
+    "models": {
+      "kev-4b": {"model": "kev-latest", "timeout": 30}
+    }
+  },
+  "jev": {
+    "base_url": "https://api.typesafe.ai",
+    "api_key": "tsf-xxx",
+    "models": {
+      "jev-latest": {"model": "jev-latest", "timeout": 30}
+    }
+  }
+}
+```
+
+`__default__` 指定默认使用的 provider 和 model。`base_url` 指向任何兼容 `/v1/systemone` 的服务（本地 Kev、TypeSafe 官方 API、OpenRouter 等）。功能说明见 [决策组件](advanced-features.md#决策组件)。
+
+## Agent 配置
+
+`configs/agents/*.md` — YAML frontmatter + Markdown 格式：
+
+```yaml
+---
+name: Broca
+role: main-agent
+tools: ask_user,communicate,bash,cron,edit_file,glob,grep,list_dir,load_skill,read_image,read_file,skill_manage,task_management,todo_management,tree_dir,web_fetch,web_search,write_file
+skills: all
+skill_loading_mode: eager          # 可选：eager（默认）/ lazy
+mcp_servers: ["stock", "weather"]  # 可选，指定该 Agent 使用哪些 MCP 服务器
+enable_context_compression: true   # 可选，开启会话上下文压缩
+enable_snapshot_tracking: true     # 可选，只读型子 Agent 可关闭
+bash_security_check: true          # 可选，bash 命令安全扫描（默认开启）
+communication_policy:              # 可选，Agent 间通信策略
+  allowed_targets: ["researcher"]
+  request_timeout: 300.0
+  max_chain_depth: 3
+persistent_memory_config:          # 可选，跨会话记忆提取
+  auto_extract: false
+compact_config:                    # 可选，上下文压缩阈值
+  session_trunc_threshold: 250000
+  session_trunc_percentage: 0.5
+  keep_steps: 8
+---
+## Role
+...
+```
+
+## MCP 配置
+
+Broca 支持通过 [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) 接入外部工具服务器。
+
+MCP 配置从以下位置读取（覆盖模式）：
+
+| 优先级 | 位置 | 说明 |
+|:------:|------|------|
+| 1（高） | `{workspace}/.broca/mcp_config.json` | 工作区级配置，存在时完全覆盖全局配置 |
+| 2（低） | `~/.broca/configs/mcp_config.json` | 全局/用户级配置，仅当工作区配置不存在时使用 |
+
+**配置格式**：一个 JSON 对象，每个 key 是服务器名称（供 Agent 的 `mcp_servers` 引用），value 是服务器连接配置：
+
+```json
+{
+  "stock": {
+    "command": "python",
+    "args": ["stock_mcp_server.py"],
+    "env": {"API_KEY": "xxx"},
+    "cwd": "/path/to/server",
+    "tool_timeout": 15
+  },
+  "weather": {
+    "url": "https://api.example.com/mcp",
+    "headers": {"Authorization": "Bearer xxx"},
+    "tool_timeout": 30
+  }
+}
+```
+
+**传输协议**：
+
+| 方式 | 必须字段 | 说明 |
+|------|----------|------|
+| **stdio** | `command` + `args` | 通过子进程标准输入/输出通信 |
+| **HTTP (SSE)** | `url` | 通过 HTTP 连接通信 |
+
+**可选字段**：
+- `env` — 环境变量（仅 stdio）
+- `cwd` — 工作目录（仅 stdio）
+- `headers` — HTTP 请求头（仅 SSE）
+- `tool_timeout` — 单次工具调用超时秒数（默认 10s）
+
+Agent 通过 `mcp_servers` 配置指定要使用哪些 MCP 服务器（对应配置文件中的 key），系统自动将对应服务器的所有工具注入到该 Agent 的工具列表中。工具名格式为 `mcp_{server_name}_{tool_name}`。
+
+## 运行配置
+
+`configs/configs.json` 集中了数据库目录、日志、Runner 与执行引擎参数（字段清单见 [configs.json](#configsjsonlayer-1) 与 [execution 分组](#execution-分组)）：
+
+```json
+{
+  "database_dir": "~/.broca/data",
+  "snapshot_home": "~/.broca/snapshots",
+  "execution": {
+    "execution_mode": "non_blocking",
+    "tool_execution_mode": "parallel",
+    "max_parallel_tools": 10,
+    "dead_loop_window": 3,
+    "message_queue_size": 3,
+    "communicate_timeout": 1800,
+    "permission_request_timeout": 90,
+    "runner_heartbeat_interval": 5,
+    "runner_heartbeat_check_interval": 15,
+    "runner_heartbeat_timeout": 45,
+    "runner_ipc_queue_size": 1000
+  },
+  "search": {
+    "default_search_provider": "tavily",
+    "default_fetch_provider": "anysearch"
+  }
+}
+```
+
+其中 `execution_mode` 控制是否允许 turn 执行中追加用户消息（见 [循环执行引擎](architecture.md#2-循环执行引擎)），`tool_execution_mode` 控制工具串行/并发执行，其余为 LLM 重试、工具超时、死循环窗口、心跳与背压等参数。Web / VS Code 设置面板可直接修改常用项。
+
+---
+
 ## 端口标准
 
 | 服务 | 标准端口 | .env 字段 | 默认值来源 |
