@@ -119,7 +119,9 @@ class LocalProcessManager(ProcessManagerABC):
         """
         if process_id is None:
             process_id = f"proc_{uuid.uuid4().hex[:12]}"
-        proc_dir = self.OUTPUT_DIR / process_id
+        # 解析为绝对路径：进程可能长时间运行，期间 cwd 或 OUTPUT_DIR 可能被
+        # 外部改动；固定绝对路径可保证结束时的 meta 写入仍指向同一目录。
+        proc_dir = (self.OUTPUT_DIR / process_id).resolve()
         proc_dir.mkdir(parents=True, exist_ok=True)
 
         stdout_path = proc_dir / "stdout.log"
@@ -353,12 +355,19 @@ class LocalProcessManager(ProcessManagerABC):
             )
 
     def _write_meta(self, meta_path: Path, updates: dict):
-        """安全的 meta.json 写入（部分更新）"""
+        """安全的 meta.json 写入（部分更新）
+
+        输出目录可能被外部清理（如其他实例的启动清理、workspace 清理）而消失。
+        写入前重建父目录，避免进程结束时的状态更新因目录不存在而失败。
+        """
         try:
+            meta_path.parent.mkdir(parents=True, exist_ok=True)
             data = {}
-            if meta_path.exists():
+            try:
                 with open(meta_path, "r") as f:
                     data = json.load(f)
+            except FileNotFoundError:
+                pass  # 首次写入或文件被外部删除
             data.update(updates)
             with open(meta_path, "w") as f:
                 json.dump(data, f, indent=2, ensure_ascii=False)

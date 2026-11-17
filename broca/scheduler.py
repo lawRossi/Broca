@@ -10,6 +10,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Callable, Dict, List, Optional
 
+from apscheduler.jobstores.base import JobLookupError
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.date import DateTrigger
@@ -261,9 +262,11 @@ class Scheduler(SchedulerABC):
     async def remove_job(self, job_id: str) -> bool:
         """删除任务"""
         try:
-            # 从APScheduler删除，APScheduler的remove_job本身会处理不存在的情况
+            # 从APScheduler删除；date 一次性任务触发后已被自动移除，属正常情况
             try:
                 self.apscheduler.remove_job(job_id)
+            except JobLookupError:
+                logger.debug(f"Job {job_id} already removed from scheduler")
             except Exception as e:
                 logger.warning(
                     f"Job not found in scheduler or remove failed: {job_id}, {e}"
@@ -437,6 +440,12 @@ class Scheduler(SchedulerABC):
                 await self.job_service.complete_job(job_id)
                 try:
                     self.apscheduler.remove_job(job_id)
+                except JobLookupError:
+                    # APScheduler 在 date 触发器触发后已自动移除该 job，
+                    # 因此这里找不到是正常情况，不应记录告警。
+                    logger.debug(
+                        f"One-time job {job_id} already removed from scheduler"
+                    )
                 except Exception as e:
                     logger.warning(
                         f"Failed to remove one-time job {job_id} from scheduler: {e}"

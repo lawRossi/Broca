@@ -8,7 +8,6 @@ ProcessManager 单元测试
 import asyncio
 import json
 import os
-import shutil
 import signal
 import sys
 from pathlib import Path
@@ -21,13 +20,20 @@ from broca.process_manager import ProcessManager, ProcessStatus
 
 # 确保每个测试有干净的 ProcessManager 单例
 @pytest_asyncio.fixture(autouse=True)
-async def reset_pm():
-    """每个测试前重置 ProcessManager 状态"""
+async def reset_pm(tmp_path, monkeypatch):
+    """每个测试前重置 ProcessManager 状态，并将输出目录隔离到 tmp_path。
+
+    不能删除 ``Path(ProcessManager.OUTPUT_DIR)``：该路径是相对工作区的
+    ``.broca/process_outputs``，直接 rmtree 会破坏并发运行中的后台任务输出
+    （曾导致 meta.json 写入时报 Errno 2）。
+    """
     pm = ProcessManager()
     await pm.cleanup()
-    output_dir = Path(ProcessManager.OUTPUT_DIR)
-    if output_dir.exists():
-        shutil.rmtree(output_dir)
+
+    output_dir = tmp_path / "process_outputs"
+    output_dir.mkdir(exist_ok=True)
+    monkeypatch.setattr(type(pm), "OUTPUT_DIR", output_dir)
+
     yield
     await pm.cleanup()
 
@@ -268,3 +274,17 @@ async def test_process_output_dir_structure():
     assert (proc_dir / "stdout.log").exists()
     assert (proc_dir / "stderr.log").exists()
     assert (proc_dir / "meta.json").exists()
+
+
+@pytest.mark.asyncio
+async def test_output_dir_isolated_to_tmp_path(tmp_path):
+    """回归：测试输出必须落在 tmp_path，不得删除工作区真实 .broca 目录。"""
+    pm = ProcessManager()
+    assert Path(pm.OUTPUT_DIR) == tmp_path / "process_outputs"
+
+    info = await pm.start_process("echo isolated_output")
+    await asyncio.sleep(0.3)
+
+    stdout_path = Path(info.stdout_path)
+    assert stdout_path.is_relative_to(tmp_path)
+    assert stdout_path.read_text().strip() == "isolated_output"
