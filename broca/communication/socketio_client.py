@@ -67,6 +67,7 @@ class _MessageDispatcher:
             MessageType.PERMISSION_RESPONSE: "permission_response",
             MessageType.AGENT_QUERY: "agent_query",
             MessageType.USER_ANSWER: "user_answer",
+            MessageType.REQUEST_RESOLVED: "request_resolved",
             MessageType.ERROR: "error",
             MessageType.BROADCAST: "broadcast",
             MessageType.PING: "ping",
@@ -683,6 +684,7 @@ class SocketIOClient(Communicator):
         subscription: Optional[str] = None,
         callback: Optional[Callable] = None,
         turn_id: Optional[str] = None,
+        timeout: Optional[int] = None,
     ) -> str:
         """Send permission request"""
         msg = MessageProtocol.create_permission_request(
@@ -694,6 +696,7 @@ class SocketIOClient(Communicator):
             room=room,
             subscription=subscription,
             turn_id=turn_id,
+            timeout=timeout,
         )
         return await self.send_message(msg, callback)
 

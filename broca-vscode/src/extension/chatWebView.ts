@@ -1305,6 +1305,7 @@ export class ChatWebViewManager {
         answer: payload.answer,
         requestId: payload.requestId,
         receiverId: payload.receiverId,
+        subscription: sessionId,
       })
     } catch (error: any) {
       console.error('Failed to send agent query response:', error)

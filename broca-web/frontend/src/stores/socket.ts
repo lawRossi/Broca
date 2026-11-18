@@ -40,6 +40,7 @@ export const useSocketStore = defineStore('socket', () => {
   const _toolCallHandlers = new Map<string, (message: Message) => void>()
   const _permissionRequestHandlers = new Map<string, (message: Message) => void>()
   const _agentQueryHandlers = new Map<string, (message: Message) => void>()
+  const _requestResolvedHandlers = new Map<string, (message: Message) => void>()
 
   /** 注册消息处理器，返回注销函数 */
   const onMessage = (id: string, handler: (message: Message) => void): (() => void) => {
@@ -88,6 +89,12 @@ export const useSocketStore = defineStore('socket', () => {
     _agentQueryHandlers.set(id, handler)
     return () => {
       _agentQueryHandlers.delete(id)
+    }
+  }
+  const onRequestResolved = (id: string, handler: (message: Message) => void): (() => void) => {
+    _requestResolvedHandlers.set(id, handler)
+    return () => {
+      _requestResolvedHandlers.delete(id)
     }
   }
 
@@ -152,6 +159,9 @@ export const useSocketStore = defineStore('socket', () => {
         })
         client.on('agent_query', (m: Message) => {
           _agentQueryHandlers.forEach((h) => h(m))
+        })
+        client.on('request_resolved', (m: Message) => {
+          _requestResolvedHandlers.forEach((h) => h(m))
         })
 
         await client.connect()
@@ -319,14 +329,14 @@ export const useSocketStore = defineStore('socket', () => {
     }
   }
 
-  const sendUserAnswer = async (params: { answer: string; requestId?: string; receiverId?: string }) => {
+  const sendUserAnswer = async (params: { answer: string; requestId?: string; receiverId?: string; subscription?: string }) => {
     if (!client) return
-    console.log(params)
     try {
       await client.sendUserAnswer({
         answer: params.answer,
         requestId: params.requestId,
         receiverId: params.receiverId,
+        subscription: params.subscription,
       })
     } catch (e: any) {
       ElMessage.error(e?.message || '发送回答失败')
@@ -394,6 +404,7 @@ export const useSocketStore = defineStore('socket', () => {
     onToolCall,
     onPermissionRequest,
     onAgentQuery,
+    onRequestResolved,
     connect,
     disconnect,
     subscribe,

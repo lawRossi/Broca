@@ -447,6 +447,7 @@ export const useChatStore = defineStore('chat', () => {
       'permission_response',
       'agent_query',
       'user_answer',
+      'request_resolved',
       'subscribe',
       'unsubscribe',
       'connect',
@@ -1281,15 +1282,66 @@ export const useChatStore = defineStore('chat', () => {
   const closeDialogsForTurn = (turnId?: string) => {
     if (!turnId) return
     if (permissionDialog.visible && permissionDialog.turnId === turnId) {
+      clearDialogTimer(permissionDialog.requestId)
       permissionDialog.visible = false
       permissionDialog.requestId = undefined
       permissionDialog.turnId = undefined
     }
     if (agentQueryDialog.visible && agentQueryDialog.turnId === turnId) {
+      clearDialogTimer(agentQueryDialog.requestId)
       agentQueryDialog.visible = false
       agentQueryDialog.requestId = undefined
       agentQueryDialog.turnId = undefined
     }
+  }
+
+  /**
+   * 按 requestId 精确关闭弹窗。
+   *
+   * 某一端应答后，服务端向整个 subscription 广播 request_resolved，所有端的
+   * 弹窗据此立即关闭，不必等到可能很晚才到达（甚至永远不来）的 turn_end。
+   */
+  const closeDialogsForRequest = (requestId?: string) => {
+    if (!requestId) return
+    if (permissionDialog.visible && permissionDialog.requestId === requestId) {
+      clearDialogTimer(requestId)
+      permissionDialog.visible = false
+      permissionDialog.requestId = undefined
+      permissionDialog.turnId = undefined
+    }
+    if (agentQueryDialog.visible && agentQueryDialog.requestId === requestId) {
+      clearDialogTimer(requestId)
+      agentQueryDialog.visible = false
+      agentQueryDialog.requestId = undefined
+      agentQueryDialog.turnId = undefined
+    }
+  }
+
+  // --- 本地超时兜底 -------------------------------------------------------
+  // 即使漏收 request_resolved / turn_end（如短暂断线、服务端未广播），弹窗也
+  // 会在服务端超时后自动关闭，避免永久悬挂。定时器时长来自请求消息携带的
+  // timeout（秒），并额外留 5s 缓冲。
+  const _dialogTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  const clearDialogTimer = (requestId?: string) => {
+    if (!requestId) return
+    const timer = _dialogTimers.get(requestId)
+    if (timer) {
+      clearTimeout(timer)
+      _dialogTimers.delete(requestId)
+    }
+  }
+
+  const armDialogTimer = (requestId: string | undefined, timeoutSec: number | undefined) => {
+    if (!requestId) return
+    clearDialogTimer(requestId)
+    // 默认与服务端 agent_query_timeout(300s) 对齐；permission 请求会带自己的 timeout
+    const seconds = typeof timeoutSec === 'number' && timeoutSec > 0 ? timeoutSec : 300
+    const timer = setTimeout(() => {
+      _dialogTimers.delete(requestId)
+      closeDialogsForRequest(requestId)
+    }, (seconds + 5) * 1000)
+    _dialogTimers.set(requestId, timer)
   }
 
   const doConnect = async () => {
@@ -1452,6 +1504,7 @@ export const useChatStore = defineStore('chat', () => {
       permissionDialog.message = m.data?.message || 'Permission required'
       permissionDialog.requestType = m.data?.request_type || 'general'
       permissionDialog.turnId = m.turn_id
+      armDialogTimer(permissionDialog.requestId, m.data?.timeout)
     })
     const unsubAgentQuery = socketStore.onAgentQuery('chat', (m: Message) => {
       agentQueryDialog.visible = true
@@ -1460,6 +1513,11 @@ export const useChatStore = defineStore('chat', () => {
       agentQueryDialog.question = m.data?.question || m.data?.content || ''
       agentQueryDialog.options = m.data?.options || []
       agentQueryDialog.turnId = m.turn_id
+      armDialogTimer(agentQueryDialog.requestId, m.data?.timeout)
+    })
+    const unsubRequestResolved = socketStore.onRequestResolved('chat', (m: Message) => {
+      // 某一端已应答：立即关闭本端同 requestId 的弹窗
+      closeDialogsForRequest(m.data?.request_id)
     })
 
     // 保存注销函数以便 cleanup 时清理
@@ -1470,7 +1528,8 @@ export const useChatStore = defineStore('chat', () => {
       unsubAgentResponse,
       unsubToolCall,
       unsubPermission,
-      unsubAgentQuery
+      unsubAgentQuery,
+      unsubRequestResolved
     )
 
     await socketStore.connect()
@@ -1580,24 +1639,29 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   const respondPermission = async (granted: boolean, sessionAction?: string) => {
+    const requestId = permissionDialog.requestId
     await socketStore.respondPermission({
       granted,
       session_action: sessionAction,
-      requestId: permissionDialog.requestId,
+      requestId,
       receiverId: permissionDialog.senderId || '',
       subscription: sessionId.value ? String(sessionId.value) : undefined,
     })
+    clearDialogTimer(requestId)
     permissionDialog.visible = false
     permissionDialog.requestId = undefined
     permissionDialog.turnId = undefined
   }
 
   const respondUserAnswer = async (answer: string) => {
+    const requestId = agentQueryDialog.requestId
     await socketStore.sendUserAnswer({
       answer,
-      requestId: agentQueryDialog.requestId,
+      requestId,
       receiverId: agentQueryDialog.senderId || '',
+      subscription: sessionId.value ? String(sessionId.value) : undefined,
     })
+    clearDialogTimer(requestId)
     agentQueryDialog.visible = false
     agentQueryDialog.requestId = undefined
     agentQueryDialog.turnId = undefined
@@ -1609,6 +1673,11 @@ export const useChatStore = defineStore('chat', () => {
     messages.value = []
     messageStates.value.clear()
     pendingChunks.value.clear()
+    // 清理弹窗兜底定时器，避免跨会话误关
+    _dialogTimers.forEach((timer) => clearTimeout(timer))
+    _dialogTimers.clear()
+    permissionDialog.visible = false
+    agentQueryDialog.visible = false
     agentStore.clearCache()
     // 清理撤销/重做状态
     showRedoButton.value = false

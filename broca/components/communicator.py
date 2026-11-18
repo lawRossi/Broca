@@ -213,6 +213,7 @@ class Communicator(BaseComponent, ABC):
         subscription: Optional[str] = None,
         callback: Optional[Callable] = None,
         turn_id: Optional[str] = None,
+        timeout: Optional[int] = None,
     ) -> str:
         """Send a permission request to the user."""
         ...

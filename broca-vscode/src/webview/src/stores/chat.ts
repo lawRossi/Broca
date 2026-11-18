@@ -451,15 +451,61 @@ export const useChatStore = defineStore('chat', () => {
   function closeDialogsForTurn(turnId?: string) {
     if (!turnId) return
     if (permissionDialog.value.visible && permissionDialog.value.turnId === turnId) {
+      clearDialogTimer(permissionDialog.value.requestId)
       permissionDialog.value.visible = false
       permissionDialog.value.requestId = undefined
       permissionDialog.value.turnId = undefined
     }
     if (agentQueryDialog.value.visible && agentQueryDialog.value.turnId === turnId) {
+      clearDialogTimer(agentQueryDialog.value.requestId)
       agentQueryDialog.value.visible = false
       agentQueryDialog.value.requestId = undefined
       agentQueryDialog.value.turnId = undefined
     }
+  }
+
+  /**
+   * 按 requestId 精确关闭弹窗。
+   * 某一端应答后服务端向整个 subscription 广播 request_resolved，本端据此
+   * 立即关闭同 requestId 的弹窗，不必等到可能很晚才来的 turn_end。
+   */
+  function closeDialogsForRequest(requestId?: string) {
+    if (!requestId) return
+    if (permissionDialog.value.visible && permissionDialog.value.requestId === requestId) {
+      clearDialogTimer(requestId)
+      permissionDialog.value.visible = false
+      permissionDialog.value.requestId = undefined
+      permissionDialog.value.turnId = undefined
+    }
+    if (agentQueryDialog.value.visible && agentQueryDialog.value.requestId === requestId) {
+      clearDialogTimer(requestId)
+      agentQueryDialog.value.visible = false
+      agentQueryDialog.value.requestId = undefined
+      agentQueryDialog.value.turnId = undefined
+    }
+  }
+
+  // --- 本地超时兜底：漏收 request_resolved / turn_end 时也会自动关弹窗 ---
+  const _dialogTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
+  function clearDialogTimer(requestId?: string) {
+    if (!requestId) return
+    const timer = _dialogTimers.get(requestId)
+    if (timer) {
+      clearTimeout(timer)
+      _dialogTimers.delete(requestId)
+    }
+  }
+
+  function armDialogTimer(requestId: string | undefined, timeoutSec: number | undefined) {
+    if (!requestId) return
+    clearDialogTimer(requestId)
+    const seconds = typeof timeoutSec === 'number' && timeoutSec > 0 ? timeoutSec : 300
+    const timer = setTimeout(() => {
+      _dialogTimers.delete(requestId)
+      closeDialogsForRequest(requestId)
+    }, (seconds + 5) * 1000)
+    _dialogTimers.set(requestId, timer)
   }
 
   function handleIncomingMessage(message: Message) {
@@ -480,6 +526,12 @@ export const useChatStore = defineStore('chat', () => {
     }
 
     // ===== 弹窗类消息：在 processMessage 之前处理，避免被过滤掉 =====
+    // 某一端已应答：立即关闭本端同 requestId 的弹窗
+    if (message.message_type === 'request_resolved') {
+      closeDialogsForRequest(message.data?.request_id)
+      return
+    }
+
     // Check if it's a permission request
     if (message.message_type === 'permission_request') {
       permissionDialog.value = {
@@ -490,6 +542,7 @@ export const useChatStore = defineStore('chat', () => {
         requestType: message.data?.request_type || 'general',
         turnId: message.turn_id,
       }
+      armDialogTimer(permissionDialog.value.requestId, message.data?.timeout)
       return
     }
 
@@ -503,6 +556,7 @@ export const useChatStore = defineStore('chat', () => {
         options: message.data?.options || [],
         turnId: message.turn_id,
       }
+      armDialogTimer(agentQueryDialog.value.requestId, message.data?.timeout)
       return
     }
 
@@ -881,29 +935,33 @@ export const useChatStore = defineStore('chat', () => {
   }
 
   function respondPermission(granted: boolean, sessionAction?: string) {
+    const requestId = permissionDialog.value.requestId
     postMessage({
       type: 'respondPermission',
       payload: {
         granted,
         session_action: sessionAction,
-        requestId: permissionDialog.value.requestId,
+        requestId,
         receiverId: permissionDialog.value.senderId,
       },
     })
+    clearDialogTimer(requestId)
     permissionDialog.value.visible = false
     permissionDialog.value.requestId = undefined
     permissionDialog.value.turnId = undefined
   }
 
   function respondAgentQuery(answer: string) {
+    const requestId = agentQueryDialog.value.requestId
     postMessage({
       type: 'respondAgentQuery',
       payload: {
         answer,
-        requestId: agentQueryDialog.value.requestId,
+        requestId,
         receiverId: agentQueryDialog.value.senderId,
       },
     })
+    clearDialogTimer(requestId)
     agentQueryDialog.value.visible = false
     agentQueryDialog.value.requestId = undefined
     agentQueryDialog.value.turnId = undefined

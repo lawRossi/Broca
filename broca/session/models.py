@@ -102,6 +102,10 @@ class MessageType(str, Enum):
     PERMISSION_REQUEST = "permission_request"
     PERMISSION_RESPONSE = "permission_response"
 
+    # 请求已应答：服务端在某端提交 PERMISSION_RESPONSE / USER_ANSWER 后向整个
+    # subscription 广播，其他端（Web / VSCode / TUI）据此按 request_id 关闭弹窗
+    REQUEST_RESOLVED = "request_resolved"
+
 
 class Turn(BaseModel, table=True):
     """
@@ -605,6 +609,7 @@ class MessageProtocol:
         message: str,
         request_id: Optional[str] = None,
         request_type: Optional[str] = None,
+        timeout: Optional[int] = None,
         **kwargs,
     ) -> Message:
         """创建权限请求消息"""
@@ -613,6 +618,8 @@ class MessageProtocol:
             data["request_id"] = request_id
         if request_type:
             data["request_type"] = request_type
+        if timeout is not None:
+            data["timeout"] = timeout
         return Message(
             message_type=MessageType.PERMISSION_REQUEST,
             role=MessageRole.SYSTEM,
@@ -650,6 +657,29 @@ class MessageProtocol:
             data={"answer": answer, "request_id": request_id},
             sender_id=sender_id,
             receiver_id=receiver_id,
+            **kwargs,
+        )
+
+    @staticmethod
+    def create_request_resolved(
+        request_id: str,
+        resolved_type: str,
+        **kwargs,
+    ) -> Message:
+        """创建“请求已被应答”广播消息。
+
+        当某一端提交了 ``PERMISSION_RESPONSE`` / ``USER_ANSWER`` 后，服务端向
+        整个 subscription 广播此消息，其他端的弹窗据此按 ``request_id`` 精确关闭，
+        不必等到整轮 ``turn_end``。
+
+        Args:
+            request_id: 被应答的原始请求 ID。
+            resolved_type: ``permission`` 或 ``agent_query``，便于前端区分弹窗类型。
+        """
+        return Message(
+            message_type=MessageType.REQUEST_RESOLVED,
+            role=MessageRole.SYSTEM,
+            data={"request_id": request_id, "resolved_type": resolved_type},
             **kwargs,
         )
 

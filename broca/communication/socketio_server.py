@@ -171,17 +171,23 @@ class SocketIOServer:
                 f"{subscription}"
             )
 
-    async def _remove_pending_message_by_request_id(self, request_id: str):
+    async def _remove_pending_message_by_request_id(
+        self, request_id: str
+    ) -> Optional[str]:
         """通过 request_id 移除缓存的待处理消息
 
         在收到 PERMISSION_RESPONSE 或 USER_ANSWER 时调用。
 
         Args:
             request_id: 要移除的请求 ID
+
+        Returns:
+            该请求原本所属的 subscription（用于广播 REQUEST_RESOLVED），
+            若请求未被缓存则返回 None。
         """
         async with self._lock:
             if request_id not in self._request_to_subscription:
-                return
+                return None
 
             subscription, msg_key = self._request_to_subscription.pop(request_id)
             sub_entries = self._pending_messages.get(subscription)
@@ -193,6 +199,39 @@ class SocketIOServer:
             logger.debug(
                 f"Removed pending message [{request_id}] from {subscription}"
             )
+            return subscription
+
+    async def _broadcast_request_resolved(
+        self,
+        subscription: str,
+        request_id: str,
+        resolved_type: str,
+        sender_id: Optional[str] = None,
+    ) -> None:
+        """向整个 subscription 广播“请求已应答”，驱动所有端按 request_id 关闭弹窗。
+
+        应答消息本身按 ``receiver_id`` 单播给 Agent，需要关闭弹窗的却是所有正在
+        查看该会话的 UI 客户端（Web / VSCode / TUI），因此这里改走 subscription
+        广播。REQUEST_RESOLVED 不是 pending candidate，不会被缓存/补投递，避免
+        晚加入的客户端拿到过期的关闭信号。
+
+        Args:
+            subscription: 请求所属的订阅频道（通常是 session_id）。
+            request_id: 被应答的原始请求 ID。
+            resolved_type: ``permission`` 或 ``agent_query``。
+            sender_id: 应答端 client_id，透传给前端做幂等判断。
+        """
+        resolved_msg = MessageProtocol.create_request_resolved(
+            request_id=request_id,
+            resolved_type=resolved_type,
+            subscription=subscription,
+            sender_id=sender_id or "server",
+        )
+        result = await self._send_to_subscription(subscription, resolved_msg)
+        logger.info(
+            f"Broadcast REQUEST_RESOLVED [{request_id}] ({resolved_type}) "
+            f"to {subscription}: {result}"
+        )
 
     async def _cleanup_expired_pending(self) -> None:
         """每 60s 扫描并清除 _pending_messages 中的过期条目"""
@@ -465,14 +504,32 @@ class SocketIOServer:
         else:
             result = await self._broadcast(message)  # type: ignore[assignment]
 
-        # 收到 PERMISSION_RESPONSE 或 USER_ANSWER 时，清理缓存中的对应待处理请求
+        # 收到 PERMISSION_RESPONSE 或 USER_ANSWER 时：
+        # 1) 清理缓存中的对应待处理请求（避免晚订阅端补投已被应答的弹窗）；
+        # 2) 向整个 subscription 广播 REQUEST_RESOLVED，让其他端的同款弹窗按
+        #    request_id 立即关闭，而不必等到整轮 turn_end（可能很晚甚至永不来）。
         if message.message_type in (
             MessageType.PERMISSION_RESPONSE,
             MessageType.USER_ANSWER,
         ):
             request_id = (message.data or {}).get("request_id")
             if request_id:
-                await self._remove_pending_message_by_request_id(request_id)
+                subscription = await self._remove_pending_message_by_request_id(
+                    request_id
+                )
+                subscription = subscription or message.subscription
+                if subscription:
+                    resolved_type = (
+                        "permission"
+                        if message.message_type == MessageType.PERMISSION_RESPONSE
+                        else "agent_query"
+                    )
+                    await self._broadcast_request_resolved(
+                        subscription,
+                        request_id,
+                        resolved_type,
+                        sender_id=message.sender_id,
+                    )
 
         # 记录发送状态
         if result:

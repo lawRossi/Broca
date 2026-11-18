@@ -24,13 +24,14 @@ class MockCommunicator:
     def __init__(self):
         self.last_permission_request = None
 
-    async def send_permission_request(self, message, request_id, request_type, subscription, turn_id=None):
+    async def send_permission_request(self, message, request_id, request_type, subscription, turn_id=None, timeout=None):
         self.last_permission_request = {
             "message": message,
             "request_id": request_id,
             "request_type": request_type,
             "subscription": subscription,
             "turn_id": turn_id,
+            "timeout": timeout,
         }
 
 

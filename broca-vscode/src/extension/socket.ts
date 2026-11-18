@@ -325,7 +325,7 @@ export class SocketClient {
     })
   }
 
-  async sendUserAnswer(params: { answer: string; requestId?: string; receiverId?: string }): Promise<void> {
+  async sendUserAnswer(params: { answer: string; requestId?: string; receiverId?: string; subscription?: string }): Promise<void> {
     if (!this.socket?.connected) throw new Error('Not connected')
 
     const message: Message = {
@@ -335,6 +335,7 @@ export class SocketClient {
       role: 'user',
       sender_id: this.clientId,
       receiver_id: params.receiverId,
+      subscription: params.subscription,
       data: {
         answer: params.answer,
         request_id: params.requestId,

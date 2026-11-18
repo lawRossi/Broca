@@ -29,6 +29,8 @@ export type MessageType =
   | 'permission_response'
   | 'agent_query'
   | 'user_answer'
+  // 请求已被某端应答（服务端广播，其他端据此按 requestId 关闭弹窗）
+  | 'request_resolved'
 
 export type MessageRole = 'user' | 'assistant' | 'system' | 'tool' | 'agent_system' | 'agent'
 

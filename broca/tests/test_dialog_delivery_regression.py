@@ -168,6 +168,142 @@ class TestPendingMessageDelivery:
 
 
 # ---------------------------------------------------------------------------
+# 4. 跨端广播：某一端应答后，其他端的同款弹窗应立即关闭
+# ---------------------------------------------------------------------------
+
+
+def _user_answer(request_id: str, receiver_id: str = "agent-1") -> Message:
+    return MessageProtocol.create_user_answer(
+        answer="选项 A",
+        request_id=request_id,
+        sender_id="vscode-client",
+        receiver_id=receiver_id,
+    )
+
+
+def _permission_response(request_id: str, receiver_id: str = "agent-1") -> Message:
+    return MessageProtocol.create_permission_response(
+        granted=True,
+        request_id=request_id,
+        sender_id="web-browser",
+        receiver_id=receiver_id,
+    )
+
+
+def _emitted_payloads(server: SocketIOServer) -> list[dict]:
+    return [
+        call.args[1]
+        for call in server.sio.emit.await_args_list
+        if len(call.args) >= 2 and isinstance(call.args[1], dict)
+    ]
+
+
+class TestRequestResolvedBroadcast:
+    """回归：在 VSCode 应答后，Web 端的弹窗不应等到 turn_end 才消失。"""
+
+    @pytest.mark.asyncio
+    async def test_user_answer_broadcasts_request_resolved(self, server):
+        """USER_ANSWER 触发 REQUEST_RESOLVED 广播，携带原 request_id 与类型。"""
+        _register_client(server, "vscode-1", "sid-vscode")
+        _register_client(server, "agent-1", "sid-agent")
+        _register_client(server, "web-1", "sid-web")
+        await server._handle_subscription(
+            "sid-web", {"subscription": "sess-1"}, subscribe=True
+        )
+        # 请求缓存到 sess-1（模拟 AskUser 发出的 agent_query）
+        await server._send_to_subscription("sess-1", _agent_query("q-cross"))
+
+        server.sio.emit.reset_mock()
+        await server._process_message("sid-vscode", _user_answer("q-cross"))
+
+        payloads = _emitted_payloads(server)
+        resolved = [
+            p
+            for p in payloads
+            if p["message_type"] == MessageType.REQUEST_RESOLVED.value
+        ]
+        assert len(resolved) == 1, "必须且只广播一次 request_resolved"
+        assert resolved[0]["data"]["request_id"] == "q-cross"
+        assert resolved[0]["data"]["resolved_type"] == "agent_query"
+        assert resolved[0]["subscription"] == "sess-1"
+
+    @pytest.mark.asyncio
+    async def test_permission_response_broadcasts_request_resolved(self, server):
+        """PERMISSION_RESPONSE 同样广播，resolved_type 为 permission。"""
+        _register_client(server, "web-1", "sid-web")
+        await server._handle_subscription(
+            "sid-web", {"subscription": "sess-1"}, subscribe=True
+        )
+        await server._send_to_subscription("sess-1", _permission_request("req-cross"))
+
+        server.sio.emit.reset_mock()
+        await server._process_message("sid-web", _permission_response("req-cross"))
+
+        resolved = [
+            p
+            for p in _emitted_payloads(server)
+            if p["message_type"] == MessageType.REQUEST_RESOLVED.value
+        ]
+        assert len(resolved) == 1
+        assert resolved[0]["data"]["request_id"] == "req-cross"
+        assert resolved[0]["data"]["resolved_type"] == "permission"
+
+    @pytest.mark.asyncio
+    async def test_resolved_broadcast_reaches_all_subscribers(self, server):
+        """广播必须发给 subscription 的所有客户端，而不只是应答方/Agent。"""
+        _register_client(server, "browser-1", "sid-browser")
+        _register_client(server, "vscode-1", "sid-vscode")
+        _register_client(server, "agent-1", "sid-agent")
+        await server._handle_subscription(
+            "sid-browser", {"subscription": "sess-1"}, subscribe=True
+        )
+        await server._handle_subscription(
+            "sid-vscode", {"subscription": "sess-1"}, subscribe=True
+        )
+        await server._send_to_subscription("sess-1", _agent_query("q-all"))
+
+        server.sio.emit.reset_mock()
+        await server._process_message("sid-vscode", _user_answer("q-all"))
+
+        # 找到那条广播 emit，room 应包含两个前端订阅者的 sid
+        broadcast_calls = [
+            call
+            for call in server.sio.emit.await_args_list
+            if len(call.args) >= 2
+            and isinstance(call.args[1], dict)
+            and call.args[1]["message_type"] == MessageType.REQUEST_RESOLVED.value
+        ]
+        assert len(broadcast_calls) == 1
+        rooms = broadcast_calls[0].kwargs.get("room")
+        assert set(rooms) == {"sid-browser", "sid-vscode"}
+
+    @pytest.mark.asyncio
+    async def test_answer_clears_pending_cache(self, server):
+        """应答后端对应请求不再缓存，避免晚订阅端补投已应答的弹窗。"""
+        _register_client(server, "vscode-1", "sid-vscode")
+        await server._send_to_subscription("sess-1", _agent_query("q-clear"))
+        assert "q-clear" in server._request_to_subscription
+
+        await server._process_message("sid-vscode", _user_answer("q-clear"))
+        assert "q-clear" not in server._request_to_subscription
+        assert "sess-1" not in server._pending_messages
+
+    @pytest.mark.asyncio
+    async def test_no_broadcast_for_unknown_request(self, server):
+        """未知 request_id（如缓存已过期）不应凭空广播。"""
+        _register_client(server, "vscode-1", "sid-vscode")
+        await server._process_message(
+            "sid-vscode", _user_answer("q-unknown", receiver_id="agent-1")
+        )
+        resolved = [
+            p
+            for p in _emitted_payloads(server)
+            if p["message_type"] == MessageType.REQUEST_RESOLVED.value
+        ]
+        assert resolved == []
+
+
+# ---------------------------------------------------------------------------
 # 2. 引擎 flush 顺序
 # ---------------------------------------------------------------------------
 

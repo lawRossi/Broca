@@ -89,6 +89,12 @@ class AskUser(Tool):
                 "answer": None,
             }
 
+        query_timeout = getattr(
+            getattr(agent.config, "execution_config", None),
+            "agent_query_timeout",
+            300,
+        )
+
         try:
             await self._send_agent_question(
                 agent=agent,
@@ -97,6 +103,7 @@ class AskUser(Tool):
                 request_id=request_id,
                 subscription=session_id,
                 turn_id=context.turn_id,
+                timeout=query_timeout,
             )
 
             await self._log_question(
@@ -104,11 +111,6 @@ class AskUser(Tool):
             )
 
             try:
-                query_timeout = getattr(
-                    getattr(agent.config, "execution_config", None),
-                    "agent_query_timeout",
-                    300,
-                )
                 await asyncio.wait_for(response_event.wait(), timeout=query_timeout)
             except asyncio.TimeoutError:
                 logger.warning(f"User question {request_id} timed out")
@@ -153,11 +155,15 @@ class AskUser(Tool):
         request_id: str,
         subscription: Optional[str],
         turn_id: Optional[str] = None,
+        timeout: Optional[int] = None,
     ):
         message_data = {
             "question": question,
             "options": options,
             "request_id": request_id,
+            # 前端据此设置本地兜底定时器：即使漏收 request_resolved / turn_end，
+            # 弹窗也会在服务端超时后自动关闭，避免永久悬挂。
+            "timeout": timeout,
         }
         message = Message(
             message_type=MessageType.AGENT_QUERY,
