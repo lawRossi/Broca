@@ -129,6 +129,9 @@ export interface TurnSummaryData {
   agent_id: string
   agent_name: string
   user_message: string | null
+  /** 所有 user 消息（non-blocking 模式下一个 turn 可有多条，含 mid-turn 注入的） */
+  user_messages?: string[]
+  user_files?: Array<{ name: string; url: string; path: string; size: number; type: string }> | null
   status: string
   current_tool: string | null
   current_file_path: string | null

@@ -5,6 +5,7 @@ import type { Message, RunnerInfo } from '../types'
 import { mergeAgentStatuses, type AgentStatus } from '../utils/agentStatus'
 import { canUpdateTurnRunningStatus } from '../utils/turnStatus'
 import { applyHistoryReload } from '../utils/historyMerge'
+import { accumulateUserMessage } from '../utils/turnUserMessages'
 
 // ========== 简洁模式类型定义 ==========
 interface ToolCallStat {
@@ -56,6 +57,8 @@ interface TurnSummary {
   recoveryHint: string | null
   /** 用户发送的消息附件（图片/文件） */
   userFiles: Array<{ name: string; url: string; path: string; size: number; type: string }> | null
+  /** 该 turn 的所有 user 消息（non-blocking 模式下一个 turn 可有多条，含 mid-turn 注入的） */
+  userMessages: string[]
 }
 
 export const useChatStore = defineStore('chat', () => {
@@ -136,6 +139,8 @@ export const useChatStore = defineStore('chat', () => {
   const _turnLastResponseMsgId = ref(new Map<string, string>())
   const _turnContentMsgId = ref(new Map<string, string>())
   const _turnSeenToolCallIds = ref(new Set<string>())
+  /** 记录每个 turn 已处理过的 user_message message_id，防止 mid-step 广播导致重复追加 */
+  const _turnSeenUserMessageIds = ref(new Map<string, Set<string>>())
   const durationTimer = ref<ReturnType<typeof setInterval> | null>(null)
 
   // ==================== 完整 Agent 数据 ====================
@@ -1022,6 +1027,7 @@ export const useChatStore = defineStore('chat', () => {
       _turnLastResponseMsgId.value = new Map()
       _turnContentMsgId.value = new Map()
       _turnSeenToolCallIds.value = new Set()
+      _turnSeenUserMessageIds.value = new Map()
       stopDurationTimer()
     }
 
@@ -1209,6 +1215,7 @@ export const useChatStore = defineStore('chat', () => {
     _turnLastResponseMsgId.value = new Map()
     _turnContentMsgId.value = new Map()
     _turnSeenToolCallIds.value = new Set()
+    _turnSeenUserMessageIds.value = new Map()
     stopDurationTimer()
   }
 
@@ -1308,6 +1315,9 @@ export const useChatStore = defineStore('chat', () => {
       }
     }
 
+    // turn 已终结，释放该 turn 的 user_message 去重状态（与 web 版一致）
+    _turnSeenUserMessageIds.value.delete(turnId)
+
     // 如果没有任何活跃 turn 了，停止计时器（timer 自身也会检测，这里做双重保障）
     if (!turnSummaries.value.some((t) => t.isActive)) {
       stopDurationTimer()
@@ -1335,33 +1345,22 @@ export const useChatStore = defineStore('chat', () => {
     if (!turn) return
 
     switch (message.message_type) {
-      case 'user_message':
-        // 简洁模式：工具注入的内部消息（如 read_image 注入的 image message）
-        // 不参与 TurnCard 聚合（data.tool_injected=true，仅供 LLM context）。
-        if (message.data?.tool_injected) break
-        if (!turn.userMessage) {
-          // 优先使用 raw_input（与明细模式 ChatMessageItem 一致）
-          if (message.data?.raw_input !== undefined) {
-            turn.userMessage = String(message.data.raw_input)
-          } else {
-            // 后端回显的 user_message 可能 JSON 包裹，与 web 版一致处理
-            const raw = message.data?.content
-            if (raw) {
-              try {
-                const parsed = typeof raw === 'string' ? JSON.parse(raw) : raw
-                turn.userMessage = parsed?.content || String(parsed)
-              } catch {
-                turn.userMessage = String(raw)
-              }
-            }
-          }
+      case 'user_message': {
+        // 简洁模式：把每条 user_message 追加进 turn.userMessages 并堆叠展示。
+        // mid-turn 注入的消息（engine._inject_user_message）与首条同属一个 turn，
+        // 必须逐条累积；去重（tool_injected 过滤 / message_id 去重 / 文本与附件
+        // 提取）统一走与 web 版一致的纯函数 accumulateUserMessage。
+        let seenUserIds = _turnSeenUserMessageIds.value.get(turnId)
+        if (!seenUserIds) {
+          seenUserIds = new Set<string>()
+          _turnSeenUserMessageIds.value.set(turnId, seenUserIds)
         }
-        // 提取用户附件（图片/文件）
-        if (message.data?.files) {
-          turn.userFiles = message.data.files
+        if (accumulateUserMessage(turn, message.message_id, message.data, seenUserIds)) {
+          // 记录最后一条用户消息 ID，用于撤销定位
+          turn.lastMessageId = message.message_id
         }
-        turn.lastMessageId = message.message_id
         break
+      }
 
       case 'tool_call': {
         const toolName = message.data?.tool_name

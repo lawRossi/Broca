@@ -4,6 +4,7 @@ import { marked } from 'marked'
 import type { TurnSummary } from '../stores/chat'
 import { useChatStore } from '../stores/chat'
 import { postMessage, onMessage, getInitialData } from '../api/vscode'
+import { getDisplayUserMessages } from '../utils/turnUserMessages'
 
 const props = defineProps<{
   turn: TurnSummary
@@ -52,6 +53,9 @@ const isLongUserMessage = computed(() => {
   if (!text) return false
   return text.length > MAX_USER_CHARS
 })
+
+// non-blocking 模式：一个 turn 可能有多条 user 消息（含 mid-turn 注入的），堆叠展示
+const displayUserMessages = computed(() => getDisplayUserMessages(props.turn))
 
 // ==================== 状态文本与颜色（与 web 版一致） ====================
 const simplifiedStatus = computed(() => {
@@ -302,15 +306,29 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
       </div>
     </div>
 
-    <!-- ==================== 用户消息（对齐 web 版） ==================== -->
-    <div v-if="turn.userMessage || (turn.userFiles && turn.userFiles.length > 0)" class="user-message-section section-accent accent-user">
+    <!-- ==================== 用户消息（对齐 web 版：non-blocking 多条堆叠） ==================== -->
+    <div
+      v-if="displayUserMessages.length > 0 || (turn.userFiles && turn.userFiles.length > 0)"
+      class="user-message-section section-accent accent-user"
+    >
       <div class="user-message-row">
         <span class="user-icon">👤</span>
         <div class="user-message-content">
-          <div v-if="turn.userMessage" class="user-message-text" :class="{ 'user-msg-collapsed': isLongUserMessage && !showFullUserMessage }">
-            {{ turn.userMessage }}
+          <!-- 堆叠显示所有 user 消息（含 mid-turn 注入的消息） -->
+          <div
+            v-for="(msg, idx) in displayUserMessages"
+            :key="idx"
+            class="user-msg-row"
+            :class="{ 'user-msg-row--not-first': idx > 0 }"
+          >
+            <div
+              class="user-msg-text"
+              :class="{ 'user-msg-collapsed': isLongUserMessage && idx === 0 && !showFullUserMessage }"
+            >
+              {{ msg }}
+            </div>
           </div>
-          <!-- 用户附件 -->
+          <!-- 用户附件（累积所有消息的 files） -->
           <div v-if="turn.userFiles && turn.userFiles.length > 0" class="user-files">
             <template v-for="(file, idx) in turn.userFiles" :key="idx">
               <!-- 图片：显示缩略图 -->
@@ -609,7 +627,14 @@ const showAgentHeader = computed(() => !props.consecutiveAgent)
   min-width: 0;
 }
 
-.user-message-text {
+/* non-blocking: 同一 turn 内多条 user 消息堆叠（对齐 web 版） */
+.user-msg-row--not-first {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px solid var(--vscode-widget-border, #e0e0e0);
+}
+
+.user-msg-text {
   word-break: break-word;
   line-height: 1.4;
 }
