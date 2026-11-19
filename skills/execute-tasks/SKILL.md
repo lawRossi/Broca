@@ -1,7 +1,7 @@
 ---
 name: execute-tasks
-version: "1.0.0"
-description: "Executes implementation tasks from a plan. "
+version: "1.1.0"
+description: "Executes implementation tasks from a plan with dependency-aware, workload-balanced parallel delegation."
 ---
 
 # Execute Tasks
@@ -55,7 +55,84 @@ flowchart LR
     D -->|"❌ Issues"| B
 ```
 
-**Parallelism principle**: Within a phase, tasks whose dependencies are all satisfied can execute **concurrently** (assigned to different agents). This leverages the low-coupling design from `create-plan` to minimize total phase duration.
+**Parallelism principle**: Within a phase, tasks whose dependencies are all satisfied can execute **concurrently** (assigned to different agents). This leverages the low-coupling design from `create-plan` to minimize total phase duration. Follow the **Parallel Execution Protocol** below — parallelism is a tool for efficiency, not an end in itself.
+
+## Parallel Execution Protocol
+
+**Parallelism exists to increase efficiency, not to look busy.** Delegation has a real cost: the delegatee must first load the task's context (plan section, code, conventions) before it can produce anything. Delegate only when the time saved by running in parallel clearly exceeds this overhead.
+
+### 1. Build the ready set (dependency gate)
+
+A task is **delegable** only when **all** its dependency task IDs have status `completed`. Verify with `task_management get_children` / `get` immediately before assigning.
+
+- ❌ Never assign a task with any dependency still `pending` / `in_progress` / `blocked`.
+- ❌ Never assume a dependency is "effectively done" — check its status explicitly.
+
+### 2. Decide per task whether delegation is worth it
+
+Weigh each ready task's workload against the delegation overhead:
+
+| Workload | Decision |
+|----------|----------|
+| Substantial (multi-file changes, new modules, real logic) | ✅ Delegate in parallel |
+| Small but non-trivial (focused single-file change with real logic) | ⚠️ Delegate only when it helps balance an otherwise idle agent |
+| Tiny (one-line fix, rename, trivial edit, status/doc tweak) | ❌ Execute locally yourself — do **not** delegate |
+
+> Rationale: for a tiny task, the delegatee's context-understanding time can exceed the execution time, so delegation is a net loss. Keep such tasks for the orchestrator to do directly.
+
+### 3. Balance the workload
+
+When several tasks are ready at once:
+
+- Distribute work so each agent gets a **roughly equal share** — avoid piling all heavy tasks on one agent while others idle.
+- Prefer one substantial task (or a balanced bundle) per agent over dumping many small tasks on a single agent.
+- Pair a large task with a smaller one for the same agent only when it improves overall balance.
+- Cap concurrent delegatees at what is genuinely useful; more agents is not automatically faster.
+
+### 4. Assign to the right agent, in delegate mode
+
+- Pick the agent by task nature: `assistant` for implementation/general work, `explorer` for search- or investigation-heavy tasks.
+- **Always use `communicate` with `mode: "delegate"`** — it is non-blocking, so you can hand off several tasks and continue. Never use `mode: "request"` to assign (it blocks until a reply).
+
+```json
+{
+  "target": "assistant",
+  "mode": "delegate",
+  "task_id": "{TASK_ID}",
+  "message": "Execute task {N.M}: {name}\nPlan: {plan path} — section for task {N.M}\nGoal: ...\nSteps: ...\nExpected output: ...\nACs: ...\nMark the task completed via task_management only when all ACs pass."
+}
+```
+
+- Put enough context in `message` that the delegatee need not re-derive the plan section, but still point it at the plan file for anchoring.
+
+### 5. Do not duplicate delegated work
+
+**Once a task is assigned, it is off your plate.**
+
+- ❌ Never start implementing a task you just delegated — no "I'll do part of it while they do the rest".
+- Mark delegated tasks `in_progress` and track them; only touch them again after the delegatee returns them (completed) or the delegation is cancelled.
+- While tasks run, work on non-delegable/tiny tasks, pre-anchor the next phase, and monitor — do not redo delegated work.
+
+### 6. Wait patiently
+
+- After delegating, wait for results. Do **not** repeatedly ping agents with messages asking "are you done?".
+- Monitor via task status (`task_management get` / `get_children`) and completion notifications, not by nagging.
+- Intervene early only with concrete evidence of a blocker the agent cannot resolve on its own.
+
+### 7. Cancel stalled delegations (with notification)
+
+If a delegated task shows **no progress for an extended period** (well beyond a reasonable duration for its scope, or no status change across several checks):
+
+1. **Notify** the assigned agent that the delegation is cancelled and it must stop:
+```json
+{
+  "target": "{assigned_agent}",
+  "mode": "notify",
+  "message": "Cancellation: stop work on task {N.M} ({TASK_ID}) — no progress detected. Do not continue; the task will be reassigned."
+}
+```
+2. Reset the task (`task_management update` → `status: "pending"`, clear stale in-progress notes).
+3. Re-plan: re-delegate (different agent or split the work), or execute it locally if doing it yourself is now faster.
 
 ## Execution Workflow
 
@@ -113,9 +190,15 @@ Choose the next task(s) based on:
 | **Priority**     | Higher priority first (high > medium > low)                               |
 | **Plan order**   | Tiebreaker only: when multiple tasks are equally ready, prefer lower task number first |
 
-**Parallel execution**: After evaluating all pending tasks, identify the set of **ready tasks** (status `pending` + all deps `completed`). If multiple tasks are ready simultaneously, they **can be assigned to different agents in parallel** to leverage the plan's parallelism design. Use `assign_task` with `execution_type: "background"` to start multiple tasks concurrently.
+**Parallel execution**: After evaluating all pending tasks, identify the set of **ready tasks** (status `pending` + all deps `completed`). Then apply the **Parallel Execution Protocol** above:
 
-> Check the plan's `并行执行图` (if present) to understand the intended parallelism structure. Tasks shown side-by-side in the diagram are designed to run concurrently.
+1. Drop tasks with any unmet dependency.
+2. Filter out tiny tasks — execute those locally.
+3. Balance the remaining workload and choose the right agent per task.
+4. Delegate via `communicate` with `mode: "delegate"` (non-blocking) — never `mode: "request"`.
+5. Do not re-execute anything you delegated; wait patiently and monitor via task status.
+
+> Check the plan's `并行执行图` (if present) to understand the intended parallelism structure. Tasks shown side-by-side in the diagram are designed to run concurrently — but still apply the cost/benefit and balance rules before delegating.
 
 #### Task Anchor
 - Re-read the task's goal, steps, expected output, and **acceptance criteria**
@@ -136,14 +219,9 @@ After completing the task, ask yourself:
 > "Does the implementation match the plan's description?"
 - If deviation found: **stop immediately**, use `ask_user` to report the deviation, get instructions before continuing
 
-```json
-// Mark task as in_progress
-{
-    "action": "update",
-    "task_id": "TASK_ID",
-    "status": "in_progress"
-}
 
+#### Task Report
+```
 // Mark task as completed — keep report CONCISE, save details for phase report
 {
     "action": "update",
@@ -191,7 +269,7 @@ This is the **detailed report** — in contrast to concise task reports, the pha
 2. Use the Phase Report Template below — include deviation explanations, AC-by-AC outcomes
 3. Present the report:
 - For manual review (by default), just provide the report location to the user and inform that `review_execution` command  can be used for report review, then **stop and wait for the user's review decision.** Never be verbose. (Your report contains all details)
-- If user specifies to use auto-review, assign the review task to `assistant`(task: "review execution report: {report path}").
+- If user specifies to use auto-review, delegate the review to `assistant` via `communicate` with `mode: "delegate"` (message: "review execution report: {report path}").
 
 > ⚠️ **Do not auto-proceed to the next phase.** You must wait for the review result. Only if the user explicitly says "proceed" or "continue all phases" should you move on (phase reports are still required).
 
@@ -265,40 +343,6 @@ Write phase reports to `plans/reports/execution/{plan-name}-phase-{N}.md`.
 - [ ] Compatible with existing work
 ```
 
-## Task Management Queries
-
-### Get Task Details
-```json
-{ "action": "get", "task_id": "TASK_ID" }
-```
-
-### Get Tasks by Plan Name
-```json
-{ "action": "search", "query": "{PlanName}" }
-```
-
-### Get Subtasks of a Phase
-```json
-{ "action": "get_children", "task_id": "PHASE_TASK_ID" }
-```
-
-## Plan Task Reference
-
-Tasks created by `create-tasks` follow this structure:
-
-| Task Name Pattern                 | Meaning           | What to Expect in `details`            |
-| -----------------------------------| -------------------| ----------------------------------------|
-| `{PlanName} / Phase {N}: {Name}`  | Phase parent task | Phase goal, phase ACs                  |
-| `{PlanName} / Task {N.M}: {Name}` | Individual task   | Steps, expected output, plan reference |
-
-The task's `files` array will contain `["plans/{plan-name}.md"]` — use this to locate the plan document for anchoring.
-
-The task's `details` field will contain:
-- **Steps**: Concrete steps to follow
-- **Expected Output**: What success looks like
-- **Dependencies**: The task's declared dependencies (from plan's `依赖` field)
-- **Plan Reference**: Path back to the plan document
-
 ## Anti-Patterns
 
 | Don't                                 | Do Instead                                                         |
@@ -309,5 +353,12 @@ The task's `details` field will contain:
 | Repeat failed approaches              | Log failures, try different methods, use 3-Strike Protocol         |
 | Serialize all tasks even when parallelism is possible | Check the ready set; execute independent tasks in parallel to save time |
 | Execute a task before its dependencies are met | Respect the dependency graph — only start tasks whose deps are all `completed` |
+| Delegate a task with unmet dependencies | Verify every dependency is `completed` immediately before assigning |
+| Delegate tiny/trivial tasks | Execute locally — context-loading overhead exceeds the work itself |
+| Pile all heavy tasks on one agent | Balance workloads; give each agent a roughly equal share |
+| Assign via `mode: "request"` (blocks) | Always use `mode: "delegate"` — non-blocking assignment |
+| Re-execute a task you already delegated | Hands off once assigned; only touch it after return/cancellation |
+| Nag agents for progress updates | Wait patiently; monitor task status instead of pinging |
+| Leave a stalled delegation running forever | Notify the agent of cancellation, reset the task, then re-plan |
 | Skip progress tracking                | Update status → in_progress → completed with report                |
 | Write verbose task-level reports      | Keep task reports concise; put details in the phase report instead |
